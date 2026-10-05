@@ -153,22 +153,30 @@ assignment, escalation, audit log writes, and both login paths.
 
 ## CI/CD
 
-- `.github/workflows/ci.yml` runs `pytest` on every push and pull request.
-- `.github/workflows/deploy.yml` runs after CI passes on `main`, SSHes into
-  an EC2 box, and runs `docker compose up -d --build`.
+- `.github/workflows/ci.yml` runs `pytest` and the migration drift check on
+  every push, pull request and `v*` tag.
+- `.github/workflows/deploy.yml` runs after CI passes on a push. `main`
+  deploys to the `staging` GitHub Environment; a `v*` tag (for example
+  `v1.0.0`) deploys to `production`. It SSHes into that environment's EC2
+  box, checks out the exact commit CI tested, and runs
+  `docker compose up -d --build`, which applies migrations on start.
 
-The deploy workflow needs these repo secrets (Settings → Secrets and
-variables → Actions), none of which this repo can set for you:
+Each environment (Settings → Environments) needs these secrets, none of
+which this repo can set for you:
 
 - `EC2_HOST` — public IP or hostname of the instance
 - `EC2_USER` — SSH user (e.g. `ubuntu`)
 - `EC2_SSH_KEY` — private key with access to that user, PEM contents
 - `EC2_APP_DIR` — path on the instance where this repo is checked out (e.g. `/home/ubuntu/ticketingApp`)
 
-One-time setup on the EC2 box itself: install Docker + Docker Compose,
+One-time setup on each EC2 box: install Docker + Docker Compose,
 `git clone` this repo into `EC2_APP_DIR`, and create a real `.env` there
-(copied from `.env.example` with production values) — the deploy workflow
-only pulls and rebuilds, it doesn't create the environment file.
+(copied from `.env.example`, with `ENV=staging` or `ENV=production` and
+real secrets). The deploy workflow only checks out and rebuilds; it doesn't
+create the environment file.
+
+The container runs uvicorn with 4 workers; set `UVICORN_WORKERS` in `.env`
+to change it.
 
 ## Wiring up Microsoft Graph
 
