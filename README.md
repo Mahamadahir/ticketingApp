@@ -149,7 +149,8 @@ only pulls and rebuilds, it doesn't create the environment file.
    `send_mail`, `create_subscription`, `get_message`.
 5. Call `create_subscription` once (e.g. from a one-off script or startup
    task) pointing at `https://<your-host>/webhooks/graph/notifications`.
-   Mail subscriptions expire after ~3 days and need a renewal job.
+   Mail subscriptions last up to 10,080 minutes (under 7 days) and need a
+   renewal job.
 6. Fill in the notification-handling TODO in
    [app/routers/webhooks.py](app/routers/webhooks.py) to fetch the new
    message via Graph and create or update a ticket.
