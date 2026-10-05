@@ -8,7 +8,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.auth import NotAuthenticated, get_current_user
 from app.config import settings, unsafe_setting_errors
 from app.models import User, UserRole
-from app.routers import admin, auth, portal, tickets, webhooks
+from app.routers import admin, auth, health, portal, tickets, webhooks
 
 
 @asynccontextmanager
@@ -27,6 +27,7 @@ app.add_middleware(
     same_site="lax",
 )
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
+app.include_router(health.router)
 app.include_router(auth.router)
 app.include_router(tickets.router)
 app.include_router(portal.router)

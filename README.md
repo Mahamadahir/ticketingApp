@@ -215,6 +215,7 @@ app/
   audit.py           Audit log helper
   graph_client.py    Microsoft Graph mail integration (stubbed)
   routers/
+    health.py        Unauthenticated /health check (app + database) for monitors
     auth.py          Login page, SSO callback, local login, dev login, logout
     tickets.py       Agent console: list/view/reply/assign/escalate/status
     portal.py        End-user portal: list/view own tickets, comment
