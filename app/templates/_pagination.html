@@ -1,0 +1,7 @@
+{% if page.total_pages > 1 %}
+<nav class="pagination" aria-label="Pagination">
+  {% if page.has_previous %}<a href="{{ page.link(page.number - 1) }}">&larr; Previous</a>{% endif %}
+  <span>Page {{ page.number }} of {{ page.total_pages }} &middot; {{ page.total_items }} total</span>
+  {% if page.has_next %}<a href="{{ page.link(page.number + 1) }}">Next &rarr;</a>{% endif %}
+</nav>
+{% endif %}

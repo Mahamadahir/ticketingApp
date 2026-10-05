@@ -10,6 +10,7 @@ from app.auth import hash_password, require_roles
 from app.database import get_session
 from app.forms import optional_int
 from app.models import AuditLog, Team, Ticket, User, UserRole
+from app.pagination import paginate
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 templates = Jinja2Templates(directory="app/templates")
@@ -128,20 +129,44 @@ def create_team(
     return RedirectResponse("/admin/teams", status_code=303)
 
 
+AUDIT_ENTITY_TYPES = ["ticket", "user", "team"]
+
+
 @router.get("/audit-log", response_class=HTMLResponse)
 def view_audit_log(
     request: Request,
     entity_type: Optional[str] = None,
+    actor: Optional[str] = None,
+    subject_user_id: Optional[str] = None,
+    page: int = 1,
     user: User = Depends(require_super_admin),
     session: Session = Depends(get_session),
 ):
-    query = select(AuditLog).order_by(AuditLog.created_at.desc()).limit(200)
+    parsed_subject_user_id = optional_int(subject_user_id)
+
+    query = select(AuditLog).order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
     if entity_type:
         query = query.where(AuditLog.entity_type == entity_type)
+    if actor:
+        query = query.where(AuditLog.actor_email == actor)
+    if parsed_subject_user_id is not None:
+        query = query.where(AuditLog.entity_type == "user", AuditLog.entity_id == parsed_subject_user_id)
 
-    entries = session.exec(query).all()
+    entries_page = paginate(session, query, page, request.query_params)
+    actors = session.exec(select(AuditLog.actor_email).distinct().order_by(AuditLog.actor_email)).all()
+    users = session.exec(select(User).order_by(User.email)).all()
+
     return templates.TemplateResponse(
         request,
         "admin_audit_log.html",
-        {"entries": entries, "entity_type": entity_type, "user": user},
+        {
+            "page": entries_page,
+            "entity_types": AUDIT_ENTITY_TYPES,
+            "actors": actors,
+            "users": users,
+            "entity_type": entity_type,
+            "actor": actor,
+            "subject_user_id": parsed_subject_user_id,
+            "user": user,
+        },
     )
