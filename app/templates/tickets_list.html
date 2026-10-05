@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Tickets{% endblock %}
+{% block content %}
+<table>
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>Subject</th>
+      <th>Requester</th>
+      <th>Status</th>
+      <th>Updated</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for ticket in tickets %}
+    <tr>
+      <td>{{ ticket.id }}</td>
+      <td><a href="/tickets/{{ ticket.id }}">{{ ticket.subject }}</a></td>
+      <td>{{ ticket.requester_email }}</td>
+      <td><span class="status status-{{ ticket.status.value }}">{{ ticket.status.value }}</span></td>
+      <td>{{ ticket.updated_at.strftime("%Y-%m-%d %H:%M") }}</td>
+    </tr>
+    {% else %}
+    <tr>
+      <td colspan="5">No tickets yet.</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
