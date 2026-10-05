@@ -1,28 +1,46 @@
 {% extends "base.html" %}
 {% block title %}Tickets{% endblock %}
 {% block content %}
+
+<div class="filters">
+  <a href="/tickets" class="{{ 'active' if not mine else '' }}">All visible</a>
+  <a href="/tickets?mine=true" class="{{ 'active' if mine else '' }}">Assigned to me</a>
+  {% if user.role.value == "super_admin" and teams %}
+    {% for t in teams %}
+    <a href="/tickets?team_id={{ t.id }}" class="{{ 'active' if team_id == t.id else '' }}">{{ t.name }}</a>
+    {% endfor %}
+  {% endif %}
+</div>
+
 <table>
   <thead>
     <tr>
       <th>ID</th>
       <th>Subject</th>
       <th>Requester</th>
+      <th>Team</th>
+      <th>Assigned</th>
       <th>Status</th>
       <th>Updated</th>
     </tr>
   </thead>
   <tbody>
     {% for ticket in tickets %}
-    <tr>
+    <tr class="{{ 'escalated-row' if ticket.is_escalated else '' }}">
       <td>{{ ticket.id }}</td>
-      <td><a href="/tickets/{{ ticket.id }}">{{ ticket.subject }}</a></td>
+      <td>
+        <a href="/tickets/{{ ticket.id }}">{{ ticket.subject }}</a>
+        {% if ticket.is_escalated %}<span class="badge badge-escalated">escalated</span>{% endif %}
+      </td>
       <td>{{ ticket.requester_email }}</td>
+      <td>{{ teams_by_id[ticket.team_id].name if ticket.team_id and ticket.team_id in teams_by_id else "Unassigned" }}</td>
+      <td>{{ agents_by_id[ticket.assigned_agent_id].display_name if ticket.assigned_agent_id and ticket.assigned_agent_id in agents_by_id else "Unassigned" }}</td>
       <td><span class="status status-{{ ticket.status.value }}">{{ ticket.status.value }}</span></td>
       <td>{{ ticket.updated_at.strftime("%Y-%m-%d %H:%M") }}</td>
     </tr>
     {% else %}
     <tr>
-      <td colspan="5">No tickets yet.</td>
+      <td colspan="7">No tickets yet.</td>
     </tr>
     {% endfor %}
   </tbody>

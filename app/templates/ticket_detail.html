@@ -3,12 +3,56 @@
 {% block content %}
 <p><a href="/tickets">&larr; back to tickets</a></p>
 
-<h2>{{ ticket.subject }}</h2>
+<h2>
+  {{ ticket.subject }}
+  {% if ticket.is_escalated %}<span class="badge badge-escalated">escalated</span>{% endif %}
+</h2>
 <p>
   From: {{ ticket.requester_email }}
+  &middot; Team: {{ team.name if team else "Unassigned" }}
+  &middot; Assigned: {{ assigned_agent.display_name if assigned_agent else "Unassigned" }}
   &middot;
   <span class="status status-{{ ticket.status.value }}">{{ ticket.status.value }}</span>
 </p>
+
+{% if ticket.is_escalated %}
+<p class="note">Escalated: {{ ticket.escalation_reason }}</p>
+{% endif %}
+
+<div class="actions">
+  <form hx-post="/tickets/{{ ticket.id }}/status" hx-target="main" hx-swap="innerHTML">
+    {% for s in ["open", "in_progress", "resolved", "closed"] %}
+    <button type="submit" name="status" value="{{ s }}" class="{{ 'button-active' if ticket.status.value == s else 'button-outline' }}">{{ s }}</button>
+    {% endfor %}
+  </form>
+
+  <form hx-post="/tickets/{{ ticket.id }}/assign" hx-target="main" hx-swap="innerHTML">
+    {% if user.role.value == "super_admin" %}
+      <select name="agent_id">
+        {% for agent in team_agents %}
+        <option value="{{ agent.id }}" {{ "selected" if assigned_agent and agent.id == assigned_agent.id else "" }}>{{ agent.display_name }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit">Reassign</button>
+    {% else %}
+      <button type="submit">Assign to me</button>
+    {% endif %}
+  </form>
+
+  <details>
+    <summary>Escalate</summary>
+    <form hx-post="/tickets/{{ ticket.id }}/escalate" hx-target="main" hx-swap="innerHTML">
+      <textarea name="reason" placeholder="Why does this need escalating?" required></textarea>
+      <select name="target_team_id">
+        <option value="">Keep current team</option>
+        {% for t in teams %}
+        <option value="{{ t.id }}">{{ t.name }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="button-destructive">Escalate</button>
+    </form>
+  </details>
+</div>
 
 <div id="thread">
   {% for message in ticket.messages|sort(attribute="created_at") %}

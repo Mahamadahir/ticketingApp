@@ -8,7 +8,20 @@
 </head>
 <body>
   <header>
-    <h1><a href="/tickets">IT Support Ticketing</a></h1>
+    <h1><a href="/">IT Support Ticketing</a></h1>
+    <nav>
+      {% if user %}
+        {% if user.role.value in ("super_admin", "agent") %}
+        <a href="/tickets">Tickets</a>
+        {% endif %}
+        <a href="/portal">My requests</a>
+        {% if user.role.value == "super_admin" %}
+        <a href="/admin/users">Admin</a>
+        {% endif %}
+        <span class="user-chip">{{ user.display_name }} &middot; {{ user.role.value }}</span>
+        <a href="/auth/logout">Sign out</a>
+      {% endif %}
+    </nav>
   </header>
   <main>
     {% block content %}{% endblock %}

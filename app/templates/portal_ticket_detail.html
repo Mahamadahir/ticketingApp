@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}{{ ticket.subject }}{% endblock %}
+{% block content %}
+<p><a href="/portal">&larr; back to my requests</a></p>
+
+<h2>{{ ticket.subject }}</h2>
+<p><span class="status status-{{ ticket.status.value }}">{{ ticket.status.value }}</span></p>
+
+<div id="thread">
+  {% for message in ticket.messages|sort(attribute="created_at") %}
+  <div class="message message-{{ message.direction.value }}">
+    <div class="message-meta">{{ message.sender }} &middot; {{ message.created_at.strftime("%Y-%m-%d %H:%M") }}</div>
+    <div class="message-body">{{ message.body }}</div>
+  </div>
+  {% endfor %}
+</div>
+
+<form hx-post="/portal/{{ ticket.id }}/comment" hx-target="main" hx-swap="innerHTML">
+  <textarea name="body" rows="4" placeholder="Add a comment..." required></textarea>
+  <button type="submit">Add comment</button>
+</form>
+{% endblock %}

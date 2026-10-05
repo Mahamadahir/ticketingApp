@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Admin: Teams{% endblock %}
+{% block content %}
+<nav class="admin-tabs">
+  <a href="/admin/users">Users</a>
+  <a href="/admin/teams" class="active">Teams</a>
+  <a href="/admin/audit-log">Audit log</a>
+</nav>
+
+<h2>Teams</h2>
+<div class="team-cards">
+  {% for team in teams %}
+  <div class="team-card">
+    <div class="team-card-name">{{ team.name }}</div>
+    <div>{{ member_counts.get(team.id, 0) }} members</div>
+    <div>{{ ticket_counts.get(team.id, 0) }} tickets</div>
+  </div>
+  {% else %}
+  <p>No teams yet &mdash; create one below.</p>
+  {% endfor %}
+</div>
+
+<h2>New team</h2>
+<form method="post" action="/admin/teams">
+  <label>Name <input type="text" name="name" required /></label>
+  <button type="submit">Create team</button>
+</form>
+{% endblock %}

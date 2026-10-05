@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Admin: Audit log{% endblock %}
+{% block content %}
+<nav class="admin-tabs">
+  <a href="/admin/users">Users</a>
+  <a href="/admin/teams">Teams</a>
+  <a href="/admin/audit-log" class="active">Audit log</a>
+</nav>
+
+<h2>Audit log</h2>
+
+<div class="filters">
+  <a href="/admin/audit-log" class="{{ 'active' if not entity_type else '' }}">All</a>
+  <a href="/admin/audit-log?entity_type=ticket" class="{{ 'active' if entity_type == 'ticket' else '' }}">Tickets</a>
+  <a href="/admin/audit-log?entity_type=user" class="{{ 'active' if entity_type == 'user' else '' }}">Users</a>
+  <a href="/admin/audit-log?entity_type=team" class="{{ 'active' if entity_type == 'team' else '' }}">Teams</a>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Time</th>
+      <th>Actor</th>
+      <th>Action</th>
+      <th>Entity</th>
+      <th>Detail</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for entry in entries %}
+    <tr>
+      <td>{{ entry.created_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>
+      <td>{{ entry.actor_email }}</td>
+      <td><span class="badge">{{ entry.action }}</span></td>
+      <td>{{ entry.entity_type }} #{{ entry.entity_id }}</td>
+      <td>{{ entry.detail or "" }}</td>
+    </tr>
+    {% else %}
+    <tr>
+      <td colspan="5">No audit entries yet.</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

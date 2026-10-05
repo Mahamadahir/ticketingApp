@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Admin: Users{% endblock %}
+{% block content %}
+<nav class="admin-tabs">
+  <a href="/admin/users" class="active">Users</a>
+  <a href="/admin/teams">Teams</a>
+  <a href="/admin/audit-log">Audit log</a>
+</nav>
+
+<h2>Users</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Email</th>
+      <th>Name</th>
+      <th>Role</th>
+      <th>Team</th>
+      <th>Local account</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for u in users %}
+    <tr>
+      <form class="contents-row" method="post" action="/admin/users/{{ u.id }}">
+        <td>{{ u.email }}</td>
+        <td>{{ u.display_name }}</td>
+        <td>
+          <select name="role">
+            {% for r in roles %}
+            <option value="{{ r.value }}" {{ "selected" if u.role == r else "" }}>{{ r.value }}</option>
+            {% endfor %}
+          </select>
+        </td>
+        <td>
+          <select name="team_id">
+            <option value="">No team</option>
+            {% for t in teams %}
+            <option value="{{ t.id }}" {{ "selected" if u.team_id == t.id else "" }}>{{ t.name }}</option>
+            {% endfor %}
+          </select>
+        </td>
+        <td>{{ "yes" if u.password_hash else "no (SSO)" }}</td>
+        <td><button type="submit">Save</button></td>
+      </form>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2>Create local account</h2>
+<p class="note">For contractors or anyone without a Microsoft tenant identity.</p>
+<form method="post" action="/admin/users">
+  <label>Email <input type="email" name="email" required /></label>
+  <label>Display name <input type="text" name="display_name" required /></label>
+  <label>Password <input type="password" name="password" required /></label>
+  <label>
+    Role
+    <select name="role">
+      {% for r in roles %}
+      <option value="{{ r.value }}">{{ r.value }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    Team
+    <select name="team_id">
+      <option value="">No team</option>
+      {% for t in teams %}
+      <option value="{{ t.id }}">{{ t.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="submit">Create</button>
+</form>
+{% endblock %}

@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Dev sign-in</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <main>
+    <h1>Dev sign-in</h1>
+    <p>
+      SSO isn't configured (no <code>SSO_TENANT_ID</code>/<code>SSO_CLIENT_ID</code>/<code>SSO_CLIENT_SECRET</code>
+      in the environment), so sign-in is a plain form for local testing. Set those variables once the
+      Entra ID app registration exists and this form stops being reachable.
+    </p>
+    <form method="post" action="/auth/dev-login">
+      <label>
+        Email
+        <input type="email" name="email" required />
+      </label>
+      <label>
+        Display name
+        <input type="text" name="display_name" required />
+      </label>
+      <button type="submit">Sign in</button>
+    </form>
+  </main>
+</body>
+</html>

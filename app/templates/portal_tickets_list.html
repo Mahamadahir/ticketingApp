@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}My requests{% endblock %}
+{% block content %}
+<h2>My requests</h2>
+
+{% if not tickets %}
+<p>No open tickets right now.</p>
+{% endif %}
+
+<div class="ticket-cards">
+  {% for ticket in tickets %}
+  <a class="ticket-card" href="/portal/{{ ticket.id }}">
+    <div class="ticket-card-subject">{{ ticket.subject }}</div>
+    <span class="status status-{{ ticket.status.value }}">{{ ticket.status.value }}</span>
+    <div class="ticket-card-updated">Updated {{ ticket.updated_at.strftime("%Y-%m-%d %H:%M") }}</div>
+  </a>
+  {% endfor %}
+</div>
+{% endblock %}

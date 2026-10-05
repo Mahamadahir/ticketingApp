@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Sign in</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <main class="login-page">
+    <h1>IT Support Ticketing</h1>
+
+    {% if error %}
+    <p class="error">{{ error }}</p>
+    {% endif %}
+
+    {% if sso_configured %}
+    <a class="button" href="/auth/sso/start">Sign in with Microsoft</a>
+    {% else %}
+    <p class="note">
+      SSO isn't configured in this environment.
+      <a href="/auth/dev-login">Use dev sign-in</a> instead.
+    </p>
+    {% endif %}
+
+    <hr />
+
+    <h2>Local account</h2>
+    <p class="note">For accounts without a Microsoft tenant identity, created by an admin.</p>
+    <form method="post" action="/auth/local-login">
+      <label>
+        Email
+        <input type="email" name="email" required />
+      </label>
+      <label>
+        Password
+        <input type="password" name="password" required />
+      </label>
+      <button type="submit">Sign in</button>
+    </form>
+  </main>
+</body>
+</html>
