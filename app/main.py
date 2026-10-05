@@ -7,7 +7,6 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.auth import NotAuthenticated, get_current_user
 from app.config import settings, unsafe_setting_errors
-from app.database import create_db_and_tables
 from app.models import User, UserRole
 from app.routers import admin, auth, portal, tickets, webhooks
 
@@ -17,7 +16,6 @@ async def lifespan(app: FastAPI):
     errors = unsafe_setting_errors(settings)
     if errors:
         raise RuntimeError("Refusing to start: " + "; ".join(errors))
-    create_db_and_tables()
     yield
 
 

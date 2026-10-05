@@ -118,6 +118,27 @@ curl -X POST http://localhost:8000/webhooks/dev/simulate-inbound \
   -d "body=I get a timeout every time I try to connect."
 ```
 
+## Database migrations
+
+Schema changes go through Alembic. The container runs `alembic upgrade head`
+before starting the app, so a deploy applies pending migrations on its own.
+
+After changing a model, generate and review a migration:
+
+```bash
+docker compose run --rm app alembic revision --autogenerate -m "describe the change"
+```
+
+CI runs `alembic check` and fails if a model changed without a migration.
+
+A database created before migrations existed (by the old `create_all` at
+startup) already has the baseline tables. Mark it as migrated once, before
+the first deploy that includes Alembic:
+
+```bash
+docker compose run --rm app alembic stamp a575769b8ea7
+```
+
 ## Running tests
 
 ```bash
@@ -201,6 +222,7 @@ app/
     webhooks.py      Graph change-notification endpoint + dev helper
   templates/         Jinja2 + HTMX views
   static/            CSS
+migrations/          Alembic environment and versioned schema migrations
 tests/               pytest suite (SQLite-backed)
 .github/workflows/   CI (tests) and CD (deploy to EC2)
 ```
