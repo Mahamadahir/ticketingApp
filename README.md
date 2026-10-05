@@ -67,10 +67,10 @@ Two ways in, both resolve to a `User` row with a `role` and optional `team`:
    with an email, password, role, and team. Always available regardless of
    whether SSO is configured.
 
-If SSO isn't configured at all, the login page points at `/auth/dev-login`
-instead — a plain form that signs in as any email with no password, purely
-for local development. It's automatically disabled the moment SSO env vars
-are set, so it's not something you need to remember to turn off.
+When `ENV=dev`, the login page also links to `/auth/dev-login`, a plain
+form that signs in as any email with no password, for local development
+only. In any other environment the route returns 404, so it can't be left
+switched on by accident.
 
 ### Bootstrapping the first super admin
 
@@ -94,9 +94,22 @@ docker compose up --build
 
 Then open http://localhost:8000. You'll land on `/auth/login`.
 
+`.env.example` sets `ENV=dev`. Staging and production must set
+`ENV=staging` or `ENV=production`: outside dev the app refuses to start
+while `SESSION_SECRET_KEY` (or, once Graph is configured,
+`GRAPH_WEBHOOK_CLIENT_STATE`) is still a default value, and the session
+cookie is HTTPS-only.
+
+Postgres isn't published on the host. To get a shell on it:
+
+```bash
+docker compose exec db psql -U ticketing
+```
+
 Graph credentials are optional to start the app — email ingestion and
 sending are stubbed until an app registration exists (see below). Until
-then, use the dev helper to create tickets manually:
+then, use the dev helper (available only when `ENV=dev`) to create tickets
+manually:
 
 ```bash
 curl -X POST http://localhost:8000/webhooks/dev/simulate-inbound \

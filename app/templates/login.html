@@ -15,10 +15,11 @@
 
     {% if sso_configured %}
     <a class="button" href="/auth/sso/start">Sign in with Microsoft</a>
-    {% else %}
+    {% endif %}
+    {% if dev_login_enabled %}
     <p class="note">
-      SSO isn't configured in this environment.
-      <a href="/auth/dev-login">Use dev sign-in</a> instead.
+      Development environment.
+      <a href="/auth/dev-login">Use dev sign-in</a>.
     </p>
     {% endif %}
 
