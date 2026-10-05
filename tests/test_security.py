@@ -1,5 +1,6 @@
 import pytest
 
+from app import check_settings
 from app.config import Settings, settings, unsafe_setting_errors
 from tests.conftest import login_as
 
@@ -66,3 +67,13 @@ def test_production_accepts_real_secrets():
 
 def test_dev_login_still_works_in_dev(client):
     assert login_as(client, "dev@example.com") is not None
+
+
+def test_settings_check_exits_non_zero_on_unsafe_config(monkeypatch):
+    monkeypatch.setattr(settings, "env", "production")
+    monkeypatch.setattr(settings, "session_secret_key", "change-me")
+    assert check_settings.main() == 1
+
+
+def test_settings_check_passes_in_dev():
+    assert check_settings.main() == 0
