@@ -21,15 +21,16 @@ require_super_admin = require_roles(UserRole.SUPER_ADMIN)
 @router.get("/users", response_class=HTMLResponse)
 def list_users(
     request: Request,
+    page: int = 1,
     user: User = Depends(require_super_admin),
     session: Session = Depends(get_session),
 ):
-    users = session.exec(select(User).order_by(User.email)).all()
+    users_page = paginate(session, select(User).order_by(User.email), page, request.query_params)
     teams = session.exec(select(Team).order_by(Team.name)).all()
     return templates.TemplateResponse(
         request,
         "admin_users.html",
-        {"users": users, "teams": teams, "roles": list(UserRole), "user": user},
+        {"page": users_page, "teams": teams, "roles": list(UserRole), "user": user},
     )
 
 

@@ -20,7 +20,7 @@
     </tr>
   </thead>
   <tbody>
-    {% for u in users %}
+    {% for u in page.items %}
     <tr>
       <form class="contents-row" method="post" action="/admin/users/{{ u.id }}">
         <td>{{ u.email }}</td>
@@ -47,6 +47,8 @@
     {% endfor %}
   </tbody>
 </table>
+
+{% include "_pagination.html" %}
 
 <h2>Create local account</h2>
 <p class="note">For contractors or anyone without a Microsoft tenant identity.</p>

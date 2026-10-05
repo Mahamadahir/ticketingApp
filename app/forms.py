@@ -1,3 +1,6 @@
+MAX_MESSAGE_LENGTH = 10_000
+
+
 def optional_int(value: str | None) -> int | None:
     """Converts an HTML select's empty-string 'none' option to None.
 
