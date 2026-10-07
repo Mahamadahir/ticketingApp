@@ -1,5 +1,6 @@
 import os
 
+os.environ["ENV"] = "dev"
 os.environ["DATABASE_URL"] = "sqlite:///./test.db"
 os.environ["SUPER_ADMIN_EMAILS"] = "admin@example.com"
 os.environ["SESSION_SECRET_KEY"] = "test-secret"

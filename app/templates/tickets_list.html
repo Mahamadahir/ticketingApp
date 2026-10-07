@@ -25,7 +25,7 @@
     </tr>
   </thead>
   <tbody>
-    {% for ticket in tickets %}
+    {% for ticket in page.items %}
     <tr class="{{ 'escalated-row' if ticket.is_escalated else '' }}">
       <td>{{ ticket.id }}</td>
       <td>
@@ -45,4 +45,6 @@
     {% endfor %}
   </tbody>
 </table>
+
+{% include "_pagination.html" %}
 {% endblock %}

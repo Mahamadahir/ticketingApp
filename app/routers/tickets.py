@@ -9,11 +9,13 @@ from sqlmodel import Session, select
 from app.audit import log_action
 from app.auth import require_roles
 from app.database import get_session
-from app.forms import optional_int
+from app.forms import MAX_MESSAGE_LENGTH, optional_int
 from app.models import Message, MessageDirection, Team, Ticket, TicketStatus, User, UserRole
+from app.pagination import paginate
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 templates = Jinja2Templates(directory="app/templates")
+templates.env.globals["max_message_length"] = MAX_MESSAGE_LENGTH
 
 AGENT_ROLES = (UserRole.SUPER_ADMIN, UserRole.AGENT)
 
@@ -28,6 +30,7 @@ def list_tickets(
     request: Request,
     mine: bool = False,
     team_id: Optional[int] = None,
+    page: int = 1,
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
@@ -41,7 +44,7 @@ def list_tickets(
     if mine:
         query = query.where(Ticket.assigned_agent_id == user.id)
 
-    tickets = session.exec(query).all()
+    tickets_page = paginate(session, query, page, request.query_params)
     teams_by_id = {team.id: team for team in session.exec(select(Team)).all()}
     agents_by_id = {agent.id: agent for agent in session.exec(select(User).where(User.role == UserRole.AGENT)).all()}
     teams = session.exec(select(Team)).all() if user.role == UserRole.SUPER_ADMIN else []
@@ -50,7 +53,7 @@ def list_tickets(
         request,
         "tickets_list.html",
         {
-            "tickets": tickets,
+            "page": tickets_page,
             "teams_by_id": teams_by_id,
             "agents_by_id": agents_by_id,
             "teams": teams,
@@ -100,7 +103,7 @@ def view_ticket(
 def reply_to_ticket(
     ticket_id: int,
     request: Request,
-    body: str = Form(...),
+    body: str = Form(..., max_length=MAX_MESSAGE_LENGTH),
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
@@ -192,7 +195,7 @@ def assign_ticket(
 def escalate_ticket(
     ticket_id: int,
     request: Request,
-    reason: str = Form(...),
+    reason: str = Form(..., max_length=MAX_MESSAGE_LENGTH),
     target_team_id: Optional[str] = Form(None),
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),

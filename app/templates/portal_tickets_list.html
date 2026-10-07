@@ -3,12 +3,12 @@
 {% block content %}
 <h2>My requests</h2>
 
-{% if not tickets %}
+{% if not page.items %}
 <p>No open tickets right now.</p>
 {% endif %}
 
 <div class="ticket-cards">
-  {% for ticket in tickets %}
+  {% for ticket in page.items %}
   <a class="ticket-card" href="/portal/{{ ticket.id }}">
     <div class="ticket-card-subject">{{ ticket.subject }}</div>
     <span class="status status-{{ ticket.status.value }}">{{ ticket.status.value }}</span>
@@ -16,4 +16,6 @@
   </a>
   {% endfor %}
 </div>
+
+{% include "_pagination.html" %}
 {% endblock %}

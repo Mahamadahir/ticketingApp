@@ -8,10 +8,13 @@ from sqlmodel import Session, select
 from app.audit import log_action
 from app.auth import get_current_user
 from app.database import get_session
+from app.forms import MAX_MESSAGE_LENGTH
 from app.models import Message, MessageDirection, Ticket, User
+from app.pagination import paginate
 
 router = APIRouter(prefix="/portal", tags=["portal"])
 templates = Jinja2Templates(directory="app/templates")
+templates.env.globals["max_message_length"] = MAX_MESSAGE_LENGTH
 
 
 def _get_own_ticket(session: Session, ticket_id: int, user: User) -> Ticket:
@@ -24,16 +27,14 @@ def _get_own_ticket(session: Session, ticket_id: int, user: User) -> Ticket:
 @router.get("", response_class=HTMLResponse)
 def list_my_tickets(
     request: Request,
+    page: int = 1,
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    tickets = session.exec(
-        select(Ticket)
-        .where(Ticket.requester_email == user.email)
-        .order_by(Ticket.updated_at.desc())
-    ).all()
+    query = select(Ticket).where(Ticket.requester_email == user.email).order_by(Ticket.updated_at.desc())
+    tickets_page = paginate(session, query, page, request.query_params)
     return templates.TemplateResponse(
-        request, "portal_tickets_list.html", {"tickets": tickets, "user": user}
+        request, "portal_tickets_list.html", {"page": tickets_page, "user": user}
     )
 
 
@@ -54,7 +55,7 @@ def view_my_ticket(
 def add_comment(
     ticket_id: int,
     request: Request,
-    body: str = Form(...),
+    body: str = Form(..., max_length=MAX_MESSAGE_LENGTH),
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):

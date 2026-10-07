@@ -9,12 +9,37 @@
 
 <h2>Audit log</h2>
 
-<div class="filters">
-  <a href="/admin/audit-log" class="{{ 'active' if not entity_type else '' }}">All</a>
-  <a href="/admin/audit-log?entity_type=ticket" class="{{ 'active' if entity_type == 'ticket' else '' }}">Tickets</a>
-  <a href="/admin/audit-log?entity_type=user" class="{{ 'active' if entity_type == 'user' else '' }}">Users</a>
-  <a href="/admin/audit-log?entity_type=team" class="{{ 'active' if entity_type == 'team' else '' }}">Teams</a>
-</div>
+<form class="filter-form" method="get" action="/admin/audit-log">
+  <label>
+    Type
+    <select name="entity_type">
+      <option value="">All</option>
+      {% for t in entity_types %}
+      <option value="{{ t }}" {{ "selected" if entity_type == t else "" }}>{{ t }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    Done by
+    <select name="actor">
+      <option value="">Anyone</option>
+      {% for a in actors %}
+      <option value="{{ a }}" {{ "selected" if actor == a else "" }}>{{ a }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    Done to user
+    <select name="subject_user_id">
+      <option value="">Any user</option>
+      {% for u in users %}
+      <option value="{{ u.id }}" {{ "selected" if subject_user_id == u.id else "" }}>{{ u.email }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="submit">Filter</button>
+  <a href="/admin/audit-log">Clear</a>
+</form>
 
 <table>
   <thead>
@@ -27,7 +52,7 @@
     </tr>
   </thead>
   <tbody>
-    {% for entry in entries %}
+    {% for entry in page.items %}
     <tr>
       <td>{{ entry.created_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>
       <td>{{ entry.actor_email }}</td>
@@ -42,4 +67,6 @@
     {% endfor %}
   </tbody>
 </table>
+
+{% include "_pagination.html" %}
 {% endblock %}

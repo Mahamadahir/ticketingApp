@@ -1,7 +1,14 @@
 from pydantic_settings import BaseSettings
 
 
+INSECURE_SECRETS = {"", "change-me", "dev-secret-change-me"}
+
+
 class Settings(BaseSettings):
+    # dev, staging or production. Defaults to production so a missing
+    # setting can never switch on dev-only routes.
+    env: str = "production"
+
     database_url: str = "postgresql+psycopg2://ticketing:ticketing@db:5432/ticketing"
 
     # Entra ID (Azure AD) app registration, client-credentials flow against
@@ -33,12 +40,32 @@ class Settings(BaseSettings):
         env_file = ".env"
 
     @property
+    def is_dev(self) -> bool:
+        return self.env == "dev"
+
+    @property
+    def graph_configured(self) -> bool:
+        return bool(self.graph_tenant_id and self.graph_client_id and self.graph_client_secret)
+
+    @property
     def sso_configured(self) -> bool:
         return bool(self.sso_tenant_id and self.sso_client_id and self.sso_client_secret)
 
     @property
     def super_admin_email_list(self) -> list[str]:
         return [e.strip().lower() for e in self.super_admin_emails.split(",") if e.strip()]
+
+
+def unsafe_setting_errors(config: Settings) -> list[str]:
+    if config.is_dev:
+        return []
+
+    errors = []
+    if config.session_secret_key in INSECURE_SECRETS:
+        errors.append("SESSION_SECRET_KEY is unset or a default value")
+    if config.graph_configured and config.graph_webhook_client_state in INSECURE_SECRETS:
+        errors.append("GRAPH_WEBHOOK_CLIENT_STATE is unset or a default value")
+    return errors
 
 
 settings = Settings()

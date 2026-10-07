@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Form, Request, Response
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response
 from sqlmodel import Session
 
 from app.config import settings
@@ -42,6 +42,9 @@ def simulate_inbound_email(
     """Dev-only helper to create a ticket without Graph wired up yet, so the
     UI can be exercised end-to-end before the app registration exists.
     """
+    if not settings.is_dev:
+        raise HTTPException(status_code=404)
+
     ticket = Ticket(subject=subject, requester_email=requester_email)
     session.add(ticket)
     session.commit()

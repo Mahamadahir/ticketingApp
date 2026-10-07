@@ -39,6 +39,8 @@ class User(SQLModel, table=True):
     # SSO accounts are provisioned just-in-time on first login and never
     # have a password_hash.
     password_hash: Optional[str] = Field(default=None)
+    failed_login_count: int = Field(default=0, sa_column_kwargs={"server_default": "0"})
+    locked_until: Optional[datetime] = Field(default=None)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

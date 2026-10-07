@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 import msal
 from fastapi import Depends, HTTPException, Request
 from passlib.context import CryptContext
@@ -8,6 +10,10 @@ from app.database import get_session
 from app.models import User, UserRole
 
 AUTHORITY_TEMPLATE = "https://login.microsoftonline.com/{tenant_id}"
+MAX_FAILED_LOGINS = 5
+BASE_LOCKOUT = timedelta(minutes=15)
+# Caps the lock at 15 minutes x 2^10, about ten and a half days.
+MAX_LOCKOUT_DOUBLINGS = 10
 SSO_SCOPES = ["User.Read"]
 
 _pwd_context = CryptContext(schemes=["bcrypt"])
@@ -22,12 +28,50 @@ def hash_password(password: str) -> str:
 
 
 def authenticate_local(session: Session, email: str, password: str) -> User | None:
+    """Returns the user only for a correct password on an unlocked account.
+    Every rejection looks the same to the caller, so the login form can't be
+    used to learn which emails have accounts or which are locked.
+    """
     user = session.exec(select(User).where(User.email == email.lower())).first()
     if not user or not user.password_hash:
+        # Spend the same bcrypt time as a real check so response timing
+        # doesn't reveal whether the account exists.
+        _pwd_context.dummy_verify()
         return None
-    if not _pwd_context.verify(password, user.password_hash):
+
+    now = datetime.now(timezone.utc)
+    is_password_correct = _pwd_context.verify(password, user.password_hash)
+
+    if _is_locked(user, now) or not is_password_correct:
+        _record_failed_login(user, now)
+        session.add(user)
+        session.commit()
         return None
+
+    user.failed_login_count = 0
+    user.locked_until = None
+    session.add(user)
+    session.commit()
     return user
+
+
+def _is_locked(user: User, now: datetime) -> bool:
+    if user.locked_until is None:
+        return False
+    return _as_utc(user.locked_until) > now
+
+
+def _record_failed_login(user: User, now: datetime) -> None:
+    user.failed_login_count += 1
+    if user.failed_login_count < MAX_FAILED_LOGINS:
+        return
+    doublings = min(user.failed_login_count - MAX_FAILED_LOGINS, MAX_LOCKOUT_DOUBLINGS)
+    user.locked_until = now + BASE_LOCKOUT * (2**doublings)
+
+
+def _as_utc(moment: datetime) -> datetime:
+    # The database hands back naive datetimes; they are stored as UTC.
+    return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
 
 
 def _msal_app() -> msal.ConfidentialClientApplication:

@@ -42,7 +42,7 @@
   <details>
     <summary>Escalate</summary>
     <form hx-post="/tickets/{{ ticket.id }}/escalate" hx-target="main" hx-swap="innerHTML">
-      <textarea name="reason" placeholder="Why does this need escalating?" required></textarea>
+      <textarea name="reason" maxlength="{{ max_message_length }}" placeholder="Why does this need escalating?" required></textarea>
       <select name="target_team_id">
         <option value="">Keep current team</option>
         {% for t in teams %}
@@ -64,7 +64,7 @@
 </div>
 
 <form hx-post="/tickets/{{ ticket.id }}/reply" hx-target="main" hx-swap="innerHTML">
-  <textarea name="body" rows="4" placeholder="Reply to requester..." required></textarea>
+  <textarea name="body" rows="4" maxlength="{{ max_message_length }}" placeholder="Reply to requester..." required></textarea>
   <button type="submit">Send reply</button>
 </form>
 {% endblock %}

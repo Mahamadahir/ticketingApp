@@ -76,3 +76,42 @@ def test_audit_log_filters_by_entity_type(client, db_session):
     response = client.get("/admin/audit-log?entity_type=team")
     assert "team #" in response.text
     assert "ticket #1" not in response.text
+
+
+def test_audit_log_filters_by_actor(client, db_session):
+    login_as(client, "admin@example.com")
+    db_session.add(AuditLog(entity_type="ticket", entity_id=1, actor_email="alice@example.com", action="commented"))
+    db_session.add(AuditLog(entity_type="ticket", entity_id=2, actor_email="bob@example.com", action="assigned"))
+    db_session.commit()
+
+    response = client.get("/admin/audit-log?actor=alice@example.com")
+    assert "ticket #1" in response.text
+    assert "ticket #2" not in response.text
+
+
+def test_audit_log_filters_by_user_acted_on(client, db_session):
+    login_as(client, "admin@example.com")
+    db_session.add(AuditLog(entity_type="user", entity_id=7, actor_email="admin@example.com", action="role_changed"))
+    db_session.add(AuditLog(entity_type="user", entity_id=8, actor_email="admin@example.com", action="team_changed"))
+    db_session.add(AuditLog(entity_type="ticket", entity_id=7, actor_email="admin@example.com", action="commented"))
+    db_session.commit()
+
+    response = client.get("/admin/audit-log?subject_user_id=7")
+    assert "user #7" in response.text
+    assert "user #8" not in response.text
+    assert "ticket #7" not in response.text
+
+
+def test_audit_log_paginates_and_keeps_filters_in_page_links(client, db_session):
+    login_as(client, "admin@example.com")
+    for entity_id in range(1, 61):
+        db_session.add(AuditLog(entity_type="ticket", entity_id=entity_id, actor_email="alice@example.com", action="commented"))
+    db_session.commit()
+
+    first_page = client.get("/admin/audit-log?actor=alice@example.com")
+    assert first_page.text.count("ticket #") == 50
+    assert "Page 1 of 2" in first_page.text
+    assert "actor=alice%40example.com&amp;page=2" in first_page.text
+
+    second_page = client.get("/admin/audit-log?actor=alice@example.com&page=2")
+    assert second_page.text.count("ticket #") == 10

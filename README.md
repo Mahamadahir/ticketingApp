@@ -67,10 +67,10 @@ Two ways in, both resolve to a `User` row with a `role` and optional `team`:
    with an email, password, role, and team. Always available regardless of
    whether SSO is configured.
 
-If SSO isn't configured at all, the login page points at `/auth/dev-login`
-instead — a plain form that signs in as any email with no password, purely
-for local development. It's automatically disabled the moment SSO env vars
-are set, so it's not something you need to remember to turn off.
+When `ENV=dev`, the login page also links to `/auth/dev-login`, a plain
+form that signs in as any email with no password, for local development
+only. In any other environment the route returns 404, so it can't be left
+switched on by accident.
 
 ### Bootstrapping the first super admin
 
@@ -94,15 +94,49 @@ docker compose up --build
 
 Then open http://localhost:8000. You'll land on `/auth/login`.
 
+`.env.example` sets `ENV=dev`. Staging and production must set
+`ENV=staging` or `ENV=production`: outside dev the app refuses to start
+while `SESSION_SECRET_KEY` (or, once Graph is configured,
+`GRAPH_WEBHOOK_CLIENT_STATE`) is still a default value, and the session
+cookie is HTTPS-only.
+
+Postgres isn't published on the host. To get a shell on it:
+
+```bash
+docker compose exec db psql -U ticketing
+```
+
 Graph credentials are optional to start the app — email ingestion and
 sending are stubbed until an app registration exists (see below). Until
-then, use the dev helper to create tickets manually:
+then, use the dev helper (available only when `ENV=dev`) to create tickets
+manually:
 
 ```bash
 curl -X POST http://localhost:8000/webhooks/dev/simulate-inbound \
   -d "requester_email=jane@example.com" \
   -d "subject=Can't connect to VPN" \
   -d "body=I get a timeout every time I try to connect."
+```
+
+## Database migrations
+
+Schema changes go through Alembic. The container runs `alembic upgrade head`
+before starting the app, so a deploy applies pending migrations on its own.
+
+After changing a model, generate and review a migration:
+
+```bash
+docker compose run --rm app alembic revision --autogenerate -m "describe the change"
+```
+
+CI runs `alembic check` and fails if a model changed without a migration.
+
+A database created before migrations existed (by the old `create_all` at
+startup) already has the baseline tables. Mark it as migrated once, before
+the first deploy that includes Alembic:
+
+```bash
+docker compose run --rm app alembic stamp a575769b8ea7
 ```
 
 ## Running tests
@@ -119,22 +153,30 @@ assignment, escalation, audit log writes, and both login paths.
 
 ## CI/CD
 
-- `.github/workflows/ci.yml` runs `pytest` on every push and pull request.
-- `.github/workflows/deploy.yml` runs after CI passes on `main`, SSHes into
-  an EC2 box, and runs `docker compose up -d --build`.
+- `.github/workflows/ci.yml` runs `pytest` and the migration drift check on
+  every push, pull request and `v*` tag.
+- `.github/workflows/deploy.yml` runs after CI passes on a push. `main`
+  deploys to the `staging` GitHub Environment; a `v*` tag (for example
+  `v1.0.0`) deploys to `production`. It SSHes into that environment's EC2
+  box, checks out the exact commit CI tested, and runs
+  `docker compose up -d --build`, which applies migrations on start.
 
-The deploy workflow needs these repo secrets (Settings → Secrets and
-variables → Actions), none of which this repo can set for you:
+Each environment (Settings → Environments) needs these secrets, none of
+which this repo can set for you:
 
 - `EC2_HOST` — public IP or hostname of the instance
 - `EC2_USER` — SSH user (e.g. `ubuntu`)
 - `EC2_SSH_KEY` — private key with access to that user, PEM contents
 - `EC2_APP_DIR` — path on the instance where this repo is checked out (e.g. `/home/ubuntu/ticketingApp`)
 
-One-time setup on the EC2 box itself: install Docker + Docker Compose,
+One-time setup on each EC2 box: install Docker + Docker Compose,
 `git clone` this repo into `EC2_APP_DIR`, and create a real `.env` there
-(copied from `.env.example` with production values) — the deploy workflow
-only pulls and rebuilds, it doesn't create the environment file.
+(copied from `.env.example`, with `ENV=staging` or `ENV=production` and
+real secrets). The deploy workflow only checks out and rebuilds; it doesn't
+create the environment file.
+
+The container runs uvicorn with 4 workers; set `UVICORN_WORKERS` in `.env`
+to change it.
 
 ## Wiring up Microsoft Graph
 
@@ -181,6 +223,7 @@ app/
   audit.py           Audit log helper
   graph_client.py    Microsoft Graph mail integration (stubbed)
   routers/
+    health.py        Unauthenticated /health check (app + database) for monitors
     auth.py          Login page, SSO callback, local login, dev login, logout
     tickets.py       Agent console: list/view/reply/assign/escalate/status
     portal.py        End-user portal: list/view own tickets, comment
@@ -188,6 +231,7 @@ app/
     webhooks.py      Graph change-notification endpoint + dev helper
   templates/         Jinja2 + HTMX views
   static/            CSS
+migrations/          Alembic environment and versioned schema migrations
 tests/               pytest suite (SQLite-backed)
 .github/workflows/   CI (tests) and CD (deploy to EC2)
 ```

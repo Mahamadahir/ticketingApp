@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
     branches: [main]
 
@@ -21,3 +22,11 @@ jobs:
 
       - name: Run tests
         run: pytest
+
+      - name: Check migrations match the models
+        env:
+          ENV: dev
+          DATABASE_URL: sqlite:///./migration-check.db
+        run: |
+          alembic upgrade head
+          alembic check
