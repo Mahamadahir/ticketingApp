@@ -1,8 +1,39 @@
 import os
 
+import psycopg2
+from sqlalchemy.engine import make_url
+
+# Tests run against Postgres, the database production uses. Locally that is the
+# compose db (`docker compose up -d db`), published on 127.0.0.1.
+TEST_DATABASE_URL = os.environ.get(
+    "TEST_DATABASE_URL", "postgresql+psycopg2://ticketing:ticketing@127.0.0.1:5432/ticketing_test"
+)
+
+
+def ensure_test_database(url: str) -> None:
+    """Creates the test database if it is missing. Refuses any database whose
+    name does not end in _test, because the tests drop every table in it."""
+    parsed = make_url(url)
+    if parsed.get_backend_name() != "postgresql":
+        raise RuntimeError("Tests need PostgreSQL; set TEST_DATABASE_URL to a postgresql+psycopg2 URL")
+    if not parsed.database.endswith("_test"):
+        raise RuntimeError(f"Refusing to run tests against '{parsed.database}': the name must end in _test")
+
+    connection = psycopg2.connect(
+        host=parsed.host, port=parsed.port, user=parsed.username, password=parsed.password, dbname="postgres"
+    )
+    connection.autocommit = True
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT 1 FROM pg_database WHERE datname = %s", (parsed.database,))
+        if cursor.fetchone() is None:
+            cursor.execute(f'CREATE DATABASE "{parsed.database}"')
+    connection.close()
+
+
+ensure_test_database(TEST_DATABASE_URL)
+
 os.environ["ENV"] = "dev"
-# CI sets DATABASE_URL to a real Postgres; locally the tests default to SQLite.
-os.environ["DATABASE_URL"] = os.environ.get("TEST_DATABASE_URL", "sqlite:///./test.db")
+os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ["SUPER_ADMIN_EMAILS"] = "admin@example.com"
 os.environ["SESSION_SECRET_KEY"] = "test-secret"
 os.environ["SSO_TENANT_ID"] = ""

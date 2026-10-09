@@ -1,6 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
 
-import pytest
 from sqlmodel import Session, select
 
 from app.database import engine
@@ -203,7 +202,6 @@ def test_history_is_shown_on_the_ticket_page(client, db_session):
     assert "new &rarr; open" in page
 
 
-@pytest.mark.skipif(engine.dialect.name != "postgresql", reason="needs real row locking (Postgres)")
 def test_concurrent_ticket_creation_never_duplicates_a_number():
     workers, per_worker = 8, 5
 

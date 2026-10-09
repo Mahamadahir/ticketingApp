@@ -4,7 +4,6 @@ from typing import Optional
 
 from sqlalchemy import event, update
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -176,9 +175,8 @@ def _assign_reference(mapper, connection, ticket: Ticket) -> None:
         # No row yet for this type. The migration seeds them, but code must
         # not depend on that: create it if absent (a concurrent creator may
         # win the race, which is fine), then bump it.
-        dialect_insert = postgresql_insert if connection.dialect.name == "postgresql" else sqlite_insert
         connection.execute(
-            dialect_insert(counter).values(ticket_type=ticket.type, last_number=0).on_conflict_do_nothing()
+            postgresql_insert(counter).values(ticket_type=ticket.type, last_number=0).on_conflict_do_nothing()
         )
         number = connection.execute(bump).scalar()
 

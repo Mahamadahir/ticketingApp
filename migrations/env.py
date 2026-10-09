@@ -35,8 +35,6 @@ def run_migrations_online() -> None:
         poolclass=pool.NullPool,
     )
     with connectable.connect() as connection:
-        # Batch mode lets ALTER-style migrations run on SQLite, which CI uses
-        # for the model/migration drift check.
         context.configure(connection=connection, target_metadata=target_metadata, render_as_batch=True)
         with context.begin_transaction():
             context.run_migrations()
