@@ -78,8 +78,15 @@ has no image yet), and no apps or job are deployed.
    registry (assign it to the GitHub Actions app registration, see below).
 2. Re-run the deployment with `IMAGE=<registry>/ticketing:<sha>` set. Setting
    the image is what deploys the apps and the migrate job.
-3. Run the migrations before traffic moves: `az containerapp job start -n <migrateJobName> -g <rg>`.
+3. Start the migrate job: `az containerapp job start -n <migrateJobName> -g <rg>`.
    The apps run with `RUN_MIGRATIONS=false`, so the job is the only migrator.
+
+   **First image deploy:** the apps and the job are created together, and nothing
+   starts the job for you. Until you run step 3 the apps are up but the database
+   has no tables, so requests fail (`/health` still reports ok, because it only
+   checks the connection). Run the job straight after the deployment. Once the
+   deploy workflow exists it does this in order: start the job, wait for it,
+   then update the apps.
 
 `deployPublicApp` and `deployWorker` stay false until the app has the
 `APP_ROLE=public` mode and the worker entrypoint. Turned on earlier, `public`

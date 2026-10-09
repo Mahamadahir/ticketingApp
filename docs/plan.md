@@ -192,7 +192,13 @@ feature is reached:
 - Graph webhook delivery, validation token handshake, 3-second response, and
   subscription renewal. Needs a public URL, so only on staging.
 - Teams bot messages (phase 8) and Teams Workflows webhooks.
-- Postgres SSL, private networking and point-in-time restore.
+- Postgres SSL, private networking and point-in-time restore. Also that the
+  server has no public endpoint: the Postgres module deliberately omits
+  `publicNetworkAccess` (a VNet-integrated server has none, and setting both may
+  be rejected), which was not confirmed against the docs. Check the first
+  `what-if`, then try to connect from outside the VNet.
+- Per-app identities: each app can read only its own Key Vault secrets (try
+  reading another app's secret with its token), and `public` has no blob access.
 - The migrate job and the deploy ordering; revision rollout and rollback.
 - Alerts, the heartbeat alert, Log Analytics and Application Insights data.
 - Custom domain and certificate at roll-out.

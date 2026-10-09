@@ -12,7 +12,7 @@ param deployWorker = false
 
 // Office and VPN ranges, comma separated, e.g. WEB_ALLOWED_CIDRS=203.0.113.0/24,198.51.100.7/32.
 // Required. Use 0.0.0.0/0 only as a deliberate choice for a throwaway test.
-param webAllowedCidrs = split(readEnvironmentVariable('WEB_ALLOWED_CIDRS'), ',')
+param webAllowedCidrs = filter(map(split(readEnvironmentVariable('WEB_ALLOWED_CIDRS'), ','), cidr => trim(cidr)), cidr => !empty(cidr))
 param publicBaseUrl = ''
 
 param alertEmail = readEnvironmentVariable('ALERT_EMAIL')
