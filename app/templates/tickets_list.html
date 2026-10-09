@@ -15,7 +15,7 @@
 <table>
   <thead>
     <tr>
-      <th>ID</th>
+      <th>Ref</th>
       <th>Subject</th>
       <th>Requester</th>
       <th>Team</th>
@@ -27,7 +27,7 @@
   <tbody>
     {% for ticket in page.items %}
     <tr class="{{ 'escalated-row' if ticket.is_escalated else '' }}">
-      <td>{{ ticket.id }}</td>
+      <td>{{ ticket.reference }}</td>
       <td>
         <a href="/tickets/{{ ticket.id }}">{{ ticket.subject }}</a>
         {% if ticket.is_escalated %}<span class="badge badge-escalated">escalated</span>{% endif %}
@@ -35,7 +35,7 @@
       <td>{{ ticket.requester_email }}</td>
       <td>{{ teams_by_id[ticket.team_id].name if ticket.team_id and ticket.team_id in teams_by_id else "Unassigned" }}</td>
       <td>{{ agents_by_id[ticket.assigned_agent_id].display_name if ticket.assigned_agent_id and ticket.assigned_agent_id in agents_by_id else "Unassigned" }}</td>
-      <td><span class="status status-{{ ticket.status.value }}">{{ ticket.status.value }}</span></td>
+      <td><span class="status status-{{ ticket.status.value }}">{{ ticket.status.value.replace("_", " ") }}</span></td>
       <td>{{ ticket.updated_at.strftime("%Y-%m-%d %H:%M") }}</td>
     </tr>
     {% else %}
