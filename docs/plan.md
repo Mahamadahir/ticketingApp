@@ -256,6 +256,20 @@ they belong to, plus every untriaged ticket. Restricted work (HR, security)
 lives in its own team. Opening a ticket link without access shows a "no
 access" page.
 
+**Sign-in follow-ups** (agreed 9 Oct 2026, from the review of Phase 0; build
+alongside 1B, which already touches the users page):
+
+- **Unlock button.** A super admin can unlock a locked local account from
+  `/admin/users`, which shows the lock expiry and failed-attempt count. Unlocking
+  resets both and is audit-logged. Until it exists a locked contractor waits out
+  the lock, which an attacker can keep renewing about once per lock period.
+- **Clear the Entra sign-in state.** The `oauth_state` value stored in the
+  session during the Entra redirect is removed as soon as the callback has
+  checked it, so a state value cannot be replayed. Logout becomes a POST, so a
+  cross-site image tag cannot sign someone out.
+- **Match users on the Entra object id** rather than email or
+  `preferred_username` (Phase 6, with Entra app roles).
+
 ## Tickets
 
 **Types.** Incident, Service Request, Major Incident, Problem. Each has its
@@ -411,7 +425,7 @@ Automatic emails use admin-managed templates, previewed when edited.
 Users, teams and memberships, categories, SLA targets per priority, business
 hours and bank holidays, settings (chase X and Y, auto-close N, automatic
 email cap, ignore phrases, Teams delay default), Service Request approvers,
-email templates, canned responses, outage mode, the audit log (paginated,
+email templates, canned responses, unlocking locked local accounts, outage mode, the audit log (paginated,
 filterable by actor and by subject user), category and ignore-phrase review
 queues, all feedback, and reports.
 
@@ -429,12 +443,12 @@ for all of them.
 | Phase | Scope |
 |---|---|
 | 0 | Security fixes, Alembic, `/health`, audit log pagination and filters, account lockout, list pagination, environment-targeted deploys |
-| 1 | Ticket model: types, references, statuses, source, categories, impact × urgency, SLA targets and clock, priority queue, message visibility, followers, linking, team memberships and visibility, reassignment, escalation changes, backdating, `ticket_event`, search, portal new request form, canned responses, preview step, Service Requests and approvers |
+| 1 | Ticket model: types, references, statuses, source, categories, impact × urgency, SLA targets and clock, priority queue, message visibility, followers, linking, team memberships and visibility, reassignment, escalation changes, backdating, `ticket_event`, search, portal new request form, canned responses, preview step, Service Requests and approvers, sign-in follow-ups (unlock button, clear Entra sign-in state, logout as POST) |
 | 2 | Worker, in-app notifications, @mentions, notification settings, Teams channel webhook for new tickets, out-of-office detection |
 | 3 | Graph mail: intake, threaded replies, `uniqueBody`, delta catch-up, subscription renewal and lifecycle handling, auto-reply filter, attachments in Blob Storage, `public` app mode for the webhook |
 | 4 | Resolution, reopen and reclose flow, ignore list and review, chase emails, auto-close, feedback, bulk resolve |
 | 5 | MSP handoff, hold, 18:00 job, MSP mail handling and forwarding |
-| 6 | Break-glass accounts, TOTP, outage mode, Entra app roles |
+| 6 | Break-glass accounts, TOTP, outage mode, Entra app roles, match users on Entra object id |
 | 7 | Reporting and CSV export, subject access export, anonymisation |
 | 8 | Teams bot: direct messages to agents and ticket intake from Teams |
 | 9 | Google Stitch redesign once the UI is feature-complete, to WCAG 2.2 AA |
