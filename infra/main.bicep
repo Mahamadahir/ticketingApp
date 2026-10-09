@@ -1,4 +1,4 @@
-﻿// Ticketing app infrastructure for one environment (staging or production).
+// Ticketing app infrastructure for one environment (staging or production).
 // Deploy at resource-group scope: one resource group per environment.
 //
 //   az deployment group what-if -g <rg> -f infra/main.bicep -p infra/staging.bicepparam
@@ -18,22 +18,20 @@ param prefix string = 'ticketing'
 
 // ---- What to deploy ---------------------------------------------------------
 
-@description('False for the first deploy: creates the platform (network, database, storage, vault, registry, monitoring) but no apps, because the registry has no image in it yet.')
-param deployApps bool = false
-
-@description('Full image reference, e.g. <acr>.azurecr.io/ticketing:<sha>. Required when deployApps is true.')
+@description('Full image reference, e.g. <acr>.azurecr.io/ticketing:<sha>. Empty creates the platform only (network, database, storage, vault, registry, monitoring), which is the first deploy because the registry has no image yet. Setting it deploys the apps and the migrate job.')
 param image string = ''
 
-@description('Second app that serves only the Graph webhook, feedback/reopen links and /health. Leave false until the app has an APP_ROLE=public mode (plan: phase 3).')
+@description('Second app that serves only the Graph webhook, feedback/reopen links and /health. Leave false until the app has an APP_ROLE=public mode (plan: phase 3). Without that mode it would serve the whole agent console on an open address.')
 param deployPublicApp bool = false
 
-@description('Background worker. Leave false until the worker entrypoint exists (plan: phase 2).')
+@description('Background worker. Leave false until the worker entrypoint exists (plan: phase 2). Without it the container crash-loops.')
 param deployWorker bool = false
 
 // ---- Access -----------------------------------------------------------------
 
-@description('Office and VPN ranges allowed to reach the web app, e.g. ["203.0.113.0/24"]. Empty means unrestricted, which is only acceptable while the app is on its generated URL with nothing in it.')
-param webAllowedCidrs array = []
+@minLength(1)
+@description('Office and VPN ranges allowed to reach the web app, e.g. ["203.0.113.0/24"]. Required, so nobody opens the agent console to the internet by leaving it out. To really allow everyone (a staging test), say so with "0.0.0.0/0".')
+param webAllowedCidrs array
 
 @description('Where the web app is reached, e.g. https://tickets.example.org. Empty uses the generated Azure URL.')
 param publicBaseUrl string = ''
@@ -65,6 +63,7 @@ param purgeProtection bool = false
 
 // ---- Application settings (non-secret) -------------------------------------
 
+@description('Where database alerts go. Required: there is no default, so a missing value fails the deploy instead of sending alerts to a dead address.')
 param alertEmail string
 param ssoTenantId string = ''
 param ssoClientId string = ''
@@ -101,13 +100,39 @@ var dbAdminLogin = 'ticketing_admin'
 var storageContainerName = 'attachments'
 var keyVaultName = 'kv-${prefix}-${envShort}-${take(suffix, 6)}'
 
-// One identity shared by every app and the migration job. Created first so its
-// role assignments exist before any app tries to pull an image or read a secret.
-resource identity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
-  name: 'id-${prefix}-${environmentName}'
+// Apps exist only when there is an image to run.
+var deployApps = !empty(image)
+
+// One identity per app and for the migrate job, so a compromised app can use
+// only what its own identity was granted (the public app faces the internet).
+resource identityWeb 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: 'id-${prefix}-${environmentName}-web'
   location: location
   tags: tags
 }
+
+resource identityPublic 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: 'id-${prefix}-${environmentName}-public'
+  location: location
+  tags: tags
+}
+
+resource identityWorker 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: 'id-${prefix}-${environmentName}-worker'
+  location: location
+  tags: tags
+}
+
+resource identityMigrate 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: 'id-${prefix}-${environmentName}-migrate'
+  location: location
+  tags: tags
+}
+
+// A second session key for apps that never serve a session. The settings check
+// needs a non-default value in them, but it must not be the web key. Derived
+// from the web key, so there is nothing extra to supply.
+var internalSessionSecretKey = '${uniqueString(sessionSecretKey, 'internal-1')}${uniqueString(sessionSecretKey, 'internal-2')}${uniqueString(sessionSecretKey, 'internal-3')}'
 
 module network 'modules/network.bicep' = {
   name: 'network'
@@ -138,7 +163,12 @@ module registry 'modules/registry.bicep' = {
     location: location
     tags: tags
     name: 'acr${prefix}${environmentName}${suffix}'
-    pullPrincipalId: identity.properties.principalId
+    pullPrincipalIds: [
+      identityWeb.properties.principalId
+      identityPublic.properties.principalId
+      identityWorker.properties.principalId
+      identityMigrate.properties.principalId
+    ]
   }
 }
 
@@ -169,7 +199,12 @@ module storage 'modules/storage.bicep' = {
     name: 'st${prefix}${envShort}${take(suffix, 6)}'
     skuName: storageSku
     containerName: storageContainerName
-    accessPrincipalId: identity.properties.principalId
+    // Attachments are handled by the web app (uploads, viewing) and the worker
+    // (mail ingestion). The public app and the migrate job never touch files.
+    accessPrincipalIds: [
+      identityWeb.properties.principalId
+      identityWorker.properties.principalId
+    ]
   }
 }
 
@@ -180,9 +215,10 @@ module keyvault 'modules/keyvault.bicep' = {
     tags: tags
     name: keyVaultName
     purgeProtection: purgeProtection
-    readerPrincipalId: identity.properties.principalId
+    secretReaders: secretReaders
     databaseUrl: 'postgresql+psycopg2://${dbAdminLogin}:${uriComponent(postgresAdminPassword)}@${postgres.outputs.fqdn}:5432/${dbName}?sslmode=require'
     sessionSecretKey: sessionSecretKey
+    internalSessionSecretKey: internalSessionSecretKey
     graphWebhookClientState: graphWebhookClientState
     ssoClientSecret: ssoClientSecret
     graphClientSecret: graphClientSecret
@@ -213,29 +249,54 @@ module alerts 'modules/alerts.bicep' = {
 
 // ---- Apps -------------------------------------------------------------------
 
-var secretNames = concat(
+// Who may read which secret, and so which secrets each app receives. Container
+// Apps read these from Key Vault with the app's own identity. Web holds the
+// session key and the SSO secret; nothing else does. The migrate job gets the
+// database URL only. The web app also gets the Graph secret and webhook state
+// because agents send replies and the settings check wants them together.
+var optionalSsoSecret = !empty(ssoClientSecret) ? ['sso-client-secret'] : []
+var optionalGraphSecret = !empty(graphClientSecret) ? ['graph-client-secret'] : []
+var webSecretNames = concat(
   ['database-url', 'session-secret-key', 'graph-webhook-client-state'],
-  !empty(ssoClientSecret) ? ['sso-client-secret'] : [],
-  !empty(graphClientSecret) ? ['graph-client-secret'] : []
+  optionalSsoSecret,
+  optionalGraphSecret
 )
+var publicSecretNames = concat(
+  ['database-url', 'session-secret-key-internal', 'graph-webhook-client-state'],
+  optionalGraphSecret
+)
+var workerSecretNames = publicSecretNames
+var migrateSecretNames = ['database-url']
 
-// Container Apps read these straight from Key Vault using the shared identity.
-// The apps depend on the keyvault and registry modules through the outputs they\n// use, so the identity's role assignments exist before any app starts.
-var appSecrets = [
-  for n in secretNames: {
-    name: n
-    keyVaultUrl: 'https://${keyVaultName}${environment().suffixes.keyvaultDns}/secrets/${n}'
-    identity: identity.id
-  }
+// Handed to the key vault module, which grants each identity read access to
+// exactly its listed secrets.
+var secretReaders = [
+  { principalId: identityWeb.properties.principalId, secrets: webSecretNames }
+  { principalId: identityPublic.properties.principalId, secrets: publicSecretNames }
+  { principalId: identityWorker.properties.principalId, secrets: workerSecretNames }
+  { principalId: identityMigrate.properties.principalId, secrets: migrateSecretNames }
 ]
+
+var secretEnvNames = {
+  'database-url': 'DATABASE_URL'
+  'session-secret-key': 'SESSION_SECRET_KEY'
+  'session-secret-key-internal': 'SESSION_SECRET_KEY'
+  'graph-webhook-client-state': 'GRAPH_WEBHOOK_CLIENT_STATE'
+  'sso-client-secret': 'SSO_CLIENT_SECRET'
+  'graph-client-secret': 'GRAPH_CLIENT_SECRET'
+}
+var vaultSecretsUrl = 'https://${keyVaultName}${environment().suffixes.keyvaultDns}/secrets/'
+
+var webSecrets = [for n in webSecretNames: { name: n, keyVaultUrl: '${vaultSecretsUrl}${n}', identity: identityWeb.id }]
+var publicSecrets = [for n in publicSecretNames: { name: n, keyVaultUrl: '${vaultSecretsUrl}${n}', identity: identityPublic.id }]
+var workerSecrets = [for n in workerSecretNames: { name: n, keyVaultUrl: '${vaultSecretsUrl}${n}', identity: identityWorker.id }]
+var migrateSecrets = [for n in migrateSecretNames: { name: n, keyVaultUrl: '${vaultSecretsUrl}${n}', identity: identityMigrate.id }]
 
 // database-url -> DATABASE_URL, session-secret-key -> SESSION_SECRET_KEY, ...
-var secretEnv = [
-  for n in secretNames: {
-    name: toUpper(replace(n, '-', '_'))
-    secretRef: n
-  }
-]
+var webSecretEnv = [for n in webSecretNames: { name: secretEnvNames[n], secretRef: n }]
+var publicSecretEnv = [for n in publicSecretNames: { name: secretEnvNames[n], secretRef: n }]
+var workerSecretEnv = [for n in workerSecretNames: { name: secretEnvNames[n], secretRef: n }]
+var migrateSecretEnv = [for n in migrateSecretNames: { name: secretEnvNames[n], secretRef: n }]
 
 var webName = 'ca-${prefix}-${environmentName}-web'
 var webBaseUrl = !empty(publicBaseUrl) ? publicBaseUrl : 'https://${webName}.${appEnvironment.outputs.defaultDomain}'
@@ -245,8 +306,10 @@ var commonEnv = [
   // Migrations run in the migrate job, not at container start.
   { name: 'RUN_MIGRATIONS', value: 'false' }
   { name: 'UVICORN_WORKERS', value: string(uvicornWorkers) }
-  // Lets DefaultAzureCredential pick the shared identity (Blob, Graph later).
-  { name: 'AZURE_CLIENT_ID', value: identity.properties.clientId }
+  // Traffic only reaches the container through the ingress, so trust its
+  // X-Forwarded-* headers. Without this the app sees http and drops the
+  // HTTPS-only session cookie.
+  { name: 'FORWARDED_ALLOW_IPS', value: '*' }
   { name: 'STORAGE_ACCOUNT_NAME', value: storage.outputs.name }
   { name: 'STORAGE_CONTAINER', value: storageContainerName }
   { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: monitoring.outputs.appInsightsConnectionString }
@@ -275,12 +338,13 @@ module web 'modules/container-app.bicep' = if (deployApps) {
     tags: tags
     name: webName
     environmentId: appEnvironment.outputs.id
-    identityId: identity.id
+    identityId: identityWeb.id
     registryServer: registry.outputs.loginServer
     image: image
-    secrets: appSecrets
-    env: concat(commonEnv, secretEnv, [
+    secrets: webSecrets
+    env: concat(commonEnv, webSecretEnv, [
       { name: 'APP_ROLE', value: 'web' }
+      { name: 'AZURE_CLIENT_ID', value: identityWeb.properties.clientId }
       { name: 'SSO_REDIRECT_URI', value: '${webBaseUrl}/auth/callback' }
     ])
     ingress: {
@@ -296,12 +360,17 @@ module web 'modules/container-app.bicep' = if (deployApps) {
     maxReplicas: webMaxReplicas
     httpConcurrentRequests: 30
   }
+  dependsOn: [
+    keyvault
+    postgres
+  ]
 }
 
 // Public: Graph webhook, feedback and reopen links, Teams bot, /health.
 // Same image, different routes (APP_ROLE=public). Open to the internet because
 // Microsoft and end users off the VPN have to reach it. Kept warm because Graph
-// expects an answer within 3 seconds and a cold start would miss it.
+// expects an answer within 3 seconds and a cold start would miss it. It has no
+// storage access and cannot read the web session key or the SSO secret.
 module publicApp 'modules/container-app.bicep' = if (deployApps && deployPublicApp) {
   name: 'app-public'
   params: {
@@ -309,12 +378,13 @@ module publicApp 'modules/container-app.bicep' = if (deployApps && deployPublicA
     tags: tags
     name: 'ca-${prefix}-${environmentName}-public'
     environmentId: appEnvironment.outputs.id
-    identityId: identity.id
+    identityId: identityPublic.id
     registryServer: registry.outputs.loginServer
     image: image
-    secrets: appSecrets
-    env: concat(commonEnv, secretEnv, [
+    secrets: publicSecrets
+    env: concat(commonEnv, publicSecretEnv, [
       { name: 'APP_ROLE', value: 'public' }
+      { name: 'AZURE_CLIENT_ID', value: identityPublic.properties.clientId }
     ])
     ingress: {
       external: true
@@ -329,6 +399,10 @@ module publicApp 'modules/container-app.bicep' = if (deployApps && deployPublicA
     maxReplicas: 2
     httpConcurrentRequests: 30
   }
+  dependsOn: [
+    keyvault
+    postgres
+  ]
 }
 
 // Worker: scheduled jobs. No ingress, exactly one replica, otherwise every
@@ -340,13 +414,14 @@ module worker 'modules/container-app.bicep' = if (deployApps && deployWorker) {
     tags: tags
     name: 'ca-${prefix}-${environmentName}-worker'
     environmentId: appEnvironment.outputs.id
-    identityId: identity.id
+    identityId: identityWorker.id
     registryServer: registry.outputs.loginServer
     image: image
     command: ['python', '-m', 'app.worker']
-    secrets: appSecrets
-    env: concat(commonEnv, secretEnv, [
+    secrets: workerSecrets
+    env: concat(commonEnv, workerSecretEnv, [
       { name: 'APP_ROLE', value: 'worker' }
+      { name: 'AZURE_CLIENT_ID', value: identityWorker.properties.clientId }
     ])
     ingress: null
     cpu: '0.5'
@@ -354,6 +429,10 @@ module worker 'modules/container-app.bicep' = if (deployApps && deployWorker) {
     minReplicas: 1
     maxReplicas: 1
   }
+  dependsOn: [
+    keyvault
+    postgres
+  ]
 }
 
 // Migrations: started by the deploy workflow before the apps move to the new
@@ -365,12 +444,16 @@ module migrate 'modules/migrate-job.bicep' = if (deployApps) {
     tags: tags
     name: 'job-${prefix}-${environmentName}-migrate'
     environmentId: appEnvironment.outputs.id
-    identityId: identity.id
+    identityId: identityMigrate.id
     registryServer: registry.outputs.loginServer
     image: image
-    secrets: appSecrets
-    env: concat(commonEnv, secretEnv)
+    secrets: migrateSecrets
+    env: concat(commonEnv, migrateSecretEnv)
   }
+  dependsOn: [
+    keyvault
+    postgres
+  ]
 }
 
 output resourceGroupName string = resourceGroup().name
@@ -383,4 +466,4 @@ output containerAppsEnvironmentName string = appEnvironment.outputs.name
 output webAppName string = webName
 output migrateJobName string = 'job-${prefix}-${environmentName}-migrate'
 output webUrl string = webBaseUrl
-output identityClientId string = identity.properties.clientId
+output webIdentityClientId string = identityWeb.properties.clientId

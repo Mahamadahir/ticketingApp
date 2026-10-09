@@ -2,21 +2,20 @@ using 'main.bicep'
 
 param environmentName = 'staging'
 
-// First deploy: platform only. Flip to true once an image is in the registry
-// (the deploy workflow passes image and deployApps itself).
-param deployApps = false
+// Empty image = platform only (first deploy: the registry has no image yet). The
+// deploy workflow sets IMAGE to deploy the apps.
 param image = readEnvironmentVariable('IMAGE', '')
 
 // Turn on as the app grows the matching mode (see docs/plan.md).
 param deployPublicApp = false
 param deployWorker = false
 
-// Office and VPN ranges. Empty = open, acceptable only while staging holds
-// nothing and sits on its generated URL.
-param webAllowedCidrs = []
+// Office and VPN ranges, comma separated, e.g. WEB_ALLOWED_CIDRS=203.0.113.0/24,198.51.100.7/32.
+// Required. Use 0.0.0.0/0 only as a deliberate choice for a throwaway test.
+param webAllowedCidrs = split(readEnvironmentVariable('WEB_ALLOWED_CIDRS'), ',')
 param publicBaseUrl = ''
 
-param alertEmail = readEnvironmentVariable('ALERT_EMAIL', 'changeme@example.org')
+param alertEmail = readEnvironmentVariable('ALERT_EMAIL')
 
 param ssoTenantId = readEnvironmentVariable('SSO_TENANT_ID', '')
 param ssoClientId = readEnvironmentVariable('SSO_CLIENT_ID', '')

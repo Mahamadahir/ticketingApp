@@ -13,7 +13,7 @@ so expect a round of fixes on the first `what-if`.
 |---|---|
 | `network` | VNet, a subnet for Container Apps, a delegated subnet and private DNS zone for Postgres |
 | `monitoring` | Log Analytics workspace, Application Insights, action group (email) |
-| `registry` | Container registry (Basic); the shared identity can pull |
+| `registry` | Container registry (Basic); each app identity can pull |
 | `postgres` | PostgreSQL 16 Flexible Server, private access only, point-in-time restore |
 | `storage` | Private blob container `attachments`, no account keys, lifecycle to cool tier after a year |
 | `keyvault` | Key Vault (RBAC) holding the database URL, session secret and other secrets |
@@ -22,12 +22,27 @@ so expect a round of fixes on the first `what-if`.
 | `migrate-job` | Manual job that runs `alembic upgrade head` |
 | `alerts` | Database storage and CPU alerts to the action group |
 
-One user-assigned managed identity is shared by every app and the job. It pulls
-images, reads Key Vault secrets and reads and writes blobs.
+Each app and the migrate job has its own user-assigned managed identity, so a
+compromised app can use only what it was granted. This matters most for
+`public`, which faces the internet.
+
+| Identity | Pulls images | Reads these Key Vault secrets | Blob access |
+|---|---|---|---|
+| web | yes | database URL, session key, webhook state, SSO secret, Graph secret | yes |
+| public | yes | database URL, internal session key, webhook state, Graph secret | no |
+| worker | yes | same as public | yes |
+| migrate | yes | database URL only | no |
+
+Secrets are granted one by one (role assignment on the secret, not the vault).
+The internal session key is derived from the web key in `main.bicep`, so the
+public app and worker never hold the key that signs agent cookies. The
+database URL still carries the server admin login; a least-privilege database
+role is a later step.
 
 ## First deploy (platform only)
 
-`deployApps` is false by default because the registry has no image yet.
+Leave `IMAGE` unset: with no image only the platform is created (the registry
+has no image yet), and no apps or job are deployed.
 
 1. Create the resource group and give your deploying identity Owner (or
    Contributor plus User Access Administrator) on it. The templates create role
@@ -39,7 +54,13 @@ images, reads Key Vault secrets and reads and writes blobs.
    $env:SESSION_SECRET_KEY = python -c "import secrets; print(secrets.token_hex(32))"
    $env:GRAPH_WEBHOOK_CLIENT_STATE = python -c "import secrets; print(secrets.token_hex(16))"
    $env:ALERT_EMAIL = 'it-support@example.org'
+   $env:WEB_ALLOWED_CIDRS = '203.0.113.0/24'   # office and VPN, comma separated
    ```
+
+   `ALERT_EMAIL` and `WEB_ALLOWED_CIDRS` have no defaults: the deploy fails
+   without them, so alerts never go to a dead address and the agent console is
+   never opened to the internet by leaving the list out. For a deliberate
+   throwaway test, `WEB_ALLOWED_CIDRS = '0.0.0.0/0'` says so explicitly.
 
    The database password goes into a connection URL, so avoid `@ : / ? #`
    (the template URL-encodes it, but plain characters are safer).
@@ -55,10 +76,15 @@ images, reads Key Vault secrets and reads and writes blobs.
 1. Build and push the image to the registry named in the deployment output
    `registryLoginServer`. The identity that pushes needs `AcrPush` on the
    registry (assign it to the GitHub Actions app registration, see below).
-2. Re-run the deployment with `deployApps=true` and `IMAGE=<registry>/ticketing:<sha>`.
+2. Re-run the deployment with `IMAGE=<registry>/ticketing:<sha>` set. Setting
+   the image is what deploys the apps and the migrate job.
 3. Run the migrations before traffic moves: `az containerapp job start -n <migrateJobName> -g <rg>`.
-   (The app entrypoint still runs `alembic upgrade head` itself; see "Code
-   changes the Azure plan needs" in `docs/plan.md`.)
+   The apps run with `RUN_MIGRATIONS=false`, so the job is the only migrator.
+
+`deployPublicApp` and `deployWorker` stay false until the app has the
+`APP_ROLE=public` mode and the worker entrypoint. Turned on earlier, `public`
+would serve the whole agent console on an open address and the worker would
+crash-loop.
 
 ## Every deploy after that
 
@@ -70,9 +96,22 @@ image, so pass it every time.
 ## GitHub Actions identity (one-off, by hand)
 
 Create an app registration with a federated credential for the repository's
-`staging` and `production` GitHub Environments. Grant it Contributor on each
-resource group plus `AcrPush` on each registry. Store the client, tenant and
+`staging` and `production` GitHub Environments. Store the client, tenant and
 subscription IDs as GitHub Environment variables. No secrets are needed.
+
+Grant it, on each resource group:
+
+- **Contributor**, to create and update the resources.
+- **Role Based Access Control Administrator**, restricted with a condition to
+  assigning only AcrPull, Key Vault Secrets User, Storage Blob Data Contributor
+  and Storage Blob Delegator. The templates write role assignments on every
+  deploy (identities to registry, vault secrets and storage). Contributor
+  cannot do that, so without this the first redeploy from CI fails with an
+  authorization error. The condition stops the pipeline granting itself Owner.
+- **AcrPush** on each registry, to push images.
+
+The alternative is to move all role assignments into a separate template run
+by hand, and keep the pipeline at Contributor.
 
 ## Custom domain (at roll-out)
 

@@ -141,8 +141,13 @@ for the database is a later option.
   is a later hardening step.
 - Malware scanning (Defender for Storage): off until costs are known.
 
-**Secrets.** Key Vault, read by the apps through a managed identity. Nothing
-secret in the repository, the Bicep parameters or the app definitions.
+**Secrets.** Key Vault, read by the apps through managed identities. Nothing
+secret in the repository, the Bicep parameters or the app definitions. Each app
+and the migrate job has its own identity and is granted read access to only the
+secrets it needs, one secret at a time; the public app and worker cannot read
+the web session key or the SSO secret, and the public app and migrate job have
+no blob access. The database URL still uses the server admin login; a
+least-privilege database role is a later hardening step.
 
 **Considered and not chosen.**
 
@@ -155,13 +160,17 @@ secret in the repository, the Bicep parameters or the app definitions.
 - Static Web Apps: the UI is server-rendered Jinja with htmx, not a SPA.
 - AKS: far more than this needs.
 
-**Code changes the Azure plan needs** (none made yet):
+**Code changes the Azure plan needs:**
 
 - `APP_ROLE` (`web`, `public`, `worker`) selects which routers are mounted.
   Needed before `public` can be deployed; due with the Graph webhook (phase 3).
+  Not made yet.
 - `RUN_MIGRATIONS=false` makes the entrypoint skip `alembic upgrade head`, so
-  replicas do not race; the migrate job runs it instead.
-- uvicorn proxy headers (`--proxy-headers`, `--forwarded-allow-ips`).
+  replicas do not race; the migrate job runs it instead. Done.
+- uvicorn proxy headers: uvicorn trusts `X-Forwarded-*` when
+  `FORWARDED_ALLOW_IPS` is set, which the Bicep sets to `*` (traffic only
+  reaches the container through the ingress). No code change needed; verify the
+  HTTPS-only cookie on staging.
 - Worker entrypoint (`python -m app.worker`), phase 2.
 - Storage layer behind an interface, with a local-disk or Azurite
   implementation for development and a Blob implementation using
