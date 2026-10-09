@@ -1,4 +1,4 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 INSECURE_SECRETS = {"", "change-me", "dev-secret-change-me"}
@@ -36,8 +36,7 @@ class Settings(BaseSettings):
     # a way into /admin before any roles have been assigned there.
     super_admin_emails: str = ""
 
-    class Config:
-        env_file = ".env"
+    model_config = SettingsConfigDict(env_file=".env")
 
     @property
     def is_dev(self) -> bool:

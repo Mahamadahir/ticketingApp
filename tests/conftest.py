@@ -1,7 +1,8 @@
 import os
 
 os.environ["ENV"] = "dev"
-os.environ["DATABASE_URL"] = "sqlite:///./test.db"
+# CI sets DATABASE_URL to a real Postgres; locally the tests default to SQLite.
+os.environ["DATABASE_URL"] = os.environ.get("TEST_DATABASE_URL", "sqlite:///./test.db")
 os.environ["SUPER_ADMIN_EMAILS"] = "admin@example.com"
 os.environ["SESSION_SECRET_KEY"] = "test-secret"
 os.environ["SSO_TENANT_ID"] = ""

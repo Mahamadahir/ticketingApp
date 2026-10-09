@@ -1,8 +1,8 @@
 from datetime import datetime, timedelta, timezone
 
+import bcrypt
 import msal
 from fastapi import Depends, HTTPException, Request
-from passlib.context import CryptContext
 from sqlmodel import Session, select
 
 from app.config import settings
@@ -16,15 +16,31 @@ BASE_LOCKOUT = timedelta(minutes=15)
 MAX_LOCKOUT_DOUBLINGS = 10
 SSO_SCOPES = ["User.Read"]
 
-_pwd_context = CryptContext(schemes=["bcrypt"])
+# bcrypt only uses the first 72 bytes of a password.
+BCRYPT_MAX_BYTES = 72
 
 
 class NotAuthenticated(Exception):
     pass
 
 
+def _password_bytes(password: str) -> bytes:
+    return password.encode("utf-8")[:BCRYPT_MAX_BYTES]
+
+
 def hash_password(password: str) -> str:
-    return _pwd_context.hash(password)
+    return bcrypt.hashpw(_password_bytes(password), bcrypt.gensalt()).decode("ascii")
+
+
+def _verify_password(password: str, password_hash: str) -> bool:
+    try:
+        return bcrypt.checkpw(_password_bytes(password), password_hash.encode("ascii"))
+    except ValueError:
+        # Malformed stored hash: treat as a wrong password.
+        return False
+
+
+_DUMMY_HASH = hash_password("dummy-password-for-timing")
 
 
 def authenticate_local(session: Session, email: str, password: str) -> User | None:
@@ -36,11 +52,11 @@ def authenticate_local(session: Session, email: str, password: str) -> User | No
     if not user or not user.password_hash:
         # Spend the same bcrypt time as a real check so response timing
         # doesn't reveal whether the account exists.
-        _pwd_context.dummy_verify()
+        _verify_password(password, _DUMMY_HASH)
         return None
 
     now = datetime.now(timezone.utc)
-    is_password_correct = _pwd_context.verify(password, user.password_hash)
+    is_password_correct = _verify_password(password, user.password_hash)
 
     if _is_locked(user, now) or not is_password_correct:
         _record_failed_login(user, now)
