@@ -147,9 +147,10 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-Tests run against an in-memory SQLite database (see `tests/conftest.py`),
-not Postgres — fast and dependency-free, at the cost of not exercising
-Postgres-specific behaviour. Covers role-scoped ticket visibility,
+Needs Python 3.14. Locally the tests run against SQLite (see
+`tests/conftest.py`), which is fast and dependency-free but does not exercise
+Postgres-specific behaviour. CI runs them against Postgres 16; to do the same
+locally, set `TEST_DATABASE_URL` to a Postgres URL. Covers role-scoped ticket visibility,
 assignment, escalation, audit log writes, and both login paths.
 
 ## CI/CD
@@ -218,7 +219,7 @@ app/
   templates/         Jinja2 + HTMX views
   static/            CSS
 migrations/          Alembic environment and versioned schema migrations
-tests/               pytest suite (SQLite-backed)
+tests/               pytest suite (SQLite locally, Postgres in CI)
 infra/               Bicep for the Azure environments (not deployed yet)
 docs/                Delivery plan
 .github/workflows/   CI (tests); no deploy workflow yet
