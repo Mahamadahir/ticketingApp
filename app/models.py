@@ -78,8 +78,9 @@ class User(SQLModel, table=True):
 
 class Ticket(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    # Assigned on insert (see app/ticket_numbers.py): a separate counter per
-    # type, so INC-1 and SR-1 both exist. The reference is the shareable id.
+    # Assigned on insert by _assign_reference at the bottom of this file: a
+    # separate counter per type, so INC-1 and SR-1 both exist. The reference is
+    # the shareable id.
     type: TicketType = Field(default=TicketType.INCIDENT)
     number: Optional[int] = Field(default=None, nullable=False)
     reference: Optional[str] = Field(default=None, nullable=False, unique=True, index=True)

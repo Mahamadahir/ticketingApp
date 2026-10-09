@@ -16,12 +16,18 @@ def ensure_test_database(url: str) -> None:
     parsed = make_url(url)
     if parsed.get_backend_name() != "postgresql":
         raise RuntimeError("Tests need PostgreSQL; set TEST_DATABASE_URL to a postgresql+psycopg2 URL")
-    if not parsed.database.endswith("_test"):
+    if not parsed.database or not parsed.database.endswith("_test"):
         raise RuntimeError(f"Refusing to run tests against '{parsed.database}': the name must end in _test")
 
-    connection = psycopg2.connect(
-        host=parsed.host, port=parsed.port, user=parsed.username, password=parsed.password, dbname="postgres"
-    )
+    try:
+        connection = psycopg2.connect(
+            host=parsed.host, port=parsed.port, user=parsed.username, password=parsed.password, dbname="postgres"
+        )
+    except psycopg2.OperationalError as error:
+        raise RuntimeError(
+            "Cannot reach the test Postgres. Start it with `docker compose up -d db` "
+            f"(or set TEST_DATABASE_URL). Original error: {error}"
+        ) from error
     connection.autocommit = True
     with connection.cursor() as cursor:
         cursor.execute("SELECT 1 FROM pg_database WHERE datname = %s", (parsed.database,))

@@ -11,7 +11,7 @@
   {% for ticket in page.items %}
   <a class="ticket-card" href="/portal/{{ ticket.id }}">
     <div class="ticket-card-subject">{{ ticket.reference }} {{ ticket.subject }}</div>
-    <span class="status status-{{ ticket.status.value }}">{{ ticket.status.value }}</span>
+    <span class="status status-{{ ticket.status.value }}">{{ ticket.status.value.replace("_", " ") }}</span>
     <div class="ticket-card-updated">Updated {{ ticket.updated_at.strftime("%Y-%m-%d %H:%M") }}</div>
   </a>
   {% endfor %}

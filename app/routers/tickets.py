@@ -119,7 +119,15 @@ def reply_to_ticket(
     )
     session.add(message)
 
-    set_status(session, ticket, TicketStatus.IN_PROGRESS, user.email)
+    # A first reply starts the work. Any other status (awaiting user, with
+    # MSP, resolved, closed) is the agent's call and a reply must not undo it.
+    if ticket.status in (TicketStatus.NEW, TicketStatus.OPEN):
+        previous_status = ticket.status
+        set_status(session, ticket, TicketStatus.IN_PROGRESS, user.email)
+        log_action(
+            session, user.email, "ticket", ticket.id, "status_changed",
+            f"{previous_status.value} -> {TicketStatus.IN_PROGRESS.value}",
+        )
     ticket.updated_at = datetime.now(timezone.utc)
     session.add(ticket)
     log_action(session, user.email, "ticket", ticket.id, "commented", body[:200])
@@ -171,6 +179,9 @@ def assign_ticket(
         if target_agent is None or target_agent.role != UserRole.AGENT or target_agent.team_id != ticket.team_id:
             raise HTTPException(status_code=400, detail="Agent must belong to the ticket's team")
 
+    if ticket.assigned_agent_id == target_agent.id:
+        return _render_ticket_detail(request, ticket, user, session)
+
     previous_agent = session.get(User, ticket.assigned_agent_id) if ticket.assigned_agent_id else None
     ticket.assigned_agent_id = target_agent.id
     ticket.updated_at = datetime.now(timezone.utc)
@@ -199,24 +210,32 @@ def escalate_ticket(
     ticket = _get_ticket(session, ticket_id, user)
     parsed_target_team_id = optional_int(target_team_id)
 
+    new_team = None
+    if parsed_target_team_id is not None:
+        new_team = session.get(Team, parsed_target_team_id)
+        if new_team is None:
+            raise HTTPException(status_code=400, detail="Target team does not exist")
+
     previous_team = session.get(Team, ticket.team_id) if ticket.team_id else None
+    previous_agent = session.get(User, ticket.assigned_agent_id) if ticket.assigned_agent_id else None
     ticket.is_escalated = True
     ticket.escalation_reason = reason
     ticket.escalated_by_id = user.id
     ticket.escalated_at = datetime.now(timezone.utc)
-    new_team = previous_team
-    if parsed_target_team_id is not None:
-        ticket.team_id = parsed_target_team_id
+    if new_team is not None:
+        ticket.team_id = new_team.id
         ticket.assigned_agent_id = None
-        new_team = session.get(Team, parsed_target_team_id)
     ticket.updated_at = datetime.now(timezone.utc)
     session.add(ticket)
     record_event(
         session, ticket, EVENT_ESCALATED, user.email,
         from_value=previous_team.name if previous_team else None,
-        to_value=new_team.name if new_team else None,
+        to_value=(new_team or previous_team).name if (new_team or previous_team) else None,
         detail=reason,
     )
+    if new_team is not None and previous_agent is not None:
+        # Moving to another team unassigns the agent; the history must say so.
+        record_event(session, ticket, EVENT_ASSIGNED, user.email, from_value=previous_agent.email, to_value=None)
     log_action(session, user.email, "ticket", ticket.id, "escalated", reason)
     session.commit()
     session.refresh(ticket)

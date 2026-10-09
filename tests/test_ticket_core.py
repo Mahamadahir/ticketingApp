@@ -4,6 +4,7 @@ from sqlmodel import Session, select
 
 from app.database import engine
 from app.models import (
+    AuditLog,
     Ticket,
     TicketCounter,
     TicketEvent,
@@ -182,7 +183,11 @@ def test_assign_and_escalate_record_events(client, db_session):
     client.post(f"/tickets/{ticket.id}/escalate", data={"reason": "Needs network", "target_team_id": team_b.id})
 
     assigned = events_for(db_session, ticket, "assigned")
-    assert [(e.from_value, e.to_value) for e in assigned] == [(None, "agent@example.com")]
+    # Assigned to the agent, then unassigned when the escalation moved teams.
+    assert [(e.from_value, e.to_value) for e in assigned] == [
+        (None, "agent@example.com"),
+        ("agent@example.com", None),
+    ]
 
     escalated = events_for(db_session, ticket, "escalated")
     assert len(escalated) == 1
@@ -222,3 +227,83 @@ def test_concurrent_ticket_creation_never_duplicates_a_number():
     with Session(engine) as session:
         numbers = sorted(session.exec(select(Ticket.number)).all())
     assert numbers == list(range(1, workers * per_worker + 1))
+
+
+def test_reply_does_not_undo_a_deliberate_status(client, db_session):
+    team = create_team(db_session, "Service Desk")
+    login_agent(client, db_session, team)
+
+    for status in (TicketStatus.AWAITING_USER, TicketStatus.WITH_MSP, TicketStatus.RESOLVED, TicketStatus.CLOSED):
+        ticket = make_ticket(db_session, team_id=team.id)
+        client.post(f"/tickets/{ticket.id}/status", data={"status": status.value})
+        db_session.refresh(ticket)
+        resolved_at = ticket.resolved_at
+
+        client.post(f"/tickets/{ticket.id}/reply", data={"body": "Late note"})
+        db_session.refresh(ticket)
+        assert ticket.status == status
+        assert ticket.resolved_at == resolved_at
+
+
+def test_first_reply_is_audited_as_a_status_change(client, db_session):
+    team = create_team(db_session, "Service Desk")
+    ticket = make_ticket(db_session, team_id=team.id)
+    login_agent(client, db_session, team)
+
+    client.post(f"/tickets/{ticket.id}/reply", data={"body": "On it"})
+
+    audit = db_session.exec(select(AuditLog).where(AuditLog.action == "status_changed")).all()
+    assert [entry.detail for entry in audit] == ["new -> in_progress"]
+
+
+def test_assigning_to_the_same_agent_twice_records_one_event(client, db_session):
+    team = create_team(db_session, "Service Desk")
+    ticket = make_ticket(db_session, team_id=team.id)
+    login_agent(client, db_session, team)
+
+    client.post(f"/tickets/{ticket.id}/assign")
+    client.post(f"/tickets/{ticket.id}/assign")
+
+    assert len(events_for(db_session, ticket, "assigned")) == 1
+    assert len(db_session.exec(select(AuditLog).where(AuditLog.action == "assigned")).all()) == 1
+
+
+def test_escalate_to_missing_team_is_rejected_without_changes(client, db_session):
+    team = create_team(db_session, "Service Desk")
+    ticket = make_ticket(db_session, team_id=team.id)
+    login_agent(client, db_session, team)
+
+    response = client.post(f"/tickets/{ticket.id}/escalate", data={"reason": "x", "target_team_id": 9999})
+
+    assert response.status_code == 400
+    db_session.refresh(ticket)
+    assert ticket.is_escalated is False
+    assert ticket.team_id == team.id
+    assert events_for(db_session, ticket, "escalated") == []
+
+
+def test_escalating_to_another_team_records_the_unassignment(client, db_session):
+    team_a = create_team(db_session, "Service Desk")
+    team_b = create_team(db_session, "Network")
+    ticket = make_ticket(db_session, team_id=team_a.id)
+    login_agent(client, db_session, team_a)
+    client.post(f"/tickets/{ticket.id}/assign")
+
+    client.post(f"/tickets/{ticket.id}/escalate", data={"reason": "Network", "target_team_id": team_b.id})
+
+    assigned = events_for(db_session, ticket, "assigned")
+    assert [(e.from_value, e.to_value) for e in assigned] == [(None, "agent@example.com"), ("agent@example.com", None)]
+
+
+def test_portal_shows_readable_status(client, db_session):
+    ticket = make_ticket(db_session)
+    ticket.requester_email = "me@example.com"
+    ticket.status = TicketStatus.AWAITING_USER
+    db_session.add(ticket)
+    db_session.commit()
+    login_as(client, "me@example.com")
+
+    for path in ("/portal", f"/portal/{ticket.id}"):
+        page = client.get(path).text
+        assert "awaiting user" in page
+        assert "awaiting_user</span>" not in page
