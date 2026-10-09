@@ -87,9 +87,13 @@ def test_login_works_again_once_the_lock_expires(client, db_session, local_user)
     assert is_signed_in(attempt_login(client, PASSWORD))
 
 
-def test_each_further_failure_doubles_the_lock(client, db_session, local_user):
+def test_each_further_failure_after_a_lock_expires_doubles_the_lock(client, db_session, local_user):
     fail_logins(client, MAX_FAILED_LOGINS)
-    first_lock = as_utc(reload(db_session, local_user).locked_until)
+    user = reload(db_session, local_user)
+    first_lock = as_utc(user.locked_until)
+    user.locked_until = datetime.now(timezone.utc) - timedelta(seconds=1)
+    db_session.add(user)
+    db_session.commit()
 
     fail_logins(client, 1)
     second_lock = as_utc(reload(db_session, local_user).locked_until)
