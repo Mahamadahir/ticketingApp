@@ -32,7 +32,8 @@ Mimecast integration.
 - **FastAPI** (Python) — async HTTP, suits webhook-driven mail ingestion
 - **PostgreSQL** — tickets, users, teams, audit log, safe for concurrent agents
 - **Jinja2 + HTMX** — server-rendered UI, no separate frontend build/deploy
-- **Docker Compose** — app + Postgres, runs on one internal box or EC2
+- **Docker Compose** — app + Postgres for local development
+- **Azure Container Apps + Bicep** — the hosting target (see `infra/` and `docs/plan.md`); not deployed yet
 
 ## Roles and portals
 
@@ -155,25 +156,10 @@ assignment, escalation, audit log writes, and both login paths.
 
 - `.github/workflows/ci.yml` runs `pytest` and the migration drift check on
   every push, pull request and `v*` tag.
-- `.github/workflows/deploy.yml` runs after CI passes on a push. `main`
-  deploys to the `staging` GitHub Environment; a `v*` tag (for example
-  `v1.0.0`) deploys to `production`. It SSHes into that environment's EC2
-  box, checks out the exact commit CI tested, and runs
-  `docker compose up -d --build`, which applies migrations on start.
-
-Each environment (Settings → Environments) needs these secrets, none of
-which this repo can set for you:
-
-- `EC2_HOST` — public IP or hostname of the instance
-- `EC2_USER` — SSH user (e.g. `ubuntu`)
-- `EC2_SSH_KEY` — private key with access to that user, PEM contents
-- `EC2_APP_DIR` — path on the instance where this repo is checked out (e.g. `/home/ubuntu/ticketingApp`)
-
-One-time setup on each EC2 box: install Docker + Docker Compose,
-`git clone` this repo into `EC2_APP_DIR`, and create a real `.env` there
-(copied from `.env.example`, with `ENV=staging` or `ENV=production` and
-real secrets). The deploy workflow only checks out and rebuilds; it doesn't
-create the environment file.
+- There is no deploy workflow yet. The old EC2 one was removed when hosting
+  moved to Azure (see `docs/plan.md`, "Hosting on Azure", and `infra/README.md`),
+  and nothing is deployed. The new one will build and push the image, run the
+  migrate job and update the Container Apps, authenticating with OIDC.
 
 The container runs uvicorn with 4 workers; set `UVICORN_WORKERS` in `.env`
 to change it.
@@ -233,5 +219,7 @@ app/
   static/            CSS
 migrations/          Alembic environment and versioned schema migrations
 tests/               pytest suite (SQLite-backed)
-.github/workflows/   CI (tests) and CD (deploy to EC2)
+infra/               Bicep for the Azure environments (not deployed yet)
+docs/                Delivery plan
+.github/workflows/   CI (tests); no deploy workflow yet
 ```
