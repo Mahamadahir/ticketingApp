@@ -111,12 +111,26 @@ for the database is a later option.
 
 - Authentication: managed identity only. Shared key access and public blob
   access are off.
-- Download links: the app checks ticket visibility, then redirects to a
-  user-delegation SAS URL valid for a few minutes. Inline images use the same
-  route. Streaming through the app instead is the fallback if a client cannot
-  follow the redirect.
-- Redundancy: LRS in staging, ZRS in production (GRS/GZRS if a second region
-  is ever wanted).
+- Download links: pages link to `/attachments/{id}`, which checks ticket
+  visibility on every request and redirects to a user-delegation SAS URL valid
+  for one to two minutes. Inline images use the same route. Streaming through
+  the app instead is the fallback if a client cannot follow the redirect.
+- One storage path: every attachment is a blob, with a metadata row in the
+  database (filename, size, detected type, content hash, blob key). No
+  database tier for small files. Inline images such as signature logos are
+  skipped when tiny and deduplicated on content hash.
+- In-app viewing: PNG, JPEG, GIF and WebP display inline in the ticket thread.
+  Everything else downloads. Never inline SVG or HTML. The content type is
+  detected server-side, not taken from the sender; responses carry
+  `X-Content-Type-Options: nosniff`; non-images are forced to download with
+  the SAS response-header overrides; the storage domain is allowed in the
+  app's image content-security policy. Files are served from the storage
+  origin, not the app's, so script in a file cannot reach the session.
+- No server-side conversion: no PDF or Office previews and no thumbnail
+  generation in v1 (parsers on hostile files). Email body HTML is sanitised or
+  shown as text.
+- Redundancy: ZRS (zone-redundant, three copies across zones in UK South) in
+  both environments. GRS/GZRS if a second region is ever wanted.
 - Versioning and soft delete on; superseded versions are deleted after 90
   days; blobs move to the cool tier after a year.
 - Uploads go through the app (size limit and type checks in one place), not

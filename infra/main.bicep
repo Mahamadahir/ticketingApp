@@ -50,7 +50,7 @@ param postgresBackupRetentionDays int = 7
 param postgresHighAvailability string = 'Disabled'
 
 @allowed(['Standard_LRS', 'Standard_ZRS', 'Standard_GRS', 'Standard_GZRS'])
-param storageSku string = 'Standard_LRS'
+param storageSku string = 'Standard_ZRS'
 
 param webMinReplicas int = 1
 param webMaxReplicas int = 2

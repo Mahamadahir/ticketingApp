@@ -37,5 +37,5 @@ param postgresSku = 'Standard_B1ms'
 param postgresTier = 'Burstable'
 param postgresBackupRetentionDays = 7
 param postgresHighAvailability = 'Disabled'
-param storageSku = 'Standard_LRS'
+param storageSku = 'Standard_ZRS'
 param purgeProtection = false
