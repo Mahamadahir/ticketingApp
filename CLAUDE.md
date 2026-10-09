@@ -24,10 +24,14 @@ run it.
   `az deployment` unless the user asks.
 - Frontend stays server-rendered Jinja2 + htmx. No SPA, no Static Web Apps.
   The web app is mainly for agents; requesters mostly use email and Teams.
+- Keep the UI plain and functional: semantic HTML, minimal CSS, no styling
+  polish. The whole UI gets redesigned with Google Stitch in Phase 9 once it is
+  feature-complete, so visual effort now is wasted.
 - Schema changes need an Alembic migration (CI runs `alembic check`).
-- Run `pytest` before saying work is done. Tests use SQLite, so anything
-  Postgres-specific (full-text search, constraints, locking) is not proved by a
-  green run; say so when it matters.
+- Run `pytest` before saying work is done. Locally tests use SQLite and CI
+  uses Postgres 16 (set `TEST_DATABASE_URL` to run against Postgres locally), so
+  anything Postgres-specific (full-text search, constraints, locking) is not
+  proved by a local green run; say so when it matters. Python is 3.14.
 - No secrets in the repo, Bicep parameter files or app definitions. Secrets
   come from the environment at deploy time and live in Key Vault.
 - Values marked TBC in the plan are settings or environment config, never
