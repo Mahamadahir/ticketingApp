@@ -1,3 +1,5 @@
+import hmac
+
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response
 from sqlmodel import Session
 
@@ -19,10 +21,19 @@ async def graph_notifications(request: Request, session: Session = Depends(get_s
     if validation_token:
         return Response(content=validation_token, media_type="text/plain")
 
-    payload = await request.json()
+    try:
+        payload = await request.json()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Body is not valid JSON")
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Unexpected payload")
 
     for notification in payload.get("value", []):
-        if notification.get("clientState") != settings.graph_webhook_client_state:
+        client_state = notification.get("clientState") if isinstance(notification, dict) else None
+        # Constant-time compare, and anything not a string never matches.
+        if not isinstance(client_state, str) or not hmac.compare_digest(
+            client_state.encode(), settings.graph_webhook_client_state.encode()
+        ):
             continue
 
         # TODO: notification only carries the message ID, not content.

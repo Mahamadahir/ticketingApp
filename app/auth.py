@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 import bcrypt
 import msal
 from fastapi import Depends, HTTPException, Request
+from sqlalchemy import func, update
 from sqlmodel import Session, select
 
 from app.config import settings
@@ -36,7 +37,9 @@ def _verify_password(password: str, password_hash: str) -> bool:
     try:
         return bcrypt.checkpw(_password_bytes(password), password_hash.encode("ascii"))
     except ValueError:
-        # Malformed stored hash: treat as a wrong password.
+        # Malformed stored hash: do the same bcrypt work as a real check, so
+        # timing doesn't single the account out, and treat it as a wrong password.
+        bcrypt.checkpw(_password_bytes(password), _DUMMY_HASH.encode("ascii"))
         return False
 
 
@@ -58,9 +61,13 @@ def authenticate_local(session: Session, email: str, password: str) -> User | No
     now = datetime.now(timezone.utc)
     is_password_correct = _verify_password(password, user.password_hash)
 
-    if _is_locked(user, now) or not is_password_correct:
-        _record_failed_login(user, now)
-        session.add(user)
+    if _is_locked(user, now):
+        # Attempts during a lock change nothing, so hammering the form cannot
+        # extend someone else's lock.
+        return None
+
+    if not is_password_correct:
+        _record_failed_login(session, user, now)
         session.commit()
         return None
 
@@ -77,16 +84,31 @@ def _is_locked(user: User, now: datetime) -> bool:
     return _as_utc(user.locked_until) > now
 
 
-def _record_failed_login(user: User, now: datetime) -> None:
-    user.failed_login_count += 1
-    if user.failed_login_count < MAX_FAILED_LOGINS:
+def _record_failed_login(session: Session, user: User, now: datetime) -> None:
+    """Counts the failure in the database in one statement, so parallel
+    guesses across workers cannot read the same count and each write back
+    the same increment."""
+    count = session.exec(
+        update(User)
+        .where(User.id == user.id)
+        .values(failed_login_count=User.failed_login_count + 1)
+        .returning(User.failed_login_count)
+    ).scalar_one()
+    if count < MAX_FAILED_LOGINS:
         return
-    doublings = min(user.failed_login_count - MAX_FAILED_LOGINS, MAX_LOCKOUT_DOUBLINGS)
-    user.locked_until = now + BASE_LOCKOUT * (2**doublings)
+    doublings = min(count - MAX_FAILED_LOGINS, MAX_LOCKOUT_DOUBLINGS)
+    lock_until = now + BASE_LOCKOUT * (2**doublings)
+    # Parallel failures finish in any order; the longest lock wins.
+    session.exec(
+        update(User)
+        .where(User.id == user.id)
+        .values(locked_until=func.greatest(func.coalesce(User.locked_until, lock_until), lock_until))
+    )
 
 
 def _as_utc(moment: datetime) -> datetime:
-    # The database hands back naive datetimes; they are stored as UTC.
+    # Postgres returns timezone-aware datetimes; this only guards against a
+    # naive value reaching the comparison.
     return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
 
 

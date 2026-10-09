@@ -6,6 +6,8 @@ from urllib.parse import urlencode
 from sqlmodel import Session, func, select
 
 PAGE_SIZE = 50
+# Keeps OFFSET far inside bigint; nobody pages this deep legitimately.
+MAX_PAGE = 100_000
 
 
 @dataclass
@@ -35,7 +37,7 @@ class Page:
 
 def paginate(session: Session, query, page_number: int, query_params: Mapping[str, str]) -> Page:
     total_items = session.exec(select(func.count()).select_from(query.subquery())).one()
-    page_number = max(1, page_number)
+    page_number = min(max(1, page_number), MAX_PAGE)
     items = session.exec(query.offset((page_number - 1) * PAGE_SIZE).limit(PAGE_SIZE)).all()
     filters = {key: value for key, value in query_params.items() if key != "page" and value}
     return Page(items=list(items), number=page_number, total_items=total_items, query_params=filters)
