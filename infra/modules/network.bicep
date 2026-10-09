@@ -9,6 +9,7 @@ param environmentName string
 
 var vnetName = 'vnet-${prefix}-${environmentName}'
 var dnsZoneName = '${prefix}-${environmentName}.private.postgres.database.azure.com'
+var containerAppsSubnetPrefix = '10.20.0.0/24'
 
 resource vnet 'Microsoft.Network/virtualNetworks@2024-01-01' = {
   name: vnetName
@@ -22,7 +23,7 @@ resource vnet 'Microsoft.Network/virtualNetworks@2024-01-01' = {
       {
         name: 'snet-container-apps'
         properties: {
-          addressPrefix: '10.20.0.0/24'
+          addressPrefix: containerAppsSubnetPrefix
           delegations: [
             {
               name: 'container-apps'
@@ -71,6 +72,8 @@ resource dnsLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-
 }
 
 output containerAppsSubnetId string = '${vnet.id}/subnets/snet-container-apps'
+// The ingress proxies that front the apps run inside this range.
+output containerAppsSubnetPrefix string = containerAppsSubnetPrefix
 output postgresSubnetId string = '${vnet.id}/subnets/snet-postgres'
 // The whole module (zone and VNet link) finishes before the database module
 // starts, so the zone is attached by the time the server is created.

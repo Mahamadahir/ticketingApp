@@ -79,6 +79,9 @@ param postgresAdminPassword string
 @secure()
 param sessionSecretKey string
 @secure()
+@description('Session key for the public app and worker, which never serve an agent session but whose settings check needs a non-default value. Generate it separately from SESSION_SECRET_KEY so the two rotate independently and reading this one forges nothing.')
+param internalSessionSecretKey string
+@secure()
 param graphWebhookClientState string
 @secure()
 @description('Optional until Entra SSO is registered for this environment.')
@@ -128,11 +131,6 @@ resource identityMigrate 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-
   location: location
   tags: tags
 }
-
-// A second session key for apps that never serve a session. The settings check
-// needs a non-default value in them, but it must not be the web key. Derived
-// from the web key, so there is nothing extra to supply.
-var internalSessionSecretKey = '${uniqueString(sessionSecretKey, 'internal-1')}${uniqueString(sessionSecretKey, 'internal-2')}${uniqueString(sessionSecretKey, 'internal-3')}'
 
 module network 'modules/network.bicep' = {
   name: 'network'
@@ -306,10 +304,11 @@ var commonEnv = [
   // Migrations run in the migrate job, not at container start.
   { name: 'RUN_MIGRATIONS', value: 'false' }
   { name: 'UVICORN_WORKERS', value: string(uvicornWorkers) }
-  // Traffic only reaches the container through the ingress, so trust its
-  // X-Forwarded-* headers. Without this the app sees http and drops the
-  // HTTPS-only session cookie.
-  { name: 'FORWARDED_ALLOW_IPS', value: '*' }
+  // Trust X-Forwarded-* only from the ingress proxies, which run in the
+  // Container Apps subnet. Without it the app sees http and drops the
+  // HTTPS-only session cookie. Not '*': then uvicorn takes the leftmost
+  // X-Forwarded-For entry, which the client controls, as the client address.
+  { name: 'FORWARDED_ALLOW_IPS', value: network.outputs.containerAppsSubnetPrefix }
   { name: 'STORAGE_ACCOUNT_NAME', value: storage.outputs.name }
   { name: 'STORAGE_CONTAINER', value: storageContainerName }
   { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: monitoring.outputs.appInsightsConnectionString }

@@ -34,8 +34,10 @@ compromised app can use only what it was granted. This matters most for
 | migrate | yes | database URL only | no |
 
 Secrets are granted one by one (role assignment on the secret, not the vault).
-The internal session key is derived from the web key in `main.bicep`, so the
-public app and worker never hold the key that signs agent cookies. The
+The public app and worker use a separate `INTERNAL_SESSION_SECRET_KEY`, so they
+never hold the key that signs agent cookies and the two rotate independently.
+The settings check only needs a non-default value in them; once the app has
+`APP_ROLE` the check can skip it for those roles and this secret can go. The
 database URL still carries the server admin login; a least-privilege database
 role is a later step.
 
@@ -52,6 +54,7 @@ has no image yet), and no apps or job are deployed.
    ```powershell
    $env:POSTGRES_ADMIN_PASSWORD = '<letters and digits, 24+ characters>'
    $env:SESSION_SECRET_KEY = python -c "import secrets; print(secrets.token_hex(32))"
+   $env:INTERNAL_SESSION_SECRET_KEY = python -c "import secrets; print(secrets.token_hex(32))"
    $env:GRAPH_WEBHOOK_CLIENT_STATE = python -c "import secrets; print(secrets.token_hex(16))"
    $env:ALERT_EMAIL = 'it-support@example.org'
    $env:WEB_ALLOWED_CIDRS = '203.0.113.0/24'   # office and VPN, comma separated

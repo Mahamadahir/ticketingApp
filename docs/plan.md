@@ -167,10 +167,14 @@ least-privilege database role is a later hardening step.
   Not made yet.
 - `RUN_MIGRATIONS=false` makes the entrypoint skip `alembic upgrade head`, so
   replicas do not race; the migrate job runs it instead. Done.
-- uvicorn proxy headers: uvicorn trusts `X-Forwarded-*` when
-  `FORWARDED_ALLOW_IPS` is set, which the Bicep sets to `*` (traffic only
-  reaches the container through the ingress). No code change needed; verify the
-  HTTPS-only cookie on staging.
+- uvicorn proxy headers: uvicorn trusts `X-Forwarded-*` from the addresses in
+  `FORWARDED_ALLOW_IPS`, which the Bicep sets to the Container Apps subnet (where
+  the ingress proxies run), not `*`. With `*` uvicorn takes the leftmost
+  `X-Forwarded-For` entry as the client address, and a client can forge that.
+  No code change needed. Verify on staging: the HTTPS-only cookie works, and a
+  request with a forged `X-Forwarded-For` is recorded with the real address.
+- Settings check per role: once `APP_ROLE` exists, require `SESSION_SECRET_KEY`
+  only for `web`, then drop the internal session key secret.
 - Worker entrypoint (`python -m app.worker`), phase 2.
 - Storage layer behind an interface, with a local-disk or Azurite
   implementation for development and a Blob implementation using

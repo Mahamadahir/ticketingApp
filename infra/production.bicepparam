@@ -29,6 +29,7 @@ param superAdminEmails = readEnvironmentVariable('SUPER_ADMIN_EMAILS', '')
 
 param postgresAdminPassword = readEnvironmentVariable('POSTGRES_ADMIN_PASSWORD')
 param sessionSecretKey = readEnvironmentVariable('SESSION_SECRET_KEY')
+param internalSessionSecretKey = readEnvironmentVariable('INTERNAL_SESSION_SECRET_KEY')
 param graphWebhookClientState = readEnvironmentVariable('GRAPH_WEBHOOK_CLIENT_STATE')
 param ssoClientSecret = readEnvironmentVariable('SSO_CLIENT_SECRET', '')
 param graphClientSecret = readEnvironmentVariable('GRAPH_CLIENT_SECRET', '')
