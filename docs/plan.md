@@ -1,6 +1,8 @@
 # Delivery plan
 
-Agreed scope and build order for the ticketing app, as at 5 October 2026.
+Agreed scope and build order for the ticketing app, as at 9 October 2026.
+Hosting moved from AWS (EC2) to Azure on 9 October. Nothing has been deployed
+anywhere: the app is built and tested locally until it is ready for staging.
 Values marked **TBC** are decided later and stored as admin settings or
 environment config, not hard-coded.
 
@@ -9,45 +11,169 @@ environment config, not hard-coded.
 **Database.** PostgreSQL stays. Alembic replaces `create_all` before any
 schema change, since almost every phase below alters tables.
 
-**Background worker.** A separate `worker` service in `docker-compose.yml`
-runs APScheduler. Running jobs inside the web process would execute them
-once per uvicorn worker. Jobs: Graph subscription renewal, mail catch-up,
-SLA timers, MSP handoff, chase emails, auto-close, delayed Teams
-notifications, presence refresh, backups.
+**Background worker.** A separate `worker` service runs APScheduler: a
+service in `docker-compose.yml` locally, a Container App fixed at one replica
+in Azure. Running jobs inside the web process would execute them once per
+uvicorn worker. Jobs: Graph subscription renewal, mail catch-up, SLA timers,
+MSP handoff, chase emails, auto-close, delayed Teams notifications, presence
+refresh.
 
-**Attachments.** Private, encrypted S3 bucket. Files are served through
-short-lived presigned URLs after a ticket visibility check. One upload size
-limit (**TBC**) for portal uploads and email attachments, including inline
-images. GuardDuty Malware Protection for S3 is optional, to switch on once
-costs are known.
+**Attachments.** Private Azure Blob Storage container. Files are served
+through short-lived user-delegation SAS links after a ticket visibility check
+(details under "Hosting on Azure"). One upload size limit (**TBC**) for portal
+uploads and email attachments, including inline images. Defender for Storage
+malware scanning is optional, to switch on once costs are known.
 
-**Backups.** `pg_dump` to S3 every **X hours (TBC)**, which sets the maximum
-data loss. Bucket versioning on, dumps expire after 30 days, monthly restore
-test into a scratch database. A shorter recovery point later needs WAL
-archiving or RDS point-in-time recovery.
+**Backups.** Azure Database for PostgreSQL takes automated backups and
+supports point-in-time restore anywhere in the retention window (7 to 35
+days, **TBC**; the window is the maximum data loss). No `pg_dump` job. Monthly
+restore test into a scratch server. A second, independent copy (scheduled
+`pg_dump` to Blob Storage) is a later option if the retention window is not
+enough.
 
 **Data retention.** Tickets, messages, attachments and the audit log are kept
 indefinitely. Raise with the data protection lead: UK GDPR's storage
 limitation principle needs a written justification. Regardless of outcome,
 build a subject access export (everything held on one person) and requester
 anonymisation (keep the ticket, remove name, email and attachments).
-Attachments older than a year move to a cheaper S3 storage class.
+Attachments older than a year move to the cool storage tier.
 
 **Health and monitoring.**
 
-- `/health` checks the app and database. The ALB target health check polls
-  it, and a CloudWatch alarm on unhealthy hosts alerts through SNS.
-- Dead man's switch: the worker and each scheduled job publish a CloudWatch
-  custom metric on success, with alarms that fire on missing data.
-- `/health` also warns when: Graph subscription expiry is under 24 hours,
-  the last catch-up poll is over 15 minutes old, the last backup is older
-  than X hours plus a margin, or EC2 disk free is under 20%.
+- `/health` checks the app and database. Container Apps readiness probes poll
+  it, and an Azure Monitor alert on replica restarts or failed requests
+  notifies the action group (email now, Teams webhook later).
+- Dead man's switch: the worker and each scheduled job write a heartbeat log
+  line (or custom event) on success, with a log-query alert that fires when
+  none has arrived within the expected interval.
+- `/health` also warns when: Graph subscription expiry is under 24 hours or
+  the last catch-up poll is over 15 minutes old. The database alerts cover
+  storage and CPU. Backup age and disk checks are no longer needed: backups
+  and disks are managed by Azure.
+- Telemetry goes to Application Insights (requests, exceptions, calls to
+  Postgres and Graph) and Log Analytics (container logs), kept 30 days in
+  staging and 90 in production, with a daily ingestion cap.
 
 **Environments.** The current environment is staging until go-live, then a
 separate production environment is built. Staging has its own Entra app
 registrations and a test mailbox, and never touches the real shared mailbox.
-The deploy workflow targets an environment from the start: staging from
-`main`, production from a release tag.
+The deploy workflow (not written yet) will target an environment: staging from
+`main`, production from a release tag. Until the app is ready, everything runs
+locally with `docker compose`.
+
+## Hosting on Azure
+
+Replaces the earlier AWS design (EC2, ALB, WAF, RDS, S3, CloudWatch). Region
+UK South, one resource group per environment, all defined in Bicep under
+`infra/` (see `infra/README.md`). Deployed from GitHub Actions with OIDC; no
+long-lived cloud credentials.
+
+**Who uses what.** The web app is for agents and admins. Everyone else mostly
+emails or uses Teams, so the end-user portal is a secondary channel and
+nothing relies on requesters reaching it.
+
+**Apps.** One image, run as separate Azure Container Apps so each gets the
+right exposure:
+
+| App | Serves | Ingress | Replicas |
+|---|---|---|---|
+| `web` | Agent console, admin, SSO callback, portal, break-glass login, outage mode | Public URL, restricted to office and VPN ranges | 1 to 2, scaled on concurrent HTTP requests |
+| `public` | Graph webhook, `/feedback/*`, `/reopen/*`, Teams bot endpoint, `/health` | Public, unrestricted | 1 to 2, never zero (Graph expects an answer within 3 seconds) |
+| `worker` | APScheduler jobs | None | Exactly 1 |
+| `migrate` job | `alembic upgrade head` | None | Run on demand before each deploy |
+
+`public` exists because feedback and reopen links must work from anywhere and
+Microsoft must reach the webhook, while Container Apps IP restrictions apply
+per app, not per path. It ships with `APP_ROLE=public`, which mounts only
+those routes. "Scaled on HTTP" means a scaling rule on concurrent requests,
+not a protocol choice.
+
+**HTTPS only.** TLS ends at the Container Apps ingress, which redirects HTTP
+to HTTPS (`allowInsecure` is false). Inside the platform the ingress talks to
+the container over plain HTTP on port 8000. uvicorn must trust the forwarded
+headers or the HTTPS-only session cookie and redirects break.
+
+**Addresses.** Staging and early testing use the generated
+`*.azurecontainerapps.io` URLs, which are stable for the life of the
+environment. At initial roll-out `web` moves to the internal domain. A free
+managed certificate needs the app reachable by the certificate authority, at
+issuance and every renewal, so IP-restricted `web` uses a certificate we
+supply (kept in Key Vault); `public` can use a managed one. Entra redirect
+URIs, `SSO_REDIRECT_URI` and the Graph notification URL change with the
+domain.
+
+**Database.** Azure Database for PostgreSQL Flexible Server, version 16, in a
+delegated subnet with no public endpoint (burstable SKU in staging).
+`sslmode=require`. Admin password lives in Key Vault. Entra authentication
+for the database is a later option.
+
+**Storage decisions.**
+
+- Authentication: managed identity only. Shared key access and public blob
+  access are off.
+- Download links: the app checks ticket visibility, then redirects to a
+  user-delegation SAS URL valid for a few minutes. Inline images use the same
+  route. Streaming through the app instead is the fallback if a client cannot
+  follow the redirect.
+- Redundancy: LRS in staging, ZRS in production (GRS/GZRS if a second region
+  is ever wanted).
+- Versioning and soft delete on; superseded versions are deleted after 90
+  days; blobs move to the cool tier after a year.
+- Uploads go through the app (size limit and type checks in one place), not
+  directly from the browser.
+- Downloads of anything that is not an image are served as attachments, never
+  rendered in the browser.
+- Network: public endpoint with Entra-only access for now; a private endpoint
+  is a later hardening step.
+- Malware scanning (Defender for Storage): off until costs are known.
+
+**Secrets.** Key Vault, read by the apps through a managed identity. Nothing
+secret in the repository, the Bicep parameters or the app definitions.
+
+**Considered and not chosen.**
+
+- Front Door Premium with WAF and Private Link: would add managed rule sets,
+  per-path rules and an app with no public address, but costs several hundred
+  pounds a month, which is out of proportion for a few agents behind IP
+  restrictions. Revisit if the public surface grows or an audit asks.
+- App Service for Containers: workable and simpler, but Container Apps was
+  preferred.
+- Static Web Apps: the UI is server-rendered Jinja with htmx, not a SPA.
+- AKS: far more than this needs.
+
+**Code changes the Azure plan needs** (none made yet):
+
+- `APP_ROLE` (`web`, `public`, `worker`) selects which routers are mounted.
+  Needed before `public` can be deployed; due with the Graph webhook (phase 3).
+- `RUN_MIGRATIONS=false` makes the entrypoint skip `alembic upgrade head`, so
+  replicas do not race; the migrate job runs it instead.
+- uvicorn proxy headers (`--proxy-headers`, `--forwarded-allow-ips`).
+- Worker entrypoint (`python -m app.worker`), phase 2.
+- Storage layer behind an interface, with a local-disk or Azurite
+  implementation for development and a Blob implementation using
+  `DefaultAzureCredential`, phase 3.
+- Application Insights via the `azure-monitor-opentelemetry` package.
+- App-level rate limiting on the public routes.
+- Write the deploy workflow (the old SSH-to-EC2 one was removed): OIDC login,
+  build and push, migrate job, deploy.
+
+**Azure-only verification.** The app is tested locally until it is ready.
+These cannot be proved locally and are checked on staging, flagged as each
+feature is reached:
+
+- Real Entra sign-in against the generated redirect URI, and later the
+  internal domain.
+- IP restrictions, HTTPS redirect and the forwarded-header handling.
+- Managed identity access to Blob Storage and Key Vault; user-delegation SAS
+  (Azurite may not support it).
+- Graph webhook delivery, validation token handshake, 3-second response, and
+  subscription renewal. Needs a public URL, so only on staging.
+- Teams bot messages (phase 8) and Teams Workflows webhooks.
+- Postgres SSL, private networking and point-in-time restore.
+- The migrate job and the deploy ordering; revision rollout and rollback.
+- Alerts, the heartbeat alert, Log Analytics and Application Insights data.
+- Custom domain and certificate at roll-out.
+- Scale rules and the single-replica worker.
 
 ## Security and request flooding
 
@@ -60,22 +186,29 @@ Fixes, first:
 - Remove the published Postgres port from `docker-compose.yml`.
 - Session cookie set to HTTPS only.
 
-AWS:
+Azure:
 
-- ALB in front of EC2 with an ACM certificate. The EC2 security group only
-  accepts the ALB; ports 8000 and 5432 are never reachable from the internet.
-- WAF on the ALB: per-IP rate rule across the site (about 300 requests per
-  5 minutes), a tighter rule on `/auth/*` and tokenised feedback and reopen
-  links, and the AWS managed Core, Known bad inputs and IP reputation groups.
-- Access restricted to office and VPN ranges, with the Graph webhook path
-  open only to Microsoft's published Graph ranges.
+- Ingress is HTTPS only. Postgres has no public endpoint. Blob Storage and
+  Key Vault accept Entra identities only, with no keys.
+- `web` accepts only office and VPN ranges (Container Apps IP restrictions,
+  no extra cost). Agents off the VPN cannot sign in, by design.
+- `public` is open to the internet and serves only the Graph webhook,
+  feedback and reopen links, the Teams bot endpoint and `/health`. Its
+  protection is in the app: single-use expiring tokens, `clientState` and
+  validation-token checks on the webhook, and rate limiting. Microsoft's Graph
+  source ranges are not allow-listed: IP rules cannot be applied per path, and
+  the ranges change.
+- No WAF. Front Door Premium is documented under "Hosting on Azure" as an
+  option, not the plan.
 
 App:
 
 - Account lockout with increasing delay after about 5 failed logins.
 - Every list paginated, message body length capped.
 - Tokenised links (feedback, reopen) single-use and expiring.
-- `uvicorn --workers 4` behind the ALB.
+- Rate limiting on the public routes.
+- `uvicorn` runs 2 to 4 workers per replica, sized to the container's CPU,
+  and trusts the ingress's forwarded headers.
 
 ## Identity and access
 
@@ -284,7 +417,7 @@ for all of them.
 | 0 | Security fixes, Alembic, `/health`, audit log pagination and filters, account lockout, list pagination, environment-targeted deploys |
 | 1 | Ticket model: types, references, statuses, source, categories, impact × urgency, SLA targets and clock, priority queue, message visibility, followers, linking, team memberships and visibility, reassignment, escalation changes, backdating, `ticket_event`, search, portal new request form, canned responses, preview step, Service Requests and approvers |
 | 2 | Worker, in-app notifications, @mentions, notification settings, Teams channel webhook for new tickets, out-of-office detection |
-| 3 | Graph mail: intake, threaded replies, `uniqueBody`, delta catch-up, subscription renewal and lifecycle handling, auto-reply filter, attachments in S3 |
+| 3 | Graph mail: intake, threaded replies, `uniqueBody`, delta catch-up, subscription renewal and lifecycle handling, auto-reply filter, attachments in Blob Storage, `public` app mode for the webhook |
 | 4 | Resolution, reopen and reclose flow, ignore list and review, chase emails, auto-close, feedback, bulk resolve |
 | 5 | MSP handoff, hold, 18:00 job, MSP mail handling and forwarding |
 | 6 | Break-glass accounts, TOTP, outage mode, Entra app roles |
@@ -292,8 +425,11 @@ for all of them.
 | 8 | Teams bot: direct messages to agents and ticket intake from Teams |
 | 9 | Google Stitch redesign once the UI is feature-complete, to WCAG 2.2 AA |
 
-AWS infrastructure (ALB, WAF, IP restriction) and backups land before
-go-live, independent of the code phases.
+The Azure infrastructure (`infra/`, Bicep) is scaffolded and not deployed.
+Staging is deployed when the app is ready for testing, then initial roll-out
+on the internal domain, then production before go-live. The code changes it
+needs are listed under "Hosting on Azure"; infrastructure work runs
+independently of the code phases.
 
 ## Later and stretch
 
@@ -309,9 +445,14 @@ routing by sender, forwarded-email intake, portal-only notes.
 - Out-of-hours MSP forwards go to users without an agent preview.
 - Every agent sees untriaged tickets, including sensitive ones, until
   automated routing exists.
+- The `public` app is reachable by anyone with no WAF in front of it; the
+  protections are in the app (tokens, rate limits, webhook validation).
+- Requesters get the portal only from the office network or VPN. Email and
+  Teams are their channels.
 
 ## TBC values
 
-Shared mailbox address, MSP address, backup interval, upload size limit,
-SLA targets per priority, triage team, auto-close days, chase X and Y,
-automatic email cap per ticket.
+Shared mailbox address, MSP address, database restore window (7 to 35
+days), upload size limit, SLA targets per priority, triage team, auto-close
+days, chase X and Y, automatic email cap per ticket, office and VPN IP
+ranges, internal domain name, alert recipients, Azure subscription.
