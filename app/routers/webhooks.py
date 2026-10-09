@@ -3,7 +3,8 @@ from sqlmodel import Session
 
 from app.config import settings
 from app.database import get_session
-from app.models import Message, MessageDirection, Ticket
+from app.models import Message, MessageDirection, TicketSource
+from app.ticket_service import create_ticket
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 
@@ -45,18 +46,17 @@ def simulate_inbound_email(
     if not settings.is_dev:
         raise HTTPException(status_code=404)
 
-    ticket = Ticket(subject=subject, requester_email=requester_email)
-    session.add(ticket)
-    session.commit()
-    session.refresh(ticket)
-
-    message = Message(
-        ticket_id=ticket.id,
-        sender=requester_email,
-        body=body,
-        direction=MessageDirection.INBOUND,
+    # One transaction: the ticket, its first message and its created event
+    # all exist or none do.
+    ticket = create_ticket(session, subject=subject, requester_email=requester_email, source=TicketSource.EMAIL)
+    session.add(
+        Message(
+            ticket_id=ticket.id,
+            sender=requester_email,
+            body=body,
+            direction=MessageDirection.INBOUND,
+        )
     )
-    session.add(message)
     session.commit()
 
-    return {"ticket_id": ticket.id}
+    return {"ticket_id": ticket.id, "reference": ticket.reference}

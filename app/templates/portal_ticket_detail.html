@@ -3,7 +3,7 @@
 {% block content %}
 <p><a href="/portal">&larr; back to my requests</a></p>
 
-<h2>{{ ticket.subject }}</h2>
+<h2>{{ ticket.reference }} {{ ticket.subject }}</h2>
 <p><span class="status status-{{ ticket.status.value }}">{{ ticket.status.value }}</span></p>
 
 <div id="thread">

@@ -1,14 +1,16 @@
 {% extends "base.html" %}
-{% block title %}Ticket #{{ ticket.id }}{% endblock %}
+{% block title %}{{ ticket.reference }}{% endblock %}
 {% block content %}
 <p><a href="/tickets">&larr; back to tickets</a></p>
 
 <h2>
-  {{ ticket.subject }}
+  {{ ticket.reference }} {{ ticket.subject }}
   {% if ticket.is_escalated %}<span class="badge badge-escalated">escalated</span>{% endif %}
 </h2>
 <p>
   From: {{ ticket.requester_email }}
+  &middot; Type: {{ ticket.type.value.replace("_", " ") }}
+  &middot; Source: {{ ticket.source.value }}
   &middot; Team: {{ team.name if team else "Unassigned" }}
   &middot; Assigned: {{ assigned_agent.display_name if assigned_agent else "Unassigned" }}
   &middot;
@@ -21,8 +23,8 @@
 
 <div class="actions">
   <form hx-post="/tickets/{{ ticket.id }}/status" hx-target="main" hx-swap="innerHTML">
-    {% for s in ["open", "in_progress", "resolved", "closed"] %}
-    <button type="submit" name="status" value="{{ s }}" class="{{ 'button-active' if ticket.status.value == s else 'button-outline' }}">{{ s }}</button>
+    {% for s in statuses %}
+    <button type="submit" name="status" value="{{ s.value }}" class="{{ 'button-active' if ticket.status == s else 'button-outline' }}">{{ s.value.replace("_", " ") }}</button>
     {% endfor %}
   </form>
 
@@ -67,4 +69,24 @@
   <textarea name="body" rows="4" maxlength="{{ max_message_length }}" placeholder="Reply to requester..." required></textarea>
   <button type="submit">Send reply</button>
 </form>
+
+<h3>History</h3>
+<table>
+  <thead>
+    <tr><th>When</th><th>Event</th><th>By</th><th>Change</th></tr>
+  </thead>
+  <tbody>
+    {% for event in events %}
+    <tr>
+      <td>{{ event.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
+      <td>{{ event.event_type.replace("_", " ") }}</td>
+      <td>{{ event.actor_email or "system" }}</td>
+      <td>
+        {% if event.from_value or event.to_value %}{{ event.from_value or "none" }} &rarr; {{ event.to_value or "none" }}{% endif %}
+        {% if event.detail %} {{ event.detail }}{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
 {% endblock %}

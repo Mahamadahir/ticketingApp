@@ -8,8 +8,14 @@ run it.
 ## State of play
 
 - Phase 0 is done and merged (security fixes, Alembic, `/health`, lockout,
-  pagination, audit log filters). Phase 1 is next; agree its approach with the
-  user before coding, because it touches far more than a few files.
+  pagination, audit log filters). Phase 1 is agreed as eight PRs (1A to 1H):
+  1A ticket core (types, per-type references, statuses, source, ticket events),
+  1B teams and visibility, 1C messages and followers, 1D triage/priority/SLA
+  (TBC values become admin settings), 1E assignment/escalation/linking/
+  backdating, 1F search and canned responses, 1G portal form and email preview,
+  1H Service Requests and approvers (may slip to after Phase 3). Ticket numbers
+  come from a `before_insert` hook in `app/models.py`; use
+  `app/ticket_service.py` for creating tickets and changing status.
 - **Nothing is deployed anywhere.** No Azure resources exist, no database has
   had migrations applied outside this laptop. Everything is developed and
   tested locally with `docker compose` and `pytest`.

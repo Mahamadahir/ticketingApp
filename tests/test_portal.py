@@ -37,6 +37,6 @@ def test_end_user_comment_does_not_change_status(client, db_session):
     client.post(f"/portal/{ticket.id}/comment", data={"body": "Still broken, please help"})
 
     db_session.refresh(ticket)
-    assert ticket.status == TicketStatus.OPEN
+    assert ticket.status == TicketStatus.NEW
     assert len(ticket.messages) == 1
     assert ticket.messages[0].body == "Still broken, please help"
