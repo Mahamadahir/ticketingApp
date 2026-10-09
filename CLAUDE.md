@@ -24,6 +24,9 @@ run it.
   `az deployment` unless the user asks.
 - Frontend stays server-rendered Jinja2 + htmx. No SPA, no Static Web Apps.
   The web app is mainly for agents; requesters mostly use email and Teams.
+- Keep the UI plain and functional: semantic HTML, minimal CSS, no styling
+  polish. The whole UI gets redesigned with Google Stitch in Phase 9 once it is
+  feature-complete, so visual effort now is wasted.
 - Schema changes need an Alembic migration (CI runs `alembic check`).
 - Run `pytest` before saying work is done. Locally tests use SQLite and CI
   uses Postgres 16 (set `TEST_DATABASE_URL` to run against Postgres locally), so
