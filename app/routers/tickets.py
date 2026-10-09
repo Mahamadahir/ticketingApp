@@ -10,10 +10,13 @@ from app.audit import log_action
 from app.auth import require_roles
 from app.database import get_session
 from app.forms import MAX_MESSAGE_LENGTH, optional_int
-from app.models import Message, MessageDirection, Team, Ticket, TicketStatus, User, UserRole
+from app.models import Message, MessageDirection, Team, Ticket, TicketEvent, TicketStatus, User, UserRole
 from app.pagination import paginate
+from app.ticket_service import EVENT_ASSIGNED, EVENT_ESCALATED, record_event, set_status
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
+# Shareable links live outside /tickets: /t/INC-42.
+reference_router = APIRouter(tags=["tickets"])
 templates = Jinja2Templates(directory="app/templates")
 templates.env.globals["max_message_length"] = MAX_MESSAGE_LENGTH
 
@@ -64,6 +67,14 @@ def list_tickets(
     )
 
 
+def _get_ticket(session: Session, ticket_id: int, user: User) -> Ticket:
+    ticket = session.get(Ticket, ticket_id)
+    if ticket is None:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    _ensure_visible(ticket, user)
+    return ticket
+
+
 @router.get("/{ticket_id}", response_class=HTMLResponse)
 def view_ticket(
     ticket_id: int,
@@ -71,32 +82,22 @@ def view_ticket(
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
-    ticket = session.get(Ticket, ticket_id)
+    return _render_ticket_detail(request, _get_ticket(session, ticket_id, user), user, session)
+
+
+@reference_router.get("/t/{reference}", response_class=HTMLResponse)
+def view_ticket_by_reference(
+    reference: str,
+    request: Request,
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """Shareable link, e.g. /t/INC-42."""
+    ticket = session.exec(select(Ticket).where(Ticket.reference == reference.upper())).first()
     if ticket is None:
         raise HTTPException(status_code=404, detail="Ticket not found")
     _ensure_visible(ticket, user)
-
-    team = session.get(Team, ticket.team_id) if ticket.team_id else None
-    assigned_agent = session.get(User, ticket.assigned_agent_id) if ticket.assigned_agent_id else None
-    team_agents = (
-        session.exec(select(User).where(User.role == UserRole.AGENT, User.team_id == ticket.team_id)).all()
-        if ticket.team_id
-        else []
-    )
-    teams = session.exec(select(Team)).all()
-
-    return templates.TemplateResponse(
-        request,
-        "ticket_detail.html",
-        {
-            "ticket": ticket,
-            "team": team,
-            "assigned_agent": assigned_agent,
-            "team_agents": team_agents,
-            "teams": teams,
-            "user": user,
-        },
-    )
+    return _render_ticket_detail(request, ticket, user, session)
 
 
 @router.post("/{ticket_id}/reply", response_class=HTMLResponse)
@@ -107,10 +108,7 @@ def reply_to_ticket(
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
-    ticket = session.get(Ticket, ticket_id)
-    if ticket is None:
-        raise HTTPException(status_code=404, detail="Ticket not found")
-    _ensure_visible(ticket, user)
+    ticket = _get_ticket(session, ticket_id, user)
 
     message = Message(
         ticket_id=ticket.id,
@@ -121,7 +119,15 @@ def reply_to_ticket(
     )
     session.add(message)
 
-    ticket.status = TicketStatus.IN_PROGRESS
+    # A first reply starts the work. Any other status (awaiting user, with
+    # MSP, resolved, closed) is the agent's call and a reply must not undo it.
+    if ticket.status in (TicketStatus.NEW, TicketStatus.OPEN):
+        previous_status = ticket.status
+        set_status(session, ticket, TicketStatus.IN_PROGRESS, user.email)
+        log_action(
+            session, user.email, "ticket", ticket.id, "status_changed",
+            f"{previous_status.value} -> {TicketStatus.IN_PROGRESS.value}",
+        )
     ticket.updated_at = datetime.now(timezone.utc)
     session.add(ticket)
     log_action(session, user.email, "ticket", ticket.id, "commented", body[:200])
@@ -143,16 +149,11 @@ def change_status(
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
-    ticket = session.get(Ticket, ticket_id)
-    if ticket is None:
-        raise HTTPException(status_code=404, detail="Ticket not found")
-    _ensure_visible(ticket, user)
+    ticket = _get_ticket(session, ticket_id, user)
 
     previous_status = ticket.status
-    ticket.status = status
-    ticket.updated_at = datetime.now(timezone.utc)
-    session.add(ticket)
-    log_action(session, user.email, "ticket", ticket.id, "status_changed", f"{previous_status.value} -> {status.value}")
+    if set_status(session, ticket, status, user.email):
+        log_action(session, user.email, "ticket", ticket.id, "status_changed", f"{previous_status.value} -> {status.value}")
     session.commit()
     session.refresh(ticket)
 
@@ -167,10 +168,7 @@ def assign_ticket(
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
-    ticket = session.get(Ticket, ticket_id)
-    if ticket is None:
-        raise HTTPException(status_code=404, detail="Ticket not found")
-    _ensure_visible(ticket, user)
+    ticket = _get_ticket(session, ticket_id, user)
 
     if user.role == UserRole.AGENT:
         target_agent = user
@@ -181,9 +179,18 @@ def assign_ticket(
         if target_agent is None or target_agent.role != UserRole.AGENT or target_agent.team_id != ticket.team_id:
             raise HTTPException(status_code=400, detail="Agent must belong to the ticket's team")
 
+    if ticket.assigned_agent_id == target_agent.id:
+        return _render_ticket_detail(request, ticket, user, session)
+
+    previous_agent = session.get(User, ticket.assigned_agent_id) if ticket.assigned_agent_id else None
     ticket.assigned_agent_id = target_agent.id
     ticket.updated_at = datetime.now(timezone.utc)
     session.add(ticket)
+    record_event(
+        session, ticket, EVENT_ASSIGNED, user.email,
+        from_value=previous_agent.email if previous_agent else None,
+        to_value=target_agent.email,
+    )
     log_action(session, user.email, "ticket", ticket.id, "assigned", target_agent.email)
     session.commit()
     session.refresh(ticket)
@@ -200,21 +207,35 @@ def escalate_ticket(
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
-    ticket = session.get(Ticket, ticket_id)
-    if ticket is None:
-        raise HTTPException(status_code=404, detail="Ticket not found")
-    _ensure_visible(ticket, user)
+    ticket = _get_ticket(session, ticket_id, user)
     parsed_target_team_id = optional_int(target_team_id)
 
+    new_team = None
+    if parsed_target_team_id is not None:
+        new_team = session.get(Team, parsed_target_team_id)
+        if new_team is None:
+            raise HTTPException(status_code=400, detail="Target team does not exist")
+
+    previous_team = session.get(Team, ticket.team_id) if ticket.team_id else None
+    previous_agent = session.get(User, ticket.assigned_agent_id) if ticket.assigned_agent_id else None
     ticket.is_escalated = True
     ticket.escalation_reason = reason
     ticket.escalated_by_id = user.id
     ticket.escalated_at = datetime.now(timezone.utc)
-    if parsed_target_team_id is not None:
-        ticket.team_id = parsed_target_team_id
+    if new_team is not None:
+        ticket.team_id = new_team.id
         ticket.assigned_agent_id = None
     ticket.updated_at = datetime.now(timezone.utc)
     session.add(ticket)
+    record_event(
+        session, ticket, EVENT_ESCALATED, user.email,
+        from_value=previous_team.name if previous_team else None,
+        to_value=(new_team or previous_team).name if (new_team or previous_team) else None,
+        detail=reason,
+    )
+    if new_team is not None and previous_agent is not None:
+        # Moving to another team unassigns the agent; the history must say so.
+        record_event(session, ticket, EVENT_ASSIGNED, user.email, from_value=previous_agent.email, to_value=None)
     log_action(session, user.email, "ticket", ticket.id, "escalated", reason)
     session.commit()
     session.refresh(ticket)
@@ -231,6 +252,9 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
         else []
     )
     teams = session.exec(select(Team)).all()
+    events = session.exec(
+        select(TicketEvent).where(TicketEvent.ticket_id == ticket.id).order_by(TicketEvent.created_at, TicketEvent.id)
+    ).all()
 
     return templates.TemplateResponse(
         request,
@@ -241,6 +265,8 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             "assigned_agent": assigned_agent,
             "team_agents": team_agents,
             "teams": teams,
+            "events": events,
+            "statuses": list(TicketStatus),
             "user": user,
         },
     )

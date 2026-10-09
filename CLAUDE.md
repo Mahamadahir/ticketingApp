@@ -8,8 +8,14 @@ run it.
 ## State of play
 
 - Phase 0 is done and merged (security fixes, Alembic, `/health`, lockout,
-  pagination, audit log filters). Phase 1 is next; agree its approach with the
-  user before coding, because it touches far more than a few files.
+  pagination, audit log filters). Phase 1 is agreed as eight PRs (1A to 1H):
+  1A ticket core (types, per-type references, statuses, source, ticket events),
+  1B teams and visibility, 1C messages and followers, 1D triage/priority/SLA
+  (TBC values become admin settings), 1E assignment/escalation/linking/
+  backdating, 1F search and canned responses, 1G portal form and email preview,
+  1H Service Requests and approvers (may slip to after Phase 3). Ticket numbers
+  come from a `before_insert` hook in `app/models.py`; use
+  `app/ticket_service.py` for creating tickets and changing status.
 - **Nothing is deployed anywhere.** No Azure resources exist, no database has
   had migrations applied outside this laptop. Everything is developed and
   tested locally with `docker compose` and `pytest`.
@@ -28,10 +34,10 @@ run it.
   polish. The whole UI gets redesigned with Google Stitch in Phase 9 once it is
   feature-complete, so visual effort now is wasted.
 - Schema changes need an Alembic migration (CI runs `alembic check`).
-- Run `pytest` before saying work is done. Locally tests use SQLite and CI
-  uses Postgres 16 (set `TEST_DATABASE_URL` to run against Postgres locally), so
-  anything Postgres-specific (full-text search, constraints, locking) is not
-  proved by a local green run; say so when it matters. Python is 3.14.
+- Run `pytest` before saying work is done. Tests run against
+  Postgres 16 (compose `db` locally, a service container in CI), never SQLite.
+  Start it with `docker compose up -d db`; the tests create and wipe a separate
+  `ticketing_test` database. Python is 3.14.
 - No secrets in the repo, Bicep parameter files or app definitions. Secrets
   come from the environment at deploy time and live in Key Vault.
 - Values marked TBC in the plan are settings or environment config, never

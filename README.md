@@ -101,7 +101,7 @@ while `SESSION_SECRET_KEY` (or, once Graph is configured,
 `GRAPH_WEBHOOK_CLIENT_STATE`) is still a default value, and the session
 cookie is HTTPS-only.
 
-Postgres isn't published on the host. To get a shell on it:
+Postgres is published on 127.0.0.1:5432 only (so the tests can reach it). To get a shell on it:
 
 ```bash
 docker compose exec db psql -U ticketing
@@ -147,11 +147,12 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-Needs Python 3.14. Locally the tests run against SQLite (see
-`tests/conftest.py`), which is fast and dependency-free but does not exercise
-Postgres-specific behaviour. CI runs them against Postgres 16; to do the same
-locally, set `TEST_DATABASE_URL` to a Postgres URL. Covers role-scoped ticket visibility,
-assignment, escalation, audit log writes, and both login paths.
+Needs Python 3.14 and the compose database running (`docker compose up -d db`).
+The tests run against Postgres 16, never SQLite: they create and wipe a separate
+`ticketing_test` database (see `tests/conftest.py`), and refuse any database whose
+name does not end in `_test`. Set `TEST_DATABASE_URL` to point elsewhere. Covers
+role-scoped ticket visibility, ticket numbering, assignment, escalation, audit and
+ticket history, and both login paths.
 
 ## CI/CD
 
@@ -219,7 +220,7 @@ app/
   templates/         Jinja2 + HTMX views
   static/            CSS
 migrations/          Alembic environment and versioned schema migrations
-tests/               pytest suite (SQLite locally, Postgres in CI)
+tests/               pytest suite (Postgres)
 infra/               Bicep for the Azure environments (not deployed yet)
 docs/                Delivery plan
 .github/workflows/   CI (tests); no deploy workflow yet
