@@ -8,41 +8,76 @@
 </nav>
 
 <h2>Users</h2>
+<p class="note">
+  A <b>member</b> sees and works a team's tickets; a <b>viewer</b> can only read them.
+  Agents also work every untriaged ticket. Super admins see everything.
+</p>
 <table>
   <thead>
     <tr>
       <th>Email</th>
       <th>Name</th>
       <th>Role</th>
-      <th>Team</th>
+      <th>Teams</th>
       <th>Local account</th>
-      <th></th>
     </tr>
   </thead>
   <tbody>
     {% for u in page.items %}
     <tr>
-      <form class="contents-row" method="post" action="/admin/users/{{ u.id }}">
-        <td>{{ u.email }}</td>
-        <td>{{ u.display_name }}</td>
-        <td>
+      <td>{{ u.email }}</td>
+      <td>{{ u.display_name }}</td>
+      <td>
+        <form method="post" action="/admin/users/{{ u.id }}">
           <select name="role">
             {% for r in roles %}
             <option value="{{ r.value }}" {{ "selected" if u.role == r else "" }}>{{ r.value }}</option>
             {% endfor %}
           </select>
-        </td>
-        <td>
-          <select name="team_id">
-            <option value="">No team</option>
+          <button type="submit">Save</button>
+        </form>
+      </td>
+      <td>
+        {% for m in memberships.get(u.id, []) %}
+        <form method="post" action="/admin/users/{{ u.id }}/memberships/{{ m.team_id }}/remove" class="inline-form">
+          {{ teams_by_id[m.team_id].name }} ({{ m.level.value }})
+          <button type="submit">Remove</button>
+        </form>
+        <br />
+        {% else %}
+        No teams
+        <br />
+        {% endfor %}
+        <form method="post" action="/admin/users/{{ u.id }}/memberships">
+          <select name="team_id" required>
             {% for t in teams %}
-            <option value="{{ t.id }}" {{ "selected" if u.team_id == t.id else "" }}>{{ t.name }}</option>
+            <option value="{{ t.id }}">{{ t.name }}</option>
             {% endfor %}
           </select>
-        </td>
-        <td>{{ "yes" if u.password_hash else "no (SSO)" }}</td>
-        <td><button type="submit">Save</button></td>
-      </form>
+          <select name="level">
+            {% for l in levels %}
+            <option value="{{ l.value }}">{{ l.value }}</option>
+            {% endfor %}
+          </select>
+          <button type="submit">Add or change</button>
+        </form>
+      </td>
+      <td>
+        {% if u.password_hash %}
+          yes
+          {% if u.locked_until and u.locked_until > now %}
+            <br />locked until {{ u.locked_until.strftime("%Y-%m-%d %H:%M") }} UTC
+          {% endif %}
+          {% if u.failed_login_count %}
+            <br />{{ u.failed_login_count }} failed attempt{{ "" if u.failed_login_count == 1 else "s" }}
+            <form method="post" action="/admin/users/{{ u.id }}/unlock">
+              <button type="submit">Unlock</button>
+            </form>
+          {% endif %}
+        {% else %}
+          no (SSO)
+        {% endif %}
+      </td>
     </tr>
     {% endfor %}
   </tbody>
@@ -70,6 +105,14 @@
       <option value="">No team</option>
       {% for t in teams %}
       <option value="{{ t.id }}">{{ t.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    Level
+    <select name="level">
+      {% for l in levels %}
+      <option value="{{ l.value }}">{{ l.value }}</option>
       {% endfor %}
     </select>
   </label>

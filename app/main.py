@@ -3,9 +3,11 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.auth import NotAuthenticated, get_current_user
+from app.visibility import NoTicketAccess
 from app.config import settings, unsafe_setting_errors
 from app.models import User, UserRole
 from app.routers import admin, auth, health, portal, tickets, webhooks
@@ -34,6 +36,16 @@ app.include_router(tickets.reference_router)
 app.include_router(portal.router)
 app.include_router(admin.router)
 app.include_router(webhooks.router)
+
+
+templates = Jinja2Templates(directory="app/templates")
+
+
+@app.exception_handler(NoTicketAccess)
+def handle_no_ticket_access(request: Request, exc: NoTicketAccess):
+    # The viewer is signed in (a route that raises this has already resolved
+    # the user), so the page can show the normal navigation.
+    return templates.TemplateResponse(request, "no_access.html", {"user": getattr(request.state, "user", None)}, status_code=403)
 
 
 @app.exception_handler(NotAuthenticated)

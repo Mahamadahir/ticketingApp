@@ -111,9 +111,12 @@ def test_reference_link_respects_team_visibility(client, db_session):
     team_a = create_team(db_session, "Service Desk")
     team_b = create_team(db_session, "Network")
     other = make_ticket(db_session, team_id=team_b.id)
+    other.status = TicketStatus.OPEN  # triaged, so team scoping applies
+    db_session.add(other)
+    db_session.commit()
     login_agent(client, db_session, team_a)
 
-    assert client.get(f"/t/{other.reference}").status_code == 404
+    assert client.get(f"/t/{other.reference}").status_code == 403
     assert client.get("/t/INC-999").status_code == 404
 
 

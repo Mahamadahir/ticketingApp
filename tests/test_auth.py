@@ -32,7 +32,7 @@ def test_logout_clears_session(client):
     login_as(client, "someone@example.com")
     assert client.get("/tickets", follow_redirects=False).status_code != 307
 
-    client.get("/auth/logout", follow_redirects=False)
+    client.post("/auth/logout", follow_redirects=False)
     response = client.get("/portal", follow_redirects=False)
     assert response.status_code == 307
     assert response.headers["location"] == "/auth/login"

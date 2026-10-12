@@ -52,11 +52,11 @@ def test_super_admin_can_create_local_account(client, db_session):
 def test_role_change_writes_audit_entry(client, db_session):
     login_as(client, "admin@example.com")
     target_id = login_as(client, "someone@example.com")
-    client.get("/auth/logout")
+    client.post("/auth/logout")
     login_as(client, "admin@example.com")
 
     response = client.post(
-        f"/admin/users/{target_id}", data={"role": "agent", "team_id": ""}, follow_redirects=False
+        f"/admin/users/{target_id}", data={"role": "agent"}, follow_redirects=False
     )
     assert response.status_code == 303
 

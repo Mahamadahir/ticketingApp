@@ -5,7 +5,8 @@ from tests.conftest import create_team, login_as, set_role
 
 
 def create_ticket(db_session, team_id=None, requester_email="requester@example.com", subject="Test ticket"):
-    ticket = Ticket(subject=subject, requester_email=requester_email, team_id=team_id)
+    # Open, not New: untriaged tickets are visible to every agent, which would hide what these tests check.
+    ticket = Ticket(subject=subject, requester_email=requester_email, team_id=team_id, status=TicketStatus.OPEN)
     db_session.add(ticket)
     db_session.commit()
     db_session.refresh(ticket)
@@ -48,7 +49,8 @@ def test_agent_cannot_view_ticket_outside_team(client, db_session):
     set_role(db_session, agent_id, UserRole.AGENT, team_a.id)
 
     response = client.get(f"/tickets/{other_ticket.id}")
-    assert response.status_code == 404
+    assert response.status_code == 403
+    assert "No access" in response.text
 
 
 def test_agent_self_assigns(client, db_session):
@@ -76,7 +78,7 @@ def test_super_admin_assign_rejects_agent_from_other_team(client, db_session):
 
     other_agent_id = login_as(client, "other-agent@example.com")
     set_role(db_session, other_agent_id, UserRole.AGENT, team_b.id)
-    client.get("/auth/logout")
+    client.post("/auth/logout")
 
     login_as(client, "admin@example.com")
 

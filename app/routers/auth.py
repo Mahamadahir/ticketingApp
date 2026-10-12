@@ -34,7 +34,9 @@ def sso_start(request: Request):
 
 @router.get("/callback")
 def callback(request: Request, code: str, state: str, session: Session = Depends(get_session)):
-    if state != request.session.get("oauth_state"):
+    # Removed as soon as it is checked, so a state value works exactly once.
+    expected_state = request.session.pop("oauth_state", None)
+    if not expected_state or not secrets.compare_digest(state, expected_state):
         raise HTTPException(status_code=400, detail="Invalid OAuth state")
 
     token_result = acquire_token_by_auth_code(code)
@@ -86,7 +88,8 @@ def dev_login_submit(
     return RedirectResponse("/", status_code=303)
 
 
-@router.get("/logout")
+@router.post("/logout")
 def logout(request: Request):
+    # A POST, so another site cannot sign someone out with an image tag.
     request.session.clear()
     return RedirectResponse("/auth/login", status_code=303)

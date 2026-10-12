@@ -15,7 +15,8 @@ run it.
   backdating, 1F search and canned responses, 1G portal form and email preview,
   1H Service Requests and approvers (may slip to after Phase 3). Ticket numbers
   come from a `before_insert` hook in `app/models.py`; use
-  `app/ticket_service.py` for creating tickets and changing status.
+  `app/ticket_service.py` for creating tickets and changing status. Who can see
+  or work a ticket is decided only in `app/visibility.py`, never in a route.
 - **Nothing is deployed anywhere.** No Azure resources exist, no database has
   had migrations applied outside this laptop. Everything is developed and
   tested locally with `docker compose` and `pytest`.

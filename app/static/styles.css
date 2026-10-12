@@ -222,3 +222,5 @@ textarea {
   gap: 0.75rem;
   margin-bottom: 1rem;
 }
+
+.inline-form { display: inline; }
