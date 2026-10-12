@@ -22,7 +22,7 @@ from app.models import (
     User,
     allocate_reference,
 )
-from app.sla import Level, describe_priority, priority_for, recalculate_deadlines
+from app.sla import Level, apply_impact_urgency, describe_priority
 from app.ticket_service import (
     EVENT_ASSIGNED,
     EVENT_REFERENCE_CHANGED,
@@ -117,11 +117,8 @@ def triage_ticket(
     ticket.needs_category_review = category.is_other
     ticket.updated_at = now
     session.add(ticket)
-    # Triage sets the priority silently: the triaged event below carries it, so the
-    # timeline does not also show a priority change for the first one.
-    priority = priority_for(impact, urgency)
-    ticket.impact, ticket.urgency, ticket.priority = impact.value, urgency.value, priority.value
-    recalculate_deadlines(session, ticket)
+    # No priority event: the triaged event below carries the first priority.
+    apply_impact_urgency(session, ticket, impact, urgency)
 
     record_event(
         session, ticket, EVENT_TRIAGED, actor.email,

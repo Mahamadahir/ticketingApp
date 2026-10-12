@@ -382,3 +382,43 @@ def test_agents_cannot_change_the_targets(client, db_session):
     set_role(db_session, user_id, UserRole.AGENT)
     response = client.post("/admin/settings", data={"key": sla_key("p1", "resolution"), "value": "1"})
     assert response.status_code == 403
+
+
+def test_a_finished_ticket_keeps_its_sla_result_and_its_priority_cannot_be_changed(client, db_session):
+    ticket, _ = triaged_ticket(client, db_session, "medium", "medium")
+    ticket.status, ticket.resolved_at = TicketStatus.RESOLVED, ticket.resolution_due_at + timedelta(hours=1)
+    db_session.add(ticket)
+    db_session.commit()
+    due = ticket.resolution_due_at
+
+    response = client.post(f"/tickets/{ticket.id}/priority", data={"impact": "low", "urgency": "low"})
+
+    assert response.status_code == 400
+    db_session.refresh(ticket)
+    assert ticket.priority == "p3" and ticket.resolution_due_at == due
+    assert "Set priority" not in client.get(f"/tickets/{ticket.id}").text
+
+
+def test_a_finished_ticket_with_no_resolved_time_shows_no_countdown():
+    ticket = clocked()
+    ticket.status, ticket.resolved_at = TicketStatus.CLOSED, None
+    assert sla_view(ticket, NOW + timedelta(days=9), 25).state == "none"
+
+
+def test_pages_of_the_queue_never_repeat_or_skip_a_ticket(client, db_session):
+    from app.pagination import PAGE_SIZE
+
+    desk = create_team(db_session, "Service Desk")
+    agent(client, db_session, member_of=[desk])
+    for number in range(PAGE_SIZE + 5):  # all untriaged, created in the same instant
+        ticket = new_ticket(db_session, desk)
+        ticket.created_at = ticket.updated_at = NOW
+        ticket.subject = f"Same-{number:03d}-end"
+        db_session.add(ticket)
+    db_session.commit()
+
+    import re
+    seen = []
+    for page in (1, 2):
+        seen += re.findall(r"Same-\d{3}-end", client.get(f"/tickets?page={page}").text)
+    assert len(seen) == len(set(seen)) == PAGE_SIZE + 5

@@ -64,13 +64,6 @@ def priority_for(impact: Level, urgency: Level) -> Priority:
     return Priority.P4
 
 
-def parse_level(value: Optional[str]) -> Optional[Level]:
-    try:
-        return Level(value) if value else None
-    except ValueError:
-        return None
-
-
 def target_minutes(session: Session, priority: Priority, which: str) -> Optional[int]:
     """The target for a priority, or None when the setting is blank (not tracked)."""
     return get_int_setting(session, sla_key(priority.value, which))
@@ -94,18 +87,27 @@ def recalculate_deadlines(session: Session, ticket: Ticket) -> None:
     ticket.resolution_due_at = base + timedelta(minutes=resolution) if resolution else None
 
 
+def apply_impact_urgency(session: Session, ticket: Ticket, impact: Level, urgency: Level) -> bool:
+    """Sets impact, urgency and the priority they give, and works the deadlines out again.
+    The one place that derivation lives; returns whether anything changed. Records no
+    event: triage carries the first priority on its own event."""
+    priority = priority_for(impact, urgency)
+    if (ticket.impact, ticket.urgency, ticket.priority) == (impact.value, urgency.value, priority.value):
+        return False
+    ticket.impact, ticket.urgency, ticket.priority = impact.value, urgency.value, priority.value
+    recalculate_deadlines(session, ticket)
+    return True
+
+
 def set_impact_urgency(
     session: Session, ticket: Ticket, impact: Level, urgency: Level, actor_email: Optional[str]
 ) -> bool:
     """Records impact and urgency, derives the priority and restarts the deadlines
     from the targets. Returns whether anything changed; an event records the old and
     new priority when it did."""
-    priority = priority_for(impact, urgency)
-    if (ticket.impact, ticket.urgency, ticket.priority) == (impact.value, urgency.value, priority.value):
-        return False
     previous = describe_priority(ticket)
-    ticket.impact, ticket.urgency, ticket.priority = impact.value, urgency.value, priority.value
-    recalculate_deadlines(session, ticket)
+    if not apply_impact_urgency(session, ticket, impact, urgency):
+        return False
     session.add(ticket)
     record_event(session, ticket, EVENT_PRIORITY_CHANGED, actor_email, previous, describe_priority(ticket))
     return True
@@ -164,9 +166,9 @@ def sla_view(ticket: Ticket, now: datetime, at_risk_percent: int) -> SlaView:
     response until an agent has emailed, then the resolution."""
     if not ticket.priority:
         return SlaView("none", "")
-    if ticket.status in FINISHED_STATUSES and ticket.resolved_at is not None:
+    if ticket.status in FINISHED_STATUSES:
         due = ticket.resolution_due_at
-        if due is None:
+        if due is None or ticket.resolved_at is None:
             return SlaView("none", "")
         late = _aware(ticket.resolved_at) > due
         return SlaView("breached" if late else "met", "resolved late" if late else "resolved in time", due)
@@ -215,4 +217,5 @@ def queue_order():
         next_due.asc().nulls_last(),
         Ticket.priority.asc().nulls_last(),
         Ticket.updated_at.desc(),
+        Ticket.id.desc(),  # a total order, so pages never repeat or skip a ticket
     ]

@@ -21,7 +21,7 @@ from app.followers import (
 )
 from app.categories import CategoryError, create_category, path_of, selectable, team_id_for
 from app.messages import UnknownRecipient, add_note, agent_timeline, email_requester, is_triaged
-from app.models import Category, Team, Ticket, TicketAlias, TicketStatus, TicketType, User, UserRole
+from app.models import FINISHED_STATUSES, Category, Team, Ticket, TicketAlias, TicketStatus, TicketType, User, UserRole
 from app.pagination import paginate
 from app.sla import (
     IMPACT_LABELS,
@@ -217,6 +217,9 @@ def change_priority(
     ticket = _get_ticket(session, ticket_id, user)
     if ticket.triaged_at is None:
         raise HTTPException(status_code=400, detail="Triage the ticket first; triage sets its priority")
+    if ticket.status in FINISHED_STATUSES:
+        # A finished ticket's SLA result must not be rewritable after the fact.
+        raise HTTPException(status_code=400, detail="A resolved or closed ticket's priority can no longer be changed")
     if set_impact_urgency(session, ticket, impact, urgency, user.email):
         ticket.updated_at = datetime.now(timezone.utc)
         log_action(session, user.email, "ticket", ticket.id, "priority_changed", describe_priority(ticket))
@@ -557,7 +560,7 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             "impact_options": [(level.value, label) for level, label in IMPACT_LABELS.items()],
             "urgency_options": [(level.value, label) for level, label in URGENCY_LABELS.items()],
             "sla": sla_view(ticket, datetime.now(timezone.utc), at_risk_percent(session)),
-            "can_set_priority": can_work and ticket.triaged_at is not None,
+            "can_set_priority": can_work and ticket.triaged_at is not None and ticket.status not in FINISHED_STATUSES,
             "category_options": options,
             "main_categories": [c for c, _ in options if c.parent_id is None and not c.is_other],
             "category_path": path_of(session, category) if category else None,
