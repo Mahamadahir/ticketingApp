@@ -23,7 +23,9 @@ run it.
   or work a ticket is decided only in `app/visibility.py`, never in a route;
   what the requester may see, and whether a ticket can be emailed, is decided
   only in `app/messages.py` (portal and outbound mail use
-  `requester_visible_messages`, never `ticket.messages`).
+  `requester_visible_messages`, never `ticket.messages`). Followers live in
+  `app/followers.py`; an internal follower row is what keeps an escalator's read
+  access, and `cc_list` is what the sender will copy on every email.
 - **Nothing is deployed anywhere.** No Azure resources exist, no database has
   had migrations applied outside this laptop. Everything is developed and
   tested locally with `docker compose` and `pytest`.

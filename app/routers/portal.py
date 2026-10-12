@@ -6,6 +6,16 @@ from sqlmodel import Session, select
 from app.audit import log_action
 from app.auth import get_current_user
 from app.database import get_session
+from app.followers import (
+    MAX_EXTERNAL_FOLLOWERS,
+    InvalidEmail,
+    TooManyFollowers,
+    add_follower,
+    followers_of,
+    is_follower,
+    remove_follower,
+    tickets_followed_by,
+)
 from app.forms import MAX_MESSAGE_LENGTH
 from app.messages import record_inbound, requester_visible_messages
 from app.models import Ticket, User
@@ -16,11 +26,38 @@ templates = Jinja2Templates(directory="app/templates")
 templates.env.globals["max_message_length"] = MAX_MESSAGE_LENGTH
 
 
+def _is_requester(ticket: Ticket, user: User) -> bool:
+    return ticket.requester_email.lower() == user.email.lower()
+
+
 def _get_own_ticket(session: Session, ticket_id: int, user: User) -> Ticket:
+    """A ticket the user raised. Followers cannot use this: they only read."""
     ticket = session.get(Ticket, ticket_id)
-    if ticket is None or ticket.requester_email.lower() != user.email.lower():
+    if ticket is None or not _is_requester(ticket, user):
         raise HTTPException(status_code=404, detail="Ticket not found")
     return ticket
+
+
+def _get_readable_ticket(session: Session, ticket_id: int, user: User) -> Ticket:
+    """A ticket the user raised or follows."""
+    ticket = session.get(Ticket, ticket_id)
+    if ticket is None or not (_is_requester(ticket, user) or is_follower(session, ticket, user.email)):
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    return ticket
+
+
+def _render_ticket(request: Request, ticket: Ticket, user: User, session: Session) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request,
+        "portal_ticket_detail.html",
+        {
+            "ticket": ticket,
+            "messages": requester_visible_messages(session, ticket),
+            "followers": [f for f in followers_of(session, ticket) if not f.is_internal],
+            "is_requester": _is_requester(ticket, user),
+            "user": user,
+        },
+    )
 
 
 @router.get("", response_class=HTMLResponse)
@@ -32,8 +69,9 @@ def list_my_tickets(
 ):
     query = select(Ticket).where(Ticket.requester_email == user.email).order_by(Ticket.updated_at.desc())
     tickets_page = paginate(session, query, page, request.query_params)
+    following = tickets_followed_by(session, user.email)
     return templates.TemplateResponse(
-        request, "portal_tickets_list.html", {"page": tickets_page, "user": user}
+        request, "portal_tickets_list.html", {"page": tickets_page, "following": following, "user": user}
     )
 
 
@@ -44,12 +82,7 @@ def view_my_ticket(
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    ticket = _get_own_ticket(session, ticket_id, user)
-    return templates.TemplateResponse(
-        request,
-        "portal_ticket_detail.html",
-        {"ticket": ticket, "messages": requester_visible_messages(session, ticket), "user": user},
-    )
+    return _render_ticket(request, _get_readable_ticket(session, ticket_id, user), user, session)
 
 
 @router.post("/{ticket_id}/comment", response_class=HTMLResponse)
@@ -67,8 +100,48 @@ def add_comment(
     session.commit()
     session.refresh(ticket)
 
-    return templates.TemplateResponse(
-        request,
-        "portal_ticket_detail.html",
-        {"ticket": ticket, "messages": requester_visible_messages(session, ticket), "user": user},
-    )
+    return _render_ticket(request, ticket, user, session)
+
+
+@router.post("/{ticket_id}/followers", response_class=HTMLResponse)
+def add_ticket_follower(
+    ticket_id: int,
+    request: Request,
+    email: str = Form(..., max_length=254),
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """The requester copies someone else on updates to their ticket."""
+    ticket = _get_own_ticket(session, ticket_id, user)
+    try:
+        follower = add_follower(session, ticket, email, user.email)
+    except InvalidEmail:
+        raise HTTPException(status_code=400, detail="That is not a valid email address")
+    except TooManyFollowers:
+        raise HTTPException(status_code=400, detail=f"A ticket can have at most {MAX_EXTERNAL_FOLLOWERS} followers")
+
+    if follower is not None:
+        log_action(session, user.email, "ticket", ticket.id, "follower_added", follower.email)
+    session.commit()
+    session.refresh(ticket)
+
+    return _render_ticket(request, ticket, user, session)
+
+
+@router.post("/{ticket_id}/followers/{follower_id}/remove", response_class=HTMLResponse)
+def remove_ticket_follower(
+    ticket_id: int,
+    follower_id: int,
+    request: Request,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    ticket = _get_own_ticket(session, ticket_id, user)
+    if not remove_follower(session, ticket, follower_id, user.email):
+        raise HTTPException(status_code=404, detail="Follower not found")
+
+    log_action(session, user.email, "ticket", ticket.id, "follower_removed", str(follower_id))
+    session.commit()
+    session.refresh(ticket)
+
+    return _render_ticket(request, ticket, user, session)

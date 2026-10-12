@@ -67,6 +67,29 @@
 </div>
 {% endif %}
 
+<h3>Followers</h3>
+<p class="note">Copied on every email to the requester. Internal followers are agents who keep read access, such as whoever escalated the ticket.</p>
+<ul>
+  {% for follower in followers %}
+  <li>
+    {{ follower.email }}{% if follower.is_internal %} <i>(internal)</i>{% endif %}
+    {% if can_edit_followers and not follower.is_internal %}
+    <form hx-post="/tickets/{{ ticket.id }}/followers/{{ follower.id }}/remove" hx-target="main" hx-swap="innerHTML" class="inline-form">
+      <button type="submit">Remove</button>
+    </form>
+    {% endif %}
+  </li>
+  {% else %}
+  <li>No followers.</li>
+  {% endfor %}
+</ul>
+{% if can_edit_followers %}
+<form hx-post="/tickets/{{ ticket.id }}/followers" hx-target="main" hx-swap="innerHTML">
+  <input type="email" name="email" placeholder="person@example.org" required />
+  <button type="submit">Add follower</button>
+</form>
+{% endif %}
+
 <h3>Timeline</h3>
 <div id="thread">
   {% for item in timeline %}
@@ -75,7 +98,7 @@
   <div class="message message-{{ message.direction.value }}">
     <div class="message-meta">
       {% if message.direction.value == "internal" %}<b>Internal note</b> (agents only)
-      {% elif message.direction.value == "outbound" %}<b>Email to requester</b>
+      {% elif message.direction.value == "outbound" %}<b>Email to requester</b>{% if message.cc %} (cc: {{ message.cc }}){% endif %}
       {% else %}<b>From requester</b>{% endif %}
       &middot; {{ message.sender }} &middot; {{ message.created_at.strftime("%Y-%m-%d %H:%M") }}
     </div>
@@ -97,6 +120,7 @@
 {% if can_email %}
 <form hx-post="/tickets/{{ ticket.id }}/email" hx-target="main" hx-swap="innerHTML">
   <textarea name="body" rows="4" maxlength="{{ max_message_length }}" placeholder="Email to the requester..." required></textarea>
+  {% if followers %}<p class="note">Copied to: {{ followers|map(attribute="email")|join(", ") }}</p>{% endif %}
   <button type="submit">Email user</button>
 </form>
 {% elif can_work %}

@@ -7,8 +7,9 @@ ticket goes through here, so the rules live in one place.
 - Every agent can read untriaged tickets (status New, or no team yet) and
   claim one by assigning it to themselves, after which they work it.
 - A ticket assigned to an agent is theirs to work, wherever it sits.
-- An agent who escalated a ticket keeps read access after it moves teams. (This
-  becomes the internal follower once followers exist, in 1C.)
+- An internal follower keeps read access to a ticket wherever it moves. Today
+  that is whoever escalated it (see followers.py); the follower list, not the
+  ticket's escalated_by_id, is what grants the access.
 """
 
 from enum import IntEnum
@@ -16,7 +17,15 @@ from enum import IntEnum
 from sqlalchemy import or_
 from sqlmodel import Session, select
 
-from app.models import MembershipLevel, Ticket, TicketStatus, TeamMembership, User, UserRole
+from app.models import (
+    MembershipLevel,
+    TeamMembership,
+    Ticket,
+    TicketFollower,
+    TicketStatus,
+    User,
+    UserRole,
+)
 
 
 class Access(IntEnum):
@@ -30,11 +39,27 @@ class NoTicketAccess(Exception):
     access' page rather than a 404, as the plan specifies."""
 
 
-def membership_levels(session: Session, user: User) -> dict[int, MembershipLevel]:
+class AccessContext(dict):
+    """What a user's access depends on besides the ticket itself: a mapping of
+    team id to their MembershipLevel, plus `followed`, the ids of tickets they
+    follow internally. Load it once per request with access_context()."""
+
+    followed: frozenset[int] = frozenset()
+
+
+def access_context(session: Session, user: User) -> AccessContext:
     rows = session.exec(
         select(TeamMembership.team_id, TeamMembership.level).where(TeamMembership.user_id == user.id)
     ).all()
-    return {team_id: level for team_id, level in rows}
+    context = AccessContext({team_id: level for team_id, level in rows})
+    context.followed = frozenset(
+        session.exec(
+            select(TicketFollower.ticket_id).where(
+                TicketFollower.user_id == user.id, TicketFollower.is_internal.is_(True)
+            )
+        ).all()
+    )
+    return context
 
 
 def is_untriaged(ticket: Ticket) -> bool:
@@ -46,7 +71,7 @@ def is_untriaged(ticket: Ticket) -> bool:
     return ticket.status == TicketStatus.NEW or ticket.team_id is None
 
 
-def ticket_access(user: User, ticket: Ticket, levels: dict[int, MembershipLevel]) -> Access:
+def ticket_access(user: User, ticket: Ticket, levels: AccessContext) -> Access:
     if user.role == UserRole.SUPER_ADMIN:
         return Access.WORK
     if user.role != UserRole.AGENT:
@@ -59,14 +84,14 @@ def ticket_access(user: User, ticket: Ticket, levels: dict[int, MembershipLevel]
     # reply would move the ticket out of New and the replier would lose sight of it.
     if (
         levels.get(ticket.team_id) == MembershipLevel.VIEWER
-        or ticket.escalated_by_id == user.id
+        or ticket.id in levels.followed
         or is_untriaged(ticket)
     ):
         return Access.READ
     return Access.NONE
 
 
-def may_self_assign(user: User, ticket: Ticket, levels: dict[int, MembershipLevel]) -> bool:
+def may_self_assign(user: User, ticket: Ticket, levels: AccessContext) -> bool:
     """An agent can take a ticket they work, or claim an untriaged one that
     nobody has yet. An untriaged ticket that is already assigned (for example
     handed to whoever will triage it) cannot be taken from its assignee."""
@@ -78,7 +103,7 @@ def may_self_assign(user: User, ticket: Ticket, levels: dict[int, MembershipLeve
     return access >= Access.READ and is_untriaged(ticket) and ticket.assigned_agent_id is None
 
 
-def may_add_note(user: User, ticket: Ticket, levels: dict[int, MembershipLevel]) -> bool:
+def may_add_note(user: User, ticket: Ticket, levels: AccessContext) -> bool:
     """Notes are open to anyone who works the ticket, and to every agent while
     it is untriaged, so an agent can record what they learned without claiming
     or triaging it."""
@@ -90,7 +115,7 @@ def may_add_note(user: User, ticket: Ticket, levels: dict[int, MembershipLevel])
     return access == Access.WORK or (access >= Access.READ and is_untriaged(ticket))
 
 
-def visible_ticket_condition(user: User, levels: dict[int, MembershipLevel]):
+def visible_ticket_condition(user: User, levels: AccessContext):
     """SQL filter for the tickets this user can see at all (read or work).
     Mirrors ticket_access; a test keeps the two in step. None means no filter."""
     if user.role == UserRole.SUPER_ADMIN:
@@ -103,11 +128,15 @@ def visible_ticket_condition(user: User, levels: dict[int, MembershipLevel]):
         Ticket.team_id.is_(None),
         Ticket.status == TicketStatus.NEW,
         Ticket.assigned_agent_id == user.id,
-        Ticket.escalated_by_id == user.id,
+        Ticket.id.in_(
+            select(TicketFollower.ticket_id).where(
+                TicketFollower.user_id == user.id, TicketFollower.is_internal.is_(True)
+            )
+        ),
     )
 
 
-def require_access(user: User, ticket: Ticket, levels: dict[int, MembershipLevel], needed: Access) -> None:
+def require_access(user: User, ticket: Ticket, levels: AccessContext, needed: Access) -> None:
     if ticket_access(user, ticket, levels) < needed:
         raise NoTicketAccess()
 

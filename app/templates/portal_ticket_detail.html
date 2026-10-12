@@ -15,8 +15,36 @@
   {% endfor %}
 </div>
 
+{% if is_requester %}
 <form hx-post="/portal/{{ ticket.id }}/comment" hx-target="main" hx-swap="innerHTML">
   <textarea name="body" rows="4" maxlength="{{ max_message_length }}" placeholder="Add a comment..." required></textarea>
   <button type="submit">Add comment</button>
 </form>
+{% else %}
+<p class="note">You are following this request, so you can read it but not reply. Reply to the emails you receive instead.</p>
+{% endif %}
+
+<h3>Also keeping up to date</h3>
+<p class="note">People listed here are copied on updates to this request.</p>
+<ul>
+  {% for follower in followers %}
+  <li>
+    {{ follower.email }}
+    {% if is_requester %}
+    <form method="post" action="/portal/{{ ticket.id }}/followers/{{ follower.id }}/remove" class="inline-form"
+          hx-post="/portal/{{ ticket.id }}/followers/{{ follower.id }}/remove" hx-target="main" hx-swap="innerHTML">
+      <button type="submit">Remove</button>
+    </form>
+    {% endif %}
+  </li>
+  {% else %}
+  <li>No one else.</li>
+  {% endfor %}
+</ul>
+{% if is_requester %}
+<form hx-post="/portal/{{ ticket.id }}/followers" hx-target="main" hx-swap="innerHTML">
+  <input type="email" name="email" placeholder="colleague@example.org" required />
+  <button type="submit">Copy this person on updates</button>
+</form>
+{% endif %}
 {% endblock %}

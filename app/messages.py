@@ -13,6 +13,7 @@ from typing import Optional
 
 from sqlmodel import Session, select
 
+from app.followers import cc_list
 from app.models import (
     Message,
     MessageDirection,
@@ -44,6 +45,7 @@ def _record(
     direction: MessageDirection,
     visibility: MessageVisibility,
     author_user_id: Optional[int] = None,
+    cc: Optional[str] = None,
 ) -> Message:
     """The one place a Message is built, so the invariants cannot drift: an
     internal note is always agents-only, and any new message touches the ticket."""
@@ -57,6 +59,7 @@ def _record(
         direction=direction,
         visibility=visibility,
         author_user_id=author_user_id,
+        cc=cc,
     )
     session.add(message)
     ticket.updated_at = datetime.now(timezone.utc)
@@ -69,9 +72,12 @@ def email_requester(session: Session, ticket: Ticket, author: User, body: str) -
     (that arrives with Graph in phase 3); it records what will be sent."""
     if not is_triaged(ticket):
         raise NotTriaged()
+    # Followers are copied; the list is recorded so the timeline shows exactly who
+    # received this email even if the followers change later.
+    cc = ', '.join(cc_list(session, ticket)) or None
     return _record(
         session, ticket, sender=author.display_name, body=body, author_user_id=author.id,
-        direction=MessageDirection.OUTBOUND, visibility=MessageVisibility.PUBLIC,
+        direction=MessageDirection.OUTBOUND, visibility=MessageVisibility.PUBLIC, cc=cc,
     )
 
 

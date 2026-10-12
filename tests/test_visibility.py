@@ -6,12 +6,13 @@ from app.models import (
     AuditLog,
     MembershipLevel,
     Ticket,
+    TicketFollower,
     TicketStatus,
     TeamMembership,
     User,
     UserRole,
 )
-from app.visibility import Access, membership_levels, ticket_access, visible_ticket_condition
+from app.visibility import Access, access_context, ticket_access, visible_ticket_condition
 from tests.conftest import add_membership, create_team, login_as, set_role
 
 
@@ -203,23 +204,41 @@ def test_list_query_and_single_ticket_rule_agree_for_every_combination(client, d
     team_choices = [mine.id, watched.id, other.id, None]
     status_choices = [TicketStatus.NEW, TicketStatus.OPEN]
     assigned_choices = [None, agent_id, someone_else]
-    escalated_choices = [None, agent_id, someone_else]
-    for team_id, status, assigned, escalated in itertools.product(
-        team_choices, status_choices, assigned_choices, escalated_choices
+    # Followers: an internal follower grants read access; an external one (copied
+    # on emails only) and someone else's follower row grant nothing.
+    follower_choices = ["none", "internal_me", "external_me", "internal_other"]
+    for team_id, status, assigned, follower in itertools.product(
+        team_choices, status_choices, assigned_choices, follower_choices
     ):
-        make_ticket(
-            db_session, team_id, status, assigned_agent_id=assigned, escalated_by_id=escalated, is_escalated=bool(escalated)
-        )
+        ticket = make_ticket(db_session, team_id, status, assigned_agent_id=assigned)
+        if follower != "none":
+            who = agent_id if follower.endswith("me") else someone_else
+            db_session.add(
+                TicketFollower(
+                    ticket_id=ticket.id,
+                    email=f"{follower}@example.com",
+                    user_id=who,
+                    is_internal=follower.startswith("internal"),
+                    added_by_email="test@example.com",
+                )
+            )
+            db_session.commit()
 
     agent = db_session.get(User, agent_id)
-    levels = membership_levels(db_session, agent)
+    levels = access_context(db_session, agent)
     every_ticket = db_session.exec(select(Ticket)).all()
     by_rule = {t.id for t in every_ticket if ticket_access(agent, t, levels) >= Access.READ}
     by_query = {t.id for t in db_session.exec(select(Ticket).where(visible_ticket_condition(agent, levels))).all()}
 
-    assert len(every_ticket) == 4 * 2 * 3 * 3
+    assert len(every_ticket) == 4 * 2 * 3 * 4
     assert by_rule == by_query
     assert 0 < len(by_rule) < len(every_ticket)
+
+    # The follower dimension matters: dropping it from the SQL changes the answer.
+    internal_me = {
+        t.id for t in every_ticket if t.id in levels.followed
+    }
+    assert internal_me and internal_me <= by_rule
 
 
 # ---- Admin ------------------------------------------------------------------
