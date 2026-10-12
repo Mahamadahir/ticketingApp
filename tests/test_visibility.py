@@ -384,3 +384,28 @@ def test_a_non_ascii_oauth_state_is_a_400_not_a_server_error(client, monkeypatch
     client.get("/auth/sso/start", follow_redirects=False)
     response = client.get("/auth/callback", params={"code": "abc", "state": "é"}, follow_redirects=False)
     assert response.status_code == 400
+
+
+def test_an_assigned_untriaged_ticket_cannot_be_taken_by_another_agent(client, db_session):
+    """New and assigned is a valid state (handed to whoever will triage it). The
+    claim button must not let a different agent take it over."""
+    other_team = create_team(db_session, "Other")
+    assignee_id = agent_in(client, db_session, email="assignee@example.com")
+    client.post("/auth/logout")
+    ticket = make_ticket(db_session, other_team.id, status=TicketStatus.NEW)
+    ticket.assigned_agent_id = assignee_id
+    db_session.add(ticket)
+    db_session.commit()
+
+    agent_in(client, db_session, email="bystander@example.com")
+    page = client.get(f"/tickets/{ticket.id}").text
+    assert "Assign to me" not in page and "read-only access" in page
+    assert client.post(f"/tickets/{ticket.id}/assign").status_code == 403
+    db_session.refresh(ticket)
+    assert ticket.assigned_agent_id == assignee_id and ticket.status == TicketStatus.NEW
+
+    # The assignee still works it, and it stays untriaged (New) until triage.
+    client.post("/auth/logout")
+    login_as(client, "assignee@example.com")
+    assert client.get(f"/tickets/{ticket.id}").status_code == 200
+    assert client.post(f"/tickets/{ticket.id}/reply", data={"body": "Looking"}).status_code == 200

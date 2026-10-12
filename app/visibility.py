@@ -38,6 +38,11 @@ def membership_levels(session: Session, user: User) -> dict[int, MembershipLevel
 
 
 def is_untriaged(ticket: Ticket) -> bool:
+    # PLANNED CHANGE (docs/plan.md, "Per-inbox routing"): once teams have their own
+    # inboxes, mail sent to team B's inbox arrives already in team B and must NOT
+    # be visible to everyone as untriaged. This is the one place that will then
+    # narrow to "in the shared triage queue" instead of "status New". Keep every
+    # use of "untriaged" going through here.
     return ticket.status == TicketStatus.NEW or ticket.team_id is None
 
 
@@ -62,11 +67,15 @@ def ticket_access(user: User, ticket: Ticket, levels: dict[int, MembershipLevel]
 
 
 def may_self_assign(user: User, ticket: Ticket, levels: dict[int, MembershipLevel]) -> bool:
-    """An agent can take a ticket they work, or claim an untriaged one."""
+    """An agent can take a ticket they work, or claim an untriaged one that
+    nobody has yet. An untriaged ticket that is already assigned (for example
+    handed to whoever will triage it) cannot be taken from its assignee."""
     if user.role != UserRole.AGENT:
         return False
     access = ticket_access(user, ticket, levels)
-    return access == Access.WORK or (access >= Access.READ and is_untriaged(ticket))
+    if access == Access.WORK:
+        return True
+    return access >= Access.READ and is_untriaged(ticket) and ticket.assigned_agent_id is None
 
 
 def visible_ticket_condition(user: User, levels: dict[int, MembershipLevel]):

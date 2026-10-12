@@ -275,6 +275,23 @@ they belong to, plus every untriaged ticket. Restricted work (HR, security)
 lives in its own team. Opening a ticket link without access shows a "no
 access" page.
 
+**Per-inbox routing (later addition, agreed 12 Oct 2026).** Each team that is
+onboarded can have its own inbox (a shared mailbox, and later a Teams channel).
+Mail or a Teams message sent to team B's inbox creates a ticket that arrives
+already in team B and is visible only to team B (plus super admins), not to
+every agent. Only the shared triage inbox feeds the untriaged queue that
+everyone can see. This is how restricted work (HR, security) and other teams
+are brought onto the system without exposing their tickets.
+
+What it needs, none of it built yet: an inbox-to-team mapping managed in the
+admin portal (inbox address, owning team, whether tickets start in the shared
+triage queue), the Graph subscription and catch-up job per mailbox, and the
+reply sent from the mailbox the ticket arrived in. Today's rule, "New or no
+team means visible to every agent", is a stand-in for the single inbox. It
+lives in one function, `is_untriaged` in `app/visibility.py`, which narrows to
+"in the shared triage queue" when this arrives, so nothing else has to change.
+Until then, restricted work is only private once triaged into its own team.
+
 **Sign-in follow-ups** (agreed 9 Oct 2026, from the review of Phase 0; build
 alongside 1B, which already touches the users page):
 
