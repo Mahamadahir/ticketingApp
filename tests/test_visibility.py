@@ -121,7 +121,7 @@ def test_claiming_an_untriaged_ticket_keeps_it_after_it_leaves_new(client, db_se
     assert triage.status_code == 200
     client.post(f"/tickets/{ticket.id}/email", data={"body": "First email"})
     db_session.refresh(ticket)
-    assert ticket.status == TicketStatus.IN_PROGRESS
+    assert ticket.status == TicketStatus.AWAITING_USER
 
     assert client.get(f"/tickets/{ticket.id}").status_code == 200
     assert client.post(f"/tickets/{ticket.id}/email", data={"body": "Follow-up"}).status_code == 200

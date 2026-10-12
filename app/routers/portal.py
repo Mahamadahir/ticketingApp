@@ -18,7 +18,8 @@ from app.followers import (
 )
 from app.forms import MAX_MESSAGE_LENGTH
 from app.messages import record_inbound, requester_visible_messages
-from app.models import Ticket, User
+from app.models import Ticket, TicketStatus, User
+from app.ticket_service import set_status
 from app.pagination import paginate
 
 router = APIRouter(prefix="/portal", tags=["portal"])
@@ -117,6 +118,15 @@ def add_comment(
 
     record_inbound(session, ticket, sender=user.display_name, body=body, author_user_id=user.id)
     log_action(session, user.email, "ticket", ticket.id, "commented", body[:200])
+    # A reply from the requester or a follower hands the ticket back to us: it leaves
+    # Awaiting user, which resumes the SLA clock. Any other status is left alone (a
+    # reply on a Resolved ticket is the reopen flow, phase 4).
+    if ticket.status == TicketStatus.AWAITING_USER:
+        set_status(session, ticket, TicketStatus.IN_PROGRESS, user.email)
+        log_action(
+            session, user.email, "ticket", ticket.id, "status_changed",
+            f"{TicketStatus.AWAITING_USER.value} -> {TicketStatus.IN_PROGRESS.value}",
+        )
     session.commit()
     session.refresh(ticket)
 

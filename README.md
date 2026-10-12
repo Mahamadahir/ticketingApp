@@ -81,6 +81,12 @@ not the portal. That access comes from the follower list
 (`app/followers.py`, `app/visibility.py`), not from the ticket's escalated-by
 field. Nothing is emailed until Graph is wired up in phase 3.
 
+**Status follows the conversation.** Emailing the user moves an Open or In progress
+ticket to *Awaiting user* automatically, with no option for the agent to skip it. A
+reply from the requester or a follower while it is Awaiting user moves it back to
+*In progress*. Both are recorded in the timeline and audit log. (The SLA clock that
+pauses in Awaiting user is built in phase 1D-ii.)
+
 **Email user and notes.** An agent has two ways to write on a ticket. **Email
 user** sends the requester a message and is available once the ticket is
 triaged (for now: has left New). **Add note** records an internal note any time,

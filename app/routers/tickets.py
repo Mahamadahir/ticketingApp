@@ -47,6 +47,9 @@ templates.env.globals["max_message_length"] = MAX_MESSAGE_LENGTH
 
 AGENT_ROLES = (UserRole.SUPER_ADMIN, UserRole.AGENT)
 
+# Statuses in which the ball is with us; emailing the user passes it to them.
+WAITING_ON_US = (TicketStatus.OPEN, TicketStatus.IN_PROGRESS)
+
 
 @router.get("", response_class=HTMLResponse)
 def list_tickets(
@@ -274,15 +277,16 @@ def email_user(
     except UnknownRecipient as error:
         raise HTTPException(status_code=400, detail=f"Not a follower of this ticket: {error}")
 
-    # The first email on an open ticket starts the work. Any other status
-    # (awaiting user, with MSP, resolved, closed) is the agent's call and an
-    # email must not undo it.
-    if ticket.status == TicketStatus.OPEN:
+    # Emailing the user always means we are now waiting on them, so the ticket moves
+    # to Awaiting user by itself (the agent is not asked, and cannot opt out). That
+    # pauses the SLA clock and starts the chase timer. A ticket With MSP is waiting on
+    # someone else, and a Resolved or Closed one is finished, so those stay as they are.
+    if ticket.status in WAITING_ON_US:
         previous_status = ticket.status
-        set_status(session, ticket, TicketStatus.IN_PROGRESS, user.email)
+        set_status(session, ticket, TicketStatus.AWAITING_USER, user.email)
         log_action(
             session, user.email, "ticket", ticket.id, "status_changed",
-            f"{previous_status.value} -> {TicketStatus.IN_PROGRESS.value}",
+            f"{previous_status.value} -> {TicketStatus.AWAITING_USER.value}",
         )
     log_action(session, user.email, "ticket", ticket.id, "emailed_requester", body[:200])
     session.commit()

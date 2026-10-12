@@ -351,14 +351,15 @@ integration later. Change control is later.
 **Statuses.** New (untriaged), Open, In progress, Awaiting user, With MSP,
 Resolved, Closed. Reopening is a recorded event, not a status.
 
-**Status follows the conversation** (agreed 12 Oct 2026, default to confirm). The
-SLA clock pauses in Awaiting user and chase emails are sent from it, so agents
-must not have to remember to set it by hand.
-- **Agent emails the user.** The Email user form has "After sending, set status
-  to": **Awaiting user** (the default), In progress, or leave as is. Awaiting user
-  fits most emails, which ask for something or wait on an answer; In progress or
-  leave as is suits a pure update. This does not apply to the resolution email,
-  which is the resolve action in phase 4.
+**Status follows the conversation** (agreed 12 Oct 2026). The SLA clock pauses in
+Awaiting user and chase emails are sent from it, so the status must be right
+without anyone remembering to set it by hand.
+- **Agent emails the user.** The ticket moves to **Awaiting user** by itself. The
+  agent is not asked and cannot opt out: there is no tick-box or choice on the
+  form (agents can still set a status by hand with the status buttons). It applies
+  to Open and In progress tickets; a ticket With MSP is waiting on someone else, and
+  a Resolved or Closed one is finished, so those do not move. It does not apply to
+  the resolution email, which is the resolve action in phase 4.
 - **The user replies.** When the requester, or a follower, replies while the ticket
   is Awaiting user, it moves back to In progress automatically and the SLA clock
   resumes. This covers portal comments now and email replies once mail intake
