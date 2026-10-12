@@ -116,9 +116,14 @@ class ActivityMiddleware(BaseHTTPMiddleware):
     be read."""
 
     async def dispatch(self, request: Request, call_next):
-        response = await call_next(request)
+        crashed: Optional[Exception] = None
         try:
-            denied = response.status_code == 403
+            response = await call_next(request)
+            status_code = response.status_code
+        except Exception as exc:  # noqa: BLE001 - recorded as a 500, then re-raised
+            crashed, status_code = exc, 500
+        try:
+            denied = status_code == 403
             if denied or request.method in STATE_CHANGING_METHODS:
                 template = getattr(request.scope.get("route"), "path", None)
                 # An unmatched path (a scanner, a typo) has no template; recording
@@ -129,7 +134,7 @@ class ActivityMiddleware(BaseHTTPMiddleware):
                         _write_request_row,
                         request.method,
                         template,
-                        response.status_code,
+                        status_code,
                         ACCESS_DENIED if denied else REQUEST,
                         session_data.get("user_id"),
                         client_ip(request),
@@ -137,4 +142,6 @@ class ActivityMiddleware(BaseHTTPMiddleware):
                     )
         except Exception:  # noqa: BLE001 - the log must never break a request
             logger.exception("Could not write the activity log row")
+        if crashed is not None:
+            raise crashed
         return response

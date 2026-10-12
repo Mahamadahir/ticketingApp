@@ -206,6 +206,22 @@ def test_state_changing_requests_are_recorded_by_route_template_with_the_actor_a
     assert "QUERYSECRET" not in stored and "BODYSECRET" not in stored and str(ticket.id) not in row.path
 
 
+def test_a_request_that_crashes_is_still_recorded_as_a_500_and_the_error_still_propagates(client, db_session, monkeypatch):
+    team = create_team(db_session, "Service Desk")
+    ticket = make_ticket(db_session, team.id)
+    agent_in(client, db_session, team)
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("handler exploded")
+
+    monkeypatch.setattr("app.routers.tickets.add_note", boom)
+    with pytest.raises(RuntimeError):
+        client.post(f"/tickets/{ticket.id}/note", data={"body": "x"})
+
+    [row] = rows(db_session, "request")
+    assert (row.path, row.status_code) == ("/tickets/{ticket_id}/note", 500)
+
+
 def test_reading_pages_is_not_recorded(client, db_session):
     team = create_team(db_session, "Service Desk")
     ticket = make_ticket(db_session, team.id)
