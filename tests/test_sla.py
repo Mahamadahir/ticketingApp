@@ -422,3 +422,24 @@ def test_pages_of_the_queue_never_repeat_or_skip_a_ticket(client, db_session):
     for page in (1, 2):
         seen += re.findall(r"Same-\d{3}-end", client.get(f"/tickets?page={page}").text)
     assert len(seen) == len(set(seen)) == PAGE_SIZE + 5
+
+def test_changing_a_target_leaves_existing_tickets_alone_but_applies_to_new_ones(client, db_session):
+    ticket, team = triaged_ticket(client, db_session, "high", "high")
+    before = (ticket.first_response_due_at, ticket.resolution_due_at)
+
+    set_setting(db_session, sla_key("p1", "first_response"), "999")
+    set_setting(db_session, sla_key("p1", "resolution"), "9999")
+    db_session.commit()
+    client.post(f"/tickets/{ticket.id}/note", data={"body": "any activity"})
+    db_session.refresh(ticket)
+    assert (ticket.first_response_due_at, ticket.resolution_due_at) == before
+
+    newer = new_ticket(db_session, team)
+    response = client.post(
+        f"/tickets/{newer.id}/triage",
+        data={"ticket_type": "incident", "impact": "high", "urgency": "high", "category_id": ticket.category_id},
+    )
+    assert response.status_code == 200
+    db_session.refresh(newer)
+    created = newer.created_at if newer.created_at.tzinfo else newer.created_at.replace(tzinfo=timezone.utc)
+    assert newer.first_response_due_at == created + timedelta(minutes=999)
