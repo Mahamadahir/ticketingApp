@@ -103,7 +103,8 @@ resource graphSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (!empty
 }
 
 // Read access is granted on each secret, so a compromised app can read only
-// what its own definition lists.
+// what its own definition lists. Incremental deployments only add: removing a
+// secret from an identity's list does not delete the old assignment (README).
 resource readTargets 'Microsoft.KeyVault/vaults/secrets@2023-07-01' existing = [
   for reader in grants: {
     parent: vault
