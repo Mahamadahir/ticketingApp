@@ -157,6 +157,8 @@ def get_current_user(request: Request, session: Session = Depends(get_session)) 
     user = session.get(User, user_id)
     if not user:
         raise NotAuthenticated()
+    # Lets error pages (such as "no access") show the signed-in user's navigation.
+    request.state.user = user
     return user
 
 

@@ -275,6 +275,36 @@ they belong to, plus every untriaged ticket. Restricted work (HR, security)
 lives in its own team. Opening a ticket link without access shows a "no
 access" page.
 
+**Per-inbox routing (later addition, agreed 12 Oct 2026).** Each team that is
+onboarded can have its own inbox (a shared mailbox, and later a Teams channel).
+Mail or a Teams message sent to team B's inbox creates a ticket that arrives
+already in team B and is visible only to team B (plus super admins), not to
+every agent. Only the shared triage inbox feeds the untriaged queue that
+everyone can see. This is how restricted work (HR, security) and other teams
+are brought onto the system without exposing their tickets.
+
+Not every team needs its own inbox. A main team can have one inbox that its
+sub-teams share, so sub-teams are onboarded without new mailboxes.
+
+**Sub-teams** (agreed 12 Oct 2026). A team can have a parent team. Members of a
+parent team see all of its sub-teams' tickets. This needs a parent on `team`,
+managed in the admin portal, and is applied in one place: the effective team
+levels computed in `app/visibility.py` include the sub-teams of every team a
+user belongs to, so no route changes. A parent member has full access to the
+sub-teams' tickets: the same level they hold in the parent, so a member can work
+them, and a viewer can read them. Built when the first sub-team is introduced,
+together with per-inbox routing. **TBC**: how many levels deep teams can nest
+(start with one).
+
+What it needs, none of it built yet: an inbox-to-team mapping managed in the
+admin portal (inbox address, owning team, whether tickets start in the shared
+triage queue), the Graph subscription and catch-up job per mailbox, and the
+reply sent from the mailbox the ticket arrived in. Today's rule, "New or no
+team means visible to every agent", is a stand-in for the single inbox. It
+lives in one function, `is_untriaged` in `app/visibility.py`, which narrows to
+"in the shared triage queue" when this arrives, so nothing else has to change.
+Until then, restricted work is only private once triaged into its own team.
+
 **Sign-in follow-ups** (agreed 9 Oct 2026, from the review of Phase 0; build
 alongside 1B, which already touches the users page):
 
@@ -302,11 +332,34 @@ Resolved, Closed. Reopening is a recorded event, not a status.
 **Source.** Email, portal, Teams or agent. Drives the default channel for
 notifying the requester.
 
-**Triage.** Manual for now, automated later. New tickets arrive unassigned
-in a triage queue owned by a default team (**TBC**), which is notified. The
-agent sets type, category, impact and urgency. Category decides the team.
-Agents can flag "no good category"; on resolution the ticket goes to a
-super admin category review queue.
+**Triage** (agreed 12 Oct 2026). Manual for now, automated later. Triage and
+assignment are separate actions. Triaging a ticket classifies it: type,
+category (which decides the team), impact and urgency. It does not assign it,
+and assigning does not triage it. So a ticket can be untriaged and unassigned,
+untriaged and assigned (handed to whoever will triage it), triaged and
+unassigned (waiting in its team's queue for anyone to pick up), or triaged and
+assigned. A New ticket shows a triage panel; saving it moves the ticket out of
+New in one step with one history event. The panel has an optional "assign to"
+dropdown, so a triager can also assign in the same action, or leave it for the
+team. Any agent can triage and any agent can assign during triage. New tickets
+arrive in a triage queue owned by a default team (**TBC**), which is notified.
+
+Until a ticket is triaged an agent can read it and add internal notes, but
+cannot email the requester. An internal note does not triage a ticket, so an
+agent can record "I spoke to the user, they told me X" without committing to a
+category.
+
+**Categories.** A main category with optional sub-categories; the main category
+decides the team. When triaging, any super admin can create a new category on
+the spot. An agent who cannot find a fit picks "Other" (a main category, never a
+sub-category). The ticket is not held up: "Other" belongs to a configurable
+default team (**TBC**, the service desk), so it is worked and resolved on time
+under its normal SLA. After resolution it goes to the super admin category
+review queue, as already planned. A super admin there creates a new category or
+maps the ticket to an existing one and corrects it, so the next ticket like it
+has a proper home and reports are accurate. The only change from the earlier
+plan is that the agent no longer flags "no good category" separately: choosing
+"Other" is the flag.
 
 **Priority and SLA.** Impact (number of users affected) × urgency gives
 P1–P4. SLA targets (first response and resolution, **TBC** per priority)
@@ -320,14 +373,29 @@ Untriaged tickets pin to the top.
 **Messages.** One table with a `visibility` column: `public` and
 `agents_only` now, `portal_only` later. The portal and outbound mail read
 through a single function that returns only public entries, with tests that
-agent-only notes never reach either.
+agent-only notes never reach either. In the agent screen a public message is
+sent with an **Email user** button (not "Reply"), which is unavailable until the
+ticket is triaged, and an **Add note** button records an internal note at any
+time. When the requester replies by email (including to the automatic "your
+ticket is open" message) the reply is added to the ticket as an inbound message
+and counts as an update: it refreshes the ticket and wakes it from Awaiting
+user.
+
+**Thread.** The ticket page shows one timeline in time order: emails, internal
+notes and events (created, triaged, assigned, re-assigned, unassigned, category
+or priority changed, status changed, escalated, split, linked), each with who
+and when. Today events sit in a separate History table.
 
 **Followers.** Requesters and agents can add followers by email. Followers
 are CC'd on public messages and see the ticket under "Following" in the
 portal.
 
-**Assignment.** Any agent can reassign by choosing a team, then an agent in
-it. The ticket moves to that team and the new assignee is notified.
+**Assignment.** Any agent who can work a ticket can assign or re-assign it.
+"Assign to me" is offered only on an unassigned ticket; once it has an assignee
+the control becomes "Re-assign", with a list of the ticket's team members (plus
+anyone while the ticket has no team). The assignee is notified. Moving a ticket
+to a different team, with an agent in it, is an escalation (below). Taking a
+ticket from its assignee needs the explicit re-assign, never the claim button.
 
 **Escalation.** The agent gives a reason and can move the ticket to another
 team. The escalating agent becomes an internal follower: CC'd on every
@@ -336,6 +404,44 @@ ticket, and is notified about notes only when @mentioned.
 
 **Linking.** Tickets link to a parent (Major Incident or Problem). Resolving
 the parent offers to resolve every linked ticket with the same notes.
+
+**Splitting.** One request that asks for several things can be split into
+sub-tickets, so each part is tracked, assigned and resolved on its own (better
+accountability). The agent clicks Split ticket, chooses how many parts, and
+enters a subject and details for each. As each sub-ticket is created the triage
+panel opens with the original's type, category, impact, urgency and team
+prefilled, and the agent can amend any of it (or assign). Each sub-ticket has its
+own reference, type, category, assignee and status, is linked to the original,
+and can email the requester itself. In the agent portal they are separate
+tickets, and the original lists them all.
+
+**Status of the original while it has sub-tickets.** It is derived, so agents do
+not set it by hand: if every sub-ticket has the same status, the original takes
+it; if exactly one sub-ticket is still unfinished, the original takes that one's
+status; otherwise it is In progress. Each derived change is recorded as a system
+event. Resolved and Closed are never derived. When every sub-ticket is finished
+the original shows "All sub-tickets are done: resolve this ticket"; the agent
+resolves it explicitly, which sends the single resolution email (with the usual
+preview), and the normal auto-close after N days then applies. It does not
+resolve itself, because the requester would otherwise never be told it was done.
+
+To the requester it is one email chain. Every email, from the original or any
+sub-ticket, is sent as a reply in the same mail conversation with the same
+subject (Graph replies keep the thread), and carries a line naming the part it
+is about, e.g. "About: SR-14 Replace keyboard". Mail from the requester lands on
+the original, which owns the conversation. Messages are stored once and shown by
+rule, not copied: the original's emails and the requester's replies show in
+every open sub-ticket; a sub-ticket's emails show in the original but not in its
+siblings; a requester reply refreshes every open sub-ticket. The system cannot
+tell which part a reply is about, so each open sub-ticket sees it and the agents
+sort it out (matching on the part label is a later option).
+
+Sub-tickets can belong to different teams, and the normal visibility rules apply
+to each one. The original's timeline hides notes and events from sub-tickets the
+viewer cannot see, and internal notes stay on the ticket they were written on.
+Resolving the original is offered once every sub-ticket is resolved, and their
+notes feed the resolution email. Splitting is recorded as an event on both
+sides.
 
 **Backdating.** Agents can log tickets and fixes after the fact.
 `reported_at` and `resolved_at` hold the dates entered; `created_at` holds

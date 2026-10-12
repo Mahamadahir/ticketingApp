@@ -21,6 +21,16 @@
 <p class="note">Escalated: {{ ticket.escalation_reason }}</p>
 {% endif %}
 
+{% if not can_work %}
+<p class="note">You have read-only access to this ticket.{% if can_claim %} It is untriaged: assign it to yourself to work on it.{% endif %}</p>
+{% if can_claim %}
+<form hx-post="/tickets/{{ ticket.id }}/assign" hx-target="main" hx-swap="innerHTML">
+  <button type="submit">Assign to me</button>
+</form>
+{% endif %}
+{% endif %}
+
+{% if can_work %}
 <div class="actions">
   <form hx-post="/tickets/{{ ticket.id }}/status" hx-target="main" hx-swap="innerHTML">
     {% for s in statuses %}
@@ -55,6 +65,7 @@
     </form>
   </details>
 </div>
+{% endif %}
 
 <div id="thread">
   {% for message in ticket.messages|sort(attribute="created_at") %}
@@ -65,10 +76,12 @@
   {% endfor %}
 </div>
 
+{% if can_work %}
 <form hx-post="/tickets/{{ ticket.id }}/reply" hx-target="main" hx-swap="innerHTML">
   <textarea name="body" rows="4" maxlength="{{ max_message_length }}" placeholder="Reply to requester..." required></textarea>
   <button type="submit">Send reply</button>
 </form>
+{% endif %}
 
 <h3>History</h3>
 <table>

@@ -52,7 +52,7 @@ from sqlmodel import Session, SQLModel, select
 
 from app.database import engine
 from app.main import app
-from app.models import Team, User, UserRole
+from app.models import MembershipLevel, Team, TeamMembership, User, UserRole
 
 
 @pytest.fixture(autouse=True)
@@ -88,12 +88,32 @@ def login_as(client: TestClient, email: str, display_name: str = "Test User") ->
     return user.id
 
 
-def set_role(db_session: Session, user_id: int, role: UserRole, team_id: int | None = None) -> None:
+def set_role(
+    db_session: Session,
+    user_id: int,
+    role: UserRole,
+    team_id: int | None = None,
+    level: MembershipLevel = MembershipLevel.MEMBER,
+) -> None:
+    """Sets a user's role and, if a team is given, their membership of it."""
     user = db_session.get(User, user_id)
     user.role = role
-    user.team_id = team_id
     db_session.add(user)
+    if team_id is not None:
+        add_membership(db_session, user_id, team_id, level, commit=False)
     db_session.commit()
+
+
+def add_membership(
+    db_session: Session,
+    user_id: int,
+    team_id: int,
+    level: MembershipLevel = MembershipLevel.MEMBER,
+    commit: bool = True,
+) -> None:
+    db_session.add(TeamMembership(user_id=user_id, team_id=team_id, level=level))
+    if commit:
+        db_session.commit()
 
 
 def create_team(db_session: Session, name: str) -> Team:

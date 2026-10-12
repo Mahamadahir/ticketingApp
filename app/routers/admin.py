@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -9,7 +10,7 @@ from app.audit import log_action
 from app.auth import hash_password, require_roles
 from app.database import get_session
 from app.forms import optional_int
-from app.models import AuditLog, Team, Ticket, User, UserRole
+from app.models import AuditLog, MembershipLevel, Team, TeamMembership, Ticket, User, UserRole
 from app.pagination import paginate
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -27,10 +28,28 @@ def list_users(
 ):
     users_page = paginate(session, select(User).order_by(User.email), page, request.query_params)
     teams = session.exec(select(Team).order_by(Team.name)).all()
+    teams_by_id = {team.id: team for team in teams}
+
+    user_ids = [u.id for u in users_page.items]
+    memberships: dict[int, list[TeamMembership]] = {}
+    if user_ids:
+        rows = session.exec(select(TeamMembership).where(TeamMembership.user_id.in_(user_ids))).all()
+        for row in rows:
+            memberships.setdefault(row.user_id, []).append(row)
+
     return templates.TemplateResponse(
         request,
         "admin_users.html",
-        {"page": users_page, "teams": teams, "roles": list(UserRole), "user": user},
+        {
+            "page": users_page,
+            "teams": teams,
+            "teams_by_id": teams_by_id,
+            "memberships": memberships,
+            "levels": list(MembershipLevel),
+            "roles": list(UserRole),
+            "now": datetime.now(timezone.utc),
+            "user": user,
+        },
     )
 
 
@@ -38,7 +57,6 @@ def list_users(
 def update_user(
     user_id: int,
     role: UserRole = Form(...),
-    team_id: Optional[str] = Form(None),
     admin: User = Depends(require_super_admin),
     session: Session = Depends(get_session),
 ):
@@ -46,14 +64,86 @@ def update_user(
     if target is None:
         raise HTTPException(status_code=404, detail="User not found")
 
-    parsed_team_id = optional_int(team_id)
     if target.role != role:
         log_action(session, admin.email, "user", target.id, "role_changed", f"{target.role.value} -> {role.value}")
         target.role = role
-    if target.team_id != parsed_team_id:
-        log_action(session, admin.email, "user", target.id, "team_changed", f"{target.team_id} -> {parsed_team_id}")
-        target.team_id = parsed_team_id
 
+    session.add(target)
+    session.commit()
+    return RedirectResponse("/admin/users", status_code=303)
+
+
+@router.post("/users/{user_id}/memberships")
+def set_membership(
+    user_id: int,
+    team_id: int = Form(...),
+    level: MembershipLevel = Form(...),
+    admin: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    """Adds the user to a team, or changes their level if already a member."""
+    target = session.get(User, user_id)
+    team = session.get(Team, team_id)
+    if target is None or team is None:
+        raise HTTPException(status_code=404, detail="User or team not found")
+    if target.role == UserRole.END_USER:
+        # Team access only applies to agents; a row here would do nothing now and
+        # quietly take effect if the person is made an agent later.
+        raise HTTPException(status_code=400, detail="Make the user an agent before adding them to a team")
+
+    membership = session.get(TeamMembership, (user_id, team_id))
+    if membership is None:
+        session.add(TeamMembership(user_id=user_id, team_id=team_id, level=level))
+        log_action(session, admin.email, "user", target.id, "membership_added", f"{team.name}: {level.value}")
+    elif membership.level != level:
+        log_action(
+            session, admin.email, "user", target.id, "membership_changed",
+            f"{team.name}: {membership.level.value} -> {level.value}",
+        )
+        membership.level = level
+        session.add(membership)
+    session.commit()
+    return RedirectResponse("/admin/users", status_code=303)
+
+
+@router.post("/users/{user_id}/memberships/{team_id}/remove")
+def remove_membership(
+    user_id: int,
+    team_id: int,
+    admin: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    membership = session.get(TeamMembership, (user_id, team_id))
+    if membership is None:
+        raise HTTPException(status_code=404, detail="Membership not found")
+
+    team = session.get(Team, team_id)
+    log_action(
+        session, admin.email, "user", user_id, "membership_removed",
+        f"{team.name if team else team_id}: {membership.level.value}",
+    )
+    session.delete(membership)
+    session.commit()
+    return RedirectResponse("/admin/users", status_code=303)
+
+
+@router.post("/users/{user_id}/unlock")
+def unlock_user(
+    user_id: int,
+    admin: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    """Clears the failed-attempt count and any lock on a local account."""
+    target = session.get(User, user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    log_action(
+        session, admin.email, "user", target.id, "unlocked",
+        f"failed attempts {target.failed_login_count}, locked until {target.locked_until}",
+    )
+    target.failed_login_count = 0
+    target.locked_until = None
     session.add(target)
     session.commit()
     return RedirectResponse("/admin/users", status_code=303)
@@ -66,6 +156,7 @@ def create_local_user(
     password: str = Form(...),
     role: UserRole = Form(...),
     team_id: Optional[str] = Form(None),
+    level: MembershipLevel = Form(MembershipLevel.MEMBER),
     admin: User = Depends(require_super_admin),
     session: Session = Depends(get_session),
 ):
@@ -73,16 +164,25 @@ def create_local_user(
     if existing:
         raise HTTPException(status_code=400, detail="A user with that email already exists")
 
+    parsed_team_id = optional_int(team_id)
+    team = session.get(Team, parsed_team_id) if parsed_team_id is not None else None
+    if parsed_team_id is not None and team is None:
+        raise HTTPException(status_code=400, detail="Team does not exist")
+    if team is not None and role == UserRole.END_USER:
+        raise HTTPException(status_code=400, detail="Team access only applies to agents")
+
     local_user = User(
         email=email.lower(),
         display_name=display_name,
         role=role,
-        team_id=optional_int(team_id),
         password_hash=hash_password(password),
     )
     session.add(local_user)
     session.flush()
     log_action(session, admin.email, "user", local_user.id, "created", f"local account, role={role}")
+    if team is not None:
+        session.add(TeamMembership(user_id=local_user.id, team_id=team.id, level=level))
+        log_action(session, admin.email, "user", local_user.id, "membership_added", f"{team.name}: {level.value}")
     session.commit()
     return RedirectResponse("/admin/users", status_code=303)
 
@@ -95,7 +195,7 @@ def list_teams(
 ):
     teams = session.exec(select(Team).order_by(Team.name)).all()
     member_counts = dict(
-        session.exec(select(User.team_id, func.count(User.id)).group_by(User.team_id)).all()
+        session.exec(select(TeamMembership.team_id, func.count(TeamMembership.user_id)).group_by(TeamMembership.team_id)).all()
     )
     ticket_counts = dict(
         session.exec(select(Ticket.team_id, func.count(Ticket.id)).group_by(Ticket.team_id)).all()
@@ -110,7 +210,6 @@ def list_teams(
             "user": user,
         },
     )
-
 
 @router.post("/teams")
 def create_team(

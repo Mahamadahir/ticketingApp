@@ -55,10 +55,23 @@ class UserRole(str, Enum):
     END_USER = "end_user"
 
 
+class MembershipLevel(str, Enum):
+    MEMBER = "member"  # sees and works the team's tickets
+    VIEWER = "viewer"  # read-only
+
+
 class Team(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(unique=True, index=True)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class TeamMembership(SQLModel, table=True):
+    """Which teams a user belongs to, and how. One row per user and team."""
+
+    user_id: int = Field(foreign_key="user.id", primary_key=True)
+    team_id: int = Field(foreign_key="team.id", primary_key=True)
+    level: MembershipLevel = Field(default=MembershipLevel.MEMBER)
 
 
 class User(SQLModel, table=True):
@@ -66,7 +79,6 @@ class User(SQLModel, table=True):
     email: str = Field(unique=True, index=True)
     display_name: str
     role: UserRole = Field(default=UserRole.END_USER)
-    team_id: Optional[int] = Field(default=None, foreign_key="team.id")
     # Set only for local accounts (no Entra ID identity, e.g. a contractor).
     # SSO accounts are provisioned just-in-time on first login and never
     # have a password_hash.

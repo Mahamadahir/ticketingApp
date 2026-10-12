@@ -19,7 +19,7 @@
         <a href="/admin/users">Admin</a>
         {% endif %}
         <span class="user-chip">{{ user.display_name }} &middot; {{ user.role.value }}</span>
-        <a href="/auth/logout">Sign out</a>
+        <form method="post" action="/auth/logout" class="inline-form"><button type="submit">Sign out</button></form>
       {% endif %}
     </nav>
   </header>

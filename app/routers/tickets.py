@@ -13,6 +13,16 @@ from app.forms import MAX_MESSAGE_LENGTH, optional_int
 from app.models import Message, MessageDirection, Team, Ticket, TicketEvent, TicketStatus, User, UserRole
 from app.pagination import paginate
 from app.ticket_service import EVENT_ASSIGNED, EVENT_ESCALATED, record_event, set_status
+from app.visibility import (
+    Access,
+    NoTicketAccess,
+    assignable_agents,
+    may_self_assign,
+    membership_levels,
+    require_access,
+    ticket_access,
+    visible_ticket_condition,
+)
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 # Shareable links live outside /tickets: /t/INC-42.
@@ -21,11 +31,6 @@ templates = Jinja2Templates(directory="app/templates")
 templates.env.globals["max_message_length"] = MAX_MESSAGE_LENGTH
 
 AGENT_ROLES = (UserRole.SUPER_ADMIN, UserRole.AGENT)
-
-
-def _ensure_visible(ticket: Ticket, user: User) -> None:
-    if user.role == UserRole.AGENT and ticket.team_id != user.team_id:
-        raise HTTPException(status_code=404, detail="Ticket not found")
 
 
 @router.get("", response_class=HTMLResponse)
@@ -39,9 +44,10 @@ def list_tickets(
 ):
     query = select(Ticket).order_by(Ticket.updated_at.desc())
 
-    if user.role == UserRole.AGENT:
-        query = query.where(Ticket.team_id == user.team_id)
-    elif team_id is not None:
+    visible = visible_ticket_condition(user, membership_levels(session, user))
+    if visible is not None:
+        query = query.where(visible)
+    if team_id is not None:
         query = query.where(Ticket.team_id == team_id)
 
     if mine:
@@ -67,11 +73,11 @@ def list_tickets(
     )
 
 
-def _get_ticket(session: Session, ticket_id: int, user: User) -> Ticket:
+def _get_ticket(session: Session, ticket_id: int, user: User, needed: Access = Access.WORK) -> Ticket:
     ticket = session.get(Ticket, ticket_id)
     if ticket is None:
         raise HTTPException(status_code=404, detail="Ticket not found")
-    _ensure_visible(ticket, user)
+    require_access(user, ticket, membership_levels(session, user), needed)
     return ticket
 
 
@@ -82,7 +88,7 @@ def view_ticket(
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
-    return _render_ticket_detail(request, _get_ticket(session, ticket_id, user), user, session)
+    return _render_ticket_detail(request, _get_ticket(session, ticket_id, user, Access.READ), user, session)
 
 
 @reference_router.get("/t/{reference}", response_class=HTMLResponse)
@@ -96,7 +102,7 @@ def view_ticket_by_reference(
     ticket = session.exec(select(Ticket).where(Ticket.reference == reference.upper())).first()
     if ticket is None:
         raise HTTPException(status_code=404, detail="Ticket not found")
-    _ensure_visible(ticket, user)
+    require_access(user, ticket, membership_levels(session, user), Access.READ)
     return _render_ticket_detail(request, ticket, user, session)
 
 
@@ -168,16 +174,18 @@ def assign_ticket(
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
-    ticket = _get_ticket(session, ticket_id, user)
+    ticket = _get_ticket(session, ticket_id, user, Access.READ)
 
     if user.role == UserRole.AGENT:
+        if not may_self_assign(user, ticket, membership_levels(session, user)):
+            raise NoTicketAccess()
         target_agent = user
     else:
         if agent_id is None:
             raise HTTPException(status_code=400, detail="agent_id is required")
         target_agent = session.get(User, agent_id)
-        if target_agent is None or target_agent.role != UserRole.AGENT or target_agent.team_id != ticket.team_id:
-            raise HTTPException(status_code=400, detail="Agent must belong to the ticket's team")
+        if target_agent is None or target_agent.id not in {agent.id for agent in assignable_agents(session, ticket)}:
+            raise HTTPException(status_code=400, detail="Agent must be a member of the ticket's team")
 
     if ticket.assigned_agent_id == target_agent.id:
         return _render_ticket_detail(request, ticket, user, session)
@@ -246,11 +254,10 @@ def escalate_ticket(
 def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session: Session) -> HTMLResponse:
     team = session.get(Team, ticket.team_id) if ticket.team_id else None
     assigned_agent = session.get(User, ticket.assigned_agent_id) if ticket.assigned_agent_id else None
-    team_agents = (
-        session.exec(select(User).where(User.role == UserRole.AGENT, User.team_id == ticket.team_id)).all()
-        if ticket.team_id
-        else []
-    )
+    levels = membership_levels(session, user)
+    team_agents = assignable_agents(session, ticket)
+    can_work = ticket_access(user, ticket, levels) >= Access.WORK
+    can_claim = not can_work and may_self_assign(user, ticket, levels)
     teams = session.exec(select(Team)).all()
     events = session.exec(
         select(TicketEvent).where(TicketEvent.ticket_id == ticket.id).order_by(TicketEvent.created_at, TicketEvent.id)
@@ -267,6 +274,8 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             "teams": teams,
             "events": events,
             "statuses": list(TicketStatus),
+            "can_work": can_work,
+            "can_claim": can_claim,
             "user": user,
         },
     )

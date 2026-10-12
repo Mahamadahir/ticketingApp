@@ -40,7 +40,7 @@ Mimecast integration.
 | Role | Portal | Can see |
 |---|---|---|
 | `super_admin` | `/tickets`, `/admin` | Every ticket, across all teams; manages users, teams, and the audit log |
-| `agent` | `/tickets` | Tickets belonging to their own team; can self-assign, reply, change status, escalate |
+| `agent` | `/tickets` | Tickets of teams they are a member of (work) or viewer of (read-only), every untriaged ticket, tickets assigned to them, and tickets they escalated (read-only); can self-assign, reply, change status, escalate on the ones they can work |
 | `end_user` | `/portal` | Only tickets they raised (matched on requester email); can view status and add comments |
 
 A ticket has exactly one assigned agent at a time. Reassignment is a
@@ -57,7 +57,7 @@ action, entity, and a short detail string, newest first.
 
 ## Signing in
 
-Two ways in, both resolve to a `User` row with a `role` and optional `team`:
+Two ways in, both resolve to a `User` row with a `role` (team access is separate, see Teams below):
 
 1. **Microsoft SSO** (primary) — set `SSO_TENANT_ID`, `SSO_CLIENT_ID`,
    `SSO_CLIENT_SECRET` in `.env` and it's the default option on the login
@@ -65,7 +65,7 @@ Two ways in, both resolve to a `User` row with a `role` and optional `team`:
    their email is listed in `SUPER_ADMIN_EMAILS`.
 2. **Local account** (alternative) — for anyone without a tenant identity
    (e.g. a contractor). A super admin creates these from `/admin/users`
-   with an email, password, role, and team. Always available regardless of
+   with an email, password, role, and optionally a first team. Always available regardless of
    whether SSO is configured.
 
 When `ENV=dev`, the login page also links to `/auth/dev-login`, a plain
@@ -82,9 +82,18 @@ create teams and promote other users.
 
 ### Teams
 
-Teams are created and managed from `/admin/teams` by a super admin — there's
-no fixed/seeded list. Create at least one team before assigning agents to
-it; a ticket with no team shows as "Unassigned" in the agent console.
+Teams are created from `/admin/teams` by a super admin; there's no fixed/seeded
+list. People are put into teams from `/admin/users`, with a level per team:
+
+- **member** sees and works the team's tickets.
+- **viewer** can read them but not change anything.
+
+A user can belong to several teams. Agents also work every *untriaged* ticket
+(status New, or no team yet) so someone can triage it, always see tickets
+assigned to them, and keep read access to a ticket they escalated away.
+Opening a ticket without access shows a "no access" page (403). The rules live
+in `app/visibility.py`; routes never decide access themselves. Super admins can
+unlock a locked local account from the same users page.
 
 ## Running locally
 
