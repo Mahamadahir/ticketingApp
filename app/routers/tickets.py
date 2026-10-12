@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from html import escape
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -18,16 +19,20 @@ from app.followers import (
     followers_of,
     remove_follower,
 )
-from app.messages import NotTriaged, add_note, agent_timeline, email_requester, is_triaged
-from app.models import Team, Ticket, TicketStatus, User, UserRole
+from app.categories import CategoryError, create_category, path_of, selectable, team_id_for
+from app.messages import add_note, agent_timeline, email_requester, is_triaged
+from app.models import Category, Team, Ticket, TicketAlias, TicketStatus, TicketType, User, UserRole
 from app.pagination import paginate
-from app.ticket_service import EVENT_ASSIGNED, EVENT_ESCALATED, record_event, set_status
+from app.ticket_service import EVENT_ASSIGNED, EVENT_ESCALATED, NotTriaged, record_event, set_status
+from app.triage import TriageError, reassign_ticket, triage_ticket
 from app.visibility import (
     Access,
     NoTicketAccess,
     assignable_agents,
     may_add_note,
     may_self_assign,
+    may_triage,
+    team_members,
     access_context,
     require_access,
     ticket_access,
@@ -91,6 +96,129 @@ def _get_ticket(session: Session, ticket_id: int, user: User, needed: Access = A
     return ticket
 
 
+def _agent_options(request: Request, members: list[User], blank_label: str) -> HTMLResponse:
+    return templates.TemplateResponse(request, "_agent_options.html", {"members": members, "blank_label": blank_label})
+
+
+@router.get("/agents-for-team", response_class=HTMLResponse)
+def agent_options_for_team(
+    request: Request,
+    team_id: Optional[int] = None,
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """The agent choices for a team, as <option>s, for the team picker's htmx call."""
+    # Re-assigning with no one chosen leaves the ticket unassigned in that team.
+    return _agent_options(request, team_members(session, team_id), "Leave unassigned")
+
+
+@router.get("/agents-for-category", response_class=HTMLResponse)
+def agent_options_for_category(
+    request: Request,
+    category_id: Optional[int] = None,
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """The agent choices for the team a category belongs to, for the triage panel."""
+    category = session.get(Category, category_id) if category_id is not None else None
+    team_id = team_id_for(session, category) if category is not None else None
+    # Triage with no one chosen leaves the assignment as it is.
+    return _agent_options(request, team_members(session, team_id), "Leave as is")
+
+
+@router.post("/{ticket_id}/triage", response_class=HTMLResponse)
+def triage(
+    ticket_id: int,
+    request: Request,
+    ticket_type: TicketType = Form(...),
+    category_id: Optional[str] = Form(None),
+    agent_id: Optional[str] = Form(None),
+    new_category_name: Optional[str] = Form(None, max_length=200),
+    new_category_parent_id: Optional[str] = Form(None),
+    new_category_team_id: Optional[str] = Form(None),
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """Classifies a New ticket: type and category (which picks the team), and
+    optionally assigns it. Assignment is not required; the team can pick it up."""
+    ticket = _get_ticket(session, ticket_id, user, Access.READ)
+    if ticket.triaged_at is not None:
+        raise HTTPException(status_code=400, detail="This ticket has already been triaged")
+    if not may_triage(user, ticket, access_context(session, user)):
+        raise NoTicketAccess()
+
+    try:
+        if new_category_name and new_category_name.strip():
+            if user.role != UserRole.SUPER_ADMIN:
+                raise HTTPException(status_code=403, detail="Only a super admin can create a category")
+            category = create_category(
+                session, new_category_name, optional_int(new_category_parent_id), optional_int(new_category_team_id)
+            )
+            log_action(session, user.email, "category", category.id, "created", path_of(session, category))
+        else:
+            chosen = optional_int(category_id)
+            category = session.get(Category, chosen) if chosen is not None else None
+            if category is None:
+                raise HTTPException(status_code=400, detail="Choose a category")
+
+        chosen_agent = optional_int(agent_id)
+        assignee = session.get(User, chosen_agent) if chosen_agent is not None else None
+        if chosen_agent is not None and (assignee is None or assignee.role != UserRole.AGENT):
+            raise HTTPException(status_code=400, detail="Choose an agent from the list")
+
+        triage_ticket(session, ticket, user, ticket_type=ticket_type, category=category, assignee=assignee)
+    except (CategoryError, TriageError) as error:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(error))
+
+    log_action(session, user.email, "ticket", ticket.id, "triaged", path_of(session, category))
+    session.commit()
+    session.refresh(ticket)
+
+    return _render_ticket_detail(request, ticket, user, session)
+
+
+@router.post("/{ticket_id}/reassign", response_class=HTMLResponse)
+def reassign(
+    ticket_id: int,
+    request: Request,
+    team_id: int = Form(...),
+    agent_id: Optional[str] = Form(None),
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """Choose a team, then an agent in it or leave the ticket unassigned there.
+    No reason is needed; this is not an escalation."""
+    ticket = _get_ticket(session, ticket_id, user)
+    team = session.get(Team, team_id)
+    if team is None:
+        raise HTTPException(status_code=400, detail="Choose a team")
+    chosen_agent = optional_int(agent_id)
+    assignee = session.get(User, chosen_agent) if chosen_agent is not None else None
+    if chosen_agent is not None and (assignee is None or assignee.role != UserRole.AGENT):
+        raise HTTPException(status_code=400, detail="Choose an agent from the list")
+
+    try:
+        changed = reassign_ticket(session, ticket, user, team=team, assignee=assignee)
+    except TriageError as error:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(error))
+
+    if changed:
+        detail = f"{team.name}: {assignee.email if assignee else 'unassigned'}"
+        log_action(session, user.email, "ticket", ticket.id, "reassigned", detail)
+    session.commit()
+    session.refresh(ticket)
+
+    if ticket_access(user, ticket, access_context(session, user)) < Access.READ:
+        # Handing a ticket to a team you are not in takes it out of your view, so
+        # say where it went instead of showing a page they can no longer open.
+        return HTMLResponse(
+            f'<p class="note">{escape(ticket.reference)} was moved to {escape(team.name)}. '
+            'You no longer have access to it.</p><p><a href="/tickets">Back to tickets</a></p>'
+        )
+    return _render_ticket_detail(request, ticket, user, session)
+
 @router.get("/{ticket_id}", response_class=HTMLResponse)
 def view_ticket(
     ticket_id: int,
@@ -110,6 +238,10 @@ def view_ticket_by_reference(
 ):
     """Shareable link, e.g. /t/INC-42."""
     ticket = session.exec(select(Ticket).where(Ticket.reference == reference.upper())).first()
+    if ticket is None:
+        # A ticket whose type changed at triage keeps its old reference as an alias.
+        alias = session.get(TicketAlias, reference.upper())
+        ticket = session.get(Ticket, alias.ticket_id) if alias is not None else None
     if ticket is None:
         raise HTTPException(status_code=404, detail="Ticket not found")
     require_access(user, ticket, access_context(session, user), Access.READ)
@@ -183,9 +315,15 @@ def change_status(
     session: Session = Depends(get_session),
 ):
     ticket = _get_ticket(session, ticket_id, user)
+    if status == TicketStatus.NEW:
+        raise HTTPException(status_code=400, detail="A ticket only starts in New; it leaves New by being triaged")
 
     previous_status = ticket.status
-    if set_status(session, ticket, status, user.email):
+    try:
+        changed = set_status(session, ticket, status, user.email)
+    except NotTriaged:
+        raise HTTPException(status_code=400, detail="Triage the ticket before changing its status")
+    if changed:
         log_action(session, user.email, "ticket", ticket.id, "status_changed", f"{previous_status.value} -> {status.value}")
     session.commit()
     session.refresh(ticket)
@@ -334,6 +472,8 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
     team_agents = assignable_agents(session, ticket)
     can_work = ticket_access(user, ticket, levels) >= Access.WORK
     can_claim = not can_work and may_self_assign(user, ticket, levels)
+    can_triage = may_triage(user, ticket, levels)
+    category = session.get(Category, ticket.category_id) if ticket.category_id else None
     teams = session.exec(select(Team)).all()
     timeline = agent_timeline(session, ticket)
 
@@ -351,7 +491,16 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             "can_email": can_work and is_triaged(ticket),
             "can_edit_followers": can_work,
             "can_note": may_add_note(user, ticket, levels),
-            "statuses": list(TicketStatus),
+            # New is left only by triage, so it is not offered as a status to set.
+            "statuses": [s for s in TicketStatus if s != TicketStatus.NEW],
+            "can_triage": can_triage,
+            "ticket_types": list(TicketType),
+            "category_options": selectable(session) if can_triage else [],
+            "main_categories": [c for c, _ in selectable(session) if c.parent_id is None and not c.is_other] if can_triage else [],
+            "category_path": path_of(session, category) if category else None,
+            "can_create_category": user.role == UserRole.SUPER_ADMIN,
+            "can_reassign": can_work and not can_triage and ticket.triaged_at is not None,
+            "reassign_agents": team_members(session, ticket.team_id),
             "can_work": can_work,
             "can_claim": can_claim,
             "user": user,

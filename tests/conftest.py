@@ -52,7 +52,7 @@ from sqlmodel import Session, SQLModel, select
 
 from app.database import engine
 from app.main import app
-from app.models import MembershipLevel, Team, TeamMembership, User, UserRole
+from app.models import Category, MembershipLevel, Team, TeamMembership, User, UserRole
 
 
 @pytest.fixture(autouse=True)
@@ -122,3 +122,11 @@ def create_team(db_session: Session, name: str) -> Team:
     db_session.commit()
     db_session.refresh(team)
     return team
+
+def create_category(db_session: Session, team: Team | None, name: str = "Hardware", parent: Category | None = None) -> Category:
+    """A main category owned by the team, or a sub-category of `parent`."""
+    category = Category(name=name, team_id=None if parent else (team.id if team else None), parent_id=parent.id if parent else None)
+    db_session.add(category)
+    db_session.commit()
+    db_session.refresh(category)
+    return category

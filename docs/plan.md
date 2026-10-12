@@ -322,7 +322,11 @@ alongside 1B, which already touches the users page):
 ## Tickets
 
 **Types.** Incident, Service Request, Major Incident, Problem. Each has its
-own reference prefix (`INC-`, `SR-`, `MI-`, `PRB-`) and a shareable URL.
+own reference prefix (`INC-`, `SR-`, `MI-`, `PRB-`) and a shareable URL. Tickets
+arrive with a default type, and triage may change it. When it does the ticket is
+given a new reference of the new type (INC-12 becomes SR-3) and the old one is
+kept as an alias that still resolves, so links and emails already sent keep
+working (agreed 12 Oct 2026).
 Projects are a separate entity tickets can link to, with Azure DevOps
 integration later. Change control is later.
 

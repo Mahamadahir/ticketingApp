@@ -46,6 +46,26 @@ Mimecast integration.
 A ticket has exactly one assigned agent at a time. Reassignment is a
 separate action (`/tickets/{id}/assign`), not a side effect of emailing the user.
 
+**Triage.** A new ticket arrives untriaged in the default triage team (a setting
+under Admin > Settings). Any agent can triage it: choose the type and a category,
+and the category decides the team. Assigning is optional and separate: choose an
+agent in the category's team, or leave the assignment as it is and the team picks
+it up. Saving the triage panel moves the ticket from New to Open; nothing else
+leaves New, and the status buttons do not offer it. Whoever triages a ticket keeps
+read access to it. If triage changes the type, the reference is re-issued (INC-12
+becomes SR-3) and the old one is kept as an alias, so existing links and the
+subjects of emails already sent still find the ticket.
+
+**Categories.** Managed by super admins under Admin > Categories: a main category
+(owned by a team) with optional sub-categories (one level, using the parent's
+team). A super admin can also create one while triaging. "Other" is for tickets
+nothing fits: they are worked and resolved normally, and afterwards appear under
+Admin > Category review, where a super admin gives them a proper category.
+
+**Re-assign.** For a triaged ticket, choose a team and then an agent in it, or
+leave it unassigned in that team. No reason is needed. It is not an escalation,
+which is a separate action that flags the ticket and needs a reason.
+
 **Followers.** An agent who works a ticket, or the requester on their own
 ticket, can copy other people on it by email (up to 20). Followers are copied on
 every email to the requester, and each email records exactly who was copied.

@@ -22,11 +22,8 @@ from app.models import (
     TicketEvent,
     User,
 )
+from app.ticket_service import NotTriaged
 from app.visibility import is_untriaged
-
-
-class NotTriaged(Exception):
-    """Raised when someone tries to email the requester about an untriaged ticket."""
 
 
 def is_triaged(ticket: Ticket) -> bool:

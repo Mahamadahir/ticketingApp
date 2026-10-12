@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Admin: Settings{% endblock %}
+{% block content %}
+{% set active = "/admin/settings" %}
+{% include "_admin_tabs.html" %}
+
+<h2>Settings</h2>
+{% for definition in definitions %}
+<form method="post" action="/admin/settings">
+  <input type="hidden" name="key" value="{{ definition.key }}" />
+  <h3>{{ definition.label }}</h3>
+  <p class="note">{{ definition.description }}</p>
+  {% if definition.kind == "team" %}
+  <select name="value">
+    <option value="">None</option>
+    {% for t in teams %}<option value="{{ t.id }}" {{ "selected" if values[definition.key] == t.id|string else "" }}>{{ t.name }}</option>{% endfor %}
+  </select>
+  {% else %}
+  <input type="text" name="value" value="{{ values[definition.key] }}" />
+  {% endif %}
+  <button type="submit">Save</button>
+</form>
+{% endfor %}
+{% endblock %}

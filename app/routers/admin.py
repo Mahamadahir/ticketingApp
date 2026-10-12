@@ -8,10 +8,29 @@ from sqlmodel import Session, func, select
 
 from app.audit import log_action
 from app.auth import hash_password, require_roles
+from app.categories import (
+    CategoryError,
+    create_category,
+    ensure_other,
+    path_of,
+    selectable,
+)
 from app.database import get_session
 from app.forms import optional_int
-from app.models import AuditLog, MembershipLevel, Team, TeamMembership, Ticket, User, UserRole
+from app.models import (
+    FINISHED_STATUSES,
+    AuditLog,
+    Category,
+    MembershipLevel,
+    Team,
+    TeamMembership,
+    Ticket,
+    User,
+    UserRole,
+)
 from app.pagination import paginate
+from app.settings_store import REGISTRY, get_setting, set_setting
+from app.ticket_service import EVENT_CATEGORY_REVIEWED, record_event
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 templates = Jinja2Templates(directory="app/templates")
@@ -229,7 +248,7 @@ def create_team(
     return RedirectResponse("/admin/teams", status_code=303)
 
 
-AUDIT_ENTITY_TYPES = ["ticket", "user", "team"]
+AUDIT_ENTITY_TYPES = ["ticket", "user", "team", "category", "setting"]
 
 
 @router.get("/audit-log", response_class=HTMLResponse)
@@ -270,3 +289,210 @@ def view_audit_log(
             "user": user,
         },
     )
+
+
+# ---- Categories ----------------------------------------------------------------
+
+
+@router.get("/categories", response_class=HTMLResponse)
+def list_categories(
+    request: Request,
+    user: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    ensure_other(session)
+    session.commit()
+    categories = session.exec(select(Category).order_by(Category.name)).all()
+    teams = session.exec(select(Team).order_by(Team.name)).all()
+    mains = sorted((c for c in categories if c.parent_id is None), key=lambda c: (c.is_other, c.name.lower()))
+    subs: dict[int, list[Category]] = {}
+    for category in categories:
+        if category.parent_id is not None:
+            subs.setdefault(category.parent_id, []).append(category)
+    return templates.TemplateResponse(
+        request,
+        "admin_categories.html",
+        {
+            "mains": mains,
+            "subs": subs,
+            "teams": teams,
+            "teams_by_id": {team.id: team for team in teams},
+            "user": user,
+        },
+    )
+
+
+@router.post("/categories")
+def add_category(
+    name: str = Form(..., max_length=200),
+    parent_id: Optional[str] = Form(None),
+    team_id: Optional[str] = Form(None),
+    admin: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    try:
+        category = create_category(session, name, optional_int(parent_id), optional_int(team_id))
+    except CategoryError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    log_action(session, admin.email, "category", category.id, "created", path_of(session, category))
+    session.commit()
+    return RedirectResponse("/admin/categories", status_code=303)
+
+
+@router.post("/categories/{category_id}")
+def update_category(
+    category_id: int,
+    team_id: Optional[str] = Form(None),
+    is_active: Optional[str] = Form(None),
+    admin: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    """Sets a main category's team, or switches a category on or off. Switching
+    off hides it from triage; tickets already in it are untouched."""
+    category = session.get(Category, category_id)
+    if category is None:
+        raise HTTPException(status_code=404, detail="Category not found")
+
+    if category.parent_id is None:
+        new_team = optional_int(team_id)
+        if new_team is not None and session.get(Team, new_team) is None:
+            raise HTTPException(status_code=400, detail="That team does not exist")
+        if new_team is None and not category.is_other:
+            raise HTTPException(status_code=400, detail="A main category needs a team")
+        if new_team != category.team_id:
+            log_action(session, admin.email, "category", category.id, "team_changed", f"{category.team_id} -> {new_team}")
+            category.team_id = new_team
+
+    active = is_active == "on"
+    if category.is_other and not active:
+        raise HTTPException(status_code=400, detail="'Other' cannot be switched off")
+    if active != category.is_active:
+        log_action(session, admin.email, "category", category.id, "activated" if active else "deactivated", path_of(session, category))
+        category.is_active = active
+
+    session.add(category)
+    session.commit()
+    return RedirectResponse("/admin/categories", status_code=303)
+
+
+# ---- Category review ("Other" tickets, after resolution) ------------------------
+
+
+def _review_queue(session: Session) -> list[Ticket]:
+    return list(
+        session.exec(
+            select(Ticket)
+            .where(Ticket.needs_category_review.is_(True), Ticket.status.in_(FINISHED_STATUSES))
+            .order_by(Ticket.resolved_at.desc(), Ticket.id.desc())
+        ).all()
+    )
+
+
+@router.get("/category-review", response_class=HTMLResponse)
+def category_review(
+    request: Request,
+    user: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    teams = session.exec(select(Team).order_by(Team.name)).all()
+    return templates.TemplateResponse(
+        request,
+        "admin_category_review.html",
+        {
+            "tickets": _review_queue(session),
+            "category_options": [(c, label) for c, label in selectable(session) if not c.is_other],
+            "main_categories": [c for c, _ in selectable(session) if c.parent_id is None and not c.is_other],
+            "teams": teams,
+            "user": user,
+        },
+    )
+
+
+@router.post("/category-review/{ticket_id}")
+def review_category(
+    ticket_id: int,
+    category_id: Optional[str] = Form(None),
+    new_category_name: Optional[str] = Form(None, max_length=200),
+    new_category_parent_id: Optional[str] = Form(None),
+    new_category_team_id: Optional[str] = Form(None),
+    admin: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    """Gives a resolved 'Other' ticket a real category: an existing one or a new
+    one. The ticket's team is not changed (it is already done); only the category,
+    so the next ticket like it has a home and reports are accurate."""
+    ticket = session.get(Ticket, ticket_id)
+    if ticket is None or not ticket.needs_category_review or ticket.status not in FINISHED_STATUSES:
+        raise HTTPException(status_code=404, detail="That ticket is not waiting for a category review")
+
+    try:
+        if new_category_name and new_category_name.strip():
+            category = create_category(
+                session, new_category_name, optional_int(new_category_parent_id), optional_int(new_category_team_id)
+            )
+            log_action(session, admin.email, "category", category.id, "created", path_of(session, category))
+        else:
+            chosen = optional_int(category_id)
+            category = session.get(Category, chosen) if chosen is not None else None
+            if category is None or category.is_other or not category.is_active:
+                raise HTTPException(status_code=400, detail="Choose a category, or create a new one")
+    except CategoryError as error:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(error))
+
+    previous = session.get(Category, ticket.category_id) if ticket.category_id else None
+    ticket.category_id = category.id
+    ticket.needs_category_review = False
+    session.add(ticket)
+    record_event(
+        session, ticket, EVENT_CATEGORY_REVIEWED, admin.email,
+        from_value=path_of(session, previous) if previous else None, to_value=path_of(session, category),
+    )
+    log_action(session, admin.email, "ticket", ticket.id, "category_reviewed", path_of(session, category))
+    session.commit()
+    return RedirectResponse("/admin/category-review", status_code=303)
+
+
+# ---- Settings -------------------------------------------------------------------
+
+
+@router.get("/settings", response_class=HTMLResponse)
+def view_settings(
+    request: Request,
+    user: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    return templates.TemplateResponse(
+        request,
+        "admin_settings.html",
+        {
+            "definitions": list(REGISTRY.values()),
+            "values": {key: get_setting(session, key) for key in REGISTRY},
+            "teams": session.exec(select(Team).order_by(Team.name)).all(),
+            "user": user,
+        },
+    )
+
+
+@router.post("/settings")
+def save_setting(
+    key: str = Form(...),
+    value: str = Form("", max_length=200),
+    admin: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    definition = REGISTRY.get(key)
+    if definition is None:
+        raise HTTPException(status_code=404, detail="Unknown setting")
+
+    value = value.strip()
+    if definition.kind == "team" and value:
+        if not value.isdigit() or session.get(Team, int(value)) is None:
+            raise HTTPException(status_code=400, detail="That team does not exist")
+
+    previous = get_setting(session, key)
+    if previous != value:
+        set_setting(session, key, value)
+        log_action(session, admin.email, "setting", 0, "changed", f"{key}: {previous!r} -> {value!r}")
+    session.commit()
+    return RedirectResponse("/admin/settings", status_code=303)

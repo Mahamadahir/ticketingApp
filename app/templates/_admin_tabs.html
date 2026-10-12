@@ -1,0 +1,5 @@
+<nav class="admin-tabs">
+  {% for href, label in [("/admin/users", "Users"), ("/admin/teams", "Teams"), ("/admin/categories", "Categories"), ("/admin/category-review", "Category review"), ("/admin/settings", "Settings"), ("/admin/audit-log", "Audit log")] %}
+  <a href="{{ href }}" class="{{ 'active' if active == href else '' }}">{{ label }}</a>
+  {% endfor %}
+</nav>

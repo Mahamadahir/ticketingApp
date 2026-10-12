@@ -12,7 +12,7 @@ from app.models import (
     TicketStatus,
     UserRole,
 )
-from tests.conftest import create_team, login_as, set_role
+from tests.conftest import create_category, create_team, login_as, set_role
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SECRET_NOTE = "Internal only: the user is a contractor, be careful"
@@ -123,16 +123,16 @@ def test_an_internal_message_cannot_be_recorded_as_public(db_session):
 
 
 def test_triaged_and_untriaged_are_one_rule(db_session):
-    """A teamless ticket counts as untriaged for access, so it cannot be
-    emailable either, whatever its status."""
+    """Emailing and access control share one definition of untriaged: nobody has
+    triaged it yet. A ticket created past New counts as triaged, so the two can
+    never disagree."""
     from app.messages import is_triaged
     from app.visibility import is_untriaged
 
     for team_id in (None, create_team(db_session, "Service Desk").id):
         for status in TicketStatus:
             ticket = make_ticket(db_session, team_id, status=status)
-            assert is_triaged(ticket) == (not is_untriaged(ticket))
-    assert not is_triaged(make_ticket(db_session, None, status=TicketStatus.OPEN))
+            assert is_triaged(ticket) == (not is_untriaged(ticket)) == (status != TicketStatus.NEW)
 
 
 def test_a_portal_comment_is_recorded_as_public_inbound(client, db_session):
@@ -177,7 +177,13 @@ def test_email_user_is_unavailable_until_the_ticket_is_triaged(client, db_sessio
     assert response.status_code == 400
     assert db_session.exec(select(Message)).all() == []
 
-    client.post(f"/tickets/{ticket.id}/status", data={"status": "open"})
+    # Triage is what makes it emailable; the status buttons cannot do it.
+    assert client.post(f"/tickets/{ticket.id}/status", data={"status": "open"}).status_code == 400
+    category = create_category(db_session, team)
+    triage = client.post(
+        f"/tickets/{ticket.id}/triage", data={"ticket_type": "incident", "category_id": category.id}
+    )
+    assert triage.status_code == 200
     assert "Email user" in client.get(f"/tickets/{ticket.id}").text
     assert client.post(f"/tickets/{ticket.id}/email", data={"body": "Hello"}).status_code == 200
 
@@ -203,8 +209,9 @@ def test_the_timeline_interleaves_messages_notes_and_events_in_order(client, db_
     ticket = make_ticket(db_session, team.id, status=TicketStatus.NEW)
     agent_for(client, db_session, team)
 
+    category = create_category(db_session, team)
     client.post(f"/tickets/{ticket.id}/note", data={"body": "First, a note"})
-    client.post(f"/tickets/{ticket.id}/status", data={"status": "open"})
+    client.post(f"/tickets/{ticket.id}/triage", data={"ticket_type": "incident", "category_id": category.id})
     client.post(f"/tickets/{ticket.id}/email", data={"body": "Then an email"})
     client.post(f"/portal/{ticket.id}/comment", data={"body": "ignored: wrong user"})  # 404, adds nothing
 
@@ -212,7 +219,7 @@ def test_the_timeline_interleaves_messages_notes_and_events_in_order(client, db_
     summary = [
         (item.message.direction.value if item.message else item.event.event_type) for item in items
     ]
-    assert summary == ["internal", "status_changed", "outbound", "status_changed"]
+    assert summary == ["internal", "triaged", "status_changed", "outbound", "status_changed"]
     assert [item.at for item in items] == sorted(item.at for item in items)
 
     page = client.get(f"/tickets/{ticket.id}").text

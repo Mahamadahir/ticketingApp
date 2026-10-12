@@ -7,6 +7,7 @@ from typing import Optional
 
 from sqlmodel import Session
 
+from app.settings_store import DEFAULT_TRIAGE_TEAM, get_int_setting
 from app.models import (
     FINISHED_STATUSES,
     Ticket,
@@ -20,6 +21,16 @@ EVENT_CREATED = "created"
 EVENT_STATUS_CHANGED = "status_changed"
 EVENT_ASSIGNED = "assigned"
 EVENT_ESCALATED = "escalated"
+EVENT_TRIAGED = "triaged"
+EVENT_TYPE_CHANGED = "type_changed"
+EVENT_REFERENCE_CHANGED = "reference_changed"
+EVENT_TEAM_CHANGED = "team_changed"
+EVENT_CATEGORY_REVIEWED = "category_reviewed"
+
+
+class NotTriaged(Exception):
+    """Raised when something that needs a triaged ticket is attempted on one that
+    has not been triaged yet (emailing the requester, moving it between statuses)."""
 
 
 def record_event(
@@ -54,7 +65,10 @@ def create_ticket(
     actor_email: Optional[str] = None,
 ) -> Ticket:
     """Creates a ticket in the New (untriaged) status and records its first
-    event. The reference is assigned on insert, so the ticket is flushed here."""
+    event. The reference is assigned on insert, so the ticket is flushed here.
+    With no team given it arrives in the default triage team, if one is set."""
+    if team_id is None:
+        team_id = get_int_setting(session, DEFAULT_TRIAGE_TEAM)
     ticket = Ticket(
         subject=subject,
         requester_email=requester_email,
@@ -74,6 +88,9 @@ def set_status(session: Session, ticket: Ticket, new_status: TicketStatus, actor
     previous = ticket.status
     if previous == new_status:
         return False
+    if ticket.triaged_at is None and new_status != TicketStatus.NEW:
+        # Leaving New is what triage does, and only triage.
+        raise NotTriaged()
 
     now = datetime.now(timezone.utc)
     ticket.status = new_status
