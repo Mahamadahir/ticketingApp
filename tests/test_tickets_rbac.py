@@ -146,21 +146,21 @@ def test_status_change_writes_audit(client, db_session):
     assert "resolved" in audit_entries[0].detail
 
 
-def test_reply_sets_status_in_progress_and_logs_comment(client, db_session):
+def test_email_sets_status_in_progress_and_is_audited(client, db_session):
     team = create_team(db_session, "Service Desk")
     ticket = create_ticket(db_session, team_id=team.id)
 
     agent_id = login_as(client, "agent@example.com")
     set_role(db_session, agent_id, UserRole.AGENT, team.id)
 
-    client.post(f"/tickets/{ticket.id}/reply", data={"body": "Have you tried rebooting?"})
+    client.post(f"/tickets/{ticket.id}/email", data={"body": "Have you tried rebooting?"})
 
     db_session.refresh(ticket)
     assert ticket.status == TicketStatus.IN_PROGRESS
     assert len(ticket.messages) == 1
     assert ticket.messages[0].author_user_id == agent_id
 
-    audit_entries = db_session.exec(select(AuditLog).where(AuditLog.action == "commented")).all()
+    audit_entries = db_session.exec(select(AuditLog).where(AuditLog.action == "emailed_requester")).all()
     assert len(audit_entries) == 1
 
 

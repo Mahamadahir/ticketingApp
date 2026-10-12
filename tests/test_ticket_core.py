@@ -164,16 +164,24 @@ def test_resolved_at_set_kept_on_close_and_cleared_on_reopen(client, db_session)
     assert ticket.resolved_at is None
 
 
-def test_reply_records_status_event_once(client, db_session):
+def triaged(db_session, ticket):
+    """Moves a ticket out of New, which is what makes it emailable."""
+    ticket.status = TicketStatus.OPEN
+    db_session.add(ticket)
+    db_session.commit()
+    return ticket
+
+
+def test_first_email_records_status_event_once(client, db_session):
     team = create_team(db_session, "Service Desk")
-    ticket = make_ticket(db_session, team_id=team.id)
+    ticket = triaged(db_session, make_ticket(db_session, team_id=team.id))
     login_agent(client, db_session, team)
 
-    client.post(f"/tickets/{ticket.id}/reply", data={"body": "On it"})
-    client.post(f"/tickets/{ticket.id}/reply", data={"body": "Still on it"})
+    client.post(f"/tickets/{ticket.id}/email", data={"body": "On it"})
+    client.post(f"/tickets/{ticket.id}/email", data={"body": "Still on it"})
 
     changes = events_for(db_session, ticket, "status_changed")
-    assert [(e.from_value, e.to_value) for e in changes] == [("new", "in_progress")]
+    assert [(e.from_value, e.to_value) for e in changes] == [("open", "in_progress")]
 
 
 def test_assign_and_escalate_record_events(client, db_session):
@@ -198,14 +206,14 @@ def test_assign_and_escalate_record_events(client, db_session):
     assert escalated[0].detail == "Needs network"
 
 
-def test_history_is_shown_on_the_ticket_page(client, db_session):
+def test_events_are_shown_in_the_ticket_timeline(client, db_session):
     team = create_team(db_session, "Service Desk")
     ticket = make_ticket(db_session, team_id=team.id)
     login_agent(client, db_session, team)
     client.post(f"/tickets/{ticket.id}/status", data={"status": "open"})
 
     page = client.get(f"/tickets/{ticket.id}").text
-    assert "History" in page
+    assert "Timeline" in page
     assert "status changed" in page
     assert "new &rarr; open" in page
 
@@ -232,7 +240,7 @@ def test_concurrent_ticket_creation_never_duplicates_a_number():
     assert numbers == list(range(1, workers * per_worker + 1))
 
 
-def test_reply_does_not_undo_a_deliberate_status(client, db_session):
+def test_email_does_not_undo_a_deliberate_status(client, db_session):
     team = create_team(db_session, "Service Desk")
     login_agent(client, db_session, team)
 
@@ -242,21 +250,21 @@ def test_reply_does_not_undo_a_deliberate_status(client, db_session):
         db_session.refresh(ticket)
         resolved_at = ticket.resolved_at
 
-        client.post(f"/tickets/{ticket.id}/reply", data={"body": "Late note"})
+        client.post(f"/tickets/{ticket.id}/email", data={"body": "Late email"})
         db_session.refresh(ticket)
         assert ticket.status == status
         assert ticket.resolved_at == resolved_at
 
 
-def test_first_reply_is_audited_as_a_status_change(client, db_session):
+def test_first_email_is_audited_as_a_status_change(client, db_session):
     team = create_team(db_session, "Service Desk")
-    ticket = make_ticket(db_session, team_id=team.id)
+    ticket = triaged(db_session, make_ticket(db_session, team_id=team.id))
     login_agent(client, db_session, team)
 
-    client.post(f"/tickets/{ticket.id}/reply", data={"body": "On it"})
+    client.post(f"/tickets/{ticket.id}/email", data={"body": "On it"})
 
     audit = db_session.exec(select(AuditLog).where(AuditLog.action == "status_changed")).all()
-    assert [entry.detail for entry in audit] == ["new -> in_progress"]
+    assert [entry.detail for entry in audit] == ["open -> in_progress"]
 
 
 def test_assigning_to_the_same_agent_twice_records_one_event(client, db_session):

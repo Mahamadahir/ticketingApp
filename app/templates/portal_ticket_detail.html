@@ -7,7 +7,7 @@
 <p><span class="status status-{{ ticket.status.value }}">{{ ticket.status.value.replace("_", " ") }}</span></p>
 
 <div id="thread">
-  {% for message in ticket.messages|sort(attribute="created_at") %}
+  {% for message in messages %}
   <div class="message message-{{ message.direction.value }}">
     <div class="message-meta">{{ message.sender }} &middot; {{ message.created_at.strftime("%Y-%m-%d %H:%M") }}</div>
     <div class="message-body">{{ message.body }}</div>

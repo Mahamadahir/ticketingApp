@@ -59,10 +59,11 @@ def test_viewer_cannot_change_anything(client, db_session):
 
     page = client.get(f"/tickets/{ticket.id}").text
     assert "read-only access" in page
-    assert "Send reply" not in page
+    assert "Email user" not in page and "Add note" not in page
 
     for path, data in (
-        ("reply", {"body": "hi"}),
+        ("email", {"body": "hi"}),
+        ("note", {"body": "hi"}),
         ("status", {"status": "resolved"}),
         ("assign", {}),
         ("escalate", {"reason": "x"}),
@@ -87,31 +88,40 @@ def test_every_agent_can_see_untriaged_tickets_but_must_claim_one_to_work_it(cli
 
     # Visible, with a way to claim it, but not workable until claimed.
     page = client.get(f"/tickets/{new_in_other_team.id}").text
-    assert "assign it to yourself" in page and "Assign to me" in page and "Send reply" not in page
-    assert client.post(f"/tickets/{new_in_other_team.id}/reply", data={"body": "On it"}).status_code == 403
+    assert "assign it to yourself" in page and "Assign to me" in page and "Email user" not in page
+    assert client.post(f"/tickets/{new_in_other_team.id}/email", data={"body": "On it"}).status_code == 403
     assert client.post(f"/tickets/{new_in_other_team.id}/status", data={"status": "open"}).status_code == 403
     assert client.post(f"/tickets/{triaged_elsewhere.id}/assign").status_code == 403
+    assert client.post(f"/tickets/{triaged_elsewhere.id}/note", data={"body": "x"}).status_code == 403
+
+    # An untriaged ticket can be annotated without claiming or triaging it.
+    assert "Add note" in page
+    assert client.post(f"/tickets/{new_in_other_team.id}/note", data={"body": "Spoke to the user"}).status_code == 200
+    db_session.refresh(new_in_other_team)
+    assert new_in_other_team.assigned_agent_id is None and new_in_other_team.status == TicketStatus.NEW
 
     assert client.post(f"/tickets/{new_in_other_team.id}/assign").status_code == 200
     db_session.refresh(new_in_other_team)
     assert new_in_other_team.assigned_agent_id == agent_id
-    assert client.post(f"/tickets/{new_in_other_team.id}/reply", data={"body": "On it"}).status_code == 200
+    # Claimed but still untriaged, so still not emailable.
+    assert client.post(f"/tickets/{new_in_other_team.id}/email", data={"body": "On it"}).status_code == 400
 
 
 def test_claiming_an_untriaged_ticket_keeps_it_after_it_leaves_new(client, db_session):
-    """The bug this guards against: replying moved the ticket out of New and the
-    replier lost sight of it."""
+    """The bug this guards against: the ticket leaving New made the agent lose
+    sight of a ticket they had been working."""
     other = create_team(db_session, "Other")
     agent_in(client, db_session)
     ticket = make_ticket(db_session, other.id, status=TicketStatus.NEW)
 
     client.post(f"/tickets/{ticket.id}/assign")
-    client.post(f"/tickets/{ticket.id}/reply", data={"body": "First reply"})
+    assert client.post(f"/tickets/{ticket.id}/status", data={"status": "open"}).status_code == 200
+    client.post(f"/tickets/{ticket.id}/email", data={"body": "First email"})
     db_session.refresh(ticket)
     assert ticket.status == TicketStatus.IN_PROGRESS
 
     assert client.get(f"/tickets/{ticket.id}").status_code == 200
-    assert client.post(f"/tickets/{ticket.id}/reply", data={"body": "Follow-up"}).status_code == 200
+    assert client.post(f"/tickets/{ticket.id}/email", data={"body": "Follow-up"}).status_code == 200
     assert "Follow-up" in client.get(f"/tickets/{ticket.id}").text
 
 
@@ -408,4 +418,6 @@ def test_an_assigned_untriaged_ticket_cannot_be_taken_by_another_agent(client, d
     client.post("/auth/logout")
     login_as(client, "assignee@example.com")
     assert client.get(f"/tickets/{ticket.id}").status_code == 200
-    assert client.post(f"/tickets/{ticket.id}/reply", data={"body": "Looking"}).status_code == 200
+    assert client.post(f"/tickets/{ticket.id}/note", data={"body": "Looking"}).status_code == 200
+    # Still New, so still no email to the requester.
+    assert client.post(f"/tickets/{ticket.id}/email", data={"body": "Looking"}).status_code == 400

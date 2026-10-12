@@ -1,5 +1,3 @@
-from datetime import datetime, timezone
-
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
@@ -9,7 +7,8 @@ from app.audit import log_action
 from app.auth import get_current_user
 from app.database import get_session
 from app.forms import MAX_MESSAGE_LENGTH
-from app.models import Message, MessageDirection, Ticket, User
+from app.messages import record_inbound, requester_visible_messages
+from app.models import Ticket, User
 from app.pagination import paginate
 
 router = APIRouter(prefix="/portal", tags=["portal"])
@@ -47,7 +46,9 @@ def view_my_ticket(
 ):
     ticket = _get_own_ticket(session, ticket_id, user)
     return templates.TemplateResponse(
-        request, "portal_ticket_detail.html", {"ticket": ticket, "user": user}
+        request,
+        "portal_ticket_detail.html",
+        {"ticket": ticket, "messages": requester_visible_messages(session, ticket), "user": user},
     )
 
 
@@ -61,21 +62,13 @@ def add_comment(
 ):
     ticket = _get_own_ticket(session, ticket_id, user)
 
-    message = Message(
-        ticket_id=ticket.id,
-        sender=user.display_name,
-        body=body,
-        direction=MessageDirection.INBOUND,
-        author_user_id=user.id,
-    )
-    session.add(message)
-
-    ticket.updated_at = datetime.now(timezone.utc)
-    session.add(ticket)
+    record_inbound(session, ticket, sender=user.display_name, body=body, author_user_id=user.id)
     log_action(session, user.email, "ticket", ticket.id, "commented", body[:200])
     session.commit()
     session.refresh(ticket)
 
     return templates.TemplateResponse(
-        request, "portal_ticket_detail.html", {"ticket": ticket, "user": user}
+        request,
+        "portal_ticket_detail.html",
+        {"ticket": ticket, "messages": requester_visible_messages(session, ticket), "user": user},
     )

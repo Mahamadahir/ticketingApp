@@ -224,3 +224,7 @@ textarea {
 }
 
 .inline-form { display: inline; }
+.event { font-size: 0.85rem; color: #555; margin: 0.35rem 0; }
+
+/* An internal note must not look like something the requester can see. */
+.message-internal { background: #fff7d6; border-left: 4px solid #d4a017; padding-left: 0.5rem; }
