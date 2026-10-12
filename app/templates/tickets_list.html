@@ -20,6 +20,8 @@
       <th>Requester</th>
       <th>Team</th>
       <th>Assigned</th>
+      <th>Priority</th>
+      <th>SLA</th>
       <th>Status</th>
       <th>Updated</th>
     </tr>
@@ -35,12 +37,14 @@
       <td>{{ ticket.requester_email }}</td>
       <td>{{ teams_by_id[ticket.team_id].name if ticket.team_id and ticket.team_id in teams_by_id else "Unassigned" }}</td>
       <td>{{ agents_by_id[ticket.assigned_agent_id].display_name if ticket.assigned_agent_id and ticket.assigned_agent_id in agents_by_id else "Unassigned" }}</td>
+      <td>{{ ticket.priority.upper() if ticket.priority else ("Untriaged" if not ticket.triaged_at else "") }}</td>
+      <td class="sla sla-{{ sla[ticket.id].state }}">{{ sla[ticket.id].text }}</td>
       <td><span class="status status-{{ ticket.status.value }}">{{ ticket.status.value.replace("_", " ") }}</span></td>
       <td>{{ ticket.updated_at.strftime("%Y-%m-%d %H:%M") }}</td>
     </tr>
     {% else %}
     <tr>
-      <td colspan="7">No tickets yet.</td>
+      <td colspan="9">No tickets yet.</td>
     </tr>
     {% endfor %}
   </tbody>

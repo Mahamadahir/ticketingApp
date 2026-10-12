@@ -22,6 +22,7 @@ from app.models import (
     User,
     allocate_reference,
 )
+from app.sla import Level, describe_priority, priority_for, recalculate_deadlines
 from app.ticket_service import (
     EVENT_ASSIGNED,
     EVENT_REFERENCE_CHANGED,
@@ -84,11 +85,14 @@ def triage_ticket(
     *,
     ticket_type: TicketType,
     category: Category,
+    impact: Level,
+    urgency: Level,
     assignee: Optional[User] = None,
 ) -> None:
     """Classifies an untriaged ticket and moves it from New to Open. The category
     decides the team; the type may change the reference (the old one is kept as
-    an alias). Assigning is optional and independent."""
+    an alias); impact and urgency give the priority and start the SLA deadlines.
+    Assigning is optional and independent."""
     if ticket.triaged_at is not None:
         raise TriageError("This ticket has already been triaged")
     if not is_selectable(session, category):
@@ -113,10 +117,16 @@ def triage_ticket(
     ticket.needs_category_review = category.is_other
     ticket.updated_at = now
     session.add(ticket)
+    # Triage sets the priority silently: the triaged event below carries it, so the
+    # timeline does not also show a priority change for the first one.
+    priority = priority_for(impact, urgency)
+    ticket.impact, ticket.urgency, ticket.priority = impact.value, urgency.value, priority.value
+    recalculate_deadlines(session, ticket)
 
     record_event(
         session, ticket, EVENT_TRIAGED, actor.email,
-        to_value=path_of(session, category), detail=f"{ticket_type.value}, team {new_team.name}",
+        to_value=path_of(session, category),
+        detail=f"{ticket_type.value}, team {new_team.name}, {describe_priority(ticket)}",
     )
     if previous_team is None or previous_team.id != team_id:
         record_event(

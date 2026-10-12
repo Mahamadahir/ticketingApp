@@ -12,6 +12,7 @@
   &middot; Type: {{ ticket.type.value.replace("_", " ") }}
   &middot; Source: {{ ticket.source.value }}
   &middot; Category: {{ category_path or "Not triaged" }}
+  &middot; Priority: {{ ticket.priority.upper() if ticket.priority else "Not set" }}
   &middot; Team: {{ team.name if team else "Unassigned" }}
   &middot; Assigned: {{ assigned_agent.display_name if assigned_agent else "Unassigned" }}
   &middot;
@@ -20,6 +21,10 @@
 
 {% if ticket.is_escalated %}
 <p class="note">Escalated: {{ ticket.escalation_reason }}</p>
+{% endif %}
+
+{% if sla.state != "none" %}
+<p class="sla sla-{{ sla.state }}">SLA: {{ sla.text }}{% if sla.due %} (due {{ sla.due.strftime("%Y-%m-%d %H:%M") }} UTC){% endif %}</p>
 {% endif %}
 
 {% if not can_work %}
@@ -40,6 +45,18 @@
       {% for type in ticket_types %}
       <option value="{{ type.value }}" {{ "selected" if ticket.type == type else "" }}>{{ type.value.replace("_", " ") }}</option>
       {% endfor %}
+    </select>
+  </label>
+  <label>Impact
+    <select name="impact" required>
+      <option value="">Choose</option>
+      {% for value, label in impact_options %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Urgency
+    <select name="urgency" required>
+      <option value="">Choose</option>
+      {% for value, label in urgency_options %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
     </select>
   </label>
   <label>Category
@@ -108,6 +125,22 @@
   {% if not assigned_agent and user.role.value == "agent" %}
   <form hx-post="/tickets/{{ ticket.id }}/assign" hx-target="main" hx-swap="innerHTML">
     <button type="submit">Assign to me</button>
+  </form>
+  {% endif %}
+
+  {% if can_set_priority %}
+  <form hx-post="/tickets/{{ ticket.id }}/priority" hx-target="main" hx-swap="innerHTML">
+    <label>Impact
+      <select name="impact">
+        {% for value, label in impact_options %}<option value="{{ value }}" {{ "selected" if ticket.impact == value else "" }}>{{ label }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Urgency
+      <select name="urgency">
+        {% for value, label in urgency_options %}<option value="{{ value }}" {{ "selected" if ticket.urgency == value else "" }}>{{ label }}</option>{% endfor %}
+      </select>
+    </label>
+    <button type="submit">Set priority</button>
   </form>
   {% endif %}
 

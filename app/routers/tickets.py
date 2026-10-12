@@ -23,6 +23,16 @@ from app.categories import CategoryError, create_category, path_of, selectable, 
 from app.messages import UnknownRecipient, add_note, agent_timeline, email_requester, is_triaged
 from app.models import Category, Team, Ticket, TicketAlias, TicketStatus, TicketType, User, UserRole
 from app.pagination import paginate
+from app.sla import (
+    IMPACT_LABELS,
+    URGENCY_LABELS,
+    Level,
+    at_risk_percent,
+    describe_priority,
+    queue_order,
+    set_impact_urgency,
+    sla_view,
+)
 from app.ticket_service import EVENT_ASSIGNED, EVENT_ESCALATED, NotTriaged, record_event, set_status
 from app.triage import TriageError, reassign_ticket, triage_ticket
 from app.visibility import (
@@ -60,7 +70,8 @@ def list_tickets(
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
-    query = select(Ticket).order_by(Ticket.updated_at.desc())
+    # Untriaged first, then by time to breach, then priority (see sla.queue_order).
+    query = select(Ticket).order_by(*queue_order())
 
     visible = visible_ticket_condition(user, access_context(session, user))
     if visible is not None:
@@ -75,12 +86,15 @@ def list_tickets(
     teams_by_id = {team.id: team for team in session.exec(select(Team)).all()}
     agents_by_id = {agent.id: agent for agent in session.exec(select(User).where(User.role == UserRole.AGENT)).all()}
     teams = session.exec(select(Team)).all() if user.role == UserRole.SUPER_ADMIN else []
+    now = datetime.now(timezone.utc)
+    threshold = at_risk_percent(session)
 
     return templates.TemplateResponse(
         request,
         "tickets_list.html",
         {
             "page": tickets_page,
+            "sla": {t.id: sla_view(t, now, threshold) for t in tickets_page.items},
             "teams_by_id": teams_by_id,
             "agents_by_id": agents_by_id,
             "teams": teams,
@@ -134,6 +148,8 @@ def triage(
     ticket_id: int,
     request: Request,
     ticket_type: TicketType = Form(...),
+    impact: Level = Form(...),
+    urgency: Level = Form(...),
     category_id: Optional[str] = Form(None),
     agent_id: Optional[str] = Form(None),
     new_category_name: Optional[str] = Form(None, max_length=200),
@@ -172,7 +188,10 @@ def triage(
         if chosen_agent is not None and (assignee is None or assignee.role != UserRole.AGENT):
             raise HTTPException(status_code=400, detail="Choose an agent from the list")
 
-        triage_ticket(session, ticket, user, ticket_type=ticket_type, category=category, assignee=assignee)
+        triage_ticket(
+            session, ticket, user, ticket_type=ticket_type, category=category,
+            impact=impact, urgency=urgency, assignee=assignee,
+        )
     except (CategoryError, TriageError) as error:
         session.rollback()
         raise HTTPException(status_code=400, detail=str(error))
@@ -181,6 +200,28 @@ def triage(
     session.commit()
     session.refresh(ticket)
 
+    return _render_ticket_detail(request, ticket, user, session)
+
+
+@router.post("/{ticket_id}/priority", response_class=HTMLResponse)
+def change_priority(
+    ticket_id: int,
+    request: Request,
+    impact: Level = Form(...),
+    urgency: Level = Form(...),
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """Re-sets impact and urgency on a triaged ticket the agent works. The priority
+    follows, and the SLA deadlines are worked out again from the new targets."""
+    ticket = _get_ticket(session, ticket_id, user)
+    if ticket.triaged_at is None:
+        raise HTTPException(status_code=400, detail="Triage the ticket first; triage sets its priority")
+    if set_impact_urgency(session, ticket, impact, urgency, user.email):
+        ticket.updated_at = datetime.now(timezone.utc)
+        log_action(session, user.email, "ticket", ticket.id, "priority_changed", describe_priority(ticket))
+        session.commit()
+        session.refresh(ticket)
     return _render_ticket_detail(request, ticket, user, session)
 
 
@@ -513,6 +554,10 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             "statuses": [s for s in TicketStatus if s != TicketStatus.NEW],
             "can_triage": can_triage,
             "ticket_types": list(TicketType),
+            "impact_options": [(level.value, label) for level, label in IMPACT_LABELS.items()],
+            "urgency_options": [(level.value, label) for level, label in URGENCY_LABELS.items()],
+            "sla": sla_view(ticket, datetime.now(timezone.utc), at_risk_percent(session)),
+            "can_set_priority": can_work and ticket.triaged_at is not None,
             "category_options": options,
             "main_categories": [c for c, _ in options if c.parent_id is None and not c.is_other],
             "category_path": path_of(session, category) if category else None,
