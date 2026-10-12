@@ -11,7 +11,7 @@ from typing import Optional
 
 from sqlmodel import Session
 
-from app.categories import path_of, team_id_for
+from app.categories import is_selectable, path_of, team_id_for
 from app.models import (
     Category,
     Team,
@@ -91,7 +91,7 @@ def triage_ticket(
     an alias). Assigning is optional and independent."""
     if ticket.triaged_at is not None:
         raise TriageError("This ticket has already been triaged")
-    if not category.is_active:
+    if not is_selectable(session, category):
         raise TriageError("That category is no longer in use")
     team_id = team_id_for(session, category)
     if team_id is None:

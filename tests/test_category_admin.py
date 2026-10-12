@@ -129,15 +129,6 @@ def test_changing_a_categorys_team_and_switching_it_off(client, db_session):
     assert client.post("/admin/categories/9999", data={}).status_code == 404
 
 
-def test_other_cannot_be_switched_off_and_may_have_no_team(client, db_session):
-    admin(client)
-    client.get("/admin/categories")  # seeds Other
-    other = db_session.exec(select(Category).where(Category.is_other.is_(True))).one()
-
-    assert client.post(f"/admin/categories/{other.id}", data={"team_id": ""}).status_code == 400  # not ticked => off
-    assert client.post(f"/admin/categories/{other.id}", data={"team_id": "", "is_active": "on"}, follow_redirects=False).status_code == 303
-
-
 def test_a_switched_off_category_disappears_from_triage_but_keeps_its_tickets(client, db_session):
     desk = create_team(db_session, "Service Desk")
     old = create_category(db_session, desk, "Old stuff")
@@ -249,3 +240,132 @@ def test_the_default_triage_team_setting_is_saved_audited_and_validated(client, 
     assert client.post("/admin/settings", data={"key": "not_a_setting", "value": "1"}).status_code == 404
     assert client.post("/admin/settings", data={"key": DEFAULT_TRIAGE_TEAM, "value": ""}, follow_redirects=False).status_code == 303
     assert db_session.get(Setting, DEFAULT_TRIAGE_TEAM).value == ""
+
+# ---- Review fixes -------------------------------------------------------------------
+
+
+def test_other_can_be_given_a_team_from_the_page_exactly_as_the_form_posts_it(client, db_session):
+    """Regression: Other's row has no tick-box, so the form sends no is_active, and
+    that used to be read as 'switch off' and refused. The old test posted the
+    field by hand, which hid it."""
+    desk = create_team(db_session, "Service Desk")
+    admin(client)
+    client.get("/admin/categories")  # seeds Other
+    other = db_session.exec(select(Category).where(Category.is_other.is_(True))).one()
+    assert 'name="is_active"' not in client.get("/admin/categories").text.split("for tickets nothing fits")[1].split("</tr>")[0]
+
+    response = client.post(f"/admin/categories/{other.id}", data={"team_id": str(desk.id)}, follow_redirects=False)
+
+    assert response.status_code == 303
+    db_session.refresh(other)
+    assert other.team_id == desk.id and other.is_active is True
+
+
+def test_other_stays_on_whatever_is_posted(client, db_session):
+    admin(client)
+    client.get("/admin/categories")
+    other = db_session.exec(select(Category).where(Category.is_other.is_(True))).one()
+
+    client.post(f"/admin/categories/{other.id}", data={"team_id": ""}, follow_redirects=False)
+
+    db_session.refresh(other)
+    assert other.is_active is True
+
+
+def test_creating_the_same_main_category_at_once_makes_exactly_one(db_session):
+    """A unique constraint cannot do this (the parent is NULL, and Postgres treats
+    NULLs as distinct), so creation takes a lock around its duplicate check."""
+    import threading
+
+    from sqlmodel import Session
+
+    from app.categories import CategoryError, create_category
+    from app.database import engine
+
+    desk = create_team(db_session, "Service Desk")
+    barrier, outcomes = threading.Barrier(5), []
+
+    def create():
+        with Session(engine) as session:
+            barrier.wait()
+            try:
+                create_category(session, "Hardware", None, desk.id)
+                session.commit()
+                outcomes.append("created")
+            except CategoryError:
+                session.rollback()
+                outcomes.append("refused")
+
+    threads = [threading.Thread(target=create) for _ in range(5)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert sorted(outcomes) == ["created"] + ["refused"] * 4
+    assert len(db_session.exec(select(Category).where(Category.name == "Hardware")).all()) == 1
+
+
+def test_other_is_seeded_once_even_when_several_requests_ask_at_the_same_time(db_session, monkeypatch):
+    """Forces the race rather than hoping for it: every thread reads 'no Other yet'
+    before any of them may insert. Without the lock they would all insert."""
+    import threading
+
+    from sqlmodel import Session
+
+    from app import categories
+    from app.database import engine
+
+    real_get_other = categories.get_other
+    barrier, seen = threading.Barrier(5), threading.local()
+
+    def get_other_after_everyone_has_looked(session):
+        found = real_get_other(session)
+        if not getattr(seen, "waited", False):
+            seen.waited = True
+            barrier.wait(timeout=10)  # all five have now read the same empty answer
+        return found
+
+    monkeypatch.setattr(categories, "get_other", get_other_after_everyone_has_looked)
+
+    def seed():
+        with Session(engine) as session:
+            categories.ensure_other(session)
+            session.commit()
+
+    threads = [threading.Thread(target=seed) for _ in range(5)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    monkeypatch.setattr(categories, "get_other", real_get_other)
+    assert len(db_session.exec(select(Category).where(Category.is_other.is_(True))).all()) == 1
+
+def test_a_setting_with_digits_that_int_rejects_is_refused_and_cannot_break_new_tickets(client, db_session):
+    from app.settings_store import get_int_setting
+
+    admin(client)
+    for odd in ("²", "٣", "12²"):  # superscript two, Arabic-Indic three
+        assert client.post("/admin/settings", data={"key": DEFAULT_TRIAGE_TEAM, "value": odd}).status_code == 400, odd
+
+    # Even if such a value got in some other way, reading it must not crash intake.
+    db_session.add(Setting(key=DEFAULT_TRIAGE_TEAM, value="²"))
+    db_session.commit()
+    assert get_int_setting(db_session, DEFAULT_TRIAGE_TEAM) is None
+    create_ticket(db_session, subject="x", requester_email="a@example.com", source=TicketSource.EMAIL)
+
+
+def test_review_cannot_choose_a_sub_category_of_a_switched_off_category(client, db_session):
+    desk = create_team(db_session, "Service Desk")
+    ticket, _ = other_ticket(client, db_session, desk)
+    hardware = create_category(db_session, desk, "Hardware")
+    laptop = create_category(db_session, None, "Laptop", parent=hardware)
+    hardware.is_active = False
+    db_session.add(hardware)
+    db_session.commit()
+    admin(client)
+
+    assert client.post(f"/admin/category-review/{ticket.id}", data={"category_id": laptop.id}).status_code == 400
+    db_session.refresh(ticket)
+    assert ticket.needs_category_review is True

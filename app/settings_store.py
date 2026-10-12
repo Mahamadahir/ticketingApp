@@ -43,7 +43,9 @@ def get_setting(session: Session, key: str) -> str:
 
 def get_int_setting(session: Session, key: str) -> Optional[int]:
     value = get_setting(session, key).strip()
-    return int(value) if value.isdigit() else None
+    # ASCII digits only: str.isdigit() also accepts characters like a superscript
+    # two, which int() then refuses.
+    return int(value) if value.isascii() and value.isdigit() else None
 
 
 def set_setting(session: Session, key: str, value: str) -> None:

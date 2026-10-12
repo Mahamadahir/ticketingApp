@@ -495,3 +495,81 @@ def test_new_tickets_arrive_in_the_default_triage_team_and_are_visible_to_everyo
     assert ticket.team_id == desk.id and ticket.status == TicketStatus.NEW
     agent(client, db_session)  # in no team
     assert "VPN" in client.get("/tickets").text
+
+# ---- Review fixes -------------------------------------------------------------------
+
+
+def test_two_people_triaging_the_same_ticket_at_once_get_one_winner_and_no_errors(db_session):
+    """Regression: the already-triaged check was a stale read, so both went ahead,
+    which crashed on the alias or silently overwrote the first triage."""
+    import threading
+
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    desk = create_team(db_session, "Service Desk")
+    ticket = new_ticket(db_session, desk)
+    category = create_category(db_session, desk)
+    agent_ids = []
+    for number in range(2):
+        with TestClient(app) as setup_client:
+            agent_ids.append(agent(setup_client, db_session, member_of=[desk], email=f"agent{number}@example.com"))
+
+    barrier, codes = threading.Barrier(2), []
+
+    def do_triage(number):
+        with TestClient(app) as racing_client:
+            racing_client.post("/auth/dev-login", data={"email": f"agent{number}@example.com", "display_name": "A"})
+            barrier.wait()
+            response = racing_client.post(
+                f"/tickets/{ticket.id}/triage", data={"ticket_type": "service_request", "category_id": category.id}
+            )
+            codes.append(response.status_code)
+
+    threads = [threading.Thread(target=do_triage, args=(number,)) for number in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert sorted(codes) == [200, 400]  # one winner, one told it is already triaged, no 500
+    assert len(events(db_session, ticket, "triaged")) == 1
+    assert len(db_session.exec(select(TicketAlias)).all()) == 1
+    db_session.refresh(ticket)
+    assert ticket.reference == "SR-1" and ticket.triaged_by_id in agent_ids
+
+
+def test_a_sub_category_of_a_switched_off_category_cannot_be_chosen(client, db_session):
+    desk = create_team(db_session, "Service Desk")
+    ticket = new_ticket(db_session, desk)
+    hardware = create_category(db_session, desk, "Hardware")
+    laptop = create_category(db_session, None, "Laptop", parent=hardware)
+    hardware.is_active = False  # a stale form still names its child
+    db_session.add(hardware)
+    db_session.commit()
+    agent(client, db_session, member_of=[desk])
+
+    response = triage(client, ticket, laptop)
+
+    assert response.status_code == 400 and "no longer in use" in response.text
+    db_session.refresh(ticket)
+    assert ticket.triaged_at is None
+
+
+def test_a_super_admin_can_assign_an_untriaged_ticket_without_triaging_it(client, db_session):
+    desk = create_team(db_session, "Service Desk")
+    ticket = new_ticket(db_session, desk)
+    member_id = agent(client, db_session, member_of=[desk], email="member@example.com")
+    client.post("/auth/logout")
+    login_as(client, "admin@example.com")
+
+    page = client.get(f"/tickets/{ticket.id}").text
+    assert "Assign to (without triaging)" in page and "<h3>Triage</h3>" in page
+
+    assert client.post(f"/tickets/{ticket.id}/assign", data={"agent_id": member_id}).status_code == 200
+    db_session.refresh(ticket)
+    assert ticket.assigned_agent_id == member_id and ticket.triaged_at is None
+
+    triage(client, ticket, create_category(db_session, desk))
+    assert "Assign to (without triaging)" not in client.get(f"/tickets/{ticket.id}").text

@@ -4,9 +4,9 @@ Adds category, ticket_alias and setting, and the triage fields on ticket
 (category, triaged_at, triaged_by, needs_category_review). Seeds the "Other"
 category.
 
-Triage used to be inferred from status. It is now explicit, so every ticket that
-is not New is backfilled as triaged (at its last update), and tickets still New
-stay untriaged.
+Triage used to be inferred from status (not New, and in a team). It is now
+explicit, so every ticket past New that has a team is backfilled as triaged (at its
+last update); tickets still New, and tickets with no team, stay untriaged.
 
 Revision ID: a7b1d4e9f653
 Revises: f6a0c3d8e542
@@ -75,8 +75,11 @@ def upgrade() -> None:
     with op.batch_alter_table('ticket', schema=None) as batch_op:
         batch_op.alter_column('needs_category_review', existing_type=sa.Boolean(), server_default=None)
 
-    # Anything past New was, in effect, already triaged.
-    op.execute("UPDATE ticket SET triaged_at = updated_at WHERE status <> 'NEW'")
+    # Anything past New with a team was, in effect, already triaged. A ticket with no
+    # team counted as untriaged under the old rule (every agent could see and claim it),
+    # so it stays untriaged: marking it triaged with no team would hide it from everyone
+    # but super admins and leave nobody able to triage it.
+    op.execute("UPDATE ticket SET triaged_at = updated_at WHERE status <> 'NEW' AND team_id IS NOT NULL")
     # The one seeded category. Its team is set under Admin > Categories; until then
     # it falls back to the default triage team setting.
     op.execute(

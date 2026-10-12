@@ -142,6 +142,9 @@ def triage(
     """Classifies a New ticket: type and category (which picks the team), and
     optionally assigns it. Assignment is not required; the team can pick it up."""
     ticket = _get_ticket(session, ticket_id, user, Access.READ)
+    # Lock the row and re-read it, so two people triaging at once cannot both pass
+    # the check below: the second waits, then sees it is already triaged.
+    session.refresh(ticket, with_for_update=True)
     if ticket.triaged_at is not None:
         raise HTTPException(status_code=400, detail="This ticket has already been triaged")
     if not may_triage(user, ticket, access_context(session, user)):
@@ -473,7 +476,9 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
     can_work = ticket_access(user, ticket, levels) >= Access.WORK
     can_claim = not can_work and may_self_assign(user, ticket, levels)
     can_triage = may_triage(user, ticket, levels)
+    can_reassign = can_work and not can_triage and ticket.triaged_at is not None
     category = session.get(Category, ticket.category_id) if ticket.category_id else None
+    options = selectable(session) if can_triage else []
     teams = session.exec(select(Team)).all()
     timeline = agent_timeline(session, ticket)
 
@@ -495,12 +500,12 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             "statuses": [s for s in TicketStatus if s != TicketStatus.NEW],
             "can_triage": can_triage,
             "ticket_types": list(TicketType),
-            "category_options": selectable(session) if can_triage else [],
-            "main_categories": [c for c, _ in selectable(session) if c.parent_id is None and not c.is_other] if can_triage else [],
+            "category_options": options,
+            "main_categories": [c for c, _ in options if c.parent_id is None and not c.is_other],
             "category_path": path_of(session, category) if category else None,
             "can_create_category": user.role == UserRole.SUPER_ADMIN,
-            "can_reassign": can_work and not can_triage and ticket.triaged_at is not None,
-            "reassign_agents": team_members(session, ticket.team_id),
+            "can_reassign": can_reassign,
+            "reassign_agents": team_members(session, ticket.team_id) if can_reassign else [],
             "can_work": can_work,
             "can_claim": can_claim,
             "user": user,

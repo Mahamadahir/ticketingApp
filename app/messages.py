@@ -28,8 +28,8 @@ from app.visibility import is_untriaged
 
 def is_triaged(ticket: Ticket) -> bool:
     # One definition of "untriaged", shared with access control (visibility.py),
-    # so the two cannot disagree. Phase 1D replaces it with the explicit triage
-    # action; the per-inbox routing change narrows it in the same place.
+    # so the two cannot disagree. A ticket is triaged once someone saves the triage
+    # panel (triaged_at); the per-inbox routing change narrows it in the same place.
     return not is_untriaged(ticket)
 
 

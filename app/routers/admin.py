@@ -12,6 +12,7 @@ from app.categories import (
     CategoryError,
     create_category,
     ensure_other,
+    is_selectable,
     path_of,
     selectable,
 )
@@ -363,9 +364,9 @@ def update_category(
             log_action(session, admin.email, "category", category.id, "team_changed", f"{category.team_id} -> {new_team}")
             category.team_id = new_team
 
-    active = is_active == "on"
-    if category.is_other and not active:
-        raise HTTPException(status_code=400, detail="'Other' cannot be switched off")
+    # Other has no tick-box (it is always on), so a missing field must not read as
+    # 'switch off'. Anything else is on only when its box is ticked.
+    active = True if category.is_other else is_active == "on"
     if active != category.is_active:
         log_action(session, admin.email, "category", category.id, "activated" if active else "deactivated", path_of(session, category))
         category.is_active = active
@@ -395,13 +396,14 @@ def category_review(
     session: Session = Depends(get_session),
 ):
     teams = session.exec(select(Team).order_by(Team.name)).all()
+    options = [(c, label) for c, label in selectable(session) if not c.is_other]
     return templates.TemplateResponse(
         request,
         "admin_category_review.html",
         {
             "tickets": _review_queue(session),
-            "category_options": [(c, label) for c, label in selectable(session) if not c.is_other],
-            "main_categories": [c for c, _ in selectable(session) if c.parent_id is None and not c.is_other],
+            "category_options": options,
+            "main_categories": [c for c, _ in options if c.parent_id is None],
             "teams": teams,
             "user": user,
         },
@@ -434,7 +436,7 @@ def review_category(
         else:
             chosen = optional_int(category_id)
             category = session.get(Category, chosen) if chosen is not None else None
-            if category is None or category.is_other or not category.is_active:
+            if category is None or category.is_other or not is_selectable(session, category):
                 raise HTTPException(status_code=400, detail="Choose a category, or create a new one")
     except CategoryError as error:
         session.rollback()
@@ -487,7 +489,7 @@ def save_setting(
 
     value = value.strip()
     if definition.kind == "team" and value:
-        if not value.isdigit() or session.get(Team, int(value)) is None:
+        if not (value.isascii() and value.isdigit()) or session.get(Team, int(value)) is None:
             raise HTTPException(status_code=400, detail="That team does not exist")
 
     previous = get_setting(session, key)

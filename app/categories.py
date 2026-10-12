@@ -7,6 +7,7 @@ the review queue in the admin routes)."""
 
 from typing import Optional
 
+from sqlalchemy import text
 from sqlmodel import Session, select
 
 from app.models import Category, Team
@@ -16,8 +17,30 @@ MAX_NAME_LENGTH = 80
 OTHER_NAME = "Other"
 
 
+# One fixed key for the whole category table. A uniqueness constraint cannot stop two
+# main categories sharing a name, because their parent is NULL and Postgres treats
+# NULLs as distinct, so creation takes this lock for the rest of its transaction.
+_CATEGORY_LOCK = 7101
+
+
 class CategoryError(ValueError):
     """A problem with a category the user can be told about."""
+
+
+def _lock_categories(session: Session) -> None:
+    session.exec(text("SELECT pg_advisory_xact_lock(:key)").bindparams(key=_CATEGORY_LOCK))
+
+
+def is_selectable(session: Session, category: Category) -> bool:
+    """Whether a category can be given to a ticket: it is on, and so is its parent.
+    Checked again when a form is submitted, because a stale page or a crafted
+    request can name a category that has since been switched off."""
+    if not category.is_active:
+        return False
+    if category.parent_id is None:
+        return True
+    parent = session.get(Category, category.parent_id)
+    return parent is not None and parent.is_active
 
 
 def get_other(session: Session) -> Optional[Category]:
@@ -27,6 +50,9 @@ def get_other(session: Session) -> Optional[Category]:
 def ensure_other(session: Session) -> Category:
     """The migration seeds Other; this covers a database built without it."""
     other = get_other(session)
+    if other is None:
+        _lock_categories(session)
+        other = get_other(session)  # someone may have made it while we waited
     if other is None:
         other = Category(name=OTHER_NAME, is_other=True)
         session.add(other)
@@ -75,6 +101,7 @@ def create_category(
 ) -> Category:
     """Creates a main category (needs a team) or a sub-category (inherits the
     parent's team). Does not commit."""
+    _lock_categories(session)  # taken first, so the duplicate check below cannot race
     name = " ".join(name.split())
     if not name or len(name) > MAX_NAME_LENGTH:
         raise CategoryError(f"A category name must be 1 to {MAX_NAME_LENGTH} characters")

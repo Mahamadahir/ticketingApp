@@ -92,6 +92,19 @@
   </form>
   {% endif %}
 
+  {% if not ticket.triaged_at and user.role.value == "super_admin" %}
+  <form hx-post="/tickets/{{ ticket.id }}/assign" hx-target="main" hx-swap="innerHTML">
+    <label>Assign to (without triaging)
+      <select name="agent_id">
+        {% for agent in team_agents %}
+        <option value="{{ agent.id }}" {{ "selected" if assigned_agent and agent.id == assigned_agent.id else "" }}>{{ agent.display_name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit">Assign</button>
+  </form>
+  {% endif %}
+
   {% if not assigned_agent and user.role.value == "agent" %}
   <form hx-post="/tickets/{{ ticket.id }}/assign" hx-target="main" hx-swap="innerHTML">
     <button type="submit">Assign to me</button>
