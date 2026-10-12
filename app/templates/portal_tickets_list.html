@@ -18,4 +18,18 @@
 </div>
 
 {% include "_pagination.html" %}
+
+{% if following %}
+<h2>Following</h2>
+<p class="note">Requests raised by other people that you are copied on. You can read these but not reply.</p>
+<div class="ticket-cards">
+  {% for ticket in following %}
+  <a class="ticket-card" href="/portal/{{ ticket.id }}">
+    <div class="ticket-card-subject">{{ ticket.reference }} {{ ticket.subject }}</div>
+    <span class="status status-{{ ticket.status.value }}">{{ ticket.status.value.replace("_", " ") }}</span>
+    <div class="ticket-card-updated">Updated {{ ticket.updated_at.strftime("%Y-%m-%d %H:%M") }}</div>
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
 {% endblock %}

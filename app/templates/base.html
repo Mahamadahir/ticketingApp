@@ -23,8 +23,25 @@
       {% endif %}
     </nav>
   </header>
+  <div id="flash" role="alert"></div>
   <main>
     {% block content %}{% endblock %}
   </main>
+  <script>
+    // Forms swap <main> with htmx. Clear any earlier message when one is sent, and
+    // let our error messages (4xx responses that name #flash as their target) show,
+    // because htmx ignores 4xx responses by default.
+    document.body.addEventListener("htmx:beforeRequest", function () {
+      var flash = document.getElementById("flash");
+      if (flash) { flash.innerHTML = ""; }
+    });
+    document.body.addEventListener("htmx:beforeSwap", function (event) {
+      var xhr = event.detail.xhr;
+      if (xhr.status >= 400 && xhr.status < 500 && xhr.getResponseHeader("HX-Retarget")) {
+        event.detail.shouldSwap = true;
+        event.detail.isError = false;
+      }
+    });
+  </script>
 </body>
 </html>

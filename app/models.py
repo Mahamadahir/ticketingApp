@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 
-from sqlalchemy import event, update
+from sqlalchemy import UniqueConstraint, event, update
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -138,11 +138,33 @@ class Message(SQLModel, table=True):
     # Anything shown to the requester or sent as mail must come through
     # app/messages.requester_visible_messages, which returns PUBLIC only.
     visibility: MessageVisibility = Field(default=MessageVisibility.PUBLIC)
+    # Who was copied on an outgoing email, as a comma-separated list, recorded at
+    # send time so the timeline shows exactly who received it.
+    cc: Optional[str] = Field(default=None)
     graph_message_id: Optional[str] = Field(default=None)
     author_user_id: Optional[int] = Field(default=None, foreign_key="user.id")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     ticket: Ticket = Relationship(back_populates="messages")
+
+
+class TicketFollower(SQLModel, table=True):
+    """Someone who is copied on a ticket's public emails.
+
+    Requesters and agents add followers by email; a follower with a portal
+    account sees the ticket under Following (read-only). An internal follower is
+    an agent (today: whoever escalated the ticket) who keeps read access to it
+    after it moves team, and is copied on everything, including MSP mail."""
+
+    __table_args__ = (UniqueConstraint("ticket_id", "email", name="uq_ticketfollower_ticket_email"),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ticket_id: int = Field(foreign_key="ticket.id", index=True)
+    email: str  # lower case
+    user_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    is_internal: bool = Field(default=False)
+    added_by_email: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class TicketCounter(SQLModel, table=True):

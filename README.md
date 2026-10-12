@@ -46,6 +46,16 @@ Mimecast integration.
 A ticket has exactly one assigned agent at a time. Reassignment is a
 separate action (`/tickets/{id}/assign`), not a side effect of emailing the user.
 
+**Followers.** An agent who works a ticket, or the requester on their own
+ticket, can copy other people on it by email (up to 20). Followers are copied on
+every email to the requester, and each email records exactly who was copied.
+A follower with a portal account sees the ticket under *Following*: read-only,
+public messages only, no replying. Escalating a ticket makes the escalating
+agent an *internal follower*: copied on everything, and keeping read access
+wherever the ticket goes. That access comes from the follower list
+(`app/followers.py`, `app/visibility.py`), not from the ticket's escalated-by
+field. Nothing is emailed until Graph is wired up in phase 3.
+
 **Email user and notes.** An agent has two ways to write on a ticket. **Email
 user** sends the requester a message and is available once the ticket is
 triaged (for now: has left New). **Add note** records an internal note any time,
