@@ -7,10 +7,16 @@ on:
     # Documentation alone cannot break the tests. Path filters are not applied to tag
     # pushes, so a release tag always runs. Do not make this check required in branch
     # protection: a skipped run would leave a docs-only pull request waiting forever.
-    paths-ignore: ["**.md", "docs/**"]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+      - "*.md"
   pull_request:
     branches: [main]
-    paths-ignore: ["**.md", "docs/**"]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+      - "*.md"
 
 permissions:
   contents: read
