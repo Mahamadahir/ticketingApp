@@ -65,8 +65,9 @@ has no image yet), and no apps or job are deployed.
    never opened to the internet by leaving the list out. For a deliberate
    throwaway test, `WEB_ALLOWED_CIDRS = '0.0.0.0/0'` says so explicitly.
 
-   The database password goes into a connection URL, so avoid `@ : / ? #`
-   (the template URL-encodes it, but plain characters are safer).
+   The database password goes into a connection URL, so the template
+   URL-encodes it and the app and Alembic both accept the encoded form. Plain
+   letters and digits are still the safer choice.
 3. Preview, then deploy:
 
    ```powershell
@@ -102,6 +103,25 @@ The GitHub workflow (not written yet) will: log in with OIDC, build and push
 the image tagged with the commit SHA, start the migrate job and wait for it,
 then deploy with the new `IMAGE`. Redeploying the template always sets the
 image, so pass it every time.
+
+Things that bite on redeploys and first runs:
+
+- **Supply every secret on every deploy.** Each deploy rewrites the Key Vault
+  secrets and each app's secret list from the variables in your shell. If
+  `SSO_CLIENT_SECRET` or `GRAPH_CLIENT_SECRET` is missing from one run, the new
+  revision silently loses it (the vault copy stays), SSO or Graph counts as
+  unconfigured, and agents can no longer sign in with Microsoft. The deploy
+  workflow should read all of them from the GitHub Environment's secrets.
+- **Rotated secrets take effect on the next revision.** Every deploy writes a new
+  version of each secret, but a running revision keeps the value it started with.
+- **Role assignments can lag.** A brand new identity or role assignment can take
+  a few minutes to propagate. Setting `IMAGE` on the very first deployment can
+  therefore fail with a forbidden error reading a secret or a 401 pulling the
+  image. Do the platform-only deploy first (as above) and retry if it happens.
+- **Role assignments are never removed by a redeploy.** The template is applied
+  incrementally, so taking a secret out of an app's list in `main.bicep` leaves
+  the old Key Vault Secrets User assignment in place. Delete it by hand, or the
+  "exactly its own secrets" guarantee drifts upward over time.
 
 ## GitHub Actions identity (one-off, by hand)
 

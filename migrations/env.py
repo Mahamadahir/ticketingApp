@@ -8,7 +8,10 @@ import app.models  # noqa: F401  registers every table on SQLModel.metadata
 from app.config import settings
 
 config = context.config
-config.set_main_option("sqlalchemy.url", settings.database_url)
+# Alembic reads this through ConfigParser, where % starts an interpolation. A
+# URL-encoded password (p@ss becomes p%40ss, which the Bicep produces) would make
+# it fail with "invalid interpolation syntax", so every % is doubled.
+config.set_main_option("sqlalchemy.url", settings.database_url.replace("%", "%%"))
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
