@@ -290,10 +290,11 @@ sub-teams share, so sub-teams are onboarded without new mailboxes.
 parent team see all of its sub-teams' tickets. This needs a parent on `team`,
 managed in the admin portal, and is applied in one place: the effective team
 levels computed in `app/visibility.py` include the sub-teams of every team a
-user belongs to, so no route changes. Built when the first sub-team is
-introduced, together with per-inbox routing. **TBC**: whether a parent member can
-work sub-team tickets or only read them (the default is the same level they hold
-in the parent), and how many levels deep teams can nest (start with one).
+user belongs to, so no route changes. A parent member has full access to the
+sub-teams' tickets: the same level they hold in the parent, so a member can work
+them, and a viewer can read them. Built when the first sub-team is introduced,
+together with per-inbox routing. **TBC**: how many levels deep teams can nest
+(start with one).
 
 What it needs, none of it built yet: an inbox-to-team mapping managed in the
 admin portal (inbox address, owning team, whether tickets start in the shared
