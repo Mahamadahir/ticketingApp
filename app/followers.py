@@ -170,12 +170,8 @@ def tickets_followed_by(session: Session, email: str) -> list[Ticket]:
     )
 
 
-def is_follower(session: Session, ticket: Ticket, email: str) -> bool:
-    return (
-        session.exec(
-            select(TicketFollower.id).where(
-                TicketFollower.ticket_id == ticket.id, TicketFollower.email == email.lower()
-            )
-        ).first()
-        is not None
-    )
+def is_follower(session: Session, ticket: Ticket, email: str, *, include_internal: bool = True) -> bool:
+    conditions = [TicketFollower.ticket_id == ticket.id, TicketFollower.email == email.lower()]
+    if not include_internal:
+        conditions.append(TicketFollower.is_internal.is_(False))
+    return session.exec(select(TicketFollower.id).where(*conditions)).first() is not None

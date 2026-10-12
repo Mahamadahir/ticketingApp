@@ -13,7 +13,7 @@ from typing import Optional
 
 from sqlmodel import Session, select
 
-from app.followers import cc_list
+from app.followers import followers_of
 from app.models import (
     Message,
     MessageDirection,
@@ -64,14 +64,35 @@ def _record(
     return message
 
 
-def email_requester(session: Session, ticket: Ticket, author: User, body: str) -> Message:
+class UnknownRecipient(ValueError):
+    """The agent asked to copy an address that is not a follower of the ticket."""
+
+
+def email_requester(
+    session: Session, ticket: Ticket, author: User, body: str, cc_emails: Optional[list[str]] = None
+) -> Message:
     """A public message from an agent to the requester. Does not send mail yet
-    (that arrives with Graph in phase 3); it records what will be sent."""
+    (that arrives with Graph in phase 3); it records what will be sent.
+
+    Every follower is copied unless the agent unticks them for this email: pass
+    cc_emails as the addresses to copy (None means all of them). Unticking does not
+    remove anyone as a follower. Internal followers are agents and are always
+    copied. The list is recorded on the message, so the timeline shows exactly who
+    received it even if the followers change later."""
     if not is_triaged(ticket):
         raise NotTriaged()
-    # Followers are copied; the list is recorded so the timeline shows exactly who
-    # received this email even if the followers change later.
-    cc = ', '.join(cc_list(session, ticket)) or None
+
+    requester = ticket.requester_email.lower()
+    candidates = [f for f in followers_of(session, ticket) if f.email != requester]
+    if cc_emails is None:
+        chosen = candidates
+    else:
+        wanted = {address.strip().lower() for address in cc_emails}
+        unknown = wanted - {f.email for f in candidates}
+        if unknown:
+            raise UnknownRecipient(", ".join(sorted(unknown)))
+        chosen = [f for f in candidates if f.is_internal or f.email in wanted]
+    cc = ", ".join(f.email for f in chosen) or None
     return _record(
         session, ticket, sender=author.display_name, body=body, author_user_id=author.id,
         direction=MessageDirection.OUTBOUND, visibility=MessageVisibility.PUBLIC, cc=cc,
@@ -117,6 +138,8 @@ class TimelineItem:
     at: datetime
     message: Optional[Message] = None
     event: Optional[TicketEvent] = None
+    # For a message from the requester's side: "requester" or "follower".
+    sender_kind: Optional[str] = None
 
     @property
     def kind(self) -> str:
@@ -127,7 +150,21 @@ def agent_timeline(session: Session, ticket: Ticket) -> list[TimelineItem]:
     """Messages, notes and events in one time-ordered list, for agents only."""
     messages = session.exec(select(Message).where(Message.ticket_id == ticket.id)).all()
     events = session.exec(select(TicketEvent).where(TicketEvent.ticket_id == ticket.id)).all()
-    items = [TimelineItem(at=m.created_at, message=m) for m in messages]
+    requester = ticket.requester_email.lower()
+    author_ids = {m.author_user_id for m in messages if m.author_user_id is not None}
+    emails = (
+        {u.id: u.email.lower() for u in session.exec(select(User).where(User.id.in_(author_ids))).all()}
+        if author_ids
+        else {}
+    )
+
+    def kind(message: Message) -> Optional[str]:
+        if message.direction != MessageDirection.INBOUND:
+            return None
+        author = emails.get(message.author_user_id)
+        return "follower" if author is not None and author != requester else "requester"
+
+    items = [TimelineItem(at=m.created_at, message=m, sender_kind=kind(m)) for m in messages]
     items += [TimelineItem(at=e.created_at, event=e) for e in events]
     # Ties keep events after the message that caused them, and a stable order.
     return sorted(items, key=lambda i: (i.at, 0 if i.message else 1, (i.message or i.event).id or 0))

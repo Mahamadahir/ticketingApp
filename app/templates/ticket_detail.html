@@ -179,6 +179,7 @@
     <div class="message-meta">
       {% if message.direction.value == "internal" %}<b>Internal note</b> (agents only)
       {% elif message.direction.value == "outbound" %}<b>Email to requester</b>{% if message.cc %} (cc: {{ message.cc }}){% endif %}
+      {% elif item.sender_kind == "follower" %}<b>From follower</b>
       {% else %}<b>From requester</b>{% endif %}
       &middot; {{ message.sender }} &middot; {{ message.created_at.strftime("%Y-%m-%d %H:%M") }}
     </div>
@@ -200,7 +201,19 @@
 {% if can_email %}
 <form hx-post="/tickets/{{ ticket.id }}/email" hx-target="main" hx-swap="innerHTML">
   <textarea name="body" rows="4" maxlength="{{ max_message_length }}" placeholder="Email to the requester..." required></textarea>
-  {% if followers %}<p class="note">Copied to: {{ followers|map(attribute="email")|join(", ") }}</p>{% endif %}
+  {% if cc_candidates %}
+  <fieldset>
+    <legend>Copy this email to</legend>
+    <input type="hidden" name="cc_form" value="1" />
+    {% for f in cc_candidates %}
+    <label>
+      <input type="checkbox" name="cc" value="{{ f.email }}" checked {{ "disabled" if f.is_internal else "" }} />
+      {{ f.email }}{% if f.is_internal %} <i>(internal, always copied)</i>{% endif %}
+    </label>
+    {% endfor %}
+    <p class="note">Unticking someone only leaves them off this email. Remove them under Followers to stop copying them on future ones.</p>
+  </fieldset>
+  {% endif %}
   <button type="submit">Email user</button>
 </form>
 {% elif can_work %}

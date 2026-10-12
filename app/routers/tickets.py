@@ -20,7 +20,7 @@ from app.followers import (
     remove_follower,
 )
 from app.categories import CategoryError, create_category, path_of, selectable, team_id_for
-from app.messages import add_note, agent_timeline, email_requester, is_triaged
+from app.messages import UnknownRecipient, add_note, agent_timeline, email_requester, is_triaged
 from app.models import Category, Team, Ticket, TicketAlias, TicketStatus, TicketType, User, UserRole
 from app.pagination import paginate
 from app.ticket_service import EVENT_ASSIGNED, EVENT_ESCALATED, NotTriaged, record_event, set_status
@@ -256,16 +256,23 @@ def email_user(
     ticket_id: int,
     request: Request,
     body: str = Form(..., max_length=MAX_MESSAGE_LENGTH),
+    cc_form: Optional[str] = Form(None),
+    cc: list[str] = Form(default=[]),
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
-    """Send the requester a message. Not available until the ticket is triaged."""
+    """Send the requester a message, copying the followers the agent left ticked.
+    Not available until the ticket is triaged. "cc_form" is sent by the page's form
+    so that ticking nobody means copying nobody; a request without it copies every
+    follower."""
     ticket = _get_ticket(session, ticket_id, user)
 
     try:
-        email_requester(session, ticket, user, body)
+        email_requester(session, ticket, user, body, cc_emails=cc if cc_form else None)
     except NotTriaged:
         raise HTTPException(status_code=400, detail="Triage the ticket before emailing the requester")
+    except UnknownRecipient as error:
+        raise HTTPException(status_code=400, detail=f"Not a follower of this ticket: {error}")
 
     # The first email on an open ticket starts the work. Any other status
     # (awaiting user, with MSP, resolved, closed) is the agent's call and an
@@ -493,6 +500,8 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             "teams": teams,
             "timeline": timeline,
             "followers": followers_of(session, ticket),
+            # Who the Email user form offers to copy: everyone except the requester.
+            "cc_candidates": [f for f in followers_of(session, ticket) if f.email != ticket.requester_email.lower()],
             "can_email": can_work and is_triaged(ticket),
             "can_edit_followers": can_work,
             "can_note": may_add_note(user, ticket, levels),

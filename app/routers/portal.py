@@ -38,6 +38,17 @@ def _get_own_ticket(session: Session, ticket_id: int, user: User) -> Ticket:
     return ticket
 
 
+def _get_commentable_ticket(session: Session, ticket_id: int, user: User) -> Ticket:
+    """A ticket the user can reply on: one they raised, or one they follow. Internal
+    followers are agents and use the agent console, so they cannot comment here."""
+    ticket = session.get(Ticket, ticket_id)
+    if ticket is None or not (
+        _is_requester(ticket, user) or is_follower(session, ticket, user.email, include_internal=False)
+    ):
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    return ticket
+
+
 def _get_readable_ticket(session: Session, ticket_id: int, user: User) -> Ticket:
     """A ticket the user raised or follows."""
     ticket = session.get(Ticket, ticket_id)
@@ -61,6 +72,9 @@ def _render_ticket(request: Request, ticket: Ticket, user: User, session: Sessio
                 else []
             ),
             "is_requester": _is_requester(ticket, user),
+            # The requester and ordinary followers can reply; an internal follower is an
+            # agent and replies from the agent console.
+            "can_comment": _is_requester(ticket, user) or is_follower(session, ticket, user.email, include_internal=False),
             "user": user,
         },
     )
@@ -99,7 +113,7 @@ def add_comment(
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    ticket = _get_own_ticket(session, ticket_id, user)
+    ticket = _get_commentable_ticket(session, ticket_id, user)
 
     record_inbound(session, ticket, sender=user.display_name, body=body, author_user_id=user.id)
     log_action(session, user.email, "ticket", ticket.id, "commented", body[:200])

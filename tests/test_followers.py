@@ -4,6 +4,8 @@ from app.followers import MAX_EXTERNAL_FOLLOWERS, cc_list, followers_of
 from app.models import (
     AuditLog,
     Message,
+    MessageDirection,
+    MessageVisibility,
     Ticket,
     TicketEvent,
     TicketFollower,
@@ -122,7 +124,9 @@ def test_an_email_records_who_was_copied_at_send_time(client, db_session):
     client.post(f"/tickets/{ticket.id}/followers", data={"email": "boss@example.org"})
     client.post(f"/tickets/{ticket.id}/followers", data={"email": "peer@example.org"})
 
-    assert "Copied to: boss@example.org, peer@example.org" in client.get(f"/tickets/{ticket.id}").text
+    page = client.get(f"/tickets/{ticket.id}").text
+    for address in ("boss@example.org", "peer@example.org"):
+        assert f'name="cc" value="{address}" checked' in page
     client.post(f"/tickets/{ticket.id}/email", data={"body": "First update"})
 
     first = db_session.exec(select(Message)).one()
@@ -147,7 +151,7 @@ def test_an_email_with_no_followers_has_no_cc(client, db_session):
     client.post(f"/tickets/{ticket.id}/email", data={"body": "Hello"})
 
     assert db_session.exec(select(Message)).one().cc is None
-    assert "Copied to" not in client.get(f"/tickets/{ticket.id}").text
+    assert "Copy this email to" not in client.get(f"/tickets/{ticket.id}").text
 
 
 # ---- The escalator is an internal follower ---------------------------------------
@@ -252,7 +256,7 @@ def test_the_requester_adds_and_removes_followers(client, db_session):
     assert follower_emails(db_session, ticket) == []
 
 
-def test_a_follower_with_an_account_reads_the_ticket_but_cannot_change_it(client, db_session):
+def test_a_follower_with_an_account_can_read_and_reply_but_not_manage_the_ticket(client, db_session):
     team = create_team(db_session, "Service Desk")
     ticket = make_ticket(db_session, team.id, requester="me@example.com")
     agent_for(client, db_session, team)
@@ -272,9 +276,16 @@ def test_a_follower_with_an_account_reads_the_ticket_but_cannot_change_it(client
     assert page.status_code == 200
     assert "We are on it" in page.text
     assert SECRET_NOTE not in page.text and "Internal note" not in page.text
-    assert "You are following this request" in page.text and "Add comment" not in page.text
+    assert "Add comment" in page.text  # followers are not read-only
+    assert "Also keeping up to date" not in page.text  # but they do not manage the follower list
 
-    assert client.post(f"/portal/{ticket.id}/comment", data={"body": "hello"}).status_code == 404
+    assert client.post(f"/portal/{ticket.id}/comment", data={"body": "Thanks, that fixed it"}).status_code == 200
+    reply = db_session.exec(select(Message).where(Message.body == "Thanks, that fixed it")).one()
+    assert (reply.direction, reply.visibility, reply.sender) == (
+        MessageDirection.INBOUND,
+        MessageVisibility.PUBLIC,
+        "Test User",
+    )
     assert client.post(f"/portal/{ticket.id}/followers", data={"email": "x@example.org"}).status_code == 404
     assert client.post(f"/portal/{ticket.id}/followers/{follower.id}/remove").status_code == 404
     assert client.get(f"/tickets/{ticket.id}").status_code == 403  # no agent console either
@@ -436,3 +447,134 @@ def test_removing_a_follower_is_audited_by_address_not_id(client, db_session):
 
     audit = db_session.exec(select(AuditLog).where(AuditLog.action == "follower_removed")).all()
     assert [entry.detail for entry in audit] == ["boss@example.org"]
+
+
+# ---- Followers respond, and the agent chooses who is copied --------------------------
+
+
+def test_a_follower_reply_reaches_the_agents_labelled_as_from_a_follower(client, db_session):
+    team = create_team(db_session, "Service Desk")
+    ticket = make_ticket(db_session, team.id, requester="me@example.com")
+    login_as(client, "me@example.com")
+    client.post(f"/portal/{ticket.id}/followers", data={"email": "boss@example.org"})
+    client.post(f"/portal/{ticket.id}/comment", data={"body": "From the requester"})
+    client.post("/auth/logout")
+    login_as(client, "boss@example.org")
+    before = db_session.get(Ticket, ticket.id).updated_at
+    client.post(f"/portal/{ticket.id}/comment", data={"body": "From the boss"})
+    client.post("/auth/logout")
+
+    agent_for(client, db_session, team)
+    page = client.get(f"/tickets/{ticket.id}").text
+    assert page.index("From the requester") < page.index("From the boss")
+    requester_part = page.split("From the requester")[0].rsplit("<b>", 1)[1]
+    follower_part = page.split("From the boss")[0].rsplit("<b>", 1)[1]
+    assert requester_part.startswith("From requester") and follower_part.startswith("From follower")
+    db_session.expire_all()
+    assert db_session.get(Ticket, ticket.id).updated_at > before
+
+
+def test_a_follower_reply_is_shown_to_the_requester_and_cannot_be_forged_by_a_stranger(client, db_session):
+    ticket = make_ticket(db_session, requester="me@example.com")
+    login_as(client, "me@example.com")
+    client.post(f"/portal/{ticket.id}/followers", data={"email": "boss@example.org"})
+    client.post("/auth/logout")
+    login_as(client, "boss@example.org")
+    client.post(f"/portal/{ticket.id}/comment", data={"body": "Boss here"})
+    client.post("/auth/logout")
+
+    login_as(client, "me@example.com")
+    assert "Boss here" in client.get(f"/portal/{ticket.id}").text
+    client.post("/auth/logout")
+
+    login_as(client, "stranger@example.org")
+    assert client.post(f"/portal/{ticket.id}/comment", data={"body": "Let me in"}).status_code == 404
+    assert [m.body for m in db_session.exec(select(Message))] == ["Boss here"]
+
+
+def test_an_internal_follower_cannot_comment_from_the_portal(client, db_session):
+    mine, network = create_team(db_session, "Mine"), create_team(db_session, "Network")
+    ticket = make_ticket(db_session, mine.id, requester="me@example.com")
+    agent_for(client, db_session, mine, email="escalator@example.com")
+    client.post(f"/tickets/{ticket.id}/escalate", data={"reason": "x", "target_team_id": network.id})
+
+    page = client.get(f"/portal/{ticket.id}")
+    assert page.status_code == 200 and "Add comment" not in page.text
+    assert "Reply from the agent console" in page.text
+    assert client.post(f"/portal/{ticket.id}/comment", data={"body": "hello"}).status_code == 404
+
+
+def emailed(client, ticket, **data):
+    return client.post(f"/tickets/{ticket.id}/email", data={"body": "An update", **data})
+
+
+def last_cc(db_session):
+    db_session.expire_all()
+    return db_session.exec(select(Message).order_by(Message.id.desc())).first().cc
+
+
+def ticket_with_two_followers(client, db_session):
+    team = create_team(db_session, "Service Desk")
+    ticket = make_ticket(db_session, team.id)
+    agent_for(client, db_session, team)
+    for address in ("boss@example.org", "peer@example.org"):
+        client.post(f"/tickets/{ticket.id}/followers", data={"email": address})
+    return ticket
+
+
+def test_the_agent_can_leave_a_follower_off_one_email_without_removing_them(client, db_session):
+    ticket = ticket_with_two_followers(client, db_session)
+
+    assert emailed(client, ticket, cc_form="1", cc=["peer@example.org"]).status_code == 200
+
+    assert last_cc(db_session) == "peer@example.org"
+    assert follower_emails(db_session, ticket) == ["boss@example.org", "peer@example.org"]  # still followers
+    emailed(client, ticket)  # no choice made: everyone is copied again
+    assert last_cc(db_session) == "boss@example.org, peer@example.org"
+
+
+def test_ticking_nobody_copies_nobody_and_a_request_without_the_form_copies_everybody(client, db_session):
+    ticket = ticket_with_two_followers(client, db_session)
+
+    emailed(client, ticket, cc_form="1")  # the form was shown and every box unticked
+    assert last_cc(db_session) is None
+    emailed(client, ticket)  # not from the form at all
+    assert last_cc(db_session) == "boss@example.org, peer@example.org"
+
+
+def test_only_followers_can_be_copied_and_a_refusal_sends_nothing(client, db_session):
+    ticket = ticket_with_two_followers(client, db_session)
+
+    response = emailed(client, ticket, cc_form="1", cc=["boss@example.org", "outsider@example.org"])
+
+    assert response.status_code == 400 and "outsider@example.org" in response.text
+    assert db_session.exec(select(Message)).all() == []
+    db_session.refresh(ticket)
+    assert ticket.status == TicketStatus.OPEN  # the refused email did not start the work
+
+
+def test_an_internal_follower_is_always_copied(client, db_session):
+    mine = create_team(db_session, "Mine")
+    ticket = make_ticket(db_session, mine.id)
+    agent_for(client, db_session, mine, email="escalator@example.com")
+    client.post(f"/tickets/{ticket.id}/escalate", data={"reason": "Flagging this"})
+    client.post(f"/tickets/{ticket.id}/followers", data={"email": "boss@example.org"})
+
+    page = client.get(f"/tickets/{ticket.id}").text
+    assert 'value="escalator@example.com" checked disabled' in page and "always copied" in page
+
+    emailed(client, ticket, cc_form="1")  # nothing ticked, and the disabled box is never sent
+    assert last_cc(db_session) == "escalator@example.com"
+    emailed(client, ticket, cc_form="1", cc=["boss@example.org"])
+    assert last_cc(db_session) == "escalator@example.com, boss@example.org"
+
+
+def test_an_agent_who_is_also_the_requester_is_not_offered_or_copied(client, db_session):
+    mine = create_team(db_session, "Mine")
+    ticket = make_ticket(db_session, mine.id, requester="agent@example.com")
+    agent_for(client, db_session, mine)
+    client.post(f"/tickets/{ticket.id}/escalate", data={"reason": "x"})  # becomes an internal follower of own ticket
+
+    assert "Copy this email to" not in client.get(f"/tickets/{ticket.id}").text
+    emailed(client, ticket)
+    assert last_cc(db_session) is None
