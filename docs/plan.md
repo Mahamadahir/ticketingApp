@@ -284,9 +284,16 @@ everyone can see. This is how restricted work (HR, security) and other teams
 are brought onto the system without exposing their tickets.
 
 Not every team needs its own inbox. A main team can have one inbox that its
-sub-teams share, so sub-teams are onboarded without new mailboxes (this needs a
-parent team on `team`, and a decision on whether a parent sees its sub-teams'
-tickets; **TBC**).
+sub-teams share, so sub-teams are onboarded without new mailboxes.
+
+**Sub-teams** (agreed 12 Oct 2026). A team can have a parent team. Members of a
+parent team see all of its sub-teams' tickets. This needs a parent on `team`,
+managed in the admin portal, and is applied in one place: the effective team
+levels computed in `app/visibility.py` include the sub-teams of every team a
+user belongs to, so no route changes. Built when the first sub-team is
+introduced, together with per-inbox routing. **TBC**: whether a parent member can
+work sub-team tickets or only read them (the default is the same level they hold
+in the parent), and how many levels deep teams can nest (start with one).
 
 What it needs, none of it built yet: an inbox-to-team mapping managed in the
 admin portal (inbox address, owning team, whether tickets start in the shared
@@ -400,10 +407,22 @@ the parent offers to resolve every linked ticket with the same notes.
 **Splitting.** One request that asks for several things can be split into
 sub-tickets, so each part is tracked, assigned and resolved on its own (better
 accountability). The agent clicks Split ticket, chooses how many parts, and
-enters a subject and details for each. Each sub-ticket has its own reference,
-type, category, assignee and status (starting from the original's values), is
-linked to the original, and can email the requester itself. In the agent portal
-they are separate tickets, and the original lists them all.
+enters a subject and details for each. As each sub-ticket is created the triage
+panel opens with the original's type, category, impact, urgency and team
+prefilled, and the agent can amend any of it (or assign). Each sub-ticket has its
+own reference, type, category, assignee and status, is linked to the original,
+and can email the requester itself. In the agent portal they are separate
+tickets, and the original lists them all.
+
+**Status of the original while it has sub-tickets.** It is derived, so agents do
+not set it by hand: if every sub-ticket has the same status, the original takes
+it; if exactly one sub-ticket is still unfinished, the original takes that one's
+status; otherwise it is In progress. Each derived change is recorded as a system
+event. Resolved and Closed are never derived. When every sub-ticket is finished
+the original shows "All sub-tickets are done: resolve this ticket"; the agent
+resolves it explicitly, which sends the single resolution email (with the usual
+preview), and the normal auto-close after N days then applies. It does not
+resolve itself, because the requester would otherwise never be told it was done.
 
 To the requester it is one email chain. Every email, from the original or any
 sub-ticket, is sent as a reply in the same mail conversation with the same
