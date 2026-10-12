@@ -72,6 +72,10 @@ target (a setting, 25% to start) or less is left and red once overdue. Tickets
 triaged before this existed have no priority and no SLA. Requesters never see
 either.
 
+**Linking.** A ticket can be linked under a Major Incident or Problem (the parent) from its page, by typing the parent's reference; an old reference that survives as an alias works too. It is one level deep: a parent is never itself linked, and a ticket with linked tickets cannot go under another. The agent must work the ticket and be able to see the parent. Both tickets get an event and there is an audit entry; unlinking works the same way. The parent lists its linked tickets, but each person sees only the ones they could open anyway (the rest are counted, not named), and a linked ticket does not name a parent its viewer cannot open. Offering to resolve every linked ticket with the parent comes with the resolve action in phase 4.
+
+**Assign to me** works only on a ticket nobody has; taking a ticket from its assignee always needs the explicit Re-assign.
+
 **Categories.** Managed by super admins under Admin > Categories: a main category
 (owned by a team) with optional sub-categories (one level, using the parent's
 team). A super admin can also create one while triaging. "Other" is for tickets
@@ -298,6 +302,7 @@ app/
   models.py          Ticket, Message, User, Team, AuditLog
   auth.py            SSO (MSAL) + local password auth, session, role checks
   audit.py           Audit log helper
+  linking.py         Link tickets under a Major Incident or Problem
   sla.py             Priority from impact x urgency, SLA deadlines and clock, queue order
   activity.py        Activity log: sign-in events and request-logging middleware
   graph_client.py    Microsoft Graph mail integration (stubbed)
