@@ -69,12 +69,23 @@ which is a separate action that flags the ticket and needs a reason.
 **Followers.** An agent who works a ticket, or the requester on their own
 ticket, can copy other people on it by email (up to 20). Followers are copied on
 every email to the requester, and each email records exactly who was copied.
-A follower with a portal account sees the ticket under *Following*: read-only,
-public messages only, no replying. Escalating a ticket makes the escalating
-agent an *internal follower*: copied on everything, and keeping read access
-wherever the ticket goes. That access comes from the follower list
+When an agent writes an email, every follower is ticked under *Copy this email
+to*; unticking someone leaves them off that one email without removing them as
+a follower (removing is separate, and is logged in the timeline and the audit
+log). A follower with a portal account sees the ticket under *Following* (public
+messages only) and can reply there; their reply is added to the ticket and shown
+to agents as *From follower*. They cannot manage the follower list. Escalating a
+ticket makes the escalating agent an *internal follower*: always copied, and
+keeping read access wherever the ticket goes; they reply from the agent console,
+not the portal. That access comes from the follower list
 (`app/followers.py`, `app/visibility.py`), not from the ticket's escalated-by
 field. Nothing is emailed until Graph is wired up in phase 3.
+
+**Status follows the conversation.** Emailing the user moves an Open or In progress
+ticket to *Awaiting user* automatically, with no option for the agent to skip it. A
+reply from the requester or a follower while it is Awaiting user moves it back to
+*In progress*. Both are recorded in the timeline and audit log. (The SLA clock that
+pauses in Awaiting user is built in phase 1D-ii.)
 
 **Email user and notes.** An agent has two ways to write on a ticket. **Email
 user** sends the requester a message and is available once the ticket is

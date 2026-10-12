@@ -170,7 +170,7 @@ def test_resolved_at_set_kept_on_close_and_cleared_on_reopen(client, db_session)
     assert ticket.resolved_at is None
 
 
-def test_first_email_records_status_event_once(client, db_session):
+def test_emailing_the_user_moves_the_ticket_to_awaiting_user_once(client, db_session):
     team = create_team(db_session, "Service Desk")
     ticket = make_ticket(db_session, team_id=team.id, triaged=True)
     login_agent(client, db_session, team)
@@ -179,7 +179,7 @@ def test_first_email_records_status_event_once(client, db_session):
     client.post(f"/tickets/{ticket.id}/email", data={"body": "Still on it"})
 
     changes = events_for(db_session, ticket, "status_changed")
-    assert [(e.from_value, e.to_value) for e in changes] == [("open", "in_progress")]
+    assert [(e.from_value, e.to_value) for e in changes] == [("open", "awaiting_user")]  # not again on the second email
 
 
 def test_assign_and_escalate_record_events(client, db_session):
@@ -254,7 +254,7 @@ def test_email_does_not_undo_a_deliberate_status(client, db_session):
         assert ticket.resolved_at == resolved_at
 
 
-def test_first_email_is_audited_as_a_status_change(client, db_session):
+def test_the_status_change_after_an_email_is_audited(client, db_session):
     team = create_team(db_session, "Service Desk")
     ticket = make_ticket(db_session, team_id=team.id, triaged=True)
     login_agent(client, db_session, team)
@@ -262,7 +262,7 @@ def test_first_email_is_audited_as_a_status_change(client, db_session):
     client.post(f"/tickets/{ticket.id}/email", data={"body": "On it"})
 
     audit = db_session.exec(select(AuditLog).where(AuditLog.action == "status_changed")).all()
-    assert [entry.detail for entry in audit] == ["open -> in_progress"]
+    assert [entry.detail for entry in audit] == ["open -> awaiting_user"]
 
 
 def test_assigning_to_the_same_agent_twice_records_one_event(client, db_session):

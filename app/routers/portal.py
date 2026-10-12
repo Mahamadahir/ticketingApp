@@ -18,7 +18,8 @@ from app.followers import (
 )
 from app.forms import MAX_MESSAGE_LENGTH
 from app.messages import record_inbound, requester_visible_messages
-from app.models import Ticket, User
+from app.models import Ticket, TicketStatus, User
+from app.ticket_service import set_status
 from app.pagination import paginate
 
 router = APIRouter(prefix="/portal", tags=["portal"])
@@ -34,6 +35,17 @@ def _get_own_ticket(session: Session, ticket_id: int, user: User) -> Ticket:
     """A ticket the user raised. Followers cannot use this: they only read."""
     ticket = session.get(Ticket, ticket_id)
     if ticket is None or not _is_requester(ticket, user):
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    return ticket
+
+
+def _get_commentable_ticket(session: Session, ticket_id: int, user: User) -> Ticket:
+    """A ticket the user can reply on: one they raised, or one they follow. Internal
+    followers are agents and use the agent console, so they cannot comment here."""
+    ticket = session.get(Ticket, ticket_id)
+    if ticket is None or not (
+        _is_requester(ticket, user) or is_follower(session, ticket, user.email, include_internal=False)
+    ):
         raise HTTPException(status_code=404, detail="Ticket not found")
     return ticket
 
@@ -61,6 +73,9 @@ def _render_ticket(request: Request, ticket: Ticket, user: User, session: Sessio
                 else []
             ),
             "is_requester": _is_requester(ticket, user),
+            # The requester and ordinary followers can reply; an internal follower is an
+            # agent and replies from the agent console.
+            "can_comment": _is_requester(ticket, user) or is_follower(session, ticket, user.email, include_internal=False),
             "user": user,
         },
     )
@@ -99,10 +114,19 @@ def add_comment(
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    ticket = _get_own_ticket(session, ticket_id, user)
+    ticket = _get_commentable_ticket(session, ticket_id, user)
 
     record_inbound(session, ticket, sender=user.display_name, body=body, author_user_id=user.id)
     log_action(session, user.email, "ticket", ticket.id, "commented", body[:200])
+    # A reply from the requester or a follower hands the ticket back to us: it leaves
+    # Awaiting user, which resumes the SLA clock. Any other status is left alone (a
+    # reply on a Resolved ticket is the reopen flow, phase 4).
+    if ticket.status == TicketStatus.AWAITING_USER:
+        set_status(session, ticket, TicketStatus.IN_PROGRESS, user.email)
+        log_action(
+            session, user.email, "ticket", ticket.id, "status_changed",
+            f"{TicketStatus.AWAITING_USER.value} -> {TicketStatus.IN_PROGRESS.value}",
+        )
     session.commit()
     session.refresh(ticket)
 
