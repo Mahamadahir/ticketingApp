@@ -12,7 +12,7 @@ from typing import Optional
 from sqlalchemy import func
 from sqlmodel import Session, select
 
-from app.models import FINISHED_STATUSES, Ticket, TicketAlias, TicketStatus, TicketType
+from app.models import FINISHED_STATUSES, Ticket, TicketStatus, TicketType
 from app.ticket_service import record_event
 
 EVENT_LINKED = "linked"  # on the ticket that was linked: to_value is the parent
@@ -25,18 +25,6 @@ PARENT_TYPES = (TicketType.MAJOR_INCIDENT, TicketType.PROBLEM)
 
 class LinkError(ValueError):
     """A reason a link cannot be made, worded for the agent."""
-
-
-def find_by_reference(session: Session, reference: str) -> Optional[Ticket]:
-    """A ticket by its reference, or by an old one it kept as an alias."""
-    reference = reference.strip().upper()
-    if not reference:
-        return None
-    ticket = session.exec(select(Ticket).where(Ticket.reference == reference)).first()
-    if ticket is None:
-        alias = session.get(TicketAlias, reference)
-        ticket = session.get(Ticket, alias.ticket_id) if alias is not None else None
-    return ticket
 
 
 MAX_LISTED = 50

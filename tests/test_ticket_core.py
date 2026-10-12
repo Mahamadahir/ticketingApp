@@ -7,7 +7,7 @@ from app.database import engine
 from app.models import (
     AuditLog,
     Ticket,
-    TicketCounter,
+    NumberCounter,
     TicketEvent,
     TicketSource,
     TicketStatus,
@@ -49,7 +49,7 @@ def login_agent(client, db_session, team):
     return agent_id
 
 
-def test_each_type_has_its_own_counter_and_prefix(db_session):
+def test_one_counter_is_shared_by_every_type_and_the_prefix_follows_the_type(db_session):
     references = [
         make_ticket(db_session, TicketType.INCIDENT).reference,
         make_ticket(db_session, TicketType.SERVICE_REQUEST).reference,
@@ -58,7 +58,7 @@ def test_each_type_has_its_own_counter_and_prefix(db_session):
         make_ticket(db_session, TicketType.PROBLEM).reference,
         make_ticket(db_session, TicketType.SERVICE_REQUEST).reference,
     ]
-    assert references == ["INC-1", "SR-1", "INC-2", "MI-1", "PRB-1", "SR-2"]
+    assert references == ["INC-1", "SR-2", "INC-3", "MI-4", "PRB-5", "SR-6"]
 
 
 def test_ticket_created_directly_still_gets_a_reference(db_session):
@@ -73,8 +73,9 @@ def test_ticket_created_directly_still_gets_a_reference(db_session):
 def test_counter_matches_last_issued_number(db_session):
     make_ticket(db_session)
     make_ticket(db_session)
-    counter = db_session.get(TicketCounter, TicketType.INCIDENT)
-    assert counter.last_number == 2
+    make_ticket(db_session, TicketType.PROBLEM)
+    counter = db_session.get(NumberCounter, "ticket")
+    assert counter.last_number == 3
 
 
 def test_new_ticket_defaults_and_created_event(db_session):
@@ -110,6 +111,26 @@ def test_reference_link_opens_ticket_case_insensitively(client, db_session):
         assert response.status_code == 200
         assert "Shared link ticket" in response.text
         assert ticket.reference in response.text
+
+
+def test_the_number_alone_finds_a_ticket_whatever_prefix_is_typed(client, db_session):
+    team = create_team(db_session, "Service Desk")
+    ticket = make_ticket(db_session, TicketType.SERVICE_REQUEST, team_id=team.id, subject="Find by number")
+    login_agent(client, db_session, team)
+
+    for text in (str(ticket.number), f"INC-{ticket.number}", f"sr{ticket.number}", f"PRB-{ticket.number}"):
+        response = client.get(f"/t/{text}")
+        assert response.status_code == 200 and "Find by number" in response.text, text
+    for text in ("abc", "INC-", "12x", "NOPE-1", "99999"):
+        assert client.get(f"/t/{text}").status_code == 404, text
+
+
+def test_ticket_numbers_parse_only_in_the_accepted_forms():
+    from app.ticket_service import parse_ticket_number
+
+    assert [parse_ticket_number(t) for t in ("1042", " #1042 ", "INC-1042", "sr-7", "PRB9")] == [1042, 1042, 1042, 7, 9]
+    for bad in ("", "INC-", "1042abc", "MAJOR-1", "1 2", "-5", "1234567890", "٣"):
+        assert parse_ticket_number(bad) is None, bad
 
 
 def test_reference_link_respects_team_visibility(client, db_session):

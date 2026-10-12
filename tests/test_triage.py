@@ -4,7 +4,6 @@ from app.models import (
     AuditLog,
     Category,
     Ticket,
-    TicketAlias,
     TicketEvent,
     TicketSource,
     TicketStatus,
@@ -107,7 +106,7 @@ def test_a_ticket_created_past_new_counts_as_triaged(db_session):
     assert untouched.status == TicketStatus.NEW and untouched.triaged_at is None
 
 
-def test_changing_the_type_reissues_the_reference_and_keeps_the_old_one_working(client, db_session):
+def test_changing_the_type_keeps_the_number_and_only_the_display_prefix_follows(client, db_session):
     desk = create_team(db_session, "Service Desk")
     ticket = new_ticket(db_session, desk)
     assert ticket.reference == "INC-1"
@@ -117,18 +116,15 @@ def test_changing_the_type_reissues_the_reference_and_keeps_the_old_one_working(
 
     db_session.refresh(ticket)
     assert (ticket.type, ticket.reference, ticket.number) == (TicketType.SERVICE_REQUEST, "SR-1", 1)
-    assert [a.ticket_id for a in db_session.exec(select(TicketAlias).where(TicketAlias.reference == "INC-1"))] == [
-        ticket.id
-    ]
-    assert [(e.from_value, e.to_value) for e in events(db_session, ticket, "reference_changed")] == [("INC-1", "SR-1")]
+    assert events(db_session, ticket, "reference_changed") == []  # nothing about identity changed
     assert [(e.from_value, e.to_value) for e in events(db_session, ticket, "type_changed")] == [
         ("incident", "service_request")
     ]
-    # Old links and email subjects still find it, in either case.
-    for link in ("/t/SR-1", "/t/INC-1", "/t/inc-1"):
+    # Old links and email subjects (INC-1) still find it, in either case and by number alone.
+    for link in ("/t/SR-1", "/t/INC-1", "/t/inc-1", "/t/1"):
         page = client.get(link)
         assert page.status_code == 200 and "SR-1" in page.text, link
-    # The old number is never handed out again.
+    # Numbers are shared across types: the next ticket is 2, not another INC-1 or SR-2.
     assert new_ticket(db_session, desk).reference == "INC-2"
 
 
@@ -141,8 +137,7 @@ def test_keeping_the_type_keeps_the_reference(client, db_session):
 
     db_session.refresh(ticket)
     assert ticket.reference == "INC-1"
-    assert db_session.exec(select(TicketAlias)).all() == []
-    assert events(db_session, ticket, "reference_changed") == []
+    assert events(db_session, ticket, "type_changed") == []
 
 
 def test_triage_assignment_is_optional_and_never_clears_an_existing_one(client, db_session):
@@ -535,7 +530,7 @@ def test_two_people_triaging_the_same_ticket_at_once_get_one_winner_and_no_error
 
     assert sorted(codes) == [200, 400]  # one winner, one told it is already triaged, no 500
     assert len(events(db_session, ticket, "triaged")) == 1
-    assert len(db_session.exec(select(TicketAlias)).all()) == 1
+    assert len(events(db_session, ticket, "type_changed")) == 1
     db_session.refresh(ticket)
     assert ticket.reference == "SR-1" and ticket.triaged_by_id in agent_ids
 

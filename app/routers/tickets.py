@@ -20,9 +20,9 @@ from app.followers import (
     remove_follower,
 )
 from app.categories import CategoryError, create_category, path_of, selectable, team_id_for
-from app.linking import PARENT_TYPES, LinkError, find_by_reference, link_ticket, linked_summary, unlink_ticket
+from app.linking import PARENT_TYPES, LinkError, link_ticket, linked_summary, unlink_ticket
 from app.messages import UnknownRecipient, add_note, agent_timeline, email_requester, is_triaged
-from app.models import FINISHED_STATUSES, Category, Team, Ticket, TicketAlias, TicketStatus, TicketType, User, UserRole
+from app.models import FINISHED_STATUSES, Category, Team, Ticket, TicketStatus, TicketType, User, UserRole
 from app.pagination import paginate
 from app.sla import (
     IMPACT_LABELS,
@@ -34,7 +34,7 @@ from app.sla import (
     set_impact_urgency,
     sla_view,
 )
-from app.ticket_service import EVENT_ASSIGNED, EVENT_ESCALATED, NotTriaged, record_event, set_status
+from app.ticket_service import EVENT_ASSIGNED, EVENT_ESCALATED, NotTriaged, find_ticket, record_event, set_status
 from app.triage import TriageError, reassign_ticket, triage_ticket
 from app.visibility import (
     Access,
@@ -51,7 +51,7 @@ from app.visibility import (
 )
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
-# Shareable links live outside /tickets: /t/INC-42.
+# Shareable links live outside /tickets: /t/1042 (the number; a prefix such as INC-1042 is accepted).
 reference_router = APIRouter(tags=["tickets"])
 templates = Jinja2Templates(directory="app/templates")
 templates.env.globals["max_message_length"] = MAX_MESSAGE_LENGTH
@@ -281,18 +281,15 @@ def view_ticket(
 
 
 @reference_router.get("/t/{reference}", response_class=HTMLResponse)
-def view_ticket_by_reference(
+def view_ticket_by_number(
     reference: str,
     request: Request,
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
-    """Shareable link, e.g. /t/INC-42."""
-    ticket = session.exec(select(Ticket).where(Ticket.reference == reference.upper())).first()
-    if ticket is None:
-        # A ticket whose type changed at triage keeps its old reference as an alias.
-        alias = session.get(TicketAlias, reference.upper())
-        ticket = session.get(Ticket, alias.ticket_id) if alias is not None else None
+    """Shareable link, e.g. /t/1042. A prefix is accepted and ignored (/t/INC-1042), so
+    old links and email subjects still work after a ticket's type changed."""
+    ticket = find_ticket(session, reference)
     if ticket is None:
         raise HTTPException(status_code=404, detail="Ticket not found")
     require_access(user, ticket, access_context(session, user), Access.READ)
@@ -492,7 +489,7 @@ def link(
     """Links this ticket under a Major Incident or Problem, given by reference. The agent
     works this ticket and must be able to see the parent."""
     ticket = _get_ticket(session, ticket_id, user)
-    parent = find_by_reference(session, parent_reference)
+    parent = find_ticket(session, parent_reference)
     # The same answer whether it does not exist or is not visible to this agent, so
     # references cannot be probed for tickets they may not see.
     if parent is None or ticket_access(user, parent, access_context(session, user)) < Access.READ:

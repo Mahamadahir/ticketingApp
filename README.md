@@ -52,9 +52,11 @@ and the category decides the team. Assigning is optional and separate: choose an
 agent in the category's team, or leave the assignment as it is and the team picks
 it up. Saving the triage panel moves the ticket from New to Open; nothing else
 leaves New, and the status buttons do not offer it. Whoever triages a ticket keeps
-read access to it. If triage changes the type, the reference is re-issued (INC-12
-becomes SR-3) and the old one is kept as an alias, so existing links and the
-subjects of emails already sent still find the ticket.
+read access to it. Every ticket has one number from a counter shared by all
+types (1042); its reference is the number with the current type's prefix (INC-1042),
+for display. If triage changes the type the prefix follows (SR-1042) but the number
+does not, and lookups use the number alone, so `/t/1042`, `/t/INC-1042` and
+`/t/sr-1042` all open the same ticket and old links and email subjects keep working.
 
 **Priority and SLA.** Triage also records impact (how many people) and urgency
 (how bad for them), which give a priority P1 to P4 (`app/sla.py`: high/high is P1,
@@ -72,7 +74,7 @@ target (a setting, 25% to start) or less is left and red once overdue. Tickets
 triaged before this existed have no priority and no SLA. Requesters never see
 either.
 
-**Linking.** A ticket can be linked under a Major Incident or Problem (the parent) from its page, by typing the parent's reference; an old reference that survives as an alias works too. It is one level deep: a parent is never itself linked, and a ticket with linked tickets cannot go under another. The agent must work the ticket and be able to see the parent. Both tickets get an event and there is an audit entry; unlinking works the same way. The parent lists its linked tickets, but each person sees only the ones they could open anyway (the rest are counted, not named), and a linked ticket does not name a parent its viewer cannot open (its timeline does still show the parent's reference in the link event, never its subject or contents). A closed ticket, a resolved ticket and an untriaged ticket cannot be linked, nor can anything go under a closed parent; two links made at the same moment cannot build a chain. A parent lists at most 50 linked tickets. Offering to resolve every linked ticket with the parent comes with the resolve action in phase 4.
+**Linking.** A ticket can be linked under a Major Incident or Problem (the parent) from its page, by typing the parent's ticket number (1042, or INC-1042; only the number matters). It is one level deep: a parent is never itself linked, and a ticket with linked tickets cannot go under another. The agent must work the ticket and be able to see the parent. Both tickets get an event and there is an audit entry; unlinking works the same way. The parent lists its linked tickets, but each person sees only the ones they could open anyway (the rest are counted, not named), and a linked ticket does not name a parent its viewer cannot open (its timeline does still show the parent's reference in the link event, never its subject or contents). A closed ticket, a resolved ticket and an untriaged ticket cannot be linked, nor can anything go under a closed parent; two links made at the same moment cannot build a chain. A parent lists at most 50 linked tickets. Offering to resolve every linked ticket with the parent comes with the resolve action in phase 4.
 
 **Assign to me** works only on a ticket nobody has; taking a ticket from its assignee always needs the explicit Re-assign.
 

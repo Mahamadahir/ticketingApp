@@ -60,15 +60,14 @@ def test_both_pages_show_the_link(client, db_session):
     assert child.reference in parent_page and "Cannot send" in parent_page
 
 
-def test_a_reference_is_matched_in_any_case_and_through_an_alias(client, db_session):
+def test_the_parent_is_found_by_number_in_any_form(client, db_session):
     desk, major, child = world(client, db_session)
-    from app.models import TicketAlias
-    db_session.add(TicketAlias(reference="INC-999", ticket_id=major.id))
-    db_session.commit()
 
     assert link(client, child, f"  {major.reference.lower()} ").status_code == 200
     other = triaged(db_session, desk, subject="Second")
-    assert link(client, other, "inc-999").status_code == 200
+    assert link(client, other, str(major.number)).status_code == 200  # the bare number
+    third = triaged(db_session, desk, subject="Third")
+    assert link(client, third, f"INC-{major.number}").status_code == 200  # a stale prefix still finds it
     db_session.refresh(other)
     assert other.linked_parent_id == major.id
 

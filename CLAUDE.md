@@ -9,7 +9,7 @@ run it.
 
 - Phase 0 is done and merged (security fixes, Alembic, `/health`, lockout,
   pagination, audit log filters). Phase 1 is agreed as eight PRs (1A to 1H):
-  1A ticket core (types, per-type references, statuses, source, ticket events),
+  1A ticket core (types, shared ticket numbers, statuses, source, ticket events),
   1B teams and visibility, 1C messages (Email user vs internal notes, email
   hidden until triaged, one timeline of messages and events) and followers,
   1D triage as its own action separate from assignment (categories with an
@@ -35,8 +35,9 @@ run it.
   placeholders, TBC; the clock runs from `created_at` and pauses in Awaiting
   user). Followers respond in the portal and the sign-in/activity log
   (`app/activity.py`) are also merged. A ticket is triaged when `triaged_at` is set;
-  it leaves New only by triage, and a type change re-issues its reference and
-  keeps the old one as a `TicketAlias`.
+  it leaves New only by triage. A ticket's number comes from one counter shared by
+  every type and never changes; `reference` (INC-1042) is a display property that
+  follows the type, and lookups use `app.ticket_service.find_ticket` (number only).
 - 1E is being delivered in three PRs: **1E-i** (linking a ticket under a Major
   Incident or Problem in `app/linking.py`; Assign to me can no longer take an
   assigned ticket), then **1E-ii** backdating, then **1E-iii** splitting into
