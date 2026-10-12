@@ -94,6 +94,18 @@ entry. There's no automatic SLA-based escalation.
 change, assignment, escalation, comment, and user/team/role change — actor,
 action, entity, and a short detail string, newest first.
 
+**Activity log** (`/admin/activity-log`, super admin only) is separate from the
+audit log. It records security and usage events: sign-ins, sign-outs, failed
+sign-ins, account lockouts, SSO failures, access-denied responses, and every
+state-changing request (POST/PUT/PATCH/DELETE), each with who, when, the IP
+address and the user agent. Paths are stored as route templates
+(`/tickets/{ticket_id}/email`), so ids and tokens never land in the log. Request
+bodies, passwords, tokens, one-time codes and query strings are never recorded.
+Filter by event type, person, date range, or "problems only". A failure to write a
+row is logged and swallowed, so it can never break a request. The IP shown is
+only trustworthy once `FORWARDED_ALLOW_IPS` is set correctly behind the Azure
+ingress (a staging check).
+
 ## Signing in
 
 Two ways in, both resolve to a `User` row with a `role` (team access is separate, see Teams below):
@@ -257,6 +269,7 @@ app/
   models.py          Ticket, Message, User, Team, AuditLog
   auth.py            SSO (MSAL) + local password auth, session, role checks
   audit.py           Audit log helper
+  activity.py        Activity log: sign-in events and request-logging middleware
   graph_client.py    Microsoft Graph mail integration (stubbed)
   routers/
     health.py        Unauthenticated /health check (app + database) for monitors
