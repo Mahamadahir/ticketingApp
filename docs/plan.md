@@ -390,15 +390,20 @@ and when. Today events sit in a separate History table.
 are CC'd on public messages and see the ticket under "Following" in the
 portal.
 
-**Assignment.** Any agent who can work a ticket can assign or re-assign it.
-"Assign to me" is offered only on an unassigned ticket; once it has an assignee
-the control becomes "Re-assign", with a list of the ticket's team members (plus
-anyone while the ticket has no team). The assignee is notified. Moving a ticket
-to a different team, with an agent in it, is an escalation (below). Taking a
-ticket from its assignee needs the explicit re-assign, never the claim button.
+**Assignment.** Any agent who can work a ticket can assign or re-assign it. The
+control is a team and then an agent: choose a team (it starts on the ticket's
+current team), then either an agent in that team or "leave unassigned" so the
+ticket waits in that team's queue for anyone to pick up. The ticket moves to the
+chosen team and a chosen assignee is notified. It needs no reason and is not an
+escalation. "Assign to me" is a shortcut offered only on an unassigned ticket;
+once a ticket has an assignee the control reads "Re-assign". Taking a ticket
+from its assignee always needs the explicit re-assign, never the claim button.
+Every change (team, assignee, unassigned) is an event on the ticket.
 
-**Escalation.** The agent gives a reason and can move the ticket to another
-team. The escalating agent becomes an internal follower: CC'd on every
+**Escalation.** A separate action from re-assigning: the ticket is flagged as
+escalated, the agent must give a reason, and can move it to another team (which
+leaves it unassigned there). Use re-assign to hand work over; use escalate when
+it needs attention beyond that. The escalating agent becomes an internal follower: CC'd on every
 outgoing message, including emails to the MSP, keeps read access to that
 ticket, and is notified about notes only when @mentioned.
 
