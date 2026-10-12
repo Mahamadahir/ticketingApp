@@ -229,3 +229,117 @@ def test_an_agent_can_claim_an_unassigned_ticket_and_claiming_your_own_is_harmle
     assert client.post(f"/tickets/{ticket.id}/assign").status_code == 200
     db_session.refresh(ticket)
     assert ticket.assigned_agent_id == me
+
+
+# ---- Review follow-ups ------------------------------------------------------------------------------------
+
+
+def test_finished_untriaged_and_closed_parents_cannot_be_linked(client, db_session):
+    desk, major, child = world(client, db_session)
+    done = triaged(db_session, desk, subject="Done")
+    done.status = TicketStatus.RESOLVED
+    fresh = new_ticket(db_session, desk)
+    closed_major = triaged(db_session, desk, TicketType.MAJOR_INCIDENT, "Old outage")
+    closed_major.status = TicketStatus.CLOSED
+    for ticket in (done, closed_major):
+        db_session.add(ticket)
+    db_session.commit()
+
+    assert link(client, done, major.reference).status_code == 400
+    assert link(client, fresh, major.reference).status_code == 400
+    assert link(client, child, closed_major.reference).status_code == 400
+    # A resolved parent can still take new reports of the same thing.
+    closed_major.status = TicketStatus.RESOLVED
+    db_session.add(closed_major)
+    db_session.commit()
+    assert link(client, child, closed_major.reference).status_code == 200
+
+
+def test_an_agent_can_still_unlink_when_the_parent_is_no_longer_visible_to_them(client, db_session):
+    desk, secret_team = create_team(db_session, "Service Desk"), create_team(db_session, "Security")
+    hidden = triaged(db_session, secret_team, TicketType.MAJOR_INCIDENT, "Breach")
+    child = triaged(db_session, desk, subject="Odd")
+    child.linked_parent_id = hidden.id
+    db_session.add(child)
+    db_session.commit()
+    agent(client, db_session, member_of=[desk])
+
+    assert f"/tickets/{child.id}/unlink" in client.get(f"/tickets/{child.id}").text
+    assert client.post(f"/tickets/{child.id}/unlink").status_code == 200
+    db_session.refresh(child)
+    assert child.linked_parent_id is None
+
+
+def test_a_parent_lists_a_capped_number_and_says_how_many_more(client, db_session):
+    from app.linking import MAX_LISTED
+
+    desk, major, _ = world(client, db_session)
+    for number in range(MAX_LISTED + 3):
+        child = new_ticket(db_session, desk)
+        child.linked_parent_id, child.triaged_at, child.subject = major.id, NOW, f"Linked-{number:03d}-end"
+        db_session.add(child)
+    db_session.commit()
+
+    page = client.get(f"/tickets/{major.id}").text
+
+    import re
+    assert len(set(re.findall(r"Linked-\d{3}-end", page))) == MAX_LISTED
+    assert "3 more you can open are not listed" in page
+
+
+def test_a_link_error_reaches_the_agent_through_htmx(client, db_session):
+    _, _, child = world(client, db_session)
+
+    response = client.post(
+        f"/tickets/{child.id}/link", data={"parent_reference": "MI-99999"}, headers={"HX-Request": "true"}
+    )
+
+    assert response.headers.get("HX-Retarget") == "#flash" and "No ticket with that reference" in response.text
+
+
+def test_two_links_made_at_once_cannot_build_a_chain(client, db_session):
+    import threading
+    import time
+
+    from sqlmodel import Session
+
+    from app import linking
+    from app.database import engine
+
+    desk = create_team(db_session, "Service Desk")
+    a = triaged(db_session, desk, TicketType.PROBLEM, "A")
+    b = triaged(db_session, desk, TicketType.PROBLEM, "B")
+    c = triaged(db_session, desk, TicketType.PROBLEM, "C")
+    ids = (a.id, b.id, c.id)
+    holding, release, outcome = threading.Event(), threading.Event(), {}
+
+    def first():  # A under B, then waits before committing
+        with Session(engine) as s:
+            linking.link_ticket(s, s.get(Ticket, ids[0]), s.get(Ticket, ids[1]), "x@example.com")
+            holding.set()
+            release.wait(10)
+            s.commit()
+
+    def second():  # B under C, started while the first is still open
+        with Session(engine) as s:
+            try:
+                linking.link_ticket(s, s.get(Ticket, ids[1]), s.get(Ticket, ids[2]), "y@example.com")
+                s.commit()
+                outcome["second"] = "linked"
+            except linking.LinkError as error:
+                outcome["second"] = str(error)
+
+    one = threading.Thread(target=first)
+    one.start()
+    assert holding.wait(10)
+    two = threading.Thread(target=second)
+    two.start()
+    time.sleep(0.7)  # with the lock, the second is waiting here
+    release.set()
+    one.join(10)
+    two.join(10)
+
+    db_session.expire_all()
+    assert outcome["second"] != "linked", "a two-level chain was created"
+    assert db_session.get(Ticket, ids[1]).linked_parent_id is None
+    assert db_session.get(Ticket, ids[0]).linked_parent_id == ids[1]

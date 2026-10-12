@@ -20,7 +20,7 @@ from app.followers import (
     remove_follower,
 )
 from app.categories import CategoryError, create_category, path_of, selectable, team_id_for
-from app.linking import PARENT_TYPES, LinkError, find_by_reference, link_ticket, linked_tickets, unlink_ticket
+from app.linking import PARENT_TYPES, LinkError, find_by_reference, link_ticket, linked_summary, unlink_ticket
 from app.messages import UnknownRecipient, add_note, agent_timeline, email_requester, is_triaged
 from app.models import FINISHED_STATUSES, Category, Team, Ticket, TicketAlias, TicketStatus, TicketType, User, UserRole
 from app.pagination import paginate
@@ -401,11 +401,11 @@ def assign_ticket(
     ticket = _get_ticket(session, ticket_id, user, Access.READ)
 
     if user.role == UserRole.AGENT:
-        if not may_self_assign(user, ticket, access_context(session, user)):
+        levels = access_context(session, user)
+        if not may_self_assign(user, ticket, levels):
+            if ticket_access(user, ticket, levels) >= Access.WORK and ticket.assigned_agent_id is not None:
+                raise HTTPException(status_code=400, detail="This ticket is assigned to someone else. Use Re-assign.")
             raise NoTicketAccess()
-        if ticket.assigned_agent_id not in (None, user.id):
-            # Taking a ticket from its assignee is a deliberate re-assign, never a claim.
-            raise HTTPException(status_code=400, detail="This ticket is assigned to someone else. Use Re-assign.")
         target_agent = user
     else:
         if agent_id is None:
@@ -589,8 +589,11 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
     # A link is only shown to someone who could open the other ticket anyway.
     parent = session.get(Ticket, ticket.linked_parent_id) if ticket.linked_parent_id else None
     parent_visible = parent is not None and ticket_access(user, parent, levels) >= Access.READ
-    all_linked = linked_tickets(session, ticket) if ticket.type in PARENT_TYPES else []
-    visible_linked = [t for t in all_linked if ticket_access(user, t, levels) >= Access.READ]
+    linked, linked_total, linked_visible = (
+        linked_summary(session, ticket, visible_ticket_condition(user, levels))
+        if ticket.type in PARENT_TYPES
+        else ([], 0, 0)
+    )
 
     return templates.TemplateResponse(
         request,
@@ -614,9 +617,10 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             "ticket_types": list(TicketType),
             "parent": parent if parent_visible else None,
             "has_hidden_parent": parent is not None and not parent_visible,
-            "linked": visible_linked,
-            "hidden_linked_count": len(all_linked) - len(visible_linked),
-            "can_link": can_work and ticket.triaged_at is not None and not all_linked,
+            "linked": linked,
+            "hidden_linked_count": linked_total - linked_visible,
+            "more_linked_count": linked_visible - len(linked),
+            "can_link": can_work and ticket.triaged_at is not None and linked_total == 0,
             "impact_options": [(level.value, label) for level, label in IMPACT_LABELS.items()],
             "urgency_options": [(level.value, label) for level, label in URGENCY_LABELS.items()],
             "sla": sla_view(ticket, datetime.now(timezone.utc), at_risk_percent(session)),

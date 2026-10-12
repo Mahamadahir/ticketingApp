@@ -182,13 +182,16 @@
 {% endif %}
 <h3>Linked tickets</h3>
 {% if parent %}
-<p>Linked to <a href="/tickets/{{ parent.id }}">{{ parent.reference }}</a> {{ parent.subject }}
+<div>Linked to <a href="/tickets/{{ parent.id }}">{{ parent.reference }}</a> {{ parent.subject }}
   {% if can_work %}
   <form hx-post="/tickets/{{ ticket.id }}/unlink" hx-target="main" hx-swap="innerHTML" class="inline-form"><button type="submit">Unlink</button></form>
   {% endif %}
-</p>
+</div>
 {% elif has_hidden_parent %}
 <p class="note">Linked to a ticket you cannot open.</p>
+{% if can_work %}
+<form hx-post="/tickets/{{ ticket.id }}/unlink" hx-target="main" hx-swap="innerHTML"><button type="submit">Unlink</button></form>
+{% endif %}
 {% elif can_link %}
 <form hx-post="/tickets/{{ ticket.id }}/link" hx-target="main" hx-swap="innerHTML">
   <label>Link under a Major Incident or Problem (reference, e.g. MI-3)
@@ -201,6 +204,7 @@
 <ul>
   {% for t in linked %}<li><a href="/tickets/{{ t.id }}">{{ t.reference }}</a> {{ t.subject }} <span class="status status-{{ t.status.value }}">{{ t.status.value.replace("_", " ") }}</span></li>{% endfor %}
 </ul>
+{% if more_linked_count %}<p class="note">Showing the first {{ linked|length }}; {{ more_linked_count }} more you can open are not listed.</p>{% endif %}
 {% if hidden_linked_count %}<p class="note">{{ hidden_linked_count }} more linked ticket{{ "s" if hidden_linked_count != 1 else "" }} you cannot open.</p>{% endif %}
 {% endif %}
 
