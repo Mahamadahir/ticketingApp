@@ -22,6 +22,7 @@ from app.models import (
     TicketEvent,
     User,
 )
+from app.sla import note_first_response
 from app.ticket_service import NotTriaged
 from app.visibility import is_untriaged
 
@@ -93,6 +94,7 @@ def email_requester(
             raise UnknownRecipient(", ".join(sorted(unknown)))
         chosen = [f for f in candidates if f.is_internal or f.email in wanted]
     cc = ", ".join(f.email for f in chosen) or None
+    note_first_response(ticket, datetime.now(timezone.utc))
     return _record(
         session, ticket, sender=author.display_name, body=body, author_user_id=author.id,
         direction=MessageDirection.OUTBOUND, visibility=MessageVisibility.PUBLIC, cc=cc,

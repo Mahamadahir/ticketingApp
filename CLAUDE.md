@@ -31,7 +31,10 @@ run it.
   settings, the re-assign control) is built in `app/triage.py`,
   `app/categories.py` and `app/settings_store.py`; **1D-ii** (impact, urgency,
   P1-P4 priority, SLA targets as settings with placeholder values, the SLA clock
-  and the priority queue) is next. A ticket is triaged when `triaged_at` is set;
+  and the priority queue) is built in `app/sla.py` (the SLA values are
+  placeholders, TBC; the clock runs from `created_at` and pauses in Awaiting
+  user). Followers respond in the portal and the sign-in/activity log
+  (`app/activity.py`) are also merged. A ticket is triaged when `triaged_at` is set;
   it leaves New only by triage, and a type change re-issues its reference and
   keeps the old one as a `TicketAlias`.
 - **Nothing is deployed anywhere.** No Azure resources exist, no database has

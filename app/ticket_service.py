@@ -26,6 +26,7 @@ EVENT_TYPE_CHANGED = "type_changed"
 EVENT_REFERENCE_CHANGED = "reference_changed"
 EVENT_TEAM_CHANGED = "team_changed"
 EVENT_CATEGORY_REVIEWED = "category_reviewed"
+EVENT_PRIORITY_CHANGED = "priority_changed"
 
 
 class NotTriaged(Exception):
@@ -101,6 +102,11 @@ def set_status(session: Session, ticket: Ticket, new_status: TicketStatus, actor
             ticket.resolved_at = now
     else:
         ticket.resolved_at = None
+    # Awaiting user stops the SLA clock and leaving it restarts it. Imported here
+    # because app.sla builds on this module.
+    from app.sla import on_status_change
+
+    on_status_change(session, ticket, previous, new_status, now)
     session.add(ticket)
     record_event(session, ticket, EVENT_STATUS_CHANGED, actor_email, previous.value, new_status.value)
     return True

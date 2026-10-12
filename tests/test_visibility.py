@@ -117,7 +117,7 @@ def test_claiming_an_untriaged_ticket_keeps_it_after_it_leaves_new(client, db_se
 
     client.post(f"/tickets/{ticket.id}/assign")
     category = create_category(db_session, other)
-    triage = client.post(f"/tickets/{ticket.id}/triage", data={"ticket_type": "incident", "category_id": category.id})
+    triage = client.post(f"/tickets/{ticket.id}/triage", data={"ticket_type": "incident", "impact": "low", "urgency": "low", "category_id": category.id})
     assert triage.status_code == 200
     client.post(f"/tickets/{ticket.id}/email", data={"body": "First email"})
     db_session.refresh(ticket)

@@ -15,12 +15,51 @@ from app.models import Setting
 class SettingDef:
     key: str
     label: str
-    kind: str  # "team": the id of a team, empty for none
+    kind: str  # "team": a team id, empty for none; "minutes": a whole number; "percent": 1 to 99
     description: str
     default: str = ""
 
 
 DEFAULT_TRIAGE_TEAM = "default_triage_team_id"
+SLA_AT_RISK_PERCENT = "sla_at_risk_percent"
+
+# PLACEHOLDER SLA targets, in minutes on a 24/7 clock, until the real ones are agreed
+# (TBC in docs/plan.md). They are settings, changed under Admin > Settings; a blank
+# value means that target is not tracked.
+_SLA_PLACEHOLDERS = {
+    "p1": (15, 240),
+    "p2": (60, 480),
+    "p3": (240, 4320),
+    "p4": (480, 10080),
+}
+
+
+def sla_key(priority: str, which: str) -> str:
+    """The setting key for a target, e.g. sla_p1_first_response_minutes."""
+    return f"sla_{priority}_{which}_minutes"
+
+
+def _sla_definitions() -> dict[str, SettingDef]:
+    definitions = {}
+    for priority, (first, resolution) in _SLA_PLACEHOLDERS.items():
+        for which, label, default in (
+            ("first_response", "first response", first),
+            ("resolution", "resolution", resolution),
+        ):
+            key = sla_key(priority, which)
+            definitions[key] = SettingDef(
+                key=key,
+                label=f"{priority.upper()} {label} target (minutes)",
+                kind="minutes",
+                description=(
+                    f"How long a {priority.upper()} ticket may wait for its {label}. The clock runs "
+                    "24/7 and stops while the ticket is Awaiting user. Placeholder value until the "
+                    "real target is agreed; blank means not tracked."
+                ),
+                default=str(default),
+            )
+    return definitions
+
 
 REGISTRY: dict[str, SettingDef] = {
     DEFAULT_TRIAGE_TEAM: SettingDef(
@@ -31,6 +70,14 @@ REGISTRY: dict[str, SettingDef] = {
             "New tickets arrive in this team's queue until someone triages them. "
             "Also where an 'Other' category sends a ticket if the category has no team of its own."
         ),
+    ),
+    **_sla_definitions(),
+    SLA_AT_RISK_PERCENT: SettingDef(
+        key=SLA_AT_RISK_PERCENT,
+        label="SLA 'at risk' threshold (percent)",
+        kind="percent",
+        description="A ticket shows amber when this share of its target time or less is left.",
+        default="25",
     ),
 }
 

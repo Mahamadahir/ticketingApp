@@ -181,7 +181,7 @@ def test_email_user_is_unavailable_until_the_ticket_is_triaged(client, db_sessio
     assert client.post(f"/tickets/{ticket.id}/status", data={"status": "open"}).status_code == 400
     category = create_category(db_session, team)
     triage = client.post(
-        f"/tickets/{ticket.id}/triage", data={"ticket_type": "incident", "category_id": category.id}
+        f"/tickets/{ticket.id}/triage", data={"ticket_type": "incident", "impact": "low", "urgency": "low", "category_id": category.id}
     )
     assert triage.status_code == 200
     assert "Email user" in client.get(f"/tickets/{ticket.id}").text
@@ -211,7 +211,7 @@ def test_the_timeline_interleaves_messages_notes_and_events_in_order(client, db_
 
     category = create_category(db_session, team)
     client.post(f"/tickets/{ticket.id}/note", data={"body": "First, a note"})
-    client.post(f"/tickets/{ticket.id}/triage", data={"ticket_type": "incident", "category_id": category.id})
+    client.post(f"/tickets/{ticket.id}/triage", data={"ticket_type": "incident", "impact": "low", "urgency": "low", "category_id": category.id})
     client.post(f"/tickets/{ticket.id}/email", data={"body": "Then an email"})
     client.post(f"/portal/{ticket.id}/comment", data={"body": "ignored: wrong user"})  # 404, adds nothing
 

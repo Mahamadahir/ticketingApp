@@ -504,6 +504,14 @@ def save_setting(
         if not (value.isascii() and value.isdigit()) or session.get(Team, int(value)) is None:
             raise HTTPException(status_code=400, detail="That team does not exist")
 
+    if definition.kind == "minutes" and value:
+        # Up to a year; a blank value means the target is not tracked.
+        if not (value.isascii() and value.isdigit()) or not 1 <= int(value) <= 525600:
+            raise HTTPException(status_code=400, detail="Enter a whole number of minutes, 1 to 525600, or leave it blank")
+    if definition.kind == "percent":
+        if not (value.isascii() and value.isdigit()) or not 1 <= int(value) <= 99:
+            raise HTTPException(status_code=400, detail="Enter a whole number from 1 to 99")
+
     previous = get_setting(session, key)
     if previous != value:
         set_setting(session, key, value)

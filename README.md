@@ -56,6 +56,22 @@ read access to it. If triage changes the type, the reference is re-issued (INC-1
 becomes SR-3) and the old one is kept as an alias, so existing links and the
 subjects of emails already sent still find the ticket.
 
+**Priority and SLA.** Triage also records impact (how many people) and urgency
+(how bad for them), which give a priority P1 to P4 (`app/sla.py`: high/high is P1,
+low/low is P4). Any agent who works the ticket can change them later from the ticket
+page; the change is an event and an audit entry. Each priority has two targets, first
+response and resolution, set under Admin > Settings in minutes. **The values shipped
+are placeholders until the real targets are agreed**, and a blank target means not
+tracked. The clock is 24/7, starts when the ticket is created, and stops while the
+ticket is Awaiting user (emailing the user pauses it, their reply restarts it and
+pushes the deadlines out by the time spent waiting). The first email an agent sends
+meets the first-response target; internal notes do not. The ticket list is the
+priority queue: untriaged tickets first, then by time to breach, then priority, with
+finished tickets last. The countdown turns amber when the "at risk" share of the
+target (a setting, 25% to start) or less is left and red once overdue. Tickets
+triaged before this existed have no priority and no SLA. Requesters never see
+either.
+
 **Categories.** Managed by super admins under Admin > Categories: a main category
 (owned by a team) with optional sub-categories (one level, using the parent's
 team). A super admin can also create one while triaging. "Other" is for tickets
@@ -282,6 +298,7 @@ app/
   models.py          Ticket, Message, User, Team, AuditLog
   auth.py            SSO (MSAL) + local password auth, session, role checks
   audit.py           Audit log helper
+  sla.py             Priority from impact x urgency, SLA deadlines and clock, queue order
   activity.py        Activity log: sign-in events and request-logging middleware
   graph_client.py    Microsoft Graph mail integration (stubbed)
   routers/

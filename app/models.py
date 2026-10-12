@@ -128,6 +128,21 @@ class Ticket(SQLModel, table=True):
     # reviews it and gives it a proper category.
     needs_category_review: bool = Field(default=False)
 
+    # Set when triaged (and editable after). Impact x urgency gives the priority
+    # (app/sla.py). Stored as text: the values are the Level and Priority enums there.
+    impact: Optional[str] = Field(default=None)
+    urgency: Optional[str] = Field(default=None)
+    priority: Optional[str] = Field(default=None, index=True)
+
+    # The SLA clock (app/sla.py). The due times are created_at + target + the time
+    # spent paused, and are recomputed when the priority changes or a pause ends.
+    # While paused (Awaiting user) sla_paused_at is set and the clock is not running.
+    first_response_due_at: Optional[datetime] = Field(default=None)
+    resolution_due_at: Optional[datetime] = Field(default=None)
+    first_responded_at: Optional[datetime] = Field(default=None)
+    sla_paused_at: Optional[datetime] = Field(default=None)
+    sla_paused_seconds: int = Field(default=0, sa_column_kwargs={"server_default": "0"})
+
     is_escalated: bool = Field(default=False)
     escalation_reason: Optional[str] = Field(default=None)
     escalated_by_id: Optional[int] = Field(default=None, foreign_key="user.id")

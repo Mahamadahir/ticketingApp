@@ -424,6 +424,23 @@ P1–P4. SLA targets (first response and resolution, **TBC** per priority)
 come from priority. Every ticket runs on a 24/7 clock that pauses while
 Awaiting user. Times display in each viewer's own timezone.
 
+*Built in phase 1D-ii (13 Oct 2026).* Impact and urgency are low/medium/high; the
+grid is high/high P1, high/medium and medium/high P2, high/low, medium/medium and
+low/high P3, the rest P4. Targets are 8 settings (first response and resolution per
+priority, minutes) with **placeholder** values: P1 15m/4h, P2 1h/8h, P3 4h/3d,
+P4 8h/7d; blank means not tracked. The clock starts at `created_at`, so time spent
+waiting for triage counts against the target. Backdating (1E) will exclude those
+tickets from SLA figures. Amber means the "at risk" setting (25%) or less of the
+target is left. Times are shown in UTC until the per-viewer timezone work.
+**Changed targets never touch existing tickets** (agreed 13 Oct 2026): a ticket's deadlines
+are fixed when it is triaged, when its priority is changed, or when a pause ends, so editing a
+target in Settings only affects tickets from then on and never rewrites breach history. **First
+response** is recorded only when an agent emails from the ticket page today; when replies also come
+from Teams (and mail through Graph in phase 3) each of those paths must call
+`note_first_response` in `app/sla.py`. Not yet
+built: breach notifications and Teams alerts (phase 3 and later), business hours,
+and SLA figures in reports (phase 7).
+
 **Priority queue.** Agents' queue sorts by time to breach, then priority,
 with a countdown that turns amber when at risk and red when breached.
 Untriaged tickets pin to the top.

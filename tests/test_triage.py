@@ -40,7 +40,7 @@ def agent(client, db_session, member_of=(), email="agent@example.com"):
 
 
 def triage(client, ticket, category, ticket_type="incident", **extra):
-    data = {"ticket_type": ticket_type, "category_id": category.id, **extra}
+    data = {"ticket_type": ticket_type, "impact": "low", "urgency": "low", "category_id": category.id, **extra}
     return client.post(f"/tickets/{ticket.id}/triage", data=data)
 
 
@@ -191,7 +191,7 @@ def test_triage_refusals(client, db_session):
     db_session.add(switched_off)
     db_session.commit()
 
-    assert client.post(f"/tickets/{ticket.id}/triage", data={"ticket_type": "incident"}).status_code == 400
+    assert client.post(f"/tickets/{ticket.id}/triage", data={"ticket_type": "incident", "impact": "low", "urgency": "low"}).status_code == 400
     assert triage(client, ticket, switched_off).status_code == 400
     refused = triage(client, ticket, no_team)
     assert refused.status_code == 400 and "no team" in refused.text.lower()
@@ -277,7 +277,7 @@ def test_a_super_admin_can_create_a_category_while_triaging(client, db_session):
 
     response = client.post(
         f"/tickets/{ticket.id}/triage",
-        data={"ticket_type": "incident", "new_category_name": "  Wi-Fi   dead zones ", "new_category_team_id": network.id},
+        data={"ticket_type": "incident", "impact": "low", "urgency": "low", "new_category_name": "  Wi-Fi   dead zones ", "new_category_team_id": network.id},
     )
 
     assert response.status_code == 200
@@ -297,7 +297,7 @@ def test_a_super_admin_can_create_a_sub_category_while_triaging(client, db_sessi
 
     client.post(
         f"/tickets/{ticket.id}/triage",
-        data={"ticket_type": "incident", "new_category_name": "Docking stations", "new_category_parent_id": hardware.id},
+        data={"ticket_type": "incident", "impact": "low", "urgency": "low", "new_category_name": "Docking stations", "new_category_parent_id": hardware.id},
     )
 
     created = db_session.exec(select(Category).where(Category.name == "Docking stations")).one()
@@ -314,7 +314,7 @@ def test_an_agent_cannot_create_a_category_and_bad_new_categories_are_refused(cl
 
     refused = client.post(
         f"/tickets/{ticket.id}/triage",
-        data={"ticket_type": "incident", "new_category_name": "Sneaky", "new_category_team_id": desk.id},
+        data={"ticket_type": "incident", "impact": "low", "urgency": "low", "new_category_name": "Sneaky", "new_category_team_id": desk.id},
     )
     assert refused.status_code == 403
     client.post("/auth/logout")
@@ -329,7 +329,7 @@ def test_an_agent_cannot_create_a_category_and_bad_new_categories_are_refused(cl
         {"new_category_name": "Grandchild", "new_category_parent_id": existing.id, "new_category_team_id": desk.id},
     )
     for fields in bad[:5]:
-        response = client.post(f"/tickets/{ticket.id}/triage", data={"ticket_type": "incident", **fields})
+        response = client.post(f"/tickets/{ticket.id}/triage", data={"ticket_type": "incident", "impact": "low", "urgency": "low", **fields})
         assert response.status_code == 400, fields
     db_session.refresh(ticket)
     assert ticket.triaged_at is None  # none of the refusals triaged it
@@ -337,7 +337,7 @@ def test_an_agent_cannot_create_a_category_and_bad_new_categories_are_refused(cl
     sub = create_category(db_session, None, "Laptop", parent=existing)
     deeper = client.post(
         f"/tickets/{ticket.id}/triage",
-        data={"ticket_type": "incident", "new_category_name": "Too deep", "new_category_parent_id": sub.id},
+        data={"ticket_type": "incident", "impact": "low", "urgency": "low", "new_category_name": "Too deep", "new_category_parent_id": sub.id},
     )
     assert deeper.status_code == 400
 
@@ -523,7 +523,7 @@ def test_two_people_triaging_the_same_ticket_at_once_get_one_winner_and_no_error
             racing_client.post("/auth/dev-login", data={"email": f"agent{number}@example.com", "display_name": "A"})
             barrier.wait()
             response = racing_client.post(
-                f"/tickets/{ticket.id}/triage", data={"ticket_type": "service_request", "category_id": category.id}
+                f"/tickets/{ticket.id}/triage", data={"ticket_type": "service_request", "impact": "low", "urgency": "low", "category_id": category.id}
             )
             codes.append(response.status_code)
 
