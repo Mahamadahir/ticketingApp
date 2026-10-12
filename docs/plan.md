@@ -344,10 +344,14 @@ category.
 **Categories.** A main category with optional sub-categories; the main category
 decides the team. When triaging, any super admin can create a new category on
 the spot. An agent who cannot find a fit picks "Other" (a main category, never a
-sub-category). That puts the ticket in a review queue visible to all super
-admins, who either create a new category and move the ticket into it, or move it
-into an existing one. The agent who picked "Other" keeps read access while it
-waits. This replaces the earlier idea of reviewing only after resolution.
+sub-category). The ticket is not held up: "Other" belongs to a configurable
+default team (**TBC**, the service desk), so it is worked and resolved on time
+under its normal SLA. After resolution it goes to the super admin category
+review queue, as already planned. A super admin there creates a new category or
+maps the ticket to an existing one and corrects it, so the next ticket like it
+has a proper home and reports are accurate. The only change from the earlier
+plan is that the agent no longer flags "no good category" separately: choosing
+"Other" is the flag.
 
 **Priority and SLA.** Impact (number of users affected) × urgency gives
 P1–P4. SLA targets (first response and resolution, **TBC** per priority)
@@ -395,12 +399,29 @@ the parent offers to resolve every linked ticket with the same notes.
 
 **Splitting.** One request that asks for several things can be split into
 sub-tickets, so each part is tracked, assigned and resolved on its own (better
-accountability). A sub-ticket has its own reference, type, category, assignee
-and status, and is linked to the original, which stays the single conversation
-with the requester. The requester is not emailed separately per sub-ticket: they
-hear about each part through the parent. The parent's resolution is offered once
-every sub-ticket is resolved, and the sub-tickets' notes feed the resolution
-email. Splitting is recorded as an event on both sides.
+accountability). The agent clicks Split ticket, chooses how many parts, and
+enters a subject and details for each. Each sub-ticket has its own reference,
+type, category, assignee and status (starting from the original's values), is
+linked to the original, and can email the requester itself. In the agent portal
+they are separate tickets, and the original lists them all.
+
+To the requester it is one email chain. Every email, from the original or any
+sub-ticket, is sent as a reply in the same mail conversation with the same
+subject (Graph replies keep the thread), and carries a line naming the part it
+is about, e.g. "About: SR-14 Replace keyboard". Mail from the requester lands on
+the original, which owns the conversation. Messages are stored once and shown by
+rule, not copied: the original's emails and the requester's replies show in
+every open sub-ticket; a sub-ticket's emails show in the original but not in its
+siblings; a requester reply refreshes every open sub-ticket. The system cannot
+tell which part a reply is about, so each open sub-ticket sees it and the agents
+sort it out (matching on the part label is a later option).
+
+Sub-tickets can belong to different teams, and the normal visibility rules apply
+to each one. The original's timeline hides notes and events from sub-tickets the
+viewer cannot see, and internal notes stay on the ticket they were written on.
+Resolving the original is offered once every sub-ticket is resolved, and their
+notes feed the resolution email. Splitting is recorded as an event on both
+sides.
 
 **Backdating.** Agents can log tickets and fixes after the fact.
 `reported_at` and `resolved_at` hold the dates entered; `created_at` holds
