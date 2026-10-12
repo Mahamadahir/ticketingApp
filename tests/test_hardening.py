@@ -1,8 +1,8 @@
-﻿import threading
+import threading
 
 from sqlmodel import Session
 
-from app.auth import authenticate_local, hash_password
+from app.auth import attempt_local_login, hash_password
 from app.database import engine
 from app.models import User, UserRole
 from app.pagination import MAX_PAGE
@@ -40,7 +40,7 @@ def test_parallel_wrong_guesses_are_all_counted(db_session):
 
     def guess():
         with Session(engine) as session:
-            authenticate_local(session, user.email, "wrong")
+            attempt_local_login(session, user.email, "wrong")
 
     threads = [threading.Thread(target=guess) for _ in range(attempts)]
     for thread in threads:

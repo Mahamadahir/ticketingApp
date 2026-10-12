@@ -218,15 +218,18 @@ under Admin > Audit log with the existing filters plus date range and result:
   meaningful action: ticket changes, emails, notes, triage, followers, user, team,
   role, membership, category and setting changes, unlocks. Every feature that
   changes data writes its entries as it is built; a review checks it.
-- **Security and request activity (to build, soon).** Sign-in, sign-out, failed
-  sign-in, lockout and unlock, Entra sign-in failures, outage-mode changes, access
+- **Security and request activity (built: Admin > Activity log).** Sign-in, sign-out, failed
+  sign-in, lockout, Entra sign-in failures, access
   denied (403), and every state-changing request, recording who, what route, the
   result, the IP address (taken from the forwarded header once only the ingress is
   trusted) and the browser. Never request bodies, passwords or tokens. This second
   layer is a safety net: it catches an action whose feature forgot its audit
   entry. It is built early rather than at the end, because it is cheap now and
   the history it would miss cannot be recovered later. CSV export arrives with
-  reporting in phase 7.
+  reporting in phase 7. Still to add: outage-mode changes and unlock events (when
+  those exist), and a retention decision. It lives on a separate page from the audit log, with filters for
+  event type, person, date range and problems only. Staging check: the IP is only
+  trustworthy once `FORWARDED_ALLOW_IPS` is the ingress subnet.
 
 Fixes, first:
 

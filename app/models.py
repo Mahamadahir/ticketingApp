@@ -232,6 +232,28 @@ class TicketEvent(SQLModel, table=True):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class ActivityLog(SQLModel, table=True):
+    """Security and request activity: sign-ins, failed sign-ins, lockouts, denied
+    access and every state-changing request. Separate from AuditLog, which records
+    named business actions on a ticket, user or team. Holds no request bodies,
+    passwords, tokens or query strings, and the path is the route template."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc), index=True
+    )
+    event_type: str = Field(index=True)
+    actor_user_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    # The signed-in user's email, or for a failed sign-in the address that was tried.
+    actor_email: Optional[str] = Field(default=None, index=True)
+    method: Optional[str] = Field(default=None)
+    path: Optional[str] = Field(default=None)  # route template, e.g. /tickets/{ticket_id}/note
+    status_code: Optional[int] = Field(default=None)
+    ip: Optional[str] = Field(default=None)
+    user_agent: Optional[str] = Field(default=None)
+    detail: Optional[str] = Field(default=None)
+
+
 class AuditLog(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     entity_type: str

@@ -1,4 +1,6 @@
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from typing import Optional
 
 import bcrypt
 import msal
@@ -46,17 +48,28 @@ def _verify_password(password: str, password_hash: str) -> bool:
 _DUMMY_HASH = hash_password("dummy-password-for-timing")
 
 
-def authenticate_local(session: Session, email: str, password: str) -> User | None:
-    """Returns the user only for a correct password on an unlocked account.
-    Every rejection looks the same to the caller, so the login form can't be
-    used to learn which emails have accounts or which are locked.
+@dataclass
+class LoginResult:
+    user: Optional[User] = None
+    # Why it failed, for the activity log only: unknown_account, not_a_local_account,
+    # account_locked or wrong_password. The person at the form never sees this.
+    failure: Optional[str] = None
+    # Set when this very failure caused the account to lock.
+    locked_until: Optional[datetime] = None
+
+
+def attempt_local_login(session: Session, email: str, password: str) -> LoginResult:
+    """Succeeds only for a correct password on an unlocked account. Every rejection
+    looks the same to the person at the form, so it can't be used to learn which
+    emails have accounts or which are locked; the reason is returned so the
+    caller can record it in the activity log.
     """
     user = session.exec(select(User).where(User.email == email.lower())).first()
     if not user or not user.password_hash:
         # Spend the same bcrypt time as a real check so response timing
         # doesn't reveal whether the account exists.
         _verify_password(password, _DUMMY_HASH)
-        return None
+        return LoginResult(failure="unknown_account" if not user else "not_a_local_account")
 
     now = datetime.now(timezone.utc)
     is_password_correct = _verify_password(password, user.password_hash)
@@ -64,18 +77,18 @@ def authenticate_local(session: Session, email: str, password: str) -> User | No
     if _is_locked(user, now):
         # Attempts during a lock change nothing, so hammering the form cannot
         # extend someone else's lock.
-        return None
+        return LoginResult(failure="account_locked")
 
     if not is_password_correct:
-        _record_failed_login(session, user, now)
+        locked_until = _record_failed_login(session, user, now)
         session.commit()
-        return None
+        return LoginResult(failure="wrong_password", locked_until=locked_until)
 
     user.failed_login_count = 0
     user.locked_until = None
     session.add(user)
     session.commit()
-    return user
+    return LoginResult(user=user)
 
 
 def _is_locked(user: User, now: datetime) -> bool:
@@ -84,7 +97,7 @@ def _is_locked(user: User, now: datetime) -> bool:
     return _as_utc(user.locked_until) > now
 
 
-def _record_failed_login(session: Session, user: User, now: datetime) -> None:
+def _record_failed_login(session: Session, user: User, now: datetime) -> Optional[datetime]:
     """Counts the failure in the database in one statement, so parallel
     guesses across workers cannot read the same count and each write back
     the same increment."""
@@ -95,7 +108,7 @@ def _record_failed_login(session: Session, user: User, now: datetime) -> None:
         .returning(User.failed_login_count)
     ).scalar_one()
     if count < MAX_FAILED_LOGINS:
-        return
+        return None
     doublings = min(count - MAX_FAILED_LOGINS, MAX_LOCKOUT_DOUBLINGS)
     lock_until = now + BASE_LOCKOUT * (2**doublings)
     # Parallel failures finish in any order; the longest lock wins.
@@ -104,6 +117,7 @@ def _record_failed_login(session: Session, user: User, now: datetime) -> None:
         .where(User.id == user.id)
         .values(locked_until=func.greatest(func.coalesce(User.locked_until, lock_until), lock_until))
     )
+    return lock_until
 
 
 def _as_utc(moment: datetime) -> datetime:

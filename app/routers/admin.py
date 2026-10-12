@@ -1,11 +1,22 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import or_
 from sqlmodel import Session, func, select
 
+from app.activity import (
+    ACCESS_DENIED,
+    ACCOUNT_LOCKED,
+    LOGIN_FAILED,
+    LOGIN_SUCCESS,
+    LOGOUT,
+    PROBLEM_EVENTS,
+    REQUEST,
+    SSO_FAILED,
+)
 from app.audit import log_action
 from app.auth import hash_password, require_roles
 from app.categories import (
@@ -20,6 +31,7 @@ from app.database import get_session
 from app.forms import optional_int
 from app.models import (
     FINISHED_STATUSES,
+    ActivityLog,
     AuditLog,
     Category,
     MembershipLevel,
@@ -498,3 +510,73 @@ def save_setting(
         log_action(session, admin.email, "setting", 0, "changed", f"{key}: {previous!r} -> {value!r}")
     session.commit()
     return RedirectResponse("/admin/settings", status_code=303)
+
+# ---- Activity log ---------------------------------------------------------------
+
+ACTIVITY_EVENT_TYPES = [
+    LOGIN_SUCCESS,
+    LOGIN_FAILED,
+    ACCOUNT_LOCKED,
+    LOGOUT,
+    SSO_FAILED,
+    ACCESS_DENIED,
+    REQUEST,
+]
+
+
+def _parse_day(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Dates look like 2026-10-31")
+
+
+@router.get("/activity-log", response_class=HTMLResponse)
+def view_activity_log(
+    request: Request,
+    event_type: Optional[str] = None,
+    actor: Optional[str] = None,
+    problems: bool = False,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    page: int = 1,
+    user: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    """Sign-ins, failed sign-ins, lockouts, refused access and every state-changing
+    request, newest first. 'Problems only' shows failures, lockouts, refusals and
+    any request that came back as an error."""
+    query = select(ActivityLog).order_by(ActivityLog.created_at.desc(), ActivityLog.id.desc())
+    if event_type:
+        query = query.where(ActivityLog.event_type == event_type)
+    if actor and actor.strip():
+        # Part of an address is enough; wildcards the person typed are matched literally.
+        needle = actor.strip().lower().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        query = query.where(ActivityLog.actor_email.like(f"%{needle}%", escape="\\"))
+    if problems:
+        query = query.where(or_(ActivityLog.event_type.in_(PROBLEM_EVENTS), ActivityLog.status_code >= 400))
+    start, end = _parse_day(date_from), _parse_day(date_to)
+    if start is not None and end is not None and end < start:
+        raise HTTPException(status_code=400, detail="'To' date is before the 'From' date")
+    if start is not None:
+        query = query.where(ActivityLog.created_at >= start)
+    if end is not None:
+        query = query.where(ActivityLog.created_at < end + timedelta(days=1))
+
+    rows_page = paginate(session, query, page, request.query_params)
+    return templates.TemplateResponse(
+        request,
+        "admin_activity_log.html",
+        {
+            "page": rows_page,
+            "event_types": ACTIVITY_EVENT_TYPES,
+            "event_type": event_type,
+            "actor": actor or "",
+            "problems": problems,
+            "date_from": date_from or "",
+            "date_to": date_to or "",
+            "user": user,
+        },
+    )
