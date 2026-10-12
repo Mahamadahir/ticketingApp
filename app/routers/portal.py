@@ -53,7 +53,13 @@ def _render_ticket(request: Request, ticket: Ticket, user: User, session: Sessio
         {
             "ticket": ticket,
             "messages": requester_visible_messages(session, ticket),
-            "followers": [f for f in followers_of(session, ticket) if not f.is_internal],
+            # Only the requester sees who else is copied; a follower must not learn
+            # the other followers' addresses, and internal followers are never shown.
+            "followers": (
+                [f for f in followers_of(session, ticket) if not f.is_internal]
+                if _is_requester(ticket, user)
+                else []
+            ),
             "is_requester": _is_requester(ticket, user),
             "user": user,
         },
@@ -137,10 +143,11 @@ def remove_ticket_follower(
     session: Session = Depends(get_session),
 ):
     ticket = _get_own_ticket(session, ticket_id, user)
-    if not remove_follower(session, ticket, follower_id, user.email):
+    removed_email = remove_follower(session, ticket, follower_id, user.email)
+    if removed_email is None:
         raise HTTPException(status_code=404, detail="Follower not found")
 
-    log_action(session, user.email, "ticket", ticket.id, "follower_removed", str(follower_id))
+    log_action(session, user.email, "ticket", ticket.id, "follower_removed", removed_email)
     session.commit()
     session.refresh(ticket)
 

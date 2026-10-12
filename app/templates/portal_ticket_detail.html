@@ -24,6 +24,7 @@
 <p class="note">You are following this request, so you can read it but not reply. Reply to the emails you receive instead.</p>
 {% endif %}
 
+{% if is_requester %}
 <h3>Also keeping up to date</h3>
 <p class="note">People listed here are copied on updates to this request.</p>
 <ul>
@@ -41,7 +42,6 @@
   <li>No one else.</li>
   {% endfor %}
 </ul>
-{% if is_requester %}
 <form hx-post="/portal/{{ ticket.id }}/followers" hx-target="main" hx-swap="innerHTML">
   <input type="email" name="email" placeholder="colleague@example.org" required />
   <button type="submit">Copy this person on updates</button>

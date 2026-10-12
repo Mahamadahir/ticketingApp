@@ -325,3 +325,114 @@ def test_internal_followers_are_not_shown_to_the_requester(client, db_session):
 
     login_as(client, "me@example.com")
     assert "secret-agent@example.com" not in client.get(f"/portal/{ticket.id}").text
+
+
+# ---- Review fixes -----------------------------------------------------------------
+
+
+def test_an_agent_who_raised_the_ticket_keeps_access_after_escalating_it_away(client, db_session):
+    """Regression: the requester shortcut in add_follower also skipped the internal
+    follower, so an agent escalating their own ticket lost read access."""
+    mine, network = create_team(db_session, "Mine"), create_team(db_session, "Network")
+    ticket = make_ticket(db_session, mine.id, requester="agent@example.com")
+    agent_for(client, db_session, mine)
+
+    client.post(f"/tickets/{ticket.id}/escalate", data={"reason": "x", "target_team_id": network.id})
+
+    assert [(f.email, f.is_internal) for f in followers_of(db_session, ticket)] == [("agent@example.com", True)]
+    assert client.get(f"/tickets/{ticket.id}").status_code == 200
+    # They are the recipient of the emails, so they are never also copied on them.
+    assert cc_list(db_session, ticket) == []
+
+
+def test_promoting_an_existing_follower_to_internal_is_recorded_and_keeps_portal_access(client, db_session):
+    team = create_team(db_session, "Service Desk")
+    ticket = make_ticket(db_session, team.id, requester="me@example.com")
+    agent_for(client, db_session, team, email="colleague@example.com")
+    db_session.add(TicketFollower(ticket_id=ticket.id, email="colleague@example.com", added_by_email="me@example.com"))
+    db_session.commit()
+    assert ticket.reference in client.get("/portal").text
+
+    client.post(f"/tickets/{ticket.id}/escalate", data={"reason": "x"})
+
+    followers = followers_of(db_session, ticket)
+    assert [(f.email, f.is_internal) for f in followers] == [("colleague@example.com", True)]
+    promoted = db_session.exec(
+        select(TicketEvent).where(TicketEvent.event_type == "follower_added", TicketEvent.detail == "internal")
+    ).all()
+    assert len(promoted) == 1
+    assert ticket.reference in client.get("/portal").text  # still listed under Following
+
+
+def test_a_follower_cannot_see_who_else_is_copied(client, db_session):
+    ticket = make_ticket(db_session, requester="me@example.com")
+    login_as(client, "me@example.com")
+    for address in ("alice@example.org", "bob@example.org"):
+        client.post(f"/portal/{ticket.id}/followers", data={"email": address})
+    assert "bob@example.org" in client.get(f"/portal/{ticket.id}").text  # the requester sees the list
+    client.post("/auth/logout")
+
+    login_as(client, "alice@example.org")
+    page = client.get(f"/portal/{ticket.id}").text
+    assert "bob@example.org" not in page and "alice@example.org" not in page
+    assert "Also keeping up to date" not in page
+
+
+def test_adding_the_same_follower_at_the_same_time_is_a_quiet_no_op(db_session):
+    """Two people (or a double click) adding the same address must not produce an
+    error; one row results."""
+    import threading
+
+    from sqlmodel import Session
+
+    from app.database import engine
+    from app.followers import add_follower
+
+    ticket = make_ticket(db_session)
+    errors, barrier = [], threading.Barrier(6)
+
+    def add():
+        try:
+            with Session(engine) as session:
+                fresh = session.get(Ticket, ticket.id)
+                barrier.wait()
+                add_follower(session, fresh, "boss@example.org", "x@example.com")
+                session.commit()
+        except Exception as error:  # noqa: BLE001 - the point is that nothing escapes
+            errors.append(error)
+
+    threads = [threading.Thread(target=add) for _ in range(6)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert errors == []
+    assert follower_emails(db_session, ticket) == ["boss@example.org"]
+
+
+def test_malformed_addresses_are_rejected_and_good_ones_accepted(client, db_session):
+    team = create_team(db_session, "Service Desk")
+    ticket = make_ticket(db_session, team.id)
+    agent_for(client, db_session, team)
+
+    for bad in ("a@b..c", "a@.b.c", "a@b.c.", ".a@x.org", "a.@x.org", "a..b@x.org", "a@-b.org", "a@b-.org", "a@b.c1", "a@b"):
+        assert client.post(f"/tickets/{ticket.id}/followers", data={"email": bad}).status_code == 400, bad
+    assert follower_emails(db_session, ticket) == []
+
+    for good in ("first.last+tag@sub.example.co.uk", "o'brien@example.org", "a@b.co"):
+        assert client.post(f"/tickets/{ticket.id}/followers", data={"email": good}).status_code == 200, good
+    assert len(follower_emails(db_session, ticket)) == 3
+
+
+def test_removing_a_follower_is_audited_by_address_not_id(client, db_session):
+    team = create_team(db_session, "Service Desk")
+    ticket = make_ticket(db_session, team.id)
+    agent_for(client, db_session, team)
+    client.post(f"/tickets/{ticket.id}/followers", data={"email": "boss@example.org"})
+    follower = followers_of(db_session, ticket)[0]
+
+    client.post(f"/tickets/{ticket.id}/followers/{follower.id}/remove")
+
+    audit = db_session.exec(select(AuditLog).where(AuditLog.action == "follower_removed")).all()
+    assert [entry.detail for entry in audit] == ["boss@example.org"]

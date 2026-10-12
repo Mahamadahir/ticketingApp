@@ -316,10 +316,11 @@ def remove_ticket_follower(
     session: Session = Depends(get_session),
 ):
     ticket = _get_ticket(session, ticket_id, user)
-    if not remove_follower(session, ticket, follower_id, user.email):
+    removed_email = remove_follower(session, ticket, follower_id, user.email)
+    if removed_email is None:
         raise HTTPException(status_code=404, detail="Follower not found")
 
-    log_action(session, user.email, "ticket", ticket.id, "follower_removed", str(follower_id))
+    log_action(session, user.email, "ticket", ticket.id, "follower_removed", removed_email)
     session.commit()
     session.refresh(ticket)
 
