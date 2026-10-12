@@ -86,6 +86,10 @@ def set_membership(
     team = session.get(Team, team_id)
     if target is None or team is None:
         raise HTTPException(status_code=404, detail="User or team not found")
+    if target.role == UserRole.END_USER:
+        # Team access only applies to agents; a row here would do nothing now and
+        # quietly take effect if the person is made an agent later.
+        raise HTTPException(status_code=400, detail="Make the user an agent before adding them to a team")
 
     membership = session.get(TeamMembership, (user_id, team_id))
     if membership is None:
@@ -164,6 +168,8 @@ def create_local_user(
     team = session.get(Team, parsed_team_id) if parsed_team_id is not None else None
     if parsed_team_id is not None and team is None:
         raise HTTPException(status_code=400, detail="Team does not exist")
+    if team is not None and role == UserRole.END_USER:
+        raise HTTPException(status_code=400, detail="Team access only applies to agents")
 
     local_user = User(
         email=email.lower(),

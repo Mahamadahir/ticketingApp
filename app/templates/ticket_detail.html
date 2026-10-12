@@ -22,7 +22,12 @@
 {% endif %}
 
 {% if not can_work %}
-<p class="note">You have read-only access to this ticket.</p>
+<p class="note">You have read-only access to this ticket.{% if can_claim %} It is untriaged: assign it to yourself to work on it.{% endif %}</p>
+{% if can_claim %}
+<form hx-post="/tickets/{{ ticket.id }}/assign" hx-target="main" hx-swap="innerHTML">
+  <button type="submit">Assign to me</button>
+</form>
+{% endif %}
 {% endif %}
 
 {% if can_work %}

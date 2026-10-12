@@ -15,9 +15,11 @@ from app.pagination import paginate
 from app.ticket_service import EVENT_ASSIGNED, EVENT_ESCALATED, record_event, set_status
 from app.visibility import (
     Access,
+    NoTicketAccess,
+    assignable_agents,
+    may_self_assign,
     membership_levels,
     require_access,
-    team_members,
     ticket_access,
     visible_ticket_condition,
 )
@@ -172,15 +174,17 @@ def assign_ticket(
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
-    ticket = _get_ticket(session, ticket_id, user)
+    ticket = _get_ticket(session, ticket_id, user, Access.READ)
 
     if user.role == UserRole.AGENT:
+        if not may_self_assign(user, ticket, membership_levels(session, user)):
+            raise NoTicketAccess()
         target_agent = user
     else:
         if agent_id is None:
             raise HTTPException(status_code=400, detail="agent_id is required")
         target_agent = session.get(User, agent_id)
-        if target_agent is None or target_agent.id not in {member.id for member in team_members(session, ticket.team_id)}:
+        if target_agent is None or target_agent.id not in {agent.id for agent in assignable_agents(session, ticket)}:
             raise HTTPException(status_code=400, detail="Agent must be a member of the ticket's team")
 
     if ticket.assigned_agent_id == target_agent.id:
@@ -250,8 +254,10 @@ def escalate_ticket(
 def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session: Session) -> HTMLResponse:
     team = session.get(Team, ticket.team_id) if ticket.team_id else None
     assigned_agent = session.get(User, ticket.assigned_agent_id) if ticket.assigned_agent_id else None
-    team_agents = team_members(session, ticket.team_id)
-    can_work = ticket_access(user, ticket, membership_levels(session, user)) >= Access.WORK
+    levels = membership_levels(session, user)
+    team_agents = assignable_agents(session, ticket)
+    can_work = ticket_access(user, ticket, levels) >= Access.WORK
+    can_claim = not can_work and may_self_assign(user, ticket, levels)
     teams = session.exec(select(Team)).all()
     events = session.exec(
         select(TicketEvent).where(TicketEvent.ticket_id == ticket.id).order_by(TicketEvent.created_at, TicketEvent.id)
@@ -269,6 +275,7 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             "events": events,
             "statuses": list(TicketStatus),
             "can_work": can_work,
+            "can_claim": can_claim,
             "user": user,
         },
     )

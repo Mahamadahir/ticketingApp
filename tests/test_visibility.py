@@ -74,20 +74,56 @@ def test_viewer_cannot_change_anything(client, db_session):
     assert ticket.assigned_agent_id is None
 
 
-def test_every_agent_works_untriaged_tickets(client, db_session):
+def test_every_agent_can_see_untriaged_tickets_but_must_claim_one_to_work_it(client, db_session):
     other = create_team(db_session, "Other")
-    agent_in(client, db_session)  # no teams at all
+    agent_id = agent_in(client, db_session)  # no teams at all
     new_in_other_team = make_ticket(db_session, other.id, status=TicketStatus.NEW, subject="Untriaged")
-    teamless = make_ticket(db_session, None, status=TicketStatus.OPEN, subject="No team yet")
+    make_ticket(db_session, None, status=TicketStatus.OPEN, subject="No team yet")
     triaged_elsewhere = make_ticket(db_session, other.id, status=TicketStatus.OPEN, subject="Triaged elsewhere")
 
     listing = client.get("/tickets").text
     assert "Untriaged" in listing and "No team yet" in listing
     assert "Triaged elsewhere" not in listing
 
+    # Visible, with a way to claim it, but not workable until claimed.
+    page = client.get(f"/tickets/{new_in_other_team.id}").text
+    assert "assign it to yourself" in page and "Assign to me" in page and "Send reply" not in page
+    assert client.post(f"/tickets/{new_in_other_team.id}/reply", data={"body": "On it"}).status_code == 403
+    assert client.post(f"/tickets/{new_in_other_team.id}/status", data={"status": "open"}).status_code == 403
+    assert client.post(f"/tickets/{triaged_elsewhere.id}/assign").status_code == 403
+
+    assert client.post(f"/tickets/{new_in_other_team.id}/assign").status_code == 200
+    db_session.refresh(new_in_other_team)
+    assert new_in_other_team.assigned_agent_id == agent_id
     assert client.post(f"/tickets/{new_in_other_team.id}/reply", data={"body": "On it"}).status_code == 200
-    assert client.post(f"/tickets/{triaged_elsewhere.id}/reply", data={"body": "x"}).status_code == 403
-    assert teamless.id  # visible and workable, covered by the listing above
+
+
+def test_claiming_an_untriaged_ticket_keeps_it_after_it_leaves_new(client, db_session):
+    """The bug this guards against: replying moved the ticket out of New and the
+    replier lost sight of it."""
+    other = create_team(db_session, "Other")
+    agent_in(client, db_session)
+    ticket = make_ticket(db_session, other.id, status=TicketStatus.NEW)
+
+    client.post(f"/tickets/{ticket.id}/assign")
+    client.post(f"/tickets/{ticket.id}/reply", data={"body": "First reply"})
+    db_session.refresh(ticket)
+    assert ticket.status == TicketStatus.IN_PROGRESS
+
+    assert client.get(f"/tickets/{ticket.id}").status_code == 200
+    assert client.post(f"/tickets/{ticket.id}/reply", data={"body": "Follow-up"}).status_code == 200
+    assert "Follow-up" in client.get(f"/tickets/{ticket.id}").text
+
+
+def test_super_admin_can_assign_any_agent_to_a_ticket_with_no_team(client, db_session):
+    agent_id = agent_in(client, db_session, email="agent@example.com")
+    client.post("/auth/logout")
+    ticket = make_ticket(db_session, None, status=TicketStatus.NEW)
+    login_as(client, "admin@example.com")
+
+    assert client.post(f"/tickets/{ticket.id}/assign", data={"agent_id": agent_id}).status_code == 200
+    db_session.refresh(ticket)
+    assert ticket.assigned_agent_id == agent_id
 
 
 def test_assigned_agent_keeps_access_when_the_ticket_moves_team(client, db_session):
@@ -182,6 +218,7 @@ def test_list_query_and_single_ticket_rule_agree_for_every_combination(client, d
 def test_admin_adds_changes_and_removes_memberships_with_audit(client, db_session):
     team = create_team(db_session, "Service Desk")
     target_id = login_as(client, "agent@example.com")
+    set_role(db_session, target_id, UserRole.AGENT)
     client.post("/auth/logout")
     login_as(client, "admin@example.com")
     url = f"/admin/users/{target_id}/memberships"
@@ -308,3 +345,42 @@ def test_oauth_state_works_once(client, monkeypatch):
 
     replay = client.get(f"/auth/callback?code=abc&state={state}", follow_redirects=False)
     assert replay.status_code == 400
+
+
+def test_memberships_are_refused_for_end_users(client, db_session):
+    team = create_team(db_session, "Service Desk")
+    requester_id = login_as(client, "requester@example.com")
+    client.post("/auth/logout")
+    login_as(client, "admin@example.com")
+
+    response = client.post(
+        f"/admin/users/{requester_id}/memberships", data={"team_id": team.id, "level": "member"}
+    )
+    assert response.status_code == 400
+    assert db_session.get(TeamMembership, (requester_id, team.id)) is None
+
+    created = client.post(
+        "/admin/users",
+        data={
+            "email": "newuser@example.com",
+            "display_name": "N",
+            "password": "correct-horse",
+            "role": "end_user",
+            "team_id": team.id,
+        },
+    )
+    assert created.status_code == 400
+
+
+def test_a_non_ascii_oauth_state_is_a_400_not_a_server_error(client, monkeypatch):
+    from app.config import settings
+    from app.routers import auth as auth_router
+
+    monkeypatch.setattr(settings, "sso_tenant_id", "t")
+    monkeypatch.setattr(settings, "sso_client_id", "c")
+    monkeypatch.setattr(settings, "sso_client_secret", "s")
+    monkeypatch.setattr(auth_router, "build_auth_url", lambda state: "https://login.example/authorize")
+
+    client.get("/auth/sso/start", follow_redirects=False)
+    response = client.get("/auth/callback", params={"code": "abc", "state": "é"}, follow_redirects=False)
+    assert response.status_code == 400

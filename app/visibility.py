@@ -4,8 +4,8 @@ ticket goes through here, so the rules live in one place.
 - Super admins see and work everything.
 - An agent works tickets of teams they are a member of, and reads tickets of
   teams they are a viewer of.
-- Every agent works untriaged tickets (status New, or no team yet), so someone
-  can triage them.
+- Every agent can read untriaged tickets (status New, or no team yet) and
+  claim one by assigning it to themselves, after which they work it.
 - A ticket assigned to an agent is theirs to work, wherever it sits.
 - An agent who escalated a ticket keeps read access after it moves teams. (This
   becomes the internal follower once followers exist, in 1C.)
@@ -47,13 +47,26 @@ def ticket_access(user: User, ticket: Ticket, levels: dict[int, MembershipLevel]
     if user.role != UserRole.AGENT:
         return Access.NONE
 
-    if levels.get(ticket.team_id) == MembershipLevel.MEMBER:
+    if levels.get(ticket.team_id) == MembershipLevel.MEMBER or ticket.assigned_agent_id == user.id:
         return Access.WORK
-    if ticket.assigned_agent_id == user.id or is_untriaged(ticket):
-        return Access.WORK
-    if levels.get(ticket.team_id) == MembershipLevel.VIEWER or ticket.escalated_by_id == user.id:
+    # Untriaged tickets are visible to everyone so someone can pick them up, but
+    # working one means claiming it first (see may_self_assign). Otherwise a
+    # reply would move the ticket out of New and the replier would lose sight of it.
+    if (
+        levels.get(ticket.team_id) == MembershipLevel.VIEWER
+        or ticket.escalated_by_id == user.id
+        or is_untriaged(ticket)
+    ):
         return Access.READ
     return Access.NONE
+
+
+def may_self_assign(user: User, ticket: Ticket, levels: dict[int, MembershipLevel]) -> bool:
+    """An agent can take a ticket they work, or claim an untriaged one."""
+    if user.role != UserRole.AGENT:
+        return False
+    access = ticket_access(user, ticket, levels)
+    return access == Access.WORK or (access >= Access.READ and is_untriaged(ticket))
 
 
 def visible_ticket_condition(user: User, levels: dict[int, MembershipLevel]):
@@ -76,6 +89,14 @@ def visible_ticket_condition(user: User, levels: dict[int, MembershipLevel]):
 def require_access(user: User, ticket: Ticket, levels: dict[int, MembershipLevel], needed: Access) -> None:
     if ticket_access(user, ticket, levels) < needed:
         raise NoTicketAccess()
+
+
+def assignable_agents(session: Session, ticket: Ticket) -> list[User]:
+    """Who a super admin may assign the ticket to: the team's members, or any
+    agent while the ticket has no team yet."""
+    if ticket.team_id is None:
+        return list(session.exec(select(User).where(User.role == UserRole.AGENT).order_by(User.display_name)).all())
+    return team_members(session, ticket.team_id)
 
 
 def team_members(session: Session, team_id: int | None) -> list[User]:
