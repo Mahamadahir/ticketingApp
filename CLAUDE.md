@@ -46,7 +46,10 @@ run it.
   the user asks for them.
 - Before committing, validate Bicep changes with
   `bicep lint infra/main.bicep` and `bicep build-params infra/staging.bicepparam`
-  (set the three required secret variables to dummy values first).
+  (set dummy values first for `POSTGRES_ADMIN_PASSWORD`, `SESSION_SECRET_KEY`,
+  `INTERNAL_SESSION_SECRET_KEY`, `GRAPH_WEBHOOK_CLIENT_STATE`, `ALERT_EMAIL` and `WEB_ALLOWED_CIDRS`). There is
+  no Bicep CLI on the PATH on this laptop; the standalone `bicep-win-x64.exe` from
+  the Azure/bicep GitHub releases works.
 
 ## Flag Azure-only checks when you reach them
 
@@ -70,10 +73,11 @@ staging checklist. The full list is under "Azure-only verification" in
 ## Code the Azure plan still needs
 
 Listed with phases in `docs/plan.md` ("Code changes the Azure plan needs"):
-`APP_ROLE` router split (`web` / `public` / `worker`), `RUN_MIGRATIONS` switch
-in the entrypoint, uvicorn proxy headers, worker entrypoint, storage interface
-with local and Blob implementations, Application Insights, rate limiting on
-public routes, and a new deploy workflow.
+`APP_ROLE` router split (`web` / `public` / `worker`), worker entrypoint,
+storage interface with local and Blob implementations, Application Insights,
+rate limiting on public routes, and a new deploy workflow. The `RUN_MIGRATIONS`
+switch is done; proxy headers need only `FORWARDED_ALLOW_IPS`, set in the Bicep
+to the Container Apps subnet (never `*`, which lets clients forge their IP).
 
 ## Layout
 

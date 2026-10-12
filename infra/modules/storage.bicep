@@ -1,13 +1,14 @@
 // Private blob storage for ticket attachments. No account keys, no public
-// blobs: the apps authenticate with the shared managed identity and hand
-// agents short-lived user-delegation SAS links after a visibility check.
+// blobs: the apps that handle files authenticate with their managed identity
+// and hand agents short-lived user-delegation SAS links after a visibility check.
 
 param location string
 param tags object
 param name string
 param skuName string
 param containerName string
-param accessPrincipalId string
+@description('Principal ids of the identities that read and write attachments. Only apps that handle files belong here.')
+param accessPrincipalIds array
 
 var blobDataContributorRoleId = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
 var blobDelegatorRoleId = 'db58b8e5-c6ad-4a2a-8342-4190687cbf4a'
@@ -95,26 +96,30 @@ resource lifecycle 'Microsoft.Storage/storageAccounts/managementPolicies@2023-05
   }
 }
 
-resource dataContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  scope: account
-  name: guid(account.id, accessPrincipalId, blobDataContributorRoleId)
-  properties: {
-    principalId: accessPrincipalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', blobDataContributorRoleId)
+resource dataContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = [
+  for principalId in accessPrincipalIds: {
+    scope: account
+    name: guid(account.id, principalId, blobDataContributorRoleId)
+    properties: {
+      principalId: principalId
+      principalType: 'ServicePrincipal'
+      roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', blobDataContributorRoleId)
+    }
   }
-}
+]
 
 // Needed to request the user delegation key that signs SAS links.
-resource delegator 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  scope: account
-  name: guid(account.id, accessPrincipalId, blobDelegatorRoleId)
-  properties: {
-    principalId: accessPrincipalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', blobDelegatorRoleId)
+resource delegator 'Microsoft.Authorization/roleAssignments@2022-04-01' = [
+  for principalId in accessPrincipalIds: {
+    scope: account
+    name: guid(account.id, principalId, blobDelegatorRoleId)
+    properties: {
+      principalId: principalId
+      principalType: 'ServicePrincipal'
+      roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', blobDelegatorRoleId)
+    }
   }
-}
+]
 
 output name string = account.name
 output id string = account.id

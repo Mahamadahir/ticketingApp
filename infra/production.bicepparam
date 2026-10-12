@@ -2,18 +2,23 @@ using 'main.bicep'
 
 param environmentName = 'production'
 
-param deployApps = false
+// Empty image = platform only (first deploy: the registry has no image yet). The
+// deploy workflow sets IMAGE to deploy the apps.
 param image = readEnvironmentVariable('IMAGE', '')
 
-param deployPublicApp = true
-param deployWorker = true
+// Off until the app has the APP_ROLE=public mode (phase 3) and the worker entrypoint
+// (phase 2). Turned on earlier they would serve the whole agent console on an open
+// address and crash-loop respectively.
+param deployPublicApp = false
+param deployWorker = false
 
-// Office and VPN ranges. Fill in before go-live; do not deploy production open.
-param webAllowedCidrs = []
+// Office and VPN ranges, comma separated, e.g. WEB_ALLOWED_CIDRS=203.0.113.0/24.
+// Required: the deploy fails without it, so production is never opened by omission.
+param webAllowedCidrs = filter(map(split(readEnvironmentVariable('WEB_ALLOWED_CIDRS'), ','), cidr => trim(cidr)), cidr => !empty(cidr))
 // The internal domain, once DNS and a certificate exist, e.g. https://tickets.example.org
 param publicBaseUrl = ''
 
-param alertEmail = readEnvironmentVariable('ALERT_EMAIL', 'changeme@example.org')
+param alertEmail = readEnvironmentVariable('ALERT_EMAIL')
 
 param ssoTenantId = readEnvironmentVariable('SSO_TENANT_ID', '')
 param ssoClientId = readEnvironmentVariable('SSO_CLIENT_ID', '')
@@ -24,6 +29,7 @@ param superAdminEmails = readEnvironmentVariable('SUPER_ADMIN_EMAILS', '')
 
 param postgresAdminPassword = readEnvironmentVariable('POSTGRES_ADMIN_PASSWORD')
 param sessionSecretKey = readEnvironmentVariable('SESSION_SECRET_KEY')
+param internalSessionSecretKey = readEnvironmentVariable('INTERNAL_SESSION_SECRET_KEY')
 param graphWebhookClientState = readEnvironmentVariable('GRAPH_WEBHOOK_CLIENT_STATE')
 param ssoClientSecret = readEnvironmentVariable('SSO_CLIENT_SECRET', '')
 param graphClientSecret = readEnvironmentVariable('GRAPH_CLIENT_SECRET', '')

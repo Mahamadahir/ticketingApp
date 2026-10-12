@@ -43,7 +43,10 @@ resource server 'Microsoft.DBforPostgreSQL/flexibleServers@2024-08-01' = {
     network: {
       delegatedSubnetResourceId: delegatedSubnetId
       privateDnsZoneArmResourceId: privateDnsZoneId
-      publicNetworkAccess: 'Disabled'
+      // publicNetworkAccess is deliberately not set: a server in a delegated
+      // subnet has no public endpoint, and setting it alongside VNet
+      // integration may be rejected. Unverified (docs lookup failed); check on
+      // the first what-if.
     }
     authConfig: {
       activeDirectoryAuth: 'Disabled'

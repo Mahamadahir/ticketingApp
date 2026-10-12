@@ -141,8 +141,13 @@ for the database is a later option.
   is a later hardening step.
 - Malware scanning (Defender for Storage): off until costs are known.
 
-**Secrets.** Key Vault, read by the apps through a managed identity. Nothing
-secret in the repository, the Bicep parameters or the app definitions.
+**Secrets.** Key Vault, read by the apps through managed identities. Nothing
+secret in the repository, the Bicep parameters or the app definitions. Each app
+and the migrate job has its own identity and is granted read access to only the
+secrets it needs, one secret at a time; the public app and worker cannot read
+the web session key or the SSO secret, and the public app and migrate job have
+no blob access. The database URL still uses the server admin login; a
+least-privilege database role is a later hardening step.
 
 **Considered and not chosen.**
 
@@ -155,13 +160,21 @@ secret in the repository, the Bicep parameters or the app definitions.
 - Static Web Apps: the UI is server-rendered Jinja with htmx, not a SPA.
 - AKS: far more than this needs.
 
-**Code changes the Azure plan needs** (none made yet):
+**Code changes the Azure plan needs:**
 
 - `APP_ROLE` (`web`, `public`, `worker`) selects which routers are mounted.
   Needed before `public` can be deployed; due with the Graph webhook (phase 3).
+  Not made yet.
 - `RUN_MIGRATIONS=false` makes the entrypoint skip `alembic upgrade head`, so
-  replicas do not race; the migrate job runs it instead.
-- uvicorn proxy headers (`--proxy-headers`, `--forwarded-allow-ips`).
+  replicas do not race; the migrate job runs it instead. Done.
+- uvicorn proxy headers: uvicorn trusts `X-Forwarded-*` from the addresses in
+  `FORWARDED_ALLOW_IPS`, which the Bicep sets to the Container Apps subnet (where
+  the ingress proxies run), not `*`. With `*` uvicorn takes the leftmost
+  `X-Forwarded-For` entry as the client address, and a client can forge that.
+  No code change needed. Verify on staging: the HTTPS-only cookie works, and a
+  request with a forged `X-Forwarded-For` is recorded with the real address.
+- Settings check per role: once `APP_ROLE` exists, require `SESSION_SECRET_KEY`
+  only for `web`, then drop the internal session key secret.
 - Worker entrypoint (`python -m app.worker`), phase 2.
 - Storage layer behind an interface, with a local-disk or Azurite
   implementation for development and a Blob implementation using
@@ -183,7 +196,13 @@ feature is reached:
 - Graph webhook delivery, validation token handshake, 3-second response, and
   subscription renewal. Needs a public URL, so only on staging.
 - Teams bot messages (phase 8) and Teams Workflows webhooks.
-- Postgres SSL, private networking and point-in-time restore.
+- Postgres SSL, private networking and point-in-time restore. Also that the
+  server has no public endpoint: the Postgres module deliberately omits
+  `publicNetworkAccess` (a VNet-integrated server has none, and setting both may
+  be rejected), which was not confirmed against the docs. Check the first
+  `what-if`, then try to connect from outside the VNet.
+- Per-app identities: each app can read only its own Key Vault secrets (try
+  reading another app's secret with its token), and `public` has no blob access.
 - The migrate job and the deploy ordering; revision rollout and rollback.
 - Alerts, the heartbeat alert, Log Analytics and Application Insights data.
 - Custom domain and certificate at roll-out.
@@ -255,6 +274,20 @@ team's tickets) or `viewer` (read-only). Agents see only tickets for teams
 they belong to, plus every untriaged ticket. Restricted work (HR, security)
 lives in its own team. Opening a ticket link without access shows a "no
 access" page.
+
+**Sign-in follow-ups** (agreed 9 Oct 2026, from the review of Phase 0; build
+alongside 1B, which already touches the users page):
+
+- **Unlock button.** A super admin can unlock a locked local account from
+  `/admin/users`, which shows the lock expiry and failed-attempt count. Unlocking
+  resets both and is audit-logged. Until it exists a locked contractor waits out
+  the lock, which an attacker can keep renewing about once per lock period.
+- **Clear the Entra sign-in state.** The `oauth_state` value stored in the
+  session during the Entra redirect is removed as soon as the callback has
+  checked it, so a state value cannot be replayed. Logout becomes a POST, so a
+  cross-site image tag cannot sign someone out.
+- **Match users on the Entra object id** rather than email or
+  `preferred_username` (Phase 6, with Entra app roles).
 
 ## Tickets
 
@@ -411,7 +444,7 @@ Automatic emails use admin-managed templates, previewed when edited.
 Users, teams and memberships, categories, SLA targets per priority, business
 hours and bank holidays, settings (chase X and Y, auto-close N, automatic
 email cap, ignore phrases, Teams delay default), Service Request approvers,
-email templates, canned responses, outage mode, the audit log (paginated,
+email templates, canned responses, unlocking locked local accounts, outage mode, the audit log (paginated,
 filterable by actor and by subject user), category and ignore-phrase review
 queues, all feedback, and reports.
 
@@ -429,12 +462,12 @@ for all of them.
 | Phase | Scope |
 |---|---|
 | 0 | Security fixes, Alembic, `/health`, audit log pagination and filters, account lockout, list pagination, environment-targeted deploys |
-| 1 | Ticket model: types, references, statuses, source, categories, impact × urgency, SLA targets and clock, priority queue, message visibility, followers, linking, team memberships and visibility, reassignment, escalation changes, backdating, `ticket_event`, search, portal new request form, canned responses, preview step, Service Requests and approvers |
+| 1 | Ticket model: types, references, statuses, source, categories, impact × urgency, SLA targets and clock, priority queue, message visibility, followers, linking, team memberships and visibility, reassignment, escalation changes, backdating, `ticket_event`, search, portal new request form, canned responses, preview step, Service Requests and approvers, sign-in follow-ups (unlock button, clear Entra sign-in state, logout as POST) |
 | 2 | Worker, in-app notifications, @mentions, notification settings, Teams channel webhook for new tickets, out-of-office detection |
 | 3 | Graph mail: intake, threaded replies, `uniqueBody`, delta catch-up, subscription renewal and lifecycle handling, auto-reply filter, attachments in Blob Storage, `public` app mode for the webhook |
 | 4 | Resolution, reopen and reclose flow, ignore list and review, chase emails, auto-close, feedback, bulk resolve |
 | 5 | MSP handoff, hold, 18:00 job, MSP mail handling and forwarding |
-| 6 | Break-glass accounts, TOTP, outage mode, Entra app roles |
+| 6 | Break-glass accounts, TOTP, outage mode, Entra app roles, match users on Entra object id |
 | 7 | Reporting and CSV export, subject access export, anonymisation |
 | 8 | Teams bot: direct messages to agents and ticket intake from Teams |
 | 9 | Google Stitch redesign once the UI is feature-complete, to WCAG 2.2 AA |
