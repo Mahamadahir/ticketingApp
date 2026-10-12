@@ -128,7 +128,12 @@ class ActivityMiddleware(BaseHTTPMiddleware):
                 template = getattr(request.scope.get("route"), "path", None)
                 # An unmatched path (a scanner, a typo) has no template; recording
                 # those would let anyone flood the table, so they are skipped.
-                if template is not None and (denied or template not in HAS_DEDICATED_EVENT):
+                # The sign-in routes write their own row, but only when they get far
+                # enough: a crash (5xx) before that would otherwise leave no trace.
+                # A 422 for a malformed form has no one to attribute it to and is
+                # something a bot can send for free, so it is not stored.
+                has_own_row = template in HAS_DEDICATED_EVENT and status_code < 500
+                if template is not None and (denied or not has_own_row):
                     session_data = request.scope.get("session") or {}
                     await run_in_threadpool(
                         _write_request_row,

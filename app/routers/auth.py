@@ -1,3 +1,4 @@
+import logging
 import secrets
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -11,12 +12,18 @@ from app.activity import (
     LOGIN_SUCCESS,
     LOGOUT,
     SSO_FAILED,
+    client_ip,
     record_activity,
 )
 from app.auth import acquire_token_by_auth_code, attempt_local_login, build_auth_url, get_or_create_user
 from app.config import settings
 from app.database import get_session
 from app.models import User
+
+logger = logging.getLogger(__name__)
+
+# Failures that match no account, or an account already locked: not stored.
+NOT_WORTH_A_ROW = {"unknown_account", "account_locked"}
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 templates = Jinja2Templates(directory="app/templates")
@@ -48,10 +55,17 @@ def callback(request: Request, code: str, state: str, session: Session = Depends
     # Compared as bytes: compare_digest raises on non-ASCII text, which would
     # turn a crafted value into a 500 instead of a 400.
     if not expected_state or not secrets.compare_digest(state.encode(), expected_state.encode()):
-        _sso_failed(session, request, "invalid_state")
+        # Only a sign-in that was really started (the session holds a state) is worth
+        # a row; a cookie-less hit on this URL is noise anyone could send forever.
+        if expected_state:
+            _sso_failed(session, request, "invalid_state")
         raise HTTPException(status_code=400, detail="Invalid OAuth state")
 
-    token_result = acquire_token_by_auth_code(code)
+    try:
+        token_result = acquire_token_by_auth_code(code)
+    except Exception:
+        _sso_failed(session, request, "token_exchange_error")
+        raise
     claims = token_result.get("id_token_claims", {})
     email = claims.get("preferred_username") or claims.get("email")
     display_name = claims.get("name", email)
@@ -62,7 +76,12 @@ def callback(request: Request, code: str, state: str, session: Session = Depends
         _sso_failed(session, request, f"token_error: {error}" if error else "no_email_claim")
         raise HTTPException(status_code=400, detail="Sign-in did not return an email claim")
 
-    user = get_or_create_user(session, email, display_name)
+    try:
+        user = get_or_create_user(session, email, display_name)
+    except Exception:
+        session.rollback()
+        _sso_failed(session, request, "account_error")
+        raise
     request.session["user_id"] = user.id
     record_activity(session, request, LOGIN_SUCCESS, actor_email=user.email, actor_user_id=user.id, detail="sso")
     session.commit()
@@ -80,6 +99,12 @@ def local_login(
     if result.user is None:
         # The person at the form sees one message whatever went wrong; the log keeps
         # the real reason (and never the password).
+        if result.failure in NOT_WORTH_A_ROW:
+            # Anyone can send these without limit (a bot guessing addresses, or
+            # hammering a locked account), so they go to the application log only and
+            # the table cannot be grown from outside. No typed text is kept.
+            logger.warning("Rejected local sign-in (%s) from %s", result.failure, client_ip(request))
+            return RedirectResponse("/auth/login?error=Invalid+email+or+password", status_code=303)
         record_activity(session, request, LOGIN_FAILED, actor_email=email, detail=result.failure)
         if result.locked_until is not None:
             record_activity(

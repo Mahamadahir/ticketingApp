@@ -58,22 +58,32 @@ def test_failed_sign_ins_record_the_real_reason_while_the_person_sees_one_messag
     db_session.commit()
 
     attempts = [
-        ("nobody@example.com", "whatever-1", "unknown_account"),
-        (sso_only.email, "whatever-2", "not_a_local_account"),
-        (user.email, "wrong-password-3", "wrong_password"),
+        ("nobody@example.com", "whatever-1"),
+        (sso_only.email, "whatever-2"),
+        (user.email, "wrong-password-3"),
     ]
     locations = set()
-    for email, password, _ in attempts:
+    for email, password in attempts:
         locations.add(sign_in(client, email, password).headers["location"])
 
     assert len(locations) == 1  # identical for every reason, so the form leaks nothing
+    # An address that matches no account is not stored (a bot could fill the table).
     failed = rows(db_session, "login_failed")
-    assert [(r.actor_email, r.detail) for r in failed] == [(email, reason) for email, _, reason in attempts]
+    assert [(r.actor_email, r.detail) for r in failed] == [
+        (sso_only.email, "not_a_local_account"), (user.email, "wrong_password"),
+    ]
     stored = every_text_stored(db_session)
-    assert not any(secret in stored for secret in ("whatever-1", "whatever-2", "wrong-password-3", "hunter2"))
+    assert not any(s in stored for s in ("whatever-1", "whatever-2", "wrong-password-3", "hunter2", "nobody@"))
 
 
-def test_the_lockout_is_recorded_once_when_it_happens_and_later_attempts_say_locked(client, db_session):
+def test_guessing_addresses_cannot_grow_the_table(client, db_session):
+    for number in range(25):
+        sign_in(client, f"guess-{number}@example.com", "x")
+        client.post("/auth/local-login", data={"email": "only-an-email"})  # malformed: 422
+    assert rows(db_session) == []
+
+
+def test_the_lockout_is_recorded_once_and_attempts_while_locked_add_no_rows(client, db_session):
     user = local_user(db_session)
 
     for number in range(6):  # 5 wrong guesses lock the account; the 6th arrives while locked
@@ -82,18 +92,19 @@ def test_the_lockout_is_recorded_once_when_it_happens_and_later_attempts_say_loc
     locked = rows(db_session, "account_locked")
     assert len(locked) == 1 and locked[0].actor_email == user.email and locked[0].detail.startswith("locked until ")
     reasons = [r.detail for r in rows(db_session, "login_failed")]
-    assert reasons == ["wrong_password"] * 5 + ["account_locked"]
+    assert reasons == ["wrong_password"] * 5  # the 6th, while locked, is not stored
 
 
-def test_the_correct_password_on_a_locked_account_is_recorded_as_a_failure(client, db_session):
+def test_the_correct_password_on_a_locked_account_is_refused_and_never_a_success(client, db_session):
     user = local_user(db_session)
     for number in range(5):
         sign_in(client, user.email, f"wrong-{number}")
+    before = len(rows(db_session))
 
     response = sign_in(client, user.email, "hunter2-correct")
 
     assert "error" in response.headers["location"]
-    assert rows(db_session, "login_failed")[-1].detail == "account_locked"
+    assert len(rows(db_session)) == before
     assert rows(db_session, "login_success") == []
 
 
@@ -135,9 +146,46 @@ def test_single_sign_on_success_and_each_failure_are_recorded_without_the_one_ti
     [ok] = rows(db_session, "login_success")
     assert (ok.actor_email, ok.detail) == ("sso-user@example.com", "sso")
 
-    client.get("/auth/callback?code=ONE-TIME-CODE-2&state=forged", follow_redirects=False)  # no state in the session
+    client.get("/auth/sso/start", follow_redirects=False)
+    client.get("/auth/callback?code=ONE-TIME-CODE-2&state=forged", follow_redirects=False)  # a started sign-in, wrong state
     assert [r.detail for r in rows(db_session, "sso_failed")] == ["invalid_state"]
     assert "ONE-TIME-CODE" not in every_text_stored(db_session)
+
+
+def test_hits_on_the_callback_with_no_sign_in_started_are_not_stored(client, db_session, monkeypatch):
+    sso_setup(monkeypatch, {})
+    for number in range(10):
+        client.get(f"/auth/callback?code=c{number}&state=s{number}", follow_redirects=False)
+    client.get("/auth/callback", follow_redirects=False)  # missing parameters: 422
+    assert rows(db_session) == []
+
+
+def test_a_failed_token_exchange_is_recorded_and_still_an_error(client, db_session, monkeypatch):
+    from app.routers import auth as auth_router
+
+    seen = sso_setup(monkeypatch, {})
+
+    def boom(code):
+        raise RuntimeError("microsoft unreachable")
+
+    monkeypatch.setattr(auth_router, "acquire_token_by_auth_code", boom)
+    client.get("/auth/sso/start", follow_redirects=False)
+    with pytest.raises(RuntimeError):
+        client.get(f"/auth/callback?code=abc&state={seen['state']}", follow_redirects=False)
+    assert [r.detail for r in rows(db_session, "sso_failed")] == ["token_exchange_error"]
+
+
+def test_a_sign_in_that_crashes_leaves_a_row_but_a_normal_one_is_not_doubled(client, db_session, monkeypatch):
+    from app.routers import auth as auth_router
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("database gone")
+
+    monkeypatch.setattr(auth_router, "attempt_local_login", boom)
+    with pytest.raises(RuntimeError):
+        sign_in(client, "someone@example.com", "x")
+    [row] = rows(db_session, "request")
+    assert (row.path, row.status_code) == ("/auth/local-login", 500)
 
 
 def test_a_sign_in_that_returns_no_email_is_recorded_with_microsofts_error_code_only(client, db_session, monkeypatch):
@@ -352,6 +400,7 @@ def test_the_activity_log_page_filters_and_shows_problems_only(client, db_sessio
     assert client.get("/admin/activity-log?date_from=31/10/2026").status_code == 400
 
 def test_the_page_escapes_what_a_visitor_controls_and_clips_the_browser_string(client, db_session):
+    local_user(db_session, email="<script>alert(1)</script>@evil.example")
     client.post(
         "/auth/local-login",
         data={"email": "<script>alert(1)</script>@evil.example", "password": "x"},
@@ -377,3 +426,20 @@ def test_the_activity_log_is_paginated(client, db_session):
     first, second = client.get("/admin/activity-log").text, client.get("/admin/activity-log?page=2").text
 
     assert "page=2" in first and first.count("<tr>") != second.count("<tr>")
+
+def test_the_person_filter_matches_part_of_an_address_and_treats_wildcards_literally(client, db_session):
+    for email in ("jane.smith@example.com", "bob_jones@example.com", "bobXjones@example.com"):
+        db_session.add(ActivityLog(event_type="request", actor_email=email, method="POST", path="/x", status_code=200))
+    db_session.commit()
+    super_admin(client)
+
+    assert client.get("/admin/activity-log?actor=SMITH").text.count("jane.smith@example.com") == 1
+    page = client.get("/admin/activity-log?actor=bob_jones").text
+    assert "bob_jones@example.com" in page and "bobXjones@example.com" not in page
+    assert "bob_jones@example.com" not in client.get("/admin/activity-log?actor=%25").text
+
+
+def test_a_date_range_that_ends_before_it_starts_is_refused_not_silently_empty(client, db_session):
+    super_admin(client)
+    assert client.get("/admin/activity-log?date_from=2026-10-10&date_to=2026-10-01").status_code == 400
+    assert client.get("/admin/activity-log?date_from=2026-10-01&date_to=2026-10-10").status_code == 200

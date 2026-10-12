@@ -101,7 +101,7 @@ state-changing request (POST/PUT/PATCH/DELETE), each with who, when, the IP
 address and the user agent. Paths are stored as route templates
 (`/tickets/{ticket_id}/email`), so ids and tokens never land in the log. Request
 bodies, passwords, tokens, one-time codes and query strings are never recorded.
-Filter by event type, person, date range, or "problems only". A failure to write a
+Failed sign-ins are stored only when the address matches a real account; guesses at unknown addresses, attempts on an already-locked account, and calls with no sign-in started go to the application log only, so outsiders cannot grow the table. A request that crashes is recorded as a 500. Filter by event type, part of an address, date range, or "problems only". A failure to write a
 row is logged and swallowed, so it can never break a request. The IP shown is
 only trustworthy once `FORWARDED_ALLOW_IPS` is set correctly behind the Azure
 ingress (a staging check).

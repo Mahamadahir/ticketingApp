@@ -58,10 +58,6 @@ class LoginResult:
     locked_until: Optional[datetime] = None
 
 
-def authenticate_local(session: Session, email: str, password: str) -> User | None:
-    return attempt_local_login(session, email, password).user
-
-
 def attempt_local_login(session: Session, email: str, password: str) -> LoginResult:
     """Succeeds only for a correct password on an unlocked account. Every rejection
     looks the same to the person at the form, so it can't be used to learn which

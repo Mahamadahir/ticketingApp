@@ -552,10 +552,14 @@ def view_activity_log(
     if event_type:
         query = query.where(ActivityLog.event_type == event_type)
     if actor and actor.strip():
-        query = query.where(ActivityLog.actor_email == actor.strip().lower())
+        # Part of an address is enough; wildcards the person typed are matched literally.
+        needle = actor.strip().lower().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        query = query.where(ActivityLog.actor_email.like(f"%{needle}%", escape="\\"))
     if problems:
         query = query.where(or_(ActivityLog.event_type.in_(PROBLEM_EVENTS), ActivityLog.status_code >= 400))
     start, end = _parse_day(date_from), _parse_day(date_to)
+    if start is not None and end is not None and end < start:
+        raise HTTPException(status_code=400, detail="'To' date is before the 'From' date")
     if start is not None:
         query = query.where(ActivityLog.created_at >= start)
     if end is not None:

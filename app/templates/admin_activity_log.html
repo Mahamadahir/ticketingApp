@@ -19,7 +19,7 @@
       {% for kind in event_types %}<option value="{{ kind }}" {{ "selected" if event_type == kind else "" }}>{{ kind.replace("_", " ") }}</option>{% endfor %}
     </select>
   </label>
-  <label>Email (exact) <input type="text" name="actor" value="{{ actor }}" /></label>
+  <label>Email (any part) <input type="text" name="actor" value="{{ actor }}" /></label>
   <label>From <input type="date" name="date_from" value="{{ date_from }}" /></label>
   <label>To <input type="date" name="date_to" value="{{ date_to }}" /></label>
   <label><input type="checkbox" name="problems" value="true" {{ "checked" if problems else "" }} /> Problems only</label>
