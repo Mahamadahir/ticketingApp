@@ -19,9 +19,9 @@ from app.models import (
     MessageVisibility,
     Ticket,
     TicketEvent,
-    TicketStatus,
     User,
 )
+from app.visibility import is_untriaged
 
 
 class NotTriaged(Exception):
@@ -29,9 +29,39 @@ class NotTriaged(Exception):
 
 
 def is_triaged(ticket: Ticket) -> bool:
-    # Triage is the ticket leaving New. Phase 1D replaces this with the explicit
-    # triage action; keep every check going through here.
-    return ticket.status != TicketStatus.NEW
+    # One definition of "untriaged", shared with access control (visibility.py),
+    # so the two cannot disagree. Phase 1D replaces it with the explicit triage
+    # action; the per-inbox routing change narrows it in the same place.
+    return not is_untriaged(ticket)
+
+
+def _record(
+    session: Session,
+    ticket: Ticket,
+    *,
+    sender: str,
+    body: str,
+    direction: MessageDirection,
+    visibility: MessageVisibility,
+    author_user_id: Optional[int] = None,
+) -> Message:
+    """The one place a Message is built, so the invariants cannot drift: an
+    internal note is always agents-only, and any new message touches the ticket."""
+    if direction == MessageDirection.INTERNAL and visibility != MessageVisibility.AGENTS_ONLY:
+        raise ValueError("An internal message must be agents-only")
+
+    message = Message(
+        ticket_id=ticket.id,
+        sender=sender,
+        body=body,
+        direction=direction,
+        visibility=visibility,
+        author_user_id=author_user_id,
+    )
+    session.add(message)
+    ticket.updated_at = datetime.now(timezone.utc)
+    session.add(ticket)
+    return message
 
 
 def email_requester(session: Session, ticket: Ticket, author: User, body: str) -> Message:
@@ -39,47 +69,45 @@ def email_requester(session: Session, ticket: Ticket, author: User, body: str) -
     (that arrives with Graph in phase 3); it records what will be sent."""
     if not is_triaged(ticket):
         raise NotTriaged()
-
-    message = Message(
-        ticket_id=ticket.id,
-        sender=author.display_name,
-        body=body,
-        direction=MessageDirection.OUTBOUND,
-        visibility=MessageVisibility.PUBLIC,
-        author_user_id=author.id,
+    return _record(
+        session, ticket, sender=author.display_name, body=body, author_user_id=author.id,
+        direction=MessageDirection.OUTBOUND, visibility=MessageVisibility.PUBLIC,
     )
-    session.add(message)
-    ticket.updated_at = datetime.now(timezone.utc)
-    session.add(ticket)
-    return message
 
 
 def add_note(session: Session, ticket: Ticket, author: User, body: str) -> Message:
     """An internal note. Allowed at any stage and does not triage the ticket."""
-    message = Message(
-        ticket_id=ticket.id,
-        sender=author.display_name,
-        body=body,
-        direction=MessageDirection.INTERNAL,
-        visibility=MessageVisibility.AGENTS_ONLY,
-        author_user_id=author.id,
+    return _record(
+        session, ticket, sender=author.display_name, body=body, author_user_id=author.id,
+        direction=MessageDirection.INTERNAL, visibility=MessageVisibility.AGENTS_ONLY,
     )
-    session.add(message)
-    ticket.updated_at = datetime.now(timezone.utc)
-    session.add(ticket)
-    return message
+
+
+def record_inbound(
+    session: Session, ticket: Ticket, *, sender: str, body: str, author_user_id: Optional[int] = None
+) -> Message:
+    """A message from the requester (portal comment, or mail once Graph is wired
+    up). Always public: the requester wrote it and may see it."""
+    return _record(
+        session, ticket, sender=sender, body=body, author_user_id=author_user_id,
+        direction=MessageDirection.INBOUND, visibility=MessageVisibility.PUBLIC,
+    )
 
 
 def requester_visible_messages(session: Session, ticket: Ticket) -> list[Message]:
-    """The only messages the requester may see, in time order."""
+    """The only messages the requester may see, in time order. Public only, and
+    never an internal note even if one were wrongly marked public."""
     return list(
         session.exec(
             select(Message)
-            .where(Message.ticket_id == ticket.id, Message.visibility == MessageVisibility.PUBLIC)
+            .where(
+                Message.ticket_id == ticket.id,
+                Message.visibility == MessageVisibility.PUBLIC,
+                Message.direction != MessageDirection.INTERNAL,
+            )
             .order_by(Message.created_at, Message.id)
         ).all()
     )
-
 
 @dataclass
 class TimelineItem:

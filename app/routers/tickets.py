@@ -128,10 +128,11 @@ def email_user(
     # (awaiting user, with MSP, resolved, closed) is the agent's call and an
     # email must not undo it.
     if ticket.status == TicketStatus.OPEN:
+        previous_status = ticket.status
         set_status(session, ticket, TicketStatus.IN_PROGRESS, user.email)
         log_action(
             session, user.email, "ticket", ticket.id, "status_changed",
-            f"{TicketStatus.OPEN.value} -> {TicketStatus.IN_PROGRESS.value}",
+            f"{previous_status.value} -> {TicketStatus.IN_PROGRESS.value}",
         )
     log_action(session, user.email, "ticket", ticket.id, "emailed_requester", body[:200])
     session.commit()

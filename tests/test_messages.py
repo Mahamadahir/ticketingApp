@@ -87,7 +87,61 @@ def test_requester_visible_messages_returns_public_only_for_every_combination(db
 
     visible = requester_visible_messages(db_session, ticket)
     assert visible and all(m.visibility == MessageVisibility.PUBLIC for m in visible)
-    assert len(visible) == len(MessageDirection)  # one PUBLIC row per direction
+    # One public row per direction, except that an internal message is never
+    # shown even when it is wrongly marked public (belt and braces).
+    assert {m.direction for m in visible} == set(MessageDirection) - {MessageDirection.INTERNAL}
+
+
+def test_a_note_wrongly_marked_public_still_never_reaches_the_requester(db_session):
+    ticket = make_ticket(db_session)
+    db_session.add(
+        Message(
+            ticket_id=ticket.id,
+            sender="agent",
+            body=SECRET_NOTE,
+            direction=MessageDirection.INTERNAL,
+            visibility=MessageVisibility.PUBLIC,  # the bad row
+        )
+    )
+    db_session.commit()
+
+    assert requester_visible_messages(db_session, ticket) == []
+
+
+def test_an_internal_message_cannot_be_recorded_as_public(db_session):
+    from app.messages import _record
+
+    ticket = make_ticket(db_session)
+    try:
+        _record(
+            db_session, ticket, sender="x", body="x",
+            direction=MessageDirection.INTERNAL, visibility=MessageVisibility.PUBLIC,
+        )
+    except ValueError:
+        return
+    raise AssertionError("an internal message was accepted as public")
+
+
+def test_triaged_and_untriaged_are_one_rule(db_session):
+    """A teamless ticket counts as untriaged for access, so it cannot be
+    emailable either, whatever its status."""
+    from app.messages import is_triaged
+    from app.visibility import is_untriaged
+
+    for team_id in (None, create_team(db_session, "Service Desk").id):
+        for status in TicketStatus:
+            ticket = make_ticket(db_session, team_id, status=status)
+            assert is_triaged(ticket) == (not is_untriaged(ticket))
+    assert not is_triaged(make_ticket(db_session, None, status=TicketStatus.OPEN))
+
+
+def test_a_portal_comment_is_recorded_as_public_inbound(client, db_session):
+    ticket = make_ticket(db_session)
+    login_as(client, "me@example.com")
+    client.post(f"/portal/{ticket.id}/comment", data={"body": "Still broken"})
+
+    message = db_session.exec(select(Message)).one()
+    assert (message.direction, message.visibility) == (MessageDirection.INBOUND, MessageVisibility.PUBLIC)
 
 
 def test_portal_code_only_reads_messages_through_the_safe_function():
