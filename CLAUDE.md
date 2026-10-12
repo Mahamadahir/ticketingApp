@@ -20,7 +20,10 @@ run it.
   1H Service Requests and approvers (may slip to after Phase 3). Ticket numbers
   come from a `before_insert` hook in `app/models.py`; use
   `app/ticket_service.py` for creating tickets and changing status. Who can see
-  or work a ticket is decided only in `app/visibility.py`, never in a route.
+  or work a ticket is decided only in `app/visibility.py`, never in a route;
+  what the requester may see, and whether a ticket can be emailed, is decided
+  only in `app/messages.py` (portal and outbound mail use
+  `requester_visible_messages`, never `ticket.messages`).
 - **Nothing is deployed anywhere.** No Azure resources exist, no database has
   had migrations applied outside this laptop. Everything is developed and
   tested locally with `docker compose` and `pytest`.

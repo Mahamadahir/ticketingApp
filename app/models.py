@@ -45,8 +45,14 @@ class TicketSource(str, Enum):
 
 
 class MessageDirection(str, Enum):
-    INBOUND = "inbound"
-    OUTBOUND = "outbound"
+    INBOUND = "inbound"  # from the requester (or a follower)
+    OUTBOUND = "outbound"  # an email to the requester
+    INTERNAL = "internal"  # an agent's note; never leaves the agent screens
+
+
+class MessageVisibility(str, Enum):
+    PUBLIC = "public"  # the requester (and portal) can see it
+    AGENTS_ONLY = "agents_only"  # notes, and later MSP mail
 
 
 class UserRole(str, Enum):
@@ -129,6 +135,9 @@ class Message(SQLModel, table=True):
     sender: str
     body: str
     direction: MessageDirection
+    # Anything shown to the requester or sent as mail must come through
+    # app/messages.requester_visible_messages, which returns PUBLIC only.
+    visibility: MessageVisibility = Field(default=MessageVisibility.PUBLIC)
     graph_message_id: Optional[str] = Field(default=None)
     author_user_id: Optional[int] = Field(default=None, foreign_key="user.id")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

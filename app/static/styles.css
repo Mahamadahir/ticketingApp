@@ -224,3 +224,4 @@ textarea {
 }
 
 .inline-form { display: inline; }
+.event { font-size: 0.85rem; color: #555; margin: 0.35rem 0; }

@@ -67,39 +67,46 @@
 </div>
 {% endif %}
 
+<h3>Timeline</h3>
 <div id="thread">
-  {% for message in ticket.messages|sort(attribute="created_at") %}
+  {% for item in timeline %}
+  {% if item.message %}
+  {% set message = item.message %}
   <div class="message message-{{ message.direction.value }}">
-    <div class="message-meta">{{ message.sender }} &middot; {{ message.created_at.strftime("%Y-%m-%d %H:%M") }}</div>
+    <div class="message-meta">
+      {% if message.direction.value == "internal" %}<b>Internal note</b> (agents only)
+      {% elif message.direction.value == "outbound" %}<b>Email to requester</b>
+      {% else %}<b>From requester</b>{% endif %}
+      &middot; {{ message.sender }} &middot; {{ message.created_at.strftime("%Y-%m-%d %H:%M") }}
+    </div>
     <div class="message-body">{{ message.body }}</div>
   </div>
+  {% else %}
+  {% set event = item.event %}
+  <div class="event">
+    {{ event.created_at.strftime("%Y-%m-%d %H:%M") }} &middot;
+    {{ event.event_type.replace("_", " ") }}
+    {% if event.from_value or event.to_value %}: {{ event.from_value or "none" }} &rarr; {{ event.to_value or "none" }}{% endif %}
+    {% if event.detail %} ({{ event.detail }}){% endif %}
+    &middot; {{ event.actor_email or "system" }}
+  </div>
+  {% endif %}
   {% endfor %}
 </div>
 
-{% if can_work %}
-<form hx-post="/tickets/{{ ticket.id }}/reply" hx-target="main" hx-swap="innerHTML">
-  <textarea name="body" rows="4" maxlength="{{ max_message_length }}" placeholder="Reply to requester..." required></textarea>
-  <button type="submit">Send reply</button>
+{% if can_email %}
+<form hx-post="/tickets/{{ ticket.id }}/email" hx-target="main" hx-swap="innerHTML">
+  <textarea name="body" rows="4" maxlength="{{ max_message_length }}" placeholder="Email to the requester..." required></textarea>
+  <button type="submit">Email user</button>
 </form>
+{% elif can_work %}
+<p class="note">Triage this ticket (move it out of New) before emailing the requester. You can still add a note.</p>
 {% endif %}
 
-<h3>History</h3>
-<table>
-  <thead>
-    <tr><th>When</th><th>Event</th><th>By</th><th>Change</th></tr>
-  </thead>
-  <tbody>
-    {% for event in events %}
-    <tr>
-      <td>{{ event.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
-      <td>{{ event.event_type.replace("_", " ") }}</td>
-      <td>{{ event.actor_email or "system" }}</td>
-      <td>
-        {% if event.from_value or event.to_value %}{{ event.from_value or "none" }} &rarr; {{ event.to_value or "none" }}{% endif %}
-        {% if event.detail %} {{ event.detail }}{% endif %}
-      </td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+{% if can_note %}
+<form hx-post="/tickets/{{ ticket.id }}/note" hx-target="main" hx-swap="innerHTML">
+  <textarea name="body" rows="3" maxlength="{{ max_message_length }}" placeholder="Internal note (agents only, does not triage the ticket)..." required></textarea>
+  <button type="submit" class="button-outline">Add note</button>
+</form>
+{% endif %}
 {% endblock %}

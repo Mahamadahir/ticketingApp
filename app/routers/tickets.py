@@ -10,13 +10,15 @@ from app.audit import log_action
 from app.auth import require_roles
 from app.database import get_session
 from app.forms import MAX_MESSAGE_LENGTH, optional_int
-from app.models import Message, MessageDirection, Team, Ticket, TicketEvent, TicketStatus, User, UserRole
+from app.messages import NotTriaged, add_note, agent_timeline, email_requester, is_triaged
+from app.models import Team, Ticket, TicketStatus, User, UserRole
 from app.pagination import paginate
 from app.ticket_service import EVENT_ASSIGNED, EVENT_ESCALATED, record_event, set_status
 from app.visibility import (
     Access,
     NoTicketAccess,
     assignable_agents,
+    may_add_note,
     may_self_assign,
     membership_levels,
     require_access,
@@ -106,46 +108,62 @@ def view_ticket_by_reference(
     return _render_ticket_detail(request, ticket, user, session)
 
 
-@router.post("/{ticket_id}/reply", response_class=HTMLResponse)
-def reply_to_ticket(
+@router.post("/{ticket_id}/email", response_class=HTMLResponse)
+def email_user(
     ticket_id: int,
     request: Request,
     body: str = Form(..., max_length=MAX_MESSAGE_LENGTH),
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
+    """Send the requester a message. Not available until the ticket is triaged."""
     ticket = _get_ticket(session, ticket_id, user)
 
-    message = Message(
-        ticket_id=ticket.id,
-        sender=user.display_name,
-        body=body,
-        direction=MessageDirection.OUTBOUND,
-        author_user_id=user.id,
-    )
-    session.add(message)
+    try:
+        email_requester(session, ticket, user, body)
+    except NotTriaged:
+        raise HTTPException(status_code=400, detail="Triage the ticket before emailing the requester")
 
-    # A first reply starts the work. Any other status (awaiting user, with
-    # MSP, resolved, closed) is the agent's call and a reply must not undo it.
-    if ticket.status in (TicketStatus.NEW, TicketStatus.OPEN):
-        previous_status = ticket.status
+    # The first email on an open ticket starts the work. Any other status
+    # (awaiting user, with MSP, resolved, closed) is the agent's call and an
+    # email must not undo it.
+    if ticket.status == TicketStatus.OPEN:
         set_status(session, ticket, TicketStatus.IN_PROGRESS, user.email)
         log_action(
             session, user.email, "ticket", ticket.id, "status_changed",
-            f"{previous_status.value} -> {TicketStatus.IN_PROGRESS.value}",
+            f"{TicketStatus.OPEN.value} -> {TicketStatus.IN_PROGRESS.value}",
         )
-    ticket.updated_at = datetime.now(timezone.utc)
-    session.add(ticket)
-    log_action(session, user.email, "ticket", ticket.id, "commented", body[:200])
+    log_action(session, user.email, "ticket", ticket.id, "emailed_requester", body[:200])
     session.commit()
     session.refresh(ticket)
 
-    # TODO: once Graph credentials are wired up, send this reply as an
-    # actual email back to ticket.requester_email via graph_client.send_mail
-    # so the requester sees it as a normal reply in their inbox.
+    # TODO: once Graph credentials are wired up, send this as an actual email
+    # to ticket.requester_email via graph_client.send_mail, as a reply in the
+    # ticket's mail conversation, so the requester sees one chain.
 
     return _render_ticket_detail(request, ticket, user, session)
 
+
+@router.post("/{ticket_id}/note", response_class=HTMLResponse)
+def add_ticket_note(
+    ticket_id: int,
+    request: Request,
+    body: str = Form(..., max_length=MAX_MESSAGE_LENGTH),
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """An internal note, visible to agents only. Allowed at any stage, including
+    on an untriaged ticket the agent has not claimed, and never triages it."""
+    ticket = _get_ticket(session, ticket_id, user, Access.READ)
+    if not may_add_note(user, ticket, membership_levels(session, user)):
+        raise NoTicketAccess()
+
+    add_note(session, ticket, user, body)
+    log_action(session, user.email, "ticket", ticket.id, "note_added", body[:200])
+    session.commit()
+    session.refresh(ticket)
+
+    return _render_ticket_detail(request, ticket, user, session)
 
 @router.post("/{ticket_id}/status", response_class=HTMLResponse)
 def change_status(
@@ -259,9 +277,7 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
     can_work = ticket_access(user, ticket, levels) >= Access.WORK
     can_claim = not can_work and may_self_assign(user, ticket, levels)
     teams = session.exec(select(Team)).all()
-    events = session.exec(
-        select(TicketEvent).where(TicketEvent.ticket_id == ticket.id).order_by(TicketEvent.created_at, TicketEvent.id)
-    ).all()
+    timeline = agent_timeline(session, ticket)
 
     return templates.TemplateResponse(
         request,
@@ -272,7 +288,9 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             "assigned_agent": assigned_agent,
             "team_agents": team_agents,
             "teams": teams,
-            "events": events,
+            "timeline": timeline,
+            "can_email": can_work and is_triaged(ticket),
+            "can_note": may_add_note(user, ticket, levels),
             "statuses": list(TicketStatus),
             "can_work": can_work,
             "can_claim": can_claim,

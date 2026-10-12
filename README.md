@@ -40,11 +40,20 @@ Mimecast integration.
 | Role | Portal | Can see |
 |---|---|---|
 | `super_admin` | `/tickets`, `/admin` | Every ticket, across all teams; manages users, teams, and the audit log |
-| `agent` | `/tickets` | Tickets of teams they are a member of (work) or viewer of (read-only), every untriaged ticket, tickets assigned to them, and tickets they escalated (read-only); can self-assign, reply, change status, escalate on the ones they can work |
+| `agent` | `/tickets` | Tickets of teams they are a member of (work) or viewer of (read-only), every untriaged ticket, tickets assigned to them, and tickets they escalated (read-only); can self-assign, email the user, add notes, change status, escalate on the ones they can work |
 | `end_user` | `/portal` | Only tickets they raised (matched on requester email); can view status and add comments |
 
 A ticket has exactly one assigned agent at a time. Reassignment is a
-separate action (`/tickets/{id}/assign`), not a side effect of replying.
+separate action (`/tickets/{id}/assign`), not a side effect of emailing the user.
+
+**Email user and notes.** An agent has two ways to write on a ticket. **Email
+user** sends the requester a message and is available once the ticket is
+triaged (for now: has left New). **Add note** records an internal note any time,
+including on an untriaged ticket the agent has not claimed, and never triages
+it. The ticket page shows one timeline of emails, notes and events in time order.
+Notes are stored as `agents_only` and the portal and outbound mail read
+messages only through `requester_visible_messages` in `app/messages.py`, which
+returns public messages, so a note cannot reach the requester.
 
 **Escalation** is manual: an agent opens the "Escalate" panel on a ticket,
 gives a reason, and optionally reassigns it to a different team. This sets
@@ -222,7 +231,7 @@ app/
   routers/
     health.py        Unauthenticated /health check (app + database) for monitors
     auth.py          Login page, SSO callback, local login, dev login, logout
-    tickets.py       Agent console: list/view/reply/assign/escalate/status
+    tickets.py       Agent console: list/view/email/note/assign/escalate/status
     portal.py        End-user portal: list/view own tickets, comment
     admin.py         Super admin: users, teams, audit log
     webhooks.py      Graph change-notification endpoint + dev helper

@@ -9,6 +9,7 @@ from app.audit import log_action
 from app.auth import get_current_user
 from app.database import get_session
 from app.forms import MAX_MESSAGE_LENGTH
+from app.messages import requester_visible_messages
 from app.models import Message, MessageDirection, Ticket, User
 from app.pagination import paginate
 
@@ -47,7 +48,9 @@ def view_my_ticket(
 ):
     ticket = _get_own_ticket(session, ticket_id, user)
     return templates.TemplateResponse(
-        request, "portal_ticket_detail.html", {"ticket": ticket, "user": user}
+        request,
+        "portal_ticket_detail.html",
+        {"ticket": ticket, "messages": requester_visible_messages(session, ticket), "user": user},
     )
 
 
@@ -77,5 +80,7 @@ def add_comment(
     session.refresh(ticket)
 
     return templates.TemplateResponse(
-        request, "portal_ticket_detail.html", {"ticket": ticket, "user": user}
+        request,
+        "portal_ticket_detail.html",
+        {"ticket": ticket, "messages": requester_visible_messages(session, ticket), "user": user},
     )

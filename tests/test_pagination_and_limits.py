@@ -44,8 +44,9 @@ def test_agent_reply_over_the_length_cap_is_rejected(client, db_session):
     set_role(db_session, agent_id, UserRole.AGENT, team.id)
     add_tickets(db_session, 1, requester_email="user@example.com", team_id=team.id)
 
-    response = client.post("/tickets/1/reply", data={"body": "x" * (MAX_MESSAGE_LENGTH + 1)})
-    assert response.status_code == 422
+    over_the_cap = {"body": "x" * (MAX_MESSAGE_LENGTH + 1)}
+    assert client.post("/tickets/1/email", data=over_the_cap).status_code == 422
+    assert client.post("/tickets/1/note", data=over_the_cap).status_code == 422
 
 
 def test_portal_comment_over_the_length_cap_is_rejected(client, db_session):

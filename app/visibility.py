@@ -78,6 +78,18 @@ def may_self_assign(user: User, ticket: Ticket, levels: dict[int, MembershipLeve
     return access >= Access.READ and is_untriaged(ticket) and ticket.assigned_agent_id is None
 
 
+def may_add_note(user: User, ticket: Ticket, levels: dict[int, MembershipLevel]) -> bool:
+    """Notes are open to anyone who works the ticket, and to every agent while
+    it is untriaged, so an agent can record what they learned without claiming
+    or triaging it."""
+    if user.role == UserRole.SUPER_ADMIN:
+        return True
+    if user.role != UserRole.AGENT:
+        return False
+    access = ticket_access(user, ticket, levels)
+    return access == Access.WORK or (access >= Access.READ and is_untriaged(ticket))
+
+
 def visible_ticket_condition(user: User, levels: dict[int, MembershipLevel]):
     """SQL filter for the tickets this user can see at all (read or work).
     Mirrors ticket_access; a test keeps the two in step. None means no filter."""
