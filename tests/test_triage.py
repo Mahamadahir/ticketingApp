@@ -117,6 +117,8 @@ def test_changing_the_type_keeps_the_number_and_only_the_display_prefix_follows(
     db_session.refresh(ticket)
     assert (ticket.type, ticket.reference, ticket.number) == (TicketType.SERVICE_REQUEST, "SR-1", 1)
     assert events(db_session, ticket, "reference_changed") == []  # nothing about identity changed
+    # History written before the retype names the ticket by its stable number, not by a prefix that has since changed.
+    assert [e.to_value for e in events(db_session, ticket, "created")] == ["#1"]
     assert [(e.from_value, e.to_value) for e in events(db_session, ticket, "type_changed")] == [
         ("incident", "service_request")
     ]

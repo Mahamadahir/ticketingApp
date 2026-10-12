@@ -195,7 +195,7 @@
 {% elif can_link %}
 <form hx-post="/tickets/{{ ticket.id }}/link" hx-target="main" hx-swap="innerHTML">
   <label>Link under a Major Incident or Problem (ticket number, e.g. 1042)
-    <input type="text" name="parent_reference" maxlength="40" required />
+    <input type="text" name="parent_number" maxlength="40" required />
   </label>
   <button type="submit">Link</button>
 </form>

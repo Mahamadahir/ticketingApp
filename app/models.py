@@ -28,7 +28,8 @@ class TicketType(str, Enum):
     PROBLEM = "problem"
 
 
-# Display prefix per ticket type, e.g. INC-42. It follows the ticket's current type and is\n# never used to look a ticket up: the number alone identifies it.
+# Display prefix per ticket type, e.g. INC-42. It follows the ticket's current type and is
+# never used to look a ticket up: the number alone identifies it.
 TICKET_TYPE_PREFIXES = {
     TicketType.INCIDENT: "INC",
     TicketType.SERVICE_REQUEST: "SR",
@@ -108,6 +109,12 @@ class Ticket(SQLModel, table=True):
         if self.number is None:
             return None
         return f"{TICKET_TYPE_PREFIXES[self.type]}-{self.number}"
+
+    @property
+    def tag(self) -> Optional[str]:
+        """#1042: the stable form, for events and the audit log. The reference's prefix
+        follows the type, so text stored with it would go stale after a retype."""
+        return f"#{self.number}" if self.number is not None else None
 
     subject: str
     requester_email: str

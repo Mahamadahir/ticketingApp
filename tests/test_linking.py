@@ -21,7 +21,7 @@ def triaged(db_session, team, ticket_type=TicketType.INCIDENT, subject="Somethin
 
 
 def link(client, child, parent_reference):
-    return client.post(f"/tickets/{child.id}/link", data={"parent_reference": parent_reference})
+    return client.post(f"/tickets/{child.id}/link", data={"parent_number": parent_reference})
 
 
 def world(client, db_session):
@@ -45,10 +45,10 @@ def test_linking_records_an_event_on_both_tickets_and_the_audit_log(client, db_s
     assert child.linked_parent_id == major.id
     [on_child] = events(db_session, child, "linked")
     [on_parent] = events(db_session, major, "child_linked")
-    assert (on_child.to_value, on_child.actor_email) == (major.reference, "agent@example.com")
-    assert on_parent.to_value == child.reference
+    assert (on_child.to_value, on_child.actor_email) == (major.tag, "agent@example.com")
+    assert on_parent.to_value == child.tag
     audit = db_session.exec(select(AuditLog).where(AuditLog.action == "linked")).all()
-    assert [a.detail for a in audit] == [major.reference]
+    assert [a.detail for a in audit] == [major.tag]
 
 
 def test_both_pages_show_the_link(client, db_session):
@@ -106,8 +106,8 @@ def test_unlinking_records_both_sides_and_frees_the_ticket(client, db_session):
 
     db_session.refresh(child)
     assert child.linked_parent_id is None
-    assert [e.from_value for e in events(db_session, child, "unlinked")] == [major.reference]
-    assert [e.from_value for e in events(db_session, major, "child_unlinked")] == [child.reference]
+    assert [e.from_value for e in events(db_session, child, "unlinked")] == [major.tag]
+    assert [e.from_value for e in events(db_session, major, "child_unlinked")] == [child.tag]
     assert link(client, child, major.reference).status_code == 200  # can be linked again
 
 
@@ -290,10 +290,10 @@ def test_a_link_error_reaches_the_agent_through_htmx(client, db_session):
     _, _, child = world(client, db_session)
 
     response = client.post(
-        f"/tickets/{child.id}/link", data={"parent_reference": "MI-99999"}, headers={"HX-Request": "true"}
+        f"/tickets/{child.id}/link", data={"parent_number": "MI-99999"}, headers={"HX-Request": "true"}
     )
 
-    assert response.headers.get("HX-Retarget") == "#flash" and "No ticket with that reference" in response.text
+    assert response.headers.get("HX-Retarget") == "#flash" and "No ticket with that number" in response.text
 
 
 def test_two_links_made_at_once_cannot_build_a_chain(client, db_session):

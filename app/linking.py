@@ -79,8 +79,8 @@ def link_ticket(session: Session, ticket: Ticket, parent: Ticket, actor_email: s
 
     ticket.linked_parent_id = parent.id
     session.add(ticket)
-    record_event(session, ticket, EVENT_LINKED, actor_email, to_value=parent.reference)
-    record_event(session, parent, EVENT_CHILD_LINKED, actor_email, to_value=ticket.reference)
+    record_event(session, ticket, EVENT_LINKED, actor_email, to_value=parent.tag)
+    record_event(session, parent, EVENT_CHILD_LINKED, actor_email, to_value=ticket.tag)
 
 
 def unlink_ticket(session: Session, ticket: Ticket, actor_email: str) -> Optional[Ticket]:
@@ -90,7 +90,7 @@ def unlink_ticket(session: Session, ticket: Ticket, actor_email: str) -> Optiona
     parent = session.get(Ticket, ticket.linked_parent_id)
     ticket.linked_parent_id = None
     session.add(ticket)
-    record_event(session, ticket, EVENT_UNLINKED, actor_email, from_value=parent.reference if parent else None)
+    record_event(session, ticket, EVENT_UNLINKED, actor_email, from_value=parent.tag if parent else None)
     if parent is not None:
-        record_event(session, parent, EVENT_CHILD_UNLINKED, actor_email, from_value=ticket.reference)
+        record_event(session, parent, EVENT_CHILD_UNLINKED, actor_email, from_value=ticket.tag)
     return parent

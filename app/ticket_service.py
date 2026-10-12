@@ -2,6 +2,7 @@
 the caller commits, so the change, its event and its audit entry land in one
 transaction."""
 
+import re
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -33,8 +34,6 @@ class NotTriaged(Exception):
     """Raised when something that needs a triaged ticket is attempted on one that
     has not been triaged yet (emailing the requester, moving it between statuses)."""
 
-
-import re
 
 # ASCII digits only (\d would also accept digits from other scripts), and only the real prefixes.
 _PREFIXES = "|".join(sorted(TICKET_TYPE_PREFIXES.values()))
@@ -101,7 +100,7 @@ def create_ticket(
     )
     session.add(ticket)
     session.flush()
-    record_event(session, ticket, EVENT_CREATED, actor_email, to_value=ticket.reference, detail=source.value)
+    record_event(session, ticket, EVENT_CREATED, actor_email, to_value=ticket.tag, detail=source.value)
     return ticket
 
 

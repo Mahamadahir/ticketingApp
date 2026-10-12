@@ -88,7 +88,7 @@ def test_new_ticket_defaults_and_created_event(db_session):
 
     created = events_for(db_session, ticket, "created")
     assert len(created) == 1
-    assert created[0].to_value == ticket.reference
+    assert created[0].to_value == ticket.tag == f"#{ticket.number}"
 
 
 def test_dev_simulate_inbound_returns_reference_and_records_event(client, db_session):

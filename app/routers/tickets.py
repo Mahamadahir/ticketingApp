@@ -280,18 +280,18 @@ def view_ticket(
     return _render_ticket_detail(request, _get_ticket(session, ticket_id, user, Access.READ), user, session)
 
 
-@reference_router.get("/t/{reference}", response_class=HTMLResponse)
+@reference_router.get("/t/{number}", response_class=HTMLResponse)
 def view_ticket_by_number(
-    reference: str,
+    number: str,
     request: Request,
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
     """Shareable link, e.g. /t/1042. A prefix is accepted and ignored (/t/INC-1042), so
     old links and email subjects still work after a ticket's type changed."""
-    ticket = find_ticket(session, reference)
+    ticket = find_ticket(session, number)
     if ticket is None:
-        raise HTTPException(status_code=404, detail="Ticket not found")
+        raise HTTPException(status_code=404, detail="No ticket with that number")
     require_access(user, ticket, access_context(session, user), Access.READ)
     return _render_ticket_detail(request, ticket, user, session)
 
@@ -482,25 +482,25 @@ def escalate_ticket(
 def link(
     ticket_id: int,
     request: Request,
-    parent_reference: str = Form(..., max_length=40),
+    parent_number: str = Form(..., max_length=40),
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
     """Links this ticket under a Major Incident or Problem, given by reference. The agent
     works this ticket and must be able to see the parent."""
     ticket = _get_ticket(session, ticket_id, user)
-    parent = find_ticket(session, parent_reference)
+    parent = find_ticket(session, parent_number)
     # The same answer whether it does not exist or is not visible to this agent, so
     # references cannot be probed for tickets they may not see.
     if parent is None or ticket_access(user, parent, access_context(session, user)) < Access.READ:
-        raise HTTPException(status_code=400, detail="No ticket with that reference")
+        raise HTTPException(status_code=400, detail="No ticket with that number")
     try:
         link_ticket(session, ticket, parent, user.email)
     except LinkError as error:
         session.rollback()
         raise HTTPException(status_code=400, detail=str(error))
     ticket.updated_at = datetime.now(timezone.utc)
-    log_action(session, user.email, "ticket", ticket.id, "linked", parent.reference)
+    log_action(session, user.email, "ticket", ticket.id, "linked", parent.tag)
     session.commit()
     session.refresh(ticket)
     return _render_ticket_detail(request, ticket, user, session)
@@ -517,7 +517,7 @@ def unlink(
     parent = unlink_ticket(session, ticket, user.email)
     if parent is not None:
         ticket.updated_at = datetime.now(timezone.utc)
-        log_action(session, user.email, "ticket", ticket.id, "unlinked", parent.reference)
+        log_action(session, user.email, "ticket", ticket.id, "unlinked", parent.tag)
         session.commit()
         session.refresh(ticket)
     return _render_ticket_detail(request, ticket, user, session)
