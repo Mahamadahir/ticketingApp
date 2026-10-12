@@ -118,6 +118,16 @@ class Ticket(SQLModel, table=True):
     team_id: Optional[int] = Field(default=None, foreign_key="team.id")
     assigned_agent_id: Optional[int] = Field(default=None, foreign_key="user.id")
 
+    # Triage is its own state, separate from assignment. A ticket is untriaged
+    # until someone saves the triage panel, which sets the category (and so the
+    # team), the type, who triaged it and when. Nothing else leaves New.
+    category_id: Optional[int] = Field(default=None, foreign_key="category.id")
+    triaged_at: Optional[datetime] = Field(default=None)
+    triaged_by_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    # Set when it was triaged into "Other": after it is resolved a super admin
+    # reviews it and gives it a proper category.
+    needs_category_review: bool = Field(default=False)
+
     is_escalated: bool = Field(default=False)
     escalation_reason: Optional[str] = Field(default=None)
     escalated_by_id: Optional[int] = Field(default=None, foreign_key="user.id")
@@ -167,6 +177,40 @@ class TicketFollower(SQLModel, table=True):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class Category(SQLModel, table=True):
+    """What a ticket is about. A main category (no parent) belongs to a team and
+    decides where triaged tickets go; a sub-category inherits its parent's team.
+    "Other" is the seeded main category an agent picks when nothing fits."""
+
+    __table_args__ = (UniqueConstraint("parent_id", "name", name="uq_category_parent_name"),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str
+    parent_id: Optional[int] = Field(default=None, foreign_key="category.id", index=True)
+    team_id: Optional[int] = Field(default=None, foreign_key="team.id")  # main categories only
+    is_other: bool = Field(default=False)
+    is_active: bool = Field(default=True)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class TicketAlias(SQLModel, table=True):
+    """An earlier reference of a ticket. Triage can change a ticket's type, which
+    re-issues its reference (INC-12 becomes SR-3); the old one keeps working in
+    links and in the subject of emails already sent."""
+
+    reference: str = Field(primary_key=True)
+    ticket_id: int = Field(foreign_key="ticket.id", index=True)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class Setting(SQLModel, table=True):
+    """An admin-editable setting. Which keys exist, and their defaults, are
+    declared in app/settings_store.py."""
+
+    key: str = Field(primary_key=True)
+    value: str
+
+
 class TicketCounter(SQLModel, table=True):
     """Last number issued for each ticket type."""
 
@@ -198,19 +242,16 @@ class AuditLog(SQLModel, table=True):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
-@event.listens_for(Ticket, "before_insert")
-def _assign_reference(mapper, connection, ticket: Ticket) -> None:
-    """Gives every new ticket its number and reference (INC-42), so no code
-    path can create one without. The counter row is updated atomically; on
-    Postgres the row lock is held until the transaction ends, so two tickets
-    created at once cannot get the same number."""
-    if ticket.reference:
-        return
-
+def allocate_reference(connection, ticket_type: TicketType) -> tuple[int, str]:
+    """Issues the next number for a ticket type and returns it with the reference
+    (INC-42). The counter row is updated atomically; on Postgres the row lock is
+    held until the transaction ends, so two tickets created at once cannot get
+    the same number. Used when a ticket is created and when triage changes its
+    type."""
     counter = TicketCounter.__table__
     bump = (
         update(counter)
-        .where(counter.c.ticket_type == ticket.type)
+        .where(counter.c.ticket_type == ticket_type)
         .values(last_number=counter.c.last_number + 1)
         .returning(counter.c.last_number)
     )
@@ -220,9 +261,19 @@ def _assign_reference(mapper, connection, ticket: Ticket) -> None:
         # not depend on that: create it if absent (a concurrent creator may
         # win the race, which is fine), then bump it.
         connection.execute(
-            postgresql_insert(counter).values(ticket_type=ticket.type, last_number=0).on_conflict_do_nothing()
+            postgresql_insert(counter).values(ticket_type=ticket_type, last_number=0).on_conflict_do_nothing()
         )
         number = connection.execute(bump).scalar()
 
-    ticket.number = number
-    ticket.reference = f"{TICKET_TYPE_PREFIXES[ticket.type]}-{number}"
+    return number, f"{TICKET_TYPE_PREFIXES[ticket_type]}-{number}"
+
+
+@event.listens_for(Ticket, "before_insert")
+def _prepare_new_ticket(mapper, connection, ticket: Ticket) -> None:
+    """Gives every new ticket its number and reference, so no code path can create
+    one without, and keeps one rule true: a ticket that is not New has been
+    triaged. (Tickets are created New, and only triage moves them on.)"""
+    if not ticket.reference:
+        ticket.number, ticket.reference = allocate_reference(connection, ticket.type)
+    if ticket.status != TicketStatus.NEW and ticket.triaged_at is None:
+        ticket.triaged_at = datetime.now(timezone.utc)

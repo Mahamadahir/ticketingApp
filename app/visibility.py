@@ -4,8 +4,8 @@ ticket goes through here, so the rules live in one place.
 - Super admins see and work everything.
 - An agent works tickets of teams they are a member of, and reads tickets of
   teams they are a viewer of.
-- Every agent can read untriaged tickets (status New, or no team yet) and
-  claim one by assigning it to themselves, after which they work it.
+- Every agent can read untriaged tickets, triage them, and claim one by
+  assigning it to themselves, after which they work it.
 - A ticket assigned to an agent is theirs to work, wherever it sits.
 - An internal follower keeps read access to a ticket wherever it moves. Today
   that is whoever escalated it (see followers.py); the follower list, not the
@@ -22,7 +22,6 @@ from app.models import (
     TeamMembership,
     Ticket,
     TicketFollower,
-    TicketStatus,
     User,
     UserRole,
 )
@@ -66,9 +65,9 @@ def is_untriaged(ticket: Ticket) -> bool:
     # PLANNED CHANGE (docs/plan.md, "Per-inbox routing"): once teams have their own
     # inboxes, mail sent to team B's inbox arrives already in team B and must NOT
     # be visible to everyone as untriaged. This is the one place that will then
-    # narrow to "in the shared triage queue" instead of "status New". Keep every
-    # use of "untriaged" going through here.
-    return ticket.status == TicketStatus.NEW or ticket.team_id is None
+    # narrow to "in the shared triage queue". Keep every use of "untriaged" going
+    # through here (the SQL twin is in visible_ticket_condition).
+    return ticket.triaged_at is None
 
 
 def ticket_access(user: User, ticket: Ticket, levels: AccessContext) -> Access:
@@ -85,6 +84,7 @@ def ticket_access(user: User, ticket: Ticket, levels: AccessContext) -> Access:
     if (
         levels.get(ticket.team_id) == MembershipLevel.VIEWER
         or ticket.id in levels.followed
+        or ticket.triaged_by_id == user.id  # triaging a ticket must not make it vanish
         or is_untriaged(ticket)
     ):
         return Access.READ
@@ -101,6 +101,14 @@ def may_self_assign(user: User, ticket: Ticket, levels: AccessContext) -> bool:
     if access == Access.WORK:
         return True
     return access >= Access.READ and is_untriaged(ticket) and ticket.assigned_agent_id is None
+
+
+def may_triage(user: User, ticket: Ticket, levels: AccessContext) -> bool:
+    """Any agent (and any super admin) can triage an untriaged ticket they can
+    see, without being in the team or assigned to it."""
+    if user.role not in (UserRole.AGENT, UserRole.SUPER_ADMIN):
+        return False
+    return is_untriaged(ticket) and ticket_access(user, ticket, levels) >= Access.READ
 
 
 def may_add_note(user: User, ticket: Ticket, levels: AccessContext) -> bool:
@@ -125,8 +133,8 @@ def visible_ticket_condition(user: User, levels: AccessContext):
 
     return or_(
         Ticket.team_id.in_(list(levels)),
-        Ticket.team_id.is_(None),
-        Ticket.status == TicketStatus.NEW,
+        Ticket.triaged_at.is_(None),
+        Ticket.triaged_by_id == user.id,
         Ticket.assigned_agent_id == user.id,
         Ticket.id.in_(
             select(TicketFollower.ticket_id).where(

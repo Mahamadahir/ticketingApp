@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Admin: Category review{% endblock %}
+{% block content %}
+{% set active = "/admin/category-review" %}
+{% include "_admin_tabs.html" %}
+
+<h2>Category review</h2>
+<p class="note">
+  Tickets triaged as "Other" and now resolved. They were worked normally; give each a proper category
+  (choose one, or create a new one) so the next ticket like it has a home and reports are accurate.
+  This changes the ticket's category only, not its team.
+</p>
+
+{% for ticket in tickets %}
+<div class="review-item">
+  <p><a href="/tickets/{{ ticket.id }}"><b>{{ ticket.reference }}</b> {{ ticket.subject }}</a>
+    &middot; {{ ticket.status.value }}</p>
+  <form method="post" action="/admin/category-review/{{ ticket.id }}">
+    <label>Existing category
+      <select name="category_id">
+        <option value="">Choose a category</option>
+        {% for option, label in category_options %}<option value="{{ option.id }}">{{ label }}</option>{% endfor %}
+      </select>
+    </label>
+    <details>
+      <summary>or create a new one</summary>
+      <label>Name <input type="text" name="new_category_name" maxlength="80" /></label>
+      <label>Under
+        <select name="new_category_parent_id">
+          <option value="">Nothing: a new main category</option>
+          {% for main in main_categories %}<option value="{{ main.id }}">{{ main.name }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Team (main category only)
+        <select name="new_category_team_id">
+          <option value="">Choose a team</option>
+          {% for t in teams %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
+        </select>
+      </label>
+    </details>
+    <button type="submit">Save category</button>
+  </form>
+</div>
+{% else %}
+<p>Nothing waiting for review.</p>
+{% endfor %}
+{% endblock %}

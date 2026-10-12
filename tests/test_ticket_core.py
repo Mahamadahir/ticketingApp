@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor
 
 from sqlmodel import Session, select
@@ -17,7 +18,7 @@ from app.ticket_service import create_ticket
 from tests.conftest import create_team, login_as, set_role
 
 
-def make_ticket(db_session, ticket_type=TicketType.INCIDENT, team_id=None, subject="Test ticket"):
+def make_ticket(db_session, ticket_type=TicketType.INCIDENT, team_id=None, subject="Test ticket", triaged=False):
     ticket = create_ticket(
         db_session,
         subject=subject,
@@ -26,6 +27,10 @@ def make_ticket(db_session, ticket_type=TicketType.INCIDENT, team_id=None, subje
         ticket_type=ticket_type,
         team_id=team_id,
     )
+    if triaged:
+        ticket.triaged_at = datetime.now(timezone.utc)
+        ticket.status = TicketStatus.OPEN
+        db_session.add(ticket)
     db_session.commit()
     db_session.refresh(ticket)
     return ticket
@@ -110,44 +115,45 @@ def test_reference_link_opens_ticket_case_insensitively(client, db_session):
 def test_reference_link_respects_team_visibility(client, db_session):
     team_a = create_team(db_session, "Service Desk")
     team_b = create_team(db_session, "Network")
-    other = make_ticket(db_session, team_id=team_b.id)
-    other.status = TicketStatus.OPEN  # triaged, so team scoping applies
-    db_session.add(other)
-    db_session.commit()
+    other = make_ticket(db_session, team_id=team_b.id, triaged=True)  # triaged, so team scoping applies
     login_agent(client, db_session, team_a)
 
     assert client.get(f"/t/{other.reference}").status_code == 403
     assert client.get("/t/INC-999").status_code == 404
 
 
-def test_every_status_can_be_set(client, db_session):
+def test_every_status_except_new_can_be_set(client, db_session):
     team = create_team(db_session, "Service Desk")
-    ticket = make_ticket(db_session, team_id=team.id)
+    ticket = make_ticket(db_session, team_id=team.id, triaged=True)
     login_agent(client, db_session, team)
 
     for status in TicketStatus:
+        if status == TicketStatus.NEW:
+            continue  # a ticket only leaves New by being triaged
         assert client.post(f"/tickets/{ticket.id}/status", data={"status": status.value}).status_code == 200
         db_session.refresh(ticket)
         assert ticket.status == status
 
+    assert client.post(f"/tickets/{ticket.id}/status", data={"status": "new"}).status_code == 400
+
 
 def test_status_change_records_event_and_unchanged_status_does_not(client, db_session):
     team = create_team(db_session, "Service Desk")
-    ticket = make_ticket(db_session, team_id=team.id)
+    ticket = make_ticket(db_session, team_id=team.id, triaged=True)
     login_agent(client, db_session, team)
 
-    client.post(f"/tickets/{ticket.id}/status", data={"status": "open"})
-    client.post(f"/tickets/{ticket.id}/status", data={"status": "open"})
+    client.post(f"/tickets/{ticket.id}/status", data={"status": "in_progress"})
+    client.post(f"/tickets/{ticket.id}/status", data={"status": "in_progress"})
 
     changes = events_for(db_session, ticket, "status_changed")
     assert len(changes) == 1
-    assert (changes[0].from_value, changes[0].to_value) == ("new", "open")
+    assert (changes[0].from_value, changes[0].to_value) == ("open", "in_progress")
     assert changes[0].actor_email == "agent@example.com"
 
 
 def test_resolved_at_set_kept_on_close_and_cleared_on_reopen(client, db_session):
     team = create_team(db_session, "Service Desk")
-    ticket = make_ticket(db_session, team_id=team.id)
+    ticket = make_ticket(db_session, team_id=team.id, triaged=True)
     login_agent(client, db_session, team)
 
     client.post(f"/tickets/{ticket.id}/status", data={"status": "resolved"})
@@ -164,17 +170,9 @@ def test_resolved_at_set_kept_on_close_and_cleared_on_reopen(client, db_session)
     assert ticket.resolved_at is None
 
 
-def triaged(db_session, ticket):
-    """Moves a ticket out of New, which is what makes it emailable."""
-    ticket.status = TicketStatus.OPEN
-    db_session.add(ticket)
-    db_session.commit()
-    return ticket
-
-
 def test_first_email_records_status_event_once(client, db_session):
     team = create_team(db_session, "Service Desk")
-    ticket = triaged(db_session, make_ticket(db_session, team_id=team.id))
+    ticket = make_ticket(db_session, team_id=team.id, triaged=True)
     login_agent(client, db_session, team)
 
     client.post(f"/tickets/{ticket.id}/email", data={"body": "On it"})
@@ -208,14 +206,14 @@ def test_assign_and_escalate_record_events(client, db_session):
 
 def test_events_are_shown_in_the_ticket_timeline(client, db_session):
     team = create_team(db_session, "Service Desk")
-    ticket = make_ticket(db_session, team_id=team.id)
+    ticket = make_ticket(db_session, team_id=team.id, triaged=True)
     login_agent(client, db_session, team)
-    client.post(f"/tickets/{ticket.id}/status", data={"status": "open"})
+    client.post(f"/tickets/{ticket.id}/status", data={"status": "in_progress"})
 
     page = client.get(f"/tickets/{ticket.id}").text
     assert "Timeline" in page
     assert "status changed" in page
-    assert "new &rarr; open" in page
+    assert "open &rarr; in_progress" in page
 
 
 def test_concurrent_ticket_creation_never_duplicates_a_number():
@@ -245,7 +243,7 @@ def test_email_does_not_undo_a_deliberate_status(client, db_session):
     login_agent(client, db_session, team)
 
     for status in (TicketStatus.AWAITING_USER, TicketStatus.WITH_MSP, TicketStatus.RESOLVED, TicketStatus.CLOSED):
-        ticket = make_ticket(db_session, team_id=team.id)
+        ticket = make_ticket(db_session, team_id=team.id, triaged=True)
         client.post(f"/tickets/{ticket.id}/status", data={"status": status.value})
         db_session.refresh(ticket)
         resolved_at = ticket.resolved_at
@@ -258,7 +256,7 @@ def test_email_does_not_undo_a_deliberate_status(client, db_session):
 
 def test_first_email_is_audited_as_a_status_change(client, db_session):
     team = create_team(db_session, "Service Desk")
-    ticket = triaged(db_session, make_ticket(db_session, team_id=team.id))
+    ticket = make_ticket(db_session, team_id=team.id, triaged=True)
     login_agent(client, db_session, team)
 
     client.post(f"/tickets/{ticket.id}/email", data={"body": "On it"})

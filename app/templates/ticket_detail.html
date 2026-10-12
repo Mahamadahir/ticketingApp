@@ -11,6 +11,7 @@
   From: {{ ticket.requester_email }}
   &middot; Type: {{ ticket.type.value.replace("_", " ") }}
   &middot; Source: {{ ticket.source.value }}
+  &middot; Category: {{ category_path or "Not triaged" }}
   &middot; Team: {{ team.name if team else "Unassigned" }}
   &middot; Assigned: {{ assigned_agent.display_name if assigned_agent else "Unassigned" }}
   &middot;
@@ -30,26 +31,106 @@
 {% endif %}
 {% endif %}
 
+{% if can_triage %}
+<h3>Triage</h3>
+<p class="note">Classify this ticket. The category decides the team. Assigning is optional: leave it as is and the team can pick it up.</p>
+<form hx-post="/tickets/{{ ticket.id }}/triage" hx-target="main" hx-swap="innerHTML">
+  <label>Type
+    <select name="ticket_type">
+      {% for type in ticket_types %}
+      <option value="{{ type.value }}" {{ "selected" if ticket.type == type else "" }}>{{ type.value.replace("_", " ") }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Category
+    <select name="category_id" hx-get="/tickets/agents-for-category" hx-trigger="change" hx-target="#triage-agent">
+      <option value="">Choose a category</option>
+      {% for option, label in category_options %}
+      <option value="{{ option.id }}">{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Assign to
+    <select name="agent_id" id="triage-agent">
+      <option value="">Leave as is{{ " (" ~ assigned_agent.display_name ~ ")" if assigned_agent else " (unassigned)" }}</option>
+    </select>
+  </label>
+  {% if can_create_category %}
+  <details>
+    <summary>Create a new category instead</summary>
+    <p class="note">Leave the category above on "Choose a category". A new main category needs a team; a sub-category uses its parent's.</p>
+    <label>Name <input type="text" name="new_category_name" maxlength="80" /></label>
+    <label>Under
+      <select name="new_category_parent_id">
+        <option value="">Nothing: a new main category</option>
+        {% for main in main_categories %}
+        <option value="{{ main.id }}">{{ main.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Team (main category only)
+      <select name="new_category_team_id">
+        <option value="">Choose a team</option>
+        {% for t in teams %}
+        <option value="{{ t.id }}">{{ t.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </details>
+  {% endif %}
+  <button type="submit">Triage</button>
+</form>
+{% endif %}
+
 {% if can_work %}
 <div class="actions">
+  {% if ticket.triaged_at %}
   <form hx-post="/tickets/{{ ticket.id }}/status" hx-target="main" hx-swap="innerHTML">
     {% for s in statuses %}
     <button type="submit" name="status" value="{{ s.value }}" class="{{ 'button-active' if ticket.status == s else 'button-outline' }}">{{ s.value.replace("_", " ") }}</button>
     {% endfor %}
   </form>
+  {% endif %}
 
+  {% if not ticket.triaged_at and user.role.value == "super_admin" %}
   <form hx-post="/tickets/{{ ticket.id }}/assign" hx-target="main" hx-swap="innerHTML">
-    {% if user.role.value == "super_admin" %}
+    <label>Assign to (without triaging)
       <select name="agent_id">
         {% for agent in team_agents %}
         <option value="{{ agent.id }}" {{ "selected" if assigned_agent and agent.id == assigned_agent.id else "" }}>{{ agent.display_name }}</option>
         {% endfor %}
       </select>
-      <button type="submit">Reassign</button>
-    {% else %}
-      <button type="submit">Assign to me</button>
-    {% endif %}
+    </label>
+    <button type="submit">Assign</button>
   </form>
+  {% endif %}
+
+  {% if not assigned_agent and user.role.value == "agent" %}
+  <form hx-post="/tickets/{{ ticket.id }}/assign" hx-target="main" hx-swap="innerHTML">
+    <button type="submit">Assign to me</button>
+  </form>
+  {% endif %}
+
+  {% if can_reassign %}
+  <form hx-post="/tickets/{{ ticket.id }}/reassign" hx-target="main" hx-swap="innerHTML">
+    <label>Team
+      <select name="team_id" hx-get="/tickets/agents-for-team" hx-trigger="change" hx-target="#reassign-agent">
+        {% for t in teams %}
+        <option value="{{ t.id }}" {{ "selected" if ticket.team_id == t.id else "" }}>{{ t.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Agent
+      <select name="agent_id" id="reassign-agent">
+        <option value="">Leave unassigned</option>
+        {% for agent in reassign_agents %}
+        <option value="{{ agent.id }}" {{ "selected" if assigned_agent and agent.id == assigned_agent.id else "" }}>{{ agent.display_name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit">{{ "Re-assign" if assigned_agent else "Assign" }}</button>
+  </form>
+  {% endif %}
 
   <details>
     <summary>Escalate</summary>
@@ -66,7 +147,6 @@
   </details>
 </div>
 {% endif %}
-
 <h3>Followers</h3>
 <p class="note">Copied on every email to the requester. Internal followers are agents who keep read access, such as whoever escalated the ticket.</p>
 <ul>
@@ -124,7 +204,7 @@
   <button type="submit">Email user</button>
 </form>
 {% elif can_work %}
-<p class="note">Triage this ticket (move it out of New) before emailing the requester. You can still add a note.</p>
+<p class="note">Triage this ticket before emailing the requester. You can still add a note.</p>
 {% endif %}
 
 {% if can_note %}

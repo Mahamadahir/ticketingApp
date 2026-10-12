@@ -13,7 +13,7 @@ from app.models import (
     UserRole,
 )
 from app.visibility import Access, access_context, ticket_access, visible_ticket_condition
-from tests.conftest import add_membership, create_team, login_as, set_role
+from tests.conftest import add_membership, create_category, create_team, login_as, set_role
 
 
 def make_ticket(db_session, team_id=None, status=TicketStatus.OPEN, subject="Ticket", **fields):
@@ -80,7 +80,7 @@ def test_every_agent_can_see_untriaged_tickets_but_must_claim_one_to_work_it(cli
     other = create_team(db_session, "Other")
     agent_id = agent_in(client, db_session)  # no teams at all
     new_in_other_team = make_ticket(db_session, other.id, status=TicketStatus.NEW, subject="Untriaged")
-    make_ticket(db_session, None, status=TicketStatus.OPEN, subject="No team yet")
+    make_ticket(db_session, None, status=TicketStatus.NEW, subject="No team yet")
     triaged_elsewhere = make_ticket(db_session, other.id, status=TicketStatus.OPEN, subject="Triaged elsewhere")
 
     listing = client.get("/tickets").text
@@ -116,7 +116,9 @@ def test_claiming_an_untriaged_ticket_keeps_it_after_it_leaves_new(client, db_se
     ticket = make_ticket(db_session, other.id, status=TicketStatus.NEW)
 
     client.post(f"/tickets/{ticket.id}/assign")
-    assert client.post(f"/tickets/{ticket.id}/status", data={"status": "open"}).status_code == 200
+    category = create_category(db_session, other)
+    triage = client.post(f"/tickets/{ticket.id}/triage", data={"ticket_type": "incident", "category_id": category.id})
+    assert triage.status_code == 200
     client.post(f"/tickets/{ticket.id}/email", data={"body": "First email"})
     db_session.refresh(ticket)
     assert ticket.status == TicketStatus.IN_PROGRESS
@@ -202,15 +204,19 @@ def test_list_query_and_single_ticket_rule_agree_for_every_combination(client, d
     login_as(client, "agent@example.com")
 
     team_choices = [mine.id, watched.id, other.id, None]
-    status_choices = [TicketStatus.NEW, TicketStatus.OPEN]
+    # Triage state: untriaged is visible to every agent; a triaged ticket is visible
+    # to the agent who triaged it, wherever it went, and not to a different triager.
+    triage_choices = ["untriaged", "triaged_by_none", "triaged_by_me", "triaged_by_other"]
     assigned_choices = [None, agent_id, someone_else]
     # Followers: an internal follower grants read access; an external one (copied
     # on emails only) and someone else's follower row grant nothing.
     follower_choices = ["none", "internal_me", "external_me", "internal_other"]
-    for team_id, status, assigned, follower in itertools.product(
-        team_choices, status_choices, assigned_choices, follower_choices
+    for team_id, triage_state, assigned, follower in itertools.product(
+        team_choices, triage_choices, assigned_choices, follower_choices
     ):
-        ticket = make_ticket(db_session, team_id, status, assigned_agent_id=assigned)
+        status = TicketStatus.NEW if triage_state == "untriaged" else TicketStatus.OPEN
+        triaged_by = {"triaged_by_me": agent_id, "triaged_by_other": someone_else}.get(triage_state)
+        ticket = make_ticket(db_session, team_id, status, assigned_agent_id=assigned, triaged_by_id=triaged_by)
         if follower != "none":
             who = agent_id if follower.endswith("me") else someone_else
             db_session.add(
@@ -230,7 +236,7 @@ def test_list_query_and_single_ticket_rule_agree_for_every_combination(client, d
     by_rule = {t.id for t in every_ticket if ticket_access(agent, t, levels) >= Access.READ}
     by_query = {t.id for t in db_session.exec(select(Ticket).where(visible_ticket_condition(agent, levels))).all()}
 
-    assert len(every_ticket) == 4 * 2 * 3 * 4
+    assert len(every_ticket) == 4 * 4 * 3 * 4
     assert by_rule == by_query
     assert 0 < len(by_rule) < len(every_ticket)
 

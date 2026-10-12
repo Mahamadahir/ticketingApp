@@ -26,6 +26,14 @@ run it.
   `requester_visible_messages`, never `ticket.messages`). Followers live in
   `app/followers.py`; an internal follower row is what keeps an escalator's read
   access, and `cc_list` is what the sender will copy on every email.
+- Phase 1 progress: 1A, 1B, 1C (messages and followers) are merged. 1D is split in
+  two: **1D-i** (explicit triage, categories with the "Other" review queue,
+  settings, the re-assign control) is built in `app/triage.py`,
+  `app/categories.py` and `app/settings_store.py`; **1D-ii** (impact, urgency,
+  P1-P4 priority, SLA targets as settings with placeholder values, the SLA clock
+  and the priority queue) is next. A ticket is triaged when `triaged_at` is set;
+  it leaves New only by triage, and a type change re-issues its reference and
+  keeps the old one as a `TicketAlias`.
 - **Nothing is deployed anywhere.** No Azure resources exist, no database has
   had migrations applied outside this laptop. Everything is developed and
   tested locally with `docker compose` and `pytest`.

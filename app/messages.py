@@ -22,17 +22,14 @@ from app.models import (
     TicketEvent,
     User,
 )
+from app.ticket_service import NotTriaged
 from app.visibility import is_untriaged
-
-
-class NotTriaged(Exception):
-    """Raised when someone tries to email the requester about an untriaged ticket."""
 
 
 def is_triaged(ticket: Ticket) -> bool:
     # One definition of "untriaged", shared with access control (visibility.py),
-    # so the two cannot disagree. Phase 1D replaces it with the explicit triage
-    # action; the per-inbox routing change narrows it in the same place.
+    # so the two cannot disagree. A ticket is triaged once someone saves the triage
+    # panel (triaged_at); the per-inbox routing change narrows it in the same place.
     return not is_untriaged(ticket)
 
 

@@ -1,11 +1,8 @@
 {% extends "base.html" %}
 {% block title %}Admin: Users{% endblock %}
 {% block content %}
-<nav class="admin-tabs">
-  <a href="/admin/users" class="active">Users</a>
-  <a href="/admin/teams">Teams</a>
-  <a href="/admin/audit-log">Audit log</a>
-</nav>
+{% set active = "/admin/users" %}
+{% include "_admin_tabs.html" %}
 
 <h2>Users</h2>
 <p class="note">

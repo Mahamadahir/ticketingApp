@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Admin: Categories{% endblock %}
+{% block content %}
+{% set active = "/admin/categories" %}
+{% include "_admin_tabs.html" %}
+
+<h2>Categories</h2>
+<p class="note">
+  The category chosen at triage decides which team gets the ticket. A main category belongs to a team;
+  a sub-category uses its parent's team. "Other" is for tickets nothing fits: they are worked normally,
+  then reviewed under Category review after they are resolved. Switching a category off hides it from
+  triage; tickets already in it are untouched.
+</p>
+
+<table>
+  <thead>
+    <tr><th>Category</th><th>Team</th><th>In use</th><th></th></tr>
+  </thead>
+  <tbody>
+    {% for main in mains %}
+    <tr>
+      <form method="post" action="/admin/categories/{{ main.id }}">
+        <td><b>{{ main.name }}</b>{% if main.is_other %} <i>(for tickets nothing fits)</i>{% endif %}</td>
+        <td>
+          <select name="team_id">
+            <option value="">{{ "No team yet (uses the default triage team)" if main.is_other else "Choose a team" }}</option>
+            {% for t in teams %}
+            <option value="{{ t.id }}" {{ "selected" if main.team_id == t.id else "" }}>{{ t.name }}</option>
+            {% endfor %}
+          </select>
+        </td>
+        <td>{% if main.is_other %}always{% else %}<input type="checkbox" name="is_active" {{ "checked" if main.is_active else "" }} />{% endif %}</td>
+        <td><button type="submit">Save</button></td>
+      </form>
+    </tr>
+    {% for sub in subs.get(main.id, []) %}
+    <tr>
+      <form method="post" action="/admin/categories/{{ sub.id }}">
+        <td>&nbsp;&nbsp;&rarr; {{ sub.name }}</td>
+        <td>{{ teams_by_id[main.team_id].name if main.team_id else "" }} <i>(from {{ main.name }})</i></td>
+        <td><input type="checkbox" name="is_active" {{ "checked" if sub.is_active else "" }} /></td>
+        <td><button type="submit">Save</button></td>
+      </form>
+    </tr>
+    {% endfor %}
+    {% endfor %}
+  </tbody>
+</table>
+
+<h3>New main category</h3>
+<form method="post" action="/admin/categories">
+  <label>Name <input type="text" name="name" maxlength="80" required /></label>
+  <label>Team
+    <select name="team_id" required>
+      <option value="">Choose a team</option>
+      {% for t in teams %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
+    </select>
+  </label>
+  <button type="submit">Create</button>
+</form>
+
+<h3>New sub-category</h3>
+<form method="post" action="/admin/categories">
+  <label>Under
+    <select name="parent_id" required>
+      <option value="">Choose a main category</option>
+      {% for main in mains if not main.is_other %}<option value="{{ main.id }}">{{ main.name }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Name <input type="text" name="name" maxlength="80" required /></label>
+  <button type="submit">Create</button>
+</form>
+{% endblock %}

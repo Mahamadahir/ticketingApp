@@ -210,6 +210,24 @@ feature is reached:
 
 ## Security and request flooding
 
+**Audit and activity log** (agreed 12 Oct 2026). Super admins can see what
+happened, who did it and when. Two layers, both kept indefinitely and viewable
+under Admin > Audit log with the existing filters plus date range and result:
+
+- **Audit entries (built, grows with every feature).** A named entry for each
+  meaningful action: ticket changes, emails, notes, triage, followers, user, team,
+  role, membership, category and setting changes, unlocks. Every feature that
+  changes data writes its entries as it is built; a review checks it.
+- **Security and request activity (to build, soon).** Sign-in, sign-out, failed
+  sign-in, lockout and unlock, Entra sign-in failures, outage-mode changes, access
+  denied (403), and every state-changing request, recording who, what route, the
+  result, the IP address (taken from the forwarded header once only the ingress is
+  trusted) and the browser. Never request bodies, passwords or tokens. This second
+  layer is a safety net: it catches an action whose feature forgot its audit
+  entry. It is built early rather than at the end, because it is cheap now and
+  the history it would miss cannot be recovered later. CSV export arrives with
+  reporting in phase 7.
+
 Fixes, first:
 
 - Dev login and `/webhooks/dev/simulate-inbound` only exist when an explicit
@@ -322,12 +340,31 @@ alongside 1B, which already touches the users page):
 ## Tickets
 
 **Types.** Incident, Service Request, Major Incident, Problem. Each has its
-own reference prefix (`INC-`, `SR-`, `MI-`, `PRB-`) and a shareable URL.
+own reference prefix (`INC-`, `SR-`, `MI-`, `PRB-`) and a shareable URL. Tickets
+arrive with a default type, and triage may change it. When it does the ticket is
+given a new reference of the new type (INC-12 becomes SR-3) and the old one is
+kept as an alias that still resolves, so links and emails already sent keep
+working (agreed 12 Oct 2026).
 Projects are a separate entity tickets can link to, with Azure DevOps
 integration later. Change control is later.
 
 **Statuses.** New (untriaged), Open, In progress, Awaiting user, With MSP,
 Resolved, Closed. Reopening is a recorded event, not a status.
+
+**Raising a ticket in the portal** (phase 1G, agreed 12 Oct 2026). One form with
+two modes. "For myself" is the normal end-user case (source: portal). Agents also
+get "For someone else": the requester's email, subject and description, with
+source agent. The ticket records who created it as well as who it is for. Where
+it is shown it reads by source: "Received by email", "Raised in the portal by
+Jane", "Raised by Agent X for Jane", "Raised in Teams by Jane", on the ticket
+page, in the timeline and in the requester's portal view. The agent's
+description is stored as the first message, marked as logged on the requester's
+behalf. The agent can triage and assign in the same form (optional), so a ticket
+they already understand skips the triage queue. The requester is told a ticket
+was raised for them (once email is wired up in phase 3): on by default, and it
+can be turned off globally in Settings or by each person in their own
+notification settings. The ticket list shows the channel as a small label and
+can be filtered by it.
 
 **Source.** Email, portal, Teams or agent. Drives the default channel for
 notifying the requester.
@@ -388,7 +425,18 @@ and when. Today events sit in a separate History table.
 
 **Followers.** Requesters and agents can add followers by email. Followers
 are CC'd on public messages and see the ticket under "Following" in the
-portal.
+portal. Followers are not read-only (corrected 12 Oct 2026): they can respond,
+by replying to the email or by commenting in the portal, and their reply is
+added to the ticket as a message from that follower, labelled as such in the
+agent timeline. They cannot manage the follower list or the ticket itself.
+
+- **Automatic followers.** Everyone CC'd on an email that creates a ticket (for
+  example A raises it and copies B and C) becomes a follower. This happens in the
+  mail intake in phase 3; until then followers are added by hand.
+- **Controlling who is copied.** When an agent emails the user, every follower is
+  copied by default, and the agent can untick any of them for that one email.
+  That does not remove them as followers; removing someone is a separate action.
+  The list actually copied is recorded on the email.
 
 **Assignment.** Any agent who can work a ticket can assign or re-assign it. The
 control is a team and then an agent: choose a team (it starts on the ticket's
