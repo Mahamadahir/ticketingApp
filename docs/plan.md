@@ -550,6 +550,9 @@ e.g. the person came to the desk and it was fixed in person, so there is nothing
 (decided 13 Oct 2026). A ticket a requester opened themselves (email, portal, Teams) can never
 be backdated, so an agent cannot drop a live ticket out of SLA. The agent raise-a-ticket form
 (1G) is what creates these tickets; until then none exist and the control never shows.
+Because the rule reads `source`, nothing else may create a `source=agent` ticket: sub-tickets
+from splitting (1E-iii) inherit the original's source, and an agent logging a requester's email
+by hand is not "on their behalf" for this purpose.
 Agents can log tickets and fixes after the fact.
 `reported_at` and `resolved_at` hold the dates entered; `created_at` holds
 the real entry time, which the audit log also records. Up to 30 days back,
