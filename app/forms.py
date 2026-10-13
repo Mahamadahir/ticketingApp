@@ -1,4 +1,4 @@
-﻿from fastapi import HTTPException
+from fastapi import HTTPException
 
 MAX_MESSAGE_LENGTH = 10_000
 

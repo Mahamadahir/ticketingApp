@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from html import escape
 from typing import Optional
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -21,6 +22,7 @@ from app.followers import (
 )
 from app.backdating import FORMAT as MOMENT_FORMAT, BackdateError, backdate_ticket, may_backdate, parse_moment
 from app.categories import CategoryError, create_category, path_of, selectable, team_id_for
+from app.search import normalise, search_condition
 from app.splitting import (
     MAX_PARTS,
     SplitError,
@@ -72,11 +74,23 @@ AGENT_ROLES = (UserRole.SUPER_ADMIN, UserRole.AGENT)
 WAITING_ON_US = (TicketStatus.OPEN, TicketStatus.IN_PROGRESS)
 
 
+def _list_link(q: str):
+    """Builds a link to the ticket list that keeps the current search; a filter passed in
+    replaces the same filter (false, empty and None leave it out)."""
+
+    def link(**params) -> str:
+        wanted = {"q": q, **params}
+        return "/tickets" + ("?" + urlencode({k: ("true" if v is True else v) for k, v in wanted.items() if v}) if any(wanted.values()) else "")
+
+    return link
+
+
 @router.get("", response_class=HTMLResponse)
 def list_tickets(
     request: Request,
     mine: bool = False,
     team_id: Optional[int] = None,
+    q: str = "",
     page: int = 1,
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
@@ -84,9 +98,14 @@ def list_tickets(
     # Untriaged first, then by time to breach, then priority (see sla.queue_order).
     query = select(Ticket).order_by(*queue_order())
 
+    # Search only narrows what the agent can already see, so visibility is applied first.
     visible = visible_ticket_condition(user, access_context(session, user))
     if visible is not None:
         query = query.where(visible)
+    q = normalise(q)
+    matching = search_condition(session, q)
+    if matching is not None:
+        query = query.where(matching)
     if team_id is not None:
         query = query.where(Ticket.team_id == team_id)
 
@@ -112,6 +131,8 @@ def list_tickets(
             "user": user,
             "mine": mine,
             "team_id": team_id,
+            "q": q,
+            "list_link": _list_link(q),
         },
     )
 

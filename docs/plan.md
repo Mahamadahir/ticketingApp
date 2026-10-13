@@ -430,8 +430,8 @@ has a proper home and reports are accurate. The only change from the earlier
 plan is that the agent no longer flags "no good category" separately: choosing
 "Other" is the flag.
 
-**Priority and SLA.** Impact (number of users affected) × urgency gives
-P1–P4. SLA targets (first response and resolution, **TBC** per priority)
+**Priority and SLA.** Impact (number of users affected) Ã— urgency gives
+P1â€“P4. SLA targets (first response and resolution, **TBC** per priority)
 come from priority. Every ticket runs on a 24/7 clock that pauses while
 Awaiting user. Times display in each viewer's own timezone.
 
@@ -605,6 +605,10 @@ actor, for reporting.
 
 **Search** across subject, messages, requester and reference using Postgres
 full-text search.
+*Built in 1F-i (13 Oct 2026):* the search box on the agent ticket list (`app/search.py`). It
+matches the number (1042, #1042, INC-1042), subject, requester and every message including
+internal notes, and only narrows what the agent can already open. Typing a ticket number that exists finds that ticket alone. No index yet: full-text is
+computed per query, fine at this volume; add GIN indexes if the list gets slow.
 
 **Canned responses** for common replies, managed by admins.
 
@@ -618,7 +622,7 @@ Automatic emails use admin-managed templates, previewed when edited.
 ## Mail (Microsoft Graph)
 
 - Shared mailbox address **TBC**.
-- Webhook plus a delta catch-up poll every 5–10 minutes. The webhook stores
+- Webhook plus a delta catch-up poll every 5â€“10 minutes. The webhook stores
   the notification and returns `202` within 3 seconds; the worker fetches
   and processes the message. Graph retries for up to 4 hours, and drops
   notifications to persistently slow endpoints.
@@ -649,7 +653,7 @@ Automatic emails use admin-managed templates, previewed when edited.
   text to an admin review list to add to the ignore list or dismiss.
 - Chase: Awaiting user with no reply for **X days** sends "Is this still an
   issue?"; **Y days** more auto-resolves. X and Y are admin settings.
-- Feedback: signed single-use link, 1–5 rating and comment, attributed to
+- Feedback: signed single-use link, 1â€“5 rating and comment, attributed to
   the resolving agent. Admins see all; agents see their own, comments
   included.
 
@@ -714,7 +718,7 @@ for all of them.
 | Phase | Scope |
 |---|---|
 | 0 | Security fixes, Alembic, `/health`, audit log pagination and filters, account lockout, list pagination, environment-targeted deploys |
-| 1 | Ticket model: types, references, statuses, source, categories, impact × urgency, SLA targets and clock, priority queue, message visibility, followers, linking, team memberships and visibility, reassignment, escalation changes, backdating, `ticket_event`, search, portal new request form, canned responses, preview step, Service Requests and approvers, sign-in follow-ups (unlock button, clear Entra sign-in state, logout as POST) |
+| 1 | Ticket model: types, references, statuses, source, categories, impact Ã— urgency, SLA targets and clock, priority queue, message visibility, followers, linking, team memberships and visibility, reassignment, escalation changes, backdating, `ticket_event`, search, portal new request form, canned responses, preview step, Service Requests and approvers, sign-in follow-ups (unlock button, clear Entra sign-in state, logout as POST) |
 | 2 | Worker, in-app notifications, @mentions, notification settings, Teams channel webhook for new tickets, out-of-office detection |
 | 3 | Graph mail: intake, threaded replies, `uniqueBody`, delta catch-up, subscription renewal and lifecycle handling, auto-reply filter, attachments in Blob Storage, `public` app mode for the webhook |
 | 4 | Resolution, reopen and reclose flow, ignore list and review, chase emails, auto-close, feedback, bulk resolve |
