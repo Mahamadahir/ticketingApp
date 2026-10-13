@@ -117,6 +117,45 @@ def test_one_part_is_not_a_split(client, db_session):
     refused(client, db_session, original, [("Only", "")], "at least 2")
 
 
+def test_an_empty_form_splits_nothing_even_when_the_ticket_already_has_enough_parts(client, db_session):
+    original, _ = world(client, db_session)
+    split(client, original, ("One", ""), ("Two", ""))
+    before = db_session.exec(select(AuditLog).where(AuditLog.action == "split")).all()
+
+    response = split(client, original, ("", ""), ("", ""))
+
+    assert response.status_code == 400 and "at least one part" in response.text
+    assert len(subs_of(db_session, original)) == 2
+    assert len(db_session.exec(select(AuditLog).where(AuditLog.action == "split")).all()) == len(before)
+
+
+def test_the_parts_of_a_backdated_ticket_have_no_sla_either(client, db_session):
+    original, _ = world(client, db_session)
+    original.is_backdated = True
+    db_session.add(original)
+    db_session.commit()
+
+    split(client, original, ("One", ""), ("Two", ""))
+
+    for sub in subs_of(db_session, original):
+        assert sub.is_backdated and sub.first_response_due_at is None and sub.resolution_due_at is None
+
+
+def test_splitting_marks_the_original_as_touched(client, db_session):
+    original, _ = world(client, db_session)
+    before = original.updated_at
+
+    split(client, original, ("One", ""), ("Two", ""))
+
+    db_session.refresh(original)
+    assert original.updated_at > before
+
+
+def test_a_part_with_details_but_no_subject_is_refused_not_dropped(client, db_session):
+    original, _ = world(client, db_session)
+    refused(client, db_session, original, [("One", ""), ("", "typed details")], "needs a subject")
+
+
 def test_a_part_needs_a_subject(client, db_session):
     original, _ = world(client, db_session)
     refused(client, db_session, original, [("One", ""), ("", "details but no subject")], "needs a subject")
@@ -258,9 +297,7 @@ def test_the_original_hides_sub_tickets_in_teams_the_viewer_cannot_see(client, d
     secret = create_team(db_session, "Security")
     split(client, original, ("Visible part", ""), ("Secret part", ""))
     visible, hidden = subs_of(db_session, original)
-    # Whoever triaged a ticket keeps access to it, and the splitter triages each part, so
-    # make the part someone else's to be able to hide it.
-    hidden.team_id, hidden.triaged_by_id = secret.id, None
+    hidden.team_id = secret.id
     db_session.add(hidden)
     db_session.commit()
 
@@ -275,7 +312,7 @@ def test_a_sub_ticket_of_an_original_you_cannot_see_does_not_name_it(client, db_
     secret = create_team(db_session, "Security")
     split(client, original, ("One", ""), ("Two", ""))
     first, _ = subs_of(db_session, original)
-    original.team_id, original.triaged_by_id = secret.id, None
+    original.team_id = secret.id
     db_session.add(original)
     db_session.commit()
 

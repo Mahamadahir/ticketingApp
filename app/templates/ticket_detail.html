@@ -240,7 +240,7 @@
 {% if can_split %}
 <details>
   <summary>Split ticket</summary>
-  <p class="note">Each part with a subject becomes its own ticket, triaged like this one (type, category, impact, urgency, team); amend or assign it on its own page. Leave unused parts blank. A ticket needs at least two sub-tickets in all and at most 10.</p>
+  <p class="note">Each part with a subject becomes its own ticket, triaged like this one (type, category, impact, urgency, team); amend or assign it on its own page. Leave unused parts blank; a part with details needs a subject. A ticket needs at least two sub-tickets in all and at most 10.</p>
   <form hx-post="/tickets/{{ ticket.number }}/split" hx-target="main" hx-swap="innerHTML">
     {% for i in split_slots %}
     <fieldset>
@@ -254,7 +254,7 @@
 {% endif %}
 
 <h3>Followers</h3>
-<p class="note">Copied on every email to the requester. Internal followers are agents who keep read access, such as whoever escalated the ticket.</p>
+<p class="note">Copied on every email to the requester. Internal followers are agents who are always copied, such as whoever escalated the ticket; that does not give them access to the ticket.</p>
 <ul>
   {% for follower in followers %}
   <li>

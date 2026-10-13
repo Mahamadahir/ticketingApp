@@ -121,9 +121,13 @@ def triage_ticket(
     # Triaged is what lets it leave New. Set after triaged_at so set_status allows it.
     set_status(session, ticket, TicketStatus.OPEN, actor.email)
     if assignee is not None:
-        # Choosing no one means leave the assignment as it is, not clear it: the
-        # ticket may already have been handed to someone to triage.
         _set_assignee(session, ticket, assignee, actor)
+    elif ticket.assigned_agent_id is not None:
+        # Choosing no one leaves the assignment as it is (the ticket may have been handed
+        # to someone to triage), unless that person is not in the team it now belongs to:
+        # access follows the team, so they could no longer open it.
+        if ticket.assigned_agent_id not in {member.id for member in team_members(session, team_id)}:
+            _set_assignee(session, ticket, None, actor)
 
 
 def reassign_ticket(

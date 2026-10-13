@@ -295,14 +295,8 @@ def reassign(
     session.commit()
     session.refresh(ticket)
 
-    if ticket_access(user, ticket, access_context(session, user)) < Access.READ:
-        # Handing a ticket to a team you are not in takes it out of your view, so
-        # say where it went instead of showing a page they can no longer open.
-        return HTMLResponse(
-            f'<p class="note">{escape(ticket.reference)} was moved to {escape(team.name)}. '
-            'You no longer have access to it.</p><p><a href="/tickets">Back to tickets</a></p>'
-        )
     return _render_ticket_detail(request, ticket, user, session)
+
 
 @router.get("/{number}", response_class=HTMLResponse)
 def view_ticket(
@@ -503,7 +497,7 @@ def escalate_ticket(
         # Moving to another team unassigns the agent; the history must say so.
         record_event(session, ticket, EVENT_ASSIGNED, user.email, from_value=previous_agent.email, to_value=None)
     # The escalating agent follows the ticket from now on: copied on everything and
-    # keeps read access wherever it goes.
+    # is always copied. This gives no access: if the ticket moved team, it is no longer theirs to open.
     add_follower(session, ticket, user.email, user.email, internal_user=user)
     log_action(session, user.email, "ticket", ticket.id, "escalated", reason)
     session.commit()
@@ -581,7 +575,6 @@ def split(
     except SplitError as error:
         session.rollback()
         raise HTTPException(status_code=400, detail=str(error))
-    ticket.updated_at = datetime.now(timezone.utc)
     log_action(session, user.email, "ticket", ticket.id, "split", ", ".join(sub.tag for sub in made))
     session.commit()
     session.refresh(ticket)
@@ -638,6 +631,14 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
     team = session.get(Team, ticket.team_id) if ticket.team_id else None
     assigned_agent = session.get(User, ticket.assigned_agent_id) if ticket.assigned_agent_id else None
     levels = access_context(session, user)
+    if ticket_access(user, ticket, levels) < Access.READ:
+        # What the agent just did moved the ticket (triage, re-assign or escalate to
+        # another team), and access follows the team, so it is no longer theirs to open.
+        where = f" to {escape(team.name)}" if team else ""
+        return HTMLResponse(
+            f'<p class="note">{escape(ticket.reference)} has been moved{where}. '
+            'You no longer have access to it. <a href="/tickets">Back to the list</a></p>'
+        )
     team_agents = assignable_agents(session, ticket)
     can_work = ticket_access(user, ticket, levels) >= Access.WORK
     can_claim = not can_work and may_self_assign(user, ticket, levels)
@@ -660,7 +661,12 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
     # The same for split: only the original or sub-tickets this viewer could open anyway.
     original = session.get(Ticket, ticket.split_from_id) if ticket.split_from_id else None
     original_visible = original is not None and ticket_access(user, original, levels) >= Access.READ
-    subs, subs_total, subs_visible = sub_tickets_summary(session, ticket, visible_ticket_condition(user, levels))
+    # A sub-ticket never has sub-tickets of its own, so skip the queries for it.
+    subs, subs_total, subs_visible = (
+        ([], 0, 0)
+        if ticket.split_from_id is not None
+        else sub_tickets_summary(session, ticket, visible_ticket_condition(user, levels))
+    )
 
     return templates.TemplateResponse(
         request,

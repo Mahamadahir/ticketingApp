@@ -204,8 +204,8 @@ class TicketFollower(SQLModel, table=True):
 
     Requesters and agents add followers by email; a follower with a portal
     account sees the ticket under Following (read-only). An internal follower is
-    an agent (today: whoever escalated the ticket) who keeps read access to it
-    after it moves team, and is copied on everything, including MSP mail."""
+    an agent (today: whoever escalated the ticket) who is always copied, including
+    on MSP mail. It grants no access to the ticket: that follows its team."""
 
     __table_args__ = (UniqueConstraint("ticket_id", "email", name="uq_ticketfollower_ticket_email"),)
 

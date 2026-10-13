@@ -169,11 +169,9 @@ def test_escalating_makes_the_agent_an_internal_follower_once(client, db_session
     assert [(f.email, f.is_internal) for f in followers] == [("agent@example.com", True)]
     assert cc_list(db_session, ticket) == ["agent@example.com"]
 
-    # Read access comes from the follower row now, wherever the ticket went.
-    page = client.get(f"/tickets/{ticket.number}")
-    assert page.status_code == 200 and "read-only access" in page.text
-    assert "(internal)" in page.text
-    # Internal followers cannot be removed from the ticket page.
+    # Following is about being copied on mail, not access: the ticket is in Network now,
+    # and the escalator is not on that team.
+    assert client.get(f"/tickets/{ticket.number}").status_code == 403
     assert client.post(f"/tickets/{ticket.number}/followers/{followers[0].id}/remove").status_code == 403
 
 
@@ -207,13 +205,16 @@ def test_an_internal_follower_cannot_be_removed_even_by_someone_who_works_the_ti
     assert follower_emails(db_session, ticket) == ["agent@example.com"]
 
 
-def test_removing_the_follower_row_removes_the_escalators_access(client, db_session):
-    """Access really does come from the follower row, not the old escalated_by_id."""
+def test_escalating_to_another_team_ends_the_escalators_access_follower_row_or_not(client, db_session):
+    """Access follows the team and nothing else: neither the follower row nor
+    escalated_by_id keeps a ticket open to someone outside the team it moved to."""
     mine, network = create_team(db_session, "Mine"), create_team(db_session, "Network")
     ticket = make_ticket(db_session, mine.id)
     agent_for(client, db_session, mine)
-    client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "x", "target_team_id": network.id})
-    assert client.get(f"/tickets/{ticket.number}").status_code == 200
+    response = client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "x", "target_team_id": network.id})
+    assert "has been moved to Network" in response.text  # not a page they can no longer open
+    assert client.get(f"/tickets/{ticket.number}").status_code == 403
+    assert str(ticket.reference) not in client.get("/tickets").text
 
     for follower in db_session.exec(select(TicketFollower)).all():
         db_session.delete(follower)
@@ -341,9 +342,9 @@ def test_internal_followers_are_not_shown_to_the_requester(client, db_session):
 # ---- Review fixes -----------------------------------------------------------------
 
 
-def test_an_agent_who_raised_the_ticket_keeps_access_after_escalating_it_away(client, db_session):
+def test_an_agent_who_raised_the_ticket_is_still_recorded_as_a_follower_after_escalating_it_away(client, db_session):
     """Regression: the requester shortcut in add_follower also skipped the internal
-    follower, so an agent escalating their own ticket lost read access."""
+    follower row. The row no longer grants access (that follows the team)."""
     mine, network = create_team(db_session, "Mine"), create_team(db_session, "Network")
     ticket = make_ticket(db_session, mine.id, requester="agent@example.com")
     agent_for(client, db_session, mine)
@@ -351,7 +352,7 @@ def test_an_agent_who_raised_the_ticket_keeps_access_after_escalating_it_away(cl
     client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "x", "target_team_id": network.id})
 
     assert [(f.email, f.is_internal) for f in followers_of(db_session, ticket)] == [("agent@example.com", True)]
-    assert client.get(f"/tickets/{ticket.number}").status_code == 200
+    assert client.get(f"/tickets/{ticket.number}").status_code == 403
     # They are the recipient of the emails, so they are never also copied on them.
     assert cc_list(db_session, ticket) == []
 

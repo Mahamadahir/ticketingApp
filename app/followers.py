@@ -3,9 +3,9 @@
 - A requester or an agent adds a follower by email. The follower is copied on
   every public email, and if they have a portal account they see the ticket
   under Following (read-only, public messages only).
-- An internal follower is an agent who keeps read access to the ticket wherever
-  it moves, and is copied on everything. Escalating a ticket makes the
-  escalating agent one.
+- An internal follower is an agent who is always copied on the ticket's emails.
+  Escalating a ticket makes the escalating agent one. It grants no access:
+  that follows the ticket's team (app/visibility.py).
 Nothing here sends mail; that arrives with Graph in phase 3. cc_list is what the
 sender will use, and each outgoing message records it.
 """
@@ -75,10 +75,9 @@ def add_follower(
 ) -> Optional[TicketFollower]:
     """Adds a follower and records the event. Returns None when there is nothing
     to add (already following, or the address is the requester's, who is already
-    a recipient). Pass internal_user to add an agent as an internal follower, which
-    grants them read access; that is allowed even when the agent is the ticket's
-    requester, because the access is the point. Safe to call twice at once. Does not
-    commit."""
+    a recipient). Pass internal_user to add an agent as an internal follower, who is then
+    always copied (no access comes with it); that is allowed even when the agent is
+    the ticket's requester. Safe to call twice at once. Does not commit."""
     # An agent's own account address is trusted as it is: re-checking it with the
     # rules for typed-in addresses could make a valid account unable to escalate.
     email = internal_user.email.strip().lower() if internal_user else normalise_email(raw_email)
@@ -134,8 +133,8 @@ def add_follower(
 
 def remove_follower(session: Session, ticket: Ticket, follower_id: int, removed_by_email: str) -> Optional[str]:
     """Removes a follower and returns their address, or None if nothing was
-    removed. Internal followers cannot be removed here: they hold read access that
-    the ticket's history depends on. Does not commit."""
+    removed. Internal followers cannot be removed here: they are always copied
+    by design. Does not commit."""
     follower = session.get(TicketFollower, follower_id)
     if follower is None or follower.ticket_id != ticket.id or follower.is_internal:
         return None

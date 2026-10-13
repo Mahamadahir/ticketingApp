@@ -294,7 +294,11 @@ with long passwords and TOTP. Always able to sign in.
 team's tickets) or `viewer` (read-only). Agents see only tickets for teams
 they belong to, plus every untriaged ticket. Restricted work (HR, security)
 lives in its own team. Opening a ticket link without access shows a "no
-access" page.
+access" page. **Access comes from the ticket's team and nothing else** (decided 13 Oct
+2026): being its assignee, having triaged or escalated it, or following it grants nothing, so
+when a ticket moves to another team everyone outside that team loses it at once (the agent who
+moved it is told where it went). The only exception is the shared triage queue (untriaged
+tickets), which narrows with per-inbox routing below.
 
 **Per-inbox routing (later addition, agreed 12 Oct 2026).** Each team that is
 onboarded can have its own inbox (a shared mailbox, and later a Teams channel).
@@ -497,8 +501,8 @@ Every change (team, assignee, unassigned) is an event on the ticket.
 escalated, the agent must give a reason, and can move it to another team (which
 leaves it unassigned there). Use re-assign to hand work over; use escalate when
 it needs attention beyond that. The escalating agent becomes an internal follower: CC'd on every
-outgoing message, including emails to the MSP, keeps read access to that
-ticket, and is notified about notes only when @mentioned.
+outgoing message, including emails to the MSP, and is notified about notes only when
+@mentioned. It gives them no access to the ticket once it has moved team.
 
 **Linking.** Tickets link to a parent (Major Incident or Problem). Resolving
 the parent offers to resolve every linked ticket with the same notes.
@@ -524,9 +528,7 @@ split again to add more, up to 10 sub-tickets in all and at least 2. Each part i
 triaged with the original's type, category (so team), impact and urgency, so it has its own
 priority and SLA clock from the moment it is made; it is not left for the agent to triage, who
 amends it with the usual controls. It keeps the requester and source. The details box becomes an
-internal note. One level only. Events `split` / `split_from`, and an audit entry. Whoever splits
-a ticket triages each part, so they keep access to the parts even if they are later routed to a
-team they are not in (the existing "triaging must not make it vanish" rule). Not built yet, part 2:
+internal note. One level only. Events `split` / `split_from`, and an audit entry. Not built yet, part 2:
 the original's derived status, the single mail thread with the "About:" line, and showing the
 requester's replies and the parts' emails across the family.
 

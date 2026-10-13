@@ -5,11 +5,11 @@ ticket goes through here, so the rules live in one place.
 - An agent works tickets of teams they are a member of, and reads tickets of
   teams they are a viewer of.
 - Every agent can read untriaged tickets, triage them, and claim one by
-  assigning it to themselves, after which they work it.
-- A ticket assigned to an agent is theirs to work, wherever it sits.
-- An internal follower keeps read access to a ticket wherever it moves. Today
-  that is whoever escalated it (see followers.py); the follower list, not the
-  ticket's escalated_by_id, is what grants the access.
+  assigning it to themselves, after which they work it. That shared triage queue
+  is the one exception to "access follows the team".
+- Otherwise access comes from the ticket's team and nothing else. Being its
+  assignee, having triaged or escalated it, or following it grants nothing: when a
+  ticket moves to another team, everyone outside that team loses it.
 """
 
 from enum import IntEnum
@@ -21,7 +21,6 @@ from app.models import (
     MembershipLevel,
     TeamMembership,
     Ticket,
-    TicketFollower,
     User,
     UserRole,
 )
@@ -40,25 +39,14 @@ class NoTicketAccess(Exception):
 
 class AccessContext(dict):
     """What a user's access depends on besides the ticket itself: a mapping of
-    team id to their MembershipLevel, plus `followed`, the ids of tickets they
-    follow internally. Load it once per request with access_context()."""
-
-    followed: frozenset[int] = frozenset()
+    team id to their MembershipLevel. Load it once per request with access_context()."""
 
 
 def access_context(session: Session, user: User) -> AccessContext:
     rows = session.exec(
         select(TeamMembership.team_id, TeamMembership.level).where(TeamMembership.user_id == user.id)
     ).all()
-    context = AccessContext({team_id: level for team_id, level in rows})
-    context.followed = frozenset(
-        session.exec(
-            select(TicketFollower.ticket_id).where(
-                TicketFollower.user_id == user.id, TicketFollower.is_internal.is_(True)
-            )
-        ).all()
-    )
-    return context
+    return AccessContext({team_id: level for team_id, level in rows})
 
 
 def is_untriaged(ticket: Ticket) -> bool:
@@ -76,17 +64,12 @@ def ticket_access(user: User, ticket: Ticket, levels: AccessContext) -> Access:
     if user.role != UserRole.AGENT:
         return Access.NONE
 
-    if levels.get(ticket.team_id) == MembershipLevel.MEMBER or ticket.assigned_agent_id == user.id:
+    if levels.get(ticket.team_id) == MembershipLevel.MEMBER:
         return Access.WORK
     # Untriaged tickets are visible to everyone so someone can pick them up, but
     # working one means claiming it first (see may_self_assign). Otherwise a
     # reply would move the ticket out of New and the replier would lose sight of it.
-    if (
-        levels.get(ticket.team_id) == MembershipLevel.VIEWER
-        or ticket.id in levels.followed
-        or ticket.triaged_by_id == user.id  # triaging a ticket must not make it vanish
-        or is_untriaged(ticket)
-    ):
+    if levels.get(ticket.team_id) == MembershipLevel.VIEWER or is_untriaged(ticket):
         return Access.READ
     return Access.NONE
 
@@ -134,17 +117,7 @@ def visible_ticket_condition(user: User, levels: AccessContext):
     if user.role != UserRole.AGENT:
         return Ticket.id.is_(None)  # nothing
 
-    return or_(
-        Ticket.team_id.in_(list(levels)),
-        Ticket.triaged_at.is_(None),
-        Ticket.triaged_by_id == user.id,
-        Ticket.assigned_agent_id == user.id,
-        Ticket.id.in_(
-            select(TicketFollower.ticket_id).where(
-                TicketFollower.user_id == user.id, TicketFollower.is_internal.is_(True)
-            )
-        ),
-    )
+    return or_(Ticket.team_id.in_(list(levels)), Ticket.triaged_at.is_(None))
 
 
 def require_access(user: User, ticket: Ticket, levels: AccessContext, needed: Access) -> None:

@@ -200,17 +200,18 @@ def test_triage_refusals(client, db_session):
     assert again.status_code == 400 and "already been triaged" in again.text
 
 
-def test_any_agent_can_triage_and_then_keeps_read_access_but_not_write_access(client, db_session):
+def test_any_agent_can_triage_but_loses_the_ticket_once_it_is_in_a_team_they_are_not_in(client, db_session):
     desk, network = create_team(db_session, "Service Desk"), create_team(db_session, "Network")
     ticket = new_ticket(db_session, desk)
     agent(client, db_session)  # in no team at all
     category = create_category(db_session, network)
 
-    assert triage(client, ticket, category).status_code == 200
+    response = triage(client, ticket, category)
 
-    page = client.get(f"/tickets/{ticket.number}")
-    assert page.status_code == 200 and "read-only access" in page.text  # triaging does not make it vanish
+    assert response.status_code == 200 and "has been moved to Network" in response.text
+    assert client.get(f"/tickets/{ticket.number}").status_code == 403  # access follows the team
     assert client.post(f"/tickets/{ticket.number}/note", data={"body": "x"}).status_code == 403
+    assert str(ticket.reference) not in client.get("/tickets").text
 
 
 def test_end_users_cannot_triage(client, db_session):
@@ -441,7 +442,7 @@ def test_moving_a_ticket_to_a_team_you_are_not_in_says_so_instead_of_showing_a_c
     response = client.post(f"/tickets/{ticket.number}/reassign", data={"team_id": network.id})
 
     assert response.status_code == 200
-    assert "was moved to Network" in response.text and "no longer have access" in response.text
+    assert "has been moved to Network" in response.text and "no longer have access" in response.text
     assert client.get(f"/tickets/{ticket.number}").status_code == 403
 
 

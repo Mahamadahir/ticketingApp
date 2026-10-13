@@ -10,12 +10,14 @@ visibility, as for links.
 
 The original's derived status and the single mail thread come in the next part."""
 
+from datetime import datetime, timezone
+
 from sqlalchemy import func
 from sqlmodel import Session, select
 
 from app.messages import add_note
 from app.models import FINISHED_STATUSES, Category, Ticket, User
-from app.sla import Level
+from app.sla import Level, recalculate_deadlines
 from app.ticket_service import create_ticket, record_event
 from app.triage import TriageError, triage_ticket
 
@@ -69,6 +71,8 @@ def split_ticket(
     if any(not subject for subject in subjects):
         raise SplitError("Each part needs a subject")
 
+    if not parts:
+        raise SplitError("Enter a subject for at least one part")
     existing = sub_ticket_count(session, original)
     if existing + len(parts) < MIN_PARTS:
         raise SplitError(f"Split into at least {MIN_PARTS} parts")
@@ -95,10 +99,17 @@ def split_ticket(
                 impact=Level(original.impact), urgency=Level(original.urgency),
             )
         except TriageError as error:
-            raise SplitError(str(error))
+            # The parts take this ticket's category, so the cause is the original's.
+            raise SplitError(f"The parts cannot take this ticket's category. {error}")
+        if original.is_backdated:
+            # A ticket logged after the fact has no SLA, and neither do its parts.
+            sub.is_backdated = True
+            recalculate_deadlines(session, sub)
         if (details or "").strip():
             add_note(session, sub, actor, details.strip())
         record_event(session, sub, EVENT_SPLIT_FROM, actor.email, to_value=original.tag)
         record_event(session, original, EVENT_SPLIT, actor.email, to_value=sub.tag)
         made.append(sub)
+    original.updated_at = datetime.now(timezone.utc)
+    session.add(original)
     return made
