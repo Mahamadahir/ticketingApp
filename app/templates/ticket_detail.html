@@ -313,7 +313,8 @@
   {% if canned %}
   <label>Insert a canned response
     <select name="canned_id" hx-get="/tickets/{{ ticket.number }}/canned" hx-trigger="change"
-            hx-include="#email-body" hx-target="#email-body" hx-swap="outerHTML">
+            hx-include="#email-body" hx-target="#email-body" hx-swap="outerHTML"
+            hx-on::after-request="this.value = ''">
       <option value="">Choose one...</option>
       {% for c in canned %}<option value="{{ c.id }}">{{ c.title }}</option>{% endfor %}
     </select>

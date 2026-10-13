@@ -7,9 +7,11 @@ Placeholders, filled in when an agent picks a response: {reference} (INC-1042),
 {subject} and {agent} (the agent's name). Anything else in braces is left as written.
 """
 
+import re
 from datetime import datetime, timezone
 
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from app.forms import MAX_MESSAGE_LENGTH
@@ -43,13 +45,23 @@ def _title_taken(session: Session, title: str, except_id: int | None) -> bool:
     return session.exec(query).first() is not None
 
 
+def _flush(session: Session) -> None:
+    """Writes now, so two admins saving the same title at once get the friendly error
+    (the database index is the last line of defence) rather than a server error."""
+    try:
+        session.flush()
+    except IntegrityError:
+        session.rollback()
+        raise CannedError("There is already a canned response with that title")
+
+
 def create_canned(session: Session, title: str, body: str) -> CannedResponse:
     title, body = _clean(title, body)
     if _title_taken(session, title, None):
         raise CannedError("There is already a canned response with that title")
     canned = CannedResponse(title=title, body=body)
     session.add(canned)
-    session.flush()
+    _flush(session)
     return canned
 
 
@@ -60,6 +72,7 @@ def update_canned(session: Session, canned: CannedResponse, title: str, body: st
     canned.title, canned.body, canned.is_active = title, body, is_active
     canned.updated_at = datetime.now(timezone.utc)
     session.add(canned)
+    _flush(session)
     return canned
 
 
@@ -68,13 +81,15 @@ def all_canned(session: Session) -> list[CannedResponse]:
 
 
 def active_canned(session: Session) -> list[CannedResponse]:
-    return [c for c in all_canned(session) if c.is_active]
+    return list(
+        session.exec(
+            select(CannedResponse).where(CannedResponse.is_active).order_by(func.lower(CannedResponse.title))
+        ).all()
+    )
 
 
 def fill(canned: CannedResponse, ticket: Ticket, agent: User) -> str:
     """The response's text with the placeholders for this ticket and agent filled in."""
     values = {"{reference}": ticket.reference, "{subject}": ticket.subject, "{agent}": agent.display_name}
-    text = canned.body
-    for placeholder, value in values.items():
-        text = text.replace(placeholder, value)
-    return text
+    # One pass, so a value that itself contains a placeholder (a subject of "{agent}") is not expanded again.
+    return re.sub("|".join(re.escape(p) for p in values), lambda match: values[match.group(0)], canned.body)

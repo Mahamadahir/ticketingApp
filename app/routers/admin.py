@@ -448,11 +448,16 @@ def edit_canned(
     if canned is None:
         raise HTTPException(status_code=404, detail="Canned response not found")
     was_active = canned.is_active
+    old_title, old_body = canned.title, canned.body
     try:
         update_canned(session, canned, title, body, is_active == "on")
     except CannedError as error:
         raise HTTPException(status_code=400, detail=str(error))
-    log_action(session, admin.email, "canned_response", canned.id, "edited", canned.title)
+    if (canned.title, canned.body) != (old_title, old_body):
+        log_action(
+            session, admin.email, "canned_response", canned.id, "edited",
+            f"{old_title!r} -> {canned.title!r}" if canned.title != old_title else canned.title,
+        )
     if canned.is_active != was_active:
         log_action(
             session, admin.email, "canned_response", canned.id,

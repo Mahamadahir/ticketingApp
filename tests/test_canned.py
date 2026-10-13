@@ -40,7 +40,7 @@ def test_an_admin_creates_edits_and_switches_one_off_with_audit(client, db_sessi
     db_session.expire_all()
     canned = db_session.get(CannedResponse, canned.id)
     assert (canned.title, canned.body, canned.is_active) == ("Reset 2", "New text", False)
-    assert actions(db_session) == ["created", "edited", "edited", "deactivated"]
+    assert actions(db_session) == ["created", "edited", "deactivated"]  # unticking alone is not an edit
     assert "Reset 2" in client.get("/admin/canned").text  # a switched-off one stays listed
 
 
@@ -171,3 +171,106 @@ def test_update_refuses_an_empty_title(db_session):
     except CannedError:
         return
     raise AssertionError("expected CannedError")
+
+
+def test_a_value_containing_a_placeholder_is_not_expanded_again(db_session):
+    ticket = Ticket(subject="{agent}", requester_email="r@example.com")
+    db_session.add(ticket)
+    db_session.commit()
+    canned = CannedResponse(title="t", body="Re: {subject} / {agent}")
+    agent = type("A", (), {"display_name": "Ann"})()
+
+    assert fill(canned, ticket, agent) == "Re: {agent} / Ann"
+
+
+def test_the_fill_endpoint_is_for_triaged_tickets_only(client, db_session):
+    team = create_team(db_session, "Desk")
+    agent_in(client, db_session, member_of=[team])
+    canned = make(db_session)
+    untriaged = Ticket(subject="New one", requester_email="r@example.com", team_id=team.id)
+    db_session.add(untriaged)
+    db_session.commit()
+    db_session.refresh(untriaged)
+
+    assert client.get(f"/tickets/{untriaged.number}/canned", params={"canned_id": canned.id}).status_code == 400
+
+
+def test_filling_never_silently_cuts_the_text_off(client, db_session):
+    team = create_team(db_session, "Desk")
+    agent_in(client, db_session, member_of=[team])
+    canned = make(db_session, "Long", "Sign-off at the end")
+    ticket = triaged(db_session, team, "x")
+
+    response = client.get(
+        f"/tickets/{ticket.number}/canned", params={"canned_id": canned.id, "body": "w" * (MAX_MESSAGE_LENGTH - 5)}
+    )
+
+    assert response.status_code == 400
+
+
+def test_two_admins_saving_the_same_title_at_once_get_the_friendly_error(db_session, monkeypatch):
+    make(db_session, "Same")
+    monkeypatch.setattr("app.canned._title_taken", lambda *args: False)  # both passed the check
+
+    try:
+        create_canned(db_session, "Same", "x")
+    except CannedError as error:
+        assert "already a canned response" in str(error)
+    else:
+        raise AssertionError("expected CannedError")
+    db_session.rollback()
+    assert len(db_session.exec(select(CannedResponse)).all()) == 1
+
+
+def test_only_active_responses_are_loaded_for_the_picker(db_session):
+    from app.canned import active_canned
+
+    make(db_session, "On")
+    make(db_session, "Off", active=False)
+
+    assert [c.title for c in active_canned(db_session)] == ["On"]
+
+def test_a_title_clash_that_slips_past_the_check_is_still_a_friendly_error(client, db_session, monkeypatch):
+    admin(client, db_session)
+    make(db_session, "Taken")
+    monkeypatch.setattr("app.canned._title_taken", lambda *args, **kwargs: False)  # two admins at once
+
+    response = client.post("/admin/canned", data={"title": "Taken", "body": "x"})
+
+    assert response.status_code == 400 and "already a canned response" in response.text
+
+
+def test_a_value_that_looks_like_a_placeholder_is_not_expanded_again(client, db_session):
+    team = create_team(db_session, "Desk")
+    agent_in(client, db_session, member_of=[team])
+    canned = make(db_session, "Echo", "Re: {subject}")
+    ticket = triaged(db_session, team, "{agent} {reference}")
+
+    fragment = client.get(f"/tickets/{ticket.number}/canned", params={"canned_id": canned.id}).text
+
+    assert "Re: {agent} {reference}" in fragment
+
+
+def test_nothing_is_filled_on_an_untriaged_ticket(client, db_session):
+    team = create_team(db_session, "Desk")
+    agent_in(client, db_session, member_of=[team])
+    canned = make(db_session)
+    untriaged = Ticket(subject="New one", requester_email="r@example.com", team_id=team.id)
+    db_session.add(untriaged)
+    db_session.commit()
+    db_session.refresh(untriaged)
+
+    assert client.get(f"/tickets/{untriaged.number}/canned", params={"canned_id": canned.id}).status_code == 400
+
+
+def test_a_response_that_would_overflow_the_box_is_refused_not_cut_off(client, db_session):
+    team = create_team(db_session, "Desk")
+    agent_in(client, db_session, member_of=[team])
+    canned = make(db_session, "Long", "SIGN-OFF at the end")
+    ticket = triaged(db_session, team, "x")
+
+    response = client.get(
+        f"/tickets/{ticket.number}/canned", params={"canned_id": canned.id, "body": "a" * (MAX_MESSAGE_LENGTH - 5)}
+    )
+
+    assert response.status_code == 400 and "too long" in response.text

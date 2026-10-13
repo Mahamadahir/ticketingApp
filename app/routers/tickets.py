@@ -366,6 +366,8 @@ def fill_from_canned(
     """The email box with a canned response added to what the agent has typed so far.
     Only fills the box; the agent edits and sends it through the normal email action."""
     ticket = _get_ticket(session, number, user)
+    if not is_triaged(ticket):
+        raise HTTPException(status_code=400, detail="Triage the ticket before emailing the requester")
     body = body[:MAX_MESSAGE_LENGTH]
     chosen = optional_int(canned_id)
     if chosen is not None:
@@ -373,7 +375,9 @@ def fill_from_canned(
         if canned is None or not canned.is_active:
             raise HTTPException(status_code=404, detail="That canned response is not available")
         text = fill_canned(canned, ticket, user)
-        body = f"{body.rstrip()}\n\n{text}".strip()[:MAX_MESSAGE_LENGTH]
+        body = f"{body.rstrip()}\n\n{text}".strip()
+        if len(body) > MAX_MESSAGE_LENGTH:
+            raise HTTPException(status_code=400, detail="That would make the email too long; shorten what you have written first")
     return templates.TemplateResponse(request, "_email_body.html", {"body": body})
 
 
