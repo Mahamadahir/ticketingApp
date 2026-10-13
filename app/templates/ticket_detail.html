@@ -224,6 +224,35 @@
 {% if hidden_linked_count %}<p class="note">{{ hidden_linked_count }} more linked ticket{{ "s" if hidden_linked_count != 1 else "" }} you cannot open.</p>{% endif %}
 {% endif %}
 
+<h3>Sub-tickets</h3>
+{% if original %}
+<p>Split from <a href="/tickets/{{ original.number }}">{{ original.reference }}</a> {{ original.subject }}</p>
+{% elif has_hidden_original %}
+<p class="note">Split from a ticket you cannot open.</p>
+{% endif %}
+{% if sub_tickets or hidden_sub_count %}
+<ul>
+  {% for t in sub_tickets %}<li><a href="/tickets/{{ t.number }}">{{ t.reference }}</a> {{ t.subject }} <span class="status status-{{ t.status.value }}">{{ t.status.value.replace("_", " ") }}</span></li>{% endfor %}
+</ul>
+{% if more_sub_count %}<p class="note">Showing the first {{ sub_tickets|length }}; {{ more_sub_count }} more you can open are not listed.</p>{% endif %}
+{% if hidden_sub_count %}<p class="note">{{ hidden_sub_count }} more sub-ticket{{ "s" if hidden_sub_count != 1 else "" }} you cannot open.</p>{% endif %}
+{% endif %}
+{% if can_split %}
+<details>
+  <summary>Split ticket</summary>
+  <p class="note">Each part with a subject becomes its own ticket, triaged like this one (type, category, impact, urgency, team); amend or assign it on its own page. Leave unused parts blank. A ticket needs at least two sub-tickets in all and at most 10.</p>
+  <form hx-post="/tickets/{{ ticket.number }}/split" hx-target="main" hx-swap="innerHTML">
+    {% for i in split_slots %}
+    <fieldset>
+      <label>Part {{ loop.index }} subject <input type="text" name="subject" maxlength="200" /></label>
+      <label>Details <textarea name="details" maxlength="5000" rows="2"></textarea></label>
+    </fieldset>
+    {% endfor %}
+    <button type="submit">Split</button>
+  </form>
+</details>
+{% endif %}
+
 <h3>Followers</h3>
 <p class="note">Copied on every email to the requester. Internal followers are agents who keep read access, such as whoever escalated the ticket.</p>
 <ul>

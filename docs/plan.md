@@ -517,6 +517,19 @@ own reference, type, category, assignee and status, is linked to the original,
 and can email the requester itself. In the agent portal they are separate
 tickets, and the original lists them all.
 
+*Splitting built in 1E-iii part 1 (13 Oct 2026):* `app/splitting.py`, `ticket.split_from_id`
+(separate from the Major Incident/Problem link). The Split ticket control (any agent who works
+the original) takes up to four parts at a time; blank subjects are skipped and a ticket can be
+split again to add more, up to 10 sub-tickets in all and at least 2. Each part is created and then
+triaged with the original's type, category (so team), impact and urgency, so it has its own
+priority and SLA clock from the moment it is made; it is not left for the agent to triage, who
+amends it with the usual controls. It keeps the requester and source. The details box becomes an
+internal note. One level only. Events `split` / `split_from`, and an audit entry. Whoever splits
+a ticket triages each part, so they keep access to the parts even if they are later routed to a
+team they are not in (the existing "triaging must not make it vanish" rule). Not built yet, part 2:
+the original's derived status, the single mail thread with the "About:" line, and showing the
+requester's replies and the parts' emails across the family.
+
 **Status of the original while it has sub-tickets.** It is derived, so agents do
 not set it by hand: if every sub-ticket has the same status, the original takes
 it; if exactly one sub-ticket is still unfinished, the original takes that one's
@@ -552,7 +565,9 @@ be backdated, so an agent cannot drop a live ticket out of SLA. The agent raise-
 (1G) is what creates these tickets; until then none exist and the control never shows.
 Because the rule reads `source`, nothing else may create a `source=agent` ticket: sub-tickets
 from splitting (1E-iii) inherit the original's source, and an agent logging a requester's email
-by hand is not "on their behalf" for this purpose.
+by hand is not "on their behalf" for this purpose. When 1G adds the real creation path, the
+backdating tests (which set `source` by hand today) should switch to it rather than keep two
+versions of the same test.
 Agents can log tickets and fixes after the fact.
 `reported_at` and `resolved_at` hold the dates entered; `created_at` holds
 the real entry time, which the audit log also records. Up to 30 days back,

@@ -308,6 +308,7 @@ app/
   audit.py           Audit log helper
   backdating.py      Enter earlier reported/resolved dates on agent-raised tickets only; flags the ticket out of SLA figures
   linking.py         Link tickets under a Major Incident or Problem
+  splitting.py       Split a ticket into sub-tickets, each triaged from the original
   sla.py             Priority from impact x urgency, SLA deadlines and clock, queue order
   activity.py        Activity log: sign-in events and request-logging middleware
   graph_client.py    Microsoft Graph mail integration (stubbed)

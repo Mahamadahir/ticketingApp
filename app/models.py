@@ -132,6 +132,11 @@ class Ticket(SQLModel, table=True):
     # left out of SLA figures; created_at still holds when it was really entered.
     is_backdated: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
 
+    # Set on a sub-ticket made by splitting another ticket (the original). One level only:
+    # a sub-ticket is never split again. Separate from linked_parent_id, which is for
+    # grouping tickets under a Major Incident or Problem.
+    split_from_id: Optional[int] = Field(default=None, foreign_key="ticket.id", index=True)
+
     team_id: Optional[int] = Field(default=None, foreign_key="team.id")
     assigned_agent_id: Optional[int] = Field(default=None, foreign_key="user.id")
 

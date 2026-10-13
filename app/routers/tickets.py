@@ -21,6 +21,7 @@ from app.followers import (
 )
 from app.backdating import FORMAT as MOMENT_FORMAT, BackdateError, backdate_ticket, may_backdate, parse_moment
 from app.categories import CategoryError, create_category, path_of, selectable, team_id_for
+from app.splitting import MAX_PARTS, SplitError, split_ticket, sub_tickets_summary
 from app.linking import PARENT_TYPES, LinkError, link_ticket, linked_summary, unlink_ticket
 from app.messages import UnknownRecipient, add_note, agent_timeline, email_requester, is_triaged
 from app.models import FINISHED_STATUSES, Category, Team, Ticket, TicketStatus, TicketType, User, UserRole
@@ -556,6 +557,37 @@ def unlink(
     return _render_ticket_detail(request, ticket, user, session)
 
 
+SPLIT_SLOTS = 4  # part boxes on the form; blank subjects are skipped, and a ticket can be split again to add more
+
+
+@router.post("/{number}/split", response_class=HTMLResponse)
+def split(
+    number: int,
+    request: Request,
+    subject: list[str] = Form(default=[]),
+    details: list[str] = Form(default=[]),
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """Splits this ticket into sub-tickets, one per part with a subject. Each is triaged
+    like the original and can then be amended or assigned on its own page."""
+    ticket = _get_ticket(session, number, user)
+    details = details + [""] * (len(subject) - len(details))
+    parts = [(s, d) for s, d in zip(subject, details) if s.strip() or d.strip()]
+    if len(parts) > MAX_PARTS or any(len(s) > 200 or len(d) > 5000 for s, d in parts):
+        raise HTTPException(status_code=400, detail="Too many parts, or a subject or details that is too long")
+    try:
+        made = split_ticket(session, ticket, user, parts)
+    except SplitError as error:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(error))
+    ticket.updated_at = datetime.now(timezone.utc)
+    log_action(session, user.email, "ticket", ticket.id, "split", ", ".join(sub.tag for sub in made))
+    session.commit()
+    session.refresh(ticket)
+    return _render_ticket_detail(request, ticket, user, session)
+
+
 @router.post("/{number}/followers", response_class=HTMLResponse)
 def add_ticket_follower(
     number: int,
@@ -625,11 +657,26 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
         else ([], 0, 0)
     )
 
+    # The same for split: only the original or sub-tickets this viewer could open anyway.
+    original = session.get(Ticket, ticket.split_from_id) if ticket.split_from_id else None
+    original_visible = original is not None and ticket_access(user, original, levels) >= Access.READ
+    subs, subs_total, subs_visible = sub_tickets_summary(session, ticket, visible_ticket_condition(user, levels))
+
     return templates.TemplateResponse(
         request,
         "ticket_detail.html",
         {
             "ticket": ticket,
+            "original": original if original_visible else None,
+            "has_hidden_original": original is not None and not original_visible,
+            "sub_tickets": subs,
+            "hidden_sub_count": subs_total - subs_visible,
+            "more_sub_count": subs_visible - len(subs),
+            "can_split": can_work
+            and ticket.triaged_at is not None
+            and ticket.split_from_id is None
+            and ticket.status not in FINISHED_STATUSES,
+            "split_slots": range(SPLIT_SLOTS),
             "team": team,
             "assigned_agent": assigned_agent,
             "team_agents": team_agents,
