@@ -1,4 +1,4 @@
-# Build plan (working document)
+﻿# Build plan (working document)
 
 The live status, the next steps and the working agreement for whoever is building
 this next, human or agent. `docs/plan.md` is the agreed scope and design; this file
@@ -27,34 +27,15 @@ not exist (`infra/` compiles but has never run against a subscription).
 | Shared ticket numbers | merged (#18) | `app/models.py`, `NumberCounter` |
 | 1E-ii backdating (agent-raised tickets only) | merged (#19, #20) | `app/backdating.py` |
 | 1E-iii part 1 splitting into sub-tickets; access follows the team | merged (#21) | `app/splitting.py` |
-| 1E-iii part 2 derived status and single mail thread | **next** | see below |
+| 1E-iii part 2 derived status and single mail thread | built, in review | `app/splitting.py`, `app/messages.py` |
 | 1F search and canned responses | not started | |
 | 1G raise-a-ticket form, agents raising for someone, preview step | not started | |
 | 1H Service Requests and approvers | not started (may slip past phase 3) | |
 | Phases 2 to 9 | not started | `docs/plan.md`, "Build order" |
 
-Tests: 361 passing on Postgres 16.
+Tests: 393 passing on Postgres 16.
 
 ## Next up
-
-**1E-iii part 2.** The plan text is in `docs/plan.md` under "Splitting".
-- Derived status of the original: every sub-ticket the same status, the original
-  takes it; exactly one unfinished, it takes that one's; otherwise In progress.
-  Resolved and Closed are never derived. A system event per derived change.
-  Agents no longer set the original's status by hand while it has sub-tickets.
-- When every sub-ticket is finished, show "All sub-tickets are done: resolve this
-  ticket"; the resolve action itself comes in phase 4.
-- Single mail thread: every email from the original or any part goes out as a
-  reply in one conversation with one subject and an "About: SR-14 Replace
-  keyboard" line. Outbound mail is only built in phase 3, so here build the rules
-  in `app/messages.py` (what shows where) and the label, not the sending.
-- Message display by rule, never copied: the original's emails and the requester's
-  replies show in every open part; a part's emails show in the original but not in
-  its siblings; a requester reply refreshes every open part. Internal notes stay on
-  the ticket they were written on.
-- Timeline of the original hides notes and events from parts the viewer cannot see.
-- Open decision for the agent doing it: what happens to the original's SLA clock
-  while it is derived (it is not triaged separately from its parts).
 
 **1F.** Search by number, subject and message text (use `find_ticket` for numbers);
 canned responses.
@@ -134,9 +115,16 @@ sleep, restart it and `docker start ticketingapp-db-1`.
 - 13 Oct: access follows the team and nothing else.
 - 13 Oct: each sub-ticket is triaged from the original at split time rather than
   left for the agent to triage.
+- 13 Oct: the original's status is derived from its parts; agents cannot set it by
+  hand (only resolve or close once all parts are finished). Reopening a resolved
+  original by hand waits for the phase 4 reopen flow.
 
 ## Open questions
 
+- Agents of a split part see the original's public messages (the requester's one
+  conversation) even when they cannot open the original. That follows the plan's
+  wording, but it is a team-access exception. Keep it, or show them only after they
+  are given access to the original?
 - Escalating makes the agent an internal follower who is always copied and cannot be
   removed. With access now team-only, they keep receiving mail for a ticket they
   cannot open. Allow removal by whoever works the ticket, or drop the rule?

@@ -17,7 +17,8 @@ from app.followers import (
     tickets_followed_by,
 )
 from app.forms import MAX_MESSAGE_LENGTH
-from app.messages import record_inbound, requester_visible_messages
+from app.messages import about_labels, record_inbound, requester_visible_messages
+from app.splitting import has_sub_tickets, refresh_open_sub_tickets, sync_original_status
 from app.models import Ticket, TicketStatus, User
 from app.ticket_service import get_by_number, set_status
 from app.pagination import paginate
@@ -59,12 +60,14 @@ def _get_readable_ticket(session: Session, number: int, user: User) -> Ticket:
 
 
 def _render_ticket(request: Request, ticket: Ticket, user: User, session: Session) -> HTMLResponse:
+    visible = requester_visible_messages(session, ticket)
     return templates.TemplateResponse(
         request,
         "portal_ticket_detail.html",
         {
             "ticket": ticket,
-            "messages": requester_visible_messages(session, ticket),
+            "messages": visible,
+            "about": about_labels(session, visible),
             # Only the requester sees who else is copied; a follower must not learn
             # the other followers' addresses, and internal followers are never shown.
             "followers": (
@@ -121,7 +124,13 @@ def add_comment(
     # A reply from the requester or a follower hands the ticket back to us: it leaves
     # Awaiting user, which resumes the SLA clock. Any other status is left alone (a
     # reply on a Resolved ticket is the reopen flow, phase 4).
-    if ticket.status == TicketStatus.AWAITING_USER:
+    if has_sub_tickets(session, ticket):
+        # The original's status follows its parts, so it is never set here. The system
+        # cannot tell which part the reply is about, so each open part sees it, and the
+        # original is re-derived from them.
+        refresh_open_sub_tickets(session, ticket, user.email)
+        sync_original_status(session, ticket.id)
+    elif ticket.status == TicketStatus.AWAITING_USER:
         set_status(session, ticket, TicketStatus.IN_PROGRESS, user.email)
         log_action(
             session, user.email, "ticket", ticket.id, "status_changed",

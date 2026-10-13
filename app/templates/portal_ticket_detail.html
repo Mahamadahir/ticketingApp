@@ -10,6 +10,7 @@
   {% for message in messages %}
   <div class="message message-{{ message.direction.value }}">
     <div class="message-meta">{{ message.sender }} &middot; {{ message.created_at.strftime("%Y-%m-%d %H:%M") }}</div>
+    {% if about.get(message.id) %}<div class="note">{{ about[message.id] }}</div>{% endif %}
     <div class="message-body">{{ message.body }}</div>
   </div>
   {% endfor %}

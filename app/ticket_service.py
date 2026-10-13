@@ -108,9 +108,15 @@ def create_ticket(
     return ticket
 
 
-def set_status(session: Session, ticket: Ticket, new_status: TicketStatus, actor_email: Optional[str]) -> bool:
+def set_status(
+    session: Session,
+    ticket: Ticket,
+    new_status: TicketStatus,
+    actor_email: Optional[str],
+    detail: Optional[str] = None,
+) -> bool:
     """Moves the ticket to a new status. Returns False, changing nothing,
-    when it is already there."""
+    when it is already there. A sub-ticket's change re-derives its original's status."""
     previous = ticket.status
     if previous == new_status:
         return False
@@ -118,6 +124,12 @@ def set_status(session: Session, ticket: Ticket, new_status: TicketStatus, actor
         # Leaving New is what triage does, and only triage.
         raise NotTriaged()
 
+    if ticket.split_from_id is not None:
+        # Lock the original before changing the part, the same order as everything else
+        # in the family, so a requester's reply and an agent's change cannot deadlock.
+        from app.splitting import lock_ticket
+
+        lock_ticket(session, ticket.split_from_id)
     now = datetime.now(timezone.utc)
     ticket.status = new_status
     ticket.updated_at = now
@@ -133,5 +145,11 @@ def set_status(session: Session, ticket: Ticket, new_status: TicketStatus, actor
 
     on_status_change(session, ticket, previous, new_status, now)
     session.add(ticket)
-    record_event(session, ticket, EVENT_STATUS_CHANGED, actor_email, previous.value, new_status.value)
+    record_event(session, ticket, EVENT_STATUS_CHANGED, actor_email, previous.value, new_status.value, detail)
+    if ticket.split_from_id is not None:
+        # The original's status follows its sub-tickets. Imported here because
+        # app.splitting builds on this module.
+        from app.splitting import sync_original_status
+
+        sync_original_status(session, ticket.split_from_id)
     return True

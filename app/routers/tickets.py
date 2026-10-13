@@ -21,7 +21,15 @@ from app.followers import (
 )
 from app.backdating import FORMAT as MOMENT_FORMAT, BackdateError, backdate_ticket, may_backdate, parse_moment
 from app.categories import CategoryError, create_category, path_of, selectable, team_id_for
-from app.splitting import MAX_PARTS, SplitError, split_ticket, sub_tickets_summary
+from app.splitting import (
+    MAX_PARTS,
+    SplitError,
+    all_sub_tickets_finished,
+    check_manual_status,
+    has_sub_tickets,
+    split_ticket,
+    sub_tickets_summary,
+)
 from app.linking import PARENT_TYPES, LinkError, link_ticket, linked_summary, unlink_ticket
 from app.messages import UnknownRecipient, add_note, agent_timeline, email_requester, is_triaged
 from app.models import FINISHED_STATUSES, Category, Team, Ticket, TicketStatus, TicketType, User, UserRole
@@ -351,7 +359,8 @@ def email_user(
     # to Awaiting user by itself (the agent is not asked, and cannot opt out). That
     # pauses the SLA clock and starts the chase timer. A ticket With MSP is waiting on
     # someone else, and a Resolved or Closed one is finished, so those stay as they are.
-    if ticket.status in WAITING_ON_US:
+    # An original's status follows its sub-tickets instead; emailing from a part moves that part.
+    if ticket.status in WAITING_ON_US and not has_sub_tickets(session, ticket):
         previous_status = ticket.status
         set_status(session, ticket, TicketStatus.AWAITING_USER, user.email)
         log_action(
@@ -402,6 +411,10 @@ def change_status(
     if status == TicketStatus.NEW:
         raise HTTPException(status_code=400, detail="A ticket only starts in New; it leaves New by being triaged")
 
+    try:
+        check_manual_status(session, ticket, status)
+    except SplitError as error:
+        raise HTTPException(status_code=400, detail=str(error))
     previous_status = ticket.status
     try:
         changed = set_status(session, ticket, status, user.email)
@@ -647,7 +660,7 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
     category = session.get(Category, ticket.category_id) if ticket.category_id else None
     options = selectable(session) if can_triage else []
     teams = session.exec(select(Team)).all()
-    timeline = agent_timeline(session, ticket)
+    timeline = agent_timeline(session, ticket, viewer=(user, levels))
 
     # A link is only shown to someone who could open the other ticket anyway.
     parent = session.get(Ticket, ticket.linked_parent_id) if ticket.linked_parent_id else None
@@ -676,6 +689,8 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             "original": original if original_visible else None,
             "has_hidden_original": original is not None and not original_visible,
             "sub_tickets": subs,
+            "status_follows_parts": subs_total > 0,
+            "all_parts_done": ticket.status not in FINISHED_STATUSES and all_sub_tickets_finished(session, ticket),
             "hidden_sub_count": subs_total - subs_visible,
             "more_sub_count": subs_visible - len(subs),
             "can_split": can_work
