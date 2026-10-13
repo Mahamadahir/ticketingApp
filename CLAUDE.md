@@ -1,9 +1,10 @@
 # Ticketing app: notes for Claude
 
 Internal IT support ticketing tool. FastAPI + SQLModel + PostgreSQL, server
-rendered with Jinja2 and htmx. Read `docs/plan.md` for the agreed scope, build
-order and hosting design before starting a phase, and `README.md` for how to
-run it.
+rendered with Jinja2 and htmx. Read `docs/build-plan.md` first (current status,
+what is next, the per-PR workflow, decisions and open questions), then
+`docs/plan.md` for the agreed scope, build order and hosting design before
+starting a phase, and `README.md` for how to run it.
 
 ## State of play
 
