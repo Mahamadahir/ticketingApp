@@ -27,12 +27,21 @@ from app.categories import (
     path_of,
     selectable,
 )
+from app.canned import (
+    MAX_TITLE_LENGTH,
+    PLACEHOLDERS,
+    CannedError,
+    all_canned,
+    create_canned,
+    update_canned,
+)
 from app.database import get_session
-from app.forms import optional_int
+from app.forms import MAX_MESSAGE_LENGTH, optional_int
 from app.models import (
     FINISHED_STATUSES,
     ActivityLog,
     AuditLog,
+    CannedResponse,
     Category,
     MembershipLevel,
     Team,
@@ -386,6 +395,76 @@ def update_category(
     session.add(category)
     session.commit()
     return RedirectResponse("/admin/categories", status_code=303)
+
+
+# ---- Canned responses -----------------------------------------------------------
+
+
+@router.get("/canned", response_class=HTMLResponse)
+def list_canned(
+    request: Request,
+    user: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    return templates.TemplateResponse(
+        request,
+        "admin_canned.html",
+        {
+            "responses": all_canned(session),
+            "placeholders": PLACEHOLDERS,
+            "max_title_length": MAX_TITLE_LENGTH,
+            "max_message_length": MAX_MESSAGE_LENGTH,
+            "user": user,
+        },
+    )
+
+
+@router.post("/canned")
+def add_canned(
+    title: str = Form(..., max_length=500),
+    body: str = Form(..., max_length=MAX_MESSAGE_LENGTH + 1000),
+    admin: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    try:
+        canned = create_canned(session, title, body)
+    except CannedError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    log_action(session, admin.email, "canned_response", canned.id, "created", canned.title)
+    session.commit()
+    return RedirectResponse("/admin/canned", status_code=303)
+
+
+@router.post("/canned/{canned_id}")
+def edit_canned(
+    canned_id: int,
+    title: str = Form(..., max_length=500),
+    body: str = Form(..., max_length=MAX_MESSAGE_LENGTH + 1000),
+    is_active: Optional[str] = Form(None),
+    admin: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    canned = session.get(CannedResponse, canned_id)
+    if canned is None:
+        raise HTTPException(status_code=404, detail="Canned response not found")
+    was_active = canned.is_active
+    old_title, old_body = canned.title, canned.body
+    try:
+        update_canned(session, canned, title, body, is_active == "on")
+    except CannedError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    if (canned.title, canned.body) != (old_title, old_body):
+        log_action(
+            session, admin.email, "canned_response", canned.id, "edited",
+            f"{old_title!r} -> {canned.title!r}" if canned.title != old_title else canned.title,
+        )
+    if canned.is_active != was_active:
+        log_action(
+            session, admin.email, "canned_response", canned.id,
+            "activated" if canned.is_active else "deactivated", canned.title,
+        )
+    session.commit()
+    return RedirectResponse("/admin/canned", status_code=303)
 
 
 # ---- Category review ("Other" tickets, after resolution) ------------------------
