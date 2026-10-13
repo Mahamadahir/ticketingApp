@@ -28,7 +28,8 @@ class TicketType(str, Enum):
     PROBLEM = "problem"
 
 
-# Reference prefix per ticket type, e.g. INC-42.
+# Display prefix per ticket type, e.g. INC-42. It follows the ticket's current type and is
+# never used to look a ticket up: the number alone identifies it.
 TICKET_TYPE_PREFIXES = {
     TicketType.INCIDENT: "INC",
     TicketType.SERVICE_REQUEST: "SR",
@@ -96,12 +97,24 @@ class User(SQLModel, table=True):
 
 class Ticket(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    # Assigned on insert by _assign_reference at the bottom of this file: a
-    # separate counter per type, so INC-1 and SR-1 both exist. The reference is
-    # the shareable id.
+    # The ticket's identity: one number from a single counter shared by every type,
+    # assigned on insert (see _prepare_new_ticket). It never changes, even when triage
+    # changes the type. The reference (INC-1042) is the number with the type's prefix
+    # for display; lookups use the number only, so a link keeps working after a retype.
     type: TicketType = Field(default=TicketType.INCIDENT)
-    number: Optional[int] = Field(default=None, nullable=False)
-    reference: Optional[str] = Field(default=None, nullable=False, unique=True, index=True)
+    number: Optional[int] = Field(default=None, nullable=False, unique=True, index=True)
+
+    @property
+    def reference(self) -> Optional[str]:
+        if self.number is None:
+            return None
+        return f"{TICKET_TYPE_PREFIXES[self.type]}-{self.number}"
+
+    @property
+    def tag(self) -> Optional[str]:
+        """#1042: the stable form, for events and the audit log. The reference's prefix
+        follows the type, so text stored with it would go stale after a retype."""
+        return f"#{self.number}" if self.number is not None else None
 
     subject: str
     requester_email: str
@@ -212,16 +225,6 @@ class Category(SQLModel, table=True):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
-class TicketAlias(SQLModel, table=True):
-    """An earlier reference of a ticket. Triage can change a ticket's type, which
-    re-issues its reference (INC-12 becomes SR-3); the old one keeps working in
-    links and in the subject of emails already sent."""
-
-    reference: str = Field(primary_key=True)
-    ticket_id: int = Field(foreign_key="ticket.id", index=True)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-
 class Setting(SQLModel, table=True):
     """An admin-editable setting. Which keys exist, and their defaults, are
     declared in app/settings_store.py."""
@@ -230,10 +233,14 @@ class Setting(SQLModel, table=True):
     value: str
 
 
-class TicketCounter(SQLModel, table=True):
-    """Last number issued for each ticket type."""
+TICKET_COUNTER = "ticket"
 
-    ticket_type: TicketType = Field(primary_key=True)
+
+class NumberCounter(SQLModel, table=True):
+    """The last number issued, one row per counter. Tickets use the one named "ticket",
+    shared by every type."""
+
+    name: str = Field(primary_key=True)
     last_number: int = Field(default=0)
 
 
@@ -266,7 +273,7 @@ class ActivityLog(SQLModel, table=True):
     # The signed-in user's email, or for a failed sign-in the address that was tried.
     actor_email: Optional[str] = Field(default=None, index=True)
     method: Optional[str] = Field(default=None)
-    path: Optional[str] = Field(default=None)  # route template, e.g. /tickets/{ticket_id}/note
+    path: Optional[str] = Field(default=None)  # route template, e.g. /tickets/{number}/note
     status_code: Optional[int] = Field(default=None)
     ip: Optional[str] = Field(default=None)
     user_agent: Optional[str] = Field(default=None)
@@ -283,38 +290,34 @@ class AuditLog(SQLModel, table=True):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
-def allocate_reference(connection, ticket_type: TicketType) -> tuple[int, str]:
-    """Issues the next number for a ticket type and returns it with the reference
-    (INC-42). The counter row is updated atomically; on Postgres the row lock is
-    held until the transaction ends, so two tickets created at once cannot get
-    the same number. Used when a ticket is created and when triage changes its
-    type."""
-    counter = TicketCounter.__table__
+def allocate_number(connection) -> int:
+    """Issues the next ticket number, shared by every type. The counter row is updated
+    atomically; on Postgres the row lock is held until the transaction ends, so two
+    tickets created at once cannot get the same number."""
+    counter = NumberCounter.__table__
     bump = (
         update(counter)
-        .where(counter.c.ticket_type == ticket_type)
+        .where(counter.c.name == TICKET_COUNTER)
         .values(last_number=counter.c.last_number + 1)
         .returning(counter.c.last_number)
     )
     number = connection.execute(bump).scalar()
     if number is None:
-        # No row yet for this type. The migration seeds them, but code must
-        # not depend on that: create it if absent (a concurrent creator may
-        # win the race, which is fine), then bump it.
+        # No row yet. The migration seeds it, but code must not depend on that: create
+        # it if absent (a concurrent creator may win the race, which is fine), then bump.
         connection.execute(
-            postgresql_insert(counter).values(ticket_type=ticket_type, last_number=0).on_conflict_do_nothing()
+            postgresql_insert(counter).values(name=TICKET_COUNTER, last_number=0).on_conflict_do_nothing()
         )
         number = connection.execute(bump).scalar()
-
-    return number, f"{TICKET_TYPE_PREFIXES[ticket_type]}-{number}"
+    return number
 
 
 @event.listens_for(Ticket, "before_insert")
 def _prepare_new_ticket(mapper, connection, ticket: Ticket) -> None:
-    """Gives every new ticket its number and reference, so no code path can create
-    one without, and keeps one rule true: a ticket that is not New has been
-    triaged. (Tickets are created New, and only triage moves them on.)"""
-    if not ticket.reference:
-        ticket.number, ticket.reference = allocate_reference(connection, ticket.type)
+    """Gives every new ticket its number, so no code path can create one without, and
+    keeps one rule true: a ticket that is not New has been triaged. (Tickets are
+    created New, and only triage moves them on.)"""
+    if ticket.number is None:
+        ticket.number = allocate_number(connection)
     if ticket.status != TicketStatus.NEW and ticket.triaged_at is None:
         ticket.triaged_at = datetime.now(timezone.utc)

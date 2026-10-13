@@ -44,7 +44,7 @@ def test_an_agent_adds_a_follower_with_event_and_audit(client, db_session):
     ticket = make_ticket(db_session, team.id)
     agent_for(client, db_session, team)
 
-    response = client.post(f"/tickets/{ticket.id}/followers", data={"email": "  Boss@Example.ORG "})
+    response = client.post(f"/tickets/{ticket.number}/followers", data={"email": "  Boss@Example.ORG "})
     assert response.status_code == 200
 
     assert follower_emails(db_session, ticket) == ["boss@example.org"]
@@ -53,7 +53,7 @@ def test_an_agent_adds_a_follower_with_event_and_audit(client, db_session):
     assert [a.detail for a in db_session.exec(select(AuditLog).where(AuditLog.action == "follower_added"))] == [
         "boss@example.org"
     ]
-    assert "boss@example.org" in client.get(f"/tickets/{ticket.id}").text
+    assert "boss@example.org" in client.get(f"/tickets/{ticket.number}").text
 
 
 def test_duplicates_and_the_requesters_own_address_are_ignored(client, db_session):
@@ -62,7 +62,7 @@ def test_duplicates_and_the_requesters_own_address_are_ignored(client, db_sessio
     agent_for(client, db_session, team)
 
     for address in ("boss@example.org", "BOSS@example.org", "me@example.com", "ME@example.com"):
-        assert client.post(f"/tickets/{ticket.id}/followers", data={"email": address}).status_code == 200
+        assert client.post(f"/tickets/{ticket.number}/followers", data={"email": address}).status_code == 200
 
     assert follower_emails(db_session, ticket) == ["boss@example.org"]
     assert len(db_session.exec(select(TicketEvent).where(TicketEvent.event_type == "follower_added")).all()) == 1
@@ -74,12 +74,12 @@ def test_bad_addresses_and_too_many_followers_are_rejected(client, db_session):
     agent_for(client, db_session, team)
 
     for bad in ("not-an-email", "a@b", "two@x.org,three@x.org", "a b@x.org", "<script>@x.org"):
-        assert client.post(f"/tickets/{ticket.id}/followers", data={"email": bad}).status_code == 400, bad
+        assert client.post(f"/tickets/{ticket.number}/followers", data={"email": bad}).status_code == 400, bad
     assert follower_emails(db_session, ticket) == []
 
     for number in range(MAX_EXTERNAL_FOLLOWERS):
-        assert client.post(f"/tickets/{ticket.id}/followers", data={"email": f"p{number}@x.org"}).status_code == 200
-    assert client.post(f"/tickets/{ticket.id}/followers", data={"email": "one-too-many@x.org"}).status_code == 400
+        assert client.post(f"/tickets/{ticket.number}/followers", data={"email": f"p{number}@x.org"}).status_code == 200
+    assert client.post(f"/tickets/{ticket.number}/followers", data={"email": "one-too-many@x.org"}).status_code == 400
     assert len(follower_emails(db_session, ticket)) == MAX_EXTERNAL_FOLLOWERS
 
 
@@ -87,16 +87,16 @@ def test_an_agent_removes_a_follower(client, db_session):
     team = create_team(db_session, "Service Desk")
     ticket = make_ticket(db_session, team.id)
     agent_for(client, db_session, team)
-    client.post(f"/tickets/{ticket.id}/followers", data={"email": "boss@example.org"})
+    client.post(f"/tickets/{ticket.number}/followers", data={"email": "boss@example.org"})
     follower = followers_of(db_session, ticket)[0]
 
-    assert client.post(f"/tickets/{ticket.id}/followers/{follower.id}/remove").status_code == 200
+    assert client.post(f"/tickets/{ticket.number}/followers/{follower.id}/remove").status_code == 200
 
     assert follower_emails(db_session, ticket) == []
     removed = db_session.exec(select(TicketEvent).where(TicketEvent.event_type == "follower_removed")).all()
     assert [e.from_value for e in removed] == ["boss@example.org"]
     # A follower of another ticket cannot be removed through this one.
-    assert client.post(f"/tickets/{ticket.id}/followers/9999/remove").status_code == 404
+    assert client.post(f"/tickets/{ticket.number}/followers/9999/remove").status_code == 404
 
 
 def test_only_someone_who_works_the_ticket_manages_followers(client, db_session):
@@ -108,8 +108,8 @@ def test_only_someone_who_works_the_ticket_manages_followers(client, db_session)
 
     add_membership(db_session, agent_id, watched.id, MembershipLevel.VIEWER)
 
-    assert client.post(f"/tickets/{ticket.id}/followers", data={"email": "boss@example.org"}).status_code == 403
-    page = client.get(f"/tickets/{ticket.id}").text
+    assert client.post(f"/tickets/{ticket.number}/followers", data={"email": "boss@example.org"}).status_code == 403
+    page = client.get(f"/tickets/{ticket.number}").text
     assert "Add follower" not in page
     assert follower_emails(db_session, ticket) == []
 
@@ -121,26 +121,26 @@ def test_an_email_records_who_was_copied_at_send_time(client, db_session):
     team = create_team(db_session, "Service Desk")
     ticket = make_ticket(db_session, team.id)
     agent_for(client, db_session, team)
-    client.post(f"/tickets/{ticket.id}/followers", data={"email": "boss@example.org"})
-    client.post(f"/tickets/{ticket.id}/followers", data={"email": "peer@example.org"})
+    client.post(f"/tickets/{ticket.number}/followers", data={"email": "boss@example.org"})
+    client.post(f"/tickets/{ticket.number}/followers", data={"email": "peer@example.org"})
 
-    page = client.get(f"/tickets/{ticket.id}").text
+    page = client.get(f"/tickets/{ticket.number}").text
     for address in ("boss@example.org", "peer@example.org"):
         assert f'name="cc" value="{address}" checked' in page
-    client.post(f"/tickets/{ticket.id}/email", data={"body": "First update"})
+    client.post(f"/tickets/{ticket.number}/email", data={"body": "First update"})
 
     first = db_session.exec(select(Message)).one()
     assert first.cc == "boss@example.org, peer@example.org"
 
     # Removing a follower later does not rewrite who received the earlier email.
     boss = [f for f in followers_of(db_session, ticket) if f.email == "boss@example.org"][0]
-    client.post(f"/tickets/{ticket.id}/followers/{boss.id}/remove")
-    client.post(f"/tickets/{ticket.id}/email", data={"body": "Second update"})
+    client.post(f"/tickets/{ticket.number}/followers/{boss.id}/remove")
+    client.post(f"/tickets/{ticket.number}/email", data={"body": "Second update"})
 
     db_session.expire_all()
     messages = db_session.exec(select(Message).order_by(Message.id)).all()
     assert [m.cc for m in messages] == ["boss@example.org, peer@example.org", "peer@example.org"]
-    assert "cc: boss@example.org, peer@example.org" in client.get(f"/tickets/{ticket.id}").text
+    assert "cc: boss@example.org, peer@example.org" in client.get(f"/tickets/{ticket.number}").text
 
 
 def test_an_email_with_no_followers_has_no_cc(client, db_session):
@@ -148,10 +148,10 @@ def test_an_email_with_no_followers_has_no_cc(client, db_session):
     ticket = make_ticket(db_session, team.id)
     agent_for(client, db_session, team)
 
-    client.post(f"/tickets/{ticket.id}/email", data={"body": "Hello"})
+    client.post(f"/tickets/{ticket.number}/email", data={"body": "Hello"})
 
     assert db_session.exec(select(Message)).one().cc is None
-    assert "Copy this email to" not in client.get(f"/tickets/{ticket.id}").text
+    assert "Copy this email to" not in client.get(f"/tickets/{ticket.number}").text
 
 
 # ---- The escalator is an internal follower ---------------------------------------
@@ -163,18 +163,18 @@ def test_escalating_makes_the_agent_an_internal_follower_once(client, db_session
     agent_for(client, db_session, mine)
 
     for _ in range(2):
-        client.post(f"/tickets/{ticket.id}/escalate", data={"reason": "Needs network", "target_team_id": network.id})
+        client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "Needs network", "target_team_id": network.id})
 
     followers = followers_of(db_session, ticket)
     assert [(f.email, f.is_internal) for f in followers] == [("agent@example.com", True)]
     assert cc_list(db_session, ticket) == ["agent@example.com"]
 
     # Read access comes from the follower row now, wherever the ticket went.
-    page = client.get(f"/tickets/{ticket.id}")
+    page = client.get(f"/tickets/{ticket.number}")
     assert page.status_code == 200 and "read-only access" in page.text
     assert "(internal)" in page.text
     # Internal followers cannot be removed from the ticket page.
-    assert client.post(f"/tickets/{ticket.id}/followers/{followers[0].id}/remove").status_code == 403
+    assert client.post(f"/tickets/{ticket.number}/followers/{followers[0].id}/remove").status_code == 403
 
 
 def test_escalating_works_for_an_account_whose_email_fails_the_typed_address_check(client, db_session):
@@ -184,12 +184,12 @@ def test_escalating_works_for_an_account_whose_email_fails_the_typed_address_che
     ticket = make_ticket(db_session, team.id)
     agent_for(client, db_session, team, email="Dotless@Localhost")
 
-    response = client.post(f"/tickets/{ticket.id}/escalate", data={"reason": "Flagging this"})
+    response = client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "Flagging this"})
 
     assert response.status_code == 200
     assert [(f.email, f.is_internal) for f in followers_of(db_session, ticket)] == [("dotless@localhost", True)]
     # People still cannot type such an address into the follower box.
-    assert client.post(f"/tickets/{ticket.id}/followers", data={"email": "typed@localhost"}).status_code == 400
+    assert client.post(f"/tickets/{ticket.number}/followers", data={"email": "typed@localhost"}).status_code == 400
 
 
 def test_an_internal_follower_cannot_be_removed_even_by_someone_who_works_the_ticket(client, db_session):
@@ -198,12 +198,12 @@ def test_an_internal_follower_cannot_be_removed_even_by_someone_who_works_the_ti
     team = create_team(db_session, "Service Desk")
     ticket = make_ticket(db_session, team.id)
     agent_for(client, db_session, team)
-    client.post(f"/tickets/{ticket.id}/escalate", data={"reason": "Flagging this"})
+    client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "Flagging this"})
     internal = followers_of(db_session, ticket)[0]
-    assert internal.is_internal and client.get(f"/tickets/{ticket.id}").status_code == 200
-    assert client.post(f"/tickets/{ticket.id}/status", data={"status": "resolved"}).status_code == 200  # works it
+    assert internal.is_internal and client.get(f"/tickets/{ticket.number}").status_code == 200
+    assert client.post(f"/tickets/{ticket.number}/status", data={"status": "resolved"}).status_code == 200  # works it
 
-    assert client.post(f"/tickets/{ticket.id}/followers/{internal.id}/remove").status_code == 404
+    assert client.post(f"/tickets/{ticket.number}/followers/{internal.id}/remove").status_code == 404
     assert follower_emails(db_session, ticket) == ["agent@example.com"]
 
 
@@ -212,8 +212,8 @@ def test_removing_the_follower_row_removes_the_escalators_access(client, db_sess
     mine, network = create_team(db_session, "Mine"), create_team(db_session, "Network")
     ticket = make_ticket(db_session, mine.id)
     agent_for(client, db_session, mine)
-    client.post(f"/tickets/{ticket.id}/escalate", data={"reason": "x", "target_team_id": network.id})
-    assert client.get(f"/tickets/{ticket.id}").status_code == 200
+    client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "x", "target_team_id": network.id})
+    assert client.get(f"/tickets/{ticket.number}").status_code == 200
 
     for follower in db_session.exec(select(TicketFollower)).all():
         db_session.delete(follower)
@@ -221,7 +221,7 @@ def test_removing_the_follower_row_removes_the_escalators_access(client, db_sess
 
     db_session.refresh(ticket)
     assert ticket.escalated_by_id is not None  # still recorded as history
-    assert client.get(f"/tickets/{ticket.id}").status_code == 403
+    assert client.get(f"/tickets/{ticket.number}").status_code == 403
 
 
 def test_an_external_follower_who_is_an_agent_gets_no_agent_access(client, db_session):
@@ -236,7 +236,7 @@ def test_an_external_follower_who_is_an_agent_gets_no_agent_access(client, db_se
     db_session.commit()
     login_as(client, "colleague@example.com")
 
-    assert client.get(f"/tickets/{ticket.id}").status_code == 403
+    assert client.get(f"/tickets/{ticket.number}").status_code == 403
 
 
 # ---- Portal --------------------------------------------------------------------
@@ -246,13 +246,13 @@ def test_the_requester_adds_and_removes_followers(client, db_session):
     ticket = make_ticket(db_session, requester="me@example.com")
     login_as(client, "me@example.com")
 
-    assert client.post(f"/portal/{ticket.id}/followers", data={"email": "Boss@Example.org"}).status_code == 200
+    assert client.post(f"/portal/{ticket.number}/followers", data={"email": "Boss@Example.org"}).status_code == 200
     assert follower_emails(db_session, ticket) == ["boss@example.org"]
-    assert "boss@example.org" in client.get(f"/portal/{ticket.id}").text
-    assert client.post(f"/portal/{ticket.id}/followers", data={"email": "nope"}).status_code == 400
+    assert "boss@example.org" in client.get(f"/portal/{ticket.number}").text
+    assert client.post(f"/portal/{ticket.number}/followers", data={"email": "nope"}).status_code == 400
 
     follower = followers_of(db_session, ticket)[0]
-    assert client.post(f"/portal/{ticket.id}/followers/{follower.id}/remove").status_code == 200
+    assert client.post(f"/portal/{ticket.number}/followers/{follower.id}/remove").status_code == 200
     assert follower_emails(db_session, ticket) == []
 
 
@@ -260,11 +260,11 @@ def test_a_follower_with_an_account_can_read_and_reply_but_not_manage_the_ticket
     team = create_team(db_session, "Service Desk")
     ticket = make_ticket(db_session, team.id, requester="me@example.com")
     agent_for(client, db_session, team)
-    client.post(f"/tickets/{ticket.id}/note", data={"body": SECRET_NOTE})
-    client.post(f"/tickets/{ticket.id}/email", data={"body": "We are on it"})
+    client.post(f"/tickets/{ticket.number}/note", data={"body": SECRET_NOTE})
+    client.post(f"/tickets/{ticket.number}/email", data={"body": "We are on it"})
     client.post("/auth/logout")
     login_as(client, "me@example.com")
-    client.post(f"/portal/{ticket.id}/followers", data={"email": "boss@example.org"})
+    client.post(f"/portal/{ticket.number}/followers", data={"email": "boss@example.org"})
     follower = followers_of(db_session, ticket)[0]
     client.post("/auth/logout")
 
@@ -272,49 +272,49 @@ def test_a_follower_with_an_account_can_read_and_reply_but_not_manage_the_ticket
     listing = client.get("/portal").text
     assert "Following" in listing and ticket.reference in listing
 
-    page = client.get(f"/portal/{ticket.id}")
+    page = client.get(f"/portal/{ticket.number}")
     assert page.status_code == 200
     assert "We are on it" in page.text
     assert SECRET_NOTE not in page.text and "Internal note" not in page.text
     assert "Add comment" in page.text  # followers are not read-only
     assert "Also keeping up to date" not in page.text  # but they do not manage the follower list
 
-    assert client.post(f"/portal/{ticket.id}/comment", data={"body": "Thanks, that fixed it"}).status_code == 200
+    assert client.post(f"/portal/{ticket.number}/comment", data={"body": "Thanks, that fixed it"}).status_code == 200
     reply = db_session.exec(select(Message).where(Message.body == "Thanks, that fixed it")).one()
     assert (reply.direction, reply.visibility, reply.sender) == (
         MessageDirection.INBOUND,
         MessageVisibility.PUBLIC,
         "Test User",
     )
-    assert client.post(f"/portal/{ticket.id}/followers", data={"email": "x@example.org"}).status_code == 404
-    assert client.post(f"/portal/{ticket.id}/followers/{follower.id}/remove").status_code == 404
-    assert client.get(f"/tickets/{ticket.id}").status_code == 403  # no agent console either
+    assert client.post(f"/portal/{ticket.number}/followers", data={"email": "x@example.org"}).status_code == 404
+    assert client.post(f"/portal/{ticket.number}/followers/{follower.id}/remove").status_code == 404
+    assert client.get(f"/tickets/{ticket.number}").status_code == 403  # no agent console either
 
 
 def test_removing_a_follower_removes_their_portal_access(client, db_session):
     ticket = make_ticket(db_session, requester="me@example.com")
     login_as(client, "me@example.com")
-    client.post(f"/portal/{ticket.id}/followers", data={"email": "boss@example.org"})
+    client.post(f"/portal/{ticket.number}/followers", data={"email": "boss@example.org"})
     follower = followers_of(db_session, ticket)[0]
     client.post("/auth/logout")
 
     login_as(client, "boss@example.org")
-    assert client.get(f"/portal/{ticket.id}").status_code == 200
+    assert client.get(f"/portal/{ticket.number}").status_code == 200
     client.post("/auth/logout")
 
     login_as(client, "me@example.com")
-    client.post(f"/portal/{ticket.id}/followers/{follower.id}/remove")
+    client.post(f"/portal/{ticket.number}/followers/{follower.id}/remove")
     client.post("/auth/logout")
 
     login_as(client, "boss@example.org")
-    assert client.get(f"/portal/{ticket.id}").status_code == 404
+    assert client.get(f"/portal/{ticket.number}").status_code == 404
     assert "Following" not in client.get("/portal").text
 
 
 def test_strangers_and_the_requesters_own_tickets_are_not_in_following(client, db_session):
     ticket = make_ticket(db_session, requester="me@example.com")
     login_as(client, "stranger@example.org")
-    assert client.get(f"/portal/{ticket.id}").status_code == 404
+    assert client.get(f"/portal/{ticket.number}").status_code == 404
     assert "Following" not in client.get("/portal").text
     client.post("/auth/logout")
 
@@ -331,11 +331,11 @@ def test_internal_followers_are_not_shown_to_the_requester(client, db_session):
     mine, network = create_team(db_session, "Mine"), create_team(db_session, "Network")
     ticket = make_ticket(db_session, mine.id, requester="me@example.com")
     agent_for(client, db_session, mine, email="secret-agent@example.com")
-    client.post(f"/tickets/{ticket.id}/escalate", data={"reason": "x", "target_team_id": network.id})
+    client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "x", "target_team_id": network.id})
     client.post("/auth/logout")
 
     login_as(client, "me@example.com")
-    assert "secret-agent@example.com" not in client.get(f"/portal/{ticket.id}").text
+    assert "secret-agent@example.com" not in client.get(f"/portal/{ticket.number}").text
 
 
 # ---- Review fixes -----------------------------------------------------------------
@@ -348,10 +348,10 @@ def test_an_agent_who_raised_the_ticket_keeps_access_after_escalating_it_away(cl
     ticket = make_ticket(db_session, mine.id, requester="agent@example.com")
     agent_for(client, db_session, mine)
 
-    client.post(f"/tickets/{ticket.id}/escalate", data={"reason": "x", "target_team_id": network.id})
+    client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "x", "target_team_id": network.id})
 
     assert [(f.email, f.is_internal) for f in followers_of(db_session, ticket)] == [("agent@example.com", True)]
-    assert client.get(f"/tickets/{ticket.id}").status_code == 200
+    assert client.get(f"/tickets/{ticket.number}").status_code == 200
     # They are the recipient of the emails, so they are never also copied on them.
     assert cc_list(db_session, ticket) == []
 
@@ -364,7 +364,7 @@ def test_promoting_an_existing_follower_to_internal_is_recorded_and_keeps_portal
     db_session.commit()
     assert ticket.reference in client.get("/portal").text
 
-    client.post(f"/tickets/{ticket.id}/escalate", data={"reason": "x"})
+    client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "x"})
 
     followers = followers_of(db_session, ticket)
     assert [(f.email, f.is_internal) for f in followers] == [("colleague@example.com", True)]
@@ -379,12 +379,12 @@ def test_a_follower_cannot_see_who_else_is_copied(client, db_session):
     ticket = make_ticket(db_session, requester="me@example.com")
     login_as(client, "me@example.com")
     for address in ("alice@example.org", "bob@example.org"):
-        client.post(f"/portal/{ticket.id}/followers", data={"email": address})
-    assert "bob@example.org" in client.get(f"/portal/{ticket.id}").text  # the requester sees the list
+        client.post(f"/portal/{ticket.number}/followers", data={"email": address})
+    assert "bob@example.org" in client.get(f"/portal/{ticket.number}").text  # the requester sees the list
     client.post("/auth/logout")
 
     login_as(client, "alice@example.org")
-    page = client.get(f"/portal/{ticket.id}").text
+    page = client.get(f"/portal/{ticket.number}").text
     assert "bob@example.org" not in page and "alice@example.org" not in page
     assert "Also keeping up to date" not in page
 
@@ -428,11 +428,11 @@ def test_malformed_addresses_are_rejected_and_good_ones_accepted(client, db_sess
     agent_for(client, db_session, team)
 
     for bad in ("a@b..c", "a@.b.c", "a@b.c.", ".a@x.org", "a.@x.org", "a..b@x.org", "a@-b.org", "a@b-.org", "a@b.c1", "a@b"):
-        assert client.post(f"/tickets/{ticket.id}/followers", data={"email": bad}).status_code == 400, bad
+        assert client.post(f"/tickets/{ticket.number}/followers", data={"email": bad}).status_code == 400, bad
     assert follower_emails(db_session, ticket) == []
 
     for good in ("first.last+tag@sub.example.co.uk", "o'brien@example.org", "a@b.co"):
-        assert client.post(f"/tickets/{ticket.id}/followers", data={"email": good}).status_code == 200, good
+        assert client.post(f"/tickets/{ticket.number}/followers", data={"email": good}).status_code == 200, good
     assert len(follower_emails(db_session, ticket)) == 3
 
 
@@ -440,10 +440,10 @@ def test_removing_a_follower_is_audited_by_address_not_id(client, db_session):
     team = create_team(db_session, "Service Desk")
     ticket = make_ticket(db_session, team.id)
     agent_for(client, db_session, team)
-    client.post(f"/tickets/{ticket.id}/followers", data={"email": "boss@example.org"})
+    client.post(f"/tickets/{ticket.number}/followers", data={"email": "boss@example.org"})
     follower = followers_of(db_session, ticket)[0]
 
-    client.post(f"/tickets/{ticket.id}/followers/{follower.id}/remove")
+    client.post(f"/tickets/{ticket.number}/followers/{follower.id}/remove")
 
     audit = db_session.exec(select(AuditLog).where(AuditLog.action == "follower_removed")).all()
     assert [entry.detail for entry in audit] == ["boss@example.org"]
@@ -456,16 +456,16 @@ def test_a_follower_reply_reaches_the_agents_labelled_as_from_a_follower(client,
     team = create_team(db_session, "Service Desk")
     ticket = make_ticket(db_session, team.id, requester="me@example.com")
     login_as(client, "me@example.com")
-    client.post(f"/portal/{ticket.id}/followers", data={"email": "boss@example.org"})
-    client.post(f"/portal/{ticket.id}/comment", data={"body": "From the requester"})
+    client.post(f"/portal/{ticket.number}/followers", data={"email": "boss@example.org"})
+    client.post(f"/portal/{ticket.number}/comment", data={"body": "From the requester"})
     client.post("/auth/logout")
     login_as(client, "boss@example.org")
     before = db_session.get(Ticket, ticket.id).updated_at
-    client.post(f"/portal/{ticket.id}/comment", data={"body": "From the boss"})
+    client.post(f"/portal/{ticket.number}/comment", data={"body": "From the boss"})
     client.post("/auth/logout")
 
     agent_for(client, db_session, team)
-    page = client.get(f"/tickets/{ticket.id}").text
+    page = client.get(f"/tickets/{ticket.number}").text
     assert page.index("From the requester") < page.index("From the boss")
     requester_part = page.split("From the requester")[0].rsplit("<b>", 1)[1]
     follower_part = page.split("From the boss")[0].rsplit("<b>", 1)[1]
@@ -477,18 +477,18 @@ def test_a_follower_reply_reaches_the_agents_labelled_as_from_a_follower(client,
 def test_a_follower_reply_is_shown_to_the_requester_and_cannot_be_forged_by_a_stranger(client, db_session):
     ticket = make_ticket(db_session, requester="me@example.com")
     login_as(client, "me@example.com")
-    client.post(f"/portal/{ticket.id}/followers", data={"email": "boss@example.org"})
+    client.post(f"/portal/{ticket.number}/followers", data={"email": "boss@example.org"})
     client.post("/auth/logout")
     login_as(client, "boss@example.org")
-    client.post(f"/portal/{ticket.id}/comment", data={"body": "Boss here"})
+    client.post(f"/portal/{ticket.number}/comment", data={"body": "Boss here"})
     client.post("/auth/logout")
 
     login_as(client, "me@example.com")
-    assert "Boss here" in client.get(f"/portal/{ticket.id}").text
+    assert "Boss here" in client.get(f"/portal/{ticket.number}").text
     client.post("/auth/logout")
 
     login_as(client, "stranger@example.org")
-    assert client.post(f"/portal/{ticket.id}/comment", data={"body": "Let me in"}).status_code == 404
+    assert client.post(f"/portal/{ticket.number}/comment", data={"body": "Let me in"}).status_code == 404
     assert [m.body for m in db_session.exec(select(Message))] == ["Boss here"]
 
 
@@ -496,16 +496,16 @@ def test_an_internal_follower_cannot_comment_from_the_portal(client, db_session)
     mine, network = create_team(db_session, "Mine"), create_team(db_session, "Network")
     ticket = make_ticket(db_session, mine.id, requester="me@example.com")
     agent_for(client, db_session, mine, email="escalator@example.com")
-    client.post(f"/tickets/{ticket.id}/escalate", data={"reason": "x", "target_team_id": network.id})
+    client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "x", "target_team_id": network.id})
 
-    page = client.get(f"/portal/{ticket.id}")
+    page = client.get(f"/portal/{ticket.number}")
     assert page.status_code == 200 and "Add comment" not in page.text
     assert "Reply from the agent console" in page.text
-    assert client.post(f"/portal/{ticket.id}/comment", data={"body": "hello"}).status_code == 404
+    assert client.post(f"/portal/{ticket.number}/comment", data={"body": "hello"}).status_code == 404
 
 
 def emailed(client, ticket, **data):
-    return client.post(f"/tickets/{ticket.id}/email", data={"body": "An update", **data})
+    return client.post(f"/tickets/{ticket.number}/email", data={"body": "An update", **data})
 
 
 def last_cc(db_session):
@@ -518,7 +518,7 @@ def ticket_with_two_followers(client, db_session):
     ticket = make_ticket(db_session, team.id)
     agent_for(client, db_session, team)
     for address in ("boss@example.org", "peer@example.org"):
-        client.post(f"/tickets/{ticket.id}/followers", data={"email": address})
+        client.post(f"/tickets/{ticket.number}/followers", data={"email": address})
     return ticket
 
 
@@ -557,10 +557,10 @@ def test_an_internal_follower_is_always_copied(client, db_session):
     mine = create_team(db_session, "Mine")
     ticket = make_ticket(db_session, mine.id)
     agent_for(client, db_session, mine, email="escalator@example.com")
-    client.post(f"/tickets/{ticket.id}/escalate", data={"reason": "Flagging this"})
-    client.post(f"/tickets/{ticket.id}/followers", data={"email": "boss@example.org"})
+    client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "Flagging this"})
+    client.post(f"/tickets/{ticket.number}/followers", data={"email": "boss@example.org"})
 
-    page = client.get(f"/tickets/{ticket.id}").text
+    page = client.get(f"/tickets/{ticket.number}").text
     assert 'value="escalator@example.com" checked disabled' in page and "always copied" in page
 
     emailed(client, ticket, cc_form="1")  # nothing ticked, and the disabled box is never sent
@@ -573,8 +573,8 @@ def test_an_agent_who_is_also_the_requester_is_not_offered_or_copied(client, db_
     mine = create_team(db_session, "Mine")
     ticket = make_ticket(db_session, mine.id, requester="agent@example.com")
     agent_for(client, db_session, mine)
-    client.post(f"/tickets/{ticket.id}/escalate", data={"reason": "x"})  # becomes an internal follower of own ticket
+    client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "x"})  # becomes an internal follower of own ticket
 
-    assert "Copy this email to" not in client.get(f"/tickets/{ticket.id}").text
+    assert "Copy this email to" not in client.get(f"/tickets/{ticket.number}").text
     emailed(client, ticket)
     assert last_cc(db_session) is None

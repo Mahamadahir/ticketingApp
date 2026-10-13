@@ -10,7 +10,7 @@ Two sources feed the ActivityLog table:
 What is never stored: request bodies, passwords, tokens, cookies or query strings
 (the Entra callback carries a one-time code in its query string, and later links
 carry tokens in their path). The path stored is the route template, such as
-/tickets/{ticket_id}/note. A failure to write a row is logged and swallowed: the
+/tickets/{number}/note. A failure to write a row is logged and swallowed: the
 log must never be the reason a request fails.
 """
 

@@ -12,7 +12,7 @@ from typing import Optional
 from sqlalchemy import func
 from sqlmodel import Session, select
 
-from app.models import FINISHED_STATUSES, Ticket, TicketAlias, TicketStatus, TicketType
+from app.models import FINISHED_STATUSES, Ticket, TicketStatus, TicketType
 from app.ticket_service import record_event
 
 EVENT_LINKED = "linked"  # on the ticket that was linked: to_value is the parent
@@ -25,18 +25,6 @@ PARENT_TYPES = (TicketType.MAJOR_INCIDENT, TicketType.PROBLEM)
 
 class LinkError(ValueError):
     """A reason a link cannot be made, worded for the agent."""
-
-
-def find_by_reference(session: Session, reference: str) -> Optional[Ticket]:
-    """A ticket by its reference, or by an old one it kept as an alias."""
-    reference = reference.strip().upper()
-    if not reference:
-        return None
-    ticket = session.exec(select(Ticket).where(Ticket.reference == reference)).first()
-    if ticket is None:
-        alias = session.get(TicketAlias, reference)
-        ticket = session.get(Ticket, alias.ticket_id) if alias is not None else None
-    return ticket
 
 
 MAX_LISTED = 50
@@ -91,8 +79,8 @@ def link_ticket(session: Session, ticket: Ticket, parent: Ticket, actor_email: s
 
     ticket.linked_parent_id = parent.id
     session.add(ticket)
-    record_event(session, ticket, EVENT_LINKED, actor_email, to_value=parent.reference)
-    record_event(session, parent, EVENT_CHILD_LINKED, actor_email, to_value=ticket.reference)
+    record_event(session, ticket, EVENT_LINKED, actor_email, to_value=parent.tag)
+    record_event(session, parent, EVENT_CHILD_LINKED, actor_email, to_value=ticket.tag)
 
 
 def unlink_ticket(session: Session, ticket: Ticket, actor_email: str) -> Optional[Ticket]:
@@ -102,7 +90,7 @@ def unlink_ticket(session: Session, ticket: Ticket, actor_email: str) -> Optiona
     parent = session.get(Ticket, ticket.linked_parent_id)
     ticket.linked_parent_id = None
     session.add(ticket)
-    record_event(session, ticket, EVENT_UNLINKED, actor_email, from_value=parent.reference if parent else None)
+    record_event(session, ticket, EVENT_UNLINKED, actor_email, from_value=parent.tag if parent else None)
     if parent is not None:
-        record_event(session, parent, EVENT_CHILD_UNLINKED, actor_email, from_value=ticket.reference)
+        record_event(session, parent, EVENT_CHILD_UNLINKED, actor_email, from_value=ticket.tag)
     return parent

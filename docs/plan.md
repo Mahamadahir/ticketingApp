@@ -343,11 +343,18 @@ alongside 1B, which already touches the users page):
 ## Tickets
 
 **Types.** Incident, Service Request, Major Incident, Problem. Each has its
-own reference prefix (`INC-`, `SR-`, `MI-`, `PRB-`) and a shareable URL. Tickets
-arrive with a default type, and triage may change it. When it does the ticket is
-given a new reference of the new type (INC-12 becomes SR-3) and the old one is
-kept as an alias that still resolves, so links and emails already sent keep
-working (agreed 12 Oct 2026).
+own display prefix (`INC-`, `SR-`, `MI-`, `PRB-`). Tickets arrive with a default
+type, and triage may change it.
+
+**Ticket numbers** (agreed 13 Oct 2026, replacing the per-type references and aliases
+of 12 Oct). One counter is shared by every ticket, whatever its type, and the number
+never changes. The reference (`INC-1042`) is the number with the current type's
+prefix, for display only: when triage changes the type the prefix follows (it shows as
+`SR-1042`) and nothing else changes, so no alias is needed. Lookups use the number
+alone, so `/t/1042`, `/t/INC-1042` and `/t/sr-1042` all open the same ticket, and a
+link or an email subject written before a retype still finds it. Only the four real
+prefixes are accepted before the number. Sub-tickets from splitting are simply the
+next numbers. Agent, portal and admin routes use the number too (/tickets/1042, /portal/1042), never the internal id.
 Projects are a separate entity tickets can link to, with Azure DevOps
 integration later. Change control is later.
 
@@ -495,7 +502,7 @@ ticket, and is notified about notes only when @mentioned.
 
 **Linking.** Tickets link to a parent (Major Incident or Problem). Resolving
 the parent offers to resolve every linked ticket with the same notes.
-*Linking built in 1E-i (13 Oct 2026):* one level deep, by reference, with events on both
+*Linking built in 1E-i (13 Oct 2026):* one level deep, by ticket number, with events on both
 tickets; visibility filters what each viewer sees of the links. The resolve offer arrives
 with the resolve action in phase 4. Phase 1E is delivered as 1E-i (linking, claim fix),
 1E-ii (backdating), 1E-iii (splitting into sub-tickets).

@@ -21,7 +21,7 @@ def triaged(db_session, team, ticket_type=TicketType.INCIDENT, subject="Somethin
 
 
 def link(client, child, parent_reference):
-    return client.post(f"/tickets/{child.id}/link", data={"parent_reference": parent_reference})
+    return client.post(f"/tickets/{child.number}/link", data={"parent_number": parent_reference})
 
 
 def world(client, db_session):
@@ -45,30 +45,29 @@ def test_linking_records_an_event_on_both_tickets_and_the_audit_log(client, db_s
     assert child.linked_parent_id == major.id
     [on_child] = events(db_session, child, "linked")
     [on_parent] = events(db_session, major, "child_linked")
-    assert (on_child.to_value, on_child.actor_email) == (major.reference, "agent@example.com")
-    assert on_parent.to_value == child.reference
+    assert (on_child.to_value, on_child.actor_email) == (major.tag, "agent@example.com")
+    assert on_parent.to_value == child.tag
     audit = db_session.exec(select(AuditLog).where(AuditLog.action == "linked")).all()
-    assert [a.detail for a in audit] == [major.reference]
+    assert [a.detail for a in audit] == [major.tag]
 
 
 def test_both_pages_show_the_link(client, db_session):
     _, major, child = world(client, db_session)
     link(client, child, major.reference)
 
-    assert f"Linked to <a href=\"/tickets/{major.id}\">{major.reference}</a>" in client.get(f"/tickets/{child.id}").text
-    parent_page = client.get(f"/tickets/{major.id}").text
+    assert f"Linked to <a href=\"/tickets/{major.number}\">{major.reference}</a>" in client.get(f"/tickets/{child.number}").text
+    parent_page = client.get(f"/tickets/{major.number}").text
     assert child.reference in parent_page and "Cannot send" in parent_page
 
 
-def test_a_reference_is_matched_in_any_case_and_through_an_alias(client, db_session):
+def test_the_parent_is_found_by_number_in_any_form(client, db_session):
     desk, major, child = world(client, db_session)
-    from app.models import TicketAlias
-    db_session.add(TicketAlias(reference="INC-999", ticket_id=major.id))
-    db_session.commit()
 
     assert link(client, child, f"  {major.reference.lower()} ").status_code == 200
     other = triaged(db_session, desk, subject="Second")
-    assert link(client, other, "inc-999").status_code == 200
+    assert link(client, other, str(major.number)).status_code == 200  # the bare number
+    third = triaged(db_session, desk, subject="Third")
+    assert link(client, third, f"INC-{major.number}").status_code == 200  # a stale prefix still finds it
     db_session.refresh(other)
     assert other.linked_parent_id == major.id
 
@@ -103,18 +102,18 @@ def test_unlinking_records_both_sides_and_frees_the_ticket(client, db_session):
     _, major, child = world(client, db_session)
     link(client, child, major.reference)
 
-    assert client.post(f"/tickets/{child.id}/unlink").status_code == 200
+    assert client.post(f"/tickets/{child.number}/unlink").status_code == 200
 
     db_session.refresh(child)
     assert child.linked_parent_id is None
-    assert [e.from_value for e in events(db_session, child, "unlinked")] == [major.reference]
-    assert [e.from_value for e in events(db_session, major, "child_unlinked")] == [child.reference]
+    assert [e.from_value for e in events(db_session, child, "unlinked")] == [major.tag]
+    assert [e.from_value for e in events(db_session, major, "child_unlinked")] == [child.tag]
     assert link(client, child, major.reference).status_code == 200  # can be linked again
 
 
 def test_unlinking_a_ticket_with_no_link_changes_and_records_nothing(client, db_session):
     _, _, child = world(client, db_session)
-    assert client.post(f"/tickets/{child.id}/unlink").status_code == 200
+    assert client.post(f"/tickets/{child.number}/unlink").status_code == 200
     assert events(db_session, child, "unlinked") == []
 
 
@@ -129,7 +128,7 @@ def test_a_viewer_cannot_link_or_unlink_and_the_form_is_not_offered(client, db_s
     add_membership(db_session, agent_id, other.id, "viewer")
 
     assert link(client, mine, major.reference).status_code == 403
-    assert "Link under a Major Incident" not in client.get(f"/tickets/{mine.id}").text
+    assert "Link under a Major Incident" not in client.get(f"/tickets/{mine.number}").text
     db_session.refresh(mine)
     assert mine.linked_parent_id is None
 
@@ -158,7 +157,7 @@ def test_a_viewer_of_the_parent_sees_only_the_linked_tickets_they_could_open(cli
     db_session.commit()
     agent(client, db_session, member_of=[desk])
 
-    page = client.get(f"/tickets/{major.id}").text
+    page = client.get(f"/tickets/{major.number}").text
 
     assert "Visible child" in page and "Secret child" not in page and secret_child.reference not in page
     assert "1 more linked ticket you cannot open" in page
@@ -173,7 +172,7 @@ def test_the_child_of_a_parent_you_cannot_see_does_not_name_it(client, db_sessio
     db_session.commit()
     agent(client, db_session, member_of=[desk])
 
-    page = client.get(f"/tickets/{child.id}").text
+    page = client.get(f"/tickets/{child.number}").text
 
     assert "Linked to a ticket you cannot open" in page
     assert hidden.reference not in page and "Breach" not in page
@@ -209,12 +208,12 @@ def test_assign_to_me_cannot_take_a_ticket_from_its_assignee_but_re_assign_can(c
     client.post("/auth/logout")
     second = agent(client, db_session, member_of=[desk], email="second@example.com")
 
-    taken = client.post(f"/tickets/{ticket.id}/assign")
+    taken = client.post(f"/tickets/{ticket.number}/assign")
 
     assert taken.status_code == 400 and "Re-assign" in taken.text
     db_session.refresh(ticket)
     assert ticket.assigned_agent_id == first
-    again = client.post(f"/tickets/{ticket.id}/reassign", data={"team_id": desk.id, "agent_id": second})
+    again = client.post(f"/tickets/{ticket.number}/reassign", data={"team_id": desk.id, "agent_id": second})
     assert again.status_code == 200
     db_session.refresh(ticket)
     assert ticket.assigned_agent_id == second
@@ -225,8 +224,8 @@ def test_an_agent_can_claim_an_unassigned_ticket_and_claiming_your_own_is_harmle
     ticket = triaged(db_session, desk, subject="Free")
     me = agent(client, db_session, member_of=[desk])
 
-    assert client.post(f"/tickets/{ticket.id}/assign").status_code == 200
-    assert client.post(f"/tickets/{ticket.id}/assign").status_code == 200
+    assert client.post(f"/tickets/{ticket.number}/assign").status_code == 200
+    assert client.post(f"/tickets/{ticket.number}/assign").status_code == 200
     db_session.refresh(ticket)
     assert ticket.assigned_agent_id == me
 
@@ -264,8 +263,8 @@ def test_an_agent_can_still_unlink_when_the_parent_is_no_longer_visible_to_them(
     db_session.commit()
     agent(client, db_session, member_of=[desk])
 
-    assert f"/tickets/{child.id}/unlink" in client.get(f"/tickets/{child.id}").text
-    assert client.post(f"/tickets/{child.id}/unlink").status_code == 200
+    assert f"/tickets/{child.number}/unlink" in client.get(f"/tickets/{child.number}").text
+    assert client.post(f"/tickets/{child.number}/unlink").status_code == 200
     db_session.refresh(child)
     assert child.linked_parent_id is None
 
@@ -280,7 +279,7 @@ def test_a_parent_lists_a_capped_number_and_says_how_many_more(client, db_sessio
         db_session.add(child)
     db_session.commit()
 
-    page = client.get(f"/tickets/{major.id}").text
+    page = client.get(f"/tickets/{major.number}").text
 
     import re
     assert len(set(re.findall(r"Linked-\d{3}-end", page))) == MAX_LISTED
@@ -291,10 +290,10 @@ def test_a_link_error_reaches_the_agent_through_htmx(client, db_session):
     _, _, child = world(client, db_session)
 
     response = client.post(
-        f"/tickets/{child.id}/link", data={"parent_reference": "MI-99999"}, headers={"HX-Request": "true"}
+        f"/tickets/{child.number}/link", data={"parent_number": "MI-99999"}, headers={"HX-Request": "true"}
     )
 
-    assert response.headers.get("HX-Retarget") == "#flash" and "No ticket with that reference" in response.text
+    assert response.headers.get("HX-Retarget") == "#flash" and "No ticket with that number" in response.text
 
 
 def test_two_links_made_at_once_cannot_build_a_chain(client, db_session):

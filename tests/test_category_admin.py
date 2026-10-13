@@ -31,8 +31,8 @@ def other_ticket(client, db_session, desk, status=TicketStatus.RESOLVED):
     db_session.commit()
     agent_id = login_as(client, "agent@example.com")
     set_role(db_session, agent_id, UserRole.AGENT, desk.id)
-    client.post(f"/tickets/{ticket.id}/triage", data={"ticket_type": "incident", "impact": "low", "urgency": "low", "category_id": other.id})
-    client.post(f"/tickets/{ticket.id}/status", data={"status": status.value})
+    client.post(f"/tickets/{ticket.number}/triage", data={"ticket_type": "incident", "impact": "low", "urgency": "low", "category_id": other.id})
+    client.post(f"/tickets/{ticket.number}/status", data={"status": status.value})
     client.post("/auth/logout")
     db_session.refresh(ticket)
     return ticket, other
@@ -136,7 +136,7 @@ def test_a_switched_off_category_disappears_from_triage_but_keeps_its_tickets(cl
     db_session.commit()
     agent_id = login_as(client, "agent@example.com")
     set_role(db_session, agent_id, UserRole.AGENT, desk.id)
-    assert "Old stuff" in client.get(f"/tickets/{ticket.id}").text
+    assert "Old stuff" in client.get(f"/tickets/{ticket.number}").text
     client.post("/auth/logout")
 
     admin(client)
@@ -144,7 +144,7 @@ def test_a_switched_off_category_disappears_from_triage_but_keeps_its_tickets(cl
     client.post("/auth/logout")
 
     login_as(client, "agent@example.com")
-    assert "Old stuff" not in client.get(f"/tickets/{ticket.id}").text
+    assert "Old stuff" not in client.get(f"/tickets/{ticket.number}").text
 
 
 # ---- Category review --------------------------------------------------------------
@@ -169,7 +169,7 @@ def test_review_assigns_an_existing_category_and_clears_the_flag_without_moving_
     hardware = create_category(db_session, network, "Hardware")
     admin(client)
 
-    response = client.post(f"/admin/category-review/{ticket.id}", data={"category_id": hardware.id}, follow_redirects=False)
+    response = client.post(f"/admin/category-review/{ticket.number}", data={"category_id": hardware.id}, follow_redirects=False)
 
     assert response.status_code == 303
     db_session.refresh(ticket)
@@ -186,7 +186,7 @@ def test_review_can_create_a_new_category(client, db_session):
     admin(client)
 
     client.post(
-        f"/admin/category-review/{ticket.id}",
+        f"/admin/category-review/{ticket.number}",
         data={"new_category_name": "Printing", "new_category_team_id": network.id},
         follow_redirects=False,
     )
@@ -205,10 +205,10 @@ def test_review_refusals(client, db_session):
     db_session.commit()
     admin(client)
 
-    assert client.post(f"/admin/category-review/{ticket.id}", data={}).status_code == 400
-    assert client.post(f"/admin/category-review/{ticket.id}", data={"category_id": other.id}).status_code == 400
-    assert client.post(f"/admin/category-review/{ticket.id}", data={"category_id": off.id}).status_code == 400
-    assert client.post(f"/admin/category-review/{ticket.id}", data={"new_category_name": "No team"}).status_code == 400
+    assert client.post(f"/admin/category-review/{ticket.number}", data={}).status_code == 400
+    assert client.post(f"/admin/category-review/{ticket.number}", data={"category_id": other.id}).status_code == 400
+    assert client.post(f"/admin/category-review/{ticket.number}", data={"category_id": off.id}).status_code == 400
+    assert client.post(f"/admin/category-review/{ticket.number}", data={"new_category_name": "No team"}).status_code == 400
     assert client.post("/admin/category-review/9999", data={"category_id": 1}).status_code == 404
     db_session.refresh(ticket)
     assert ticket.needs_category_review is True  # still waiting
@@ -216,7 +216,7 @@ def test_review_refusals(client, db_session):
     ordinary = create_ticket(db_session, subject="n", requester_email="a@example.com", source=TicketSource.EMAIL)
     db_session.commit()
     good = create_category(db_session, desk, "Real")
-    assert client.post(f"/admin/category-review/{ordinary.id}", data={"category_id": good.id}).status_code == 404
+    assert client.post(f"/admin/category-review/{ordinary.number}", data={"category_id": good.id}).status_code == 404
 
 
 # ---- Settings ---------------------------------------------------------------------
@@ -366,6 +366,6 @@ def test_review_cannot_choose_a_sub_category_of_a_switched_off_category(client, 
     db_session.commit()
     admin(client)
 
-    assert client.post(f"/admin/category-review/{ticket.id}", data={"category_id": laptop.id}).status_code == 400
+    assert client.post(f"/admin/category-review/{ticket.number}", data={"category_id": laptop.id}).status_code == 400
     db_session.refresh(ticket)
     assert ticket.needs_category_review is True

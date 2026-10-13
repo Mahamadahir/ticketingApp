@@ -43,7 +43,7 @@ from app.models import (
 )
 from app.pagination import paginate
 from app.settings_store import REGISTRY, get_setting, set_setting
-from app.ticket_service import EVENT_CATEGORY_REVIEWED, record_event
+from app.ticket_service import EVENT_CATEGORY_REVIEWED, get_by_number, record_event
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 templates = Jinja2Templates(directory="app/templates")
@@ -422,9 +422,9 @@ def category_review(
     )
 
 
-@router.post("/category-review/{ticket_id}")
+@router.post("/category-review/{number}")
 def review_category(
-    ticket_id: int,
+    number: int,
     category_id: Optional[str] = Form(None),
     new_category_name: Optional[str] = Form(None, max_length=200),
     new_category_parent_id: Optional[str] = Form(None),
@@ -435,7 +435,7 @@ def review_category(
     """Gives a resolved 'Other' ticket a real category: an existing one or a new
     one. The ticket's team is not changed (it is already done); only the category,
     so the next ticket like it has a home and reports are accurate."""
-    ticket = session.get(Ticket, ticket_id)
+    ticket = get_by_number(session, number)
     if ticket is None or not ticket.needs_category_review or ticket.status not in FINISHED_STATUSES:
         raise HTTPException(status_code=404, detail="That ticket is not waiting for a category review")
 

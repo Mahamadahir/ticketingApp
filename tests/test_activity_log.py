@@ -245,10 +245,10 @@ def test_state_changing_requests_are_recorded_by_route_template_with_the_actor_a
     ticket = make_ticket(db_session, team.id)
     agent_id = agent_in(client, db_session, team)
 
-    client.post(f"/tickets/{ticket.id}/note?token=QUERYSECRET", data={"body": "BODYSECRET internal"})
+    client.post(f"/tickets/{ticket.number}/note?token=QUERYSECRET", data={"body": "BODYSECRET internal"})
 
     [row] = rows(db_session, "request")
-    assert row.method == "POST" and row.path == "/tickets/{ticket_id}/note"  # the template, never the real address
+    assert row.method == "POST" and row.path == "/tickets/{number}/note"  # the template, never the real address
     assert (row.status_code, row.actor_email, row.actor_user_id) == (200, "agent@example.com", agent_id)
     stored = every_text_stored(db_session)
     assert "QUERYSECRET" not in stored and "BODYSECRET" not in stored and str(ticket.id) not in row.path
@@ -264,10 +264,10 @@ def test_a_request_that_crashes_is_still_recorded_as_a_500_and_the_error_still_p
 
     monkeypatch.setattr("app.routers.tickets.add_note", boom)
     with pytest.raises(RuntimeError):
-        client.post(f"/tickets/{ticket.id}/note", data={"body": "x"})
+        client.post(f"/tickets/{ticket.number}/note", data={"body": "x"})
 
     [row] = rows(db_session, "request")
-    assert (row.path, row.status_code) == ("/tickets/{ticket_id}/note", 500)
+    assert (row.path, row.status_code) == ("/tickets/{number}/note", 500)
 
 
 def test_reading_pages_is_not_recorded(client, db_session):
@@ -276,7 +276,7 @@ def test_reading_pages_is_not_recorded(client, db_session):
     agent_in(client, db_session, team)
     before = len(rows(db_session))
 
-    for path in ("/tickets", f"/tickets/{ticket.id}", "/portal", "/health"):
+    for path in ("/tickets", f"/tickets/{ticket.number}", "/portal", "/health"):
         client.get(path)
 
     assert len(rows(db_session)) == before
@@ -287,13 +287,13 @@ def test_refused_access_is_recorded_for_reads_and_for_writes(client, db_session)
     ticket = make_ticket(db_session, other.id)
     agent_in(client, db_session, mine)
 
-    client.get(f"/tickets/{ticket.id}")
-    client.post(f"/tickets/{ticket.id}/status", data={"status": "resolved"})
+    client.get(f"/tickets/{ticket.number}")
+    client.post(f"/tickets/{ticket.number}/status", data={"status": "resolved"})
 
     denied = rows(db_session, "access_denied")
     assert [(r.method, r.path, r.status_code) for r in denied] == [
-        ("GET", "/tickets/{ticket_id}", 403),
-        ("POST", "/tickets/{ticket_id}/status", 403),
+        ("GET", "/tickets/{number}", 403),
+        ("POST", "/tickets/{number}/status", 403),
     ]
     assert all(r.actor_email == "agent@example.com" for r in denied)
     assert rows(db_session, "request") == []  # a refused write is one row, not two
@@ -324,7 +324,7 @@ def test_an_unauthenticated_request_has_no_actor(client, db_session):
     team = create_team(db_session, "Service Desk")
     ticket = make_ticket(db_session, team.id)
 
-    client.post(f"/tickets/{ticket.id}/note", data={"body": "x"}, follow_redirects=False)
+    client.post(f"/tickets/{ticket.number}/note", data={"body": "x"}, follow_redirects=False)
 
     [row] = rows(db_session, "request")
     assert row.actor_email is None and row.actor_user_id is None and row.status_code == 307
@@ -340,7 +340,7 @@ def test_a_failure_to_write_the_log_never_breaks_the_request(client, db_session,
 
     monkeypatch.setattr(activity, "_write_request_row", explode)
 
-    response = client.post(f"/tickets/{ticket.id}/note", data={"body": "Still works"})
+    response = client.post(f"/tickets/{ticket.number}/note", data={"body": "Still works"})
 
     assert response.status_code == 200 and "Still works" in response.text
 

@@ -16,16 +16,13 @@ from app.models import (
     Category,
     Team,
     Ticket,
-    TicketAlias,
     TicketStatus,
     TicketType,
     User,
-    allocate_reference,
 )
 from app.sla import Level, apply_impact_urgency, describe_priority
 from app.ticket_service import (
     EVENT_ASSIGNED,
-    EVENT_REFERENCE_CHANGED,
     EVENT_TEAM_CHANGED,
     EVENT_TRIAGED,
     EVENT_TYPE_CHANGED,
@@ -39,23 +36,15 @@ class TriageError(ValueError):
     """A reason triage or re-assignment cannot go ahead, worded for the user."""
 
 
-def reissue_reference(session: Session, ticket: Ticket, new_type: TicketType, actor_email: str) -> None:
-    """Changes the ticket's type and gives it a reference of the new type
-    (INC-12 becomes SR-3). The old reference stays as an alias so existing links,
-    and the subjects of emails already sent, still find the ticket."""
+def change_type(session: Session, ticket: Ticket, new_type: TicketType, actor_email: str) -> None:
+    """Changes the ticket's type. The number stays, so links and email subjects keep
+    working; only the display prefix follows the type (INC-12 shows as SR-12)."""
     if new_type == ticket.type:
         return
-    old_type, old_reference = ticket.type, ticket.reference
-    number, reference = allocate_reference(session.connection(), new_type)
-
-    session.add(TicketAlias(reference=old_reference, ticket_id=ticket.id))
-    ticket.type, ticket.number, ticket.reference = new_type, number, reference
+    old_type = ticket.type
+    ticket.type = new_type
     session.add(ticket)
-    # Flush now so the alias and the new reference are written together, and a
-    # clash surfaces here rather than at commit.
-    session.flush()
     record_event(session, ticket, EVENT_TYPE_CHANGED, actor_email, old_type.value, new_type.value)
-    record_event(session, ticket, EVENT_REFERENCE_CHANGED, actor_email, old_reference, reference)
 
 
 def _assignee_for(session: Session, team_id: int, assignee: Optional[User]) -> Optional[User]:
@@ -90,8 +79,7 @@ def triage_ticket(
     assignee: Optional[User] = None,
 ) -> None:
     """Classifies an untriaged ticket and moves it from New to Open. The category
-    decides the team; the type may change the reference (the old one is kept as
-    an alias); impact and urgency give the priority and start the SLA deadlines.
+    decides the team; the type may change (the number does not); impact and urgency give the priority and start the SLA deadlines.
     Assigning is optional and independent."""
     if ticket.triaged_at is not None:
         raise TriageError("This ticket has already been triaged")
@@ -106,7 +94,7 @@ def triage_ticket(
     assignee = _assignee_for(session, team_id, assignee)
 
     now = datetime.now(timezone.utc)
-    reissue_reference(session, ticket, ticket_type, actor.email)
+    change_type(session, ticket, ticket_type, actor.email)
 
     previous_team = session.get(Team, ticket.team_id) if ticket.team_id else None
     new_team = session.get(Team, team_id)

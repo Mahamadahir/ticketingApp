@@ -19,7 +19,7 @@ from app.followers import (
 from app.forms import MAX_MESSAGE_LENGTH
 from app.messages import record_inbound, requester_visible_messages
 from app.models import Ticket, TicketStatus, User
-from app.ticket_service import set_status
+from app.ticket_service import get_by_number, set_status
 from app.pagination import paginate
 
 router = APIRouter(prefix="/portal", tags=["portal"])
@@ -31,18 +31,18 @@ def _is_requester(ticket: Ticket, user: User) -> bool:
     return ticket.requester_email.lower() == user.email.lower()
 
 
-def _get_own_ticket(session: Session, ticket_id: int, user: User) -> Ticket:
+def _get_own_ticket(session: Session, number: int, user: User) -> Ticket:
     """A ticket the user raised. Followers cannot use this: they only read."""
-    ticket = session.get(Ticket, ticket_id)
+    ticket = get_by_number(session, number)
     if ticket is None or not _is_requester(ticket, user):
         raise HTTPException(status_code=404, detail="Ticket not found")
     return ticket
 
 
-def _get_commentable_ticket(session: Session, ticket_id: int, user: User) -> Ticket:
+def _get_commentable_ticket(session: Session, number: int, user: User) -> Ticket:
     """A ticket the user can reply on: one they raised, or one they follow. Internal
     followers are agents and use the agent console, so they cannot comment here."""
-    ticket = session.get(Ticket, ticket_id)
+    ticket = get_by_number(session, number)
     if ticket is None or not (
         _is_requester(ticket, user) or is_follower(session, ticket, user.email, include_internal=False)
     ):
@@ -50,9 +50,9 @@ def _get_commentable_ticket(session: Session, ticket_id: int, user: User) -> Tic
     return ticket
 
 
-def _get_readable_ticket(session: Session, ticket_id: int, user: User) -> Ticket:
+def _get_readable_ticket(session: Session, number: int, user: User) -> Ticket:
     """A ticket the user raised or follows."""
-    ticket = session.get(Ticket, ticket_id)
+    ticket = get_by_number(session, number)
     if ticket is None or not (_is_requester(ticket, user) or is_follower(session, ticket, user.email)):
         raise HTTPException(status_code=404, detail="Ticket not found")
     return ticket
@@ -96,25 +96,25 @@ def list_my_tickets(
     )
 
 
-@router.get("/{ticket_id}", response_class=HTMLResponse)
+@router.get("/{number}", response_class=HTMLResponse)
 def view_my_ticket(
-    ticket_id: int,
+    number: int,
     request: Request,
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    return _render_ticket(request, _get_readable_ticket(session, ticket_id, user), user, session)
+    return _render_ticket(request, _get_readable_ticket(session, number, user), user, session)
 
 
-@router.post("/{ticket_id}/comment", response_class=HTMLResponse)
+@router.post("/{number}/comment", response_class=HTMLResponse)
 def add_comment(
-    ticket_id: int,
+    number: int,
     request: Request,
     body: str = Form(..., max_length=MAX_MESSAGE_LENGTH),
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    ticket = _get_commentable_ticket(session, ticket_id, user)
+    ticket = _get_commentable_ticket(session, number, user)
 
     record_inbound(session, ticket, sender=user.display_name, body=body, author_user_id=user.id)
     log_action(session, user.email, "ticket", ticket.id, "commented", body[:200])
@@ -133,16 +133,16 @@ def add_comment(
     return _render_ticket(request, ticket, user, session)
 
 
-@router.post("/{ticket_id}/followers", response_class=HTMLResponse)
+@router.post("/{number}/followers", response_class=HTMLResponse)
 def add_ticket_follower(
-    ticket_id: int,
+    number: int,
     request: Request,
     email: str = Form(..., max_length=254),
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
     """The requester copies someone else on updates to their ticket."""
-    ticket = _get_own_ticket(session, ticket_id, user)
+    ticket = _get_own_ticket(session, number, user)
     try:
         follower = add_follower(session, ticket, email, user.email)
     except InvalidEmail:
@@ -158,15 +158,15 @@ def add_ticket_follower(
     return _render_ticket(request, ticket, user, session)
 
 
-@router.post("/{ticket_id}/followers/{follower_id}/remove", response_class=HTMLResponse)
+@router.post("/{number}/followers/{follower_id}/remove", response_class=HTMLResponse)
 def remove_ticket_follower(
-    ticket_id: int,
+    number: int,
     follower_id: int,
     request: Request,
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    ticket = _get_own_ticket(session, ticket_id, user)
+    ticket = _get_own_ticket(session, number, user)
     removed_email = remove_follower(session, ticket, follower_id, user.email)
     if removed_email is None:
         raise HTTPException(status_code=404, detail="Follower not found")

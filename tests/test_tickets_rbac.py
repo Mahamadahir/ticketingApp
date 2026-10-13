@@ -48,7 +48,7 @@ def test_agent_cannot_view_ticket_outside_team(client, db_session):
     agent_id = login_as(client, "agent@example.com")
     set_role(db_session, agent_id, UserRole.AGENT, team_a.id)
 
-    response = client.get(f"/tickets/{other_ticket.id}")
+    response = client.get(f"/tickets/{other_ticket.number}")
     assert response.status_code == 403
     assert "No access" in response.text
 
@@ -60,7 +60,7 @@ def test_agent_self_assigns(client, db_session):
     agent_id = login_as(client, "agent@example.com")
     set_role(db_session, agent_id, UserRole.AGENT, team.id)
 
-    response = client.post(f"/tickets/{ticket.id}/assign", follow_redirects=False)
+    response = client.post(f"/tickets/{ticket.number}/assign", follow_redirects=False)
     assert response.status_code == 200
 
     db_session.refresh(ticket)
@@ -83,7 +83,7 @@ def test_super_admin_assign_rejects_agent_from_other_team(client, db_session):
     login_as(client, "admin@example.com")
 
     response = client.post(
-        f"/tickets/{ticket.id}/assign", data={"agent_id": other_agent_id}, follow_redirects=False
+        f"/tickets/{ticket.number}/assign", data={"agent_id": other_agent_id}, follow_redirects=False
     )
     assert response.status_code == 400
 
@@ -96,7 +96,7 @@ def test_escalate_ticket_records_reason_and_audit(client, db_session):
     set_role(db_session, agent_id, UserRole.AGENT, team.id)
 
     response = client.post(
-        f"/tickets/{ticket.id}/escalate",
+        f"/tickets/{ticket.number}/escalate",
         data={"reason": "Outage affecting whole floor"},
         follow_redirects=False,
     )
@@ -120,7 +120,7 @@ def test_escalate_can_reassign_team(client, db_session):
     set_role(db_session, agent_id, UserRole.AGENT, team_a.id)
 
     client.post(
-        f"/tickets/{ticket.id}/escalate",
+        f"/tickets/{ticket.number}/escalate",
         data={"reason": "Needs network team", "target_team_id": team_b.id},
     )
 
@@ -136,7 +136,7 @@ def test_status_change_writes_audit(client, db_session):
     agent_id = login_as(client, "agent@example.com")
     set_role(db_session, agent_id, UserRole.AGENT, team.id)
 
-    client.post(f"/tickets/{ticket.id}/status", data={"status": "resolved"})
+    client.post(f"/tickets/{ticket.number}/status", data={"status": "resolved"})
 
     db_session.refresh(ticket)
     assert ticket.status == TicketStatus.RESOLVED
@@ -153,7 +153,7 @@ def test_email_sets_status_awaiting_user_and_is_audited(client, db_session):
     agent_id = login_as(client, "agent@example.com")
     set_role(db_session, agent_id, UserRole.AGENT, team.id)
 
-    client.post(f"/tickets/{ticket.id}/email", data={"body": "Have you tried rebooting?"})
+    client.post(f"/tickets/{ticket.number}/email", data={"body": "Have you tried rebooting?"})
 
     db_session.refresh(ticket)
     assert ticket.status == TicketStatus.AWAITING_USER

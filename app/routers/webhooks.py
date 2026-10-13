@@ -64,4 +64,4 @@ def simulate_inbound_email(
     record_inbound(session, ticket, sender=requester_email, body=body)
     session.commit()
 
-    return {"ticket_id": ticket.id, "reference": ticket.reference}
+    return {"number": ticket.number, "reference": ticket.reference}
