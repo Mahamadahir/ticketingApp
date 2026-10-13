@@ -551,6 +551,10 @@ the real entry time, which the audit log also records. Up to 30 days back,
 never in the future. Backdated tickets are excluded from SLA figures but
 count towards volume. Sending the user the resolution email is on by
 default.
+*Built in 1E-ii (13 Oct 2026):* a Backdate control on the ticket page for anyone who
+works the ticket; reported time on any ticket, resolved time only on a finished one, never
+before the report; the flag is permanent and removes the SLA deadlines. Times are UTC until
+the timezone work. The resolution email (default on) comes with the resolve action, phase 4.
 
 **Service Requests.** Approvers are configured per request type in the
 admin portal.
