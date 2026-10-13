@@ -7,9 +7,9 @@ import pytest
 from sqlmodel import Session, select
 
 from app.messages import about_labels, agent_timeline, requester_visible_messages, thread_subject
-from app.models import Message, MessageDirection, Ticket, TicketEvent, TicketStatus, User
+from app.models import Message, MessageDirection, Ticket, TicketEvent, TicketStatus, User, UserRole
 from app.splitting import derived_status
-from tests.conftest import create_team, login_as
+from tests.conftest import create_team, login_as, set_role
 from tests.test_splitting import split, subs_of, world
 from tests.test_triage import events
 
@@ -309,6 +309,31 @@ def test_the_originals_timeline_hides_parts_the_viewer_cannot_open(client, db_se
     client.post("/auth/logout")
     login_as(client, "admin@example.com")
     assert "Hidden part email" in client.get(f"/tickets/{original.number}").text
+
+
+def test_a_part_shows_the_originals_conversation_only_to_agents_whose_team_can_open_the_original(
+    client, db_session
+):
+    original, (a, b), desk = family(client, db_session)
+    client.post(f"/tickets/{original.number}/email", data={"body": "On the original"})
+    assert "On the original" in client.get(f"/tickets/{a.number}").text  # same team: shown
+
+    # The part moves to another team; its agent has no access to the original.
+    other = create_team(db_session, "Security")
+    part = db_session.get(Ticket, a.id)
+    part.team_id = other.id
+    db_session.add(part)
+    db_session.commit()
+    client.post("/auth/logout")
+    outsider_id = login_as(client, "outsider@example.com")
+    set_role(db_session, outsider_id, UserRole.AGENT, other.id)
+
+    page = client.get(f"/tickets/{a.number}").text
+    assert "Part 1" in page and "On the original" not in page
+
+    # The requester's own conversation is unaffected.
+    db_session.expire_all()
+    assert "On the original" in bodies(requester_visible_messages(db_session, db_session.get(Ticket, a.id)))
 
 
 def test_a_timeline_asked_for_with_no_viewer_shows_no_part_items(client, db_session):
