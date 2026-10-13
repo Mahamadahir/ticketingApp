@@ -310,7 +310,16 @@
 
 {% if can_email %}
 <form hx-post="/tickets/{{ ticket.number }}/email" hx-target="main" hx-swap="innerHTML">
-  <textarea name="body" rows="4" maxlength="{{ max_message_length }}" placeholder="Email to the requester..." required></textarea>
+  {% if canned %}
+  <label>Insert a canned response
+    <select name="canned_id" hx-get="/tickets/{{ ticket.number }}/canned" hx-trigger="change"
+            hx-include="#email-body" hx-target="#email-body" hx-swap="outerHTML">
+      <option value="">Choose one...</option>
+      {% for c in canned %}<option value="{{ c.id }}">{{ c.title }}</option>{% endfor %}
+    </select>
+  </label>
+  {% endif %}
+  {% with body = "" %}{% include "_email_body.html" %}{% endwith %}
   {% if cc_candidates %}
   <fieldset>
     <legend>Copy this email to</legend>

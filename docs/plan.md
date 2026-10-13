@@ -611,6 +611,7 @@ internal notes, and only narrows what the agent can already open. Typing a ticke
 computed per query, fine at this volume; add GIN indexes if the list gets slow.
 
 **Canned responses** for common replies, managed by admins.
+*Built in 1F-ii (13 Oct 2026):* Admin > Canned responses (super admin: create, edit, switch off; audited). On a triaged ticket the email form has an "Insert a canned response" picker that only fills the box (appending to what is typed) with {reference}, {subject} and {agent} filled in; the agent edits and sends it as usual. Global, not per team; per-team sets can follow if wanted.
 
 ## Outbound email preview
 

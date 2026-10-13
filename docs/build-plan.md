@@ -28,18 +28,15 @@ not exist (`infra/` compiles but has never run against a subscription).
 | 1E-ii backdating (agent-raised tickets only) | merged (#19, #20) | `app/backdating.py` |
 | 1E-iii part 1 splitting into sub-tickets; access follows the team | merged (#21) | `app/splitting.py` |
 | 1E-iii part 2 derived status and single mail thread | merged (#23) | `app/splitting.py`, `app/messages.py` |
-| 1F-i search | built, in review | `app/search.py` |
-| 1F-ii canned responses | not started | |
+| 1F-i search | merged (#25) | `app/search.py` |
+| 1F-ii canned responses | built, in review | `app/canned.py` |
 | 1G raise-a-ticket form, agents raising for someone, preview step | not started | |
 | 1H Service Requests and approvers | not started (may slip past phase 3) | |
 | Phases 2 to 9 | not started | `docs/plan.md`, "Build order" |
 
-Tests: 406 passing on Postgres 16.
+Tests: 418 passing on Postgres 16.
 
 ## Next up
-
-**1F-ii.** Canned responses, managed by admins, picked on the email form. (1F-i, search
-by number, subject, requester and message text, is built.)
 
 **1G.** Portal raise-a-ticket form; agents raising a ticket for someone else (the
 only thing allowed to create `source=agent` tickets, which backdating relies on);

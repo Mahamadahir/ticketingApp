@@ -22,6 +22,7 @@ from app.followers import (
 )
 from app.backdating import FORMAT as MOMENT_FORMAT, BackdateError, backdate_ticket, may_backdate, parse_moment
 from app.categories import CategoryError, create_category, path_of, selectable, team_id_for
+from app.canned import active_canned, fill as fill_canned
 from app.search import normalise, search_condition
 from app.splitting import (
     MAX_PARTS,
@@ -34,7 +35,7 @@ from app.splitting import (
 )
 from app.linking import PARENT_TYPES, LinkError, link_ticket, linked_summary, unlink_ticket
 from app.messages import UnknownRecipient, add_note, agent_timeline, email_requester, is_triaged
-from app.models import FINISHED_STATUSES, Category, Team, Ticket, TicketStatus, TicketType, User, UserRole
+from app.models import FINISHED_STATUSES, CannedResponse, Category, Team, Ticket, TicketStatus, TicketType, User, UserRole
 from app.pagination import paginate
 from app.sla import (
     IMPACT_LABELS,
@@ -351,6 +352,29 @@ def view_ticket_by_number(
         raise HTTPException(status_code=404, detail="No ticket with that number")
     # One canonical address: /tickets/1042 (which also checks access).
     return RedirectResponse(f"/tickets/{ticket.number}", status_code=303)
+
+
+@router.get("/{number}/canned", response_class=HTMLResponse)
+def fill_from_canned(
+    number: int,
+    request: Request,
+    canned_id: Optional[str] = None,
+    body: str = "",
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """The email box with a canned response added to what the agent has typed so far.
+    Only fills the box; the agent edits and sends it through the normal email action."""
+    ticket = _get_ticket(session, number, user)
+    body = body[:MAX_MESSAGE_LENGTH]
+    chosen = optional_int(canned_id)
+    if chosen is not None:
+        canned = session.get(CannedResponse, chosen)
+        if canned is None or not canned.is_active:
+            raise HTTPException(status_code=404, detail="That canned response is not available")
+        text = fill_canned(canned, ticket, user)
+        body = f"{body.rstrip()}\n\n{text}".strip()[:MAX_MESSAGE_LENGTH]
+    return templates.TemplateResponse(request, "_email_body.html", {"body": body})
 
 
 @router.post("/{number}/email", response_class=HTMLResponse)
@@ -728,6 +752,7 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             # Who the Email user form offers to copy: everyone except the requester.
             "cc_candidates": [f for f in followers_of(session, ticket) if f.email != ticket.requester_email.lower()],
             "can_email": can_work and is_triaged(ticket),
+            "canned": active_canned(session) if can_work and is_triaged(ticket) else [],
             "can_edit_followers": can_work,
             "can_note": may_add_note(user, ticket, levels),
             # New is left only by triage, so it is not offered as a status to set.

@@ -242,6 +242,19 @@ class Setting(SQLModel, table=True):
     value: str
 
 
+class CannedResponse(SQLModel, table=True):
+    """A ready-made reply an agent can drop into the email box. Managed by admins in
+    app/canned.py. Switching one off hides it from agents; it is never deleted, so the
+    admin list keeps the wording."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    title: str = Field(unique=True, index=True)
+    body: str
+    is_active: bool = Field(default=True)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 TICKET_COUNTER = "ticket"
 
 
