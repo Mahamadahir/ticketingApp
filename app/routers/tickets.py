@@ -3,7 +3,7 @@ from html import escape
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select
 
@@ -292,8 +292,8 @@ def view_ticket_by_number(
     ticket = find_ticket(session, number)
     if ticket is None:
         raise HTTPException(status_code=404, detail="No ticket with that number")
-    require_access(user, ticket, access_context(session, user), Access.READ)
-    return _render_ticket_detail(request, ticket, user, session)
+    # One canonical address: /tickets/1042 (which also checks access).
+    return RedirectResponse(f"/tickets/{ticket.number}", status_code=303)
 
 
 @router.post("/{number}/email", response_class=HTMLResponse)
@@ -486,7 +486,7 @@ def link(
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
-    """Links this ticket under a Major Incident or Problem, given by reference. The agent
+    """Links this ticket under a Major Incident or Problem, given by number (1042, or INC-1042). The agent
     works this ticket and must be able to see the parent."""
     ticket = _get_ticket(session, number, user)
     parent = find_ticket(session, parent_number)

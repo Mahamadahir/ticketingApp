@@ -488,7 +488,7 @@ def test_new_tickets_arrive_in_the_default_triage_team_and_are_visible_to_everyo
         data={"requester_email": "jane@example.com", "subject": "VPN", "body": "Timeout"},
     ).json()
 
-    ticket = db_session.get(Ticket, result["ticket_id"])
+    ticket = db_session.exec(select(Ticket).where(Ticket.number == result["number"])).one()
     assert ticket.team_id == desk.id and ticket.status == TicketStatus.NEW
     agent(client, db_session)  # in no team
     assert "VPN" in client.get("/tickets").text

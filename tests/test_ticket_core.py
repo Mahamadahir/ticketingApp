@@ -97,7 +97,8 @@ def test_dev_simulate_inbound_returns_reference_and_records_event(client, db_ses
         data={"requester_email": "jane@example.com", "subject": "VPN", "body": "Timeout"},
     )
     assert response.json()["reference"] == "INC-1"
-    ticket = db_session.get(Ticket, response.json()["ticket_id"])
+    ticket = db_session.exec(select(Ticket).where(Ticket.number == response.json()["number"])).one()
+    assert "ticket_id" not in response.json()  # the internal id is never handed out
     assert len(events_for(db_session, ticket, "created")) == 1
 
 
@@ -125,11 +126,21 @@ def test_the_number_alone_finds_a_ticket_whatever_prefix_is_typed(client, db_ses
         assert client.get(f"/t/{text}").status_code == 404, text
 
 
+def test_the_shareable_link_redirects_to_the_one_canonical_address(client, db_session):
+    team = create_team(db_session, "Service Desk")
+    ticket = make_ticket(db_session, TicketType.SERVICE_REQUEST, team_id=team.id)
+    login_agent(client, db_session, team)
+
+    for text in (str(ticket.number), f"INC-{ticket.number}", f"sr-{ticket.number}"):
+        response = client.get(f"/t/{text}", follow_redirects=False)
+        assert response.status_code == 303 and response.headers["location"] == f"/tickets/{ticket.number}", text
+
+
 def test_ticket_numbers_parse_only_in_the_accepted_forms():
     from app.ticket_service import parse_ticket_number
 
     assert [parse_ticket_number(t) for t in ("1042", " #1042 ", "INC-1042", "sr-7", "PRB9")] == [1042, 1042, 1042, 7, 9]
-    for bad in ("", "INC-", "1042abc", "MAJOR-1", "1 2", "-5", "1234567890", "٣"):
+    for bad in ("", "INC-", "1042abc", "MAJOR-1", "1 2", "-5", "1234567890", "٣", "0", "0001042", "INC-007"):
         assert parse_ticket_number(bad) is None, bad
 
 

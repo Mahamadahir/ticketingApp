@@ -35,9 +35,9 @@ class NotTriaged(Exception):
     has not been triaged yet (emailing the requester, moving it between statuses)."""
 
 
-# ASCII digits only (\d would also accept digits from other scripts), and only the real prefixes.
+# ASCII digits only (\d would also accept digits from other scripts), no leading zero (one spelling\n# per ticket), and only the real prefixes.
 _PREFIXES = "|".join(sorted(TICKET_TYPE_PREFIXES.values()))
-_NUMBER_FORM = re.compile(rf"^#?(?:(?:{_PREFIXES})-?)?([0-9]{{1,9}})$", re.IGNORECASE)
+_NUMBER_FORM = re.compile(rf"^#?(?:(?:{_PREFIXES})-?)?([1-9][0-9]{{0,8}})$", re.IGNORECASE)
 
 
 def parse_ticket_number(text: str) -> Optional[int]:
@@ -55,9 +55,7 @@ def get_by_number(session: Session, number: int) -> Optional[Ticket]:
 
 def find_ticket(session: Session, text: str) -> Optional[Ticket]:
     number = parse_ticket_number(text)
-    if number is None:
-        return None
-    return session.exec(select(Ticket).where(Ticket.number == number)).first()
+    return get_by_number(session, number) if number is not None else None
 
 
 def record_event(
