@@ -528,9 +528,24 @@ split again to add more, up to 10 sub-tickets in all and at least 2. Each part i
 triaged with the original's type, category (so team), impact and urgency, so it has its own
 priority and SLA clock from the moment it is made; it is not left for the agent to triage, who
 amends it with the usual controls. It keeps the requester and source. The details box becomes an
-internal note. One level only. Events `split` / `split_from`, and an audit entry. Not built yet, part 2:
-the original's derived status, the single mail thread with the "About:" line, and showing the
-requester's replies and the parts' emails across the family.
+internal note. One level only. Events `split` / `split_from`, and an audit entry.
+
+*Part 2 built (13 Oct 2026):* the original's status is derived (`derived_status`,
+`sync_original_status` in `app/splitting.py`) with a system event "from its sub-tickets"; a part's
+status change re-derives it under a row lock, and a split derives it once. Agents cannot set an
+original's status by hand: only Resolved or Closed, and only once every part is finished (so
+reopening a resolved original by hand is refused until the phase 4 reopen flow). Emailing from the
+original does not move it to Awaiting user; emailing from a part moves that part. A requester reply
+on the original hands every open part back (Awaiting user to In progress) and moves it up the queue.
+The page says "All sub-tickets are done: resolve this ticket" and the original never resolves itself.
+Conversation rules live in `app/messages.py`: the original's public messages (emails and replies)
+show on each open part, a part's show on the original (only for parts the viewer can open, in the
+agent timeline), siblings stay apart, finished parts stop showing the original's, internal notes
+never cross, and nothing is copied. `thread_subject` is the original's subject and `about_labels`
+gives each family email its "About: SR-14 Replace keyboard" line (shown in the portal now; sent with
+the mail in phase 3). The original's own SLA clock is untouched by its derived status, apart from
+the usual pause while it is Awaiting user. A part's agents see the original's public messages even
+if they cannot open the original, because it is the requester's one conversation.
 
 **Status of the original while it has sub-tickets.** It is derived, so agents do
 not set it by hand: if every sub-ticket has the same status, the original takes

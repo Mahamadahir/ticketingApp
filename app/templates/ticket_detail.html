@@ -109,6 +109,8 @@
     <button type="submit" name="status" value="{{ s.value }}" class="{{ 'button-active' if ticket.status == s else 'button-outline' }}">{{ s.value.replace("_", " ") }}</button>
     {% endfor %}
   </form>
+  {% if status_follows_parts %}<p class="note">This ticket has sub-tickets, so its status follows them. You can resolve or close it once they are all finished.</p>{% endif %}
+  {% if all_parts_done %}<p class="note"><b>All sub-tickets are done: resolve this ticket.</b></p>{% endif %}
   {% endif %}
 
   {% if not ticket.triaged_at and user.role.value == "super_admin" %}
@@ -283,6 +285,7 @@
   {% set message = item.message %}
   <div class="message message-{{ message.direction.value }}">
     <div class="message-meta">
+      {% if item.source %}<span class="note">[{{ item.source.reference }} {{ item.source.subject }}]</span>{% endif %}
       {% if message.direction.value == "internal" %}<b>Internal note</b> (agents only)
       {% elif message.direction.value == "outbound" %}<b>Email to requester</b>{% if message.cc %} (cc: {{ message.cc }}){% endif %}
       {% elif item.sender_kind == "follower" %}<b>From follower</b>
@@ -294,6 +297,7 @@
   {% else %}
   {% set event = item.event %}
   <div class="event">
+    {% if item.source %}<span class="note">[{{ item.source.reference }} {{ item.source.subject }}]</span>{% endif %}
     {{ event.created_at.strftime("%Y-%m-%d %H:%M") }} &middot;
     {{ event.event_type.replace("_", " ") }}
     {% if event.from_value or event.to_value %}: {{ event.from_value or "none" }} &rarr; {{ event.to_value or "none" }}{% endif %}

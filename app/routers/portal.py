@@ -17,7 +17,8 @@ from app.followers import (
     tickets_followed_by,
 )
 from app.forms import MAX_MESSAGE_LENGTH
-from app.messages import record_inbound, requester_visible_messages
+from app.messages import about_labels, record_inbound, requester_visible_messages
+from app.splitting import has_sub_tickets, refresh_open_sub_tickets
 from app.models import Ticket, TicketStatus, User
 from app.ticket_service import get_by_number, set_status
 from app.pagination import paginate
@@ -59,12 +60,14 @@ def _get_readable_ticket(session: Session, number: int, user: User) -> Ticket:
 
 
 def _render_ticket(request: Request, ticket: Ticket, user: User, session: Session) -> HTMLResponse:
+    visible = requester_visible_messages(session, ticket)
     return templates.TemplateResponse(
         request,
         "portal_ticket_detail.html",
         {
             "ticket": ticket,
-            "messages": requester_visible_messages(session, ticket),
+            "messages": visible,
+            "about": about_labels(session, visible),
             # Only the requester sees who else is copied; a follower must not learn
             # the other followers' addresses, and internal followers are never shown.
             "followers": (
@@ -127,6 +130,9 @@ def add_comment(
             session, user.email, "ticket", ticket.id, "status_changed",
             f"{TicketStatus.AWAITING_USER.value} -> {TicketStatus.IN_PROGRESS.value}",
         )
+    if has_sub_tickets(session, ticket):
+        # The system cannot tell which part the reply is about, so each open part sees it.
+        refresh_open_sub_tickets(session, ticket, user.email)
     session.commit()
     session.refresh(ticket)
 

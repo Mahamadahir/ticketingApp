@@ -44,7 +44,8 @@ starting a phase, and `README.md` for how to run it.
   Incident or Problem in `app/linking.py`; Assign to me can no longer take an
   assigned ticket), then **1E-ii** backdating (built: `app/backdating.py`, flag `is_backdated` drops SLA), then **1E-iii** splitting into
   sub-tickets in two PRs: part 1 (built: `app/splitting.py`, `split_from_id`, each part triaged
-  from the original) and part 2 (the original's derived status and the single mail thread).
+  from the original) and part 2 (built: the original's derived status in `app/splitting.py`; which
+  messages show where, the one thread subject and the "About:" line in `app/messages.py`).
   Only the 1G agent raise form may create `source=agent` tickets (backdating relies on it); when
   1G lands, switch the backdating tests to that real path.
 - **Nothing is deployed anywhere.** No Azure resources exist, no database has

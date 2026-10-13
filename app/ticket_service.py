@@ -108,9 +108,15 @@ def create_ticket(
     return ticket
 
 
-def set_status(session: Session, ticket: Ticket, new_status: TicketStatus, actor_email: Optional[str]) -> bool:
+def set_status(
+    session: Session,
+    ticket: Ticket,
+    new_status: TicketStatus,
+    actor_email: Optional[str],
+    detail: Optional[str] = None,
+) -> bool:
     """Moves the ticket to a new status. Returns False, changing nothing,
-    when it is already there."""
+    when it is already there. A sub-ticket's change re-derives its original's status."""
     previous = ticket.status
     if previous == new_status:
         return False
@@ -133,5 +139,11 @@ def set_status(session: Session, ticket: Ticket, new_status: TicketStatus, actor
 
     on_status_change(session, ticket, previous, new_status, now)
     session.add(ticket)
-    record_event(session, ticket, EVENT_STATUS_CHANGED, actor_email, previous.value, new_status.value)
+    record_event(session, ticket, EVENT_STATUS_CHANGED, actor_email, previous.value, new_status.value, detail)
+    if ticket.split_from_id is not None:
+        # The original's status follows its sub-tickets. Imported here because
+        # app.splitting builds on this module.
+        from app.splitting import sync_original_status
+
+        sync_original_status(session, ticket.split_from_id)
     return True
