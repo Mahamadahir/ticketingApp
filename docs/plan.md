@@ -545,14 +545,22 @@ Resolving the original is offered once every sub-ticket is resolved, and their
 notes feed the resolution email. Splitting is recorded as an event on both
 sides.
 
-**Backdating.** Agents can log tickets and fixes after the fact.
+**Backdating.** Only for a ticket an agent raised on someone's behalf (source `agent`),
+e.g. the person came to the desk and it was fixed in person, so there is nothing to track
+(decided 13 Oct 2026). A ticket a requester opened themselves (email, portal, Teams) can never
+be backdated, so an agent cannot drop a live ticket out of SLA. The agent raise-a-ticket form
+(1G) is what creates these tickets; until then none exist and the control never shows.
+Because the rule reads `source`, nothing else may create a `source=agent` ticket: sub-tickets
+from splitting (1E-iii) inherit the original's source, and an agent logging a requester's email
+by hand is not "on their behalf" for this purpose.
+Agents can log tickets and fixes after the fact.
 `reported_at` and `resolved_at` hold the dates entered; `created_at` holds
 the real entry time, which the audit log also records. Up to 30 days back,
 never in the future. Backdated tickets are excluded from SLA figures but
 count towards volume. Sending the user the resolution email is on by
 default.
 *Built in 1E-ii (13 Oct 2026):* a Backdate control on the ticket page for anyone who
-works the ticket; reported time on any ticket, resolved time only on a finished one, never
+works the ticket, shown only on agent-raised tickets (`may_backdate`); reported time on any ticket, resolved time only on a finished one, never
 before the report; the flag is permanent and removes the SLA deadlines. Times are UTC until
 the timezone work. The resolution email (default on) comes with the resolve action, phase 4.
 

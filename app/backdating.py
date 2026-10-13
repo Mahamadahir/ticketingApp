@@ -1,7 +1,9 @@
 """Logging tickets and fixes after the fact. Nothing here commits.
 
-An agent can enter when the problem was reported and when it was fixed, up to 30 days
-back and never in the future. `reported_at` and `resolved_at` hold the dates entered;
+For a ticket an agent raised on someone's behalf (source "agent", e.g. the person came
+to the desk and it was fixed in person) the agent can enter when the problem was reported
+and when it was fixed, up to 30 days back and never in the future. Tickets the requester
+opened themselves cannot be backdated. `reported_at` and `resolved_at` hold the dates entered;
 `created_at` keeps the real entry time and the audit log records who changed what. Once
 a ticket has been backdated it is flagged for good: it counts towards volume but is
 excluded from SLA figures (app/sla.py), because its clock would measure when someone
@@ -13,7 +15,7 @@ from typing import Optional
 
 from sqlmodel import Session
 
-from app.models import FINISHED_STATUSES, Ticket
+from app.models import FINISHED_STATUSES, Ticket, TicketSource
 from app.sla import recalculate_deadlines
 from app.ticket_service import record_event
 
@@ -25,6 +27,13 @@ FORMAT = "%Y-%m-%dT%H:%M"  # what an HTML datetime-local input sends
 
 class BackdateError(ValueError):
     """A reason the dates cannot be accepted, worded for the agent."""
+
+
+def may_backdate(ticket: Ticket) -> bool:
+    """Only a ticket an agent raised on someone's behalf (source "agent") can be backdated:
+    the requester came to IT in person and it was fixed on the spot. A ticket the
+    requester opened themselves (email, portal, Teams) keeps its real clock."""
+    return ticket.source == TicketSource.AGENT
 
 
 def parse_moment(text: Optional[str]) -> Optional[datetime]:
@@ -65,6 +74,8 @@ def backdate_ticket(
     changes is checked against the 30-day window, so an old ticket's other date can
     still be edited. Resolved can only be set on a finished ticket, and never before
     the report."""
+    if not may_backdate(ticket):
+        raise BackdateError("Only a ticket an agent raised on someone's behalf can be backdated")
     now = now or datetime.now(timezone.utc)
     earliest = now - timedelta(days=MAX_DAYS_BACK)
 

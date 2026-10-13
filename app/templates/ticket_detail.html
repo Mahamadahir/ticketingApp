@@ -146,6 +146,7 @@
   </form>
   {% endif %}
 
+  {% if can_backdate %}
   <details>
     <summary>Backdate (log after the fact)</summary>
     <p class="note">Enter when it was reported or fixed: up to 30 days back, never in the future, times in UTC. A backdated ticket counts towards volume but is left out of SLA figures. Leave a box blank to keep that date.</p>
@@ -157,6 +158,7 @@
       <button type="submit">Save dates</button>
     </form>
   </details>
+  {% endif %}
 
   {% if can_reassign %}
   <form hx-post="/tickets/{{ ticket.number }}/reassign" hx-target="main" hx-swap="innerHTML">

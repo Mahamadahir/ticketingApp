@@ -19,7 +19,7 @@ from app.followers import (
     followers_of,
     remove_follower,
 )
-from app.backdating import FORMAT as MOMENT_FORMAT, BackdateError, backdate_ticket, parse_moment
+from app.backdating import FORMAT as MOMENT_FORMAT, BackdateError, backdate_ticket, may_backdate, parse_moment
 from app.categories import CategoryError, create_category, path_of, selectable, team_id_for
 from app.linking import PARENT_TYPES, LinkError, link_ticket, linked_summary, unlink_ticket
 from app.messages import UnknownRecipient, add_note, agent_timeline, email_requester, is_triaged
@@ -655,6 +655,7 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             "urgency_options": [(level.value, label) for level, label in URGENCY_LABELS.items()],
             "sla": sla_view(ticket, datetime.now(timezone.utc), at_risk_percent(session)),
             "moment_format": MOMENT_FORMAT,
+            "can_backdate": may_backdate(ticket),
             "can_set_priority": can_work and ticket.triaged_at is not None and ticket.status not in FINISHED_STATUSES,
             "category_options": options,
             "main_categories": [c for c, _ in options if c.parent_id is None and not c.is_other],
