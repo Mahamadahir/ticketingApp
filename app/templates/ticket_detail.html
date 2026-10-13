@@ -30,7 +30,7 @@
 {% if not can_work %}
 <p class="note">You have read-only access to this ticket.{% if can_claim %} It is untriaged: assign it to yourself to work on it.{% endif %}</p>
 {% if can_claim %}
-<form hx-post="/tickets/{{ ticket.id }}/assign" hx-target="main" hx-swap="innerHTML">
+<form hx-post="/tickets/{{ ticket.number }}/assign" hx-target="main" hx-swap="innerHTML">
   <button type="submit">Assign to me</button>
 </form>
 {% endif %}
@@ -39,7 +39,7 @@
 {% if can_triage %}
 <h3>Triage</h3>
 <p class="note">Classify this ticket. The category decides the team. Assigning is optional: leave it as is and the team can pick it up.</p>
-<form hx-post="/tickets/{{ ticket.id }}/triage" hx-target="main" hx-swap="innerHTML">
+<form hx-post="/tickets/{{ ticket.number }}/triage" hx-target="main" hx-swap="innerHTML">
   <label>Type
     <select name="ticket_type">
       {% for type in ticket_types %}
@@ -102,7 +102,7 @@
 {% if can_work %}
 <div class="actions">
   {% if ticket.triaged_at %}
-  <form hx-post="/tickets/{{ ticket.id }}/status" hx-target="main" hx-swap="innerHTML">
+  <form hx-post="/tickets/{{ ticket.number }}/status" hx-target="main" hx-swap="innerHTML">
     {% for s in statuses %}
     <button type="submit" name="status" value="{{ s.value }}" class="{{ 'button-active' if ticket.status == s else 'button-outline' }}">{{ s.value.replace("_", " ") }}</button>
     {% endfor %}
@@ -110,7 +110,7 @@
   {% endif %}
 
   {% if not ticket.triaged_at and user.role.value == "super_admin" %}
-  <form hx-post="/tickets/{{ ticket.id }}/assign" hx-target="main" hx-swap="innerHTML">
+  <form hx-post="/tickets/{{ ticket.number }}/assign" hx-target="main" hx-swap="innerHTML">
     <label>Assign to (without triaging)
       <select name="agent_id">
         {% for agent in team_agents %}
@@ -123,13 +123,13 @@
   {% endif %}
 
   {% if not assigned_agent and user.role.value == "agent" %}
-  <form hx-post="/tickets/{{ ticket.id }}/assign" hx-target="main" hx-swap="innerHTML">
+  <form hx-post="/tickets/{{ ticket.number }}/assign" hx-target="main" hx-swap="innerHTML">
     <button type="submit">Assign to me</button>
   </form>
   {% endif %}
 
   {% if can_set_priority %}
-  <form hx-post="/tickets/{{ ticket.id }}/priority" hx-target="main" hx-swap="innerHTML">
+  <form hx-post="/tickets/{{ ticket.number }}/priority" hx-target="main" hx-swap="innerHTML">
     <label>Impact
       <select name="impact">
         {% for value, label in impact_options %}<option value="{{ value }}" {{ "selected" if ticket.impact == value else "" }}>{{ label }}</option>{% endfor %}
@@ -145,7 +145,7 @@
   {% endif %}
 
   {% if can_reassign %}
-  <form hx-post="/tickets/{{ ticket.id }}/reassign" hx-target="main" hx-swap="innerHTML">
+  <form hx-post="/tickets/{{ ticket.number }}/reassign" hx-target="main" hx-swap="innerHTML">
     <label>Team
       <select name="team_id" hx-get="/tickets/agents-for-team" hx-trigger="change" hx-target="#reassign-agent">
         {% for t in teams %}
@@ -167,7 +167,7 @@
 
   <details>
     <summary>Escalate</summary>
-    <form hx-post="/tickets/{{ ticket.id }}/escalate" hx-target="main" hx-swap="innerHTML">
+    <form hx-post="/tickets/{{ ticket.number }}/escalate" hx-target="main" hx-swap="innerHTML">
       <textarea name="reason" maxlength="{{ max_message_length }}" placeholder="Why does this need escalating?" required></textarea>
       <select name="target_team_id">
         <option value="">Keep current team</option>
@@ -182,18 +182,18 @@
 {% endif %}
 <h3>Linked tickets</h3>
 {% if parent %}
-<div>Linked to <a href="/tickets/{{ parent.id }}">{{ parent.reference }}</a> {{ parent.subject }}
+<div>Linked to <a href="/tickets/{{ parent.number }}">{{ parent.reference }}</a> {{ parent.subject }}
   {% if can_work %}
-  <form hx-post="/tickets/{{ ticket.id }}/unlink" hx-target="main" hx-swap="innerHTML" class="inline-form"><button type="submit">Unlink</button></form>
+  <form hx-post="/tickets/{{ ticket.number }}/unlink" hx-target="main" hx-swap="innerHTML" class="inline-form"><button type="submit">Unlink</button></form>
   {% endif %}
 </div>
 {% elif has_hidden_parent %}
 <p class="note">Linked to a ticket you cannot open.</p>
 {% if can_work %}
-<form hx-post="/tickets/{{ ticket.id }}/unlink" hx-target="main" hx-swap="innerHTML"><button type="submit">Unlink</button></form>
+<form hx-post="/tickets/{{ ticket.number }}/unlink" hx-target="main" hx-swap="innerHTML"><button type="submit">Unlink</button></form>
 {% endif %}
 {% elif can_link %}
-<form hx-post="/tickets/{{ ticket.id }}/link" hx-target="main" hx-swap="innerHTML">
+<form hx-post="/tickets/{{ ticket.number }}/link" hx-target="main" hx-swap="innerHTML">
   <label>Link under a Major Incident or Problem (ticket number, e.g. 1042)
     <input type="text" name="parent_number" maxlength="40" required />
   </label>
@@ -202,7 +202,7 @@
 {% endif %}
 {% if linked or hidden_linked_count %}
 <ul>
-  {% for t in linked %}<li><a href="/tickets/{{ t.id }}">{{ t.reference }}</a> {{ t.subject }} <span class="status status-{{ t.status.value }}">{{ t.status.value.replace("_", " ") }}</span></li>{% endfor %}
+  {% for t in linked %}<li><a href="/tickets/{{ t.number }}">{{ t.reference }}</a> {{ t.subject }} <span class="status status-{{ t.status.value }}">{{ t.status.value.replace("_", " ") }}</span></li>{% endfor %}
 </ul>
 {% if more_linked_count %}<p class="note">Showing the first {{ linked|length }}; {{ more_linked_count }} more you can open are not listed.</p>{% endif %}
 {% if hidden_linked_count %}<p class="note">{{ hidden_linked_count }} more linked ticket{{ "s" if hidden_linked_count != 1 else "" }} you cannot open.</p>{% endif %}
@@ -215,7 +215,7 @@
   <li>
     {{ follower.email }}{% if follower.is_internal %} <i>(internal)</i>{% endif %}
     {% if can_edit_followers and not follower.is_internal %}
-    <form hx-post="/tickets/{{ ticket.id }}/followers/{{ follower.id }}/remove" hx-target="main" hx-swap="innerHTML" class="inline-form">
+    <form hx-post="/tickets/{{ ticket.number }}/followers/{{ follower.id }}/remove" hx-target="main" hx-swap="innerHTML" class="inline-form">
       <button type="submit">Remove</button>
     </form>
     {% endif %}
@@ -225,7 +225,7 @@
   {% endfor %}
 </ul>
 {% if can_edit_followers %}
-<form hx-post="/tickets/{{ ticket.id }}/followers" hx-target="main" hx-swap="innerHTML">
+<form hx-post="/tickets/{{ ticket.number }}/followers" hx-target="main" hx-swap="innerHTML">
   <input type="email" name="email" placeholder="person@example.org" required />
   <button type="submit">Add follower</button>
 </form>
@@ -260,7 +260,7 @@
 </div>
 
 {% if can_email %}
-<form hx-post="/tickets/{{ ticket.id }}/email" hx-target="main" hx-swap="innerHTML">
+<form hx-post="/tickets/{{ ticket.number }}/email" hx-target="main" hx-swap="innerHTML">
   <textarea name="body" rows="4" maxlength="{{ max_message_length }}" placeholder="Email to the requester..." required></textarea>
   {% if cc_candidates %}
   <fieldset>
@@ -282,7 +282,7 @@
 {% endif %}
 
 {% if can_note %}
-<form hx-post="/tickets/{{ ticket.id }}/note" hx-target="main" hx-swap="innerHTML">
+<form hx-post="/tickets/{{ ticket.number }}/note" hx-target="main" hx-swap="innerHTML">
   <textarea name="body" rows="3" maxlength="{{ max_message_length }}" placeholder="Internal note (agents only, does not triage the ticket)..." required></textarea>
   <button type="submit" class="button-outline">Add note</button>
 </form>

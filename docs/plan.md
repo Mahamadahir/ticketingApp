@@ -354,7 +354,7 @@ prefix, for display only: when triage changes the type the prefix follows (it sh
 alone, so `/t/1042`, `/t/INC-1042` and `/t/sr-1042` all open the same ticket, and a
 link or an email subject written before a retype still finds it. Only the four real
 prefixes are accepted before the number. Sub-tickets from splitting are simply the
-next numbers.
+next numbers. Agent, portal and admin routes use the number too (/tickets/1042, /portal/1042), never the internal id.
 Projects are a separate entity tickets can link to, with Azure DevOps
 integration later. Change control is later.
 

@@ -273,7 +273,7 @@ class ActivityLog(SQLModel, table=True):
     # The signed-in user's email, or for a failed sign-in the address that was tried.
     actor_email: Optional[str] = Field(default=None, index=True)
     method: Optional[str] = Field(default=None)
-    path: Optional[str] = Field(default=None)  # route template, e.g. /tickets/{ticket_id}/note
+    path: Optional[str] = Field(default=None)  # route template, e.g. /tickets/{number}/note
     status_code: Optional[int] = Field(default=None)
     ip: Optional[str] = Field(default=None)
     user_agent: Optional[str] = Field(default=None)

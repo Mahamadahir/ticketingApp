@@ -151,11 +151,11 @@ def test_every_status_except_new_can_be_set(client, db_session):
     for status in TicketStatus:
         if status == TicketStatus.NEW:
             continue  # a ticket only leaves New by being triaged
-        assert client.post(f"/tickets/{ticket.id}/status", data={"status": status.value}).status_code == 200
+        assert client.post(f"/tickets/{ticket.number}/status", data={"status": status.value}).status_code == 200
         db_session.refresh(ticket)
         assert ticket.status == status
 
-    assert client.post(f"/tickets/{ticket.id}/status", data={"status": "new"}).status_code == 400
+    assert client.post(f"/tickets/{ticket.number}/status", data={"status": "new"}).status_code == 400
 
 
 def test_status_change_records_event_and_unchanged_status_does_not(client, db_session):
@@ -163,8 +163,8 @@ def test_status_change_records_event_and_unchanged_status_does_not(client, db_se
     ticket = make_ticket(db_session, team_id=team.id, triaged=True)
     login_agent(client, db_session, team)
 
-    client.post(f"/tickets/{ticket.id}/status", data={"status": "in_progress"})
-    client.post(f"/tickets/{ticket.id}/status", data={"status": "in_progress"})
+    client.post(f"/tickets/{ticket.number}/status", data={"status": "in_progress"})
+    client.post(f"/tickets/{ticket.number}/status", data={"status": "in_progress"})
 
     changes = events_for(db_session, ticket, "status_changed")
     assert len(changes) == 1
@@ -177,16 +177,16 @@ def test_resolved_at_set_kept_on_close_and_cleared_on_reopen(client, db_session)
     ticket = make_ticket(db_session, team_id=team.id, triaged=True)
     login_agent(client, db_session, team)
 
-    client.post(f"/tickets/{ticket.id}/status", data={"status": "resolved"})
+    client.post(f"/tickets/{ticket.number}/status", data={"status": "resolved"})
     db_session.refresh(ticket)
     resolved_at = ticket.resolved_at
     assert resolved_at is not None
 
-    client.post(f"/tickets/{ticket.id}/status", data={"status": "closed"})
+    client.post(f"/tickets/{ticket.number}/status", data={"status": "closed"})
     db_session.refresh(ticket)
     assert ticket.resolved_at == resolved_at
 
-    client.post(f"/tickets/{ticket.id}/status", data={"status": "open"})
+    client.post(f"/tickets/{ticket.number}/status", data={"status": "open"})
     db_session.refresh(ticket)
     assert ticket.resolved_at is None
 
@@ -196,8 +196,8 @@ def test_emailing_the_user_moves_the_ticket_to_awaiting_user_once(client, db_ses
     ticket = make_ticket(db_session, team_id=team.id, triaged=True)
     login_agent(client, db_session, team)
 
-    client.post(f"/tickets/{ticket.id}/email", data={"body": "On it"})
-    client.post(f"/tickets/{ticket.id}/email", data={"body": "Still on it"})
+    client.post(f"/tickets/{ticket.number}/email", data={"body": "On it"})
+    client.post(f"/tickets/{ticket.number}/email", data={"body": "Still on it"})
 
     changes = events_for(db_session, ticket, "status_changed")
     assert [(e.from_value, e.to_value) for e in changes] == [("open", "awaiting_user")]  # not again on the second email
@@ -209,8 +209,8 @@ def test_assign_and_escalate_record_events(client, db_session):
     ticket = make_ticket(db_session, team_id=team_a.id)
     login_agent(client, db_session, team_a)
 
-    client.post(f"/tickets/{ticket.id}/assign")
-    client.post(f"/tickets/{ticket.id}/escalate", data={"reason": "Needs network", "target_team_id": team_b.id})
+    client.post(f"/tickets/{ticket.number}/assign")
+    client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "Needs network", "target_team_id": team_b.id})
 
     assigned = events_for(db_session, ticket, "assigned")
     # Assigned to the agent, then unassigned when the escalation moved teams.
@@ -229,9 +229,9 @@ def test_events_are_shown_in_the_ticket_timeline(client, db_session):
     team = create_team(db_session, "Service Desk")
     ticket = make_ticket(db_session, team_id=team.id, triaged=True)
     login_agent(client, db_session, team)
-    client.post(f"/tickets/{ticket.id}/status", data={"status": "in_progress"})
+    client.post(f"/tickets/{ticket.number}/status", data={"status": "in_progress"})
 
-    page = client.get(f"/tickets/{ticket.id}").text
+    page = client.get(f"/tickets/{ticket.number}").text
     assert "Timeline" in page
     assert "status changed" in page
     assert "open &rarr; in_progress" in page
@@ -265,11 +265,11 @@ def test_email_does_not_undo_a_deliberate_status(client, db_session):
 
     for status in (TicketStatus.AWAITING_USER, TicketStatus.WITH_MSP, TicketStatus.RESOLVED, TicketStatus.CLOSED):
         ticket = make_ticket(db_session, team_id=team.id, triaged=True)
-        client.post(f"/tickets/{ticket.id}/status", data={"status": status.value})
+        client.post(f"/tickets/{ticket.number}/status", data={"status": status.value})
         db_session.refresh(ticket)
         resolved_at = ticket.resolved_at
 
-        client.post(f"/tickets/{ticket.id}/email", data={"body": "Late email"})
+        client.post(f"/tickets/{ticket.number}/email", data={"body": "Late email"})
         db_session.refresh(ticket)
         assert ticket.status == status
         assert ticket.resolved_at == resolved_at
@@ -280,7 +280,7 @@ def test_the_status_change_after_an_email_is_audited(client, db_session):
     ticket = make_ticket(db_session, team_id=team.id, triaged=True)
     login_agent(client, db_session, team)
 
-    client.post(f"/tickets/{ticket.id}/email", data={"body": "On it"})
+    client.post(f"/tickets/{ticket.number}/email", data={"body": "On it"})
 
     audit = db_session.exec(select(AuditLog).where(AuditLog.action == "status_changed")).all()
     assert [entry.detail for entry in audit] == ["open -> awaiting_user"]
@@ -291,8 +291,8 @@ def test_assigning_to_the_same_agent_twice_records_one_event(client, db_session)
     ticket = make_ticket(db_session, team_id=team.id)
     login_agent(client, db_session, team)
 
-    client.post(f"/tickets/{ticket.id}/assign")
-    client.post(f"/tickets/{ticket.id}/assign")
+    client.post(f"/tickets/{ticket.number}/assign")
+    client.post(f"/tickets/{ticket.number}/assign")
 
     assert len(events_for(db_session, ticket, "assigned")) == 1
     assert len(db_session.exec(select(AuditLog).where(AuditLog.action == "assigned")).all()) == 1
@@ -303,7 +303,7 @@ def test_escalate_to_missing_team_is_rejected_without_changes(client, db_session
     ticket = make_ticket(db_session, team_id=team.id)
     login_agent(client, db_session, team)
 
-    response = client.post(f"/tickets/{ticket.id}/escalate", data={"reason": "x", "target_team_id": 9999})
+    response = client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "x", "target_team_id": 9999})
 
     assert response.status_code == 400
     db_session.refresh(ticket)
@@ -317,9 +317,9 @@ def test_escalating_to_another_team_records_the_unassignment(client, db_session)
     team_b = create_team(db_session, "Network")
     ticket = make_ticket(db_session, team_id=team_a.id)
     login_agent(client, db_session, team_a)
-    client.post(f"/tickets/{ticket.id}/assign")
+    client.post(f"/tickets/{ticket.number}/assign")
 
-    client.post(f"/tickets/{ticket.id}/escalate", data={"reason": "Network", "target_team_id": team_b.id})
+    client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "Network", "target_team_id": team_b.id})
 
     assigned = events_for(db_session, ticket, "assigned")
     assert [(e.from_value, e.to_value) for e in assigned] == [(None, "agent@example.com"), ("agent@example.com", None)]
@@ -333,7 +333,7 @@ def test_portal_shows_readable_status(client, db_session):
     db_session.commit()
     login_as(client, "me@example.com")
 
-    for path in ("/portal", f"/portal/{ticket.id}"):
+    for path in ("/portal", f"/portal/{ticket.number}"):
         page = client.get(path).text
         assert "awaiting user" in page
         assert "awaiting_user</span>" not in page

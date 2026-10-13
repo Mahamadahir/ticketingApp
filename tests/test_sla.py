@@ -19,7 +19,7 @@ def triaged_ticket(client, db_session, impact="high", urgency="high"):
     ticket = new_ticket(db_session, team)
     agent(client, db_session, member_of=[team])
     response = client.post(
-        f"/tickets/{ticket.id}/triage",
+        f"/tickets/{ticket.number}/triage",
         data={"ticket_type": "incident", "impact": impact, "urgency": urgency, "category_id": category.id},
     )
     assert response.status_code == 200
@@ -66,10 +66,10 @@ def test_triage_needs_impact_and_urgency_and_refuses_made_up_levels(client, db_s
     agent(client, db_session, member_of=[team])
     base = {"ticket_type": "incident", "category_id": category.id}
 
-    assert client.post(f"/tickets/{ticket.id}/triage", data={**base, "urgency": "low"}).status_code == 422
-    assert client.post(f"/tickets/{ticket.id}/triage", data={**base, "impact": "low"}).status_code == 422
+    assert client.post(f"/tickets/{ticket.number}/triage", data={**base, "urgency": "low"}).status_code == 422
+    assert client.post(f"/tickets/{ticket.number}/triage", data={**base, "impact": "low"}).status_code == 422
     assert client.post(
-        f"/tickets/{ticket.id}/triage", data={**base, "impact": "catastrophic", "urgency": "low"}
+        f"/tickets/{ticket.number}/triage", data={**base, "impact": "catastrophic", "urgency": "low"}
     ).status_code == 422
     db_session.refresh(ticket)
     assert ticket.triaged_at is None and ticket.priority is None
@@ -101,7 +101,7 @@ def test_changing_priority_moves_the_deadlines_and_records_who_and_what(client, 
     ticket, _ = triaged_ticket(client, db_session, "low", "low")
     old_due = ticket.resolution_due_at
 
-    response = client.post(f"/tickets/{ticket.id}/priority", data={"impact": "high", "urgency": "high"})
+    response = client.post(f"/tickets/{ticket.number}/priority", data={"impact": "high", "urgency": "high"})
 
     assert response.status_code == 200
     db_session.refresh(ticket)
@@ -116,7 +116,7 @@ def test_changing_priority_moves_the_deadlines_and_records_who_and_what(client, 
 def test_setting_the_same_priority_again_changes_and_records_nothing(client, db_session):
     ticket, _ = triaged_ticket(client, db_session, "low", "low")
 
-    client.post(f"/tickets/{ticket.id}/priority", data={"impact": "low", "urgency": "low"})
+    client.post(f"/tickets/{ticket.number}/priority", data={"impact": "low", "urgency": "low"})
 
     assert events(db_session, ticket, "priority_changed") == []
 
@@ -127,7 +127,7 @@ def test_priority_cannot_be_set_on_an_untriaged_ticket_or_by_a_viewer(client, db
     agent_id = agent(client, db_session, member_of=[desk])
     add_membership(db_session, agent_id, other.id, "viewer")
 
-    assert client.post(f"/tickets/{fresh.id}/priority", data={"impact": "low", "urgency": "low"}).status_code == 400
+    assert client.post(f"/tickets/{fresh.number}/priority", data={"impact": "low", "urgency": "low"}).status_code == 400
 
     category = create_category(db_session, other, "Hardware")
     watched = new_ticket(db_session, other)
@@ -135,7 +135,7 @@ def test_priority_cannot_be_set_on_an_untriaged_ticket_or_by_a_viewer(client, db
     watched.triaged_at, watched.status, watched.category_id = NOW, TicketStatus.OPEN, category.id
     db_session.add(watched)
     db_session.commit()
-    denied = client.post(f"/tickets/{watched.id}/priority", data={"impact": "high", "urgency": "high"})
+    denied = client.post(f"/tickets/{watched.number}/priority", data={"impact": "high", "urgency": "high"})
     assert denied.status_code == 403
     db_session.refresh(watched)
     assert watched.priority is None
@@ -225,7 +225,7 @@ def test_emailing_the_user_pauses_the_clock_and_their_reply_restarts_it(client, 
     ticket, _ = triaged_ticket(client, db_session, "high", "high")
     due_before = ticket.resolution_due_at
 
-    assert client.post(f"/tickets/{ticket.id}/email", data={"body": "Have you tried turning it off?"}).status_code == 200
+    assert client.post(f"/tickets/{ticket.number}/email", data={"body": "Have you tried turning it off?"}).status_code == 200
     db_session.refresh(ticket)
     assert ticket.status == TicketStatus.AWAITING_USER
     assert ticket.sla_paused_at is not None and ticket.first_responded_at is not None
@@ -235,7 +235,7 @@ def test_emailing_the_user_pauses_the_clock_and_their_reply_restarts_it(client, 
     db_session.commit()
     client.post("/auth/logout")
     login_as(client, ticket.requester_email)
-    assert client.post(f"/portal/{ticket.id}/comment", data={"body": "Yes, no change."}).status_code in (200, 303)
+    assert client.post(f"/portal/{ticket.number}/comment", data={"body": "Yes, no change."}).status_code in (200, 303)
 
     db_session.refresh(ticket)
     assert ticket.status == TicketStatus.IN_PROGRESS and ticket.sla_paused_at is None
@@ -245,7 +245,7 @@ def test_emailing_the_user_pauses_the_clock_and_their_reply_restarts_it(client, 
 
 def test_a_note_or_a_portal_comment_is_not_a_first_response(client, db_session):
     ticket, _ = triaged_ticket(client, db_session)
-    client.post(f"/tickets/{ticket.id}/note", data={"body": "internal thought"})
+    client.post(f"/tickets/{ticket.number}/note", data={"body": "internal thought"})
     db_session.refresh(ticket)
     assert ticket.first_responded_at is None
 
@@ -305,7 +305,7 @@ def test_the_list_and_ticket_pages_show_priority_and_the_countdown(client, db_se
     ticket, _ = triaged_ticket(client, db_session, "high", "high")
 
     listing = client.get("/tickets").text
-    detail = client.get(f"/tickets/{ticket.id}").text
+    detail = client.get(f"/tickets/{ticket.number}").text
 
     assert "P1" in listing and "first response due in" in listing
     assert "Priority: P1" in detail and "SLA: first response due in" in detail
@@ -320,7 +320,7 @@ def test_a_ticket_triaged_before_priorities_existed_still_lists_and_opens(client
     agent(client, db_session, member_of=[team])
 
     assert client.get("/tickets").status_code == 200
-    detail = client.get(f"/tickets/{old.id}")
+    detail = client.get(f"/tickets/{old.number}")
     assert detail.status_code == 200 and "Priority: Not set" in detail.text
 
 
@@ -329,7 +329,7 @@ def test_requesters_never_see_priority_or_sla(client, db_session):
     client.post("/auth/logout")
     login_as(client, ticket.requester_email)
 
-    page = client.get(f"/portal/{ticket.id}").text
+    page = client.get(f"/portal/{ticket.number}").text
 
     assert "P1" not in page and "SLA" not in page and "first response" not in page
 
@@ -391,12 +391,12 @@ def test_a_finished_ticket_keeps_its_sla_result_and_its_priority_cannot_be_chang
     db_session.commit()
     due = ticket.resolution_due_at
 
-    response = client.post(f"/tickets/{ticket.id}/priority", data={"impact": "low", "urgency": "low"})
+    response = client.post(f"/tickets/{ticket.number}/priority", data={"impact": "low", "urgency": "low"})
 
     assert response.status_code == 400
     db_session.refresh(ticket)
     assert ticket.priority == "p3" and ticket.resolution_due_at == due
-    assert "Set priority" not in client.get(f"/tickets/{ticket.id}").text
+    assert "Set priority" not in client.get(f"/tickets/{ticket.number}").text
 
 
 def test_a_finished_ticket_with_no_resolved_time_shows_no_countdown():
@@ -430,13 +430,13 @@ def test_changing_a_target_leaves_existing_tickets_alone_but_applies_to_new_ones
     set_setting(db_session, sla_key("p1", "first_response"), "999")
     set_setting(db_session, sla_key("p1", "resolution"), "9999")
     db_session.commit()
-    client.post(f"/tickets/{ticket.id}/note", data={"body": "any activity"})
+    client.post(f"/tickets/{ticket.number}/note", data={"body": "any activity"})
     db_session.refresh(ticket)
     assert (ticket.first_response_due_at, ticket.resolution_due_at) == before
 
     newer = new_ticket(db_session, team)
     response = client.post(
-        f"/tickets/{newer.id}/triage",
+        f"/tickets/{newer.number}/triage",
         data={"ticket_type": "incident", "impact": "high", "urgency": "high", "category_id": ticket.category_id},
     )
     assert response.status_code == 200

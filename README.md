@@ -56,7 +56,7 @@ read access to it. Every ticket has one number from a counter shared by all
 types (1042); its reference is the number with the current type's prefix (INC-1042),
 for display. If triage changes the type the prefix follows (SR-1042) but the number
 does not, and lookups use the number alone, so `/t/1042`, `/t/INC-1042` and
-`/t/sr-1042` all open the same ticket and old links and email subjects keep working.
+`/t/sr-1042` all open the same ticket and old links and email subjects keep working. The agent console and the portal are addressed by the number too (/tickets/1042, /portal/1042); the internal id never appears in a URL or page.
 
 **Priority and SLA.** Triage also records impact (how many people) and urgency
 (how bad for them), which give a priority P1 to P4 (`app/sla.py`: high/high is P1,

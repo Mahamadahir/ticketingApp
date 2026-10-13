@@ -42,10 +42,10 @@ def test_emailing_the_user_puts_the_ticket_in_awaiting_user_with_no_choice(clien
     ticket = make_ticket(db_session, team.id, start)
     agent_for(client, db_session, team)
 
-    page = client.get(f"/tickets/{ticket.id}").text
+    page = client.get(f"/tickets/{ticket.number}").text
     assert "After sending" not in page  # there is nothing for the agent to choose or tick
 
-    assert client.post(f"/tickets/{ticket.id}/email", data={"body": "Which printer is it?"}).status_code == 200
+    assert client.post(f"/tickets/{ticket.number}/email", data={"body": "Which printer is it?"}).status_code == 200
 
     assert status_of(db_session, ticket) == TicketStatus.AWAITING_USER
     assert status_events(db_session, ticket) == [(start.value, "awaiting_user", "agent@example.com")]
@@ -59,7 +59,7 @@ def test_emailing_leaves_statuses_that_are_not_waiting_on_us_alone(client, db_se
     ticket = make_ticket(db_session, team.id, status)
     agent_for(client, db_session, team)
 
-    assert client.post(f"/tickets/{ticket.id}/email", data={"body": "An update"}).status_code == 200
+    assert client.post(f"/tickets/{ticket.number}/email", data={"body": "An update"}).status_code == 200
 
     assert status_of(db_session, ticket) == status
     assert status_events(db_session, ticket) == []
@@ -70,8 +70,8 @@ def test_a_second_email_while_awaiting_the_user_changes_nothing_more(client, db_
     ticket = make_ticket(db_session, team.id)
     agent_for(client, db_session, team)
 
-    client.post(f"/tickets/{ticket.id}/email", data={"body": "First"})
-    client.post(f"/tickets/{ticket.id}/email", data={"body": "Second"})
+    client.post(f"/tickets/{ticket.number}/email", data={"body": "First"})
+    client.post(f"/tickets/{ticket.number}/email", data={"body": "Second"})
 
     assert len(status_events(db_session, ticket)) == 1
 
@@ -82,7 +82,7 @@ def test_a_refused_email_does_not_change_the_status(client, db_session):
     agent_for(client, db_session, team)
 
     refused = client.post(
-        f"/tickets/{ticket.id}/email", data={"body": "x", "cc_form": "1", "cc": "stranger@example.org"}
+        f"/tickets/{ticket.number}/email", data={"body": "x", "cc_form": "1", "cc": "stranger@example.org"}
     )
 
     assert refused.status_code == 400
@@ -94,7 +94,7 @@ def test_the_requester_replying_hands_the_ticket_back(client, db_session):
     ticket = make_ticket(db_session, team.id, TicketStatus.AWAITING_USER)
     login_as(client, "me@example.com")
 
-    assert client.post(f"/portal/{ticket.id}/comment", data={"body": "It is the one on floor 2"}).status_code == 200
+    assert client.post(f"/portal/{ticket.number}/comment", data={"body": "It is the one on floor 2"}).status_code == 200
 
     assert status_of(db_session, ticket) == TicketStatus.IN_PROGRESS
     assert status_events(db_session, ticket) == [("awaiting_user", "in_progress", "me@example.com")]
@@ -106,11 +106,11 @@ def test_a_follower_replying_also_hands_it_back(client, db_session):
     team = create_team(db_session, "Service Desk")
     ticket = make_ticket(db_session, team.id, TicketStatus.AWAITING_USER)
     login_as(client, "me@example.com")
-    client.post(f"/portal/{ticket.id}/followers", data={"email": "boss@example.org"})
+    client.post(f"/portal/{ticket.number}/followers", data={"email": "boss@example.org"})
     client.post("/auth/logout")
     login_as(client, "boss@example.org")
 
-    client.post(f"/portal/{ticket.id}/comment", data={"body": "Boss here, it is floor 2"})
+    client.post(f"/portal/{ticket.number}/comment", data={"body": "Boss here, it is floor 2"})
 
     assert status_of(db_session, ticket) == TicketStatus.IN_PROGRESS
     assert status_events(db_session, ticket) == [("awaiting_user", "in_progress", "boss@example.org")]
@@ -125,7 +125,7 @@ def test_a_reply_only_changes_a_ticket_that_is_awaiting_the_user(client, db_sess
     ticket = make_ticket(db_session, team.id, status)
     login_as(client, "me@example.com")
 
-    assert client.post(f"/portal/{ticket.id}/comment", data={"body": "Hello?"}).status_code == 200
+    assert client.post(f"/portal/{ticket.number}/comment", data={"body": "Hello?"}).status_code == 200
 
     assert status_of(db_session, ticket) == status
     assert status_events(db_session, ticket) == []
@@ -135,13 +135,13 @@ def test_the_whole_conversation_moves_the_status_back_and_forth(client, db_sessi
     team = create_team(db_session, "Service Desk")
     ticket = make_ticket(db_session, team.id)
     agent_for(client, db_session, team)
-    client.post(f"/tickets/{ticket.id}/email", data={"body": "Which printer?"})
+    client.post(f"/tickets/{ticket.number}/email", data={"body": "Which printer?"})
     client.post("/auth/logout")
     login_as(client, "me@example.com")
-    client.post(f"/portal/{ticket.id}/comment", data={"body": "Floor 2"})
+    client.post(f"/portal/{ticket.number}/comment", data={"body": "Floor 2"})
     client.post("/auth/logout")
     login_as(client, "agent@example.com")  # the same agent, already in the team
-    client.post(f"/tickets/{ticket.id}/email", data={"body": "Thanks, trying a fix"})
+    client.post(f"/tickets/{ticket.number}/email", data={"body": "Thanks, trying a fix"})
 
     assert [(f, t) for f, t, _ in status_events(db_session, ticket)] == [
         ("open", "awaiting_user"),
@@ -155,7 +155,7 @@ def test_an_agent_can_still_set_the_status_by_hand(client, db_session):
     team = create_team(db_session, "Service Desk")
     ticket = make_ticket(db_session, team.id)
     agent_for(client, db_session, team)
-    client.post(f"/tickets/{ticket.id}/email", data={"body": "Which printer?"})
+    client.post(f"/tickets/{ticket.number}/email", data={"body": "Which printer?"})
 
-    assert client.post(f"/tickets/{ticket.id}/status", data={"status": "in_progress"}).status_code == 200
+    assert client.post(f"/tickets/{ticket.number}/status", data={"status": "in_progress"}).status_code == 200
     assert status_of(db_session, ticket) == TicketStatus.IN_PROGRESS

@@ -16,7 +16,7 @@
 </div>
 
 {% if can_comment %}
-<form hx-post="/portal/{{ ticket.id }}/comment" hx-target="main" hx-swap="innerHTML">
+<form hx-post="/portal/{{ ticket.number }}/comment" hx-target="main" hx-swap="innerHTML">
   <textarea name="body" rows="4" maxlength="{{ max_message_length }}" placeholder="Add a comment..." required></textarea>
   <button type="submit">Add comment</button>
 </form>
@@ -32,8 +32,8 @@
   <li>
     {{ follower.email }}
     {% if is_requester %}
-    <form method="post" action="/portal/{{ ticket.id }}/followers/{{ follower.id }}/remove" class="inline-form"
-          hx-post="/portal/{{ ticket.id }}/followers/{{ follower.id }}/remove" hx-target="main" hx-swap="innerHTML">
+    <form method="post" action="/portal/{{ ticket.number }}/followers/{{ follower.id }}/remove" class="inline-form"
+          hx-post="/portal/{{ ticket.number }}/followers/{{ follower.id }}/remove" hx-target="main" hx-swap="innerHTML">
       <button type="submit">Remove</button>
     </form>
     {% endif %}
@@ -42,7 +42,7 @@
   <li>No one else.</li>
   {% endfor %}
 </ul>
-<form hx-post="/portal/{{ ticket.id }}/followers" hx-target="main" hx-swap="innerHTML">
+<form hx-post="/portal/{{ ticket.number }}/followers" hx-target="main" hx-swap="innerHTML">
   <input type="email" name="email" placeholder="colleague@example.org" required />
   <button type="submit">Copy this person on updates</button>
 </form>

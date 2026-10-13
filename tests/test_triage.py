@@ -40,7 +40,7 @@ def agent(client, db_session, member_of=(), email="agent@example.com"):
 
 def triage(client, ticket, category, ticket_type="incident", **extra):
     data = {"ticket_type": ticket_type, "impact": "low", "urgency": "low", "category_id": category.id, **extra}
-    return client.post(f"/tickets/{ticket.id}/triage", data=data)
+    return client.post(f"/tickets/{ticket.number}/triage", data=data)
 
 
 def events(db_session, ticket, event_type):
@@ -83,14 +83,14 @@ def test_a_new_ticket_leaves_new_only_by_triage(client, db_session):
     ticket = new_ticket(db_session, desk)
     agent(client, db_session, member_of=[desk])
 
-    assert client.post(f"/tickets/{ticket.id}/status", data={"status": "open"}).status_code == 400
-    assert client.post(f"/tickets/{ticket.id}/status", data={"status": "resolved"}).status_code == 400
+    assert client.post(f"/tickets/{ticket.number}/status", data={"status": "open"}).status_code == 400
+    assert client.post(f"/tickets/{ticket.number}/status", data={"status": "resolved"}).status_code == 400
     db_session.refresh(ticket)
     assert ticket.status == TicketStatus.NEW
 
     triage(client, ticket, create_category(db_session, desk))
-    assert client.post(f"/tickets/{ticket.id}/status", data={"status": "in_progress"}).status_code == 200
-    assert client.post(f"/tickets/{ticket.id}/status", data={"status": "new"}).status_code == 400
+    assert client.post(f"/tickets/{ticket.number}/status", data={"status": "in_progress"}).status_code == 200
+    assert client.post(f"/tickets/{ticket.number}/status", data={"status": "new"}).status_code == 400
 
 
 def test_a_ticket_created_past_new_counts_as_triaged(db_session):
@@ -148,7 +148,7 @@ def test_triage_assignment_is_optional_and_never_clears_an_existing_one(client, 
     desk = create_team(db_session, "Service Desk")
     ticket = new_ticket(db_session, desk)
     agent_id = agent(client, db_session, member_of=[desk])
-    client.post(f"/tickets/{ticket.id}/assign")  # claimed, still untriaged
+    client.post(f"/tickets/{ticket.number}/assign")  # claimed, still untriaged
 
     triage(client, ticket, create_category(db_session, desk))
 
@@ -188,7 +188,7 @@ def test_triage_refusals(client, db_session):
     db_session.add(switched_off)
     db_session.commit()
 
-    assert client.post(f"/tickets/{ticket.id}/triage", data={"ticket_type": "incident", "impact": "low", "urgency": "low"}).status_code == 400
+    assert client.post(f"/tickets/{ticket.number}/triage", data={"ticket_type": "incident", "impact": "low", "urgency": "low"}).status_code == 400
     assert triage(client, ticket, switched_off).status_code == 400
     refused = triage(client, ticket, no_team)
     assert refused.status_code == 400 and "no team" in refused.text.lower()
@@ -208,9 +208,9 @@ def test_any_agent_can_triage_and_then_keeps_read_access_but_not_write_access(cl
 
     assert triage(client, ticket, category).status_code == 200
 
-    page = client.get(f"/tickets/{ticket.id}")
+    page = client.get(f"/tickets/{ticket.number}")
     assert page.status_code == 200 and "read-only access" in page.text  # triaging does not make it vanish
-    assert client.post(f"/tickets/{ticket.id}/note", data={"body": "x"}).status_code == 403
+    assert client.post(f"/tickets/{ticket.number}/note", data={"body": "x"}).status_code == 403
 
 
 def test_end_users_cannot_triage(client, db_session):
@@ -227,9 +227,9 @@ def test_the_triage_panel_is_only_offered_on_untriaged_tickets(client, db_sessio
     agent(client, db_session, member_of=[desk])
     category = create_category(db_session, desk)
 
-    assert "<h3>Triage</h3>" in client.get(f"/tickets/{ticket.id}").text
+    assert "<h3>Triage</h3>" in client.get(f"/tickets/{ticket.number}").text
     triage(client, ticket, category)
-    page = client.get(f"/tickets/{ticket.id}").text
+    page = client.get(f"/tickets/{ticket.number}").text
     assert "<h3>Triage</h3>" not in page and "Category: Hardware" in page
 
 
@@ -273,7 +273,7 @@ def test_a_super_admin_can_create_a_category_while_triaging(client, db_session):
     login_as(client, "admin@example.com")
 
     response = client.post(
-        f"/tickets/{ticket.id}/triage",
+        f"/tickets/{ticket.number}/triage",
         data={"ticket_type": "incident", "impact": "low", "urgency": "low", "new_category_name": "  Wi-Fi   dead zones ", "new_category_team_id": network.id},
     )
 
@@ -293,7 +293,7 @@ def test_a_super_admin_can_create_a_sub_category_while_triaging(client, db_sessi
     login_as(client, "admin@example.com")
 
     client.post(
-        f"/tickets/{ticket.id}/triage",
+        f"/tickets/{ticket.number}/triage",
         data={"ticket_type": "incident", "impact": "low", "urgency": "low", "new_category_name": "Docking stations", "new_category_parent_id": hardware.id},
     )
 
@@ -310,7 +310,7 @@ def test_an_agent_cannot_create_a_category_and_bad_new_categories_are_refused(cl
     agent(client, db_session, member_of=[desk])
 
     refused = client.post(
-        f"/tickets/{ticket.id}/triage",
+        f"/tickets/{ticket.number}/triage",
         data={"ticket_type": "incident", "impact": "low", "urgency": "low", "new_category_name": "Sneaky", "new_category_team_id": desk.id},
     )
     assert refused.status_code == 403
@@ -326,14 +326,14 @@ def test_an_agent_cannot_create_a_category_and_bad_new_categories_are_refused(cl
         {"new_category_name": "Grandchild", "new_category_parent_id": existing.id, "new_category_team_id": desk.id},
     )
     for fields in bad[:5]:
-        response = client.post(f"/tickets/{ticket.id}/triage", data={"ticket_type": "incident", "impact": "low", "urgency": "low", **fields})
+        response = client.post(f"/tickets/{ticket.number}/triage", data={"ticket_type": "incident", "impact": "low", "urgency": "low", **fields})
         assert response.status_code == 400, fields
     db_session.refresh(ticket)
     assert ticket.triaged_at is None  # none of the refusals triaged it
 
     sub = create_category(db_session, None, "Laptop", parent=existing)
     deeper = client.post(
-        f"/tickets/{ticket.id}/triage",
+        f"/tickets/{ticket.number}/triage",
         data={"ticket_type": "incident", "impact": "low", "urgency": "low", "new_category_name": "Too deep", "new_category_parent_id": sub.id},
     )
     assert deeper.status_code == 400
@@ -363,7 +363,7 @@ def test_reassign_to_a_team_and_an_agent_in_it(client, db_session):
     client.post("/auth/logout")
     login_as(client, "agent@example.com")
 
-    response = client.post(f"/tickets/{ticket.id}/reassign", data={"team_id": network.id, "agent_id": helper_id})
+    response = client.post(f"/tickets/{ticket.number}/reassign", data={"team_id": network.id, "agent_id": helper_id})
 
     assert response.status_code == 200
     db_session.refresh(ticket)
@@ -383,7 +383,7 @@ def test_reassign_to_a_team_and_leave_it_unassigned_there(client, db_session):
     agent_id = agent(client, db_session, member_of=[desk, network])
     ticket = triaged_ticket(db_session, desk, assigned_agent_id=agent_id)
 
-    client.post(f"/tickets/{ticket.id}/reassign", data={"team_id": network.id, "agent_id": ""})
+    client.post(f"/tickets/{ticket.number}/reassign", data={"team_id": network.id, "agent_id": ""})
 
     db_session.refresh(ticket)
     assert (ticket.team_id, ticket.assigned_agent_id) == (network.id, None)
@@ -397,7 +397,7 @@ def test_reassign_within_the_team_and_a_no_op_records_nothing(client, db_session
     agent_id = agent(client, db_session, member_of=[desk])
     ticket = triaged_ticket(db_session, desk, assigned_agent_id=agent_id)
 
-    client.post(f"/tickets/{ticket.id}/reassign", data={"team_id": desk.id, "agent_id": agent_id})
+    client.post(f"/tickets/{ticket.number}/reassign", data={"team_id": desk.id, "agent_id": agent_id})
 
     assert events(db_session, ticket, "assigned") == [] and events(db_session, ticket, "team_changed") == []
     assert db_session.exec(select(AuditLog).where(AuditLog.action == "reassigned")).all() == []
@@ -411,14 +411,14 @@ def test_reassign_refusals(client, db_session):
     ticket = triaged_ticket(db_session, desk, assigned_agent_id=agent_id)
     untriaged = new_ticket(db_session, desk)
 
-    not_a_member = client.post(f"/tickets/{ticket.id}/reassign", data={"team_id": network.id, "agent_id": outsider_id})
+    not_a_member = client.post(f"/tickets/{ticket.number}/reassign", data={"team_id": network.id, "agent_id": outsider_id})
     assert not_a_member.status_code == 400
-    assert client.post(f"/tickets/{ticket.id}/reassign", data={"team_id": 9999}).status_code == 400
-    assert client.post(f"/tickets/{ticket.id}/reassign", data={"team_id": desk.id, "agent_id": "abc"}).status_code == 400
+    assert client.post(f"/tickets/{ticket.number}/reassign", data={"team_id": 9999}).status_code == 400
+    assert client.post(f"/tickets/{ticket.number}/reassign", data={"team_id": desk.id, "agent_id": "abc"}).status_code == 400
     db_session.refresh(ticket)
     assert (ticket.team_id, ticket.assigned_agent_id) == (desk.id, agent_id)  # unchanged by every refusal
     # An untriaged ticket's team is decided by triage, not by moving it.
-    untriaged_move = client.post(f"/tickets/{untriaged.id}/reassign", data={"team_id": desk.id})
+    untriaged_move = client.post(f"/tickets/{untriaged.number}/reassign", data={"team_id": desk.id})
     assert untriaged_move.status_code == 400 and "Triage the ticket first" in untriaged_move.text
 
 
@@ -430,7 +430,7 @@ def test_a_viewer_cannot_reassign(client, db_session):
     add_membership(db_session, viewer_id, desk.id, MembershipLevel.VIEWER)
     ticket = triaged_ticket(db_session, desk)
 
-    assert client.post(f"/tickets/{ticket.id}/reassign", data={"team_id": desk.id}).status_code == 403
+    assert client.post(f"/tickets/{ticket.number}/reassign", data={"team_id": desk.id}).status_code == 403
 
 
 def test_moving_a_ticket_to_a_team_you_are_not_in_says_so_instead_of_showing_a_closed_door(client, db_session):
@@ -438,11 +438,11 @@ def test_moving_a_ticket_to_a_team_you_are_not_in_says_so_instead_of_showing_a_c
     agent(client, db_session, member_of=[desk])
     ticket = triaged_ticket(db_session, desk)
 
-    response = client.post(f"/tickets/{ticket.id}/reassign", data={"team_id": network.id})
+    response = client.post(f"/tickets/{ticket.number}/reassign", data={"team_id": network.id})
 
     assert response.status_code == 200
     assert "was moved to Network" in response.text and "no longer have access" in response.text
-    assert client.get(f"/tickets/{ticket.id}").status_code == 403
+    assert client.get(f"/tickets/{ticket.number}").status_code == 403
 
 
 def test_assign_to_me_is_only_offered_while_unassigned_and_reassign_replaces_it(client, db_session):
@@ -450,13 +450,13 @@ def test_assign_to_me_is_only_offered_while_unassigned_and_reassign_replaces_it(
     agent_id = agent(client, db_session, member_of=[desk])
     ticket = triaged_ticket(db_session, desk)
 
-    page = client.get(f"/tickets/{ticket.id}").text
+    page = client.get(f"/tickets/{ticket.number}").text
     assert "Assign to me" in page and ">Assign</button>" in page
 
     ticket.assigned_agent_id = agent_id
     db_session.add(ticket)
     db_session.commit()
-    page = client.get(f"/tickets/{ticket.id}").text
+    page = client.get(f"/tickets/{ticket.number}").text
     assert "Assign to me" not in page and ">Re-assign</button>" in page
 
 
@@ -520,7 +520,7 @@ def test_two_people_triaging_the_same_ticket_at_once_get_one_winner_and_no_error
             racing_client.post("/auth/dev-login", data={"email": f"agent{number}@example.com", "display_name": "A"})
             barrier.wait()
             response = racing_client.post(
-                f"/tickets/{ticket.id}/triage", data={"ticket_type": "service_request", "impact": "low", "urgency": "low", "category_id": category.id}
+                f"/tickets/{ticket.number}/triage", data={"ticket_type": "service_request", "impact": "low", "urgency": "low", "category_id": category.id}
             )
             codes.append(response.status_code)
 
@@ -561,12 +561,12 @@ def test_a_super_admin_can_assign_an_untriaged_ticket_without_triaging_it(client
     client.post("/auth/logout")
     login_as(client, "admin@example.com")
 
-    page = client.get(f"/tickets/{ticket.id}").text
+    page = client.get(f"/tickets/{ticket.number}").text
     assert "Assign to (without triaging)" in page and "<h3>Triage</h3>" in page
 
-    assert client.post(f"/tickets/{ticket.id}/assign", data={"agent_id": member_id}).status_code == 200
+    assert client.post(f"/tickets/{ticket.number}/assign", data={"agent_id": member_id}).status_code == 200
     db_session.refresh(ticket)
     assert ticket.assigned_agent_id == member_id and ticket.triaged_at is None
 
     triage(client, ticket, create_category(db_session, desk))
-    assert "Assign to (without triaging)" not in client.get(f"/tickets/{ticket.id}").text
+    assert "Assign to (without triaging)" not in client.get(f"/tickets/{ticket.number}").text

@@ -48,9 +48,9 @@ def test_member_works_viewer_reads_others_cannot_see(client, db_session):
     assert "Own team" in listing and "Watched team" in listing
     assert "Other team" not in listing
 
-    assert client.get(f"/tickets/{own_ticket.id}").status_code == 200
-    assert client.get(f"/tickets/{viewed_ticket.id}").status_code == 200
-    assert client.get(f"/tickets/{hidden_ticket.id}").status_code == 403
+    assert client.get(f"/tickets/{own_ticket.number}").status_code == 200
+    assert client.get(f"/tickets/{viewed_ticket.number}").status_code == 200
+    assert client.get(f"/tickets/{hidden_ticket.number}").status_code == 403
 
 
 def test_viewer_cannot_change_anything(client, db_session):
@@ -58,7 +58,7 @@ def test_viewer_cannot_change_anything(client, db_session):
     agent_in(client, db_session, viewer_of=[watched])
     ticket = make_ticket(db_session, watched.id)
 
-    page = client.get(f"/tickets/{ticket.id}").text
+    page = client.get(f"/tickets/{ticket.number}").text
     assert "read-only access" in page
     assert "Email user" not in page and "Add note" not in page
 
@@ -69,7 +69,7 @@ def test_viewer_cannot_change_anything(client, db_session):
         ("assign", {}),
         ("escalate", {"reason": "x"}),
     ):
-        assert client.post(f"/tickets/{ticket.id}/{path}", data=data).status_code == 403, path
+        assert client.post(f"/tickets/{ticket.number}/{path}", data=data).status_code == 403, path
 
     db_session.refresh(ticket)
     assert ticket.status == TicketStatus.OPEN
@@ -88,24 +88,24 @@ def test_every_agent_can_see_untriaged_tickets_but_must_claim_one_to_work_it(cli
     assert "Triaged elsewhere" not in listing
 
     # Visible, with a way to claim it, but not workable until claimed.
-    page = client.get(f"/tickets/{new_in_other_team.id}").text
+    page = client.get(f"/tickets/{new_in_other_team.number}").text
     assert "assign it to yourself" in page and "Assign to me" in page and "Email user" not in page
-    assert client.post(f"/tickets/{new_in_other_team.id}/email", data={"body": "On it"}).status_code == 403
-    assert client.post(f"/tickets/{new_in_other_team.id}/status", data={"status": "open"}).status_code == 403
-    assert client.post(f"/tickets/{triaged_elsewhere.id}/assign").status_code == 403
-    assert client.post(f"/tickets/{triaged_elsewhere.id}/note", data={"body": "x"}).status_code == 403
+    assert client.post(f"/tickets/{new_in_other_team.number}/email", data={"body": "On it"}).status_code == 403
+    assert client.post(f"/tickets/{new_in_other_team.number}/status", data={"status": "open"}).status_code == 403
+    assert client.post(f"/tickets/{triaged_elsewhere.number}/assign").status_code == 403
+    assert client.post(f"/tickets/{triaged_elsewhere.number}/note", data={"body": "x"}).status_code == 403
 
     # An untriaged ticket can be annotated without claiming or triaging it.
     assert "Add note" in page
-    assert client.post(f"/tickets/{new_in_other_team.id}/note", data={"body": "Spoke to the user"}).status_code == 200
+    assert client.post(f"/tickets/{new_in_other_team.number}/note", data={"body": "Spoke to the user"}).status_code == 200
     db_session.refresh(new_in_other_team)
     assert new_in_other_team.assigned_agent_id is None and new_in_other_team.status == TicketStatus.NEW
 
-    assert client.post(f"/tickets/{new_in_other_team.id}/assign").status_code == 200
+    assert client.post(f"/tickets/{new_in_other_team.number}/assign").status_code == 200
     db_session.refresh(new_in_other_team)
     assert new_in_other_team.assigned_agent_id == agent_id
     # Claimed but still untriaged, so still not emailable.
-    assert client.post(f"/tickets/{new_in_other_team.id}/email", data={"body": "On it"}).status_code == 400
+    assert client.post(f"/tickets/{new_in_other_team.number}/email", data={"body": "On it"}).status_code == 400
 
 
 def test_claiming_an_untriaged_ticket_keeps_it_after_it_leaves_new(client, db_session):
@@ -115,17 +115,17 @@ def test_claiming_an_untriaged_ticket_keeps_it_after_it_leaves_new(client, db_se
     agent_in(client, db_session)
     ticket = make_ticket(db_session, other.id, status=TicketStatus.NEW)
 
-    client.post(f"/tickets/{ticket.id}/assign")
+    client.post(f"/tickets/{ticket.number}/assign")
     category = create_category(db_session, other)
-    triage = client.post(f"/tickets/{ticket.id}/triage", data={"ticket_type": "incident", "impact": "low", "urgency": "low", "category_id": category.id})
+    triage = client.post(f"/tickets/{ticket.number}/triage", data={"ticket_type": "incident", "impact": "low", "urgency": "low", "category_id": category.id})
     assert triage.status_code == 200
-    client.post(f"/tickets/{ticket.id}/email", data={"body": "First email"})
+    client.post(f"/tickets/{ticket.number}/email", data={"body": "First email"})
     db_session.refresh(ticket)
     assert ticket.status == TicketStatus.AWAITING_USER
 
-    assert client.get(f"/tickets/{ticket.id}").status_code == 200
-    assert client.post(f"/tickets/{ticket.id}/email", data={"body": "Follow-up"}).status_code == 200
-    assert "Follow-up" in client.get(f"/tickets/{ticket.id}").text
+    assert client.get(f"/tickets/{ticket.number}").status_code == 200
+    assert client.post(f"/tickets/{ticket.number}/email", data={"body": "Follow-up"}).status_code == 200
+    assert "Follow-up" in client.get(f"/tickets/{ticket.number}").text
 
 
 def test_super_admin_can_assign_any_agent_to_a_ticket_with_no_team(client, db_session):
@@ -134,7 +134,7 @@ def test_super_admin_can_assign_any_agent_to_a_ticket_with_no_team(client, db_se
     ticket = make_ticket(db_session, None, status=TicketStatus.NEW)
     login_as(client, "admin@example.com")
 
-    assert client.post(f"/tickets/{ticket.id}/assign", data={"agent_id": agent_id}).status_code == 200
+    assert client.post(f"/tickets/{ticket.number}/assign", data={"agent_id": agent_id}).status_code == 200
     db_session.refresh(ticket)
     assert ticket.assigned_agent_id == agent_id
 
@@ -148,8 +148,8 @@ def test_assigned_agent_keeps_access_when_the_ticket_moves_team(client, db_sessi
     db_session.add(ticket)
     db_session.commit()
 
-    assert client.get(f"/tickets/{ticket.id}").status_code == 200
-    assert client.post(f"/tickets/{ticket.id}/status", data={"status": "resolved"}).status_code == 200
+    assert client.get(f"/tickets/{ticket.number}").status_code == 200
+    assert client.post(f"/tickets/{ticket.number}/status", data={"status": "resolved"}).status_code == 200
 
 
 def test_escalating_agent_keeps_read_access_but_not_write_access(client, db_session):
@@ -158,14 +158,14 @@ def test_escalating_agent_keeps_read_access_but_not_write_access(client, db_sess
     ticket = make_ticket(db_session, mine.id)
 
     response = client.post(
-        f"/tickets/{ticket.id}/escalate", data={"reason": "Needs network", "target_team_id": network.id}
+        f"/tickets/{ticket.number}/escalate", data={"reason": "Needs network", "target_team_id": network.id}
     )
     assert response.status_code == 200
 
-    page = client.get(f"/tickets/{ticket.id}")
+    page = client.get(f"/tickets/{ticket.number}")
     assert page.status_code == 200
     assert "read-only access" in page.text
-    assert client.post(f"/tickets/{ticket.id}/status", data={"status": "resolved"}).status_code == 403
+    assert client.post(f"/tickets/{ticket.number}/status", data={"status": "resolved"}).status_code == 403
     assert str(ticket.reference) in client.get("/tickets").text
 
 
@@ -189,8 +189,8 @@ def test_super_admin_assigns_only_team_members(client, db_session):
     ticket = make_ticket(db_session, team.id)
     login_as(client, "admin@example.com")
 
-    assert client.post(f"/tickets/{ticket.id}/assign", data={"agent_id": viewer_id}).status_code == 400
-    assert client.post(f"/tickets/{ticket.id}/assign", data={"agent_id": member_id}).status_code == 200
+    assert client.post(f"/tickets/{ticket.number}/assign", data={"agent_id": viewer_id}).status_code == 400
+    assert client.post(f"/tickets/{ticket.number}/assign", data={"agent_id": member_id}).status_code == 200
     db_session.refresh(ticket)
     assert ticket.assigned_agent_id == member_id
 
@@ -433,16 +433,16 @@ def test_an_assigned_untriaged_ticket_cannot_be_taken_by_another_agent(client, d
     db_session.commit()
 
     agent_in(client, db_session, email="bystander@example.com")
-    page = client.get(f"/tickets/{ticket.id}").text
+    page = client.get(f"/tickets/{ticket.number}").text
     assert "Assign to me" not in page and "read-only access" in page
-    assert client.post(f"/tickets/{ticket.id}/assign").status_code == 403
+    assert client.post(f"/tickets/{ticket.number}/assign").status_code == 403
     db_session.refresh(ticket)
     assert ticket.assigned_agent_id == assignee_id and ticket.status == TicketStatus.NEW
 
     # The assignee still works it, and it stays untriaged (New) until triage.
     client.post("/auth/logout")
     login_as(client, "assignee@example.com")
-    assert client.get(f"/tickets/{ticket.id}").status_code == 200
-    assert client.post(f"/tickets/{ticket.id}/note", data={"body": "Looking"}).status_code == 200
+    assert client.get(f"/tickets/{ticket.number}").status_code == 200
+    assert client.post(f"/tickets/{ticket.number}/note", data={"body": "Looking"}).status_code == 200
     # Still New, so still no email to the requester.
-    assert client.post(f"/tickets/{ticket.id}/email", data={"body": "Looking"}).status_code == 400
+    assert client.post(f"/tickets/{ticket.number}/email", data={"body": "Looking"}).status_code == 400

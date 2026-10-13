@@ -48,6 +48,11 @@ def parse_ticket_number(text: str) -> Optional[int]:
     return int(match.group(1)) if match else None
 
 
+def get_by_number(session: Session, number: int) -> Optional[Ticket]:
+    """The ticket with this number, or None. Route paths carry the number, never the internal id."""
+    return session.exec(select(Ticket).where(Ticket.number == number)).first()
+
+
 def find_ticket(session: Session, text: str) -> Optional[Ticket]:
     number = parse_ticket_number(text)
     if number is None:

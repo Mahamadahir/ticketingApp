@@ -34,7 +34,7 @@ from app.sla import (
     set_impact_urgency,
     sla_view,
 )
-from app.ticket_service import EVENT_ASSIGNED, EVENT_ESCALATED, NotTriaged, find_ticket, record_event, set_status
+from app.ticket_service import EVENT_ASSIGNED, EVENT_ESCALATED, NotTriaged, find_ticket, get_by_number, record_event, set_status
 from app.triage import TriageError, reassign_ticket, triage_ticket
 from app.visibility import (
     Access,
@@ -106,8 +106,8 @@ def list_tickets(
     )
 
 
-def _get_ticket(session: Session, ticket_id: int, user: User, needed: Access = Access.WORK) -> Ticket:
-    ticket = session.get(Ticket, ticket_id)
+def _get_ticket(session: Session, number: int, user: User, needed: Access = Access.WORK) -> Ticket:
+    ticket = get_by_number(session, number)
     if ticket is None:
         raise HTTPException(status_code=404, detail="Ticket not found")
     require_access(user, ticket, access_context(session, user), needed)
@@ -144,9 +144,9 @@ def agent_options_for_category(
     return _agent_options(request, team_members(session, team_id), "Leave as is")
 
 
-@router.post("/{ticket_id}/triage", response_class=HTMLResponse)
+@router.post("/{number}/triage", response_class=HTMLResponse)
 def triage(
-    ticket_id: int,
+    number: int,
     request: Request,
     ticket_type: TicketType = Form(...),
     impact: Level = Form(...),
@@ -161,7 +161,7 @@ def triage(
 ):
     """Classifies a New ticket: type and category (which picks the team), and
     optionally assigns it. Assignment is not required; the team can pick it up."""
-    ticket = _get_ticket(session, ticket_id, user, Access.READ)
+    ticket = _get_ticket(session, number, user, Access.READ)
     # Lock the row and re-read it, so two people triaging at once cannot both pass
     # the check below: the second waits, then sees it is already triaged.
     session.refresh(ticket, with_for_update=True)
@@ -204,9 +204,9 @@ def triage(
     return _render_ticket_detail(request, ticket, user, session)
 
 
-@router.post("/{ticket_id}/priority", response_class=HTMLResponse)
+@router.post("/{number}/priority", response_class=HTMLResponse)
 def change_priority(
-    ticket_id: int,
+    number: int,
     request: Request,
     impact: Level = Form(...),
     urgency: Level = Form(...),
@@ -215,7 +215,7 @@ def change_priority(
 ):
     """Re-sets impact and urgency on a triaged ticket the agent works. The priority
     follows, and the SLA deadlines are worked out again from the new targets."""
-    ticket = _get_ticket(session, ticket_id, user)
+    ticket = _get_ticket(session, number, user)
     if ticket.triaged_at is None:
         raise HTTPException(status_code=400, detail="Triage the ticket first; triage sets its priority")
     if ticket.status in FINISHED_STATUSES:
@@ -229,9 +229,9 @@ def change_priority(
     return _render_ticket_detail(request, ticket, user, session)
 
 
-@router.post("/{ticket_id}/reassign", response_class=HTMLResponse)
+@router.post("/{number}/reassign", response_class=HTMLResponse)
 def reassign(
-    ticket_id: int,
+    number: int,
     request: Request,
     team_id: int = Form(...),
     agent_id: Optional[str] = Form(None),
@@ -240,7 +240,7 @@ def reassign(
 ):
     """Choose a team, then an agent in it or leave the ticket unassigned there.
     No reason is needed; this is not an escalation."""
-    ticket = _get_ticket(session, ticket_id, user)
+    ticket = _get_ticket(session, number, user)
     team = session.get(Team, team_id)
     if team is None:
         raise HTTPException(status_code=400, detail="Choose a team")
@@ -270,14 +270,14 @@ def reassign(
         )
     return _render_ticket_detail(request, ticket, user, session)
 
-@router.get("/{ticket_id}", response_class=HTMLResponse)
+@router.get("/{number}", response_class=HTMLResponse)
 def view_ticket(
-    ticket_id: int,
+    number: int,
     request: Request,
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
-    return _render_ticket_detail(request, _get_ticket(session, ticket_id, user, Access.READ), user, session)
+    return _render_ticket_detail(request, _get_ticket(session, number, user, Access.READ), user, session)
 
 
 @reference_router.get("/t/{number}", response_class=HTMLResponse)
@@ -296,9 +296,9 @@ def view_ticket_by_number(
     return _render_ticket_detail(request, ticket, user, session)
 
 
-@router.post("/{ticket_id}/email", response_class=HTMLResponse)
+@router.post("/{number}/email", response_class=HTMLResponse)
 def email_user(
-    ticket_id: int,
+    number: int,
     request: Request,
     body: str = Form(..., max_length=MAX_MESSAGE_LENGTH),
     cc_form: Optional[str] = Form(None),
@@ -310,7 +310,7 @@ def email_user(
     Not available until the ticket is triaged. "cc_form" is sent by the page's form
     so that ticking nobody means copying nobody; a request without it copies every
     follower."""
-    ticket = _get_ticket(session, ticket_id, user)
+    ticket = _get_ticket(session, number, user)
 
     try:
         email_requester(session, ticket, user, body, cc_emails=cc if cc_form else None)
@@ -341,9 +341,9 @@ def email_user(
     return _render_ticket_detail(request, ticket, user, session)
 
 
-@router.post("/{ticket_id}/note", response_class=HTMLResponse)
+@router.post("/{number}/note", response_class=HTMLResponse)
 def add_ticket_note(
-    ticket_id: int,
+    number: int,
     request: Request,
     body: str = Form(..., max_length=MAX_MESSAGE_LENGTH),
     user: User = Depends(require_roles(*AGENT_ROLES)),
@@ -351,7 +351,7 @@ def add_ticket_note(
 ):
     """An internal note, visible to agents only. Allowed at any stage, including
     on an untriaged ticket the agent has not claimed, and never triages it."""
-    ticket = _get_ticket(session, ticket_id, user, Access.READ)
+    ticket = _get_ticket(session, number, user, Access.READ)
     if not may_add_note(user, ticket, access_context(session, user)):
         raise NoTicketAccess()
 
@@ -362,15 +362,15 @@ def add_ticket_note(
 
     return _render_ticket_detail(request, ticket, user, session)
 
-@router.post("/{ticket_id}/status", response_class=HTMLResponse)
+@router.post("/{number}/status", response_class=HTMLResponse)
 def change_status(
-    ticket_id: int,
+    number: int,
     request: Request,
     status: TicketStatus = Form(...),
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
-    ticket = _get_ticket(session, ticket_id, user)
+    ticket = _get_ticket(session, number, user)
     if status == TicketStatus.NEW:
         raise HTTPException(status_code=400, detail="A ticket only starts in New; it leaves New by being triaged")
 
@@ -387,15 +387,15 @@ def change_status(
     return _render_ticket_detail(request, ticket, user, session)
 
 
-@router.post("/{ticket_id}/assign", response_class=HTMLResponse)
+@router.post("/{number}/assign", response_class=HTMLResponse)
 def assign_ticket(
-    ticket_id: int,
+    number: int,
     request: Request,
     agent_id: Optional[int] = Form(None),
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
-    ticket = _get_ticket(session, ticket_id, user, Access.READ)
+    ticket = _get_ticket(session, number, user, Access.READ)
 
     if user.role == UserRole.AGENT:
         levels = access_context(session, user)
@@ -430,16 +430,16 @@ def assign_ticket(
     return _render_ticket_detail(request, ticket, user, session)
 
 
-@router.post("/{ticket_id}/escalate", response_class=HTMLResponse)
+@router.post("/{number}/escalate", response_class=HTMLResponse)
 def escalate_ticket(
-    ticket_id: int,
+    number: int,
     request: Request,
     reason: str = Form(..., max_length=MAX_MESSAGE_LENGTH),
     target_team_id: Optional[str] = Form(None),
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
-    ticket = _get_ticket(session, ticket_id, user)
+    ticket = _get_ticket(session, number, user)
     parsed_target_team_id = optional_int(target_team_id)
 
     new_team = None
@@ -478,9 +478,9 @@ def escalate_ticket(
     return _render_ticket_detail(request, ticket, user, session)
 
 
-@router.post("/{ticket_id}/link", response_class=HTMLResponse)
+@router.post("/{number}/link", response_class=HTMLResponse)
 def link(
-    ticket_id: int,
+    number: int,
     request: Request,
     parent_number: str = Form(..., max_length=40),
     user: User = Depends(require_roles(*AGENT_ROLES)),
@@ -488,7 +488,7 @@ def link(
 ):
     """Links this ticket under a Major Incident or Problem, given by reference. The agent
     works this ticket and must be able to see the parent."""
-    ticket = _get_ticket(session, ticket_id, user)
+    ticket = _get_ticket(session, number, user)
     parent = find_ticket(session, parent_number)
     # The same answer whether it does not exist or is not visible to this agent, so
     # references cannot be probed for tickets they may not see.
@@ -506,14 +506,14 @@ def link(
     return _render_ticket_detail(request, ticket, user, session)
 
 
-@router.post("/{ticket_id}/unlink", response_class=HTMLResponse)
+@router.post("/{number}/unlink", response_class=HTMLResponse)
 def unlink(
-    ticket_id: int,
+    number: int,
     request: Request,
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
-    ticket = _get_ticket(session, ticket_id, user)
+    ticket = _get_ticket(session, number, user)
     parent = unlink_ticket(session, ticket, user.email)
     if parent is not None:
         ticket.updated_at = datetime.now(timezone.utc)
@@ -523,9 +523,9 @@ def unlink(
     return _render_ticket_detail(request, ticket, user, session)
 
 
-@router.post("/{ticket_id}/followers", response_class=HTMLResponse)
+@router.post("/{number}/followers", response_class=HTMLResponse)
 def add_ticket_follower(
-    ticket_id: int,
+    number: int,
     request: Request,
     email: str = Form(..., max_length=254),
     user: User = Depends(require_roles(*AGENT_ROLES)),
@@ -533,7 +533,7 @@ def add_ticket_follower(
 ):
     """Copy someone on this ticket's emails. They see it under Following in the
     portal if they have an account."""
-    ticket = _get_ticket(session, ticket_id, user)
+    ticket = _get_ticket(session, number, user)
     try:
         follower = add_follower(session, ticket, email, user.email)
     except InvalidEmail:
@@ -549,15 +549,15 @@ def add_ticket_follower(
     return _render_ticket_detail(request, ticket, user, session)
 
 
-@router.post("/{ticket_id}/followers/{follower_id}/remove", response_class=HTMLResponse)
+@router.post("/{number}/followers/{follower_id}/remove", response_class=HTMLResponse)
 def remove_ticket_follower(
-    ticket_id: int,
+    number: int,
     follower_id: int,
     request: Request,
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
-    ticket = _get_ticket(session, ticket_id, user)
+    ticket = _get_ticket(session, number, user)
     removed_email = remove_follower(session, ticket, follower_id, user.email)
     if removed_email is None:
         raise HTTPException(status_code=404, detail="Follower not found")

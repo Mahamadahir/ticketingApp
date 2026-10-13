@@ -25,7 +25,7 @@ def test_a_refused_form_comes_back_as_a_message_aimed_at_the_flash_area(client, 
     ticket = make_ticket(db_session, team.id, status=TicketStatus.NEW)
     agent_for(client, db_session, team)
 
-    response = client.post(f"/tickets/{ticket.id}/email", data={"body": "Hello"}, headers=HTMX)
+    response = client.post(f"/tickets/{ticket.number}/email", data={"body": "Hello"}, headers=HTMX)
 
     assert response.status_code == 400
     assert response.headers["HX-Retarget"] == "#flash"
@@ -39,7 +39,7 @@ def test_the_same_refusal_without_htmx_is_still_the_normal_json_error(client, db
     ticket = make_ticket(db_session, team.id, status=TicketStatus.NEW)
     agent_for(client, db_session, team)
 
-    response = client.post(f"/tickets/{ticket.id}/email", data={"body": "Hello"})
+    response = client.post(f"/tickets/{ticket.number}/email", data={"body": "Hello"})
 
     assert response.status_code == 400
     assert response.json() == {"detail": "Triage the ticket before emailing the requester"}
@@ -51,10 +51,10 @@ def test_a_bad_follower_address_and_a_validation_error_show_messages(client, db_
     ticket = make_ticket(db_session, team.id)
     agent_for(client, db_session, team)
 
-    bad_address = client.post(f"/tickets/{ticket.id}/followers", data={"email": "nope"}, headers=HTMX)
+    bad_address = client.post(f"/tickets/{ticket.number}/followers", data={"email": "nope"}, headers=HTMX)
     assert bad_address.status_code == 400 and "not a valid email address" in bad_address.text
 
-    missing = client.post(f"/tickets/{ticket.id}/note", data={}, headers=HTMX)
+    missing = client.post(f"/tickets/{ticket.number}/note", data={}, headers=HTMX)
     assert missing.status_code == 422
     assert missing.headers["HX-Retarget"] == "#flash" and "Check what you entered" in missing.text
 
@@ -64,11 +64,11 @@ def test_no_access_to_a_ticket_is_a_message_for_htmx_and_the_page_otherwise(clie
     ticket = make_ticket(db_session, other.id)
     agent_for(client, db_session, mine)  # the ticket is Open in another team, so not theirs
 
-    ajax = client.post(f"/tickets/{ticket.id}/status", data={"status": "resolved"}, headers=HTMX)
+    ajax = client.post(f"/tickets/{ticket.number}/status", data={"status": "resolved"}, headers=HTMX)
     assert ajax.status_code == 403 and ajax.headers["HX-Retarget"] == "#flash"
     assert "have access to do that" in ajax.text  # the apostrophe in "don't" is escaped
 
-    page = client.get(f"/tickets/{ticket.id}")
+    page = client.get(f"/tickets/{ticket.number}")
     assert page.status_code == 403 and "No access" in page.text and "HX-Retarget" not in page.headers
 
 

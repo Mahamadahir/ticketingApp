@@ -13,9 +13,9 @@
 
 {% for ticket in tickets %}
 <div class="review-item">
-  <p><a href="/tickets/{{ ticket.id }}"><b>{{ ticket.reference }}</b> {{ ticket.subject }}</a>
+  <p><a href="/tickets/{{ ticket.number }}"><b>{{ ticket.reference }}</b> {{ ticket.subject }}</a>
     &middot; {{ ticket.status.value }}</p>
-  <form method="post" action="/admin/category-review/{{ ticket.id }}">
+  <form method="post" action="/admin/category-review/{{ ticket.number }}">
     <label>Existing category
       <select name="category_id">
         <option value="">Choose a category</option>

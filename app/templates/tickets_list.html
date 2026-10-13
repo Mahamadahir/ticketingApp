@@ -31,7 +31,7 @@
     <tr class="{{ 'escalated-row' if ticket.is_escalated else '' }}">
       <td>{{ ticket.reference }}</td>
       <td>
-        <a href="/tickets/{{ ticket.id }}">{{ ticket.subject }}</a>
+        <a href="/tickets/{{ ticket.number }}">{{ ticket.subject }}</a>
         {% if ticket.is_escalated %}<span class="badge badge-escalated">escalated</span>{% endif %}
       </td>
       <td>{{ ticket.requester_email }}</td>

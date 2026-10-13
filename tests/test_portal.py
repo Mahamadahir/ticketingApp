@@ -26,7 +26,7 @@ def test_end_user_cannot_view_others_ticket(client, db_session):
 
     login_as(client, "me@example.com")
 
-    response = client.get(f"/portal/{other_ticket.id}")
+    response = client.get(f"/portal/{other_ticket.number}")
     assert response.status_code == 404
 
 
@@ -34,7 +34,7 @@ def test_end_user_comment_does_not_change_status(client, db_session):
     ticket = create_ticket_for(db_session, "me@example.com")
     login_as(client, "me@example.com")
 
-    client.post(f"/portal/{ticket.id}/comment", data={"body": "Still broken, please help"})
+    client.post(f"/portal/{ticket.number}/comment", data={"body": "Still broken, please help"})
 
     db_session.refresh(ticket)
     assert ticket.status == TicketStatus.NEW

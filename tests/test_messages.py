@@ -40,7 +40,7 @@ def test_a_note_is_internal_and_does_not_change_the_ticket(client, db_session):
     ticket = make_ticket(db_session, team.id, status=TicketStatus.NEW)
     agent_id = agent_for(client, db_session, team)
 
-    assert client.post(f"/tickets/{ticket.id}/note", data={"body": SECRET_NOTE}).status_code == 200
+    assert client.post(f"/tickets/{ticket.number}/note", data={"body": SECRET_NOTE}).status_code == 200
 
     db_session.refresh(ticket)
     assert ticket.status == TicketStatus.NEW  # a note does not triage
@@ -56,17 +56,17 @@ def test_a_note_never_reaches_the_requester(client, db_session):
     team = create_team(db_session, "Service Desk")
     ticket = make_ticket(db_session, team.id)
     agent_for(client, db_session, team)
-    client.post(f"/tickets/{ticket.id}/note", data={"body": SECRET_NOTE})
-    client.post(f"/tickets/{ticket.id}/email", data={"body": "We are looking into it"})
+    client.post(f"/tickets/{ticket.number}/note", data={"body": SECRET_NOTE})
+    client.post(f"/tickets/{ticket.number}/email", data={"body": "We are looking into it"})
     client.post("/auth/logout")
 
     login_as(client, "me@example.com")
-    portal_page = client.get(f"/portal/{ticket.id}").text
+    portal_page = client.get(f"/portal/{ticket.number}").text
     assert "We are looking into it" in portal_page
     assert SECRET_NOTE not in portal_page and "Internal note" not in portal_page
 
     # Still hidden after the requester writes back, which re-renders the page.
-    after_comment = client.post(f"/portal/{ticket.id}/comment", data={"body": "Thanks"}).text
+    after_comment = client.post(f"/portal/{ticket.number}/comment", data={"body": "Thanks"}).text
     assert SECRET_NOTE not in after_comment
 
 
@@ -138,7 +138,7 @@ def test_triaged_and_untriaged_are_one_rule(db_session):
 def test_a_portal_comment_is_recorded_as_public_inbound(client, db_session):
     ticket = make_ticket(db_session)
     login_as(client, "me@example.com")
-    client.post(f"/portal/{ticket.id}/comment", data={"body": "Still broken"})
+    client.post(f"/portal/{ticket.number}/comment", data={"body": "Still broken"})
 
     message = db_session.exec(select(Message)).one()
     assert (message.direction, message.visibility) == (MessageDirection.INBOUND, MessageVisibility.PUBLIC)
@@ -157,7 +157,7 @@ def test_viewers_and_end_users_cannot_add_notes(client, db_session):
     ticket = make_ticket(db_session, team.id)
     login_as(client, "me@example.com")  # the requester, an end user
 
-    assert client.post(f"/tickets/{ticket.id}/note", data={"body": "x"}).status_code == 403
+    assert client.post(f"/tickets/{ticket.number}/note", data={"body": "x"}).status_code == 403
     assert db_session.exec(select(Message)).all() == []
 
 
@@ -169,23 +169,23 @@ def test_email_user_is_unavailable_until_the_ticket_is_triaged(client, db_sessio
     ticket = make_ticket(db_session, team.id, status=TicketStatus.NEW)
     agent_for(client, db_session, team)
 
-    page = client.get(f"/tickets/{ticket.id}").text
+    page = client.get(f"/tickets/{ticket.number}").text
     assert "Email user" not in page and "Triage this ticket" in page
     assert "Add note" in page
 
-    response = client.post(f"/tickets/{ticket.id}/email", data={"body": "Hello"})
+    response = client.post(f"/tickets/{ticket.number}/email", data={"body": "Hello"})
     assert response.status_code == 400
     assert db_session.exec(select(Message)).all() == []
 
     # Triage is what makes it emailable; the status buttons cannot do it.
-    assert client.post(f"/tickets/{ticket.id}/status", data={"status": "open"}).status_code == 400
+    assert client.post(f"/tickets/{ticket.number}/status", data={"status": "open"}).status_code == 400
     category = create_category(db_session, team)
     triage = client.post(
-        f"/tickets/{ticket.id}/triage", data={"ticket_type": "incident", "impact": "low", "urgency": "low", "category_id": category.id}
+        f"/tickets/{ticket.number}/triage", data={"ticket_type": "incident", "impact": "low", "urgency": "low", "category_id": category.id}
     )
     assert triage.status_code == 200
-    assert "Email user" in client.get(f"/tickets/{ticket.id}").text
-    assert client.post(f"/tickets/{ticket.id}/email", data={"body": "Hello"}).status_code == 200
+    assert "Email user" in client.get(f"/tickets/{ticket.number}").text
+    assert client.post(f"/tickets/{ticket.number}/email", data={"body": "Hello"}).status_code == 200
 
 
 def test_an_email_is_public_outbound_and_shown_to_the_requester(client, db_session):
@@ -193,7 +193,7 @@ def test_an_email_is_public_outbound_and_shown_to_the_requester(client, db_sessi
     ticket = make_ticket(db_session, team.id)
     agent_for(client, db_session, team)
 
-    client.post(f"/tickets/{ticket.id}/email", data={"body": "Have you tried rebooting?"})
+    client.post(f"/tickets/{ticket.number}/email", data={"body": "Have you tried rebooting?"})
 
     message = db_session.exec(select(Message)).one()
     assert message.direction == MessageDirection.OUTBOUND
@@ -210,10 +210,10 @@ def test_the_timeline_interleaves_messages_notes_and_events_in_order(client, db_
     agent_for(client, db_session, team)
 
     category = create_category(db_session, team)
-    client.post(f"/tickets/{ticket.id}/note", data={"body": "First, a note"})
-    client.post(f"/tickets/{ticket.id}/triage", data={"ticket_type": "incident", "impact": "low", "urgency": "low", "category_id": category.id})
-    client.post(f"/tickets/{ticket.id}/email", data={"body": "Then an email"})
-    client.post(f"/portal/{ticket.id}/comment", data={"body": "ignored: wrong user"})  # 404, adds nothing
+    client.post(f"/tickets/{ticket.number}/note", data={"body": "First, a note"})
+    client.post(f"/tickets/{ticket.number}/triage", data={"ticket_type": "incident", "impact": "low", "urgency": "low", "category_id": category.id})
+    client.post(f"/tickets/{ticket.number}/email", data={"body": "Then an email"})
+    client.post(f"/portal/{ticket.number}/comment", data={"body": "ignored: wrong user"})  # 404, adds nothing
 
     items = agent_timeline(db_session, ticket)
     summary = [
@@ -222,7 +222,7 @@ def test_the_timeline_interleaves_messages_notes_and_events_in_order(client, db_
     assert summary == ["internal", "triaged", "status_changed", "outbound", "status_changed"]
     assert [item.at for item in items] == sorted(item.at for item in items)
 
-    page = client.get(f"/tickets/{ticket.id}").text
+    page = client.get(f"/tickets/{ticket.number}").text
     assert page.index("First, a note") < page.index("Then an email")
     assert "Internal note" in page and "Email to requester" in page and "status changed" in page
 
@@ -231,9 +231,9 @@ def test_an_inbound_portal_comment_appears_in_the_agent_timeline(client, db_sess
     team = create_team(db_session, "Service Desk")
     ticket = make_ticket(db_session, team.id)
     login_as(client, "me@example.com")
-    client.post(f"/portal/{ticket.id}/comment", data={"body": "Still broken"})
+    client.post(f"/portal/{ticket.number}/comment", data={"body": "Still broken"})
     client.post("/auth/logout")
     agent_for(client, db_session, team)
 
-    page = client.get(f"/tickets/{ticket.id}").text
+    page = client.get(f"/tickets/{ticket.number}").text
     assert "From requester" in page and "Still broken" in page
