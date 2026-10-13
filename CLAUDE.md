@@ -46,8 +46,8 @@ starting a phase, and `README.md` for how to run it.
   sub-tickets in two PRs: part 1 (built: `app/splitting.py`, `split_from_id`, each part triaged
   from the original) and part 2 (built: the original's derived status in `app/splitting.py`; which
   messages show where, the one thread subject and the "About:" line in `app/messages.py`).
-  Only the 1G agent raise form may create `source=agent` tickets (backdating relies on it); when
-  1G lands, switch the backdating tests to that real path.
+  Only `app/raising.py` (the portal raise form, 1G-i, built) may create `source=agent` tickets
+  (backdating relies on it); the backdating tests use that real path.
 - **Nothing is deployed anywhere.** No Azure resources exist, no database has
   had migrations applied outside this laptop. Everything is developed and
   tested locally with `docker compose` and `pytest`.

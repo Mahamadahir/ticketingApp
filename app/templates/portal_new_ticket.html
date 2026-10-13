@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Raise a request{% endblock %}
+{% block content %}
+<p><a href="{{ '/tickets' if is_agent else '/portal' }}">&larr; back</a></p>
+<h2>Raise a request</h2>
+
+<form hx-post="/portal/new" hx-target="#flash" hx-swap="innerHTML">
+  <label>Subject <input type="text" name="subject" maxlength="{{ max_subject_length }}" required /></label>
+  <label>Describe the problem
+    <textarea name="description" rows="6" maxlength="{{ max_message_length }}" required></textarea>
+  </label>
+
+  {% if is_agent %}
+  <fieldset>
+    <legend>For someone else (agents)</legend>
+    <p class="note">
+      Leave the email blank to raise this for yourself. Fill it in when someone came to the desk or phoned and
+      you are logging it for them; the ticket then reads "Raised by you for them". Everything below applies only
+      to a ticket raised for someone else.
+    </p>
+    <label>Their email address <input type="email" name="for_email" maxlength="254" /></label>
+
+    <h4>Classify and assign now (optional)</h4>
+    <p class="note">A ticket you already understand can skip the triage queue. Choose a category, impact and urgency together.</p>
+    <label>Type
+      <select name="ticket_type">
+        {% for type in ticket_types %}<option value="{{ type.value }}">{{ type.value.replace("_", " ") }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Category
+      <select name="category_id" hx-get="/tickets/agents-for-category" hx-trigger="change" hx-target="#raise-agent">
+        <option value="">Leave for triage</option>
+        {% for option, label in category_options %}<option value="{{ option.id }}">{{ label }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Impact
+      <select name="impact">
+        <option value="">-</option>
+        {% for level in levels %}<option value="{{ level.value }}">{{ impact_labels[level] }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Urgency
+      <select name="urgency">
+        <option value="">-</option>
+        {% for level in levels %}<option value="{{ level.value }}">{{ urgency_labels[level] }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Assign to
+      <select name="agent_id" id="raise-agent"><option value="">Leave unassigned</option></select>
+    </label>
+
+    <h4>Fixed in person? (optional)</h4>
+    <p class="note">
+      If this was reported and fixed before you logged it, say when (UTC, up to 30 days back). A ticket with a
+      resolved time is created already resolved, needs a category, impact and urgency, and has no SLA.
+    </p>
+    <label>Reported <input type="datetime-local" name="reported_at" /></label>
+    <label>Resolved <input type="datetime-local" name="resolved_at" /></label>
+  </fieldset>
+  {% endif %}
+
+  <button type="submit">Raise request</button>
+</form>
+{% endblock %}

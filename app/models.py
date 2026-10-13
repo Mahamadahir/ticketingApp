@@ -120,6 +120,9 @@ class Ticket(SQLModel, table=True):
     requester_email: str
     status: TicketStatus = Field(default=TicketStatus.NEW)
     source: TicketSource = Field(default=TicketSource.EMAIL)
+    # Who created the ticket when that is a person other than the requester: the agent who
+    # raised it for them (source "agent"), or the requester themselves in the portal.
+    created_by_id: Optional[int] = Field(default=None, foreign_key="user.id", index=True)
     graph_conversation_id: Optional[str] = Field(default=None, index=True)
 
     # When the problem was reported and when it was fixed, as entered. They

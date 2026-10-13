@@ -29,19 +29,17 @@ not exist (`infra/` compiles but has never run against a subscription).
 | 1E-iii part 1 splitting into sub-tickets; access follows the team | merged (#21) | `app/splitting.py` |
 | 1E-iii part 2 derived status and single mail thread | merged (#23) | `app/splitting.py`, `app/messages.py` |
 | 1F-i search | merged (#25) | `app/search.py` |
-| 1F-ii canned responses | built, in review | `app/canned.py` |
-| 1G raise-a-ticket form, agents raising for someone, preview step | not started | |
+| 1F-ii canned responses | merged (#26) | `app/canned.py` |
+| 1G-i raise a ticket: portal form, agents raising for someone, optional triage and backdating at creation, source labels | built, in review | `app/raising.py` |
+| 1G-ii outbound email preview step; "tell the requester a ticket was raised for them" setting | not started | |
 | 1H Service Requests and approvers | not started (may slip past phase 3) | |
 | Phases 2 to 9 | not started | `docs/plan.md`, "Build order" |
 
-Tests: 427 passing on Postgres 16.
+Tests: 455 passing on Postgres 16.
 
 ## Next up
 
-**1G.** Portal raise-a-ticket form; agents raising a ticket for someone else (the
-only thing allowed to create `source=agent` tickets, which backdating relies on);
-creation-time backdating; the outbound email preview step. When it lands, switch
-the backdating tests off their hand-set `source` to the real creation path.
+**1G-ii.** The outbound email preview (an "Are you sure?" step on every email an agent triggers that reaches an end user: replies now, resolutions and MSP forwards later) and the setting that tells a requester a ticket was raised for them (on by default; global in Settings and per person; the mail itself is phase 3).
 
 **1H.** Service Requests and per-type approvers.
 
@@ -111,6 +109,7 @@ sleep, restart it and `docker start ticketingapp-db-1`.
   `agent`), e.g. the person came to the desk and it was fixed in person. Never for
   tickets the requester opened.
 - 13 Oct: access follows the team and nothing else.
+- 13 Oct: `app/raising.py` is the only code that creates `source=agent` tickets (a test scans for it); the backdating tests now raise their tickets through the real form.
 - 13 Oct: each sub-ticket is triaged from the original at split time rather than
   left for the agent to triage.
 - 13 Oct: the original's conversation shows on a part to an agent only if their team can open the original; the requester's own portal and mail view is unaffected.
@@ -135,6 +134,7 @@ sleep, restart it and `docker start ticketingapp-db-1`.
 The full list is "Azure-only verification" in `docs/plan.md`. Added by work so far:
 - `FORWARDED_ALLOW_IPS` set to the Container Apps subnet, so the activity log records
   real client IPs and cannot be forged.
-- htmx behaviour and `datetime-local` inputs in a real browser (backdating, split and
-  link forms); tests use the HTTP layer only.
+- htmx behaviour and `datetime-local` inputs in a real browser (backdating, split, link,
+  canned-response picker and raise-a-ticket forms, including the `HX-Redirect` after raising);
+  tests use the HTTP layer only.
 - Entra sign-in and the SSO activity events against a real redirect URI.

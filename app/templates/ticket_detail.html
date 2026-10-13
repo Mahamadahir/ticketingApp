@@ -10,7 +10,7 @@
 <p>
   From: {{ ticket.requester_email }}
   &middot; Type: {{ ticket.type.value.replace("_", " ") }}
-  &middot; Source: {{ ticket.source.value }}
+  &middot; Source: {{ source_label }}
   &middot; Category: {{ category_path or "Not triaged" }}
   &middot; Priority: {{ ticket.priority.upper() if ticket.priority else "Not set" }}
   &middot; Reported: {{ ticket.reported_at.strftime("%Y-%m-%d %H:%M") }} UTC{% if ticket.is_backdated %} <span class="badge">backdated</span>{% endif %}
