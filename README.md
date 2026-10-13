@@ -76,7 +76,7 @@ either.
 
 **Linking.** A ticket can be linked under a Major Incident or Problem (the parent) from its page, by typing the parent's ticket number (1042, or INC-1042; only the number matters). It is one level deep: a parent is never itself linked, and a ticket with linked tickets cannot go under another. The agent must work the ticket and be able to see the parent. Both tickets get an event and there is an audit entry; unlinking works the same way. The parent lists its linked tickets, but each person sees only the ones they could open anyway (the rest are counted, not named), and a linked ticket does not name a parent its viewer cannot open (its timeline does still show the parent's reference in the link event, never its subject or contents). A closed ticket, a resolved ticket and an untriaged ticket cannot be linked, nor can anything go under a closed parent; two links made at the same moment cannot build a chain. A parent lists at most 50 linked tickets. Offering to resolve every linked ticket with the parent comes with the resolve action in phase 4.
 
-**Assign to me** works only on a ticket nobody has; taking a ticket from its assignee always needs the explicit Re-assign.
+**Backdating.** For a ticket logged after the fact, a worker can open Backdate on the ticket page and enter when it was reported and, on a resolved or closed ticket, when it was fixed. Up to 30 days back, never in the future, never a fix before the report, times in UTC until viewer timezones arrive. `created_at` keeps the real entry time; each change is an event and an audit entry. Once backdated a ticket stays flagged (`is_backdated`): it counts towards volume but has no SLA deadlines and is left out of SLA figures, since its clock would measure when it was logged, not how fast it was handled. The resolution email that goes with a backdated fix comes with the resolve action in phase 4.`n`n**Assign to me** works only on a ticket nobody has; taking a ticket from its assignee always needs the explicit Re-assign.
 
 **Categories.** Managed by super admins under Admin > Categories: a main category
 (owned by a team) with optional sub-categories (one level, using the parent's
@@ -304,7 +304,7 @@ app/
   models.py          Ticket, Message, User, Team, AuditLog
   auth.py            SSO (MSAL) + local password auth, session, role checks
   audit.py           Audit log helper
-  linking.py         Link tickets under a Major Incident or Problem
+  backdating.py      Enter earlier reported/resolved dates; flags the ticket out of SLA figures`n  linking.py         Link tickets under a Major Incident or Problem
   sla.py             Priority from impact x urgency, SLA deadlines and clock, queue order
   activity.py        Activity log: sign-in events and request-logging middleware
   graph_client.py    Microsoft Graph mail integration (stubbed)

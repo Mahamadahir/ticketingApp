@@ -13,6 +13,8 @@
   &middot; Source: {{ ticket.source.value }}
   &middot; Category: {{ category_path or "Not triaged" }}
   &middot; Priority: {{ ticket.priority.upper() if ticket.priority else "Not set" }}
+  &middot; Reported: {{ ticket.reported_at.strftime("%Y-%m-%d %H:%M") }} UTC{% if ticket.is_backdated %} <span class="badge">backdated</span>{% endif %}
+  {% if ticket.resolved_at %}&middot; Resolved: {{ ticket.resolved_at.strftime("%Y-%m-%d %H:%M") }} UTC{% endif %}
   &middot; Team: {{ team.name if team else "Unassigned" }}
   &middot; Assigned: {{ assigned_agent.display_name if assigned_agent else "Unassigned" }}
   &middot;
@@ -143,6 +145,18 @@
     <button type="submit">Set priority</button>
   </form>
   {% endif %}
+
+  <details>
+    <summary>Backdate (log after the fact)</summary>
+    <p class="note">Enter when it was reported or fixed: up to 30 days back, never in the future, times in UTC. A backdated ticket counts towards volume but is left out of SLA figures. Leave a box blank to keep that date.</p>
+    <form hx-post="/tickets/{{ ticket.number }}/backdate" hx-target="main" hx-swap="innerHTML">
+      <label>Reported <input type="datetime-local" name="reported_at" value="{{ ticket.reported_at.strftime(moment_format) }}" /></label>
+      {% if ticket.resolved_at %}
+      <label>Resolved <input type="datetime-local" name="resolved_at" value="{{ ticket.resolved_at.strftime(moment_format) }}" /></label>
+      {% endif %}
+      <button type="submit">Save dates</button>
+    </form>
+  </details>
 
   {% if can_reassign %}
   <form hx-post="/tickets/{{ ticket.number }}/reassign" hx-target="main" hx-swap="innerHTML">

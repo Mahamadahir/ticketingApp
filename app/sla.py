@@ -75,9 +75,9 @@ def _aware(value: datetime) -> datetime:
 
 def recalculate_deadlines(session: Session, ticket: Ticket) -> None:
     """Sets both deadlines from created_at, the current targets and the time already
-    spent paused. A ticket with no priority has none."""
+    spent paused. A ticket with no priority has none, and neither has a backdated one."""
     priority = Priority(ticket.priority) if ticket.priority else None
-    if priority is None:
+    if priority is None or ticket.is_backdated:
         ticket.first_response_due_at = ticket.resolution_due_at = None
         return
     base = _aware(ticket.created_at) + timedelta(seconds=ticket.sla_paused_seconds)
@@ -164,7 +164,7 @@ def _span(delta: timedelta) -> str:
 def sla_view(ticket: Ticket, now: datetime, at_risk_percent: int) -> SlaView:
     """The SLA position of a ticket, for display. The next deadline is the first
     response until an agent has emailed, then the resolution."""
-    if not ticket.priority:
+    if not ticket.priority or ticket.is_backdated:
         return SlaView("none", "")
     if ticket.status in FINISHED_STATUSES:
         due = ticket.resolution_due_at

@@ -35,7 +35,8 @@ class NotTriaged(Exception):
     has not been triaged yet (emailing the requester, moving it between statuses)."""
 
 
-# ASCII digits only (\d would also accept digits from other scripts), no leading zero (one spelling\n# per ticket), and only the real prefixes.
+# ASCII digits only (\d would also accept digits from other scripts), no leading zero (one spelling
+# per ticket), and only the real prefixes.
 _PREFIXES = "|".join(sorted(TICKET_TYPE_PREFIXES.values()))
 _NUMBER_FORM = re.compile(rf"^#?(?:(?:{_PREFIXES})-?)?([1-9][0-9]{{0,8}})$", re.IGNORECASE)
 

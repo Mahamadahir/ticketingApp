@@ -40,7 +40,7 @@ run it.
   follows the type, and lookups use `app.ticket_service.find_ticket` (number only).
 - 1E is being delivered in three PRs: **1E-i** (linking a ticket under a Major
   Incident or Problem in `app/linking.py`; Assign to me can no longer take an
-  assigned ticket), then **1E-ii** backdating, then **1E-iii** splitting into
+  assigned ticket), then **1E-ii** backdating (built: `app/backdating.py`, flag `is_backdated` drops SLA), then **1E-iii** splitting into
   sub-tickets.
 - **Nothing is deployed anywhere.** No Azure resources exist, no database has
   had migrations applied outside this laptop. Everything is developed and

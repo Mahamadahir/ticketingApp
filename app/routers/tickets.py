@@ -19,6 +19,7 @@ from app.followers import (
     followers_of,
     remove_follower,
 )
+from app.backdating import FORMAT as MOMENT_FORMAT, BackdateError, backdate_ticket, parse_moment
 from app.categories import CategoryError, create_category, path_of, selectable, team_id_for
 from app.linking import PARENT_TYPES, LinkError, link_ticket, linked_summary, unlink_ticket
 from app.messages import UnknownRecipient, add_note, agent_timeline, email_requester, is_triaged
@@ -224,6 +225,33 @@ def change_priority(
     if set_impact_urgency(session, ticket, impact, urgency, user.email):
         ticket.updated_at = datetime.now(timezone.utc)
         log_action(session, user.email, "ticket", ticket.id, "priority_changed", describe_priority(ticket))
+        session.commit()
+        session.refresh(ticket)
+    return _render_ticket_detail(request, ticket, user, session)
+
+
+@router.post("/{number}/backdate", response_class=HTMLResponse)
+def backdate(
+    number: int,
+    request: Request,
+    reported_at: Optional[str] = Form(None, max_length=40),
+    resolved_at: Optional[str] = Form(None, max_length=40),
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """Enter when the problem was reported and/or fixed, for a ticket logged after the
+    fact. Up to 30 days back, never in the future. Blank leaves a date as it is."""
+    ticket = _get_ticket(session, number, user)
+    try:
+        changed = backdate_ticket(
+            session, ticket, user.email,
+            reported_at=parse_moment(reported_at), resolved_at=parse_moment(resolved_at),
+        )
+    except BackdateError as error:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(error))
+    if changed:
+        log_action(session, user.email, "ticket", ticket.id, "backdated", f"reported {ticket.reported_at:%Y-%m-%d %H:%M}" + (f", resolved {ticket.resolved_at:%Y-%m-%d %H:%M}" if ticket.resolved_at else ""))
         session.commit()
         session.refresh(ticket)
     return _render_ticket_detail(request, ticket, user, session)
@@ -621,6 +649,7 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             "impact_options": [(level.value, label) for level, label in IMPACT_LABELS.items()],
             "urgency_options": [(level.value, label) for level, label in URGENCY_LABELS.items()],
             "sla": sla_view(ticket, datetime.now(timezone.utc), at_risk_percent(session)),
+            "moment_format": MOMENT_FORMAT,
             "can_set_priority": can_work and ticket.triaged_at is not None and ticket.status not in FINISHED_STATUSES,
             "category_options": options,
             "main_categories": [c for c, _ in options if c.parent_id is None and not c.is_other],
