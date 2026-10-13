@@ -38,6 +38,16 @@ Tests: 427 passing on Postgres 16.
 
 ## Next up
 
+**1B-ii (before 1G).** Team visibility links and tier escalation: a link table
+(from team, to team, level view or work) managed by admins and logged; an optional
+"escalates to" team; escalation moves the ticket and adds a work link back; both
+`ticket_access` and `visible_ticket_condition` honour links (the lock-step test
+extended); links are not transitive; no links means today's behaviour. Needs a
+migration. Tests: no link gives nothing extra, no transitivity, removing a link
+revokes access at once. Also to build from the decisions below: unassign on removal
+from a team, category change after triage, per-user timezone display (these can be
+separate small PRs).
+
 **1G.** Portal raise-a-ticket form; agents raising a ticket for someone else (the
 only thing allowed to create `source=agent` tickets, which backdating relies on);
 creation-time backdating; the outbound email preview step. When it lands, switch
@@ -79,7 +89,8 @@ sleep, restart it and `docker start ticketingapp-db-1`.
 
 - **Access** is decided only in `app/visibility.py` and comes from the ticket's
   team: member works, viewer reads. Assignee, triager, escalator and follower grant
-  nothing. The one exception is the shared untriaged queue. `visible_ticket_condition`
+  nothing. The exceptions are the shared untriaged queue and admin-set team
+  visibility links (decided, not built yet; see the decisions log). `visible_ticket_condition`
   is the SQL twin of `ticket_access`; a test keeps them in step.
 - **What the requester sees** and whether a ticket can be emailed: only
   `app/messages.py` (`requester_visible_messages`, never `ticket.messages`).
@@ -118,17 +129,31 @@ sleep, restart it and `docker start ticketingapp-db-1`.
   hand (only resolve or close once all parts are finished). Reopening a resolved
   original by hand waits for the phase 4 reopen flow.
 
+- 13 Oct: removing an agent from a team leaves their tickets in the team but
+  unassigned. (To build.)
+- 13 Oct: a ticket's category can be changed after triage, so a split part can take a
+  different category from the original (parts are separate issues). The category
+  change is a ticket event. (To build; unblocks splits when the original's category
+  has been switched off.)
+- 13 Oct: times display in each user's own timezone; stored values stay UTC. (To build.)
+- 13 Oct: **team visibility links** (to build, see Next up). Access stays team-only by
+  default; an admin setting can link one team to another so the first can see the
+  second's tickets. Links are directional, not transitive, "view" or "work" level,
+  admin-only and written to the activity log. The rule lives only in
+  `app/visibility.py`. Used for same-role teams in different locations; unrelated
+  departments (e.g. Finance and IT support) get no link.
+- 13 Oct: **escalation is by team.** Each team has an optional "escalates to" team.
+  Escalating moves the ticket to that team and gives the escalating team a "work"
+  link back, so the escalator keeps full access. Cross-department hand-offs stay a
+  re-assign and need no link. The escalator is still added as a follower (copied on
+  mail, and sees the requester view in the portal), but their access does not depend
+  on it, so the "always copied, cannot be removed" rule is dropped: any follower can
+  be removed by whoever works the ticket.
+
 ## Open questions
 
-- Escalating makes the agent an internal follower who is always copied and cannot be
-  removed. With access now team-only, they keep receiving mail for a ticket they
-  cannot open. Allow removal by whoever works the ticket, or drop the rule?
-- Removing an agent from a team leaves tickets assigned to them. Should that clear
-  or flag the assignment?
-- A split's parts take the original's category. If it has since been switched off,
-  the split is refused with no way to pick another; decide whether a ticket's
-  category can be changed after triage.
-- Per-viewer timezone: all times are UTC for now.
+None at the moment. Still to decide when 1B-ii is built: whether a "view" link can
+add a note or only read (assumed read only).
 
 ## Staging checklist (Azure-only, cannot be proved locally)
 
