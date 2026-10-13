@@ -80,13 +80,28 @@ def test_the_original_follows_its_parts_with_a_system_event_for_each_change(clie
     set_to(client, b, AWAITING)
     assert status_of(db_session, original) == AWAITING  # exactly one unfinished: its status
     set_to(client, b, RESOLVED)
-    assert status_of(db_session, original) == AWAITING  # all finished: never derived, stays put
+    assert status_of(db_session, original) == PROGRESS  # all finished: nobody waits on the requester
 
     changes = [e for e in events(db_session, original, "status_changed") if e.detail]  # leaves out triage's
     assert [(e.from_value, e.to_value, e.actor_email, e.detail) for e in changes] == [
         ("open", "in_progress", None, "from its sub-tickets"),
         ("in_progress", "awaiting_user", None, "from its sub-tickets"),
+        ("awaiting_user", "in_progress", None, "from its sub-tickets"),
     ]
+
+
+def test_a_reply_on_an_original_whose_parts_are_all_done_does_not_leave_it_awaiting(client, db_session):
+    original, (a, b), _ = family(client, db_session)
+    set_to(client, a, RESOLVED)
+    set_to(client, b, AWAITING)
+    assert status_of(db_session, original) == AWAITING
+    set_to(client, b, RESOLVED)
+
+    as_requester(client)
+    client.post(f"/portal/tickets/{original.number}/comment", data={"body": "thanks"})
+
+    assert status_of(db_session, original) == PROGRESS
+    assert status_of(db_session, a) == RESOLVED
 
 
 def test_a_split_derives_the_status_once_not_once_per_part(client, db_session):
@@ -352,17 +367,26 @@ def test_two_parts_changing_at_once_leave_the_original_with_the_right_status(cli
     original, (a, b), _ = family(client, db_session)
     holding, release = threading.Event(), threading.Event()
 
+    errors = []
+
     def first():  # part one goes to Awaiting user, then waits before committing
-        with Session(engine) as s:
-            set_status(s, s.get(Ticket, a.id), AWAITING, "x@example.com")
+        try:
+            with Session(engine) as s:
+                set_status(s, s.get(Ticket, a.id), AWAITING, "x@example.com")
+                holding.set()
+                release.wait(10)
+                s.commit()
+        except Exception as exc:  # a crash must fail the test, not vanish in the thread
+            errors.append(exc)
             holding.set()
-            release.wait(10)
-            s.commit()
 
     def second():  # part two does the same while the first is still open
-        with Session(engine) as s:
-            set_status(s, s.get(Ticket, b.id), AWAITING, "y@example.com")
-            s.commit()
+        try:
+            with Session(engine) as s:
+                set_status(s, s.get(Ticket, b.id), AWAITING, "y@example.com")
+                s.commit()
+        except Exception as exc:
+            errors.append(exc)
 
     one = threading.Thread(target=first)
     one.start()
@@ -373,6 +397,8 @@ def test_two_parts_changing_at_once_leave_the_original_with_the_right_status(cli
     release.set()
     one.join(10)
     two.join(10)
+    assert not one.is_alive() and not two.is_alive()
+    assert errors == []
 
     # Both parts wait on the requester, so the original does too. Without the lock each
     # saw the other as still Open and left it In progress.

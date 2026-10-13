@@ -18,7 +18,7 @@ from app.followers import (
 )
 from app.forms import MAX_MESSAGE_LENGTH
 from app.messages import about_labels, record_inbound, requester_visible_messages
-from app.splitting import has_sub_tickets, refresh_open_sub_tickets
+from app.splitting import has_sub_tickets, refresh_open_sub_tickets, sync_original_status
 from app.models import Ticket, TicketStatus, User
 from app.ticket_service import get_by_number, set_status
 from app.pagination import paginate
@@ -124,15 +124,18 @@ def add_comment(
     # A reply from the requester or a follower hands the ticket back to us: it leaves
     # Awaiting user, which resumes the SLA clock. Any other status is left alone (a
     # reply on a Resolved ticket is the reopen flow, phase 4).
-    if ticket.status == TicketStatus.AWAITING_USER:
+    if has_sub_tickets(session, ticket):
+        # The original's status follows its parts, so it is never set here. The system
+        # cannot tell which part the reply is about, so each open part sees it, and the
+        # original is re-derived from them.
+        refresh_open_sub_tickets(session, ticket, user.email)
+        sync_original_status(session, ticket.id)
+    elif ticket.status == TicketStatus.AWAITING_USER:
         set_status(session, ticket, TicketStatus.IN_PROGRESS, user.email)
         log_action(
             session, user.email, "ticket", ticket.id, "status_changed",
             f"{TicketStatus.AWAITING_USER.value} -> {TicketStatus.IN_PROGRESS.value}",
         )
-    if has_sub_tickets(session, ticket):
-        # The system cannot tell which part the reply is about, so each open part sees it.
-        refresh_open_sub_tickets(session, ticket, user.email)
     session.commit()
     session.refresh(ticket)
 

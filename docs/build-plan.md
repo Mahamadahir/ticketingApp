@@ -1,4 +1,4 @@
-# Build plan (working document)
+﻿# Build plan (working document)
 
 The live status, the next steps and the working agreement for whoever is building
 this next, human or agent. `docs/plan.md` is the agreed scope and design; this file
@@ -33,7 +33,7 @@ not exist (`infra/` compiles but has never run against a subscription).
 | 1H Service Requests and approvers | not started (may slip past phase 3) | |
 | Phases 2 to 9 | not started | `docs/plan.md`, "Build order" |
 
-Tests: 392 passing on Postgres 16.
+Tests: 393 passing on Postgres 16.
 
 ## Next up
 

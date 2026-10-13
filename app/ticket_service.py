@@ -124,6 +124,12 @@ def set_status(
         # Leaving New is what triage does, and only triage.
         raise NotTriaged()
 
+    if ticket.split_from_id is not None:
+        # Lock the original before changing the part, the same order as everything else
+        # in the family, so a requester's reply and an agent's change cannot deadlock.
+        from app.splitting import lock_ticket
+
+        lock_ticket(session, ticket.split_from_id)
     now = datetime.now(timezone.utc)
     ticket.status = new_status
     ticket.updated_at = now

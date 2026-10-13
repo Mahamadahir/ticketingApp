@@ -70,12 +70,18 @@ def derived_status(statuses: list[TicketStatus]) -> Optional[TicketStatus]:
     return TicketStatus.IN_PROGRESS
 
 
+def lock_ticket(session: Session, ticket_id: int) -> None:
+    """Row-locks a ticket until the transaction ends. Everything that touches a family
+    takes the original's lock before any part's, so two requests cannot wait on each other."""
+    session.exec(select(Ticket.id).where(Ticket.id == ticket_id).with_for_update()).all()
+
+
 def sync_original_status(session: Session, original_id: int) -> bool:
     """Re-derives the original's status from its sub-tickets and records a system event
     when it changes. Returns whether it changed. A finished or untriaged original is left alone."""
     # Lock the original and read the statuses after, so two parts changing at once end with
     # the last one seeing the other's change.
-    session.exec(select(Ticket.id).where(Ticket.id == original_id).with_for_update()).all()
+    lock_ticket(session, original_id)
     original = session.get(Ticket, original_id)
     if original is None:
         return False
@@ -84,6 +90,10 @@ def sync_original_status(session: Session, original_id: int) -> bool:
         return False
     statuses = list(session.exec(select(Ticket.status).where(Ticket.split_from_id == original_id)).all())
     target = derived_status(statuses)
+    if target is None and statuses and original.status == TicketStatus.AWAITING_USER:
+        # Every part is finished, so nothing is waiting on the requester: the SLA clock
+        # restarts and the original waits for an agent to resolve it.
+        target = TicketStatus.IN_PROGRESS
     if target is None or target == original.status:
         return False
     return set_status(session, original, target, None, detail="from its sub-tickets")
@@ -122,6 +132,7 @@ def refresh_open_sub_tickets(session: Session, original: Ticket, actor_email: st
     """The requester replied on the original, and the system cannot tell which part the
     reply is about, so every open sub-ticket is refreshed: it moves up the queue, and one
     waiting on the requester goes back to In progress (which resumes its SLA clock)."""
+    lock_ticket(session, original.id)  # the original first, as set_status on a part does
     now = datetime.now(timezone.utc)
     parts = session.exec(
         select(Ticket).where(Ticket.split_from_id == original.id, Ticket.status.not_in(FINISHED_STATUSES))

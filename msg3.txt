@@ -1,0 +1,3 @@
+Review fixes for split status: no stale Awaiting user, one lock order
+
+When every part is finished an original left in Awaiting user goes back to In progress (the SLA clock restarts). Everything in a family locks the original before any part (set_status on a part, refresh_open_sub_tickets), so a requester reply and an agent change cannot deadlock. A requester reply on an original with parts no longer sets its status by hand; it refreshes the parts and re-derives. The concurrency test now fails on a crashed thread.
