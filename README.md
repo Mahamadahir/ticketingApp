@@ -99,10 +99,10 @@ a follower (removing is separate, and is logged in the timeline and the audit
 log). A follower with a portal account sees the ticket under *Following* (public
 messages only) and can reply there; their reply is added to the ticket and shown
 to agents as *From follower*. They cannot manage the follower list. Escalating a
-ticket makes the escalating agent an *internal follower*: always copied, and
-keeping read access wherever the ticket goes; they reply from the agent console,
-not the portal. That access comes from the follower list
-(`app/followers.py`, `app/visibility.py`), not from the ticket's escalated-by
+ticket makes the escalating agent an *internal follower*: always copied;
+they reply from the agent console, not the portal. Following gives no access to the
+ticket (`app/followers.py`; access is `app/visibility.py` and follows the team), and
+neither does the ticket's escalated-by
 field. Nothing is emailed until Graph is wired up in phase 3.
 
 **Status follows the conversation.** Emailing the user moves an Open or In progress
@@ -175,8 +175,9 @@ list. People are put into teams from `/admin/users`, with a level per team:
 - **viewer** can read them but not change anything.
 
 A user can belong to several teams. Agents also work every *untriaged* ticket
-(status New, or no team yet) so someone can triage it, always see tickets
-assigned to them, and keep read access to a ticket they escalated away.
+(status New, or no team yet) so someone can triage it. Otherwise access comes from the ticket's team alone: being
+assigned to a ticket, having triaged or escalated it, or following it grants nothing, so
+when a ticket moves to another team everyone outside that team loses it.
 Opening a ticket without access shows a "no access" page (403). The rules live
 in `app/visibility.py`; routes never decide access themselves. Super admins can
 unlock a locked local account from the same users page.
@@ -308,6 +309,7 @@ app/
   audit.py           Audit log helper
   backdating.py      Enter earlier reported/resolved dates on agent-raised tickets only; flags the ticket out of SLA figures
   linking.py         Link tickets under a Major Incident or Problem
+  splitting.py       Split a ticket into sub-tickets, each triaged from the original
   sla.py             Priority from impact x urgency, SLA deadlines and clock, queue order
   activity.py        Activity log: sign-in events and request-logging middleware
   graph_client.py    Microsoft Graph mail integration (stubbed)

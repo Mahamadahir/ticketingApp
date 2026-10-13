@@ -132,6 +132,11 @@ class Ticket(SQLModel, table=True):
     # left out of SLA figures; created_at still holds when it was really entered.
     is_backdated: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
 
+    # Set on a sub-ticket made by splitting another ticket (the original). One level only:
+    # a sub-ticket is never split again. Separate from linked_parent_id, which is for
+    # grouping tickets under a Major Incident or Problem.
+    split_from_id: Optional[int] = Field(default=None, foreign_key="ticket.id", index=True)
+
     team_id: Optional[int] = Field(default=None, foreign_key="team.id")
     assigned_agent_id: Optional[int] = Field(default=None, foreign_key="user.id")
 
@@ -199,8 +204,8 @@ class TicketFollower(SQLModel, table=True):
 
     Requesters and agents add followers by email; a follower with a portal
     account sees the ticket under Following (read-only). An internal follower is
-    an agent (today: whoever escalated the ticket) who keeps read access to it
-    after it moves team, and is copied on everything, including MSP mail."""
+    an agent (today: whoever escalated the ticket) who is always copied, including
+    on MSP mail. It grants no access to the ticket: that follows its team."""
 
     __table_args__ = (UniqueConstraint("ticket_id", "email", name="uq_ticketfollower_ticket_email"),)
 

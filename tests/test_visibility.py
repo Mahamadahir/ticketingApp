@@ -104,15 +104,15 @@ def test_every_agent_can_see_untriaged_tickets_but_must_claim_one_to_work_it(cli
     assert client.post(f"/tickets/{new_in_other_team.number}/assign").status_code == 200
     db_session.refresh(new_in_other_team)
     assert new_in_other_team.assigned_agent_id == agent_id
-    # Claimed but still untriaged, so still not emailable.
-    assert client.post(f"/tickets/{new_in_other_team.number}/email", data={"body": "On it"}).status_code == 400
+    # Claimed but still untriaged and in a team they are not in: no access to work it, so no email.
+    assert client.post(f"/tickets/{new_in_other_team.number}/email", data={"body": "On it"}).status_code == 403
 
 
-def test_claiming_an_untriaged_ticket_keeps_it_after_it_leaves_new(client, db_session):
+def test_an_agent_in_the_team_keeps_a_claimed_ticket_after_it_leaves_new(client, db_session):
     """The bug this guards against: the ticket leaving New made the agent lose
-    sight of a ticket they had been working."""
+    sight of a ticket they had been working. Being in the team is what keeps it."""
     other = create_team(db_session, "Other")
-    agent_in(client, db_session)
+    agent_in(client, db_session, member_of=[other])
     ticket = make_ticket(db_session, other.id, status=TicketStatus.NEW)
 
     client.post(f"/tickets/{ticket.number}/assign")
@@ -128,6 +128,21 @@ def test_claiming_an_untriaged_ticket_keeps_it_after_it_leaves_new(client, db_se
     assert "Follow-up" in client.get(f"/tickets/{ticket.number}").text
 
 
+def test_claiming_then_triaging_into_a_team_you_are_not_in_hands_it_over_cleanly(client, db_session):
+    other = create_team(db_session, "Other")
+    agent_in(client, db_session)  # in no team
+    ticket = make_ticket(db_session, other.id, status=TicketStatus.NEW)
+    client.post(f"/tickets/{ticket.number}/assign")
+    category = create_category(db_session, other)
+
+    response = client.post(f"/tickets/{ticket.number}/triage", data={"ticket_type": "incident", "impact": "low", "urgency": "low", "category_id": category.id})
+
+    assert response.status_code == 200 and "has been moved to Other" in response.text
+    db_session.refresh(ticket)
+    assert ticket.assigned_agent_id is None  # not left assigned to someone who cannot open it
+    assert client.get(f"/tickets/{ticket.number}").status_code == 403
+
+
 def test_super_admin_can_assign_any_agent_to_a_ticket_with_no_team(client, db_session):
     agent_id = agent_in(client, db_session, email="agent@example.com")
     client.post("/auth/logout")
@@ -139,7 +154,7 @@ def test_super_admin_can_assign_any_agent_to_a_ticket_with_no_team(client, db_se
     assert ticket.assigned_agent_id == agent_id
 
 
-def test_assigned_agent_keeps_access_when_the_ticket_moves_team(client, db_session):
+def test_being_assigned_does_not_keep_access_when_the_ticket_is_in_another_team(client, db_session):
     mine, other = create_team(db_session, "Mine"), create_team(db_session, "Other")
     agent_id = agent_in(client, db_session, member_of=[mine])
     ticket = make_ticket(db_session, mine.id)
@@ -148,11 +163,13 @@ def test_assigned_agent_keeps_access_when_the_ticket_moves_team(client, db_sessi
     db_session.add(ticket)
     db_session.commit()
 
-    assert client.get(f"/tickets/{ticket.number}").status_code == 200
-    assert client.post(f"/tickets/{ticket.number}/status", data={"status": "resolved"}).status_code == 200
+    assert client.get(f"/tickets/{ticket.number}").status_code == 403
+    assert client.post(f"/tickets/{ticket.number}/status", data={"status": "resolved"}).status_code == 403
+    assert str(ticket.reference) not in client.get("/tickets").text
+    assert str(ticket.reference) not in client.get("/tickets?mine=true").text
 
 
-def test_escalating_agent_keeps_read_access_but_not_write_access(client, db_session):
+def test_escalating_to_another_team_hands_the_ticket_over_completely(client, db_session):
     mine, network = create_team(db_session, "Mine"), create_team(db_session, "Network")
     agent_in(client, db_session, member_of=[mine])
     ticket = make_ticket(db_session, mine.id)
@@ -160,13 +177,11 @@ def test_escalating_agent_keeps_read_access_but_not_write_access(client, db_sess
     response = client.post(
         f"/tickets/{ticket.number}/escalate", data={"reason": "Needs network", "target_team_id": network.id}
     )
-    assert response.status_code == 200
+    assert response.status_code == 200 and "has been moved to Network" in response.text
 
-    page = client.get(f"/tickets/{ticket.number}")
-    assert page.status_code == 200
-    assert "read-only access" in page.text
+    assert client.get(f"/tickets/{ticket.number}").status_code == 403
     assert client.post(f"/tickets/{ticket.number}/status", data={"status": "resolved"}).status_code == 403
-    assert str(ticket.reference) in client.get("/tickets").text
+    assert str(ticket.reference) not in client.get("/tickets").text
 
 
 def test_team_filter_works_for_agents_within_what_they_can_see(client, db_session):
@@ -204,12 +219,11 @@ def test_list_query_and_single_ticket_rule_agree_for_every_combination(client, d
     login_as(client, "agent@example.com")
 
     team_choices = [mine.id, watched.id, other.id, None]
-    # Triage state: untriaged is visible to every agent; a triaged ticket is visible
-    # to the agent who triaged it, wherever it went, and not to a different triager.
+    # Triage state: untriaged is visible to every agent. A triaged ticket follows its team,
+    # whoever triaged it.
     triage_choices = ["untriaged", "triaged_by_none", "triaged_by_me", "triaged_by_other"]
     assigned_choices = [None, agent_id, someone_else]
-    # Followers: an internal follower grants read access; an external one (copied
-    # on emails only) and someone else's follower row grant nothing.
+    # Followers grant nothing, internal or external: they are about who is copied on mail.
     follower_choices = ["none", "internal_me", "external_me", "internal_other"]
     for team_id, triage_state, assigned, follower in itertools.product(
         team_choices, triage_choices, assigned_choices, follower_choices
@@ -240,11 +254,14 @@ def test_list_query_and_single_ticket_rule_agree_for_every_combination(client, d
     assert by_rule == by_query
     assert 0 < len(by_rule) < len(every_ticket)
 
-    # The follower dimension matters: dropping it from the SQL changes the answer.
-    internal_me = {
-        t.id for t in every_ticket if t.id in levels.followed
-    }
-    assert internal_me and internal_me <= by_rule
+    # Access follows the team. For a triaged ticket in a team the agent is not in, being
+    # its assignee, its triager or its internal follower changes nothing.
+    outside = [t for t in every_ticket if t.triaged_at and t.team_id not in (mine.id, watched.id)]
+    assert outside and not {t.id for t in outside} & by_rule
+    assert {t.id for t in outside if t.assigned_agent_id == agent_id or t.triaged_by_id == agent_id}
+    # And the other way: in a team they are in, nobody's assignment or follower row takes it away.
+    inside = [t for t in every_ticket if t.team_id == mine.id]
+    assert {t.id for t in inside} <= by_rule
 
 
 # ---- Admin ------------------------------------------------------------------
@@ -439,10 +456,10 @@ def test_an_assigned_untriaged_ticket_cannot_be_taken_by_another_agent(client, d
     db_session.refresh(ticket)
     assert ticket.assigned_agent_id == assignee_id and ticket.status == TicketStatus.NEW
 
-    # The assignee still works it, and it stays untriaged (New) until triage.
+    # The assignee can read it and annotate it (it is untriaged), and it stays New until
+    # triage. Emailing the requester is not available: untriaged, and not their team.
     client.post("/auth/logout")
     login_as(client, "assignee@example.com")
     assert client.get(f"/tickets/{ticket.number}").status_code == 200
     assert client.post(f"/tickets/{ticket.number}/note", data={"body": "Looking"}).status_code == 200
-    # Still New, so still no email to the requester.
-    assert client.post(f"/tickets/{ticket.number}/email", data={"body": "Looking"}).status_code == 400
+    assert client.post(f"/tickets/{ticket.number}/email", data={"body": "Looking"}).status_code == 403

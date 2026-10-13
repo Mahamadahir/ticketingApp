@@ -24,8 +24,9 @@ run it.
   what the requester may see, and whether a ticket can be emailed, is decided
   only in `app/messages.py` (portal and outbound mail use
   `requester_visible_messages`, never `ticket.messages`). Followers live in
-  `app/followers.py`; an internal follower row is what keeps an escalator's read
-  access, and `cc_list` is what the sender will copy on every email.
+  `app/followers.py`; `cc_list` is what the sender will copy on every email. Access
+  comes from the ticket's team only (not assignee, triager, escalator or follower);
+  the one exception is the shared untriaged queue.
 - Phase 1 progress: 1A, 1B, 1C (messages and followers) are merged. 1D is split in
   two: **1D-i** (explicit triage, categories with the "Other" review queue,
   settings, the re-assign control) is built in `app/triage.py`,
@@ -41,7 +42,10 @@ run it.
 - 1E is being delivered in three PRs: **1E-i** (linking a ticket under a Major
   Incident or Problem in `app/linking.py`; Assign to me can no longer take an
   assigned ticket), then **1E-ii** backdating (built: `app/backdating.py`, flag `is_backdated` drops SLA), then **1E-iii** splitting into
-  sub-tickets.
+  sub-tickets in two PRs: part 1 (built: `app/splitting.py`, `split_from_id`, each part triaged
+  from the original) and part 2 (the original's derived status and the single mail thread).
+  Only the 1G agent raise form may create `source=agent` tickets (backdating relies on it); when
+  1G lands, switch the backdating tests to that real path.
 - **Nothing is deployed anywhere.** No Azure resources exist, no database has
   had migrations applied outside this laptop. Everything is developed and
   tested locally with `docker compose` and `pytest`.

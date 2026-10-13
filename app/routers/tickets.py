@@ -21,6 +21,7 @@ from app.followers import (
 )
 from app.backdating import FORMAT as MOMENT_FORMAT, BackdateError, backdate_ticket, may_backdate, parse_moment
 from app.categories import CategoryError, create_category, path_of, selectable, team_id_for
+from app.splitting import MAX_PARTS, SplitError, split_ticket, sub_tickets_summary
 from app.linking import PARENT_TYPES, LinkError, link_ticket, linked_summary, unlink_ticket
 from app.messages import UnknownRecipient, add_note, agent_timeline, email_requester, is_triaged
 from app.models import FINISHED_STATUSES, Category, Team, Ticket, TicketStatus, TicketType, User, UserRole
@@ -294,14 +295,8 @@ def reassign(
     session.commit()
     session.refresh(ticket)
 
-    if ticket_access(user, ticket, access_context(session, user)) < Access.READ:
-        # Handing a ticket to a team you are not in takes it out of your view, so
-        # say where it went instead of showing a page they can no longer open.
-        return HTMLResponse(
-            f'<p class="note">{escape(ticket.reference)} was moved to {escape(team.name)}. '
-            'You no longer have access to it.</p><p><a href="/tickets">Back to tickets</a></p>'
-        )
     return _render_ticket_detail(request, ticket, user, session)
+
 
 @router.get("/{number}", response_class=HTMLResponse)
 def view_ticket(
@@ -502,7 +497,7 @@ def escalate_ticket(
         # Moving to another team unassigns the agent; the history must say so.
         record_event(session, ticket, EVENT_ASSIGNED, user.email, from_value=previous_agent.email, to_value=None)
     # The escalating agent follows the ticket from now on: copied on everything and
-    # keeps read access wherever it goes.
+    # is always copied. This gives no access: if the ticket moved team, it is no longer theirs to open.
     add_follower(session, ticket, user.email, user.email, internal_user=user)
     log_action(session, user.email, "ticket", ticket.id, "escalated", reason)
     session.commit()
@@ -556,6 +551,36 @@ def unlink(
     return _render_ticket_detail(request, ticket, user, session)
 
 
+SPLIT_SLOTS = 4  # part boxes on the form; blank subjects are skipped, and a ticket can be split again to add more
+
+
+@router.post("/{number}/split", response_class=HTMLResponse)
+def split(
+    number: int,
+    request: Request,
+    subject: list[str] = Form(default=[]),
+    details: list[str] = Form(default=[]),
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """Splits this ticket into sub-tickets, one per part with a subject. Each is triaged
+    like the original and can then be amended or assigned on its own page."""
+    ticket = _get_ticket(session, number, user)
+    details = details + [""] * (len(subject) - len(details))
+    parts = [(s, d) for s, d in zip(subject, details) if s.strip() or d.strip()]
+    if len(parts) > MAX_PARTS or any(len(s) > 200 or len(d) > 5000 for s, d in parts):
+        raise HTTPException(status_code=400, detail="Too many parts, or a subject or details that is too long")
+    try:
+        made = split_ticket(session, ticket, user, parts)
+    except SplitError as error:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(error))
+    log_action(session, user.email, "ticket", ticket.id, "split", ", ".join(sub.tag for sub in made))
+    session.commit()
+    session.refresh(ticket)
+    return _render_ticket_detail(request, ticket, user, session)
+
+
 @router.post("/{number}/followers", response_class=HTMLResponse)
 def add_ticket_follower(
     number: int,
@@ -606,6 +631,14 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
     team = session.get(Team, ticket.team_id) if ticket.team_id else None
     assigned_agent = session.get(User, ticket.assigned_agent_id) if ticket.assigned_agent_id else None
     levels = access_context(session, user)
+    if ticket_access(user, ticket, levels) < Access.READ:
+        # What the agent just did moved the ticket (triage, re-assign or escalate to
+        # another team), and access follows the team, so it is no longer theirs to open.
+        where = f" to {escape(team.name)}" if team else ""
+        return HTMLResponse(
+            f'<p class="note">{escape(ticket.reference)} has been moved{where}. '
+            'You no longer have access to it. <a href="/tickets">Back to the list</a></p>'
+        )
     team_agents = assignable_agents(session, ticket)
     can_work = ticket_access(user, ticket, levels) >= Access.WORK
     can_claim = not can_work and may_self_assign(user, ticket, levels)
@@ -625,11 +658,31 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
         else ([], 0, 0)
     )
 
+    # The same for split: only the original or sub-tickets this viewer could open anyway.
+    original = session.get(Ticket, ticket.split_from_id) if ticket.split_from_id else None
+    original_visible = original is not None and ticket_access(user, original, levels) >= Access.READ
+    # A sub-ticket never has sub-tickets of its own, so skip the queries for it.
+    subs, subs_total, subs_visible = (
+        ([], 0, 0)
+        if ticket.split_from_id is not None
+        else sub_tickets_summary(session, ticket, visible_ticket_condition(user, levels))
+    )
+
     return templates.TemplateResponse(
         request,
         "ticket_detail.html",
         {
             "ticket": ticket,
+            "original": original if original_visible else None,
+            "has_hidden_original": original is not None and not original_visible,
+            "sub_tickets": subs,
+            "hidden_sub_count": subs_total - subs_visible,
+            "more_sub_count": subs_visible - len(subs),
+            "can_split": can_work
+            and ticket.triaged_at is not None
+            and ticket.split_from_id is None
+            and ticket.status not in FINISHED_STATUSES,
+            "split_slots": range(SPLIT_SLOTS),
             "team": team,
             "assigned_agent": assigned_agent,
             "team_agents": team_agents,
