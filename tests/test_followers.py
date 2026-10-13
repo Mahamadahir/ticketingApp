@@ -190,19 +190,18 @@ def test_escalating_works_for_an_account_whose_email_fails_the_typed_address_che
     assert client.post(f"/tickets/{ticket.number}/followers", data={"email": "typed@localhost"}).status_code == 400
 
 
-def test_an_internal_follower_cannot_be_removed_even_by_someone_who_works_the_ticket(client, db_session):
-    """Escalating without changing team leaves the agent able to work the ticket,
-    so only the follower guard itself stands in the way of removing the row."""
+def test_an_internal_follower_can_be_removed_by_someone_who_works_the_ticket(client, db_session):
+    """The escalator is a follower, but their access never depended on it, so whoever
+    works the ticket may remove them like any other follower."""
     team = create_team(db_session, "Service Desk")
     ticket = make_ticket(db_session, team.id)
     agent_for(client, db_session, team)
     client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "Flagging this"})
     internal = followers_of(db_session, ticket)[0]
     assert internal.is_internal and client.get(f"/tickets/{ticket.number}").status_code == 200
-    assert client.post(f"/tickets/{ticket.number}/status", data={"status": "resolved"}).status_code == 200  # works it
 
-    assert client.post(f"/tickets/{ticket.number}/followers/{internal.id}/remove").status_code == 404
-    assert follower_emails(db_session, ticket) == ["agent@example.com"]
+    assert client.post(f"/tickets/{ticket.number}/followers/{internal.id}/remove").status_code == 200
+    assert follower_emails(db_session, ticket) == []
 
 
 def test_escalating_to_another_team_ends_the_escalators_access_follower_row_or_not(client, db_session):

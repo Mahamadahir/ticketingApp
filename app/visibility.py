@@ -1,4 +1,4 @@
-"""Who can see and work which tickets. Every route that reads or changes a
+﻿"""Who can see and work which tickets. Every route that reads or changes a
 ticket goes through here, so the rules live in one place.
 
 - Super admins see and work everything.
@@ -10,6 +10,11 @@ ticket goes through here, so the rules live in one place.
 - Otherwise access comes from the ticket's team and nothing else. Being its
   assignee, having triaged or escalated it, or following it grants nothing: when a
   ticket moves to another team, everyone outside that team loses it.
+- The one other way in is a team link, set by an admin: agents of team A get view or
+  work access to team B's tickets. A link is one-way and one hop (A sees B and B
+  sees C does not let A see C), and never gives more than the agent's own level in
+  A. A team's "escalates to" team counts as a work link, so 1st line keeps working
+  tickets it escalated to 2nd line.
 """
 
 from enum import IntEnum
@@ -19,6 +24,8 @@ from sqlmodel import Session, select
 
 from app.models import (
     MembershipLevel,
+    Team,
+    TeamLink,
     TeamMembership,
     Ticket,
     User,
@@ -39,14 +46,43 @@ class NoTicketAccess(Exception):
 
 class AccessContext(dict):
     """What a user's access depends on besides the ticket itself: a mapping of
-    team id to their MembershipLevel. Load it once per request with access_context()."""
+    team id to the Access they have to that team's tickets (their own teams plus
+    linked ones). Load it once per request with access_context()."""
+
+
+_LEVEL_ACCESS = {MembershipLevel.MEMBER: Access.WORK, MembershipLevel.VIEWER: Access.READ}
 
 
 def access_context(session: Session, user: User) -> AccessContext:
-    rows = session.exec(
-        select(TeamMembership.team_id, TeamMembership.level).where(TeamMembership.user_id == user.id)
-    ).all()
-    return AccessContext({team_id: level for team_id, level in rows})
+    own = {
+        team_id: _LEVEL_ACCESS[level]
+        for team_id, level in session.exec(
+            select(TeamMembership.team_id, TeamMembership.level).where(TeamMembership.user_id == user.id)
+        ).all()
+    }
+    effective = dict(own)
+    if own:
+        links = [
+            (from_team_id, to_team_id, _LEVEL_ACCESS[level])
+            for from_team_id, to_team_id, level in session.exec(
+                select(TeamLink.from_team_id, TeamLink.to_team_id, TeamLink.level).where(
+                    TeamLink.from_team_id.in_(list(own))
+                )
+            ).all()
+        ]
+        links += [
+            (team_id, escalates_to, Access.WORK)
+            for team_id, escalates_to in session.exec(
+                select(Team.id, Team.escalates_to_team_id).where(
+                    Team.id.in_(list(own)), Team.escalates_to_team_id.is_not(None)
+                )
+            ).all()
+        ]
+        for from_team_id, to_team_id, link_access in links:
+            # One hop from the agent's own teams, capped by their level there.
+            granted = min(own[from_team_id], link_access)
+            effective[to_team_id] = max(effective.get(to_team_id, Access.NONE), granted)
+    return AccessContext(effective)
 
 
 def is_untriaged(ticket: Ticket) -> bool:
@@ -64,12 +100,13 @@ def ticket_access(user: User, ticket: Ticket, levels: AccessContext) -> Access:
     if user.role != UserRole.AGENT:
         return Access.NONE
 
-    if levels.get(ticket.team_id) == MembershipLevel.MEMBER:
+    team_access = levels.get(ticket.team_id, Access.NONE)
+    if team_access == Access.WORK:
         return Access.WORK
     # Untriaged tickets are visible to everyone so someone can pick them up, but
     # working one means claiming it first (see may_self_assign). Otherwise a
     # reply would move the ticket out of New and the replier would lose sight of it.
-    if levels.get(ticket.team_id) == MembershipLevel.VIEWER or is_untriaged(ticket):
+    if team_access == Access.READ or is_untriaged(ticket):
         return Access.READ
     return Access.NONE
 

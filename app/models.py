@@ -70,7 +70,19 @@ class MembershipLevel(str, Enum):
 class Team(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(unique=True, index=True)
+    # The next tier up (1st line -> 2nd line). Escalating moves a ticket here, and the
+    # team keeps working access to this team's tickets (see app/visibility.py).
+    escalates_to_team_id: Optional[int] = Field(default=None, foreign_key="team.id")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class TeamLink(SQLModel, table=True):
+    """An admin-set exception to "access follows the team": agents of from_team get
+    this level of access to to_team's tickets. Directional; a two-way link is two rows."""
+
+    from_team_id: int = Field(foreign_key="team.id", primary_key=True)
+    to_team_id: int = Field(foreign_key="team.id", primary_key=True)
+    level: MembershipLevel = Field(default=MembershipLevel.VIEWER)
 
 
 class TeamMembership(SQLModel, table=True):
@@ -204,7 +216,7 @@ class TicketFollower(SQLModel, table=True):
 
     Requesters and agents add followers by email; a follower with a portal
     account sees the ticket under Following (read-only). An internal follower is
-    an agent (today: whoever escalated the ticket) who is always copied, including
+    an agent (today: whoever escalated the ticket) who is copied while they follow, including
     on MSP mail. It grants no access to the ticket: that follows its team."""
 
     __table_args__ = (UniqueConstraint("ticket_id", "email", name="uq_ticketfollower_ticket_email"),)

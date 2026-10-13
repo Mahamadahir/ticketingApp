@@ -11,11 +11,49 @@
     <div class="team-card-name">{{ team.name }}</div>
     <div>{{ member_counts.get(team.id, 0) }} members</div>
     <div>{{ ticket_counts.get(team.id, 0) }} tickets</div>
+    <form method="post" action="/admin/teams/{{ team.id }}/escalates-to">
+      <label>Escalates to
+        <select name="escalates_to_team_id">
+          <option value="">(nobody)</option>
+          {% for other in teams if other.id != team.id %}
+          <option value="{{ other.id }}" {{ "selected" if team.escalates_to_team_id == other.id else "" }}>{{ other.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button type="submit">Save</button>
+    </form>
   </div>
   {% else %}
   <p>No teams yet &mdash; create one below.</p>
   {% endfor %}
 </div>
+
+<h2>Team links</h2>
+<p class="note">By default a team sees only its own tickets. A link lets agents of one team see (viewer) or work (member) another team's tickets. It is one-way and does not chain; for both directions add two links. A team's "Escalates to" team counts as a link at member level. Agents who are only viewers of their own team never get more than view access through a link.</p>
+<ul>
+  {% for link in links %}
+  <li>
+    {{ teams_by_id[link.from_team_id].name }} &rarr; {{ teams_by_id[link.to_team_id].name }}: {{ link.level.value }}
+    <form method="post" action="/admin/team-links/{{ link.from_team_id }}/{{ link.to_team_id }}/remove" class="inline-form">
+      <button type="submit">Remove</button>
+    </form>
+  </li>
+  {% else %}
+  <li>No links.</li>
+  {% endfor %}
+</ul>
+<form method="post" action="/admin/team-links">
+  <label>From
+    <select name="from_team_id">{% for team in teams %}<option value="{{ team.id }}">{{ team.name }}</option>{% endfor %}</select>
+  </label>
+  <label>can see tickets of
+    <select name="to_team_id">{% for team in teams %}<option value="{{ team.id }}">{{ team.name }}</option>{% endfor %}</select>
+  </label>
+  <label>as
+    <select name="level">{% for level in levels %}<option value="{{ level.value }}">{{ level.value }}</option>{% endfor %}</select>
+  </label>
+  <button type="submit">Add or change link</button>
+</form>
 
 <h2>New team</h2>
 <form method="post" action="/admin/teams">

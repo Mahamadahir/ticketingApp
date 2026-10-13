@@ -532,13 +532,17 @@ def escalate_ticket(
     ticket = _get_ticket(session, number, user)
     parsed_target_team_id = optional_int(target_team_id)
 
+    previous_team = session.get(Team, ticket.team_id) if ticket.team_id else None
     new_team = None
+    if parsed_target_team_id is None and previous_team is not None and previous_team.escalates_to_team_id:
+        # No team chosen: go to the next tier up, which the team's agents keep working
+        # access to through app/visibility.py.
+        parsed_target_team_id = previous_team.escalates_to_team_id
     if parsed_target_team_id is not None:
         new_team = session.get(Team, parsed_target_team_id)
         if new_team is None:
             raise HTTPException(status_code=400, detail="Target team does not exist")
 
-    previous_team = session.get(Team, ticket.team_id) if ticket.team_id else None
     previous_agent = session.get(User, ticket.assigned_agent_id) if ticket.assigned_agent_id else None
     ticket.is_escalated = True
     ticket.escalation_reason = reason
@@ -558,8 +562,8 @@ def escalate_ticket(
     if new_team is not None and previous_agent is not None:
         # Moving to another team unassigns the agent; the history must say so.
         record_event(session, ticket, EVENT_ASSIGNED, user.email, from_value=previous_agent.email, to_value=None)
-    # The escalating agent follows the ticket from now on: copied on everything and
-    # is always copied. This gives no access: if the ticket moved team, it is no longer theirs to open.
+    # The escalating agent follows the ticket from now on and is copied on its mail.
+    # That grants no access; whether they can still open it depends on the team link.
     add_follower(session, ticket, user.email, user.email, internal_user=user)
     log_action(session, user.email, "ticket", ticket.id, "escalated", reason)
     session.commit()

@@ -256,12 +256,12 @@
 {% endif %}
 
 <h3>Followers</h3>
-<p class="note">Copied on every email to the requester. Internal followers are agents who are always copied, such as whoever escalated the ticket; that does not give them access to the ticket.</p>
+<p class="note">Copied on every email to the requester. Internal followers are agents, such as whoever escalated the ticket; they are copied while they follow, and following does not give access to the ticket.</p>
 <ul>
   {% for follower in followers %}
   <li>
     {{ follower.email }}{% if follower.is_internal %} <i>(internal)</i>{% endif %}
-    {% if can_edit_followers and not follower.is_internal %}
+    {% if can_edit_followers %}
     <form hx-post="/tickets/{{ ticket.number }}/followers/{{ follower.id }}/remove" hx-target="main" hx-swap="innerHTML" class="inline-form">
       <button type="submit">Remove</button>
     </form>

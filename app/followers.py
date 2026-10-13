@@ -3,9 +3,10 @@
 - A requester or an agent adds a follower by email. The follower is copied on
   every public email, and if they have a portal account they see the ticket
   under Following (read-only, public messages only).
-- An internal follower is an agent who is always copied on the ticket's emails.
-  Escalating a ticket makes the escalating agent one. It grants no access:
-  that follows the ticket's team (app/visibility.py).
+- An internal follower is an agent copied on the ticket's emails. Escalating a
+  ticket makes the escalating agent one. It grants no access: that follows the
+  ticket's team and team links (app/visibility.py). Whoever works the ticket can
+  remove any follower, internal ones included.
 Nothing here sends mail; that arrives with Graph in phase 3. cc_list is what the
 sender will use, and each outgoing message records it.
 """
@@ -133,10 +134,9 @@ def add_follower(
 
 def remove_follower(session: Session, ticket: Ticket, follower_id: int, removed_by_email: str) -> Optional[str]:
     """Removes a follower and returns their address, or None if nothing was
-    removed. Internal followers cannot be removed here: they are always copied
-    by design. Does not commit."""
+    removed. Does not commit."""
     follower = session.get(TicketFollower, follower_id)
-    if follower is None or follower.ticket_id != ticket.id or follower.is_internal:
+    if follower is None or follower.ticket_id != ticket.id:
         return None
     email = follower.email
     session.delete(follower)

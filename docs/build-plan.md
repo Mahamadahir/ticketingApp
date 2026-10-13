@@ -29,24 +29,17 @@ not exist (`infra/` compiles but has never run against a subscription).
 | 1E-iii part 1 splitting into sub-tickets; access follows the team | merged (#21) | `app/splitting.py` |
 | 1E-iii part 2 derived status and single mail thread | merged (#23) | `app/splitting.py`, `app/messages.py` |
 | 1F-i search | merged (#25) | `app/search.py` |
-| 1F-ii canned responses | built, in review | `app/canned.py` |
+| 1F-ii canned responses | merged (#26) | `app/canned.py` |
+| 1B-ii team visibility links and tier escalation | built, in review | `app/visibility.py`, `app/routers/admin.py` |
 | 1G raise-a-ticket form, agents raising for someone, preview step | not started | |
 | 1H Service Requests and approvers | not started (may slip past phase 3) | |
 | Phases 2 to 9 | not started | `docs/plan.md`, "Build order" |
 
-Tests: 427 passing on Postgres 16.
+Tests: 442 passing on Postgres 16.
 
 ## Next up
 
-**1B-ii (before 1G).** Team visibility links and tier escalation: a link table
-(from team, to team, level view or work) managed by admins and logged; an optional
-"escalates to" team; escalation moves the ticket and adds a work link back; both
-`ticket_access` and `visible_ticket_condition` honour links (the lock-step test
-extended); links are not transitive; no links means today's behaviour. Needs a
-migration. Tests: no link gives nothing extra, no transitivity, removing a link
-revokes access at once. Also to build from the decisions below: unassign on removal
-from a team, category change after triage, per-user timezone display (these can be
-separate small PRs).
+**Small PRs from the decisions below (not started):** unassign tickets when an agent is removed from a team, category change after triage, per-user timezone display.
 
 **1G.** Portal raise-a-ticket form; agents raising a ticket for someone else (the
 only thing allowed to create `source=agent` tickets, which backdating relies on);
@@ -90,7 +83,8 @@ sleep, restart it and `docker start ticketingapp-db-1`.
 - **Access** is decided only in `app/visibility.py` and comes from the ticket's
   team: member works, viewer reads. Assignee, triager, escalator and follower grant
   nothing. The exceptions are the shared untriaged queue and admin-set team
-  visibility links (decided, not built yet; see the decisions log). `visible_ticket_condition`
+  visibility links (`TeamLink`, plus a team's "escalates to" team as an implicit work
+  link): one way, one hop, never above the agent's own level in the linking team. `visible_ticket_condition`
   is the SQL twin of `ticket_access`; a test keeps them in step.
 - **What the requester sees** and whether a ticket can be emailed: only
   `app/messages.py` (`requester_visible_messages`, never `ticket.messages`).
@@ -136,13 +130,13 @@ sleep, restart it and `docker start ticketingapp-db-1`.
   change is a ticket event. (To build; unblocks splits when the original's category
   has been switched off.)
 - 13 Oct: times display in each user's own timezone; stored values stay UTC. (To build.)
-- 13 Oct: **team visibility links** (to build, see Next up). Access stays team-only by
+- 13 Oct: **team visibility links** (built, 1B-ii). Access stays team-only by
   default; an admin setting can link one team to another so the first can see the
   second's tickets. Links are directional, not transitive, "view" or "work" level,
   admin-only and written to the activity log. The rule lives only in
   `app/visibility.py`. Used for same-role teams in different locations; unrelated
   departments (e.g. Finance and IT support) get no link.
-- 13 Oct: **escalation is by team.** Each team has an optional "escalates to" team.
+- 13 Oct: **escalation is by team** (built, 1B-ii). Each team has an optional "escalates to" team.
   Escalating moves the ticket to that team and gives the escalating team a "work"
   link back, so the escalator keeps full access. Cross-department hand-offs stay a
   re-assign and need no link. The escalator is still added as a follower (copied on
