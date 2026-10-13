@@ -37,6 +37,10 @@ run it.
   (`app/activity.py`) are also merged. A ticket is triaged when `triaged_at` is set;
   it leaves New only by triage, and a type change re-issues its reference and
   keeps the old one as a `TicketAlias`.
+- 1E is being delivered in three PRs: **1E-i** (linking a ticket under a Major
+  Incident or Problem in `app/linking.py`; Assign to me can no longer take an
+  assigned ticket), then **1E-ii** backdating, then **1E-iii** splitting into
+  sub-tickets.
 - **Nothing is deployed anywhere.** No Azure resources exist, no database has
   had migrations applied outside this laptop. Everything is developed and
   tested locally with `docker compose` and `pytest`.

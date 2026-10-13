@@ -495,6 +495,10 @@ ticket, and is notified about notes only when @mentioned.
 
 **Linking.** Tickets link to a parent (Major Incident or Problem). Resolving
 the parent offers to resolve every linked ticket with the same notes.
+*Linking built in 1E-i (13 Oct 2026):* one level deep, by reference, with events on both
+tickets; visibility filters what each viewer sees of the links. The resolve offer arrives
+with the resolve action in phase 4. Phase 1E is delivered as 1E-i (linking, claim fix),
+1E-ii (backdating), 1E-iii (splitting into sub-tickets).
 
 **Splitting.** One request that asks for several things can be split into
 sub-tickets, so each part is tracked, assigned and resolved on its own (better

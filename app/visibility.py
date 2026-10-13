@@ -92,10 +92,13 @@ def ticket_access(user: User, ticket: Ticket, levels: AccessContext) -> Access:
 
 
 def may_self_assign(user: User, ticket: Ticket, levels: AccessContext) -> bool:
-    """An agent can take a ticket they work, or claim an untriaged one that
-    nobody has yet. An untriaged ticket that is already assigned (for example
-    handed to whoever will triage it) cannot be taken from its assignee."""
+    """An agent can take a ticket they work that nobody else holds, or claim an
+    untriaged one that nobody has yet. A ticket assigned to someone else (for example
+    one handed to whoever will triage it) is never taken this way: that is Re-assign."""
     if user.role != UserRole.AGENT:
+        return False
+    if ticket.assigned_agent_id not in (None, user.id):
+        # Taking a ticket from its assignee is a deliberate re-assign, never a claim.
         return False
     access = ticket_access(user, ticket, levels)
     if access == Access.WORK:

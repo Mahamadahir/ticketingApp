@@ -143,6 +143,10 @@ class Ticket(SQLModel, table=True):
     sla_paused_at: Optional[datetime] = Field(default=None)
     sla_paused_seconds: int = Field(default=0, sa_column_kwargs={"server_default": "0"})
 
+    # Set when this ticket is linked to a Major Incident or Problem (app/linking.py).
+    # One level only: a parent is never itself linked to anything.
+    linked_parent_id: Optional[int] = Field(default=None, foreign_key="ticket.id", index=True)
+
     is_escalated: bool = Field(default=False)
     escalation_reason: Optional[str] = Field(default=None)
     escalated_by_id: Optional[int] = Field(default=None, foreign_key="user.id")

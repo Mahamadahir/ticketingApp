@@ -20,6 +20,7 @@ from app.followers import (
     remove_follower,
 )
 from app.categories import CategoryError, create_category, path_of, selectable, team_id_for
+from app.linking import PARENT_TYPES, LinkError, find_by_reference, link_ticket, linked_summary, unlink_ticket
 from app.messages import UnknownRecipient, add_note, agent_timeline, email_requester, is_triaged
 from app.models import FINISHED_STATUSES, Category, Team, Ticket, TicketAlias, TicketStatus, TicketType, User, UserRole
 from app.pagination import paginate
@@ -400,7 +401,10 @@ def assign_ticket(
     ticket = _get_ticket(session, ticket_id, user, Access.READ)
 
     if user.role == UserRole.AGENT:
-        if not may_self_assign(user, ticket, access_context(session, user)):
+        levels = access_context(session, user)
+        if not may_self_assign(user, ticket, levels):
+            if ticket_access(user, ticket, levels) >= Access.WORK and ticket.assigned_agent_id is not None:
+                raise HTTPException(status_code=400, detail="This ticket is assigned to someone else. Use Re-assign.")
             raise NoTicketAccess()
         target_agent = user
     else:
@@ -477,6 +481,51 @@ def escalate_ticket(
     return _render_ticket_detail(request, ticket, user, session)
 
 
+@router.post("/{ticket_id}/link", response_class=HTMLResponse)
+def link(
+    ticket_id: int,
+    request: Request,
+    parent_reference: str = Form(..., max_length=40),
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """Links this ticket under a Major Incident or Problem, given by reference. The agent
+    works this ticket and must be able to see the parent."""
+    ticket = _get_ticket(session, ticket_id, user)
+    parent = find_by_reference(session, parent_reference)
+    # The same answer whether it does not exist or is not visible to this agent, so
+    # references cannot be probed for tickets they may not see.
+    if parent is None or ticket_access(user, parent, access_context(session, user)) < Access.READ:
+        raise HTTPException(status_code=400, detail="No ticket with that reference")
+    try:
+        link_ticket(session, ticket, parent, user.email)
+    except LinkError as error:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(error))
+    ticket.updated_at = datetime.now(timezone.utc)
+    log_action(session, user.email, "ticket", ticket.id, "linked", parent.reference)
+    session.commit()
+    session.refresh(ticket)
+    return _render_ticket_detail(request, ticket, user, session)
+
+
+@router.post("/{ticket_id}/unlink", response_class=HTMLResponse)
+def unlink(
+    ticket_id: int,
+    request: Request,
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    ticket = _get_ticket(session, ticket_id, user)
+    parent = unlink_ticket(session, ticket, user.email)
+    if parent is not None:
+        ticket.updated_at = datetime.now(timezone.utc)
+        log_action(session, user.email, "ticket", ticket.id, "unlinked", parent.reference)
+        session.commit()
+        session.refresh(ticket)
+    return _render_ticket_detail(request, ticket, user, session)
+
+
 @router.post("/{ticket_id}/followers", response_class=HTMLResponse)
 def add_ticket_follower(
     ticket_id: int,
@@ -537,6 +586,15 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
     teams = session.exec(select(Team)).all()
     timeline = agent_timeline(session, ticket)
 
+    # A link is only shown to someone who could open the other ticket anyway.
+    parent = session.get(Ticket, ticket.linked_parent_id) if ticket.linked_parent_id else None
+    parent_visible = parent is not None and ticket_access(user, parent, levels) >= Access.READ
+    linked, linked_total, linked_visible = (
+        linked_summary(session, ticket, visible_ticket_condition(user, levels))
+        if ticket.type in PARENT_TYPES
+        else ([], 0, 0)
+    )
+
     return templates.TemplateResponse(
         request,
         "ticket_detail.html",
@@ -557,6 +615,12 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             "statuses": [s for s in TicketStatus if s != TicketStatus.NEW],
             "can_triage": can_triage,
             "ticket_types": list(TicketType),
+            "parent": parent if parent_visible else None,
+            "has_hidden_parent": parent is not None and not parent_visible,
+            "linked": linked,
+            "hidden_linked_count": linked_total - linked_visible,
+            "more_linked_count": linked_visible - len(linked),
+            "can_link": can_work and ticket.triaged_at is not None and linked_total == 0,
             "impact_options": [(level.value, label) for level, label in IMPACT_LABELS.items()],
             "urgency_options": [(level.value, label) for level, label in URGENCY_LABELS.items()],
             "sla": sla_view(ticket, datetime.now(timezone.utc), at_risk_percent(session)),
