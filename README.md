@@ -306,7 +306,7 @@ app/
   models.py          Ticket, Message, User, Team, AuditLog
   auth.py            SSO (MSAL) + local password auth, session, role checks
   audit.py           Audit log helper
-  backdating.py      Enter earlier reported/resolved dates; flags the ticket out of SLA figures
+  backdating.py      Enter earlier reported/resolved dates on agent-raised tickets only; flags the ticket out of SLA figures
   linking.py         Link tickets under a Major Incident or Problem
   sla.py             Priority from impact x urgency, SLA deadlines and clock, queue order
   activity.py        Activity log: sign-in events and request-logging middleware

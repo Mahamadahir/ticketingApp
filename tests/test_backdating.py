@@ -5,12 +5,22 @@ from sqlmodel import select
 
 from app import sla
 from app.backdating import BackdateError, backdate_ticket, parse_moment
-from app.models import AuditLog, TicketStatus
+from app.models import AuditLog, TicketSource, TicketStatus
 from tests.conftest import add_membership, create_category, create_team
-from tests.test_sla import triaged_ticket
+from tests.test_sla import triaged_ticket as _triaged_ticket
 from tests.test_triage import agent, events, new_ticket
 
 FORMAT = "%Y-%m-%dT%H:%M"
+
+
+def triaged_ticket(client, db_session, impact="high", urgency="high", source=TicketSource.AGENT):
+    """Backdating is for tickets an agent raised on someone's behalf, so that is the default."""
+    ticket, team = _triaged_ticket(client, db_session, impact, urgency)
+    ticket.source = source
+    db_session.add(ticket)
+    db_session.commit()
+    db_session.refresh(ticket)
+    return ticket, team
 
 
 def ago(**delta):
@@ -175,6 +185,7 @@ def test_a_viewer_cannot_backdate_and_the_form_is_not_offered(client, db_session
     category = create_category(db_session, other, "Hardware")
     watched = new_ticket(db_session, other)
     watched.triaged_at, watched.status, watched.category_id = datetime.now(timezone.utc), TicketStatus.OPEN, category.id
+    watched.source = TicketSource.AGENT  # so only the viewer rule can be what refuses it
     db_session.add(watched)
     db_session.commit()
     me = agent(client, db_session, member_of=[desk])
@@ -184,6 +195,26 @@ def test_a_viewer_cannot_backdate_and_the_form_is_not_offered(client, db_session
     assert "Backdate (log after the fact)" not in client.get(f"/tickets/{watched.number}").text
     db_session.refresh(watched)
     assert not watched.is_backdated
+
+
+@pytest.mark.parametrize("source", [TicketSource.EMAIL, TicketSource.PORTAL, TicketSource.TEAMS])
+def test_a_ticket_the_requester_opened_themselves_cannot_be_backdated(client, db_session, source):
+    ticket, _ = triaged_ticket(client, db_session, source=source)
+    reported = ticket.reported_at
+
+    response = post(client, ticket, reported_at=ago(days=2).strftime(FORMAT))
+
+    assert response.status_code == 400 and "on someone's behalf" in response.text
+    db_session.refresh(ticket)
+    assert not ticket.is_backdated and ticket.reported_at == reported
+    assert not events(db_session, ticket, "backdated")
+    assert "Backdate (log after the fact)" not in client.get(f"/tickets/{ticket.number}").text
+
+
+def test_the_form_is_offered_on_a_ticket_an_agent_raised_for_someone(client, db_session):
+    ticket, _ = triaged_ticket(client, db_session)
+
+    assert "Backdate (log after the fact)" in client.get(f"/tickets/{ticket.number}").text
 
 
 def test_the_dates_parse_only_in_the_expected_form():
@@ -198,7 +229,7 @@ def test_the_dates_parse_only_in_the_expected_form():
 def test_backdating_refuses_a_moment_exactly_in_the_future_and_accepts_now(db_session):
     from app.models import Ticket
 
-    ticket = Ticket(subject="x", requester_email="a@example.com")
+    ticket = Ticket(subject="x", requester_email="a@example.com", source=TicketSource.AGENT)
     db_session.add(ticket)
     db_session.commit()
     now = datetime(2026, 10, 13, 12, 0, tzinfo=timezone.utc)
