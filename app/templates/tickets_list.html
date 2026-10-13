@@ -2,6 +2,15 @@
 {% block title %}Tickets{% endblock %}
 {% block content %}
 
+<form method="get" action="/tickets" class="search">
+  <input type="search" name="q" value="{{ q }}" maxlength="200" placeholder="Number, subject, requester or message text" />
+  {% if mine %}<input type="hidden" name="mine" value="true" />{% endif %}
+  {% if team_id %}<input type="hidden" name="team_id" value="{{ team_id }}" />{% endif %}
+  <button type="submit">Search</button>
+  {% if q %}<a href="/tickets{{ '?mine=true' if mine else '' }}">Clear</a>{% endif %}
+</form>
+{% if q %}<p class="note">{{ page.total_items }} ticket{{ "" if page.total_items == 1 else "s" }} you can open match "{{ q }}" (subject, requester, number, and every message including internal notes).</p>{% endif %}
+
 <div class="filters">
   <a href="/tickets" class="{{ 'active' if not mine else '' }}">All visible</a>
   <a href="/tickets?mine=true" class="{{ 'active' if mine else '' }}">Assigned to me</a>
@@ -44,7 +53,7 @@
     </tr>
     {% else %}
     <tr>
-      <td colspan="9">No tickets yet.</td>
+      <td colspan="9">{{ "No tickets match." if q else "No tickets yet." }}</td>
     </tr>
     {% endfor %}
   </tbody>
