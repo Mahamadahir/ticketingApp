@@ -1,4 +1,4 @@
-﻿# Delivery plan
+# Delivery plan
 
 Agreed scope and build order for the ticketing app, as at 9 October 2026.
 Hosting moved from AWS (EC2) to Azure on 9 October. Nothing has been deployed
@@ -607,7 +607,7 @@ actor, for reporting.
 full-text search.
 *Built in 1F-i (13 Oct 2026):* the search box on the agent ticket list (`app/search.py`). It
 matches the number (1042, #1042, INC-1042), subject, requester and every message including
-internal notes, and only narrows what the agent can already open. No index yet: full-text is
+internal notes, and only narrows what the agent can already open. Typing a ticket number that exists finds that ticket alone. No index yet: full-text is
 computed per query, fine at this volume; add GIN indexes if the list gets slow.
 
 **Canned responses** for common replies, managed by admins.

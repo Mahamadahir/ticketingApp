@@ -7,16 +7,16 @@
   {% if mine %}<input type="hidden" name="mine" value="true" />{% endif %}
   {% if team_id %}<input type="hidden" name="team_id" value="{{ team_id }}" />{% endif %}
   <button type="submit">Search</button>
-  {% if q %}<a href="/tickets{{ '?mine=true' if mine else '' }}">Clear</a>{% endif %}
+  {% if q %}<a href="{{ list_link(q='', mine=mine, team_id=team_id) }}">Clear</a>{% endif %}
 </form>
 {% if q %}<p class="note">{{ page.total_items }} ticket{{ "" if page.total_items == 1 else "s" }} you can open match "{{ q }}" (subject, requester, number, and every message including internal notes).</p>{% endif %}
 
 <div class="filters">
-  <a href="/tickets" class="{{ 'active' if not mine else '' }}">All visible</a>
-  <a href="/tickets?mine=true" class="{{ 'active' if mine else '' }}">Assigned to me</a>
+  <a href="{{ list_link(mine=False, team_id=None) }}" class="{{ 'active' if not mine else '' }}">All visible</a>
+  <a href="{{ list_link(mine=True, team_id=None) }}" class="{{ 'active' if mine else '' }}">Assigned to me</a>
   {% if user.role.value == "super_admin" and teams %}
     {% for t in teams %}
-    <a href="/tickets?team_id={{ t.id }}" class="{{ 'active' if team_id == t.id else '' }}">{{ t.name }}</a>
+    <a href="{{ list_link(mine=False, team_id=t.id) }}" class="{{ 'active' if team_id == t.id else '' }}">{{ t.name }}</a>
     {% endfor %}
   {% endif %}
 </div>

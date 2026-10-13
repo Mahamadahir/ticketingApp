@@ -1,4 +1,4 @@
-﻿"""Everything about the messages on a ticket: emailing the requester, internal
+"""Everything about the messages on a ticket: emailing the requester, internal
 notes, what the requester is allowed to see, and the agent timeline.
 
 Rules that live here and nowhere else:

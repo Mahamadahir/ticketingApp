@@ -1,6 +1,7 @@
-﻿from datetime import datetime, timezone
+from datetime import datetime, timezone
 from html import escape
 from typing import Optional
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -73,6 +74,17 @@ AGENT_ROLES = (UserRole.SUPER_ADMIN, UserRole.AGENT)
 WAITING_ON_US = (TicketStatus.OPEN, TicketStatus.IN_PROGRESS)
 
 
+def _list_link(q: str):
+    """Builds a link to the ticket list that keeps the current search; a filter passed in
+    replaces the same filter (false, empty and None leave it out)."""
+
+    def link(**params) -> str:
+        wanted = {"q": q, **params}
+        return "/tickets" + ("?" + urlencode({k: ("true" if v is True else v) for k, v in wanted.items() if v}) if any(wanted.values()) else "")
+
+    return link
+
+
 @router.get("", response_class=HTMLResponse)
 def list_tickets(
     request: Request,
@@ -91,7 +103,7 @@ def list_tickets(
     if visible is not None:
         query = query.where(visible)
     q = normalise(q)
-    matching = search_condition(q)
+    matching = search_condition(session, q)
     if matching is not None:
         query = query.where(matching)
     if team_id is not None:
@@ -120,6 +132,7 @@ def list_tickets(
             "mine": mine,
             "team_id": team_id,
             "q": q,
+            "list_link": _list_link(q),
         },
     )
 

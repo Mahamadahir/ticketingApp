@@ -1,4 +1,4 @@
-﻿"""Searching tickets from the agent list (phase 1F).
+"""Searching tickets from the agent list (phase 1F).
 
 Search only narrows the list an agent already has: the route applies
 visibility.visible_ticket_condition first, so a match in a ticket the agent cannot
@@ -6,13 +6,16 @@ open never shows. It looks at the ticket number (1042, #1042, INC-1042), the sub
 the requester and the text of every message, internal notes included, because only
 agents search.
 
-Text matching uses Postgres full-text search (English stemming, so "printing" finds
-"printer") plus a plain substring match on the subject and requester, which finds
-fragments full-text cannot, such as part of an address or a hostname.
+Typing a ticket number that exists finds that ticket alone, so "1042" does not also
+bring up every ticket that mentions 1042. Otherwise the text is matched with Postgres
+full-text search (English stemming, so "printers" finds "printer") plus a plain
+substring match, which finds fragments full-text cannot, such as part of an address,
+a hostname or an error code. A search of only common words ("the") has no full-text
+terms, so it falls back on the substring match alone.
 """
 
 from sqlalchemy import and_, exists, func, or_
-from sqlmodel import select
+from sqlmodel import Session, select
 
 from app.models import Message, Ticket
 from app.ticket_service import parse_ticket_number
@@ -31,28 +34,32 @@ def _like_pattern(text: str) -> str:
     return f"%{escaped}%"
 
 
-def search_condition(text: str):
+def search_condition(session: Session, text: str | None):
     """The SQL condition matching tickets for the typed text, or None for a blank search."""
     text = normalise(text)
     if not text:
         return None
+
+    number = parse_ticket_number(text)
+    if number is not None and session.exec(select(Ticket.id).where(Ticket.number == number)).first() is not None:
+        return Ticket.number == number
+
     query = func.websearch_to_tsquery(_CONFIG, text)
     pattern = _like_pattern(text)
     in_a_message = exists(
         select(Message.id).where(
             and_(
                 Message.ticket_id == Ticket.id,
-                func.to_tsvector(_CONFIG, Message.body).op("@@")(query),
+                or_(
+                    func.to_tsvector(_CONFIG, Message.body).op("@@")(query),
+                    Message.body.ilike(pattern, escape="\\"),
+                ),
             )
         )
     )
-    clauses = [
+    return or_(
         func.to_tsvector(_CONFIG, Ticket.subject).op("@@")(query),
         Ticket.subject.ilike(pattern, escape="\\"),
         Ticket.requester_email.ilike(pattern, escape="\\"),
         in_a_message,
-    ]
-    number = parse_ticket_number(text)
-    if number is not None:
-        clauses.append(Ticket.number == number)
-    return or_(*clauses)
+    )
