@@ -189,7 +189,8 @@ def test_a_viewer_cannot_backdate_and_the_form_is_not_offered(client, db_session
 def test_the_dates_parse_only_in_the_expected_form():
     assert parse_moment("2026-10-01T14:30") == datetime(2026, 10, 1, 14, 30, tzinfo=timezone.utc)
     assert parse_moment("  ") is None and parse_moment(None) is None
-    for bad in ("2026-10-01", "2026-10-01 14:30", "01/10/2026", "2026-10-01T14:30:00", "x"):
+    assert parse_moment("2026-10-01T14:30:45") == datetime(2026, 10, 1, 14, 30, 45, tzinfo=timezone.utc)  # seconds are tolerated
+    for bad in ("2026-10-01", "2026-10-01 14:30", "01/10/2026", "2026-10-01T14:30:00:00", "x"):
         with pytest.raises(BackdateError):
             parse_moment(bad)
 
@@ -246,3 +247,68 @@ def test_the_sla_view_ignores_a_backdated_ticket_even_if_deadlines_are_still_sto
     ticket.first_response_due_at = ticket.resolution_due_at = datetime.now(timezone.utc) - timedelta(days=1)
 
     assert sla.sla_view(ticket, datetime.now(timezone.utc), 25).state == "none"
+
+# ---- Review follow-ups ---------------------------------------------------------------------------------
+
+
+def test_saving_the_prefilled_form_untouched_changes_nothing_even_with_seconds_stored(client, db_session):
+    ticket, _ = triaged_ticket(client, db_session, "high", "high")
+    resolve(client, ticket)
+    db_session.refresh(ticket)
+    assert ticket.reported_at.second or ticket.reported_at.microsecond  # stored with seconds, the form shows minutes
+    due = ticket.resolution_due_at
+
+    page = client.get(f"/tickets/{ticket.number}").text
+    reported = ticket.reported_at.strftime(FORMAT)
+    resolved = ticket.resolved_at.strftime(FORMAT)
+    assert f'value="{reported}"' in page and f'value="{resolved}"' in page
+
+    response = post(client, ticket, reported_at=reported, resolved_at=resolved)
+
+    assert response.status_code == 200
+    db_session.refresh(ticket)
+    assert not ticket.is_backdated and ticket.resolution_due_at == due
+    assert events(db_session, ticket, "backdated") == []
+    assert not db_session.exec(select(AuditLog).where(AuditLog.action == "backdated")).all()
+
+
+def test_only_the_resolved_time_can_be_edited_on_a_ticket_reported_over_30_days_ago(client, db_session):
+    ticket, _ = triaged_ticket(client, db_session)
+    resolve(client, ticket)
+    db_session.refresh(ticket)
+    ticket.reported_at = ago(days=45).replace(minute=0)
+    db_session.add(ticket)
+    db_session.commit()
+
+    # The form sends the unchanged old reported time along with the new resolved time.
+    response = post(
+        client, ticket, reported_at=ticket.reported_at.strftime(FORMAT), resolved_at=ago(days=10).strftime(FORMAT)
+    )
+
+    assert response.status_code == 200
+    db_session.refresh(ticket)
+    assert ticket.resolved_at == ago(days=10) or abs((ticket.resolved_at - ago(days=10)).total_seconds()) < 120
+    assert [e.detail for e in events(db_session, ticket, "backdated")] == ["resolved"]  # reported was not touched
+
+
+def test_the_audit_entry_records_from_and_to(client, db_session):
+    ticket, _ = triaged_ticket(client, db_session)
+    before = ticket.reported_at.strftime("%Y-%m-%d %H:%M")
+    when = ago(days=2)
+
+    post(client, ticket, reported_at=when.strftime(FORMAT))
+
+    [entry] = db_session.exec(select(AuditLog).where(AuditLog.action == "backdated")).all()
+    assert entry.detail == f"reported {before} -> {when:%Y-%m-%d %H:%M}"
+
+
+def test_a_change_to_one_date_does_not_log_the_other(client, db_session):
+    ticket, _ = triaged_ticket(client, db_session)
+    resolve(client, ticket)
+    db_session.refresh(ticket)
+
+    post(client, ticket, reported_at=ago(days=2).strftime(FORMAT), resolved_at=ticket.resolved_at.strftime(FORMAT))
+
+    assert [e.detail for e in events(db_session, ticket, "backdated")] == ["reported"]
+    [entry] = db_session.exec(select(AuditLog).where(AuditLog.action == "backdated")).all()
+    assert "resolved" not in entry.detail

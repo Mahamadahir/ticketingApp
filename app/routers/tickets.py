@@ -243,15 +243,20 @@ def backdate(
     fact. Up to 30 days back, never in the future. Blank leaves a date as it is."""
     ticket = _get_ticket(session, number, user)
     try:
-        changed = backdate_ticket(
+        changes = backdate_ticket(
             session, ticket, user.email,
             reported_at=parse_moment(reported_at), resolved_at=parse_moment(resolved_at),
         )
     except BackdateError as error:
         session.rollback()
         raise HTTPException(status_code=400, detail=str(error))
-    if changed:
-        log_action(session, user.email, "ticket", ticket.id, "backdated", f"reported {ticket.reported_at:%Y-%m-%d %H:%M}" + (f", resolved {ticket.resolved_at:%Y-%m-%d %H:%M}" if ticket.resolved_at else ""))
+    if changes:
+        # What changed, from and to, so the audit log shows what was altered and not just the result.
+        detail = "; ".join(
+            f"{what} {before:%Y-%m-%d %H:%M} -> {after:%Y-%m-%d %H:%M}" if before else f"{what} -> {after:%Y-%m-%d %H:%M}"
+            for what, before, after in changes
+        )
+        log_action(session, user.email, "ticket", ticket.id, "backdated", detail)
         session.commit()
         session.refresh(ticket)
     return _render_ticket_detail(request, ticket, user, session)

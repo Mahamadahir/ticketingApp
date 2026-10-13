@@ -28,19 +28,27 @@ class BackdateError(ValueError):
 
 
 def parse_moment(text: Optional[str]) -> Optional[datetime]:
-    """A date and time typed as 2026-10-01T14:30, read as UTC (viewer timezones come
-    with the timezone work). Blank means "leave as it is"."""
+    """A date and time typed as 2026-10-01T14:30 (seconds are accepted too), read as UTC
+    (viewer timezones come with the timezone work). Blank means "leave as it is"."""
     text = (text or "").strip()
     if not text:
         return None
-    try:
-        return datetime.strptime(text, FORMAT).replace(tzinfo=timezone.utc)
-    except ValueError:
-        raise BackdateError("Enter the date and time as YYYY-MM-DDTHH:MM")
+    for form in (FORMAT, FORMAT + ":%S"):
+        try:
+            return datetime.strptime(text, form).replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+    raise BackdateError("Enter the date and time as YYYY-MM-DDTHH:MM")
 
 
 def _aware(value: datetime) -> datetime:
     return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
+def _minute(value: datetime) -> datetime:
+    """The form shows and sends minutes, so a stored moment with seconds must compare
+    equal to its own pre-filled value: saving the form untouched changes nothing."""
+    return _aware(value).replace(second=0, microsecond=0)
 
 
 def backdate_ticket(
@@ -51,40 +59,47 @@ def backdate_ticket(
     reported_at: Optional[datetime] = None,
     resolved_at: Optional[datetime] = None,
     now: Optional[datetime] = None,
-) -> bool:
-    """Sets the reported and/or resolved moments. Returns whether anything changed.
-    Resolved can only be set on a finished ticket, and never before the report."""
+) -> list[tuple[str, Optional[datetime], datetime]]:
+    """Sets the reported and/or resolved moments. Returns what changed as
+    (which, before, after) triples, empty when nothing did. Only a moment that actually
+    changes is checked against the 30-day window, so an old ticket's other date can
+    still be edited. Resolved can only be set on a finished ticket, and never before
+    the report."""
     now = now or datetime.now(timezone.utc)
     earliest = now - timedelta(days=MAX_DAYS_BACK)
 
-    new_reported = reported_at if reported_at is not None else _aware(ticket.reported_at)
-    if reported_at is not None:
+    reported_changes = reported_at is not None and reported_at != _minute(ticket.reported_at)
+    resolved_changes = resolved_at is not None and (
+        ticket.resolved_at is None or resolved_at != _minute(ticket.resolved_at)
+    )
+
+    if reported_changes:
         if reported_at > now:
             raise BackdateError("The reported time cannot be in the future")
         if reported_at < earliest:
             raise BackdateError(f"The reported time cannot be more than {MAX_DAYS_BACK} days back")
-
-    new_resolved = ticket.resolved_at
-    if resolved_at is not None:
+    if resolved_changes:
         if ticket.status not in FINISHED_STATUSES:
             raise BackdateError("Only a resolved or closed ticket has a resolved time")
         if resolved_at > now:
             raise BackdateError("The resolved time cannot be in the future")
         if resolved_at < earliest:
             raise BackdateError(f"The resolved time cannot be more than {MAX_DAYS_BACK} days back")
-        new_resolved = resolved_at
-    if new_resolved is not None and _aware(new_resolved) < new_reported:
+
+    final_reported = reported_at if reported_changes else _aware(ticket.reported_at)
+    final_resolved = resolved_at if resolved_changes else ticket.resolved_at
+    if final_resolved is not None and (reported_changes or resolved_changes) and _aware(final_resolved) < final_reported:
         raise BackdateError("The resolved time cannot be before the reported time")
 
     changes = []
-    if reported_at is not None and reported_at != _aware(ticket.reported_at):
+    if reported_changes:
         changes.append(("reported", ticket.reported_at, reported_at))
         ticket.reported_at = reported_at
-    if resolved_at is not None and (ticket.resolved_at is None or resolved_at != _aware(ticket.resolved_at)):
+    if resolved_changes:
         changes.append(("resolved", ticket.resolved_at, resolved_at))
         ticket.resolved_at = resolved_at
     if not changes:
-        return False
+        return []
 
     ticket.is_backdated = True
     recalculate_deadlines(session, ticket)  # a backdated ticket has none
@@ -95,4 +110,4 @@ def backdate_ticket(
             session, ticket, EVENT_BACKDATED, actor_email,
             before.strftime(FORMAT) if before else None, after.strftime(FORMAT), detail=what,
         )
-    return True
+    return changes
