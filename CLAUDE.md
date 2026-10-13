@@ -27,7 +27,8 @@ starting a phase, and `README.md` for how to run it.
   `requester_visible_messages`, never `ticket.messages`). Followers live in
   `app/followers.py`; `cc_list` is what the sender will copy on every email. Access
   comes from the ticket's team only (not assignee, triager, escalator or follower);
-  the one exception is the shared untriaged queue.
+  the exceptions are the shared untriaged queue and admin-set team links
+  (`TeamLink`; a team's "escalates to" team counts as a work link).
 - Phase 1 progress: 1A, 1B, 1C (messages and followers) are merged. 1D is split in
   two: **1D-i** (explicit triage, categories with the "Other" review queue,
   settings, the re-assign control) is built in `app/triage.py`,
