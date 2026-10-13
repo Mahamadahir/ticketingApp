@@ -1,4 +1,4 @@
-"""Everything about the messages on a ticket: emailing the requester, internal
+﻿"""Everything about the messages on a ticket: emailing the requester, internal
 notes, what the requester is allowed to see, and the agent timeline.
 
 Rules that live here and nowhere else:
@@ -27,7 +27,7 @@ from app.models import (
 )
 from app.sla import note_first_response
 from app.ticket_service import NotTriaged
-from app.visibility import is_untriaged, visible_ticket_condition
+from app.visibility import Access, is_untriaged, ticket_access, visible_ticket_condition
 
 
 def is_triaged(ticket: Ticket) -> bool:
@@ -143,7 +143,11 @@ def _shared_conversation(session: Session, ticket: Ticket, viewer=None) -> list[
     A finished sub-ticket no longer shows the original's conversation."""
     if ticket.split_from_id is not None:
         original = session.get(Ticket, ticket.split_from_id)
-        return [original] if original is not None and ticket.status not in FINISHED_STATUSES else []
+        if original is None or ticket.status in FINISHED_STATUSES:
+            return []
+        if viewer is not None and ticket_access(viewer[0], original, viewer[1]) < Access.READ:
+            return []  # an agent sees the original's conversation only if their team can open it
+        return [original]
     return _sub_tickets(session, ticket, viewer)
 
 
@@ -225,7 +229,7 @@ def agent_timeline(session: Session, ticket: Ticket, viewer=None) -> list[Timeli
     messages = session.exec(select(Message).where(Message.ticket_id == ticket.id)).all()
     events = session.exec(select(TicketEvent).where(TicketEvent.ticket_id == ticket.id)).all()
     other_items: list[TimelineItem] = []
-    if ticket.split_from_id is not None or viewer is not None:
+    if viewer is not None:
         for other in _shared_conversation(session, ticket, viewer):
             for m in session.exec(select(Message).where(Message.ticket_id == other.id, *_PUBLIC)).all():
                 other_items.append(TimelineItem(at=m.created_at, message=m, source=other))

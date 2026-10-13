@@ -27,7 +27,7 @@ not exist (`infra/` compiles but has never run against a subscription).
 | Shared ticket numbers | merged (#18) | `app/models.py`, `NumberCounter` |
 | 1E-ii backdating (agent-raised tickets only) | merged (#19, #20) | `app/backdating.py` |
 | 1E-iii part 1 splitting into sub-tickets; access follows the team | merged (#21) | `app/splitting.py` |
-| 1E-iii part 2 derived status and single mail thread | built, in review | `app/splitting.py`, `app/messages.py` |
+| 1E-iii part 2 derived status and single mail thread | merged (#23) | `app/splitting.py`, `app/messages.py` |
 | 1F search and canned responses | not started | |
 | 1G raise-a-ticket form, agents raising for someone, preview step | not started | |
 | 1H Service Requests and approvers | not started (may slip past phase 3) | |
@@ -115,16 +115,13 @@ sleep, restart it and `docker start ticketingapp-db-1`.
 - 13 Oct: access follows the team and nothing else.
 - 13 Oct: each sub-ticket is triaged from the original at split time rather than
   left for the agent to triage.
+- 13 Oct: the original's conversation shows on a part to an agent only if their team can open the original; the requester's own portal and mail view is unaffected.
 - 13 Oct: the original's status is derived from its parts; agents cannot set it by
   hand (only resolve or close once all parts are finished). Reopening a resolved
   original by hand waits for the phase 4 reopen flow.
 
 ## Open questions
 
-- Agents of a split part see the original's public messages (the requester's one
-  conversation) even when they cannot open the original. That follows the plan's
-  wording, but it is a team-access exception. Keep it, or show them only after they
-  are given access to the original?
 - Escalating makes the agent an internal follower who is always copied and cannot be
   removed. With access now team-only, they keep receiving mail for a ticket they
   cannot open. Allow removal by whoever works the ticket, or drop the rule?
