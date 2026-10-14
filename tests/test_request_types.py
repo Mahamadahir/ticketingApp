@@ -239,3 +239,70 @@ def test_the_agent_page_shows_the_request_and_its_approvers_but_the_requester_do
     login_as(client, "walkin@example.com")
     portal = client.get(f"/portal/{ticket.number}").text
     assert "Request: New starter" in portal and "Big Boss" not in portal
+
+
+# ---- Review fixes -----------------------------------------------------------------------------------
+
+
+def test_retyping_a_catalogue_request_at_triage_drops_its_request_type(client, db_session):
+    request_type = make(db_session, "New starter")
+    login_as(client, "jo@example.com")
+    raise_it(client, request_type_id=request_type.id)
+    ticket = db_session.exec(select(Ticket)).one()
+    client.post("/auth/logout")
+    team, category, _ = desk(client, db_session)
+
+    response = client.post(
+        f"/tickets/{ticket.number}/triage",
+        data={"ticket_type": "incident", "impact": "low", "urgency": "low", "category_id": category.id},
+    )
+
+    assert response.status_code == 200
+    db_session.expire_all()
+    ticket = db_session.get(Ticket, ticket.id)
+    assert (ticket.type, ticket.request_type_id) == (TicketType.INCIDENT, None)
+    assert "Request:" not in client.get(f"/tickets/{ticket.number}").text
+    event = db_session.exec(
+        select(TicketEvent).where(TicketEvent.ticket_id == ticket.id, TicketEvent.event_type == "request_type")
+    ).all()[-1]
+    assert (event.from_value, event.to_value, event.detail) == ("New starter", None, "retyped")
+
+
+def test_triaging_a_catalogue_request_as_a_service_request_keeps_its_type(client, db_session):
+    request_type = make(db_session, "New starter")
+    login_as(client, "jo@example.com")
+    raise_it(client, request_type_id=request_type.id)
+    ticket = db_session.exec(select(Ticket)).one()
+    client.post("/auth/logout")
+    team, category, _ = desk(client, db_session)
+
+    client.post(
+        f"/tickets/{ticket.number}/triage",
+        data={"ticket_type": "service_request", "impact": "low", "urgency": "low", "category_id": category.id},
+    )
+
+    db_session.expire_all()
+    assert db_session.get(Ticket, ticket.id).request_type_id == request_type.id
+
+
+def test_a_name_clash_that_slips_past_the_check_is_a_friendly_error(client, db_session, monkeypatch):
+    admin(client, db_session)
+    make(db_session, "Taken")
+    monkeypatch.setattr("app.request_types._name_taken", lambda *args, **kwargs: False)  # two admins at once
+
+    response = client.post("/admin/request-types", data={"name": "Taken"})
+
+    assert response.status_code == 400 and "already a request type" in response.text
+
+
+def test_the_audit_entry_says_what_changed(client, db_session):
+    person(client, db_session, "boss@example.com")
+    admin(client, db_session)
+    request_type = make(db_session, "Laptop", "Old text")
+
+    client.post(f"/admin/request-types/{request_type.id}", data={"name": "Laptop", "description": "New text", "is_active": "on"})
+    client.post(f"/admin/request-types/{request_type.id}", data={"name": "Laptop", "description": "New text", "approvers": "boss@example.com", "is_active": "on"})
+    client.post(f"/admin/request-types/{request_type.id}", data={"name": "Notebook", "description": "New text", "approvers": "boss@example.com", "is_active": "on"})
+
+    details = [a.detail for a in db_session.exec(select(AuditLog).where(AuditLog.action == "edited", AuditLog.entity_type == "request_type")).all()]
+    assert details == ["description changed", "approvers [] -> ['boss@example.com']", "name 'Laptop' -> 'Notebook'"]

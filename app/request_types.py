@@ -8,6 +8,7 @@ the work until they have, is the next step (1H-ii).
 from typing import Optional
 
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from app.followers import InvalidEmail, normalise_email
@@ -88,6 +89,16 @@ def _set_approvers(session: Session, request_type: RequestType, users: list[User
         session.add(RequestTypeApprover(request_type_id=request_type.id, user_id=user_id))
 
 
+def _flush(session: Session) -> None:
+    """Writes now, so two admins saving the same name at once get the friendly error
+    (the database index is the last line of defence) rather than a server error."""
+    try:
+        session.flush()
+    except IntegrityError:
+        session.rollback()
+        raise RequestTypeError("There is already a request type with that name")
+
+
 def create_request_type(
     session: Session, name: str, description: str, approvers_text: str
 ) -> RequestType:
@@ -97,9 +108,9 @@ def create_request_type(
     users = parse_approvers(session, approvers_text)
     request_type = RequestType(name=name, description=description)
     session.add(request_type)
-    session.flush()
+    _flush(session)
     _set_approvers(session, request_type, users)
-    session.flush()
+    _flush(session)
     return request_type
 
 
@@ -113,7 +124,7 @@ def update_request_type(
     request_type.name, request_type.description, request_type.is_active = name, description, is_active
     session.add(request_type)
     _set_approvers(session, request_type, users)
-    session.flush()
+    _flush(session)
     return request_type
 
 

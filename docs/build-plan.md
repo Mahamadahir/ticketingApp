@@ -38,7 +38,7 @@ not exist (`infra/` compiles but has never run against a subscription).
 | 1H-ii approvals: pending approvals, approvers decide in the portal, work held until approved | not started (design to confirm, see Open questions) | |
 | Phases 2 to 9 | not started | `docs/plan.md`, "Build order" |
 
-Tests: 533 passing on Postgres 16.
+Tests: 537 passing on Postgres 16.
 
 ## Next up
 **Deferred from the escalation work (documented, not built).**
@@ -190,8 +190,8 @@ sleep, restart it and `docker start ticketingapp-db-1`.
   status: a pending-approval banner and a hold on resolving, not an "Awaiting approval" status
   (the plan fixes the statuses); (6) approvers who never reply: no chase until phase 3 mail.
 
-None at the moment. Assumption to confirm: until the MSP handoff is built (phase 5) a
-category whose target is the MSP cannot be escalated.
+- **MSP escalation (assumption to confirm).** Until the MSP handoff is built (phase 5) a
+  category whose target is the MSP cannot be escalated.
 
 ## Staging checklist (Azure-only, cannot be proved locally)
 

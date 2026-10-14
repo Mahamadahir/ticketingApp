@@ -580,10 +580,14 @@ def edit_request_type(
     session.flush()
     after = (request_type.name, request_type.description, sorted(a.email for a in approvers_of(session, request_type)))
     if before != after:
-        log_action(
-            session, admin.email, "request_type", request_type.id, "edited",
-            f"{before[0]!r} -> {after[0]!r}; approvers {before[2]} -> {after[2]}",
-        )
+        changes = []
+        if before[0] != after[0]:
+            changes.append(f"name {before[0]!r} -> {after[0]!r}")
+        if before[1] != after[1]:
+            changes.append("description changed")
+        if before[2] != after[2]:
+            changes.append(f"approvers {before[2]} -> {after[2]}")
+        log_action(session, admin.email, "request_type", request_type.id, "edited", "; ".join(changes))
     if request_type.is_active != was_active:
         log_action(
             session, admin.email, "request_type", request_type.id,
