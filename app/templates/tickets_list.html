@@ -13,7 +13,7 @@
 {% if q %}<p class="note">{{ page.total_items }} ticket{{ "" if page.total_items == 1 else "s" }} you can open match "{{ q }}" (subject, requester, number, and every message including internal notes).</p>{% endif %}
 
 <p>
-  <a href="/portal/new">Raise a request</a>
+  <a href="/portal/new">Raise a request</a> &middot; <a href="/tickets/activity">Team activity</a>
   &middot; Channel:
   <a href="{{ list_link(source='', mine=mine, team_id=team_id) }}" class="{{ 'active' if not source else '' }}">any</a>
   {% for s in sources %}<a href="{{ list_link(source=s, mine=mine, team_id=team_id) }}" class="{{ 'active' if source == s else '' }}">{{ s }}</a> {% endfor %}

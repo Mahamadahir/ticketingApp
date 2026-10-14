@@ -610,6 +610,16 @@ admin portal.
 assignment, priority change, SLA pause, reopen and MSP handoff with time and
 actor, for reporting.
 
+**Team activity** (agreed 14 Oct 2026, in addition to the audit log). Agents get an activity
+section, `/tickets/activity`, showing everything happening on the tickets they can open, newest
+first: ticket events, emails to and replies from the requester, and internal notes. It uses the
+ticket list's access (`visible_ticket_condition`), so it is the agent's teams plus the shared
+untriaged queue, and a ticket moved to another team leaves the feed of everyone outside that team,
+history included. Filters: team and kind (changes, emails and replies, notes). The audit log
+(Admin) stays the system-wide record of settings, accounts and categories, and the activity log
+the record of sign-ins; this is the work on tickets, for the people doing it. Built (13-14 Oct 2026,
+`app/team_activity.py`). Later: per-person filter, and a link from a ticket to its own history.
+
 **Search** across subject, messages, requester and reference using Postgres
 full-text search.
 *Built in 1F-i (13 Oct 2026):* the search box on the agent ticket list (`app/search.py`). It

@@ -38,6 +38,7 @@ from app.linking import PARENT_TYPES, LinkError, link_ticket, linked_summary, un
 from app.messages import UnknownRecipient, add_note, agent_timeline, email_requester, is_triaged
 from app.models import FINISHED_STATUSES, CannedResponse, Category, Team, Ticket, TicketSource, TicketStatus, TicketType, User, UserRole
 from app.pagination import paginate
+from app.team_activity import KIND_LABELS, Kind, describe as describe_activity, feed_query
 from app.sla import (
     IMPACT_LABELS,
     URGENCY_LABELS,
@@ -140,6 +141,43 @@ def list_tickets(
             "source": source.value if source else "",
             "sources": [s.value for s in TicketSource],
             "list_link": _list_link(q, source.value if source else ""),
+        },
+    )
+
+
+@router.get("/activity", response_class=HTMLResponse)
+def team_activity(
+    request: Request,
+    team_id: Optional[int] = None,
+    kind: Optional[Kind] = None,
+    page: int = 1,
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """Everything that happened on the tickets this agent can open, newest first: ticket
+    events, emails and replies, and internal notes. Access is the ticket list's, so a
+    ticket moved to another team leaves the feed of everyone outside that team."""
+    levels = access_context(session, user)
+    feed = paginate(
+        session, feed_query(visible_ticket_condition(user, levels), team_id, kind), page, request.query_params
+    )
+    ids = {row.ticket_id for row in feed.items}
+    tickets = {t.id: t for t in session.exec(select(Ticket).where(Ticket.id.in_(ids))).all()} if ids else {}
+    teams = session.exec(select(Team).order_by(Team.name)).all()
+    if user.role != UserRole.SUPER_ADMIN:
+        teams = [t for t in teams if t.id in levels]
+    return templates.TemplateResponse(
+        request,
+        "tickets_activity.html",
+        {
+            "page": feed,
+            "entries": [(row, tickets.get(row.ticket_id), describe_activity(row)) for row in feed.items],
+            "teams": teams,
+            "teams_by_id": {t.id: t for t in session.exec(select(Team)).all()},
+            "team_id": team_id,
+            "kind": kind.value if kind else "",
+            "kinds": [(k.value, label) for k, label in KIND_LABELS.items()],
+            "user": user,
         },
     )
 

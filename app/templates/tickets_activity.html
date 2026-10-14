@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Team activity{% endblock %}
+{% block content %}
+<p><a href="/tickets">&larr; back to tickets</a></p>
+<h2>Team activity</h2>
+<p class="note">
+  Everything happening on the tickets you can open, newest first: changes, emails and replies, and internal
+  notes. It follows the same access as the ticket list, so a ticket moved to another team leaves your feed.
+  (The audit log in Admin covers settings and accounts, and the activity log covers sign-ins.)
+</p>
+
+<form method="get" action="/tickets/activity" class="filters">
+  <label>Team
+    <select name="team_id">
+      <option value="">All I can see</option>
+      {% for t in teams %}<option value="{{ t.id }}" {{ "selected" if team_id == t.id else "" }}>{{ t.name }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Show
+    <select name="kind">
+      <option value="">Everything</option>
+      {% for value, label in kinds %}<option value="{{ value }}" {{ "selected" if kind == value else "" }}>{{ label }}</option>{% endfor %}
+    </select>
+  </label>
+  <button type="submit">Filter</button>
+</form>
+
+<table>
+  <thead>
+    <tr><th>When (UTC)</th><th>Ticket</th><th>Team</th><th>Who</th><th>What</th></tr>
+  </thead>
+  <tbody>
+    {% for row, ticket, text in entries %}
+    <tr>
+      <td>{{ row.at.strftime("%Y-%m-%d %H:%M") }}</td>
+      <td>{% if ticket %}<a href="/tickets/{{ ticket.number }}">{{ ticket.reference }}</a> {{ ticket.subject }}{% endif %}</td>
+      <td>{{ teams_by_id[ticket.team_id].name if ticket and ticket.team_id and ticket.team_id in teams_by_id else "" }}</td>
+      <td>{{ row.actor or "system" }}</td>
+      <td>{{ text }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5">Nothing yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% include "_pagination.html" %}
+{% endblock %}
