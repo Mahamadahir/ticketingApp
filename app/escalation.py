@@ -15,7 +15,7 @@ app/visibility.py) and becomes an internal follower. Nothing here commits.
 
 from datetime import datetime, timezone
 
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.audit import log_action
 from app.categories import escalation_team_id_for
@@ -49,6 +49,19 @@ def escalation_target(session: Session, ticket: Ticket) -> Team:
     if team is None:  # cannot happen with the foreign key; keeps the answer honest if it does
         raise EscalationError(MSP_NOT_BUILT)
     return team
+
+
+def escalators_of(session: Session, ticket: Ticket) -> list[User]:
+    """Everyone who escalated this ticket, oldest first. Each keeps working access to it
+    permanently, so the ticket page lists them all."""
+    return list(
+        session.exec(
+            select(User)
+            .join(TicketEscalator, TicketEscalator.user_id == User.id)
+            .where(TicketEscalator.ticket_id == ticket.id)
+            .order_by(User.id)
+        ).all()
+    )
 
 
 def escalate_ticket(session: Session, ticket: Ticket, actor: User, reason: str) -> Team:

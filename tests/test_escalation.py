@@ -389,3 +389,28 @@ def test_the_ticket_page_names_the_escalation_target(client, db_session):
     page = client.get(f"/tickets/{ticket.number}").text
     assert "Escalate to Dev" in page and "target_team_id" not in page
     assert MembershipLevel.MEMBER  # the team picker is gone from the form
+
+
+def test_the_ticket_lists_everyone_who_escalated_it_and_they_all_keep_access(client, db_session):
+    desk, dev, platform = (create_team(db_session, n) for n in ("Support", "Dev", "Platform"))
+    agent_in(client, db_session, member_of=[desk], email="alice@example.com")
+    client.post("/auth/logout")
+    agent_in(client, db_session, member_of=[dev], email="bob@example.com")
+    ticket = make_ticket(db_session, desk.id)
+    categorised(db_session, ticket, dev)
+    login_as(client, "alice@example.com")
+    escalate(client, ticket)  # Support -> Dev
+
+    client.post("/auth/logout")
+    login_as(client, "bob@example.com")
+    ticket_category = db_session.get(Category, ticket.category_id)
+    ticket_category.escalation_team_id = platform.id  # Dev's next step, for this test
+    db_session.add(ticket_category)
+    db_session.commit()
+    assert escalate(client, ticket).status_code == 200  # Dev -> Platform
+
+    page = client.get(f"/tickets/{ticket.number}").text
+    assert "alice@example.com" in page and "bob@example.com" in page
+    client.post("/auth/logout")
+    login_as(client, "alice@example.com")
+    assert client.get(f"/tickets/{ticket.number}").status_code == 200  # still hers

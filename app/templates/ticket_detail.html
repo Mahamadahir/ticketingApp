@@ -23,6 +23,9 @@
 
 {% if ticket.is_escalated %}
 <p class="note">Escalated: {{ ticket.escalation_reason }}</p>
+{% if escalators %}
+<p class="note">Escalated by (each keeps access to this ticket): {% for e in escalators %}{{ e.display_name }} ({{ e.email }}){{ ", " if not loop.last else "" }}{% endfor %}</p>
+{% endif %}
 {% endif %}
 
 {% if sla.state != "none" %}

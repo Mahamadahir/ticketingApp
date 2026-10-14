@@ -22,7 +22,7 @@ from app.followers import (
 )
 from app.backdating import FORMAT as MOMENT_FORMAT, BackdateError, backdate_ticket, may_backdate, parse_moment
 from app.categories import CategoryError, create_category, path_of, selectable, team_id_for
-from app.escalation import EscalationError, escalate_ticket as escalate, escalation_target
+from app.escalation import EscalationError, escalate_ticket as escalate, escalation_target, escalators_of
 from app.canned import active_canned, fill as fill_canned
 from app.search import normalise, search_condition
 from app.splitting import (
@@ -734,6 +734,7 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             "escalation_team": escalation_team,
             "escalation_blocked": escalation_blocked,
             "timeline": timeline,
+            "escalators": escalators_of(session, ticket),
             "followers": followers_of(session, ticket),
             # Who the Email user form offers to copy: everyone except the requester.
             "cc_candidates": [f for f in followers_of(session, ticket) if f.email != ticket.requester_email.lower()],
