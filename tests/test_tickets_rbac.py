@@ -1,7 +1,7 @@
 from sqlmodel import select
 
 from app.models import AuditLog, Ticket, TicketStatus, UserRole
-from tests.conftest import create_team, login_as, set_role
+from tests.conftest import escalatable, create_team, login_as, set_role
 
 
 def create_ticket(db_session, team_id=None, requester_email="requester@example.com", subject="Test ticket"):
@@ -95,6 +95,7 @@ def test_escalate_ticket_records_reason_and_audit(client, db_session):
     agent_id = login_as(client, "agent@example.com")
     set_role(db_session, agent_id, UserRole.AGENT, team.id)
 
+    escalatable(db_session, ticket)
     response = client.post(
         f"/tickets/{ticket.number}/escalate",
         data={"reason": "Outage affecting whole floor"},
@@ -111,7 +112,7 @@ def test_escalate_ticket_records_reason_and_audit(client, db_session):
     assert len(audit_entries) == 1
 
 
-def test_escalate_can_reassign_team(client, db_session):
+def test_escalate_moves_the_ticket_to_the_category_target(client, db_session):
     team_a = create_team(db_session, "Service Desk")
     team_b = create_team(db_session, "Network")
     ticket = create_ticket(db_session, team_id=team_a.id)
@@ -119,10 +120,8 @@ def test_escalate_can_reassign_team(client, db_session):
     agent_id = login_as(client, "agent@example.com")
     set_role(db_session, agent_id, UserRole.AGENT, team_a.id)
 
-    client.post(
-        f"/tickets/{ticket.number}/escalate",
-        data={"reason": "Needs network team", "target_team_id": team_b.id},
-    )
+    escalatable(db_session, ticket, team_b)
+    client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "Needs network team"})
 
     db_session.refresh(ticket)
     assert ticket.team_id == team_b.id

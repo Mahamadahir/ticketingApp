@@ -260,6 +260,7 @@ def list_teams(
 @router.post("/teams")
 def create_team(
     name: str = Form(...),
+    parent_team_id: Optional[str] = Form(None),
     admin: User = Depends(require_super_admin),
     session: Session = Depends(get_session),
 ):
@@ -267,41 +268,17 @@ def create_team(
     if existing:
         raise HTTPException(status_code=400, detail="A team with that name already exists")
 
-    team = Team(name=name)
+    parent_id = optional_int(parent_team_id)
+    parent = session.get(Team, parent_id) if parent_id is not None else None
+    if parent_id is not None and parent is None:
+        raise HTTPException(status_code=400, detail="Parent team does not exist")
+    if parent is not None and parent.parent_team_id is not None:
+        raise HTTPException(status_code=400, detail="Teams go one level deep: a sub-team cannot have its own sub-teams")
+
+    team = Team(name=name, parent_team_id=parent_id)
     session.add(team)
     session.flush()
-    log_action(session, admin.email, "team", team.id, "created", name)
-    session.commit()
-    return RedirectResponse("/admin/teams", status_code=303)
-
-
-@router.post("/teams/{team_id}/escalates-to")
-def set_escalation_team(
-    team_id: int,
-    escalates_to_team_id: Optional[str] = Form(None),
-    admin: User = Depends(require_super_admin),
-    session: Session = Depends(get_session),
-):
-    """Sets (or clears) the next tier up. Escalating from this team goes there, and
-    this team's agents keep working access to that team's tickets."""
-    team = session.get(Team, team_id)
-    if team is None:
-        raise HTTPException(status_code=404, detail="Team not found")
-    target_id = optional_int(escalates_to_team_id)
-    target = session.get(Team, target_id) if target_id is not None else None
-    if target_id is not None and target is None:
-        raise HTTPException(status_code=400, detail="Team does not exist")
-    if target_id == team_id:
-        raise HTTPException(status_code=400, detail="A team cannot escalate to itself")
-
-    if team.escalates_to_team_id != target_id:
-        previous = session.get(Team, team.escalates_to_team_id) if team.escalates_to_team_id else None
-        log_action(
-            session, admin.email, "team", team.id, "escalation_team_changed",
-            f"{previous.name if previous else 'none'} -> {target.name if target else 'none'}",
-        )
-        team.escalates_to_team_id = target_id
-        session.add(team)
+    log_action(session, admin.email, "team", team.id, "created", f"{name} (sub-team of {parent.name})" if parent else name)
     session.commit()
     return RedirectResponse("/admin/teams", status_code=303)
 
@@ -455,15 +432,20 @@ def add_category(
 def update_category(
     category_id: int,
     team_id: Optional[str] = Form(None),
+    escalation: Optional[str] = Form(None),
     is_active: Optional[str] = Form(None),
     admin: User = Depends(require_super_admin),
     session: Session = Depends(get_session),
 ):
-    """Sets a main category's team, or switches a category on or off. Switching
+    """Sets a main category's team and where it escalates to, or a sub-category's
+    escalation (inherit, MSP or a team), or switches a category on or off. Switching
     off hides it from triage; tickets already in it are untouched."""
     category = session.get(Category, category_id)
     if category is None:
         raise HTTPException(status_code=404, detail="Category not found")
+
+    if escalation is not None:
+        _set_escalation(session, admin, category, escalation)
 
     if category.parent_id is None:
         new_team = optional_int(team_id)
@@ -485,6 +467,29 @@ def update_category(
     session.add(category)
     session.commit()
     return RedirectResponse("/admin/categories", status_code=303)
+
+
+def _set_escalation(session: Session, admin: User, category: Category, choice: str) -> None:
+    """choice is "inherit" (sub-categories only), "msp", or a team id."""
+    inherits, team_id = False, None
+    if choice == "inherit":
+        if category.parent_id is None:
+            raise HTTPException(status_code=400, detail="A main category sets its own escalation target")
+        inherits = True
+    elif choice != "msp":
+        team_id = optional_int(choice)
+        if team_id is None or session.get(Team, team_id) is None:
+            raise HTTPException(status_code=400, detail="That team does not exist")
+    if category.parent_id is None:
+        inherits = category.escalation_inherits  # unused for a main category; leave as it was
+    if (category.escalation_inherits, category.escalation_team_id) != (inherits, team_id):
+        log_action(
+            session, admin.email, "category", category.id, "escalation_changed",
+            f"{path_of(session, category)}: {choice}",
+        )
+        category.escalation_inherits = inherits
+        category.escalation_team_id = team_id
+        session.add(category)
 
 
 # ---- Canned responses -----------------------------------------------------------

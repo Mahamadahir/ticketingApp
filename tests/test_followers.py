@@ -12,7 +12,7 @@ from app.models import (
     TicketStatus,
     UserRole,
 )
-from tests.conftest import add_membership, create_team, login_as, set_role
+from tests.conftest import escalatable, add_membership, create_team, login_as, set_role
 
 SECRET_NOTE = "Internal only: do not share"
 
@@ -162,17 +162,18 @@ def test_escalating_makes_the_agent_an_internal_follower_once(client, db_session
     ticket = make_ticket(db_session, mine.id)
     agent_for(client, db_session, mine)
 
-    for _ in range(2):
-        client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "Needs network", "target_team_id": network.id})
+    escalatable(db_session, ticket, network)
+    assert client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "Needs network"}).status_code == 200
+    # Already with the target team, so the next step would be the MSP: refused, no second row.
+    assert client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "Needs network"}).status_code == 400
 
     followers = followers_of(db_session, ticket)
     assert [(f.email, f.is_internal) for f in followers] == [("agent@example.com", True)]
     assert cc_list(db_session, ticket) == ["agent@example.com"]
 
-    # Following is about being copied on mail, not access: the ticket is in Network now,
-    # and the escalator is not on that team.
-    assert client.get(f"/tickets/{ticket.number}").status_code == 403
-    assert client.post(f"/tickets/{ticket.number}/followers/{followers[0].id}/remove").status_code == 403
+    # The escalator keeps working the ticket they escalated, so they may also manage its followers.
+    assert client.get(f"/tickets/{ticket.number}").status_code == 200
+    assert client.post(f"/tickets/{ticket.number}/followers/{followers[0].id}/remove").status_code == 200
 
 
 def test_escalating_works_for_an_account_whose_email_fails_the_typed_address_check(client, db_session):
@@ -182,6 +183,7 @@ def test_escalating_works_for_an_account_whose_email_fails_the_typed_address_che
     ticket = make_ticket(db_session, team.id)
     agent_for(client, db_session, team, email="Dotless@Localhost")
 
+    escalatable(db_session, ticket)
     response = client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "Flagging this"})
 
     assert response.status_code == 200
@@ -196,6 +198,7 @@ def test_an_internal_follower_can_be_removed_by_someone_who_works_the_ticket(cli
     team = create_team(db_session, "Service Desk")
     ticket = make_ticket(db_session, team.id)
     agent_for(client, db_session, team)
+    escalatable(db_session, ticket)
     client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "Flagging this"})
     internal = followers_of(db_session, ticket)[0]
     assert internal.is_internal and client.get(f"/tickets/{ticket.number}").status_code == 200
@@ -204,24 +207,24 @@ def test_an_internal_follower_can_be_removed_by_someone_who_works_the_ticket(cli
     assert follower_emails(db_session, ticket) == []
 
 
-def test_escalating_to_another_team_ends_the_escalators_access_follower_row_or_not(client, db_session):
-    """Access follows the team and nothing else: neither the follower row nor
-    escalated_by_id keeps a ticket open to someone outside the team it moved to."""
+def test_the_escalators_access_comes_from_escalating_not_from_the_follower_row(client, db_session):
+    """Following grants nothing: delete the follower row and the escalator still works the
+    ticket they escalated, while an agent who is only a follower has no access."""
     mine, network = create_team(db_session, "Mine"), create_team(db_session, "Network")
     ticket = make_ticket(db_session, mine.id)
     agent_for(client, db_session, mine)
-    response = client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "x", "target_team_id": network.id})
-    assert "has been moved to Network" in response.text  # not a page they can no longer open
-    assert client.get(f"/tickets/{ticket.number}").status_code == 403
-    assert str(ticket.reference) not in client.get("/tickets").text
+    escalatable(db_session, ticket, network)
+    response = client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "x"})
+    assert response.status_code == 200 and "Network" in response.text
+    assert client.get(f"/tickets/{ticket.number}").status_code == 200
 
     for follower in db_session.exec(select(TicketFollower)).all():
         db_session.delete(follower)
     db_session.commit()
+    assert client.get(f"/tickets/{ticket.number}").status_code == 200  # still theirs to open
 
-    db_session.refresh(ticket)
-    assert ticket.escalated_by_id is not None  # still recorded as history
-    assert client.get(f"/tickets/{ticket.number}").status_code == 403
+    other = make_ticket(db_session, network.id)  # their escalation opened no other Network ticket
+    assert client.get(f"/tickets/{other.number}").status_code == 403
 
 
 def test_an_external_follower_who_is_an_agent_gets_no_agent_access(client, db_session):
@@ -331,7 +334,8 @@ def test_internal_followers_are_not_shown_to_the_requester(client, db_session):
     mine, network = create_team(db_session, "Mine"), create_team(db_session, "Network")
     ticket = make_ticket(db_session, mine.id, requester="me@example.com")
     agent_for(client, db_session, mine, email="secret-agent@example.com")
-    client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "x", "target_team_id": network.id})
+    escalatable(db_session, ticket, network)
+    client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "x"})
     client.post("/auth/logout")
 
     login_as(client, "me@example.com")
@@ -348,10 +352,10 @@ def test_an_agent_who_raised_the_ticket_is_still_recorded_as_a_follower_after_es
     ticket = make_ticket(db_session, mine.id, requester="agent@example.com")
     agent_for(client, db_session, mine)
 
-    client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "x", "target_team_id": network.id})
+    escalatable(db_session, ticket, network)
+    client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "x"})
 
     assert [(f.email, f.is_internal) for f in followers_of(db_session, ticket)] == [("agent@example.com", True)]
-    assert client.get(f"/tickets/{ticket.number}").status_code == 403
     # They are the recipient of the emails, so they are never also copied on them.
     assert cc_list(db_session, ticket) == []
 
@@ -364,6 +368,7 @@ def test_promoting_an_existing_follower_to_internal_is_recorded_and_keeps_portal
     db_session.commit()
     assert ticket.reference in client.get("/portal").text
 
+    escalatable(db_session, ticket)
     client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "x"})
 
     followers = followers_of(db_session, ticket)
@@ -496,7 +501,8 @@ def test_an_internal_follower_cannot_comment_from_the_portal(client, db_session)
     mine, network = create_team(db_session, "Mine"), create_team(db_session, "Network")
     ticket = make_ticket(db_session, mine.id, requester="me@example.com")
     agent_for(client, db_session, mine, email="escalator@example.com")
-    client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "x", "target_team_id": network.id})
+    escalatable(db_session, ticket, network)
+    client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "x"})
 
     page = client.get(f"/portal/{ticket.number}")
     assert page.status_code == 200 and "Add comment" not in page.text
@@ -557,6 +563,7 @@ def test_an_internal_follower_is_always_copied(client, db_session):
     mine = create_team(db_session, "Mine")
     ticket = make_ticket(db_session, mine.id)
     agent_for(client, db_session, mine, email="escalator@example.com")
+    escalatable(db_session, ticket)
     client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "Flagging this"})
     client.post(f"/tickets/{ticket.number}/followers", data={"email": "boss@example.org"})
 
@@ -573,6 +580,7 @@ def test_an_agent_who_is_also_the_requester_is_not_offered_or_copied(client, db_
     mine = create_team(db_session, "Mine")
     ticket = make_ticket(db_session, mine.id, requester="agent@example.com")
     agent_for(client, db_session, mine)
+    escalatable(db_session, ticket)
     client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "x"})  # becomes an internal follower of own ticket
 
     assert "Copy this email to" not in client.get(f"/tickets/{ticket.number}").text

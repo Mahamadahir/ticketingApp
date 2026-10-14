@@ -52,7 +52,9 @@ from sqlmodel import Session, SQLModel, select
 
 from app.database import engine
 from app.main import app
-from app.models import Category, MembershipLevel, Team, TeamMembership, User, UserRole
+from datetime import datetime, timezone
+
+from app.models import Category, MembershipLevel, Team, TeamMembership, TicketStatus, User, UserRole
 
 
 @pytest.fixture(autouse=True)
@@ -130,3 +132,21 @@ def create_category(db_session: Session, team: Team | None, name: str = "Hardwar
     db_session.commit()
     db_session.refresh(category)
     return category
+
+
+def escalatable(db_session: Session, ticket, target: Team | None = None, name: str = "Hardware") -> Team:
+    """Gives a ticket a category that escalates to `target` (a new team if none is given),
+    so the Escalate button has somewhere to send it. Also triages it (escalating needs
+    that) if it is still New. Returns the target team."""
+    if target is None:
+        target = create_team(db_session, f"Escalation target {ticket.id}")
+    category = Category(name=f"{name} {ticket.id}", team_id=ticket.team_id, escalation_team_id=target.id)
+    db_session.add(category)
+    db_session.flush()
+    ticket.category_id = category.id
+    if ticket.triaged_at is None:
+        ticket.triaged_at = datetime.now(timezone.utc)
+        ticket.status = TicketStatus.OPEN
+    db_session.add(ticket)
+    db_session.commit()
+    return target

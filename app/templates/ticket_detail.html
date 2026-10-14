@@ -185,16 +185,15 @@
 
   <details>
     <summary>Escalate</summary>
+    {% if escalation_team %}
     <form hx-post="/tickets/{{ ticket.number }}/escalate" hx-target="main" hx-swap="innerHTML">
+      <p class="note">Goes to {{ escalation_team.name }}, unassigned. You keep access to this ticket. To hand it to a different team, use Re-assign.</p>
       <textarea name="reason" maxlength="{{ max_message_length }}" placeholder="Why does this need escalating?" required></textarea>
-      <select name="target_team_id">
-        <option value="">Keep current team</option>
-        {% for t in teams %}
-        <option value="{{ t.id }}">{{ t.name }}</option>
-        {% endfor %}
-      </select>
-      <button type="submit" class="button-destructive">Escalate</button>
+      <button type="submit" class="button-destructive">Escalate to {{ escalation_team.name }}</button>
     </form>
+    {% else %}
+    <p class="note">Cannot escalate: {{ escalation_blocked }}</p>
+    {% endif %}
   </details>
 </div>
 {% endif %}

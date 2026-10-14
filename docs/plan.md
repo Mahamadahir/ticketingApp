@@ -320,9 +320,9 @@ managed in the admin portal, and is applied in one place: the effective team
 levels computed in `app/visibility.py` include the sub-teams of every team a
 user belongs to, so no route changes. A parent member has full access to the
 sub-teams' tickets: the same level they hold in the parent, so a member can work
-them, and a viewer can read them. Built when the first sub-team is introduced,
-together with per-inbox routing. **TBC**: how many levels deep teams can nest
-(start with one).
+them, and a viewer can read them. **Built** (1B-ii): `team.parent_team_id`, the
+visibility rule and the admin portal; one level deep. A sub-team sharing its parent's
+inbox waits for per-inbox routing, which is not built.
 
 What it needs, none of it built yet: an inbox-to-team mapping managed in the
 admin portal (inbox address, owning team, whether tickets start in the shared
@@ -516,7 +516,11 @@ already have visibility of that team through membership, a parent team or a team
   parent-team rule), **another team** (support to the in-house dev team), or the
   **MSP**. Sub-teams are created by an admin in the portal.
 - The target depends on where the ticket is now as well as its category, so a second-line
-  ticket can escalate on again. Look up (category, current team) and fall back to the MSP.
+  ticket can escalate on again. Built so far: the category's target, or the MSP if the
+  ticket is already with that team. A (category, current team) table for longer chains is
+  not built.
+- The MSP handoff is phase 5. Until it exists a category whose target is the MSP
+  (the default) cannot be escalated: the Escalate control says so.
 - Escalating to another team leaves the ticket unassigned there, and the escalator keeps
   working access to that ticket (and only that ticket).
 - Escalating to the MSP is the same action as Send to MSP (see MSP): the ticket stays in

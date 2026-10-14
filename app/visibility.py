@@ -8,13 +8,14 @@ ticket goes through here, so the rules live in one place.
   assigning it to themselves, after which they work it. That shared triage queue
   is the one exception to "access follows the team".
 - Otherwise access comes from the ticket's team and nothing else. Being its
-  assignee, having triaged or escalated it, or following it grants nothing: when a
-  ticket moves to another team, everyone outside that team loses it.
-- The one other way in is a team link, set by an admin: agents of team A get view or
-  work access to team B's tickets. A link is one-way and one hop (A sees B and B
-  sees C does not let A see C), and never gives more than the agent's own level in
-  A. A team's "escalates to" team counts as a work link, so 1st line keeps working
-  tickets it escalated to 2nd line.
+  assignee, having triaged it, or following it grants nothing: when a ticket moves
+  to another team, everyone outside that team loses it.
+- There are three other ways in. A parent team's members get their level on every
+  sub-team's tickets (one level deep). An admin-set team link gives agents of team A
+  view or work access to team B's tickets: one-way, one hop from a team the agent
+  belongs to (A sees B and B sees C does not let A see C), never above the agent's own
+  level in A. And an agent who escalated a ticket to another team keeps working
+  access to that one ticket (TicketEscalator).
 """
 
 from enum import IntEnum
@@ -28,6 +29,7 @@ from app.models import (
     TeamLink,
     TeamMembership,
     Ticket,
+    TicketEscalator,
     User,
     UserRole,
 )
@@ -46,8 +48,11 @@ class NoTicketAccess(Exception):
 
 class AccessContext(dict):
     """What a user's access depends on besides the ticket itself: a mapping of
-    team id to the Access they have to that team's tickets (their own teams plus
-    linked ones). Load it once per request with access_context()."""
+    team id to the Access they have to that team's tickets (their own teams, their
+    sub-teams and linked ones), plus the ids of tickets they escalated and so keep
+    working. Load it once per request with access_context()."""
+
+    escalated_ticket_ids: frozenset = frozenset()
 
 
 _LEVEL_ACCESS = {MembershipLevel.MEMBER: Access.WORK, MembershipLevel.VIEWER: Access.READ}
@@ -62,6 +67,11 @@ def access_context(session: Session, user: User) -> AccessContext:
     }
     effective = dict(own)
     if own:
+        # A parent team's members hold the same level on its sub-teams.
+        for sub_id, parent_id in session.exec(
+            select(Team.id, Team.parent_team_id).where(Team.parent_team_id.in_(list(own)))
+        ).all():
+            effective[sub_id] = max(effective.get(sub_id, Access.NONE), own[parent_id])
         links = [
             (from_team_id, to_team_id, _LEVEL_ACCESS[level])
             for from_team_id, to_team_id, level in session.exec(
@@ -70,19 +80,16 @@ def access_context(session: Session, user: User) -> AccessContext:
                 )
             ).all()
         ]
-        links += [
-            (team_id, escalates_to, Access.WORK)
-            for team_id, escalates_to in session.exec(
-                select(Team.id, Team.escalates_to_team_id).where(
-                    Team.id.in_(list(own)), Team.escalates_to_team_id.is_not(None)
-                )
-            ).all()
-        ]
         for from_team_id, to_team_id, link_access in links:
             # One hop from the agent's own teams, capped by their level there.
             granted = min(own[from_team_id], link_access)
             effective[to_team_id] = max(effective.get(to_team_id, Access.NONE), granted)
-    return AccessContext(effective)
+    context = AccessContext(effective)
+    if user.role == UserRole.AGENT:
+        context.escalated_ticket_ids = frozenset(
+            session.exec(select(TicketEscalator.ticket_id).where(TicketEscalator.user_id == user.id)).all()
+        )
+    return context
 
 
 def is_untriaged(ticket: Ticket) -> bool:
@@ -101,7 +108,7 @@ def ticket_access(user: User, ticket: Ticket, levels: AccessContext) -> Access:
         return Access.NONE
 
     team_access = levels.get(ticket.team_id, Access.NONE)
-    if team_access == Access.WORK:
+    if team_access == Access.WORK or ticket.id in levels.escalated_ticket_ids:
         return Access.WORK
     # Untriaged tickets are visible to everyone so someone can pick them up, but
     # working one means claiming it first (see may_self_assign). Otherwise a
@@ -154,7 +161,11 @@ def visible_ticket_condition(user: User, levels: AccessContext):
     if user.role != UserRole.AGENT:
         return Ticket.id.is_(None)  # nothing
 
-    return or_(Ticket.team_id.in_(list(levels)), Ticket.triaged_at.is_(None))
+    return or_(
+        Ticket.team_id.in_(list(levels)),
+        Ticket.triaged_at.is_(None),
+        Ticket.id.in_(select(TicketEscalator.ticket_id).where(TicketEscalator.user_id == user.id)),
+    )
 
 
 def require_access(user: User, ticket: Ticket, levels: AccessContext, needed: Access) -> None:

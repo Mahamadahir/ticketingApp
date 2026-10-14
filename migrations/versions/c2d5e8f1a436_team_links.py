@@ -1,7 +1,8 @@
-"""team visibility links and escalation tiers
+"""team links, sub-teams and escalation by category
 
-Adds teamlink (admin-set access from one team to another's tickets) and
-team.escalates_to_team_id (the next tier up).
+Adds teamlink (admin-set access from one team to another's tickets), team.parent_team_id
+(sub-teams), category.escalation_team_id / escalation_inherits (where escalating sends a
+ticket; no team means the MSP) and ticketescalator (who keeps access to what they escalated).
 
 Revision ID: c2d5e8f1a436
 Revises: b5c8e1f6a320
@@ -34,13 +35,30 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(['to_team_id'], ['team.id']),
         sa.PrimaryKeyConstraint('from_team_id', 'to_team_id'),
     )
+    op.create_table(
+        'ticketescalator',
+        sa.Column('ticket_id', sa.Integer(), nullable=False),
+        sa.Column('user_id', sa.Integer(), nullable=False),
+        sa.ForeignKeyConstraint(['ticket_id'], ['ticket.id']),
+        sa.ForeignKeyConstraint(['user_id'], ['user.id']),
+        sa.PrimaryKeyConstraint('ticket_id', 'user_id'),
+    )
     with op.batch_alter_table('team', schema=None) as batch_op:
-        batch_op.add_column(sa.Column('escalates_to_team_id', sa.Integer(), nullable=True))
-        batch_op.create_foreign_key('fk_team_escalates_to_team_id', 'team', ['escalates_to_team_id'], ['id'])
+        batch_op.add_column(sa.Column('parent_team_id', sa.Integer(), nullable=True))
+        batch_op.create_foreign_key('fk_team_parent_team_id', 'team', ['parent_team_id'], ['id'])
+    with op.batch_alter_table('category', schema=None) as batch_op:
+        batch_op.add_column(sa.Column('escalation_team_id', sa.Integer(), nullable=True))
+        batch_op.add_column(sa.Column('escalation_inherits', sa.Boolean(), server_default='true', nullable=False))
+        batch_op.create_foreign_key('fk_category_escalation_team_id', 'team', ['escalation_team_id'], ['id'])
 
 
 def downgrade() -> None:
+    with op.batch_alter_table('category', schema=None) as batch_op:
+        batch_op.drop_constraint('fk_category_escalation_team_id', type_='foreignkey')
+        batch_op.drop_column('escalation_inherits')
+        batch_op.drop_column('escalation_team_id')
     with op.batch_alter_table('team', schema=None) as batch_op:
-        batch_op.drop_constraint('fk_team_escalates_to_team_id', type_='foreignkey')
-        batch_op.drop_column('escalates_to_team_id')
+        batch_op.drop_constraint('fk_team_parent_team_id', type_='foreignkey')
+        batch_op.drop_column('parent_team_id')
+    op.drop_table('ticketescalator')
     op.drop_table('teamlink')

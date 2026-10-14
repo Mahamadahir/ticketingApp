@@ -70,9 +70,9 @@ class MembershipLevel(str, Enum):
 class Team(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(unique=True, index=True)
-    # The next tier up (1st line -> 2nd line). Escalating moves a ticket here, and the
-    # team keeps working access to this team's tickets (see app/visibility.py).
-    escalates_to_team_id: Optional[int] = Field(default=None, foreign_key="team.id")
+    # A sub-team has a parent. Members of the parent get the same level on the
+    # sub-team's tickets (app/visibility.py). One level deep only.
+    parent_team_id: Optional[int] = Field(default=None, foreign_key="team.id")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -83,6 +83,14 @@ class TeamLink(SQLModel, table=True):
     from_team_id: int = Field(foreign_key="team.id", primary_key=True)
     to_team_id: int = Field(foreign_key="team.id", primary_key=True)
     level: MembershipLevel = Field(default=MembershipLevel.VIEWER)
+
+
+class TicketEscalator(SQLModel, table=True):
+    """An agent who escalated this ticket to another team. They keep working access to
+    this one ticket (app/visibility.py); nothing else about being an escalator grants any."""
+
+    ticket_id: int = Field(foreign_key="ticket.id", primary_key=True)
+    user_id: int = Field(foreign_key="user.id", primary_key=True)
 
 
 class TeamMembership(SQLModel, table=True):
@@ -241,6 +249,10 @@ class Category(SQLModel, table=True):
     name: str
     parent_id: Optional[int] = Field(default=None, foreign_key="category.id", index=True)
     team_id: Optional[int] = Field(default=None, foreign_key="team.id")  # main categories only
+    # Where escalating a ticket in this category sends it (app/escalation.py). A team,
+    # or None for the MSP. A sub-category follows its parent's unless it overrides.
+    escalation_team_id: Optional[int] = Field(default=None, foreign_key="team.id")
+    escalation_inherits: bool = Field(default=True, sa_column_kwargs={"server_default": "true"})
     is_other: bool = Field(default=False)
     is_active: bool = Field(default=True)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

@@ -5,7 +5,7 @@ would fail (in the other tests the two happen to be equal)."""
 from datetime import datetime, timezone
 
 from app.models import TicketStatus, UserRole
-from tests.conftest import create_category, create_team, login_as, set_role
+from tests.conftest import escalatable, create_category, create_team, login_as, set_role
 from tests.test_triage import agent, new_ticket
 
 NOW = datetime(2026, 10, 13, 12, 0, tzinfo=timezone.utc)
@@ -47,6 +47,7 @@ def test_every_agent_action_is_addressed_by_number(client, db_session):
     assert client.post(f"/tickets/{NUMBER}/priority", data={"impact": "low", "urgency": "low"}).status_code == 200
     assert client.post(f"/tickets/{NUMBER}/email", data={"body": "hello"}).status_code == 200
     assert client.post(f"/tickets/{NUMBER}/followers", data={"email": "cc@example.com"}).status_code == 200
+    escalatable(db_session, ticket)
     assert client.post(f"/tickets/{NUMBER}/escalate", data={"reason": "needs more"}).status_code == 200
     assert client.post(f"/tickets/{NUMBER}/reassign", data={"team_id": desk.id, "agent_id": me}).status_code == 200
     db_session.refresh(ticket)
