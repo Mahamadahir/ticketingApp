@@ -80,6 +80,18 @@ def test_a_ticket_already_with_the_escalation_team_would_go_to_the_msp_and_is_re
     unchanged(db_session, ticket, desk)
 
 
+def test_a_resolved_or_closed_ticket_cannot_escalate(client, db_session):
+    desk, dev = create_team(db_session, "Support"), create_team(db_session, "Dev")
+    agent_in(client, db_session, member_of=[desk])
+    for status in (TicketStatus.RESOLVED, TicketStatus.CLOSED):
+        ticket = make_ticket(db_session, desk.id, status=status)
+        categorised(db_session, ticket, dev, name=f"Hardware {status.value}")
+        response = escalate(client, ticket)
+        assert response.status_code == 400 and "cannot be escalated" in response.text
+        db_session.refresh(ticket)
+        assert ticket.team_id == desk.id and not ticket.is_escalated
+
+
 def test_the_agent_cannot_choose_the_team(client, db_session):
     desk, dev, finance = (create_team(db_session, n) for n in ("Support", "Dev", "Finance"))
     agent_in(client, db_session, member_of=[desk])

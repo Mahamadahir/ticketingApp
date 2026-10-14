@@ -1,4 +1,4 @@
-﻿"""Who can see and work which tickets. Every route that reads or changes a
+"""Who can see and work which tickets. Every route that reads or changes a
 ticket goes through here, so the rules live in one place.
 
 - Super admins see and work everything.

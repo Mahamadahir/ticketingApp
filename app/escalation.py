@@ -1,4 +1,4 @@
-﻿"""Escalation: sending a triaged ticket to the escalation target of its category.
+"""Escalation: sending a triaged ticket to the escalation target of its category.
 
 The agent does not choose where it goes. A main category has a target (a team, or the
 MSP when none is set, which is the default); a sub-category follows its parent's unless
@@ -20,10 +20,13 @@ from sqlmodel import Session
 from app.audit import log_action
 from app.categories import escalation_team_id_for
 from app.followers import add_follower
-from app.models import Category, Team, Ticket, TicketEscalator, User
+from app.models import FINISHED_STATUSES, Category, Team, Ticket, TicketEscalator, User
 from app.ticket_service import EVENT_ASSIGNED, EVENT_ESCALATED, record_event
 
-MSP_NOT_BUILT = "The next step for this ticket is the MSP, and the MSP handoff is not available yet."
+MSP_NOT_BUILT = (
+    "Escalating from here goes to the MSP (the category's escalation team is the MSP, or the ticket is "
+    "already with it), and the MSP handoff is not available yet."
+)
 
 
 class EscalationError(ValueError):
@@ -34,6 +37,8 @@ def escalation_target(session: Session, ticket: Ticket) -> Team:
     """The team this ticket escalates to, or EscalationError saying why there is none."""
     if ticket.triaged_at is None:
         raise EscalationError("Triage the ticket first; its category decides where it escalates")
+    if ticket.status in FINISHED_STATUSES:
+        raise EscalationError("A resolved or closed ticket cannot be escalated")
     category = session.get(Category, ticket.category_id) if ticket.category_id else None
     if category is None:
         raise EscalationError("This ticket has no category, so there is nowhere for it to escalate")
