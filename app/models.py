@@ -76,15 +76,6 @@ class Team(SQLModel, table=True):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
-class TeamLink(SQLModel, table=True):
-    """An admin-set exception to "access follows the team": agents of from_team get
-    this level of access to to_team's tickets. Directional; a two-way link is two rows."""
-
-    from_team_id: int = Field(foreign_key="team.id", primary_key=True)
-    to_team_id: int = Field(foreign_key="team.id", primary_key=True)
-    level: MembershipLevel = Field(default=MembershipLevel.VIEWER)
-
-
 class TicketEscalator(SQLModel, table=True):
     """An agent who escalated this ticket to another team. They keep working access to
     this one ticket (app/visibility.py); nothing else about being an escalator grants any."""

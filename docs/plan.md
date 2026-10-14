@@ -299,7 +299,7 @@ access" page. **Access comes from the ticket's team and nothing else** (decided 
 when a ticket is re-assigned to another team everyone outside that team (and its parent
 team) loses it at once (the agent who moved it is told where it went). The exceptions are
 the shared triage queue (untriaged tickets), which narrows with per-inbox routing below,
-admin-set team links (`TeamLink`, for example same-role teams in different locations), and
+and
 **escalation** (below): an agent who escalated a ticket keeps working access to that one
 ticket.
 
@@ -506,7 +506,7 @@ reason, and the ticket goes to the **escalation target of its category**: they d
 pick a team. Re-assign is the tool for handing work to the right team (for example mail
 that should have gone to Finance goes to Finance, left unassigned); it needs no reason,
 is not an escalation, and the agent loses sight of the ticket afterwards unless they
-already have visibility of that team through membership, a parent team or a team link.
+already have visibility of that team through membership or a parent team.
 
 - Every main category has a defined escalation target, and the default for all of them
   is the MSP. A sub-category inherits its parent's target or overrides it. Targets

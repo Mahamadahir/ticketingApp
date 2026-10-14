@@ -5,7 +5,7 @@
   under Following (read-only, public messages only).
 - An internal follower is an agent copied on the ticket's emails. Escalating a
   ticket makes the escalating agent one. It grants no access: that follows the
-  ticket's team and team links (app/visibility.py). Whoever works the ticket can
+  ticket's team (app/visibility.py). Whoever works the ticket can
   remove any follower, internal ones included.
 Nothing here sends mail; that arrives with Graph in phase 3. cc_list is what the
 sender will use, and each outgoing message records it.

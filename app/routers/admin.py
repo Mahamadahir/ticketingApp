@@ -45,7 +45,6 @@ from app.models import (
     Category,
     MembershipLevel,
     Team,
-    TeamLink,
     TeamMembership,
     Ticket,
     User,
@@ -242,15 +241,12 @@ def list_teams(
     ticket_counts = dict(
         session.exec(select(Ticket.team_id, func.count(Ticket.id)).group_by(Ticket.team_id)).all()
     )
-    links = session.exec(select(TeamLink).order_by(TeamLink.from_team_id, TeamLink.to_team_id)).all()
     return templates.TemplateResponse(
         request,
         "admin_teams.html",
         {
             "teams": teams,
             "teams_by_id": {team.id: team for team in teams},
-            "links": links,
-            "levels": list(MembershipLevel),
             "member_counts": member_counts,
             "ticket_counts": ticket_counts,
             "user": user,
@@ -279,60 +275,6 @@ def create_team(
     session.add(team)
     session.flush()
     log_action(session, admin.email, "team", team.id, "created", f"{name} (sub-team of {parent.name})" if parent else name)
-    session.commit()
-    return RedirectResponse("/admin/teams", status_code=303)
-
-
-@router.post("/team-links")
-def set_team_link(
-    from_team_id: int = Form(...),
-    to_team_id: int = Form(...),
-    level: MembershipLevel = Form(...),
-    admin: User = Depends(require_super_admin),
-    session: Session = Depends(get_session),
-):
-    """Lets agents of one team see (viewer) or work (member) another team's tickets.
-    One-way: for both directions add a second link."""
-    from_team = session.get(Team, from_team_id)
-    to_team = session.get(Team, to_team_id)
-    if from_team is None or to_team is None:
-        raise HTTPException(status_code=404, detail="Team not found")
-    if from_team_id == to_team_id:
-        raise HTTPException(status_code=400, detail="A team cannot link to itself")
-
-    link = session.get(TeamLink, (from_team_id, to_team_id))
-    label = f"{from_team.name} -> {to_team.name}"
-    if link is None:
-        session.add(TeamLink(from_team_id=from_team_id, to_team_id=to_team_id, level=level))
-        log_action(session, admin.email, "team", from_team.id, "link_added", f"{label}: {level.value}")
-    elif link.level != level:
-        log_action(
-            session, admin.email, "team", from_team.id, "link_changed",
-            f"{label}: {link.level.value} -> {level.value}",
-        )
-        link.level = level
-        session.add(link)
-    session.commit()
-    return RedirectResponse("/admin/teams", status_code=303)
-
-
-@router.post("/team-links/{from_team_id}/{to_team_id}/remove")
-def remove_team_link(
-    from_team_id: int,
-    to_team_id: int,
-    admin: User = Depends(require_super_admin),
-    session: Session = Depends(get_session),
-):
-    link = session.get(TeamLink, (from_team_id, to_team_id))
-    if link is None:
-        raise HTTPException(status_code=404, detail="Link not found")
-    from_team = session.get(Team, from_team_id)
-    to_team = session.get(Team, to_team_id)
-    log_action(
-        session, admin.email, "team", from_team_id, "link_removed",
-        f"{from_team.name if from_team else from_team_id} -> {to_team.name if to_team else to_team_id}: {link.level.value}",
-    )
-    session.delete(link)
     session.commit()
     return RedirectResponse("/admin/teams", status_code=303)
 

@@ -30,12 +30,12 @@ not exist (`infra/` compiles but has never run against a subscription).
 | 1E-iii part 2 derived status and single mail thread | merged (#23) | `app/splitting.py`, `app/messages.py` |
 | 1F-i search | merged (#25) | `app/search.py` |
 | 1F-ii canned responses | merged (#26) | `app/canned.py` |
-| 1B-ii team links, sub-teams and escalation by category | built, in review (#29) | `app/visibility.py`, `app/escalation.py`, `app/routers/admin.py` |
+| 1B-ii sub-teams and escalation by category | built, in review (#29) | `app/visibility.py`, `app/escalation.py`, `app/routers/admin.py` |
 | 1G raise-a-ticket form, agents raising for someone, preview step | not started | |
 | 1H Service Requests and approvers | not started (may slip past phase 3) | |
 | Phases 2 to 9 | not started | `docs/plan.md`, "Build order" |
 
-Tests: 463 passing on Postgres 16.
+Tests: 452 passing on Postgres 16.
 
 ## Next up
 
@@ -98,10 +98,9 @@ sleep, restart it and `docker start ticketingapp-db-1`.
 
 - **Access** is decided only in `app/visibility.py` and comes from the ticket's
   team: member works, viewer reads. Assignee, triager, escalator and follower grant
-  nothing. The exceptions are the shared untriaged queue and admin-set team
-  visibility links (`TeamLink`: one way, one hop, never above the agent's own level in
-  the linking team), a parent team's view of its sub-teams, and the escalator's access to
-  the one ticket they escalated (`TicketEscalator`). `visible_ticket_condition`
+  nothing. The exceptions are the shared untriaged queue and a parent
+  team's view of its sub-teams, and the escalator's access to the one ticket they
+  escalated (`TicketEscalator`). `visible_ticket_condition`
   is the SQL twin of `ticket_access`; a test keeps them in step.
 - **What the requester sees** and whether a ticket can be emailed: only
   `app/messages.py` (`requester_visible_messages`, never `ticket.messages`).
@@ -147,12 +146,11 @@ sleep, restart it and `docker start ticketingapp-db-1`.
   change is a ticket event. (To build; unblocks splits when the original's category
   has been switched off.)
 - 13 Oct: times display in each user's own timezone; stored values stay UTC. (To build.)
-- 13 Oct: **team visibility links** (built, 1B-ii; links come only from teams the agent belongs to, not from sub-teams). Access stays team-only by
-  default; an admin setting can link one team to another so the first can see the
-  second's tickets. Links are directional, not transitive, "view" or "work" level,
-  admin-only and written to the activity log. The rule lives only in
-  `app/visibility.py`. Used for same-role teams in different locations; unrelated
-  departments (e.g. Finance and IT support) get no link.
+- 13 Oct: team visibility links (an admin-set way for one team to see another's tickets)
+  were designed and built, then **dropped from 1B-ii on 14 Oct before merging**: viewer or
+  member memberships do the same job for now. Build them (a one-way team-to-team link, one
+  hop, never above the agent's own level) when a real case needs a whole team to see
+  another's tickets without being assignable there. Access stays team-only otherwise.
 - 13 Oct: a first version of escalation had each team escalate to one team. Replaced on 14 Oct
   before it merged (never in `main`).
 - 14 Oct: **escalation is by ticket category** (built, 1B-ii).
@@ -168,7 +166,7 @@ sleep, restart it and `docker start ticketingapp-db-1`.
   and triagers still grant nothing. Any follower can be removed by whoever works the ticket.
 - 14 Oct: re-assign is not escalation. It hands a ticket to a team, unassigned, needs
   no reason, and the agent loses sight of it unless they already have visibility of
-  that team (membership, parent team or a team link).
+  that team (membership or a parent team).
 - 14 Oct: Send to MSP and escalating to the MSP are the same action. It lets the agent
   send the thread (default) or only the original request. The thread holds only emails
   and comments, never ticket events, so an escalated ticket nobody wrote on sends just
@@ -177,8 +175,8 @@ sleep, restart it and `docker start ticketingapp-db-1`.
 
 ## Open questions
 
-None at the moment. Assumptions to confirm: a "view" team link can only read, not add a note; until the MSP
-handoff is built (phase 5) a category whose target is the MSP cannot be escalated.
+None at the moment. Assumption to confirm: until the MSP handoff is built (phase 5) a
+category whose target is the MSP cannot be escalated.
 
 ## Staging checklist (Azure-only, cannot be proved locally)
 

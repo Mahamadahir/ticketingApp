@@ -274,7 +274,7 @@ def test_first_line_escalates_to_second_line_and_keeps_the_ticket(client, db_ses
     assert escalate(client, ticket).status_code == 400
 
 
-def test_sub_teams_do_not_nest_and_links_do_not_come_from_sub_teams(client, db_session):
+def test_sub_teams_do_not_nest(client, db_session):
     support, second = make_support(db_session)
     third = Team(name="Third", parent_team_id=second.id)  # not creatable in the admin, but be safe
     db_session.add(third)

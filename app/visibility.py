@@ -10,12 +10,9 @@ ticket goes through here, so the rules live in one place.
 - Otherwise access comes from the ticket's team and nothing else. Being its
   assignee, having triaged it, or following it grants nothing: when a ticket moves
   to another team, everyone outside that team loses it.
-- There are three other ways in. A parent team's members get their level on every
-  sub-team's tickets (one level deep). An admin-set team link gives agents of team A
-  view or work access to team B's tickets: one-way, one hop from a team the agent
-  belongs to (A sees B and B sees C does not let A see C), never above the agent's own
-  level in A. And an agent who escalated a ticket to another team keeps working
-  access to that one ticket (TicketEscalator).
+- There are two other ways in. A parent team's members get their level on every
+  sub-team's tickets (one level deep). And an agent who escalated a ticket to another
+  team keeps working access to that one ticket (TicketEscalator).
 """
 
 from enum import IntEnum
@@ -26,7 +23,6 @@ from sqlmodel import Session, select
 from app.models import (
     MembershipLevel,
     Team,
-    TeamLink,
     TeamMembership,
     Ticket,
     TicketEscalator,
@@ -48,8 +44,8 @@ class NoTicketAccess(Exception):
 
 class AccessContext(dict):
     """What a user's access depends on besides the ticket itself: a mapping of
-    team id to the Access they have to that team's tickets (their own teams, their
-    sub-teams and linked ones), plus the ids of tickets they escalated and so keep
+    team id to the Access they have to that team's tickets (their own teams and their
+    sub-teams), plus the ids of tickets they escalated and so keep
     working. Load it once per request with access_context()."""
 
     escalated_ticket_ids: frozenset = frozenset()
@@ -72,18 +68,6 @@ def access_context(session: Session, user: User) -> AccessContext:
             select(Team.id, Team.parent_team_id).where(Team.parent_team_id.in_(list(own)))
         ).all():
             effective[sub_id] = max(effective.get(sub_id, Access.NONE), own[parent_id])
-        links = [
-            (from_team_id, to_team_id, _LEVEL_ACCESS[level])
-            for from_team_id, to_team_id, level in session.exec(
-                select(TeamLink.from_team_id, TeamLink.to_team_id, TeamLink.level).where(
-                    TeamLink.from_team_id.in_(list(own))
-                )
-            ).all()
-        ]
-        for from_team_id, to_team_id, link_access in links:
-            # One hop from the agent's own teams, capped by their level there.
-            granted = min(own[from_team_id], link_access)
-            effective[to_team_id] = max(effective.get(to_team_id, Access.NONE), granted)
     context = AccessContext(effective)
     if user.role == UserRole.AGENT:
         context.escalated_ticket_ids = frozenset(
