@@ -34,7 +34,7 @@
     <tr>
       <td>{{ row.at.strftime("%Y-%m-%d %H:%M") }}</td>
       <td>{% if ticket %}<a href="/tickets/{{ ticket.number }}">{{ ticket.reference }}</a> {{ ticket.subject }}{% endif %}</td>
-      <td>{{ teams_by_id[ticket.team_id].name if ticket and ticket.team_id and ticket.team_id in teams_by_id else "" }}</td>
+      <td>{{ teams_by_id[ticket.team_id].name if ticket and ticket.team_id and ticket.team_id in teams_by_id else "Unassigned" }}</td>
       <td>{{ row.actor or "system" }}</td>
       <td>{{ text }}</td>
     </tr>

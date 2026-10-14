@@ -14,7 +14,7 @@ work on tickets, for the people doing it.
 from enum import Enum
 from typing import Optional
 
-from sqlalchemy import String, cast, func, literal, null, union_all
+from sqlalchemy import String, case, cast, func, literal, null, union_all
 from sqlmodel import select
 
 from app.models import Message, MessageDirection, Ticket, TicketEvent
@@ -55,7 +55,10 @@ def feed_query(visible, team_id: Optional[int] = None, kind: Optional[Kind] = No
             Message.sender.label("actor"),
             cast(null(), String).label("from_value"),
             cast(null(), String).label("to_value"),
-            func_excerpt(Message.body).label("detail"),
+            case(
+                (func.length(Message.body) > EXCERPT, func.substr(Message.body, 1, EXCERPT) + "..."),
+                else_=Message.body,
+            ).label("detail"),
         )
         .join(Ticket, Ticket.id == Message.ticket_id)
     )
@@ -78,10 +81,6 @@ def feed_query(visible, team_id: Optional[int] = None, kind: Optional[Kind] = No
 
     combined = union_all(*scoped).subquery()
     return select(*combined.c).order_by(combined.c.at.desc(), combined.c.kind, combined.c.row_id.desc())
-
-
-def func_excerpt(column):
-    return func.substr(column, 1, EXCERPT)
 
 
 KIND_LABELS = {

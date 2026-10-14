@@ -42,7 +42,8 @@ def test_the_feed_shows_events_emails_replies_and_notes_newest_first(client, db_
     assert "message from the requester: It is smoking" in page  # the description logged for them
     assert "triaged" in page and "created" in page
     assert page.index("Probably the fuser") < page.index("Have you tried") < page.index("It is smoking")
-    assert "Service Desk" in page and "Agent Ann" in page or "agent@example.com" in page
+    assert "<td>Service Desk</td>" in page
+    assert "agent@example.com" in page or "Agent Ann" in page
 
 
 def test_other_teams_work_is_not_in_the_feed(client, db_session):
@@ -123,6 +124,26 @@ def test_only_agents_can_open_it(client, db_session):
 # ---- Filters, paging, wording ------------------------------------------------------------------------
 
 
+def test_the_filter_form_with_blank_choices_means_no_filter(client, db_session):
+    team, category, _ = desk(client, db_session)
+    classified(client, category, "Anything")
+
+    for params in ({"team_id": "", "kind": ""}, {"team_id": str(team.id), "kind": ""}, {"team_id": "", "kind": "notes"}):
+        response = feed(client, **params)
+        assert response.status_code == 200, params
+    assert "Anything" in feed(client, team_id="", kind="").text
+    assert feed(client, team_id="abc").status_code == 400
+
+
+def test_an_untriaged_ticket_shows_unassigned_as_its_team(client, db_session):
+    desk(client, db_session)
+    raise_it(client, subject="No team yet", for_email="walkin@example.com")
+
+    page = feed(client).text
+
+    assert "No team yet" in page and "<td>Unassigned</td>" in page
+
+
 def test_the_kind_filter(client, db_session):
     team, category, _ = desk(client, db_session)
     classified(client, category, "Mixed")
@@ -148,7 +169,9 @@ def test_long_messages_are_cut_to_an_excerpt(client, db_session):
 
     page = feed(client, kind="notes").text
 
-    assert "x" * 160 in page and "x" * 161 not in page and "TAILMARKER" not in page
+    assert "x" * 160 + "..." in page and "x" * 161 not in page and "TAILMARKER" not in page
+    client.post(f"/tickets/{ticket.number}/note", data={"body": "y" * 160})
+    assert "y" * 160 + "..." not in feed(client, kind="notes").text  # exactly 160 is not cut
 
 
 def test_the_feed_pages_and_keeps_its_filters(client, db_session):
