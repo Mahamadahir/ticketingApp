@@ -99,14 +99,30 @@ def _flush(session: Session) -> None:
         raise RequestTypeError("There is already a request type with that name")
 
 
+def _thresholds(approvals_required: int, declines_required: int, approvers: int) -> tuple[int, int]:
+    """How many must approve and how many must decline. With approvers, neither can be more
+    than there are (that rule could never be met); with none they are kept at one."""
+    for value in (approvals_required, declines_required):
+        if value < 1:
+            raise RequestTypeError("The numbers of approvals and declines needed must be at least 1")
+        if approvers and value > approvers:
+            raise RequestTypeError(f"That needs {value} approvers but only {approvers} are named")
+    return approvals_required, declines_required
+
+
 def create_request_type(
-    session: Session, name: str, description: str, approvers_text: str
+    session: Session, name: str, description: str, approvers_text: str,
+    approvals_required: int = 1, declines_required: int = 1,
 ) -> RequestType:
     name, description = _clean(name, description)
     if _name_taken(session, name, None):
         raise RequestTypeError("There is already a request type with that name")
     users = parse_approvers(session, approvers_text)
-    request_type = RequestType(name=name, description=description)
+    approvals_required, declines_required = _thresholds(approvals_required, declines_required, len(users))
+    request_type = RequestType(
+        name=name, description=description,
+        approvals_required=approvals_required, declines_required=declines_required,
+    )
     session.add(request_type)
     _flush(session)
     _set_approvers(session, request_type, users)
@@ -115,13 +131,16 @@ def create_request_type(
 
 
 def update_request_type(
-    session: Session, request_type: RequestType, name: str, description: str, approvers_text: str, is_active: bool
+    session: Session, request_type: RequestType, name: str, description: str, approvers_text: str,
+    is_active: bool, approvals_required: int = 1, declines_required: int = 1,
 ) -> RequestType:
     name, description = _clean(name, description)
     if _name_taken(session, name, request_type.id):
         raise RequestTypeError("There is already a request type with that name")
     users = parse_approvers(session, approvers_text)
+    approvals_required, declines_required = _thresholds(approvals_required, declines_required, len(users))
     request_type.name, request_type.description, request_type.is_active = name, description, is_active
+    request_type.approvals_required, request_type.declines_required = approvals_required, declines_required
     session.add(request_type)
     _set_approvers(session, request_type, users)
     _flush(session)

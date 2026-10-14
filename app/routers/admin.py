@@ -544,11 +544,13 @@ def add_request_type(
     name: str = Form(..., max_length=500),
     description: str = Form("", max_length=5000),
     approvers: str = Form("", max_length=5000),
+    approvals_required: int = Form(1, ge=1, le=100),
+    declines_required: int = Form(1, ge=1, le=100),
     admin: User = Depends(require_super_admin),
     session: Session = Depends(get_session),
 ):
     try:
-        request_type = create_request_type(session, name, description, approvers)
+        request_type = create_request_type(session, name, description, approvers, approvals_required, declines_required)
     except RequestTypeError as error:
         session.rollback()
         raise HTTPException(status_code=400, detail=str(error))
@@ -563,6 +565,8 @@ def edit_request_type(
     name: str = Form(..., max_length=500),
     description: str = Form("", max_length=5000),
     approvers: str = Form("", max_length=5000),
+    approvals_required: int = Form(1, ge=1, le=100),
+    declines_required: int = Form(1, ge=1, le=100),
     is_active: Optional[str] = Form(None),
     admin: User = Depends(require_super_admin),
     session: Session = Depends(get_session),
@@ -570,15 +574,24 @@ def edit_request_type(
     request_type = session.get(RequestType, type_id)
     if request_type is None:
         raise HTTPException(status_code=404, detail="Request type not found")
-    before = (request_type.name, request_type.description, sorted(a.email for a in approvers_of(session, request_type)))
+    before = (
+        request_type.name, request_type.description, sorted(a.email for a in approvers_of(session, request_type)),
+        (request_type.approvals_required, request_type.declines_required),
+    )
     was_active = request_type.is_active
     try:
-        update_request_type(session, request_type, name, description, approvers, is_active == "on")
+        update_request_type(
+            session, request_type, name, description, approvers, is_active == "on",
+            approvals_required, declines_required,
+        )
     except RequestTypeError as error:
         session.rollback()
         raise HTTPException(status_code=400, detail=str(error))
     session.flush()
-    after = (request_type.name, request_type.description, sorted(a.email for a in approvers_of(session, request_type)))
+    after = (
+        request_type.name, request_type.description, sorted(a.email for a in approvers_of(session, request_type)),
+        (request_type.approvals_required, request_type.declines_required),
+    )
     if before != after:
         changes = []
         if before[0] != after[0]:
@@ -587,6 +600,8 @@ def edit_request_type(
             changes.append("description changed")
         if before[2] != after[2]:
             changes.append(f"approvers {before[2]} -> {after[2]}")
+        if before[3] != after[3]:
+            changes.append(f"needs {before[3][0]} approvals / {before[3][1]} declines -> {after[3][0]} / {after[3][1]}")
         log_action(session, admin.email, "request_type", request_type.id, "edited", "; ".join(changes))
     if request_type.is_active != was_active:
         log_action(

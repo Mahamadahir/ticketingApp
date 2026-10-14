@@ -159,6 +159,8 @@ def split_ticket(
         raise SplitError("Triage this ticket before splitting it")
     if original.status in FINISHED_STATUSES:
         raise SplitError("A resolved or closed ticket cannot be split")
+    if original.status == TicketStatus.AWAITING_APPROVAL:
+        raise SplitError("This request is waiting for approval; split it once it has been approved")
     category = session.get(Category, original.category_id) if original.category_id else None
     if category is None or original.impact is None or original.urgency is None:
         raise SplitError("This ticket has no category, impact and urgency to give its parts")

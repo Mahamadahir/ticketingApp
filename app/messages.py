@@ -148,6 +148,15 @@ def email_requester(
     )
 
 
+def record_notice(session: Session, ticket: Ticket, body: str) -> Message:
+    """An automatic public message to the requester (an approval decision, say). Not an agent's
+    email, so it does not count as a first response. Mail for it arrives with phase 3."""
+    return _record(
+        session, ticket, sender="IT Support (automatic)", body=body,
+        direction=MessageDirection.OUTBOUND, visibility=MessageVisibility.PUBLIC,
+    )
+
+
 def add_note(session: Session, ticket: Ticket, author: User, body: str) -> Message:
     """An internal note. Allowed at any stage and does not triage the ticket."""
     return _record(

@@ -9,6 +9,9 @@
   The things people can ask IT for, listed on the request form (New starter, Software install ...).
   Each can have approvers: people with an account (they sign in once first; they need not be agents,
   managers are typical) who will approve the request before the work goes ahead. Up to {{ max_approvers }}.
+  "Approvals needed" is how many of them must approve (1: any one approver is enough); "declines" is how many
+  must decline to close the request. If so many decline that the approvals can no longer be reached, it closes too.
+  The request waits in Awaiting approval, starting when an agent triages it.
   Switching a type off hides it from the form; tickets already raised keep it.
 </p>
 
@@ -22,6 +25,8 @@
     <label>Approvers (email addresses, separated by commas)
       <input type="text" name="approvers" value="{{ approver_emails }}" />
     </label>
+    <label>Approvals needed <input type="number" name="approvals_required" value="{{ t.approvals_required }}" min="1" max="100" /></label>
+    <label>Declines that close the request <input type="number" name="declines_required" value="{{ t.declines_required }}" min="1" max="100" /></label>
     <label><input type="checkbox" name="is_active" {{ "checked" if t.is_active else "" }} /> Available on the request form</label>
     <button type="submit">Save</button>
   </fieldset>
@@ -37,6 +42,8 @@
     <textarea name="description" rows="2" maxlength="{{ max_description_length }}"></textarea>
   </label>
   <label>Approvers (email addresses, separated by commas) <input type="text" name="approvers" /></label>
+  <label>Approvals needed <input type="number" name="approvals_required" value="1" min="1" max="100" /></label>
+  <label>Declines that close the request <input type="number" name="declines_required" value="1" min="1" max="100" /></label>
   <button type="submit">Create</button>
 </form>
 {% endblock %}

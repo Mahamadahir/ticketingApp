@@ -2,7 +2,7 @@
 {% block title %}My requests{% endblock %}
 {% block content %}
 <h2>My requests</h2>
-<p><a href="/portal/new">Raise a request</a></p>
+<p><a href="/portal/new">Raise a request</a>{% if waiting_on_me %} &middot; <a href="/portal/approvals">Waiting for your approval ({{ waiting_on_me }})</a>{% endif %}</p>
 
 {% if not page.items %}
 <p>No open tickets right now.</p>

@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Approval{% endblock %}
+{% block content %}
+{% if invalid %}
+<h2>This link is not valid</h2>
+<p>It may have expired or been damaged. Sign in to the portal to see what is waiting for you.</p>
+<p><a href="/portal/approvals">Open the portal</a></p>
+{% else %}
+<h2>{{ ticket.reference }} {{ ticket.subject }}</h2>
+{% if message %}<p class="note">{{ message }}</p>{% endif %}
+<p>
+  From: {{ ticket.requester_email }}
+  {% if request_type %}&middot; Request: {{ request_type.name }}{% endif %}
+  &middot; Asking: {{ approver.display_name or approver.email }} ({{ rule }})
+</p>
+<pre class="message-body">{{ description }}</pre>
+
+{% if can_answer %}
+<form method="post" action="/approvals/{{ token }}">
+  <label>Comment (optional; shown to the requester if you decline)
+    <textarea name="comment" rows="3" maxlength="{{ max_comment_length }}"></textarea>
+  </label>
+  <button type="submit" name="decision" value="approved">Approve</button>
+  <button type="submit" name="decision" value="declined" class="button-outline">Decline</button>
+</form>
+{% elif approval.decision == "pending" %}
+<p>This request is no longer waiting for approval.</p>
+{% elif approval.decision == "not_needed" %}
+<p>This request was settled without your answer.</p>
+{% else %}
+<p>You {{ approval.decision }} this request.</p>
+{% endif %}
+{% endif %}
+{% endblock %}

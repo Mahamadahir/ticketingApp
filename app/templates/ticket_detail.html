@@ -22,6 +22,34 @@
   <span class="status status-{{ ticket.status.value }}">{{ ticket.status.value }}</span>
 </p>
 
+{% if ticket.status.value == "awaiting_approval" %}
+<p class="note"><b>Waiting for approval</b> ({{ approval_rule }}). The ticket moves on when its approvers decide; its status cannot be changed by hand until then. The SLA clock is running.</p>
+{% endif %}
+{% if approvals %}
+<details {{ "open" if ticket.status.value == "awaiting_approval" else "" }}>
+  <summary>Approvals ({{ approval_rule }})</summary>
+  <table>
+    <thead><tr><th>Approver</th><th>Answer</th><th>Comment</th><th>When (UTC)</th></tr></thead>
+    <tbody>
+      {% for approval, approver in approvals %}
+      <tr>
+        <td>{{ approver.display_name or approver.email }}</td>
+        <td>{{ approval.decision.replace("_", " ") }}</td>
+        <td>{{ approval.comment }}</td>
+        <td>{{ approval.decided_at.strftime("%Y-%m-%d %H:%M") if approval.decided_at else "" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if can_waive %}
+  <form hx-post="/tickets/{{ ticket.number }}/approval/waive" hx-target="main" hx-swap="innerHTML">
+    <p class="note">Super admin: let this request through without waiting for the remaining approvers.</p>
+    <button type="submit" class="button-outline">Waive approval</button>
+  </form>
+  {% endif %}
+</details>
+{% endif %}
+
 {% if ticket.is_escalated %}
 <p class="note">Escalated: {{ ticket.escalation_reason }}</p>
 {% if escalators %}
@@ -107,7 +135,7 @@
 
 {% if can_work %}
 <div class="actions">
-  {% if ticket.triaged_at %}
+  {% if ticket.triaged_at and ticket.status.value != "awaiting_approval" %}
   <form hx-post="/tickets/{{ ticket.number }}/status" hx-target="main" hx-swap="innerHTML">
     {% for s in statuses %}
     <button type="submit" name="status" value="{{ s.value }}" class="{{ 'button-active' if ticket.status == s else 'button-outline' }}">{{ s.value.replace("_", " ") }}</button>

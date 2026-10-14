@@ -154,14 +154,14 @@ def test_reference_link_respects_team_visibility(client, db_session):
     assert client.get("/t/INC-999").status_code == 404
 
 
-def test_every_status_except_new_can_be_set(client, db_session):
+def test_every_status_except_new_and_awaiting_approval_can_be_set(client, db_session):
     team = create_team(db_session, "Service Desk")
     ticket = make_ticket(db_session, team_id=team.id, triaged=True)
     login_agent(client, db_session, team)
 
     for status in TicketStatus:
-        if status == TicketStatus.NEW:
-            continue  # a ticket only leaves New by being triaged
+        if status in (TicketStatus.NEW, TicketStatus.AWAITING_APPROVAL):
+            continue  # New is left only by triage; Awaiting approval is entered by triage and left by the approvers
         assert client.post(f"/tickets/{ticket.number}/status", data={"status": status.value}).status_code == 200
         db_session.refresh(ticket)
         assert ticket.status == status

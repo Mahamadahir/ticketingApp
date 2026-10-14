@@ -28,7 +28,15 @@ EVENT_TYPE_CHANGED = "type_changed"
 EVENT_TEAM_CHANGED = "team_changed"
 EVENT_CATEGORY_REVIEWED = "category_reviewed"
 EVENT_PRIORITY_CHANGED = "priority_changed"
+EVENT_APPROVAL_REQUESTED = "approval_requested"  # to_value: who was asked, detail: how many must approve
+EVENT_APPROVAL_DECIDED = "approval_decided"  # actor: the approver, to_value: approved or declined
+EVENT_APPROVAL_OUTCOME = "approval_outcome"  # to_value: approved, declined or waived
 EVENT_REQUEST_TYPE = "request_type"  # a service request raised from the catalogue: to_value is its name
+
+
+class AwaitingApproval(Exception):
+    """Raised when something tries to move a ticket that is waiting for its approvers. Only the
+    approval itself (app/approvals.py) moves it on."""
 
 
 class NotTriaged(Exception):
@@ -119,12 +127,15 @@ def set_status(
     new_status: TicketStatus,
     actor_email: Optional[str],
     detail: Optional[str] = None,
+    by_approval: bool = False,
 ) -> bool:
     """Moves the ticket to a new status. Returns False, changing nothing,
     when it is already there. A sub-ticket's change re-derives its original's status."""
     previous = ticket.status
     if previous == new_status:
         return False
+    if previous == TicketStatus.AWAITING_APPROVAL and not by_approval:
+        raise AwaitingApproval()
     if ticket.triaged_at is None and new_status != TicketStatus.NEW:
         # Leaving New is what triage does, and only triage.
         raise NotTriaged()
