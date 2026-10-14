@@ -21,7 +21,14 @@ from app.followers import (
 from app.backdating import FORMAT as MOMENT_FORMAT, BackdateError, parse_moment
 from app.categories import CategoryError, selectable
 from app.forms import MAX_MESSAGE_LENGTH, optional_int
-from app.raising import MAX_SUBJECT_LENGTH, RaiseError, is_agent, raise_ticket, source_label
+from app.raising import (
+    MAX_SUBJECT_LENGTH,
+    RaiseError,
+    is_agent,
+    raise_ticket,
+    should_tell_requester,
+    source_label,
+)
 from app.sla import IMPACT_LABELS, URGENCY_LABELS, Level
 from app.triage import TriageError
 from app.visibility import Access, access_context, ticket_access
@@ -82,6 +89,7 @@ def _render_new_form(request: Request, user: User, session: Session) -> HTMLResp
             "urgency_labels": URGENCY_LABELS,
             "moment_format": MOMENT_FORMAT,
             "max_subject_length": MAX_SUBJECT_LENGTH,
+            "tell_requester": should_tell_requester(session),
         },
     )
 

@@ -309,12 +309,13 @@
 </div>
 
 {% if can_email %}
-<form hx-post="/tickets/{{ ticket.number }}/email" hx-target="main" hx-swap="innerHTML">
+<form hx-post="/tickets/{{ ticket.number }}/email/preview" hx-target="#email-preview" hx-swap="innerHTML"
+      hx-on:input="document.getElementById('email-preview').innerHTML = ''">
   {% if canned %}
   <label>Insert a canned response
     <select name="canned_id" hx-get="/tickets/{{ ticket.number }}/canned" hx-trigger="change"
             hx-include="#email-body" hx-target="#email-body" hx-swap="outerHTML"
-            hx-on::after-request="this.value = ''">
+            hx-on::after-request="this.value = ''; document.getElementById('email-preview').innerHTML = ''">
       <option value="">Choose one...</option>
       {% for c in canned %}<option value="{{ c.id }}">{{ c.title }}</option>{% endfor %}
     </select>
@@ -334,8 +335,9 @@
     <p class="note">Unticking someone only leaves them off this email. Remove them under Followers to stop copying them on future ones.</p>
   </fieldset>
   {% endif %}
-  <button type="submit">Email user</button>
+  <button type="submit">Preview email</button>
 </form>
+<div id="email-preview"></div>
 {% elif can_work %}
 <p class="note">Triage this ticket before emailing the requester. You can still add a note.</p>
 {% endif %}

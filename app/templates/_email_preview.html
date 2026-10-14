@@ -1,0 +1,23 @@
+<div class="email-preview">
+  <h3>Check before sending</h3>
+  <p><b>To:</b> {{ preview.to }}</p>
+  <p><b>Copied:</b> {{ preview.cc | join(", ") if preview.cc else "no one" }}</p>
+  <p><b>Subject:</b> {{ preview.subject }}</p>
+  {% if preview.about %}<p class="note">{{ preview.about }} (this email is about one part of a split request)</p>{% endif %}
+  <pre class="message-body">{{ preview.body }}</pre>
+  <p class="note">
+    {% if status_after %}Sending moves this ticket to {{ status_after.value.replace("_", " ") }} and pauses its SLA clock.
+    {% else %}Sending leaves the ticket's status as it is.{% endif %}
+    The email is recorded on the ticket and goes to the requester.
+  </p>
+  <form hx-post="/tickets/{{ ticket.number }}/email" hx-target="main" hx-swap="innerHTML" hx-disabled-elt="find button[type=submit]">
+    <textarea name="body" hidden>
+{{ preview.body }}</textarea>
+    {% if cc_form %}
+    <input type="hidden" name="cc_form" value="1" />
+    {% for address in ticked %}<input type="hidden" name="cc" value="{{ address }}" />{% endfor %}
+    {% endif %}
+    <button type="submit">Send email</button>
+    <button type="button" class="button-outline" hx-on:click="document.getElementById('email-preview').innerHTML = ''">Keep editing</button>
+  </form>
+</div>
