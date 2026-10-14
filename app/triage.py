@@ -14,6 +14,7 @@ from sqlmodel import Session
 from app.categories import is_selectable, path_of, team_id_for
 from app.models import (
     Category,
+    RequestType,
     Team,
     Ticket,
     TicketStatus,
@@ -23,6 +24,7 @@ from app.models import (
 from app.sla import Level, apply_impact_urgency, describe_priority
 from app.ticket_service import (
     EVENT_ASSIGNED,
+    EVENT_REQUEST_TYPE,
     EVENT_TEAM_CHANGED,
     EVENT_TRIAGED,
     EVENT_TYPE_CHANGED,
@@ -45,6 +47,15 @@ def change_type(session: Session, ticket: Ticket, new_type: TicketType, actor_em
     ticket.type = new_type
     session.add(ticket)
     record_event(session, ticket, EVENT_TYPE_CHANGED, actor_email, old_type.value, new_type.value)
+    if new_type != TicketType.SERVICE_REQUEST and ticket.request_type_id is not None:
+        # No longer a service request, so no longer one of the catalogue's kinds (and its
+        # approvers have nothing to approve).
+        request_type = session.get(RequestType, ticket.request_type_id)
+        ticket.request_type_id = None
+        record_event(
+            session, ticket, EVENT_REQUEST_TYPE, actor_email,
+            from_value=request_type.name if request_type else None, detail="retyped",
+        )
 
 
 def _assignee_for(session: Session, team_id: int, assignee: Optional[User]) -> Optional[User]:

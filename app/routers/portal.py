@@ -34,7 +34,8 @@ from app.triage import TriageError
 from app.visibility import Access, access_context, ticket_access
 from app.messages import about_labels, record_inbound, requester_visible_messages
 from app.splitting import has_sub_tickets, refresh_open_sub_tickets, sync_original_status
-from app.models import Category, Ticket, TicketSource, TicketStatus, TicketType, User, UserRole
+from app.request_types import active_request_types, request_type_of
+from app.models import Category, RequestType, Ticket, TicketSource, TicketStatus, TicketType, User, UserRole
 from app.ticket_service import get_by_number, set_status
 from app.pagination import paginate
 
@@ -90,6 +91,7 @@ def _render_new_form(request: Request, user: User, session: Session) -> HTMLResp
             "moment_format": MOMENT_FORMAT,
             "max_subject_length": MAX_SUBJECT_LENGTH,
             "tell_requester": should_tell_requester(session),
+            "request_types": active_request_types(session),
         },
     )
 
@@ -104,6 +106,7 @@ def _render_ticket(request: Request, ticket: Ticket, user: User, session: Sessio
             "messages": visible,
             "about": about_labels(session, visible),
             "source_label": source_label(session, ticket),
+            "request_info": request_type_of(session, ticket),
             # Only the requester sees who else is copied; a follower must not learn
             # the other followers' addresses, and internal followers are never shown.
             "followers": (
@@ -151,6 +154,7 @@ def raise_new_ticket(
     description: str = Form(..., max_length=MAX_MESSAGE_LENGTH + 1000),
     for_email: Optional[str] = Form(None, max_length=500),
     ticket_type: TicketType = Form(TicketType.INCIDENT),
+    request_type_id: Optional[str] = Form(None),
     category_id: Optional[str] = Form(None),
     impact: Optional[str] = Form(None),
     urgency: Optional[str] = Form(None),
@@ -169,6 +173,10 @@ def raise_new_ticket(
         chosen_category = session.get(Category, category_choice) if category_choice is not None else None
         if category_choice is not None and chosen_category is None:
             raise RaiseError("Choose a category from the list")
+        type_choice = optional_int(request_type_id)
+        chosen_request_type = session.get(RequestType, type_choice) if type_choice is not None else None
+        if type_choice is not None and chosen_request_type is None:
+            raise RaiseError("Choose a kind of request from the list")
         chosen_agent = optional_int(agent_id)
         assignee = session.get(User, chosen_agent) if chosen_agent is not None else None
         if chosen_agent is not None and (assignee is None or assignee.role != UserRole.AGENT):
@@ -182,7 +190,7 @@ def raise_new_ticket(
         ticket = raise_ticket(
             session, user, subject=subject, description=description, for_email=for_email,
             ticket_type=ticket_type, category=chosen_category, impact=level_impact, urgency=level_urgency,
-            assignee=assignee, reported_at=moments[0], resolved_at=moments[1],
+            assignee=assignee, reported_at=moments[0], resolved_at=moments[1], request_type=chosen_request_type,
         )
         log_action(session, user.email, "ticket", ticket.id, "raised", ticket.source.value)
         session.flush()

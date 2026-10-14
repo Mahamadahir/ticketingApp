@@ -28,6 +28,7 @@ EVENT_TYPE_CHANGED = "type_changed"
 EVENT_TEAM_CHANGED = "team_changed"
 EVENT_CATEGORY_REVIEWED = "category_reviewed"
 EVENT_PRIORITY_CHANGED = "priority_changed"
+EVENT_REQUEST_TYPE = "request_type"  # a service request raised from the catalogue: to_value is its name
 
 
 class NotTriaged(Exception):
@@ -90,6 +91,7 @@ def create_ticket(
     team_id: Optional[int] = None,
     actor_email: Optional[str] = None,
     created_by_id: Optional[int] = None,
+    request_type_id: Optional[int] = None,
 ) -> Ticket:
     """Creates a ticket in the New (untriaged) status and records its first
     event. The number is assigned on insert, so the ticket is flushed here.
@@ -103,6 +105,7 @@ def create_ticket(
         type=ticket_type,
         team_id=team_id,
         created_by_id=created_by_id,
+        request_type_id=request_type_id,
     )
     session.add(ticket)
     session.flush()

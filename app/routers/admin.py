@@ -27,6 +27,16 @@ from app.categories import (
     path_of,
     selectable,
 )
+from app.request_types import (
+    MAX_APPROVERS,
+    MAX_DESCRIPTION_LENGTH as MAX_REQUEST_DESCRIPTION_LENGTH,
+    MAX_NAME_LENGTH as MAX_REQUEST_NAME_LENGTH,
+    RequestTypeError,
+    all_request_types,
+    approvers_of,
+    create_request_type,
+    update_request_type,
+)
 from app.canned import (
     MAX_TITLE_LENGTH,
     PLACEHOLDERS,
@@ -43,6 +53,7 @@ from app.models import (
     AuditLog,
     CannedResponse,
     Category,
+    RequestType,
     MembershipLevel,
     Team,
     TeamMembership,
@@ -503,6 +514,87 @@ def edit_canned(
         )
     session.commit()
     return RedirectResponse("/admin/canned", status_code=303)
+
+
+# ---- Request types (Service Requests) --------------------------------------------
+
+
+@router.get("/request-types", response_class=HTMLResponse)
+def list_request_types(
+    request: Request,
+    user: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    types = all_request_types(session)
+    return templates.TemplateResponse(
+        request,
+        "admin_request_types.html",
+        {
+            "types": [(t, ", ".join(a.email for a in approvers_of(session, t))) for t in types],
+            "max_name_length": MAX_REQUEST_NAME_LENGTH,
+            "max_description_length": MAX_REQUEST_DESCRIPTION_LENGTH,
+            "max_approvers": MAX_APPROVERS,
+            "user": user,
+        },
+    )
+
+
+@router.post("/request-types")
+def add_request_type(
+    name: str = Form(..., max_length=500),
+    description: str = Form("", max_length=5000),
+    approvers: str = Form("", max_length=5000),
+    admin: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    try:
+        request_type = create_request_type(session, name, description, approvers)
+    except RequestTypeError as error:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(error))
+    log_action(session, admin.email, "request_type", request_type.id, "created", request_type.name)
+    session.commit()
+    return RedirectResponse("/admin/request-types", status_code=303)
+
+
+@router.post("/request-types/{type_id}")
+def edit_request_type(
+    type_id: int,
+    name: str = Form(..., max_length=500),
+    description: str = Form("", max_length=5000),
+    approvers: str = Form("", max_length=5000),
+    is_active: Optional[str] = Form(None),
+    admin: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    request_type = session.get(RequestType, type_id)
+    if request_type is None:
+        raise HTTPException(status_code=404, detail="Request type not found")
+    before = (request_type.name, request_type.description, sorted(a.email for a in approvers_of(session, request_type)))
+    was_active = request_type.is_active
+    try:
+        update_request_type(session, request_type, name, description, approvers, is_active == "on")
+    except RequestTypeError as error:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(error))
+    session.flush()
+    after = (request_type.name, request_type.description, sorted(a.email for a in approvers_of(session, request_type)))
+    if before != after:
+        changes = []
+        if before[0] != after[0]:
+            changes.append(f"name {before[0]!r} -> {after[0]!r}")
+        if before[1] != after[1]:
+            changes.append("description changed")
+        if before[2] != after[2]:
+            changes.append(f"approvers {before[2]} -> {after[2]}")
+        log_action(session, admin.email, "request_type", request_type.id, "edited", "; ".join(changes))
+    if request_type.is_active != was_active:
+        log_action(
+            session, admin.email, "request_type", request_type.id,
+            "activated" if request_type.is_active else "deactivated", request_type.name,
+        )
+    session.commit()
+    return RedirectResponse("/admin/request-types", status_code=303)
 
 
 # ---- Category review ("Other" tickets, after resolution) ------------------------

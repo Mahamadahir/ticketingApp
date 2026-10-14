@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Admin: Request types{% endblock %}
+{% block content %}
+{% set active = "/admin/request-types" %}
+{% include "_admin_tabs.html" %}
+
+<h2>Request types</h2>
+<p class="note">
+  The things people can ask IT for, listed on the request form (New starter, Software install ...).
+  Each can have approvers: people with an account (they sign in once first; they need not be agents,
+  managers are typical) who will approve the request before the work goes ahead. Up to {{ max_approvers }}.
+  Switching a type off hides it from the form; tickets already raised keep it.
+</p>
+
+{% for t, approver_emails in types %}
+<form method="post" action="/admin/request-types/{{ t.id }}">
+  <fieldset>
+    <label>Name <input type="text" name="name" value="{{ t.name }}" maxlength="{{ max_name_length }}" required /></label>
+    <label>Description (shown on the form)
+      <textarea name="description" rows="2" maxlength="{{ max_description_length }}">{{ t.description }}</textarea>
+    </label>
+    <label>Approvers (email addresses, separated by commas)
+      <input type="text" name="approvers" value="{{ approver_emails }}" />
+    </label>
+    <label><input type="checkbox" name="is_active" {{ "checked" if t.is_active else "" }} /> Available on the request form</label>
+    <button type="submit">Save</button>
+  </fieldset>
+</form>
+{% else %}
+<p>No request types yet.</p>
+{% endfor %}
+
+<h3>New request type</h3>
+<form method="post" action="/admin/request-types">
+  <label>Name <input type="text" name="name" maxlength="{{ max_name_length }}" required /></label>
+  <label>Description (shown on the form)
+    <textarea name="description" rows="2" maxlength="{{ max_description_length }}"></textarea>
+  </label>
+  <label>Approvers (email addresses, separated by commas) <input type="text" name="approvers" /></label>
+  <button type="submit">Create</button>
+</form>
+{% endblock %}

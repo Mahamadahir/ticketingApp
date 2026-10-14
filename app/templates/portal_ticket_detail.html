@@ -5,7 +5,8 @@
 
 <h2>{{ ticket.reference }} {{ ticket.subject }}</h2>
 <p><span class="status status-{{ ticket.status.value }}">{{ ticket.status.value.replace("_", " ") }}</span>
-  &middot; <span class="note">{{ source_label }}</span></p>
+  &middot; <span class="note">{{ source_label }}</span>
+  {% if request_info %}&middot; <span class="note">Request: {{ request_info[0].name }}</span>{% endif %}</p>
 
 <div id="thread">
   {% for message in messages %}

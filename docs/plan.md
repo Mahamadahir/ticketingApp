@@ -632,6 +632,20 @@ the timezone work. The resolution email (default on) comes with the resolve acti
 
 **Service Requests.** Approvers are configured per request type in the
 admin portal.
+*Built in 1H-i (14 Oct 2026; the plan said no more than the line above, so these are working
+defaults to confirm):* a **request catalogue**. Admin > Request types (super admin) lists the
+things people can ask for ("New starter", "Software install"): a name, a short description
+shown on the form, up to 10 approvers (people with an account, who need not be agents), and an
+on/off switch (off hides it from the form; tickets keep it). The raise form (`/portal/new`) asks
+"What do you need?" with those types plus "Something is not working"; choosing a type makes the
+ticket a Service Request (`SR-`) and records `request_type_id` and a `request_type` event. Agents
+raising for someone else can pick one too. The agent page shows the request and its approvers; the
+requester sees the request name only. Sub-tickets from a split do not inherit the request type.
+*Next, 1H-ii (proposed, not built):* raising a catalogue request creates a pending approval for
+each approver; the first decision wins (one approver is enough; a decline closes the request with a
+reason to the requester); approvers decide from the portal ("My approvals") and can read the
+request; while approval is pending the agent page says so and the ticket cannot be resolved or
+closed. Approver emails come with phase 3.
 
 **History.** A `ticket_event` table records every status change,
 assignment, priority change, SLA pause, reopen and MSP handoff with time and

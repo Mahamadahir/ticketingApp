@@ -24,6 +24,7 @@ from app.backdating import FORMAT as MOMENT_FORMAT, BackdateError, backdate_tick
 from app.categories import CategoryError, create_category, path_of, selectable, team_id_for
 from app.escalation import EscalationError, escalate_ticket as escalate, escalation_target, escalators_of
 from app.raising import source_label
+from app.request_types import request_type_of
 from app.canned import active_canned, fill as fill_canned
 from app.search import normalise, search_condition
 from app.splitting import (
@@ -862,6 +863,7 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             "moment_format": MOMENT_FORMAT,
             "can_backdate": may_backdate(ticket),
             "source_label": source_label(session, ticket),
+            "request_info": request_type_of(session, ticket),
             "can_set_priority": can_work and ticket.triaged_at is not None and ticket.status not in FINISHED_STATUSES,
             "category_options": options,
             "main_categories": [c for c, _ in options if c.parent_id is None and not c.is_other],
