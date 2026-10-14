@@ -103,7 +103,7 @@ notification settings that 2B stores and nothing yet sends. The Graph client in 
   re-assign it to any team and then loses sight of it. Whether re-assign should be limited to
   teams the agent can see is undecided.
 
-**Small PRs from the decisions below (not started):** unassign tickets when an agent is removed from a team, category change after triage, per-user timezone display.
+**Small PRs from the decisions below (not started):** unassign tickets when an agent is removed from a team, category change after triage, per-user timezone display, and the status dropdown on Email user / Add note (agreed 14 Oct, replaces "emailing always moves to Awaiting user": the agent picks the status, default Awaiting user; the preview must show the chosen status; see "Status follows the conversation" in `docs/plan.md`). Today an email still always moves an Open or In progress ticket to Awaiting user.
 
 
 **Email preview for the other emails.** The step exists for agent replies (1G-ii). Resolution emails (phase 4), MSP forwards and bulk resolves (listing every linked ticket and recipient) must reuse it, and automatic emails need admin-managed templates previewed when edited. Per-person opt-out of the "raised for you" email joins the setting when user notification settings exist.
@@ -257,6 +257,13 @@ sleep, restart it and `docker start ticketingapp-db-1`.
   and comments, never ticket events, so an escalated ticket nobody wrote on sends just
   the original request. Teams also get an admin toggle for the automatic 18:00 handoff
   (`docs/plan.md`, "MSP").
+- 14 Oct: added phase 10 (security hardening and go-live gate) to `docs/plan.md`, and agreed that
+  background work is driven by the database (rows with leases and retries) rather than in-memory
+  timers. Where that stands (20 Oct): sending is built that way (the `TeamsPost` and `OutboundEmail`
+  outboxes are rows the worker claims with `SKIP LOCKED` and retries with backoff). The recurring-jobs
+  table (`scheduled_job`, with `next_run_at` and a lease) is not built; the worker still runs its jobs
+  from APScheduler, which is acceptable only while each job is safe to run late and twice. Build the
+  table before the 18:00 MSP handoff (phase 5), which must not be missed.
 
 ## Open questions
 
