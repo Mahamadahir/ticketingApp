@@ -631,6 +631,15 @@ computed per query, fine at this volume; add GIN indexes if the list gets slow.
 *Built in 1F-ii (13 Oct 2026):* Admin > Canned responses (super admin: create, edit, switch off; audited). On a triaged ticket the email form has an "Insert a canned response" picker that only fills the box (appending to what is typed) with {reference}, {subject} and {agent} filled in; the agent edits and sends it as usual. Global, not per team; per-team sets can follow if wanted.
 
 ## Outbound email preview
+*Built for agent replies in 1G-ii (14 Oct 2026):* the email form now has **Preview email**: a panel
+shows To, who is copied (internal followers always), the subject (the family's one thread subject),
+the "About:" line for a split request, the text, and what sending will do to the ticket
+(for example "moves this ticket to awaiting user and pauses its SLA clock"). **Send email** and
+**Keep editing** follow. The preview runs the send's own checks (`app/messages.preview_email`
+shares the copy rules with `email_requester`), so what is previewed is what would go. It is a
+safety step in the page, not a server lock: the send endpoint still accepts a direct post. The
+setting "Tell the requester when an agent raises a ticket for them" (Settings, default on) is in;
+the email itself arrives with phase 3.
 
 Every email an agent triggers that reaches an end user (replies,
 resolutions, bulk resolves, MSP forwards) shows a preview and an "Are you
