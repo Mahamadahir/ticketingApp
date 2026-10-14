@@ -15,12 +15,13 @@ from app.models import Setting
 class SettingDef:
     key: str
     label: str
-    kind: str  # "team": a team id, empty for none; "minutes": a whole number; "percent": 1 to 99
+    kind: str  # "team": a team id, empty for none; "minutes": a whole number; "percent": 1 to 99; "flag": on or off
     description: str
     default: str = ""
 
 
 DEFAULT_TRIAGE_TEAM = "default_triage_team_id"
+TELL_REQUESTER_RAISED_FOR = "tell_requester_when_raised_for_them"
 SLA_AT_RISK_PERCENT = "sla_at_risk_percent"
 
 # PLACEHOLDER SLA targets, in minutes on a 24/7 clock, until the real ones are agreed
@@ -72,6 +73,17 @@ REGISTRY: dict[str, SettingDef] = {
         ),
     ),
     **_sla_definitions(),
+    TELL_REQUESTER_RAISED_FOR: SettingDef(
+        key=TELL_REQUESTER_RAISED_FOR,
+        label="Tell the requester when an agent raises a ticket for them",
+        kind="flag",
+        description=(
+            "On: the requester is emailed that a ticket was raised for them. The email itself "
+            "starts with mail intake and sending (phase 3); this decides whether it is sent. "
+            "Each person will also be able to turn it off in their own notification settings."
+        ),
+        default="on",
+    ),
     SLA_AT_RISK_PERCENT: SettingDef(
         key=SLA_AT_RISK_PERCENT,
         label="SLA 'at risk' threshold (percent)",
@@ -86,6 +98,11 @@ def get_setting(session: Session, key: str) -> str:
     definition = REGISTRY[key]
     row = session.get(Setting, key)
     return row.value if row is not None else definition.default
+
+
+def get_flag(session: Session, key: str) -> bool:
+    """An on/off setting."""
+    return get_setting(session, key).strip().lower() != "off"
 
 
 def get_int_setting(session: Session, key: str) -> Optional[int]:

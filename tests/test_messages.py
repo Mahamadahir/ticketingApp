@@ -170,7 +170,7 @@ def test_email_user_is_unavailable_until_the_ticket_is_triaged(client, db_sessio
     agent_for(client, db_session, team)
 
     page = client.get(f"/tickets/{ticket.number}").text
-    assert "Email user" not in page and "Triage this ticket" in page
+    assert "Preview email" not in page and "Triage this ticket" in page
     assert "Add note" in page
 
     response = client.post(f"/tickets/{ticket.number}/email", data={"body": "Hello"})
@@ -184,7 +184,7 @@ def test_email_user_is_unavailable_until_the_ticket_is_triaged(client, db_sessio
         f"/tickets/{ticket.number}/triage", data={"ticket_type": "incident", "impact": "low", "urgency": "low", "category_id": category.id}
     )
     assert triage.status_code == 200
-    assert "Email user" in client.get(f"/tickets/{ticket.number}").text
+    assert "Preview email" in client.get(f"/tickets/{ticket.number}").text
     assert client.post(f"/tickets/{ticket.number}/email", data={"body": "Hello"}).status_code == 200
 
 

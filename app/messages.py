@@ -72,6 +72,51 @@ class UnknownRecipient(ValueError):
     """The agent asked to copy an address that is not a follower of the ticket."""
 
 
+def _copied_followers(session: Session, ticket: Ticket, cc_emails: Optional[list[str]]) -> list:
+    """Who an email on this ticket copies: every follower, or only those the agent left
+    ticked (internal followers are always copied). The one place this is worked out, so the
+    preview and the email that is then sent cannot disagree."""
+    requester = ticket.requester_email.lower()
+    candidates = [f for f in followers_of(session, ticket) if f.email != requester]
+    if cc_emails is None:
+        return candidates
+    wanted = {address.strip().lower() for address in cc_emails}
+    unknown = wanted - {f.email for f in candidates}
+    if unknown:
+        raise UnknownRecipient(", ".join(sorted(unknown)))
+    return [f for f in candidates if f.is_internal or f.email in wanted]
+
+
+@dataclass
+class EmailPreview:
+    """What email_requester would send, for the "are you sure?" step. Nothing is recorded."""
+
+    to: str
+    cc: list[str]
+    subject: str
+    about: Optional[str]
+    body: str
+
+
+def preview_email(
+    session: Session, ticket: Ticket, body: str, cc_emails: Optional[list[str]] = None
+) -> EmailPreview:
+    """Checks an email exactly as email_requester does and returns what it would send."""
+    if not is_triaged(ticket):
+        raise NotTriaged()
+    chosen = _copied_followers(session, ticket, cc_emails)
+    in_a_split = ticket.split_from_id is not None or session.exec(
+        select(Ticket.id).where(Ticket.split_from_id == ticket.id).limit(1)
+    ).first() is not None
+    return EmailPreview(
+        to=ticket.requester_email,
+        cc=[f.email for f in chosen],
+        subject=thread_subject(session, ticket),
+        about=f"About: {ticket.reference} {ticket.subject}" if in_a_split else None,
+        body=body,
+    )
+
+
 def email_requester(
     session: Session, ticket: Ticket, author: User, body: str, cc_emails: Optional[list[str]] = None
 ) -> Message:
@@ -86,16 +131,7 @@ def email_requester(
     if not is_triaged(ticket):
         raise NotTriaged()
 
-    requester = ticket.requester_email.lower()
-    candidates = [f for f in followers_of(session, ticket) if f.email != requester]
-    if cc_emails is None:
-        chosen = candidates
-    else:
-        wanted = {address.strip().lower() for address in cc_emails}
-        unknown = wanted - {f.email for f in candidates}
-        if unknown:
-            raise UnknownRecipient(", ".join(sorted(unknown)))
-        chosen = [f for f in candidates if f.is_internal or f.email in wanted]
+    chosen = _copied_followers(session, ticket, cc_emails)
     cc = ", ".join(f.email for f in chosen) or None
     note_first_response(ticket, datetime.now(timezone.utc))
     return _record(

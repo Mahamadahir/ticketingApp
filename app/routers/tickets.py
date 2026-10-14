@@ -35,7 +35,14 @@ from app.splitting import (
     sub_tickets_summary,
 )
 from app.linking import PARENT_TYPES, LinkError, link_ticket, linked_summary, unlink_ticket
-from app.messages import UnknownRecipient, add_note, agent_timeline, email_requester, is_triaged
+from app.messages import (
+    UnknownRecipient,
+    add_note,
+    agent_timeline,
+    email_requester,
+    is_triaged,
+    preview_email,
+)
 from app.models import FINISHED_STATUSES, CannedResponse, Category, Team, Ticket, TicketSource, TicketStatus, TicketType, User, UserRole
 from app.pagination import paginate
 from app.sla import (
@@ -387,6 +394,52 @@ def fill_from_canned(
     return templates.TemplateResponse(request, "_email_body.html", {"body": body})
 
 
+def _status_after_email(session: Session, ticket: Ticket) -> Optional[TicketStatus]:
+    """Emailing the user always means we are now waiting on them, so the ticket moves to
+    Awaiting user by itself (the agent is not asked, and cannot opt out). That pauses the SLA
+    clock and starts the chase timer. A ticket With MSP is waiting on someone else, and a
+    Resolved or Closed one is finished, so those stay as they are. An original's status
+    follows its sub-tickets instead; emailing from a part moves that part. None: no change."""
+    if ticket.status in WAITING_ON_US and not has_sub_tickets(session, ticket):
+        return TicketStatus.AWAITING_USER
+    return None
+
+
+@router.post("/{number}/email/preview", response_class=HTMLResponse)
+def preview_email_user(
+    number: int,
+    request: Request,
+    body: str = Form(..., max_length=MAX_MESSAGE_LENGTH),
+    cc_form: Optional[str] = Form(None),
+    cc: list[str] = Form(default=[]),
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """The "are you sure?" step before an email goes to the requester: who it goes to, who is
+    copied, the subject and the text, and what it does to the ticket. Sends and records nothing.
+    The checks are the send's own, so what is previewed is what would go."""
+    ticket = _get_ticket(session, number, user)
+    if not body.strip():
+        raise HTTPException(status_code=400, detail="Write the email first")
+    try:
+        preview = preview_email(session, ticket, body, cc_emails=cc if cc_form else None)
+    except NotTriaged:
+        raise HTTPException(status_code=400, detail="Triage the ticket before emailing the requester")
+    except UnknownRecipient as error:
+        raise HTTPException(status_code=400, detail=f"Not a follower of this ticket: {error}")
+    return templates.TemplateResponse(
+        request,
+        "_email_preview.html",
+        {
+            "ticket": ticket,
+            "preview": preview,
+            "cc_form": bool(cc_form),
+            "ticked": cc,
+            "status_after": _status_after_email(session, ticket),
+        },
+    )
+
+
 @router.post("/{number}/email", response_class=HTMLResponse)
 def email_user(
     number: int,
@@ -410,17 +463,13 @@ def email_user(
     except UnknownRecipient as error:
         raise HTTPException(status_code=400, detail=f"Not a follower of this ticket: {error}")
 
-    # Emailing the user always means we are now waiting on them, so the ticket moves
-    # to Awaiting user by itself (the agent is not asked, and cannot opt out). That
-    # pauses the SLA clock and starts the chase timer. A ticket With MSP is waiting on
-    # someone else, and a Resolved or Closed one is finished, so those stay as they are.
-    # An original's status follows its sub-tickets instead; emailing from a part moves that part.
-    if ticket.status in WAITING_ON_US and not has_sub_tickets(session, ticket):
+    new_status = _status_after_email(session, ticket)
+    if new_status is not None:
         previous_status = ticket.status
-        set_status(session, ticket, TicketStatus.AWAITING_USER, user.email)
+        set_status(session, ticket, new_status, user.email)
         log_action(
             session, user.email, "ticket", ticket.id, "status_changed",
-            f"{previous_status.value} -> {TicketStatus.AWAITING_USER.value}",
+            f"{previous_status.value} -> {new_status.value}",
         )
     log_action(session, user.email, "ticket", ticket.id, "emailed_requester", body[:200])
     session.commit()

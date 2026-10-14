@@ -19,6 +19,7 @@
       to a ticket raised for someone else.
     </p>
     <label>Their email address <input type="email" name="for_email" maxlength="254" /></label>
+    <p class="note">{{ "They will be told by email that you raised this for them." if tell_requester else "They will not be emailed about this (switched off in Settings)." }}</p>
 
     <h4>Classify and assign now (optional)</h4>
     <p class="note">A ticket you already understand can skip the triage queue. Choose a category, impact and urgency together.</p>
