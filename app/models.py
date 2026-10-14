@@ -70,7 +70,18 @@ class MembershipLevel(str, Enum):
 class Team(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(unique=True, index=True)
+    # A sub-team has a parent. Members of the parent get the same level on the
+    # sub-team's tickets (app/visibility.py). One level deep only.
+    parent_team_id: Optional[int] = Field(default=None, foreign_key="team.id")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class TicketEscalator(SQLModel, table=True):
+    """An agent who escalated this ticket to another team. They keep working access to
+    this one ticket (app/visibility.py); nothing else about being an escalator grants any."""
+
+    ticket_id: int = Field(foreign_key="ticket.id", primary_key=True)
+    user_id: int = Field(foreign_key="user.id", primary_key=True)
 
 
 class TeamMembership(SQLModel, table=True):
@@ -207,7 +218,7 @@ class TicketFollower(SQLModel, table=True):
 
     Requesters and agents add followers by email; a follower with a portal
     account sees the ticket under Following (read-only). An internal follower is
-    an agent (today: whoever escalated the ticket) who is always copied, including
+    an agent (today: whoever escalated the ticket) who is copied while they follow, including
     on MSP mail. It grants no access to the ticket: that follows its team."""
 
     __table_args__ = (UniqueConstraint("ticket_id", "email", name="uq_ticketfollower_ticket_email"),)
@@ -232,6 +243,10 @@ class Category(SQLModel, table=True):
     name: str
     parent_id: Optional[int] = Field(default=None, foreign_key="category.id", index=True)
     team_id: Optional[int] = Field(default=None, foreign_key="team.id")  # main categories only
+    # Where escalating a ticket in this category sends it (app/escalation.py). A team,
+    # or None for the MSP. A sub-category follows its parent's unless it overrides.
+    escalation_team_id: Optional[int] = Field(default=None, foreign_key="team.id")
+    escalation_inherits: bool = Field(default=True, sa_column_kwargs={"server_default": "true"})
     is_other: bool = Field(default=False)
     is_active: bool = Field(default=True)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

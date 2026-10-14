@@ -11,10 +11,16 @@
   then reviewed under Category review after they are resolved. Switching a category off hides it from
   triage; tickets already in it are untouched.
 </p>
+<p class="note">
+  "Escalates to" is where the Escalate button sends a triaged ticket in that category. Every category
+  starts on the MSP; a sub-category follows its main category unless you pick something else. Until the MSP
+  handoff is built, a category set to the MSP cannot be escalated, so pick a team to enable it. If the
+  ticket is already with that team, the next step is the MSP.
+</p>
 
 <table>
   <thead>
-    <tr><th>Category</th><th>Team</th><th>In use</th><th></th></tr>
+    <tr><th>Category</th><th>Team</th><th>Escalates to</th><th>In use</th><th></th></tr>
   </thead>
   <tbody>
     {% for main in mains %}
@@ -29,6 +35,14 @@
             {% endfor %}
           </select>
         </td>
+        <td>
+          <select name="escalation">
+            <option value="msp" {{ "selected" if main.escalation_team_id is none else "" }}>MSP (not available yet)</option>
+            {% for t in teams %}
+            <option value="{{ t.id }}" {{ "selected" if main.escalation_team_id == t.id else "" }}>{{ t.name }}</option>
+            {% endfor %}
+          </select>
+        </td>
         <td>{% if main.is_other %}always{% else %}<input type="checkbox" name="is_active" {{ "checked" if main.is_active else "" }} />{% endif %}</td>
         <td><button type="submit">Save</button></td>
       </form>
@@ -38,6 +52,15 @@
       <form method="post" action="/admin/categories/{{ sub.id }}">
         <td>&nbsp;&nbsp;&rarr; {{ sub.name }}</td>
         <td>{{ teams_by_id[main.team_id].name if main.team_id else "" }} <i>(from {{ main.name }})</i></td>
+        <td>
+          <select name="escalation">
+            <option value="inherit" {{ "selected" if sub.escalation_inherits else "" }}>Same as {{ main.name }}</option>
+            <option value="msp" {{ "selected" if not sub.escalation_inherits and sub.escalation_team_id is none else "" }}>MSP (not available yet)</option>
+            {% for t in teams %}
+            <option value="{{ t.id }}" {{ "selected" if not sub.escalation_inherits and sub.escalation_team_id == t.id else "" }}>{{ t.name }}</option>
+            {% endfor %}
+          </select>
+        </td>
         <td><input type="checkbox" name="is_active" {{ "checked" if sub.is_active else "" }} /></td>
         <td><button type="submit">Save</button></td>
       </form>

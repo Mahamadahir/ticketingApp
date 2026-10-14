@@ -22,6 +22,7 @@ from app.followers import (
 )
 from app.backdating import FORMAT as MOMENT_FORMAT, BackdateError, backdate_ticket, may_backdate, parse_moment
 from app.categories import CategoryError, create_category, path_of, selectable, team_id_for
+from app.escalation import EscalationError, escalate_ticket as escalate, escalation_target, escalators_of
 from app.raising import source_label
 from app.canned import active_canned, fill as fill_canned
 from app.search import normalise, search_condition
@@ -57,7 +58,7 @@ from app.sla import (
     set_impact_urgency,
     sla_view,
 )
-from app.ticket_service import EVENT_ASSIGNED, EVENT_ESCALATED, NotTriaged, find_ticket, get_by_number, record_event, set_status
+from app.ticket_service import EVENT_ASSIGNED, NotTriaged, find_ticket, get_by_number, record_event, set_status
 from app.triage import TriageError, reassign_ticket, triage_ticket
 from app.visibility import (
     Access,
@@ -627,43 +628,16 @@ def escalate_ticket(
     number: int,
     request: Request,
     reason: str = Form(..., max_length=MAX_MESSAGE_LENGTH),
-    target_team_id: Optional[str] = Form(None),
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
+    """Sends a triaged ticket to the escalation target of its category. The agent does
+    not pick the team (re-assign is for that). Needs a reason."""
     ticket = _get_ticket(session, number, user)
-    parsed_target_team_id = optional_int(target_team_id)
-
-    new_team = None
-    if parsed_target_team_id is not None:
-        new_team = session.get(Team, parsed_target_team_id)
-        if new_team is None:
-            raise HTTPException(status_code=400, detail="Target team does not exist")
-
-    previous_team = session.get(Team, ticket.team_id) if ticket.team_id else None
-    previous_agent = session.get(User, ticket.assigned_agent_id) if ticket.assigned_agent_id else None
-    ticket.is_escalated = True
-    ticket.escalation_reason = reason
-    ticket.escalated_by_id = user.id
-    ticket.escalated_at = datetime.now(timezone.utc)
-    if new_team is not None:
-        ticket.team_id = new_team.id
-        ticket.assigned_agent_id = None
-    ticket.updated_at = datetime.now(timezone.utc)
-    session.add(ticket)
-    record_event(
-        session, ticket, EVENT_ESCALATED, user.email,
-        from_value=previous_team.name if previous_team else None,
-        to_value=(new_team or previous_team).name if (new_team or previous_team) else None,
-        detail=reason,
-    )
-    if new_team is not None and previous_agent is not None:
-        # Moving to another team unassigns the agent; the history must say so.
-        record_event(session, ticket, EVENT_ASSIGNED, user.email, from_value=previous_agent.email, to_value=None)
-    # The escalating agent follows the ticket from now on: copied on everything and
-    # is always copied. This gives no access: if the ticket moved team, it is no longer theirs to open.
-    add_follower(session, ticket, user.email, user.email, internal_user=user)
-    log_action(session, user.email, "ticket", ticket.id, "escalated", reason)
+    try:
+        escalate(session, ticket, user, reason)
+    except EscalationError as error:
+        raise HTTPException(status_code=400, detail=str(error))
     session.commit()
     session.refresh(ticket)
 
@@ -805,12 +779,19 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
         )
     team_agents = assignable_agents(session, ticket)
     can_work = ticket_access(user, ticket, levels) >= Access.WORK
-    can_claim = not can_work and may_self_assign(user, ticket, levels)
+    can_self_assign = may_self_assign(user, ticket, levels)
+    can_claim = not can_work and can_self_assign
     can_triage = may_triage(user, ticket, levels)
     can_reassign = can_work and not can_triage and ticket.triaged_at is not None
     category = session.get(Category, ticket.category_id) if ticket.category_id else None
     options = selectable(session) if can_triage else []
     teams = session.exec(select(Team)).all()
+    escalation_team, escalation_blocked = None, None
+    if can_work:
+        try:
+            escalation_team = escalation_target(session, ticket)
+        except EscalationError as error:
+            escalation_blocked = str(error)
     timeline = agent_timeline(session, ticket, viewer=(user, levels))
 
     # A link is only shown to someone who could open the other ticket anyway.
@@ -853,7 +834,10 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             "assigned_agent": assigned_agent,
             "team_agents": team_agents,
             "teams": teams,
+            "escalation_team": escalation_team,
+            "escalation_blocked": escalation_blocked,
             "timeline": timeline,
+            "escalators": escalators_of(session, ticket),
             "followers": followers_of(session, ticket),
             # Who the Email user form offers to copy: everyone except the requester.
             "cc_candidates": [f for f in followers_of(session, ticket) if f.email != ticket.requester_email.lower()],
@@ -864,6 +848,7 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             # New is left only by triage, so it is not offered as a status to set.
             "statuses": [s for s in TicketStatus if s != TicketStatus.NEW],
             "can_triage": can_triage,
+            "can_self_assign": can_self_assign,
             "ticket_types": list(TicketType),
             "parent": parent if parent_visible else None,
             "has_hidden_parent": parent is not None and not parent_visible,

@@ -295,10 +295,13 @@ team's tickets) or `viewer` (read-only). Agents see only tickets for teams
 they belong to, plus every untriaged ticket. Restricted work (HR, security)
 lives in its own team. Opening a ticket link without access shows a "no
 access" page. **Access comes from the ticket's team and nothing else** (decided 13 Oct
-2026): being its assignee, having triaged or escalated it, or following it grants nothing, so
-when a ticket moves to another team everyone outside that team loses it at once (the agent who
-moved it is told where it went). The only exception is the shared triage queue (untriaged
-tickets), which narrows with per-inbox routing below.
+2026): being its assignee, having triaged it, or following it grants nothing, so
+when a ticket is re-assigned to another team everyone outside that team (and its parent
+team) loses it at once (the agent who moved it is told where it went). The exceptions are
+the shared triage queue (untriaged tickets), which narrows with per-inbox routing below,
+and
+**escalation** (below): an agent who escalated a ticket keeps working access to that one
+ticket.
 
 **Per-inbox routing (later addition, agreed 12 Oct 2026).** Each team that is
 onboarded can have its own inbox (a shared mailbox, and later a Teams channel).
@@ -317,9 +320,9 @@ managed in the admin portal, and is applied in one place: the effective team
 levels computed in `app/visibility.py` include the sub-teams of every team a
 user belongs to, so no route changes. A parent member has full access to the
 sub-teams' tickets: the same level they hold in the parent, so a member can work
-them, and a viewer can read them. Built when the first sub-team is introduced,
-together with per-inbox routing. **TBC**: how many levels deep teams can nest
-(start with one).
+them, and a viewer can read them. **Built** (1B-ii): `team.parent_team_id`, the
+visibility rule and the admin portal; one level deep. A sub-team sharing its parent's
+inbox waits for per-inbox routing, which is not built.
 
 What it needs, none of it built yet: an inbox-to-team mapping managed in the
 admin portal (inbox address, owning team, whether tickets start in the shared
@@ -504,12 +507,36 @@ once a ticket has an assignee the control reads "Re-assign". Taking a ticket
 from its assignee always needs the explicit re-assign, never the claim button.
 Every change (team, assignee, unassigned) is an event on the ticket.
 
-**Escalation.** A separate action from re-assigning: the ticket is flagged as
-escalated, the agent must give a reason, and can move it to another team (which
-leaves it unassigned there). Use re-assign to hand work over; use escalate when
-it needs attention beyond that. The escalating agent becomes an internal follower: CC'd on every
-outgoing message, including emails to the MSP, and is notified about notes only when
-@mentioned. It gives them no access to the ticket once it has moved team.
+**Escalation** (revised 14 Oct 2026). A separate action from re-assigning, and only
+for a triaged ticket (an untriaged one has no category, so no route). The agent gives a
+reason, and the ticket goes to the **escalation target of its category**: they do not
+pick a team. Re-assign is the tool for handing work to the right team (for example mail
+that should have gone to Finance goes to Finance, left unassigned); it needs no reason,
+is not an escalation, and the agent loses sight of the ticket afterwards unless they
+already have visibility of that team through membership or a parent team.
+
+- Every main category has a defined escalation target, and the default for all of them
+  is the MSP. A sub-category inherits its parent's target or overrides it. Targets
+  are configured by an admin in settings; none are seeded or hard-coded.
+- A target is one of three kinds: a **sub-team** of the agent's team (first line to
+  second line; second line is a sub-team, so first line keeps access through the
+  parent-team rule), **another team** (support to the in-house dev team), or the
+  **MSP**. Sub-teams are created by an admin in the portal.
+- The target depends on where the ticket is now as well as its category, so a second-line
+  ticket can escalate on again. Built so far: the category's target, or the MSP if the
+  ticket is already with that team. A (category, current team) table for longer chains is
+  not built.
+- The MSP handoff is phase 5. Until it exists a category whose target is the MSP
+  (the default) cannot be escalated: the Escalate control says so.
+- Escalating to another team leaves the ticket unassigned there, and the escalator keeps
+  working access to that ticket (and only that ticket).
+- Escalating to the MSP is the same action as Send to MSP (see MSP): the ticket stays in
+  its team with status With MSP and nobody's access changes.
+- The escalating agent becomes an internal follower: CC'd on every outgoing message,
+  including emails to the MSP, notified about notes only when @mentioned. Whoever works
+  the ticket can remove any follower.
+- Changing a ticket's category after triage changes its escalation target, and is an
+  event on the ticket.
 
 **Linking.** Tickets link to a parent (Major Incident or Problem). Resolving
 the parent offers to resolve every linked ticket with the same notes.
@@ -687,7 +714,22 @@ Automatic emails use admin-managed templates, previewed when edited.
 ## MSP
 
 - Single MSP, address **TBC**.
-- "Send to MSP" button on any ticket.
+- "Send to MSP" button on any ticket. It is the same action as escalating to the MSP
+  and the button may carry either label.
+- The agent chooses what goes: the **thread** (the default), or **only the original
+  request**. The thread holds only useful content: the user's messages, emails sent
+  and the comments and notes agents left. Ticket events (triage, assignment, escalation,
+  status changes) are never sent. A ticket that has been triaged and escalated with no
+  emails sent and no comments left therefore sends only the original request, whichever
+  option is chosen. The original request is the first email from the user, with the
+  user's details, reference, priority, category and attachments. Use "original only"
+  when the ticket was passed between teams and the MSP does not need that history, for
+  example 1st line triaged it, escalated it to 2nd line, and 2nd line decided it is MSP
+  work. The preview step shows exactly what will be sent. The 18:00 automatic send
+  uses the thread.
+- Each team has an admin setting, "include in the automatic 18:00 MSP handoff"
+  (a setting, not a constant). Tickets of a team with it off are never sent
+  automatically; an agent can still send them by hand.
 - At 18:00 daily, every ticket due to breach before the next business
   morning (08:00, Monday to Friday, UK bank holidays excluded) goes to the
   MSP, unless the assigned agent has put it on hold. A hold lasts until the

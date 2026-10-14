@@ -13,7 +13,7 @@ from app.models import (
     UserRole,
 )
 from app.visibility import Access, access_context, ticket_access, visible_ticket_condition
-from tests.conftest import add_membership, create_category, create_team, login_as, set_role
+from tests.conftest import escalatable, add_membership, create_category, create_team, login_as, set_role
 
 
 def make_ticket(db_session, team_id=None, status=TicketStatus.OPEN, subject="Ticket", **fields):
@@ -169,19 +169,25 @@ def test_being_assigned_does_not_keep_access_when_the_ticket_is_in_another_team(
     assert str(ticket.reference) not in client.get("/tickets?mine=true").text
 
 
-def test_escalating_to_another_team_hands_the_ticket_over_completely(client, db_session):
+def test_escalating_hands_the_ticket_to_the_other_team_but_the_escalator_keeps_it(client, db_session):
     mine, network = create_team(db_session, "Mine"), create_team(db_session, "Network")
     agent_in(client, db_session, member_of=[mine])
+    colleague_id = agent_in(client, db_session, member_of=[mine], email="colleague@example.com")
+    login_as(client, "agent@example.com")
     ticket = make_ticket(db_session, mine.id)
 
-    response = client.post(
-        f"/tickets/{ticket.number}/escalate", data={"reason": "Needs network", "target_team_id": network.id}
-    )
-    assert response.status_code == 200 and "has been moved to Network" in response.text
+    escalatable(db_session, ticket, network)
+    response = client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "Needs network"})
+    assert response.status_code == 200
 
+    # The escalator keeps working this one ticket...
+    assert client.get(f"/tickets/{ticket.number}").status_code == 200
+    assert ticket.reference in client.get("/tickets").text
+    # ...but a colleague who did not escalate it has lost it with the move.
+    client.post("/auth/logout")
+    login_as(client, "colleague@example.com")
     assert client.get(f"/tickets/{ticket.number}").status_code == 403
-    assert client.post(f"/tickets/{ticket.number}/status", data={"status": "resolved"}).status_code == 403
-    assert str(ticket.reference) not in client.get("/tickets").text
+    assert ticket.reference not in client.get("/tickets").text
 
 
 def test_team_filter_works_for_agents_within_what_they_can_see(client, db_session):

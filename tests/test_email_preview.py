@@ -5,7 +5,7 @@ from app.messages import preview_email
 from app.models import AuditLog, Message, Ticket, TicketEvent, TicketStatus, UserRole
 from app.raising import should_tell_requester
 from app.ticket_service import NotTriaged
-from tests.conftest import create_category, create_team, login_as, set_role
+from tests.conftest import create_category, create_team, escalatable, login_as, set_role
 from tests.test_raising import desk, raise_it
 from tests.test_splitting import split, subs_of
 
@@ -84,6 +84,7 @@ def test_an_internal_follower_is_always_shown_as_copied(client, db_session):
     ticket = ticket_for_email(client, db_session)
     follow(client, ticket, "boss@example.com")
     # Escalating makes the escalating agent an internal follower, who is always copied.
+    escalatable(db_session, ticket)  # escalation needs a category that has somewhere to send it
     assert client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "Needs a second pair of eyes"}).status_code == 200
 
     page = preview(client, ticket, cc_form="1").text  # nothing ticked

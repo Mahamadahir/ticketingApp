@@ -15,7 +15,7 @@ from app.models import (
     UserRole,
 )
 from app.ticket_service import create_ticket
-from tests.conftest import create_team, login_as, set_role
+from tests.conftest import escalatable, create_team, login_as, set_role
 
 
 def make_ticket(db_session, ticket_type=TicketType.INCIDENT, team_id=None, subject="Test ticket", triaged=False):
@@ -221,7 +221,8 @@ def test_assign_and_escalate_record_events(client, db_session):
     login_agent(client, db_session, team_a)
 
     client.post(f"/tickets/{ticket.number}/assign")
-    client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "Needs network", "target_team_id": team_b.id})
+    escalatable(db_session, ticket, team_b)
+    client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "Needs network"})
 
     assigned = events_for(db_session, ticket, "assigned")
     # Assigned to the agent, then unassigned when the escalation moved teams.
@@ -309,12 +310,12 @@ def test_assigning_to_the_same_agent_twice_records_one_event(client, db_session)
     assert len(db_session.exec(select(AuditLog).where(AuditLog.action == "assigned")).all()) == 1
 
 
-def test_escalate_to_missing_team_is_rejected_without_changes(client, db_session):
+def test_escalating_a_ticket_with_no_category_is_rejected_without_changes(client, db_session):
     team = create_team(db_session, "Service Desk")
     ticket = make_ticket(db_session, team_id=team.id)
     login_agent(client, db_session, team)
 
-    response = client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "x", "target_team_id": 9999})
+    response = client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "x"})
 
     assert response.status_code == 400
     db_session.refresh(ticket)
@@ -330,7 +331,8 @@ def test_escalating_to_another_team_records_the_unassignment(client, db_session)
     login_agent(client, db_session, team_a)
     client.post(f"/tickets/{ticket.number}/assign")
 
-    client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "Network", "target_team_id": team_b.id})
+    escalatable(db_session, ticket, team_b)
+    client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "Network"})
 
     assigned = events_for(db_session, ticket, "assigned")
     assert [(e.from_value, e.to_value) for e in assigned] == [(None, "agent@example.com"), ("agent@example.com", None)]

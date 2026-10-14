@@ -74,6 +74,16 @@ def team_id_for(session: Session, category: Category) -> Optional[int]:
     return None
 
 
+def escalation_team_id_for(session: Session, category: Category) -> Optional[int]:
+    """The team escalating a ticket in this category sends it to, or None for the MSP
+    (the default). A sub-category uses its parent's unless it overrides."""
+    if category.parent_id is not None and category.escalation_inherits:
+        parent = session.get(Category, category.parent_id)
+        if parent is not None:
+            return parent.escalation_team_id
+    return category.escalation_team_id
+
+
 def path_of(session: Session, category: Category) -> str:
     """'Hardware / Laptop' for a sub-category, 'Hardware' for a main one."""
     if category.parent_id is None:

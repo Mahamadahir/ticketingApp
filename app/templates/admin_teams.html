@@ -9,6 +9,7 @@
   {% for team in teams %}
   <div class="team-card">
     <div class="team-card-name">{{ team.name }}</div>
+    {% if team.parent_team_id %}<div>Sub-team of {{ teams_by_id[team.parent_team_id].name }}</div>{% endif %}
     <div>{{ member_counts.get(team.id, 0) }} members</div>
     <div>{{ ticket_counts.get(team.id, 0) }} tickets</div>
   </div>
@@ -18,8 +19,15 @@
 </div>
 
 <h2>New team</h2>
+<p class="note">A sub-team (for example 2nd line under Support) is worked by its own members, and every member of the parent team gets the same level on its tickets. Sub-teams go one level deep.</p>
 <form method="post" action="/admin/teams">
   <label>Name <input type="text" name="name" required /></label>
+  <label>Sub-team of
+    <select name="parent_team_id">
+      <option value="">(none, a main team)</option>
+      {% for team in teams if not team.parent_team_id %}<option value="{{ team.id }}">{{ team.name }}</option>{% endfor %}
+    </select>
+  </label>
   <button type="submit">Create team</button>
 </form>
 {% endblock %}

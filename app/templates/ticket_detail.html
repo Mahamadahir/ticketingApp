@@ -23,6 +23,9 @@
 
 {% if ticket.is_escalated %}
 <p class="note">Escalated: {{ ticket.escalation_reason }}</p>
+{% if escalators %}
+<p class="note">Escalated by (each keeps access to this ticket): {% for e in escalators %}{{ e.display_name }} ({{ e.email }}){{ ", " if not loop.last else "" }}{% endfor %}</p>
+{% endif %}
 {% endif %}
 
 {% if sla.state != "none" %}
@@ -126,7 +129,7 @@
   </form>
   {% endif %}
 
-  {% if not assigned_agent and user.role.value == "agent" %}
+  {% if not assigned_agent and user.role.value == "agent" and can_self_assign %}
   <form hx-post="/tickets/{{ ticket.number }}/assign" hx-target="main" hx-swap="innerHTML">
     <button type="submit">Assign to me</button>
   </form>
@@ -185,16 +188,15 @@
 
   <details>
     <summary>Escalate</summary>
+    {% if escalation_team %}
     <form hx-post="/tickets/{{ ticket.number }}/escalate" hx-target="main" hx-swap="innerHTML">
+      <p class="note">Goes to {{ escalation_team.name }}, unassigned. You keep access to this ticket. To hand it to a different team, use Re-assign.</p>
       <textarea name="reason" maxlength="{{ max_message_length }}" placeholder="Why does this need escalating?" required></textarea>
-      <select name="target_team_id">
-        <option value="">Keep current team</option>
-        {% for t in teams %}
-        <option value="{{ t.id }}">{{ t.name }}</option>
-        {% endfor %}
-      </select>
-      <button type="submit" class="button-destructive">Escalate</button>
+      <button type="submit" class="button-destructive">Escalate to {{ escalation_team.name }}</button>
     </form>
+    {% else %}
+    <p class="note">Cannot escalate: {{ escalation_blocked }}</p>
+    {% endif %}
   </details>
 </div>
 {% endif %}
@@ -256,12 +258,12 @@
 {% endif %}
 
 <h3>Followers</h3>
-<p class="note">Copied on every email to the requester. Internal followers are agents who are always copied, such as whoever escalated the ticket; that does not give them access to the ticket.</p>
+<p class="note">Copied on every email to the requester. Internal followers are agents, such as whoever escalated the ticket; they are copied while they follow, and following does not give access to the ticket.</p>
 <ul>
   {% for follower in followers %}
   <li>
     {{ follower.email }}{% if follower.is_internal %} <i>(internal)</i>{% endif %}
-    {% if can_edit_followers and not follower.is_internal %}
+    {% if can_edit_followers %}
     <form hx-post="/tickets/{{ ticket.number }}/followers/{{ follower.id }}/remove" hx-target="main" hx-swap="innerHTML" class="inline-form">
       <button type="submit">Remove</button>
     </form>
