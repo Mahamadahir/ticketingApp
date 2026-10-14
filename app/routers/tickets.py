@@ -790,6 +790,7 @@ def remove_ticket_follower(
 
 
 def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session: Session) -> HTMLResponse:
+    ticket_approvals = approvals_of(session, ticket)
     team = session.get(Team, ticket.team_id) if ticket.team_id else None
     assigned_agent = session.get(User, ticket.assigned_agent_id) if ticket.assigned_agent_id else None
     levels = access_context(session, user)
@@ -887,8 +888,8 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             "can_backdate": may_backdate(ticket),
             "source_label": source_label(session, ticket),
             "request_info": request_type_of(session, ticket),
-            "approvals": approvals_of(session, ticket),
-            "approval_rule": describe_rule(ticket, len(approvals_of(session, ticket))) if ticket.approvals_required else None,
+            "approvals": ticket_approvals,
+            "approval_rule": describe_rule(ticket, len(ticket_approvals)) if ticket.approvals_required else None,
             "can_waive": user.role == UserRole.SUPER_ADMIN and ticket.status == TicketStatus.AWAITING_APPROVAL,
             "can_set_priority": can_work and ticket.triaged_at is not None and ticket.status not in FINISHED_STATUSES,
             "category_options": options,

@@ -9,6 +9,7 @@ from app.models import (
     AuditLog,
     Message,
     RequestType,
+    RequestTypeApprover,
     Ticket,
     TicketApproval,
     TicketEvent,
@@ -396,15 +397,14 @@ def test_an_approver_sees_and_opens_what_waits_for_them_in_the_portal(client, db
     assert "Nothing is waiting" in client.get("/portal/approvals").text
 
 
-def test_after_answering_the_approver_still_reads_it_but_cannot_answer_again(client, db_session):
+def test_once_it_is_settled_the_approver_no_longer_reads_the_ticket(client, db_session):
     person(client, db_session, "boss@example.com")
     ticket = raised_and_triaged(client, db_session, request_type(db_session, ["boss@example.com"]))
     answer(client, ticket, "boss@example.com", "approved")
 
-    page = client.get(f"/portal/{ticket.number}").text
-
-    assert 'name="decision"' not in page
+    assert client.get(f"/portal/{ticket.number}").status_code == 404  # their answer is no longer wanted
     assert "Nothing is waiting" in client.get("/portal/approvals").text
+    assert "You approved this request" in client.get(link_for(db_session, ticket, "boss@example.com")).text  # the link page still tells them
 
 
 # ---- The emailed link --------------------------------------------------------------------------------
@@ -540,3 +540,73 @@ def test_the_admin_sets_the_thresholds_and_they_are_checked(client, db_session):
     details = [a.detail for a in db_session.exec(select(AuditLog).where(AuditLog.action == "edited")).all()]
     assert details == ["needs 2 approvals / 1 declines -> 1 / 2"]
     assert 'name="approvals_required"' in client.get("/admin/request-types").text
+
+
+# ---- Review fixes -----------------------------------------------------------------------------------
+
+
+def test_someone_removed_as_an_approver_can_no_longer_answer(client, db_session):
+    for email in ("a@example.com", "b@example.com"):
+        person(client, db_session, email)
+    kind = request_type(db_session, ["a@example.com", "b@example.com"], approvals_required=2)
+    ticket = raised_and_triaged(client, db_session, kind)
+    url = link_for(db_session, ticket, "a@example.com")
+    leaver = db_session.exec(select(User).where(User.email == "a@example.com")).one()
+    for row in db_session.exec(select(RequestTypeApprover).where(RequestTypeApprover.user_id == leaver.id)).all():
+        db_session.delete(row)
+    db_session.commit()
+
+    portal = answer(client, ticket, "a@example.com", "approved")
+    by_link = client.post(url, data={"decision": "approved"})
+
+    assert portal.status_code == 400 and "no longer an approver" in portal.text
+    assert "no longer an approver" in by_link.text
+    assert approvals(db_session, ticket)["a@example.com"] == PENDING
+
+
+def test_waiving_tells_the_requester(client, db_session):
+    person(client, db_session, "boss@example.com")
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, ["boss@example.com"]))
+    client.post("/auth/logout")
+    set_role(db_session, login_as(client, "admin@example.com"), UserRole.SUPER_ADMIN)
+    client.post(f"/tickets/{ticket.number}/approval/waive")
+    client.post("/auth/logout")
+    login_as(client, "jo@example.com")
+
+    assert "going ahead" in client.get(f"/portal/{ticket.number}").text
+
+
+def test_an_approver_whose_answer_was_not_needed_is_told_so(client, db_session):
+    for email in ("a@example.com", "b@example.com"):
+        person(client, db_session, email)
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, ["a@example.com", "b@example.com"]))
+    answer(client, ticket, "a@example.com", "approved")  # one is enough: b is marked not needed
+
+    late = answer(client, ticket, "b@example.com", "approved")
+
+    assert late.status_code == 400 and "settled without your answer" in late.text
+    assert "already answered" not in late.text
+
+
+def test_the_waiting_count_is_right(client, db_session):
+    person(client, db_session, "boss@example.com")
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, ["boss@example.com"]))
+    from app.approvals import count_pending_for, pending_for
+
+    boss = db_session.exec(select(User).where(User.email == "boss@example.com")).one()
+    assert count_pending_for(db_session, boss) == len(pending_for(db_session, boss)) == 1
+    answer(client, ticket, "boss@example.com", "approved")
+    assert count_pending_for(db_session, boss) == 0
+
+def test_the_waiting_count_leaves_out_what_the_person_already_answered(client, db_session):
+    for email in ("a@example.com", "b@example.com"):
+        person(client, db_session, email)
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, ["a@example.com", "b@example.com"], approvals_required=2))
+    from app.approvals import count_pending_for
+
+    a = db_session.exec(select(User).where(User.email == "a@example.com")).one()
+    b = db_session.exec(select(User).where(User.email == "b@example.com")).one()
+    answer(client, ticket, "a@example.com", "approved")  # still waiting on b
+
+    assert status(db_session, ticket) == TicketStatus.AWAITING_APPROVAL
+    assert count_pending_for(db_session, a) == 0 and count_pending_for(db_session, b) == 1

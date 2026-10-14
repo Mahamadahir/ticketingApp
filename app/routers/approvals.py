@@ -18,10 +18,9 @@ from app.approvals import (
     PENDING,
     ApprovalError,
     approvals_of,
-    decide,
     describe_rule,
+    record_decision,
 )
-from app.audit import log_action
 from app.database import get_session
 from app.messages import requester_visible_messages
 from app.models import RequestType, Ticket, TicketApproval, TicketStatus, User
@@ -91,13 +90,11 @@ def answer(
     if approval is None:
         return _invalid(request)
     try:
-        decide(session, approval, decision, comment)
+        record_decision(session, approval, decision, comment)
     except ApprovalError as error:
         session.rollback()
         session.refresh(approval)
         return _page(request, session, approval, token, message=str(error))
-    approver = session.get(User, approval.approver_id)
-    log_action(session, approver.email, "ticket", approval.ticket_id, f"approval_{decision}", (comment or "")[:200])
     session.commit()
     session.refresh(approval)
     return _page(request, session, approval, token, message="Thank you, your answer has been recorded.")

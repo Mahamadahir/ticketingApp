@@ -38,7 +38,7 @@ not exist (`infra/` compiles but has never run against a subscription).
 | 1H-ii approvals: Awaiting approval status, thresholds, approvers decide in the portal or from an emailed link | built, in review | `app/approvals.py`, `app/routers/approvals.py` |
 | Phases 2 to 9 | not started | `docs/plan.md`, "Build order" |
 
-Tests: 574 passing on Postgres 16.
+Tests: 588 passing on Postgres 16.
 
 ## Next up
 **Deferred from the escalation work (documented, not built).**
@@ -198,3 +198,10 @@ The full list is "Azure-only verification" in `docs/plan.md`. Added by work so f
   canned-response picker and raise-a-ticket forms, including the `HX-Redirect` after raising);
   tests use the HTTP layer only.
 - Entra sign-in and the SSO activity events against a real redirect URI.
+- The emailed approval link carries its token in the URL path, so web server, ingress and
+  Application Insights request logs will record a working credential for the link's lifetime
+  (14 days by default). Redact `/approvals/*` paths in access logs and telemetry on staging, and
+  keep the lifetime short once real mail is sent. The portal ("Waiting for your approval") is the
+  signed-in alternative that has no such token.
+- Approve / Decline pages (portal and emailed link) in a real browser, including that a mail
+  security scanner opening the link does not decide anything (phase 3, with real mail).

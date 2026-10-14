@@ -24,9 +24,10 @@ from app.approvals import (
     ApprovalError,
     approval_for,
     approvals_of,
-    decide,
+    count_pending_for,
     describe_rule,
     pending_for,
+    record_decision,
 )
 from app.backdating import FORMAT as MOMENT_FORMAT, BackdateError, parse_moment
 from app.categories import CategoryError, selectable
@@ -78,12 +79,13 @@ def _get_commentable_ticket(session: Session, number: int, user: User) -> Ticket
 
 
 def _get_readable_ticket(session: Session, number: int, user: User) -> Ticket:
-    """A ticket the user raised or follows, or one they are asked to approve."""
+    """A ticket the user raised or follows, or one that is waiting for them to approve. An approver
+    reads the request while their answer is wanted; once it is settled the access ends."""
     ticket = get_by_number(session, number)
     if ticket is None or not (
         _is_requester(ticket, user)
         or is_follower(session, ticket, user.email)
-        or approval_for(session, ticket, user) is not None
+        or _my_pending_approval(session, ticket, user) is not None
     ):
         raise HTTPException(status_code=404, detail="Ticket not found")
     return ticket
@@ -167,7 +169,7 @@ def list_my_tickets(
     return templates.TemplateResponse(
         request,
         "portal_tickets_list.html",
-        {"page": tickets_page, "following": following, "waiting_on_me": len(pending_for(session, user)), "user": user},
+        {"page": tickets_page, "following": following, "waiting_on_me": count_pending_for(session, user), "user": user},
     )
 
 
@@ -269,11 +271,10 @@ def decide_approval(
     if approval is None:
         raise HTTPException(status_code=404, detail="Ticket not found")
     try:
-        result = decide(session, approval, decision, comment)
+        record_decision(session, approval, decision, comment)
     except ApprovalError as error:
         session.rollback()
         raise HTTPException(status_code=400, detail=str(error))
-    log_action(session, user.email, "ticket", ticket.id, f"approval_{decision}", (comment or "")[:200])
     session.commit()
     session.refresh(ticket)
     return _render_ticket(request, ticket, user, session)

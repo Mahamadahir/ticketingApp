@@ -24,11 +24,14 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
 
+from sqlalchemy import func
 from sqlmodel import Session, select
 
+from app.audit import log_action
 from app.messages import record_notice
 from app.models import (
     RequestType,
+    RequestTypeApprover,
     Ticket,
     TicketApproval,
     TicketStatus,
@@ -155,6 +158,19 @@ def pending_for(session: Session, user: User) -> list[tuple[TicketApproval, Tick
     return [(approval, ticket) for approval, ticket in rows]
 
 
+def count_pending_for(session: Session, user: User) -> int:
+    return session.exec(
+        select(func.count())
+        .select_from(TicketApproval)
+        .join(Ticket, Ticket.id == TicketApproval.ticket_id)
+        .where(
+            TicketApproval.approver_id == user.id,
+            TicketApproval.decision == PENDING,
+            Ticket.status == TicketStatus.AWAITING_APPROVAL,
+        )
+    ).one()
+
+
 def _settle(session: Session, ticket: Ticket, result: str, approvals: list[TicketApproval], who: User) -> None:
     now = datetime.now(timezone.utc)
     for approval in approvals:
@@ -175,6 +191,29 @@ def _settle(session: Session, ticket: Ticket, result: str, approvals: list[Ticke
         )
 
 
+def _still_an_approver(session: Session, ticket: Ticket, approval: TicketApproval) -> bool:
+    """Whether the person is still named as an approver of the request's type. An admin who
+    removes someone (they have left) takes their right to answer with them, including by an
+    old emailed link; a request that can then never be approved is for a super admin to waive."""
+    if ticket.request_type_id is None:
+        return False
+    return session.exec(
+        select(RequestTypeApprover.id).where(
+            RequestTypeApprover.request_type_id == ticket.request_type_id,
+            RequestTypeApprover.user_id == approval.approver_id,
+        )
+    ).first() is not None
+
+
+def record_decision(session: Session, approval: TicketApproval, decision: str, comment: str) -> Optional[str]:
+    """decide() plus its audit entry: the one way a person's answer is recorded, whether it came
+    from the portal or the emailed link. Does not commit."""
+    result = decide(session, approval, decision, comment)
+    approver = session.get(User, approval.approver_id)
+    log_action(session, approver.email, "ticket", approval.ticket_id, f"approval_{decision}", (comment or "").strip()[:200])
+    return result
+
+
 def decide(session: Session, approval: TicketApproval, decision: str, comment: str) -> Optional[str]:
     """Records an approver's decision and settles the ticket if that decides it. Returns the
     outcome (APPROVED, DECLINED) when this settled the ticket, else None. Does not commit."""
@@ -188,10 +227,14 @@ def decide(session: Session, approval: TicketApproval, decision: str, comment: s
     # Lock the ticket and re-read, so two approvers answering at once are counted one after the other.
     session.refresh(ticket, with_for_update=True)
     session.refresh(approval)
+    if approval.decision == NOT_NEEDED:
+        raise ApprovalError("This request was settled without your answer")
     if approval.decision != PENDING:
         raise ApprovalError("You have already answered this request")
     if ticket.status != TicketStatus.AWAITING_APPROVAL:
         raise ApprovalError("This request is no longer waiting for approval")
+    if not _still_an_approver(session, ticket, approval):
+        raise ApprovalError("You are no longer an approver for this kind of request")
 
     approver = session.get(User, approval.approver_id)
     approval.decision, approval.comment, approval.decided_at = decision, comment, datetime.now(timezone.utc)
@@ -218,3 +261,4 @@ def waive(session: Session, ticket: Ticket, actor: User) -> None:
             session.add(approval)
     record_event(session, ticket, EVENT_APPROVAL_OUTCOME, actor.email, to_value="waived")
     set_status(session, ticket, TicketStatus.OPEN, actor.email, detail="approval waived", by_approval=True)
+    record_notice(session, ticket, "Your request is going ahead: IT has let it through without waiting for further approval.")
