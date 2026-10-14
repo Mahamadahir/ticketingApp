@@ -46,6 +46,7 @@ from app.messages import (
 )
 from app.models import FINISHED_STATUSES, CannedResponse, Category, Team, Ticket, TicketSource, TicketStatus, TicketType, User, UserRole
 from app.pagination import paginate
+from app.team_activity import KIND_LABELS, Kind, describe as describe_activity, feed_query
 from app.sla import (
     IMPACT_LABELS,
     URGENCY_LABELS,
@@ -148,6 +149,49 @@ def list_tickets(
             "source": source.value if source else "",
             "sources": [s.value for s in TicketSource],
             "list_link": _list_link(q, source.value if source else ""),
+        },
+    )
+
+
+@router.get("/activity", response_class=HTMLResponse)
+def team_activity(
+    request: Request,
+    team_id: Optional[str] = None,
+    kind: Optional[str] = None,
+    page: int = 1,
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """Everything that happened on the tickets this agent can open, newest first: ticket
+    events, emails and replies, and internal notes. Access is the ticket list's, so a
+    ticket moved to another team leaves the feed of everyone outside that team."""
+    # The filter form sends a blank value for "all", which is no filter, not an error.
+    try:
+        team_choice = optional_int(team_id)
+        kind_choice = Kind(kind) if kind and kind.strip() else None
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Unknown team or kind")
+    levels = access_context(session, user)
+    feed = paginate(
+        session, feed_query(visible_ticket_condition(user, levels), team_choice, kind_choice), page,
+        request.query_params,
+    )
+    ids = {row.ticket_id for row in feed.items}
+    tickets = {t.id: t for t in session.exec(select(Ticket).where(Ticket.id.in_(ids))).all()} if ids else {}
+    all_teams = session.exec(select(Team).order_by(Team.name)).all()
+    teams = all_teams if user.role == UserRole.SUPER_ADMIN else [t for t in all_teams if t.id in levels]
+    return templates.TemplateResponse(
+        request,
+        "tickets_activity.html",
+        {
+            "page": feed,
+            "entries": [(row, tickets.get(row.ticket_id), describe_activity(row)) for row in feed.items],
+            "teams": teams,
+            "teams_by_id": {t.id: t for t in all_teams},
+            "team_id": team_choice,
+            "kind": kind_choice.value if kind_choice else "",
+            "kinds": [(k.value, label) for k, label in KIND_LABELS.items()],
+            "user": user,
         },
     )
 
