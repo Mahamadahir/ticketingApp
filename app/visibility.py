@@ -17,7 +17,8 @@ ticket goes through here, so the rules live in one place.
 
 from enum import IntEnum
 
-from sqlalchemy import or_
+from sqlalchemy import event, or_
+from sqlalchemy.orm import Session as OrmSession
 from sqlmodel import Session, select
 
 from app.models import (
@@ -46,7 +47,7 @@ class AccessContext(dict):
     """What a user's access depends on besides the ticket itself: a mapping of
     team id to the Access they have to that team's tickets (their own teams and their
     sub-teams), plus the ids of tickets they escalated and so keep
-    working. Load it once per request with access_context()."""
+    working. Always get it from access_context(), which loads it once per session."""
 
     escalated_ticket_ids: frozenset = frozenset()
 
@@ -54,7 +55,31 @@ class AccessContext(dict):
 _LEVEL_ACCESS = {MembershipLevel.MEMBER: Access.WORK, MembershipLevel.VIEWER: Access.READ}
 
 
+_CACHE_KEY = "access_context"
+
+
 def access_context(session: Session, user: User) -> AccessContext:
+    """The one way to find out what a user can reach. Built once per database session
+    (one per request) and reused, so a page that checks access several times asks the
+    database once. The copy is dropped whenever the session flushes or ends a
+    transaction, so a change made in the same request (a new escalation, a membership
+    edit) is never read back stale."""
+    cache = session.info.setdefault(_CACHE_KEY, {})
+    key = (user.id, user.role)
+    if key not in cache:
+        cache[key] = _load_access_context(session, user)
+    return cache[key]
+
+
+def _forget_access_contexts(session, *args) -> None:
+    session.info.pop(_CACHE_KEY, None)
+
+
+for _signal in ("after_flush", "after_commit", "after_rollback"):
+    event.listen(OrmSession, _signal, _forget_access_contexts)
+
+
+def _load_access_context(session: Session, user: User) -> AccessContext:
     own = {
         team_id: _LEVEL_ACCESS[level]
         for team_id, level in session.exec(

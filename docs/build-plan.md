@@ -107,7 +107,9 @@ sleep, restart it and `docker start ticketingapp-db-1`.
   nothing. The exceptions are the shared untriaged queue and a parent
   team's view of its sub-teams, and the escalator's access to the one ticket they
   escalated (`TicketEscalator`). `visible_ticket_condition`
-  is the SQL twin of `ticket_access`; a test keeps them in step.
+  is the SQL twin of `ticket_access`; a test keeps them in step. Get what a user can
+  reach only from `access_context(session, user)`: it loads once per database session and
+  is dropped on every flush, commit and rollback, so never build or keep your own copy.
 - **What the requester sees** and whether a ticket can be emailed: only
   `app/messages.py` (`requester_visible_messages`, never `ticket.messages`).
 - **Ticket numbers**: one shared counter, never change. `reference` (INC-12) is a
