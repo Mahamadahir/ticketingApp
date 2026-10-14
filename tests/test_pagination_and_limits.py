@@ -1,3 +1,5 @@
+import re
+
 from app.forms import MAX_MESSAGE_LENGTH
 from app.models import Ticket, UserRole
 from app.pagination import PAGE_SIZE
@@ -16,11 +18,11 @@ def test_agent_queue_is_paginated_and_keeps_filters(client, db_session):
     add_tickets(db_session, PAGE_SIZE + 5, requester_email="user@example.com", team_id=team.id)
 
     first_page = client.get(f"/tickets?team_id={team.id}")
-    assert first_page.text.count('href="/tickets/') == PAGE_SIZE
+    assert len(re.findall(r'href="/tickets/\d+"', first_page.text)) == PAGE_SIZE
     assert f"team_id={team.id}&amp;page=2" in first_page.text
 
     second_page = client.get(f"/tickets?team_id={team.id}&page=2")
-    assert second_page.text.count('href="/tickets/') == 5
+    assert len(re.findall(r'href="/tickets/\d+"', second_page.text)) == 5
 
 
 def test_portal_list_is_paginated(client, db_session):

@@ -23,6 +23,7 @@ from app.followers import (
 from app.backdating import FORMAT as MOMENT_FORMAT, BackdateError, backdate_ticket, may_backdate, parse_moment
 from app.categories import CategoryError, create_category, path_of, selectable, team_id_for
 from app.escalation import EscalationError, escalate_ticket as escalate, escalation_target, escalators_of
+from app.raising import source_label
 from app.canned import active_canned, fill as fill_canned
 from app.search import normalise, search_condition
 from app.splitting import (
@@ -35,9 +36,18 @@ from app.splitting import (
     sub_tickets_summary,
 )
 from app.linking import PARENT_TYPES, LinkError, link_ticket, linked_summary, unlink_ticket
-from app.messages import UnknownRecipient, add_note, agent_timeline, email_requester, is_triaged
-from app.models import FINISHED_STATUSES, CannedResponse, Category, Team, Ticket, TicketStatus, TicketType, User, UserRole
+from app.messages import (
+    EmptyEmail,
+    UnknownRecipient,
+    add_note,
+    agent_timeline,
+    email_requester,
+    is_triaged,
+    preview_email,
+)
+from app.models import FINISHED_STATUSES, CannedResponse, Category, Team, Ticket, TicketSource, TicketStatus, TicketType, User, UserRole
 from app.pagination import paginate
+from app.team_activity import KIND_LABELS, Kind, describe as describe_activity, feed_query
 from app.sla import (
     IMPACT_LABELS,
     URGENCY_LABELS,
@@ -76,12 +86,12 @@ AGENT_ROLES = (UserRole.SUPER_ADMIN, UserRole.AGENT)
 WAITING_ON_US = (TicketStatus.OPEN, TicketStatus.IN_PROGRESS)
 
 
-def _list_link(q: str):
+def _list_link(q: str, source: str = ""):
     """Builds a link to the ticket list that keeps the current search; a filter passed in
     replaces the same filter (false, empty and None leave it out)."""
 
     def link(**params) -> str:
-        wanted = {"q": q, **params}
+        wanted = {"q": q, "source": source, **params}
         return "/tickets" + ("?" + urlencode({k: ("true" if v is True else v) for k, v in wanted.items() if v}) if any(wanted.values()) else "")
 
     return link
@@ -93,6 +103,7 @@ def list_tickets(
     mine: bool = False,
     team_id: Optional[int] = None,
     q: str = "",
+    source: Optional[TicketSource] = None,
     page: int = 1,
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
@@ -110,6 +121,8 @@ def list_tickets(
         query = query.where(matching)
     if team_id is not None:
         query = query.where(Ticket.team_id == team_id)
+    if source is not None:
+        query = query.where(Ticket.source == source)
 
     if mine:
         query = query.where(Ticket.assigned_agent_id == user.id)
@@ -134,7 +147,52 @@ def list_tickets(
             "mine": mine,
             "team_id": team_id,
             "q": q,
-            "list_link": _list_link(q),
+            "source": source.value if source else "",
+            "sources": [s.value for s in TicketSource],
+            "list_link": _list_link(q, source.value if source else ""),
+        },
+    )
+
+
+@router.get("/activity", response_class=HTMLResponse)
+def team_activity(
+    request: Request,
+    team_id: Optional[str] = None,
+    kind: Optional[str] = None,
+    page: int = 1,
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """Everything that happened on the tickets this agent can open, newest first: ticket
+    events, emails and replies, and internal notes. Access is the ticket list's, so a
+    ticket moved to another team leaves the feed of everyone outside that team."""
+    # The filter form sends a blank value for "all", which is no filter, not an error.
+    try:
+        team_choice = optional_int(team_id)
+        kind_choice = Kind(kind) if kind and kind.strip() else None
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Unknown team or kind")
+    levels = access_context(session, user)
+    feed = paginate(
+        session, feed_query(visible_ticket_condition(user, levels), team_choice, kind_choice), page,
+        request.query_params,
+    )
+    ids = {row.ticket_id for row in feed.items}
+    tickets = {t.id: t for t in session.exec(select(Ticket).where(Ticket.id.in_(ids))).all()} if ids else {}
+    all_teams = session.exec(select(Team).order_by(Team.name)).all()
+    teams = all_teams if user.role == UserRole.SUPER_ADMIN else [t for t in all_teams if t.id in levels]
+    return templates.TemplateResponse(
+        request,
+        "tickets_activity.html",
+        {
+            "page": feed,
+            "entries": [(row, tickets.get(row.ticket_id), describe_activity(row)) for row in feed.items],
+            "teams": teams,
+            "teams_by_id": {t.id: t for t in all_teams},
+            "team_id": team_choice,
+            "kind": kind_choice.value if kind_choice else "",
+            "kinds": [(k.value, label) for k, label in KIND_LABELS.items()],
+            "user": user,
         },
     )
 
@@ -382,6 +440,52 @@ def fill_from_canned(
     return templates.TemplateResponse(request, "_email_body.html", {"body": body})
 
 
+def _status_after_email(session: Session, ticket: Ticket) -> Optional[TicketStatus]:
+    """Emailing the user always means we are now waiting on them, so the ticket moves to
+    Awaiting user by itself (the agent is not asked, and cannot opt out). That pauses the SLA
+    clock and starts the chase timer. A ticket With MSP is waiting on someone else, and a
+    Resolved or Closed one is finished, so those stay as they are. An original's status
+    follows its sub-tickets instead; emailing from a part moves that part. None: no change."""
+    if ticket.status in WAITING_ON_US and not has_sub_tickets(session, ticket):
+        return TicketStatus.AWAITING_USER
+    return None
+
+
+@router.post("/{number}/email/preview", response_class=HTMLResponse)
+def preview_email_user(
+    number: int,
+    request: Request,
+    body: str = Form(..., max_length=MAX_MESSAGE_LENGTH),
+    cc_form: Optional[str] = Form(None),
+    cc: list[str] = Form(default=[]),
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """The "are you sure?" step before an email goes to the requester: who it goes to, who is
+    copied, the subject and the text, and what it does to the ticket. Sends and records nothing.
+    The checks are the send's own, so what is previewed is what would go."""
+    ticket = _get_ticket(session, number, user)
+    try:
+        preview = preview_email(session, ticket, body, cc_emails=cc if cc_form else None)
+    except NotTriaged:
+        raise HTTPException(status_code=400, detail="Triage the ticket before emailing the requester")
+    except EmptyEmail:
+        raise HTTPException(status_code=400, detail="Write the email first")
+    except UnknownRecipient as error:
+        raise HTTPException(status_code=400, detail=f"Not a follower of this ticket: {error}")
+    return templates.TemplateResponse(
+        request,
+        "_email_preview.html",
+        {
+            "ticket": ticket,
+            "preview": preview,
+            "cc_form": bool(cc_form),
+            "ticked": cc,
+            "status_after": _status_after_email(session, ticket),
+        },
+    )
+
+
 @router.post("/{number}/email", response_class=HTMLResponse)
 def email_user(
     number: int,
@@ -402,20 +506,18 @@ def email_user(
         email_requester(session, ticket, user, body, cc_emails=cc if cc_form else None)
     except NotTriaged:
         raise HTTPException(status_code=400, detail="Triage the ticket before emailing the requester")
+    except EmptyEmail:
+        raise HTTPException(status_code=400, detail="Write the email first")
     except UnknownRecipient as error:
         raise HTTPException(status_code=400, detail=f"Not a follower of this ticket: {error}")
 
-    # Emailing the user always means we are now waiting on them, so the ticket moves
-    # to Awaiting user by itself (the agent is not asked, and cannot opt out). That
-    # pauses the SLA clock and starts the chase timer. A ticket With MSP is waiting on
-    # someone else, and a Resolved or Closed one is finished, so those stay as they are.
-    # An original's status follows its sub-tickets instead; emailing from a part moves that part.
-    if ticket.status in WAITING_ON_US and not has_sub_tickets(session, ticket):
+    new_status = _status_after_email(session, ticket)
+    if new_status is not None:
         previous_status = ticket.status
-        set_status(session, ticket, TicketStatus.AWAITING_USER, user.email)
+        set_status(session, ticket, new_status, user.email)
         log_action(
             session, user.email, "ticket", ticket.id, "status_changed",
-            f"{previous_status.value} -> {TicketStatus.AWAITING_USER.value}",
+            f"{previous_status.value} -> {new_status.value}",
         )
     log_action(session, user.email, "ticket", ticket.id, "emailed_requester", body[:200])
     session.commit()
@@ -759,6 +861,7 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             "sla": sla_view(ticket, datetime.now(timezone.utc), at_risk_percent(session)),
             "moment_format": MOMENT_FORMAT,
             "can_backdate": may_backdate(ticket),
+            "source_label": source_label(session, ticket),
             "can_set_priority": can_work and ticket.triaged_at is not None and ticket.status not in FINISHED_STATUSES,
             "category_options": options,
             "main_categories": [c for c, _ in options if c.parent_id is None and not c.is_other],

@@ -625,6 +625,8 @@ def save_setting(
         # Up to a year; a blank value means the target is not tracked.
         if not (value.isascii() and value.isdigit()) or not 1 <= int(value) <= 525600:
             raise HTTPException(status_code=400, detail="Enter a whole number of minutes, 1 to 525600, or leave it blank")
+    if definition.kind == "flag" and value not in ("on", "off"):
+        raise HTTPException(status_code=400, detail="Choose on or off")
     if definition.kind == "percent":
         if not (value.isascii() and value.isdigit()) or not 1 <= int(value) <= 99:
             raise HTTPException(status_code=400, detail="Enter a whole number from 1 to 99")

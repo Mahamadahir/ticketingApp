@@ -184,6 +184,7 @@ def split_ticket(
             ticket_type=original.type,
             team_id=original.team_id,
             actor_email=actor.email,
+            created_by_id=original.created_by_id,
         )
         try:
             triage_ticket(

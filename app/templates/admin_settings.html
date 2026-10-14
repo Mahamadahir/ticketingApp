@@ -15,6 +15,11 @@
     <option value="">None</option>
     {% for t in teams %}<option value="{{ t.id }}" {{ "selected" if values[definition.key] == t.id|string else "" }}>{{ t.name }}</option>{% endfor %}
   </select>
+  {% elif definition.kind == "flag" %}
+  <select name="value">
+    <option value="on" {{ "selected" if values[definition.key] != "off" else "" }}>On</option>
+    <option value="off" {{ "selected" if values[definition.key] == "off" else "" }}>Off</option>
+  </select>
   {% else %}
   <input type="text" name="value" value="{{ values[definition.key] }}" />
   {% endif %}

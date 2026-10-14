@@ -4,7 +4,7 @@ Adds team.parent_team_id (sub-teams), category.escalation_team_id / escalation_i
 ticket; no team means the MSP) and ticketescalator (who keeps access to what they escalated).
 
 Revision ID: c2d5e8f1a436
-Revises: b5c8e1f6a320
+Revises: c6d9f2a7b431
 Create Date: 2026-10-13 21:00:00.000000
 
 """
@@ -16,7 +16,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = 'c2d5e8f1a436'
-down_revision: Union[str, Sequence[str], None] = 'b5c8e1f6a320'
+down_revision: Union[str, Sequence[str], None] = 'c6d9f2a7b431'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

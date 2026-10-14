@@ -400,6 +400,13 @@ was raised for them (once email is wired up in phase 3): on by default, and it
 can be turned off globally in Settings or by each person in their own
 notification settings. The ticket list shows the channel as a small label and
 can be filtered by it.
+*Built in 1G-i (13 Oct 2026):* `/portal/new` (`app/raising.py`), linked from both lists. Agents get a
+"For someone else" section: the person's email, optional type/category/impact/urgency/assignee (all
+or none of the classification), and optional reported/resolved times for a fix made in person (a
+resolved time creates the ticket already resolved, backdated, with no SLA). `Ticket.created_by_id`
+records who raised it; the description is the first message, "Logged by X on behalf of Y"; the page
+and the requester's view read "Raised by X for Y" / "Raised in the portal by Y". Channel label and
+filter on the agent list. Not yet: the email preview step and the "requester is told" setting (1G-ii).
 
 **Source.** Email, portal, Teams or agent. Drives the default channel for
 notifying the requester.
@@ -630,6 +637,16 @@ admin portal.
 assignment, priority change, SLA pause, reopen and MSP handoff with time and
 actor, for reporting.
 
+**Team activity** (agreed 14 Oct 2026, in addition to the audit log). Agents get an activity
+section, `/tickets/activity`, showing everything happening on the tickets they can open, newest
+first: ticket events, emails to and replies from the requester, and internal notes. It uses the
+ticket list's access (`visible_ticket_condition`), so it is the agent's teams plus the shared
+untriaged queue, and a ticket moved to another team leaves the feed of everyone outside that team,
+history included. Filters: team and kind (changes, emails and replies, notes). The audit log
+(Admin) stays the system-wide record of settings, accounts and categories, and the activity log
+the record of sign-ins; this is the work on tickets, for the people doing it. Built (13-14 Oct 2026,
+`app/team_activity.py`). Later: per-person filter, and a link from a ticket to its own history.
+
 **Search** across subject, messages, requester and reference using Postgres
 full-text search.
 *Built in 1F-i (13 Oct 2026):* the search box on the agent ticket list (`app/search.py`). It
@@ -641,6 +658,15 @@ computed per query, fine at this volume; add GIN indexes if the list gets slow.
 *Built in 1F-ii (13 Oct 2026):* Admin > Canned responses (super admin: create, edit, switch off; audited). On a triaged ticket the email form has an "Insert a canned response" picker that only fills the box (appending to what is typed) with {reference}, {subject} and {agent} filled in; the agent edits and sends it as usual. Global, not per team; per-team sets can follow if wanted.
 
 ## Outbound email preview
+*Built for agent replies in 1G-ii (14 Oct 2026):* the email form now has **Preview email**: a panel
+shows To, who is copied (internal followers always), the subject (the family's one thread subject),
+the "About:" line for a split request, the text, and what sending will do to the ticket
+(for example "moves this ticket to awaiting user and pauses its SLA clock"). **Send email** and
+**Keep editing** follow. The preview runs the send's own checks (`app/messages.preview_email`
+shares the copy rules with `email_requester`), so what is previewed is what would go. It is a
+safety step in the page, not a server lock: the send endpoint still accepts a direct post. The
+setting "Tell the requester when an agent raises a ticket for them" (Settings, default on) is in;
+the email itself arrives with phase 3.
 
 Every email an agent triggers that reaches an end user (replies,
 resolutions, bulk resolves, MSP forwards) shows a preview and an "Are you

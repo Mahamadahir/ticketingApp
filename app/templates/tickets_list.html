@@ -6,10 +6,18 @@
   <input type="search" name="q" value="{{ q }}" maxlength="200" placeholder="Number, subject, requester or message text" />
   {% if mine %}<input type="hidden" name="mine" value="true" />{% endif %}
   {% if team_id %}<input type="hidden" name="team_id" value="{{ team_id }}" />{% endif %}
+  {% if source %}<input type="hidden" name="source" value="{{ source }}" />{% endif %}
   <button type="submit">Search</button>
   {% if q %}<a href="{{ list_link(q='', mine=mine, team_id=team_id) }}">Clear</a>{% endif %}
 </form>
 {% if q %}<p class="note">{{ page.total_items }} ticket{{ "" if page.total_items == 1 else "s" }} you can open match "{{ q }}" (subject, requester, number, and every message including internal notes).</p>{% endif %}
+
+<p>
+  <a href="/portal/new">Raise a request</a> &middot; <a href="/tickets/activity">Team activity</a>
+  &middot; Channel:
+  <a href="{{ list_link(source='', mine=mine, team_id=team_id) }}" class="{{ 'active' if not source else '' }}">any</a>
+  {% for s in sources %}<a href="{{ list_link(source=s, mine=mine, team_id=team_id) }}" class="{{ 'active' if source == s else '' }}">{{ s }}</a> {% endfor %}
+</p>
 
 <div class="filters">
   <a href="{{ list_link(mine=False, team_id=None) }}" class="{{ 'active' if not mine else '' }}">All visible</a>
@@ -41,6 +49,7 @@
       <td>{{ ticket.reference }}</td>
       <td>
         <a href="/tickets/{{ ticket.number }}">{{ ticket.subject }}</a>
+        <span class="badge">{{ ticket.source.value }}</span>
         {% if ticket.is_escalated %}<span class="badge badge-escalated">escalated</span>{% endif %}
       </td>
       <td>{{ ticket.requester_email }}</td>
