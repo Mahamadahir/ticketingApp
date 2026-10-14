@@ -18,6 +18,16 @@ from app.followers import (
     remove_follower,
     tickets_followed_by,
 )
+from app.approvals import (
+    MAX_COMMENT_LENGTH,
+    PENDING,
+    ApprovalError,
+    approval_for,
+    approvals_of,
+    decide,
+    describe_rule,
+    pending_for,
+)
 from app.backdating import FORMAT as MOMENT_FORMAT, BackdateError, parse_moment
 from app.categories import CategoryError, selectable
 from app.forms import MAX_MESSAGE_LENGTH, optional_int
@@ -68,9 +78,13 @@ def _get_commentable_ticket(session: Session, number: int, user: User) -> Ticket
 
 
 def _get_readable_ticket(session: Session, number: int, user: User) -> Ticket:
-    """A ticket the user raised or follows."""
+    """A ticket the user raised or follows, or one they are asked to approve."""
     ticket = get_by_number(session, number)
-    if ticket is None or not (_is_requester(ticket, user) or is_follower(session, ticket, user.email)):
+    if ticket is None or not (
+        _is_requester(ticket, user)
+        or is_follower(session, ticket, user.email)
+        or approval_for(session, ticket, user) is not None
+    ):
         raise HTTPException(status_code=404, detail="Ticket not found")
     return ticket
 
@@ -96,6 +110,20 @@ def _render_new_form(request: Request, user: User, session: Session) -> HTMLResp
     )
 
 
+def _my_pending_approval(session: Session, ticket: Ticket, user: User):
+    """This user's unanswered approval of the ticket, while it is still waiting."""
+    if ticket.status != TicketStatus.AWAITING_APPROVAL:
+        return None
+    approval = approval_for(session, ticket, user)
+    return approval if approval is not None and approval.decision == PENDING else None
+
+
+def _approval_rule(session: Session, ticket: Ticket):
+    if ticket.status != TicketStatus.AWAITING_APPROVAL:
+        return None
+    return describe_rule(ticket, len(approvals_of(session, ticket)))
+
+
 def _render_ticket(request: Request, ticket: Ticket, user: User, session: Session) -> HTMLResponse:
     visible = requester_visible_messages(session, ticket)
     return templates.TemplateResponse(
@@ -107,6 +135,9 @@ def _render_ticket(request: Request, ticket: Ticket, user: User, session: Sessio
             "about": about_labels(session, visible),
             "source_label": source_label(session, ticket),
             "request_info": request_type_of(session, ticket),
+            "my_approval": _my_pending_approval(session, ticket, user),
+            "is_approver": approval_for(session, ticket, user) is not None,
+            "approval_rule": _approval_rule(session, ticket),
             # Only the requester sees who else is copied; a follower must not learn
             # the other followers' addresses, and internal followers are never shown.
             "followers": (
@@ -134,7 +165,9 @@ def list_my_tickets(
     tickets_page = paginate(session, query, page, request.query_params)
     following = tickets_followed_by(session, user.email)
     return templates.TemplateResponse(
-        request, "portal_tickets_list.html", {"page": tickets_page, "following": following, "user": user}
+        request,
+        "portal_tickets_list.html",
+        {"page": tickets_page, "following": following, "waiting_on_me": len(pending_for(session, user)), "user": user},
     )
 
 
@@ -207,6 +240,43 @@ def raise_new_ticket(
     if request.headers.get("HX-Request"):
         return Response(status_code=204, headers={"HX-Redirect": destination})
     return RedirectResponse(destination, status_code=303)
+
+
+@router.get("/approvals", response_class=HTMLResponse)
+def my_approvals(
+    request: Request,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """Requests waiting for this person to approve or decline."""
+    return templates.TemplateResponse(
+        request, "portal_approvals.html", {"waiting": pending_for(session, user), "user": user}
+    )
+
+
+@router.post("/{number}/approval", response_class=HTMLResponse)
+def decide_approval(
+    number: int,
+    request: Request,
+    decision: str = Form(...),
+    comment: str = Form("", max_length=MAX_COMMENT_LENGTH + 500),
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """An approver approves or declines a request waiting for them."""
+    ticket = get_by_number(session, number)
+    approval = approval_for(session, ticket, user) if ticket is not None else None
+    if approval is None:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    try:
+        result = decide(session, approval, decision, comment)
+    except ApprovalError as error:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(error))
+    log_action(session, user.email, "ticket", ticket.id, f"approval_{decision}", (comment or "")[:200])
+    session.commit()
+    session.refresh(ticket)
+    return _render_ticket(request, ticket, user, session)
 
 
 @router.get("/{number}", response_class=HTMLResponse)

@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Waiting for your approval{% endblock %}
+{% block content %}
+<p><a href="/portal">&larr; back to my requests</a></p>
+<h2>Waiting for your approval</h2>
+
+{% for approval, ticket in waiting %}
+<p>
+  <a href="/portal/{{ ticket.number }}">{{ ticket.reference }} {{ ticket.subject }}</a>
+  &middot; from {{ ticket.requester_email }}
+  &middot; asked {{ approval.created_at.strftime("%Y-%m-%d %H:%M") }} UTC
+</p>
+{% else %}
+<p>Nothing is waiting for your approval.</p>
+{% endfor %}
+{% endblock %}

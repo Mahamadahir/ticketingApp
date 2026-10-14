@@ -11,6 +11,7 @@ from typing import Optional
 
 from sqlmodel import Session
 
+from app.approvals import start_approvals, status_after_triage
 from app.categories import is_selectable, path_of, team_id_for
 from app.models import (
     Category,
@@ -130,7 +131,11 @@ def triage_ticket(
             from_value=previous_team.name if previous_team else None, to_value=new_team.name,
         )
     # Triaged is what lets it leave New. Set after triaged_at so set_status allows it.
-    set_status(session, ticket, TicketStatus.OPEN, actor.email)
+    # A catalogue request with approvers waits for them (Awaiting approval) instead of opening.
+    target = status_after_triage(session, ticket)
+    set_status(session, ticket, target, actor.email)
+    if target == TicketStatus.AWAITING_APPROVAL:
+        start_approvals(session, ticket, actor.email)
     if assignee is not None:
         _set_assignee(session, ticket, assignee, actor)
     elif ticket.assigned_agent_id is not None:

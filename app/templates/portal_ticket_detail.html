@@ -8,6 +8,20 @@
   &middot; <span class="note">{{ source_label }}</span>
   {% if request_info %}&middot; <span class="note">Request: {{ request_info[0].name }}</span>{% endif %}</p>
 
+{% if approval_rule %}
+<p class="note">Waiting for approval ({{ approval_rule }}).</p>
+{% endif %}
+{% if my_approval %}
+<form hx-post="/portal/{{ ticket.number }}/approval" hx-target="main" hx-swap="innerHTML">
+  <h3>Your approval</h3>
+  <label>Comment (optional; shown to the requester if you decline)
+    <textarea name="comment" rows="2" maxlength="1000"></textarea>
+  </label>
+  <button type="submit" name="decision" value="approved">Approve</button>
+  <button type="submit" name="decision" value="declined" class="button-outline">Decline</button>
+</form>
+{% endif %}
+
 <div id="thread">
   {% for message in messages %}
   <div class="message message-{{ message.direction.value }}">
@@ -23,6 +37,8 @@
   <textarea name="body" rows="4" maxlength="{{ max_message_length }}" placeholder="Add a comment..." required></textarea>
   <button type="submit">Add comment</button>
 </form>
+{% elif is_approver and not is_requester %}
+<p class="note">You can see this request because you are one of its approvers.</p>
 {% else %}
 <p class="note">You are following this request as an agent. Reply from the agent console, not from here.</p>
 {% endif %}

@@ -26,6 +26,7 @@ from app.escalation import EscalationError, escalate_ticket as escalate, escalat
 from app.raising import source_label
 from app.request_types import request_type_of
 from app.canned import active_canned, fill as fill_canned
+from app.approvals import ApprovalError, approvals_of, describe_rule, waive
 from app.search import normalise, search_condition
 from app.splitting import (
     MAX_PARTS,
@@ -59,7 +60,7 @@ from app.sla import (
     set_impact_urgency,
     sla_view,
 )
-from app.ticket_service import EVENT_ASSIGNED, NotTriaged, find_ticket, get_by_number, record_event, set_status
+from app.ticket_service import AwaitingApproval, EVENT_ASSIGNED, NotTriaged, find_ticket, get_by_number, record_event, set_status
 from app.triage import TriageError, reassign_ticket, triage_ticket
 from app.visibility import (
     Access,
@@ -573,11 +574,33 @@ def change_status(
         changed = set_status(session, ticket, status, user.email)
     except NotTriaged:
         raise HTTPException(status_code=400, detail="Triage the ticket before changing its status")
+    except AwaitingApproval:
+        raise HTTPException(status_code=400, detail="This request is waiting for its approvers; its status changes when they decide")
     if changed:
         log_action(session, user.email, "ticket", ticket.id, "status_changed", f"{previous_status.value} -> {status.value}")
     session.commit()
     session.refresh(ticket)
 
+    return _render_ticket_detail(request, ticket, user, session)
+
+
+@router.post("/{number}/approval/waive", response_class=HTMLResponse)
+def waive_approval(
+    number: int,
+    request: Request,
+    user: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
+    session: Session = Depends(get_session),
+):
+    """A super admin lets a request through without waiting for its remaining approvers (one has
+    left, say). Agents cannot: approval is a control, so skipping it is a super admin's call."""
+    ticket = _get_ticket(session, number, user)
+    try:
+        waive(session, ticket, user)
+    except ApprovalError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    log_action(session, user.email, "ticket", ticket.id, "approval_waived", ticket.tag)
+    session.commit()
+    session.refresh(ticket)
     return _render_ticket_detail(request, ticket, user, session)
 
 
@@ -847,7 +870,7 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             "can_edit_followers": can_work,
             "can_note": may_add_note(user, ticket, levels),
             # New is left only by triage, so it is not offered as a status to set.
-            "statuses": [s for s in TicketStatus if s != TicketStatus.NEW],
+            "statuses": [s for s in TicketStatus if s not in (TicketStatus.NEW, TicketStatus.AWAITING_APPROVAL)],
             "can_triage": can_triage,
             "can_self_assign": can_self_assign,
             "ticket_types": list(TicketType),
@@ -864,6 +887,9 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             "can_backdate": may_backdate(ticket),
             "source_label": source_label(session, ticket),
             "request_info": request_type_of(session, ticket),
+            "approvals": approvals_of(session, ticket),
+            "approval_rule": describe_rule(ticket, len(approvals_of(session, ticket))) if ticket.approvals_required else None,
+            "can_waive": user.role == UserRole.SUPER_ADMIN and ticket.status == TicketStatus.AWAITING_APPROVAL,
             "can_set_priority": can_work and ticket.triaged_at is not None and ticket.status not in FINISHED_STATUSES,
             "category_options": options,
             "main_categories": [c for c, _ in options if c.parent_id is None and not c.is_other],

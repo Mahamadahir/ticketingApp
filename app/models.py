@@ -12,6 +12,7 @@ class TicketStatus(str, Enum):
     OPEN = "open"
     IN_PROGRESS = "in_progress"
     AWAITING_USER = "awaiting_user"
+    AWAITING_APPROVAL = "awaiting_approval"  # a service request waiting for its approvers (app/approvals.py)
     WITH_MSP = "with_msp"
     RESOLVED = "resolved"
     CLOSED = "closed"
@@ -138,6 +139,10 @@ class Ticket(SQLModel, table=True):
     # (app/request_types.py). Null for everything else, including a service request an agent
     # retyped at triage.
     request_type_id: Optional[int] = Field(default=None, foreign_key="requesttype.id", index=True)
+    # The approval rule this ticket is held to, copied from its request type when approvals
+    # start so that editing the request type later does not change a request already waiting.
+    approvals_required: Optional[int] = Field(default=None)
+    declines_required: Optional[int] = Field(default=None)
     graph_conversation_id: Optional[str] = Field(default=None, index=True)
 
     # When the problem was reported and when it was fixed, as entered. They
@@ -286,6 +291,10 @@ class RequestType(SQLModel, table=True):
     name: str = Field(unique=True, index=True)
     description: str = Field(default="")
     is_active: bool = Field(default=True)
+    # How many approvers must approve before the work goes ahead, and how many must decline
+    # before the request is closed. Both default to one: any single approver decides.
+    approvals_required: int = Field(default=1)
+    declines_required: int = Field(default=1)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -298,6 +307,21 @@ class RequestTypeApprover(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     request_type_id: int = Field(foreign_key="requesttype.id", index=True)
     user_id: int = Field(foreign_key="user.id", index=True)
+
+
+class TicketApproval(SQLModel, table=True):
+    """One approver's say on one ticket (app/approvals.py). pending until they decide; not_needed
+    once the ticket's outcome was settled without them."""
+
+    __table_args__ = (UniqueConstraint("ticket_id", "approver_id", name="uq_ticketapproval"),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ticket_id: int = Field(foreign_key="ticket.id", index=True)
+    approver_id: int = Field(foreign_key="user.id", index=True)
+    decision: str = Field(default="pending")  # pending, approved, declined, not_needed
+    comment: str = Field(default="")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    decided_at: Optional[datetime] = Field(default=None)
 
 
 TICKET_COUNTER = "ticket"

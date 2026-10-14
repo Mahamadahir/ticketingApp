@@ -22,6 +22,7 @@ class SettingDef:
 
 DEFAULT_TRIAGE_TEAM = "default_triage_team_id"
 TELL_REQUESTER_RAISED_FOR = "tell_requester_when_raised_for_them"
+APPROVAL_LINK_MINUTES = "approval_link_minutes"
 SLA_AT_RISK_PERCENT = "sla_at_risk_percent"
 
 # PLACEHOLDER SLA targets, in minutes on a 24/7 clock, until the real ones are agreed
@@ -83,6 +84,16 @@ REGISTRY: dict[str, SettingDef] = {
             "Each person will also be able to turn it off in their own notification settings."
         ),
         default="on",
+    ),
+    APPROVAL_LINK_MINUTES: SettingDef(
+        key=APPROVAL_LINK_MINUTES,
+        label="How long an emailed approve/decline link works (minutes)",
+        kind="minutes",
+        description=(
+            "Approvers get a link that opens a page where they approve or decline. After this long "
+            "the link stops working and they use the portal instead. 20160 is 14 days."
+        ),
+        default="20160",
     ),
     SLA_AT_RISK_PERCENT: SettingDef(
         key=SLA_AT_RISK_PERCENT,

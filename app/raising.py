@@ -31,7 +31,7 @@ from app.models import (
 )
 from app.settings_store import TELL_REQUESTER_RAISED_FOR, get_flag
 from app.sla import Level
-from app.ticket_service import EVENT_REQUEST_TYPE, create_ticket, record_event, set_status
+from app.ticket_service import EVENT_REQUEST_TYPE, AwaitingApproval, create_ticket, record_event, set_status
 from app.triage import triage_ticket
 
 AGENT_ROLES = (UserRole.AGENT, UserRole.SUPER_ADMIN)
@@ -134,7 +134,10 @@ def raise_ticket(
             impact=impact, urgency=urgency, assignee=assignee,
         )
     if resolved_at is not None:
-        set_status(session, ticket, TicketStatus.RESOLVED, creator.email)
+        try:
+            set_status(session, ticket, TicketStatus.RESOLVED, creator.email)
+        except AwaitingApproval:
+            raise RaiseError("A request that needs approval cannot be logged as already resolved")
     if reported_at is not None or resolved_at is not None:
         try:
             backdate_ticket(session, ticket, creator.email, reported_at=reported_at, resolved_at=resolved_at)

@@ -365,8 +365,8 @@ next numbers. Agent, portal and admin routes use the number too (/tickets/1042, 
 Projects are a separate entity tickets can link to, with Azure DevOps
 integration later. Change control is later.
 
-**Statuses.** New (untriaged), Open, In progress, Awaiting user, With MSP,
-Resolved, Closed. Reopening is a recorded event, not a status.
+**Statuses.** New (untriaged), Open, In progress, Awaiting user, Awaiting approval
+(a service request waiting for its approvers, 14 Oct 2026), With MSP, Resolved, Closed. Reopening is a recorded event, not a status.
 
 **Status follows the conversation** (agreed 12 Oct 2026). The SLA clock pauses in
 Awaiting user and chase emails are sent from it, so the status must be right
@@ -641,11 +641,37 @@ on/off switch (off hides it from the form; tickets keep it). The raise form (`/p
 ticket a Service Request (`SR-`) and records `request_type_id` and a `request_type` event. Agents
 raising for someone else can pick one too. The agent page shows the request and its approvers; the
 requester sees the request name only. Sub-tickets from a split do not inherit the request type.
-*Next, 1H-ii (proposed, not built):* raising a catalogue request creates a pending approval for
-each approver; the first decision wins (one approver is enough; a decline closes the request with a
-reason to the requester); approvers decide from the portal ("My approvals") and can read the
-request; while approval is pending the agent page says so and the ticket cannot be resolved or
-closed. Approver emails come with phase 3.
+*Built in 1H-ii (14 Oct 2026, decisions confirmed that day):*
+- **A new status, Awaiting approval.** Reached only through triage; it is the one place the plan's
+  status list grew. While in it the ticket cannot be moved by hand by anyone (no status buttons;
+  the server refuses with a clear message), cannot be split, and cannot be logged as already
+  resolved. The SLA clock keeps running. Agents can still triage, assign, write notes and email.
+- **A reusable rule** (`app/approvals.py`, written so another kind of ticket, such as change
+  control, can use it): two numbers per request type, *approvals needed* and *declines needed*,
+  both defaulting to one (any single approver decides), copied onto the ticket when approvals
+  start so later edits do not change a request already waiting. Approved when the approvals reach
+  the first number; declined when the declines reach the second, or when so many have declined that
+  the approvals can no longer be reached. Whichever happens first settles it and everyone still
+  pending is marked "not needed". Approved: the ticket goes to Open and the requester gets an
+  automatic message. Declined: it is Closed with the approvers' reasons in the message to the requester.
+- **It starts at triage**, once the real type and team are known: a catalogue request with
+  approvers waits for them instead of opening; an agent who retypes it to an incident ends the
+  approval; an agent who raises and classifies a request for someone starts it at once. The
+  requester never approves their own request (they are left out; with no one else left, no
+  approval is needed).
+- **Approvers decide in the end-user portal** ("Waiting for your approval", the request page with
+  Approve / Decline and an optional comment) and need not be agents. An approver can read the
+  request (the requester's public conversation) but nothing else of the agents' side.
+- **The emailed link** (`app/routers/approvals.py`, `app/approval_links.py`): a signed, time-limited
+  link per approval that needs no sign-in. Opening it (GET) only shows the request and the
+  buttons; deciding is a separate POST from that page, so mail scanners and link previews that
+  fetch every URL cannot approve or decline for anyone. How long it lasts is a setting (default 14
+  days). The email that carries it comes with phase 3; the link, its page and the token are built.
+  It is internet-facing, so it belongs with the public routers when `APP_ROLE` splits them.
+- **A super admin can waive** a pending approval (an approver has left); agents cannot.
+- **Not chasing yet.** Approvers who never answer are not chased before phase 3. When mail and
+  Teams exist, asking an approver and chasing them go by **email and Teams**, like the other
+  notifications; approvals will want a reminder schedule alongside the auto-close timers.
 
 **History.** A `ticket_event` table records every status change,
 assignment, priority change, SLA pause, reopen and MSP handoff with time and

@@ -35,10 +35,10 @@ not exist (`infra/` compiles but has never run against a subscription).
 | 1G-ii outbound email preview step; "tell the requester a ticket was raised for them" setting | merged (#31) | `app/messages.py` (`preview_email`), `app/raising.py` |
 | Team activity feed (agents see all activity in their teams) | merged (#30) | `app/team_activity.py` |
 | 1H-i request catalogue: request types with approvers, chosen on the raise form | built, in review | `app/request_types.py` |
-| 1H-ii approvals: pending approvals, approvers decide in the portal, work held until approved | not started (design to confirm, see Open questions) | |
+| 1H-ii approvals: Awaiting approval status, thresholds, approvers decide in the portal or from an emailed link | built, in review | `app/approvals.py`, `app/routers/approvals.py` |
 | Phases 2 to 9 | not started | `docs/plan.md`, "Build order" |
 
-Tests: 537 passing on Postgres 16.
+Tests: 574 passing on Postgres 16.
 
 ## Next up
 **Deferred from the escalation work (documented, not built).**
@@ -62,7 +62,7 @@ Tests: 537 passing on Postgres 16.
 
 **Email preview for the other emails.** The step exists for agent replies (1G-ii). Resolution emails (phase 4), MSP forwards and bulk resolves (listing every linked ticket and recipient) must reuse it, and automatic emails need admin-managed templates previewed when edited. Per-person opt-out of the "raised for you" email joins the setting when user notification settings exist.
 
-**1H-ii.** Approvals for catalogue requests: a pending approval per approver at raise time, first decision wins, approvers decide from the portal, work held until approved (see Open questions for the points to confirm first).
+**Next.** Phase 2 onwards per docs/plan.md (Build order). Phase 3 (mail) will carry the approval emails with the link from pp/approval_links.py.
 
 ## Working agreement for every PR
 
@@ -185,13 +185,7 @@ sleep, restart it and `docker start ticketingapp-db-1`.
 
 ## Open questions
 
-- **Approvals (1H-ii), to confirm before building.** Defaults proposed in `docs/plan.md`: (1) one
-  approver is enough, first decision wins, rather than all approvers; (2) a decline closes the
-  request; (3) the SLA clock keeps running while approval is pending, rather than starting at
-  approval; (4) approvers read the request in the portal and need not be agents; (5) no new
-  status: a pending-approval banner and a hold on resolving, not an "Awaiting approval" status
-  (the plan fixes the statuses); (6) approvers who never reply: no chase until phase 3 mail.
-
+- **Approvals, remaining.** Approval emails and chasing (email and Teams) wait for phase 3. Not decided: whether an approver may delegate (someone on leave), and whether a request should be able to be withdrawn by its requester while it waits. Today an absent approver is handled by a super admin waiving the approval.
 - **MSP escalation (assumption to confirm).** Until the MSP handoff is built (phase 5) a
   category whose target is the MSP cannot be escalated.
 
