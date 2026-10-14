@@ -11,6 +11,7 @@
   From: {{ ticket.requester_email }}
   &middot; Type: {{ ticket.type.value.replace("_", " ") }}
   &middot; Source: {{ source_label }}
+  {% if request_info %}&middot; Request: {{ request_info[0].name }}{% if request_info[1] %} (approvers: {{ request_info[1] | map(attribute="display_name") | join(", ") }}){% endif %}{% endif %}
   &middot; Category: {{ category_path or "Not triaged" }}
   &middot; Priority: {{ ticket.priority.upper() if ticket.priority else "Not set" }}
   &middot; Reported: {{ ticket.reported_at.strftime("%Y-%m-%d %H:%M") }} UTC{% if ticket.is_backdated %} <span class="badge">backdated</span>{% endif %}

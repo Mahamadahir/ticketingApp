@@ -21,6 +21,7 @@ from app.followers import InvalidEmail, normalise_email
 from app.messages import record_inbound
 from app.models import (
     Category,
+    RequestType,
     Ticket,
     TicketSource,
     TicketStatus,
@@ -30,7 +31,7 @@ from app.models import (
 )
 from app.settings_store import TELL_REQUESTER_RAISED_FOR, get_flag
 from app.sla import Level
-from app.ticket_service import create_ticket, set_status
+from app.ticket_service import EVENT_REQUEST_TYPE, create_ticket, record_event, set_status
 from app.triage import triage_ticket
 
 AGENT_ROLES = (UserRole.AGENT, UserRole.SUPER_ADMIN)
@@ -66,6 +67,7 @@ def raise_ticket(
     assignee: Optional[User] = None,
     reported_at: Optional[datetime] = None,
     resolved_at: Optional[datetime] = None,
+    request_type: Optional[RequestType] = None,
 ) -> Ticket:
     """Raises a ticket. With for_email an agent raises it on that person's behalf; without,
     the creator raises it for themselves. Only the agent mode can classify, assign or
@@ -81,6 +83,10 @@ def raise_ticket(
     on_behalf = bool(for_email and for_email.strip())
     if not on_behalf and ticket_type != TicketType.INCIDENT:
         raise RaiseError("Only an agent can choose the type of a ticket")
+    if request_type is not None:
+        if not request_type.is_active:
+            raise RaiseError("That kind of request is no longer available")
+        ticket_type = TicketType.SERVICE_REQUEST  # a catalogue request is a service request
     if resolved_at is not None and reported_at is None:
         # Fixed at the desk: it was reported the moment it was fixed, unless the agent says otherwise.
         reported_at = resolved_at
@@ -110,7 +116,10 @@ def raise_ticket(
     ticket = create_ticket(
         session, subject=subject, requester_email=requester, source=source,
         ticket_type=ticket_type, actor_email=creator.email, created_by_id=creator.id,
+        request_type_id=request_type.id if request_type is not None else None,
     )
+    if request_type is not None:
+        record_event(session, ticket, EVENT_REQUEST_TYPE, creator.email, to_value=request_type.name)
     if on_behalf:
         # Stored as the requester's own first message; who typed it is in the sender.
         record_inbound(

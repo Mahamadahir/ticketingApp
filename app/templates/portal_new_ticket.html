@@ -5,6 +5,12 @@
 <h2>Raise a request</h2>
 
 <form hx-post="/portal/new" hx-target="#flash" hx-swap="innerHTML" hx-disabled-elt="find button[type=submit]">
+  <label>What do you need?
+    <select name="request_type_id">
+      <option value="">Something is not working (report a problem)</option>
+      {% for t in request_types %}<option value="{{ t.id }}">{{ t.name }}{% if t.description %} - {{ t.description }}{% endif %}</option>{% endfor %}
+    </select>
+  </label>
   <label>Subject <input type="text" name="subject" maxlength="{{ max_subject_length }}" required /></label>
   <label>Describe the problem
     <textarea name="description" rows="6" maxlength="{{ max_message_length }}" required></textarea>

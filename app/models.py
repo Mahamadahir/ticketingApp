@@ -134,6 +134,10 @@ class Ticket(SQLModel, table=True):
     # Who created the ticket when that is a person other than the requester: the agent who
     # raised it for them (source "agent"), or the requester themselves in the portal.
     created_by_id: Optional[int] = Field(default=None, foreign_key="user.id", index=True)
+    # The kind of service request this is, when it was raised from the request catalogue
+    # (app/request_types.py). Null for everything else, including a service request an agent
+    # retyped at triage.
+    request_type_id: Optional[int] = Field(default=None, foreign_key="requesttype.id", index=True)
     graph_conversation_id: Optional[str] = Field(default=None, index=True)
 
     # When the problem was reported and when it was fixed, as entered. They
@@ -271,6 +275,29 @@ class CannedResponse(SQLModel, table=True):
     is_active: bool = Field(default=True)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class RequestType(SQLModel, table=True):
+    """A thing people can ask IT for ("New starter", "Software install"), each with the
+    people who approve it. Managed by admins in app/request_types.py. Switching one off hides
+    it from the request form; it is never deleted, so tickets keep their request type."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(unique=True, index=True)
+    description: str = Field(default="")
+    is_active: bool = Field(default=True)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class RequestTypeApprover(SQLModel, table=True):
+    """Someone who approves requests of a type. They need an account (they sign in once),
+    and need not be an agent: approvers are often managers."""
+
+    __table_args__ = (UniqueConstraint("request_type_id", "user_id", name="uq_requesttypeapprover"),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    request_type_id: int = Field(foreign_key="requesttype.id", index=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
 
 
 TICKET_COUNTER = "ticket"
