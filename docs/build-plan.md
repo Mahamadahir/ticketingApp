@@ -39,6 +39,14 @@ Tests: 442 passing on Postgres 16.
 
 ## Next up
 
+**1B-iii (rework of #29, not started).** Escalation by category: drop `Team.escalates_to_team_id`
+and the implicit tier link; add the category escalation target (team, sub-team or MSP) with
+inheritance and the admin setting; escalation needs triage and no longer takes a chosen
+team; the escalator keeps access to what they escalated; sub-teams (parent on `team`,
+parent members see sub-teams, per `docs/plan.md`). The MSP target waits for the MSP
+handoff (phase 5) and until then only internal targets work. Keep `TeamLink`, the admin
+link page and removable followers from #29.
+
 **Small PRs from the decisions below (not started):** unassign tickets when an agent is removed from a team, category change after triage, per-user timezone display.
 
 **1G.** Portal raise-a-ticket form; agents raising a ticket for someone else (the
@@ -136,18 +144,31 @@ sleep, restart it and `docker start ticketingapp-db-1`.
   admin-only and written to the activity log. The rule lives only in
   `app/visibility.py`. Used for same-role teams in different locations; unrelated
   departments (e.g. Finance and IT support) get no link.
-- 13 Oct: **escalation is by team** (built, 1B-ii). Each team has an optional "escalates to" team.
-  Escalating moves the ticket to that team and gives the escalating team a "work"
-  link back, so the escalator keeps full access. Cross-department hand-offs stay a
-  re-assign and need no link. The escalator is still added as a follower (copied on
-  mail, and sees the requester view in the portal), but their access does not depend
-  on it, so the "always copied, cannot be removed" rule is dropped: any follower can
-  be removed by whoever works the ticket.
+- 13 Oct: first version of escalation (built in 1B-ii, PR #29): each team has an
+  "escalates to" team and keeps a work link to it. **Superseded 14 Oct, see below.**
+- 14 Oct: **escalation is by ticket category** (replaces the per-team "escalates to").
+  A ticket must be triaged to escalate. Each main category has an escalation target
+  (default: the MSP); a sub-category inherits or overrides. A target is a sub-team of
+  the agent's team (1st to 2nd line), another team (support to the in-house dev team) or
+  the MSP. The lookup is (category, current team), falling back to the MSP, so a ticket
+  can escalate on again. The agent does not choose a team. Targets, and the sub-teams
+  themselves, are created by an admin in settings and the portal; nothing is seeded.
+- 14 Oct: the escalator keeps working access to the one ticket they escalated to another
+  team (and only that ticket), as an explicit rule in `app/visibility.py`. This
+  reverses "an escalator grants nothing" for escalators only. Followers, assignees
+  and triagers still grant nothing. Any follower can be removed by whoever works the ticket.
+- 14 Oct: re-assign is not escalation. It hands a ticket to a team, unassigned, needs
+  no reason, and the agent loses sight of it unless they already have visibility of
+  that team (membership, parent team or a team link).
+- 14 Oct: Send to MSP and escalating to the MSP are the same action. It lets the agent
+  send the full thread (default) or only the original request, so the MSP is not sent
+  internal hand-offs between teams (`docs/plan.md`, "MSP").
 
 ## Open questions
 
-None at the moment. Still to decide when 1B-ii is built: whether a "view" link can
-add a note or only read (assumed read only).
+None at the moment. Assumptions to confirm: a "view" team link can only read, not add a note; the 18:00
+automatic MSP send always includes the full thread; until the MSP handoff is built (phase
+5) a category whose target is the MSP cannot be escalated.
 
 ## Staging checklist (Azure-only, cannot be proved locally)
 
