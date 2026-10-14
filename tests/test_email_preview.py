@@ -150,6 +150,32 @@ def test_a_split_originals_status_is_not_moved_and_a_part_is_about_itself(client
     assert f"About: {part.reference} Keyboard" in from_part
 
 
+def test_a_leading_blank_line_survives_the_trip_to_the_send(client, db_session):
+    ticket = ticket_for_email(client, db_session)
+    page = preview(client, ticket, body="\n\nHello").text
+    # A browser drops one newline straight after <textarea>, so the template adds one.
+    assert '<textarea name="body" hidden>\n\n\nHello</textarea>' in page
+
+
+def test_editing_the_form_clears_the_preview(client, db_session):
+    ticket = ticket_for_email(client, db_session)
+    page = client.get(f"/tickets/{ticket.number}").text
+    clear = "document.getElementById('email-preview').innerHTML = ''"
+    assert f'hx-on:input="{clear}"' in page  # typing, ticking a copy, anything in the form
+    assert page.count(clear) == 1  # (the canned-response picker adds its own once any exist)
+
+
+def test_a_blank_email_is_refused_by_the_send_too(client, db_session):
+    ticket = ticket_for_email(client, db_session)
+    before = recorded(db_session)
+
+    assert client.post(f"/tickets/{ticket.number}/email", data={"body": "  \n "}).status_code == 400
+
+    assert recorded(db_session) == before
+    db_session.refresh(ticket)
+    assert ticket.status == TicketStatus.OPEN
+
+
 def test_the_text_is_escaped(client, db_session):
     ticket = ticket_for_email(client, db_session)
     page = preview(client, ticket, body="<script>alert(1)</script>").text
@@ -163,7 +189,7 @@ def test_the_tell_the_requester_setting_defaults_on_and_is_changed_in_settings(c
     key = "tell_requester_when_raised_for_them"
     ticket_for_email(client, db_session)
     assert should_tell_requester(db_session) is True
-    assert "They will be told by email" in client.get("/portal/new").text
+    assert "set to be told by email" in client.get("/portal/new").text
 
     client.post("/auth/logout")
     set_role(db_session, login_as(client, "admin@example.com"), UserRole.SUPER_ADMIN)

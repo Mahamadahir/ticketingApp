@@ -68,6 +68,10 @@ def _record(
     return message
 
 
+class EmptyEmail(ValueError):
+    """The agent tried to email the requester with nothing to say."""
+
+
 class UnknownRecipient(ValueError):
     """The agent asked to copy an address that is not a follower of the ticket."""
 
@@ -104,6 +108,8 @@ def preview_email(
     """Checks an email exactly as email_requester does and returns what it would send."""
     if not is_triaged(ticket):
         raise NotTriaged()
+    if not body.strip():
+        raise EmptyEmail()
     chosen = _copied_followers(session, ticket, cc_emails)
     in_a_split = ticket.split_from_id is not None or session.exec(
         select(Ticket.id).where(Ticket.split_from_id == ticket.id).limit(1)
@@ -112,7 +118,7 @@ def preview_email(
         to=ticket.requester_email,
         cc=[f.email for f in chosen],
         subject=thread_subject(session, ticket),
-        about=f"About: {ticket.reference} {ticket.subject}" if in_a_split else None,
+        about=about_text(ticket) if in_a_split else None,
         body=body,
     )
 
@@ -130,6 +136,8 @@ def email_requester(
     received it even if the followers change later."""
     if not is_triaged(ticket):
         raise NotTriaged()
+    if not body.strip():
+        raise EmptyEmail()
 
     chosen = _copied_followers(session, ticket, cc_emails)
     cc = ", ".join(f.email for f in chosen) or None
@@ -215,6 +223,11 @@ def thread_subject(session: Session, ticket: Ticket) -> str:
     return ticket.subject
 
 
+def about_text(ticket: Ticket) -> str:
+    """The "About:" line naming the part an email is about. The one place its wording lives."""
+    return f"About: {ticket.reference} {ticket.subject}"
+
+
 def about_labels(session: Session, messages: list[Message]) -> dict[int, str]:
     """For outgoing emails that belong to a split request, the line naming the part it is
     about ("About: SR-14 Replace keyboard"), keyed by message id. Emails on a ticket that
@@ -232,7 +245,7 @@ def about_labels(session: Session, messages: list[Message]) -> dict[int, str]:
         ).all()
     )
     return {
-        m.id: f"About: {tickets[m.ticket_id].reference} {tickets[m.ticket_id].subject}"
+        m.id: about_text(tickets[m.ticket_id])
         for m in outbound
         if tickets[m.ticket_id].split_from_id is not None or m.ticket_id in originals
     }

@@ -35,7 +35,7 @@ not exist (`infra/` compiles but has never run against a subscription).
 | 1H Service Requests and approvers | not started (may slip past phase 3) | |
 | Phases 2 to 9 | not started | `docs/plan.md`, "Build order" |
 
-Tests: 470 passing on Postgres 16.
+Tests: 473 passing on Postgres 16.
 
 ## Next up
 

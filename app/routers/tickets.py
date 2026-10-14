@@ -36,6 +36,7 @@ from app.splitting import (
 )
 from app.linking import PARENT_TYPES, LinkError, link_ticket, linked_summary, unlink_ticket
 from app.messages import (
+    EmptyEmail,
     UnknownRecipient,
     add_note,
     agent_timeline,
@@ -419,12 +420,12 @@ def preview_email_user(
     copied, the subject and the text, and what it does to the ticket. Sends and records nothing.
     The checks are the send's own, so what is previewed is what would go."""
     ticket = _get_ticket(session, number, user)
-    if not body.strip():
-        raise HTTPException(status_code=400, detail="Write the email first")
     try:
         preview = preview_email(session, ticket, body, cc_emails=cc if cc_form else None)
     except NotTriaged:
         raise HTTPException(status_code=400, detail="Triage the ticket before emailing the requester")
+    except EmptyEmail:
+        raise HTTPException(status_code=400, detail="Write the email first")
     except UnknownRecipient as error:
         raise HTTPException(status_code=400, detail=f"Not a follower of this ticket: {error}")
     return templates.TemplateResponse(
@@ -460,6 +461,8 @@ def email_user(
         email_requester(session, ticket, user, body, cc_emails=cc if cc_form else None)
     except NotTriaged:
         raise HTTPException(status_code=400, detail="Triage the ticket before emailing the requester")
+    except EmptyEmail:
+        raise HTTPException(status_code=400, detail="Write the email first")
     except UnknownRecipient as error:
         raise HTTPException(status_code=400, detail=f"Not a follower of this ticket: {error}")
 

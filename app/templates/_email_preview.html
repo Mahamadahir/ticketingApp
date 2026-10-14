@@ -11,7 +11,8 @@
     The email is recorded on the ticket and goes to the requester.
   </p>
   <form hx-post="/tickets/{{ ticket.number }}/email" hx-target="main" hx-swap="innerHTML" hx-disabled-elt="find button[type=submit]">
-    <textarea name="body" hidden>{{ preview.body }}</textarea>
+    <textarea name="body" hidden>
+{{ preview.body }}</textarea>
     {% if cc_form %}
     <input type="hidden" name="cc_form" value="1" />
     {% for address in ticked %}<input type="hidden" name="cc" value="{{ address }}" />{% endfor %}

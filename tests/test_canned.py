@@ -147,6 +147,7 @@ def test_a_filled_response_is_sent_through_the_normal_email_action(client, db_se
     ticket = triaged(db_session, team, "Printer jam")
     text = client.get(f"/tickets/{ticket.number}/canned", params={"canned_id": canned.id}).text
     body = text.split(">", 1)[1].rsplit("</textarea", 1)[0].replace("&#34;", '"')
+    body = body.removeprefix("\n")  # a browser drops the one newline right after <textarea>
 
     assert client.post(f"/tickets/{ticket.number}/email", data={"body": body}).status_code == 200
 
