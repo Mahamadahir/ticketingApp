@@ -427,7 +427,8 @@ def _set_escalation(session: Session, admin: User, category: Category, choice: s
     if (category.escalation_inherits, category.escalation_team_id) != (inherits, team_id):
         log_action(
             session, admin.email, "category", category.id, "escalation_changed",
-            f"{path_of(session, category)}: {choice}",
+            f"{path_of(session, category)}: "
+            + ("inherit" if inherits else (session.get(Team, team_id).name if team_id else "MSP")),
         )
         category.escalation_inherits = inherits
         category.escalation_team_id = team_id

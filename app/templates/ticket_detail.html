@@ -129,7 +129,7 @@
   </form>
   {% endif %}
 
-  {% if not assigned_agent and user.role.value == "agent" %}
+  {% if not assigned_agent and user.role.value == "agent" and can_self_assign %}
   <form hx-post="/tickets/{{ ticket.number }}/assign" hx-target="main" hx-swap="innerHTML">
     <button type="submit">Assign to me</button>
   </form>

@@ -414,3 +414,46 @@ def test_the_ticket_lists_everyone_who_escalated_it_and_they_all_keep_access(cli
     client.post("/auth/logout")
     login_as(client, "alice@example.com")
     assert client.get(f"/tickets/{ticket.number}").status_code == 200  # still hers
+
+
+def test_parent_team_members_can_be_assigned_a_sub_team_ticket(client, db_session):
+    support, second = make_support(db_session)
+    first_line = agent_in(client, db_session, member_of=[support])
+    ticket = make_ticket(db_session, second.id)
+    login_as(client, "admin@example.com")
+    assert client.post(f"/tickets/{ticket.number}/assign", data={"agent_id": first_line}).status_code == 200
+    db_session.refresh(ticket)
+    assert ticket.assigned_agent_id == first_line
+
+
+def test_an_escalator_cannot_claim_the_ticket_they_sent_away(client, db_session):
+    desk, dev = create_team(db_session, "Support"), create_team(db_session, "Dev")
+    agent_in(client, db_session, member_of=[desk])
+    ticket = make_ticket(db_session, desk.id)
+    categorised(db_session, ticket, dev)
+    escalate(client, ticket)
+    assert "Assign to me" not in client.get(f"/tickets/{ticket.number}").text
+    assert client.post(f"/tickets/{ticket.number}/assign").status_code == 403
+    db_session.refresh(ticket)
+    assert ticket.assigned_agent_id is None
+
+
+def test_a_ticket_in_a_sub_team_of_the_target_cannot_escalate_up_to_the_parent(client, db_session):
+    support, second = make_support(db_session)
+    agent_in(client, db_session, member_of=[support])
+    ticket = make_ticket(db_session, second.id)
+    categorised(db_session, ticket, support)
+    assert escalate(client, ticket).status_code == 400
+    db_session.refresh(ticket)
+    assert ticket.team_id == second.id
+
+
+def test_a_repeated_escalate_by_the_same_agent_is_not_a_server_error(client, db_session):
+    desk, dev = create_team(db_session, "Support"), create_team(db_session, "Dev")
+    agent_id = agent_in(client, db_session, member_of=[desk])
+    ticket = make_ticket(db_session, desk.id)
+    categorised(db_session, ticket, dev)
+    db_session.add(TicketEscalator(ticket_id=ticket.id, user_id=agent_id))  # as if a twin request got there first
+    db_session.commit()
+    assert escalate(client, ticket).status_code == 200
+    assert len(db_session.exec(select(TicketEscalator)).all()) == 1

@@ -677,7 +677,8 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
         )
     team_agents = assignable_agents(session, ticket)
     can_work = ticket_access(user, ticket, levels) >= Access.WORK
-    can_claim = not can_work and may_self_assign(user, ticket, levels)
+    can_self_assign = may_self_assign(user, ticket, levels)
+    can_claim = not can_work and can_self_assign
     can_triage = may_triage(user, ticket, levels)
     can_reassign = can_work and not can_triage and ticket.triaged_at is not None
     category = session.get(Category, ticket.category_id) if ticket.category_id else None
@@ -745,6 +746,7 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             # New is left only by triage, so it is not offered as a status to set.
             "statuses": [s for s in TicketStatus if s != TicketStatus.NEW],
             "can_triage": can_triage,
+            "can_self_assign": can_self_assign,
             "ticket_types": list(TicketType),
             "parent": parent if parent_visible else None,
             "has_hidden_parent": parent is not None and not parent_visible,

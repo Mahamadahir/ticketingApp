@@ -15,6 +15,7 @@ app/visibility.py) and becomes an internal follower. Nothing here commits.
 
 from datetime import datetime, timezone
 
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from app.audit import log_action
@@ -43,7 +44,13 @@ def escalation_target(session: Session, ticket: Ticket) -> Team:
     if category is None:
         raise EscalationError("This ticket has no category, so there is nowhere for it to escalate")
     team_id = escalation_team_id_for(session, category)
-    if team_id is None or team_id == ticket.team_id:
+    current = session.get(Team, ticket.team_id) if ticket.team_id else None
+    already_there = team_id == ticket.team_id or (
+        current is not None and current.parent_team_id is not None and current.parent_team_id == team_id
+    )
+    if team_id is None or already_there:
+        # In the target, or in one of its sub-teams (moving up to the parent would be
+        # a step back, not an escalation): the next step is the MSP.
         raise EscalationError(MSP_NOT_BUILT)
     team = session.get(Team, team_id)
     if team is None:  # cannot happen with the foreign key; keeps the answer honest if it does
@@ -52,8 +59,8 @@ def escalation_target(session: Session, ticket: Ticket) -> Team:
 
 
 def escalators_of(session: Session, ticket: Ticket) -> list[User]:
-    """Everyone who escalated this ticket, oldest first. Each keeps working access to it
-    permanently, so the ticket page lists them all."""
+    """Everyone who escalated this ticket (in no particular order: the table keeps no
+    timestamp). Each keeps working access to it permanently, so the ticket page lists them all."""
     return list(
         session.exec(
             select(User)
@@ -87,8 +94,13 @@ def escalate_ticket(session: Session, ticket: Ticket, actor: User, reason: str) 
     if previous_agent is not None:
         # Moving to another team unassigns the agent; the history must say so.
         record_event(session, ticket, EVENT_ASSIGNED, actor.email, from_value=previous_agent.email, to_value=None)
-    if session.get(TicketEscalator, (ticket.id, actor.id)) is None:
-        session.add(TicketEscalator(ticket_id=ticket.id, user_id=actor.id))
+    try:
+        # A savepoint, so a double click (two requests adding the same row) is a quiet no-op.
+        with session.begin_nested():
+            session.add(TicketEscalator(ticket_id=ticket.id, user_id=actor.id))
+            session.flush()
+    except IntegrityError:
+        pass
     # Copied on its mail from now on. Their access to the ticket comes from TicketEscalator,
     # not from following it.
     add_follower(session, ticket, actor.email, actor.email, internal_user=actor)

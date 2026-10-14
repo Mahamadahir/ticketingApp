@@ -112,7 +112,9 @@ def may_self_assign(user: User, ticket: Ticket, levels: AccessContext) -> bool:
         # Taking a ticket from its assignee is a deliberate re-assign, never a claim.
         return False
     access = ticket_access(user, ticket, levels)
-    if access == Access.WORK:
+    if access == Access.WORK and levels.get(ticket.team_id, Access.NONE) == Access.WORK:
+        # Working it through the team (or a parent team). An escalator's access to a ticket
+        # they sent away is not a claim on it: the assignee must be someone in its team.
         return True
     return access >= Access.READ and is_untriaged(ticket) and ticket.assigned_agent_id is None
 
@@ -166,15 +168,18 @@ def assignable_agents(session: Session, ticket: Ticket) -> list[User]:
 
 
 def team_members(session: Session, team_id: int | None) -> list[User]:
-    """Agents who can work a team's tickets (members, not viewers)."""
+    """Agents who can work a team's tickets (members, not viewers), including the members of
+    its parent team, who work its tickets too (see access_context)."""
     if team_id is None:
         return []
+    parent_id = session.exec(select(Team.parent_team_id).where(Team.id == team_id)).first()
+    team_ids = [team_id] + ([parent_id] if parent_id is not None else [])
     return list(
         session.exec(
             select(User)
             .join(TeamMembership, TeamMembership.user_id == User.id)
             .where(
-                TeamMembership.team_id == team_id,
+                TeamMembership.team_id.in_(team_ids),
                 TeamMembership.level == MembershipLevel.MEMBER,
                 User.role == UserRole.AGENT,
             )
