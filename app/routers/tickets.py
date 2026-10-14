@@ -27,6 +27,7 @@ from app.raising import source_label
 from app.request_types import request_type_of
 from app.canned import active_canned, fill as fill_canned
 from app.approvals import ApprovalError, approvals_of, describe_rule, waive
+from app.notifications import notify_assigned, notify_mentions
 from app.search import normalise, search_condition
 from app.splitting import (
     MAX_PARTS,
@@ -546,8 +547,9 @@ def add_ticket_note(
     if not may_add_note(user, ticket, access_context(session, user)):
         raise NoTicketAccess()
 
-    add_note(session, ticket, user, body)
+    note = add_note(session, ticket, user, body)
     log_action(session, user.email, "ticket", ticket.id, "note_added", body[:200])
+    notify_mentions(session, ticket, note, user)
     session.commit()
     session.refresh(ticket)
 
@@ -641,6 +643,7 @@ def assign_ticket(
         to_value=target_agent.email,
     )
     log_action(session, user.email, "ticket", ticket.id, "assigned", target_agent.email)
+    notify_assigned(session, ticket, target_agent, user.email)
     session.commit()
     session.refresh(ticket)
 

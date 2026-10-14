@@ -13,6 +13,7 @@
       {% if user %}
         {% if user.role.value in ("super_admin", "agent") %}
         <a href="/tickets">Tickets</a>
+        <a href="/notifications" data-poll hx-get="/notifications/count" hx-trigger="load, every 30s" hx-swap="innerHTML">Notifications</a>
         {% endif %}
         <a href="/portal">My requests</a>
         {% if user.role.value == "super_admin" %}
@@ -31,7 +32,9 @@
     // Forms swap <main> with htmx. Clear any earlier message when one is sent, and
     // let our error messages (4xx responses that name #flash as their target) show,
     // because htmx ignores 4xx responses by default.
-    document.body.addEventListener("htmx:beforeRequest", function () {
+    document.body.addEventListener("htmx:beforeRequest", function (event) {
+      // The bell polls in the background; that must not wipe a message the person is reading.
+      if (event.detail.elt && event.detail.elt.hasAttribute("data-poll")) { return; }
       var flash = document.getElementById("flash");
       if (flash) { flash.innerHTML = ""; }
     });

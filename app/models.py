@@ -324,6 +324,20 @@ class TicketApproval(SQLModel, table=True):
     decided_at: Optional[datetime] = Field(default=None)
 
 
+class Notification(SQLModel, table=True):
+    """Something an agent should know about (app/notifications.py): shown in the bell until read.
+    One row per recipient."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    kind: str  # assigned, mentioned
+    ticket_id: Optional[int] = Field(default=None, foreign_key="ticket.id", index=True)
+    actor_email: Optional[str] = Field(default=None)  # who caused it; None for the system
+    text: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), index=True)
+    read_at: Optional[datetime] = Field(default=None)
+
+
 TICKET_COUNTER = "ticket"
 
 
