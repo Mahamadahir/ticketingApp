@@ -30,7 +30,7 @@ not exist (`infra/` compiles but has never run against a subscription).
 | 1E-iii part 2 derived status and single mail thread | merged (#23) | `app/splitting.py`, `app/messages.py` |
 | 1F-i search | merged (#25) | `app/search.py` |
 | 1F-ii canned responses | merged (#26) | `app/canned.py` |
-| 1B-ii sub-teams and escalation by category | built, in review (#29) | `app/visibility.py`, `app/escalation.py`, `app/routers/admin.py` |
+| 1B-ii sub-teams and escalation by category | merged (#29, #32) | `app/visibility.py`, `app/escalation.py`, `app/routers/admin.py` |
 | 1G-i raise a ticket: portal form, agents raising for someone, optional triage and backdating at creation, source labels | merged (#28) | `app/raising.py` |
 | 1G-ii outbound email preview step; "tell the requester a ticket was raised for them" setting | merged (#31) | `app/messages.py` (`preview_email`), `app/raising.py` |
 | Team activity feed (agents see all activity in their teams) | merged (#30) | `app/team_activity.py` |
