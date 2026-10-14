@@ -38,10 +38,14 @@ def upgrade() -> None:
         batch_op.create_index(batch_op.f('ix_notification_user_id'), ['user_id'], unique=False)
         batch_op.create_index(batch_op.f('ix_notification_ticket_id'), ['ticket_id'], unique=False)
         batch_op.create_index(batch_op.f('ix_notification_created_at'), ['created_at'], unique=False)
+        batch_op.create_index(
+            'ix_notification_user_unread', ['user_id'], unique=False, postgresql_where=sa.text('read_at IS NULL')
+        )
 
 
 def downgrade() -> None:
     with op.batch_alter_table('notification', schema=None) as batch_op:
+        batch_op.drop_index('ix_notification_user_unread', postgresql_where=sa.text('read_at IS NULL'))
         batch_op.drop_index(batch_op.f('ix_notification_created_at'))
         batch_op.drop_index(batch_op.f('ix_notification_ticket_id'))
         batch_op.drop_index(batch_op.f('ix_notification_user_id'))

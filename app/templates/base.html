@@ -40,6 +40,12 @@
     });
     document.body.addEventListener("htmx:beforeSwap", function (event) {
       var xhr = event.detail.xhr;
+      // The bell polls on its own. If the session has ended it is redirected to the sign-in page,
+      // which must not be swapped into the menu.
+      if (event.detail.elt && event.detail.elt.hasAttribute("data-poll") && /\/auth\//.test(xhr.responseURL || "")) {
+        event.detail.shouldSwap = false;
+        return;
+      }
       if (xhr.status >= 400 && xhr.status < 500 && xhr.getResponseHeader("HX-Retarget")) {
         event.detail.shouldSwap = true;
         event.detail.isError = false;

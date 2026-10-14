@@ -8,7 +8,7 @@ from sqlmodel import Session, select
 from app.auth import require_roles
 from app.database import get_session
 from app.models import Notification, Ticket, User, UserRole
-from app.notifications import AGENT_ROLES, count_unread, mark_all_read, mark_read
+from app.notifications import AGENT_ROLES, count_unread, mark_all_read, mark_read, visible_to
 from app.pagination import paginate
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
@@ -26,7 +26,7 @@ def list_notifications(
 ):
     query = (
         select(Notification)
-        .where(Notification.user_id == user.id)
+        .where(visible_to(session, user))
         .order_by(Notification.created_at.desc(), Notification.id.desc())
     )
     notifications = paginate(session, query, page, request.query_params)

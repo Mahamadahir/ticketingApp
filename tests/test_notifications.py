@@ -50,7 +50,7 @@ def test_assigning_a_ticket_notifies_the_assignee_but_not_yourself(client, db_se
     client.post(f"/tickets/{ticket.number}/reassign", data={"team_id": team.id, "agent_id": bob.id})
     [told] = notifications_for(db_session, "bob@example.com")
     assert (told.kind, told.ticket_id, told.actor_email, told.read_at) == ("assigned", ticket.id, "agent@example.com", None)
-    assert told.text == f"{ticket.reference} Printer jam was assigned to you"
+    assert told.text == f"{ticket.tag} Printer jam was assigned to you"
 
 
 def test_assigning_during_triage_and_by_a_super_admin_notifies_too(client, db_session):
@@ -97,7 +97,7 @@ def test_a_mention_in_a_note_notifies_the_agent_who_can_open_the_ticket(client, 
 
     [told] = notifications_for(db_session, "bob@example.com")  # once, however often they are named
     assert (told.kind, told.actor_email) == ("mentioned", "agent@example.com")
-    assert told.text == f"Agent Ann mentioned you on {ticket.reference} Router down"
+    assert told.text == f"Agent Ann mentioned you on {ticket.tag} Router down"
     assert notifications_for(db_session, "agent@example.com") == []
 
 
@@ -286,3 +286,104 @@ def test_the_bell_is_for_agents_only_and_polls_without_clearing_messages(client,
     assert client.get("/notifications", follow_redirects=False).status_code == 200
     client.post("/auth/logout")
     assert client.get("/notifications", follow_redirects=False).status_code in (303, 307, 401, 403)
+
+
+# ---- Review fixes -----------------------------------------------------------------------------------
+
+
+def test_the_stored_text_uses_the_number_not_a_prefix_that_can_change(client, db_session):
+    team, category, _ = desk(client, db_session)
+    bob = agent_in_desk(client, db_session, "bob@example.com")
+    back_to(client)
+    classified(client, category, "Retyped later")
+    ticket = ticket_named(db_session, "Retyped later")
+    client.post(f"/tickets/{ticket.number}/reassign", data={"team_id": team.id, "agent_id": bob.id})
+
+    [told] = notifications_for(db_session, "bob@example.com")
+
+    assert f"#{ticket.number} " in told.text and "INC-" not in told.text
+
+
+def test_an_assignee_who_cannot_open_the_ticket_is_not_told_about_it(client, db_session):
+    from app.notifications import notify_assigned
+
+    team, category, _ = desk(client, db_session)
+    other = create_team(db_session, "Network")
+    outsider = db_session.get(User, login_as(client, "outsider@example.com"))
+    set_role(db_session, outsider.id, UserRole.AGENT, other.id)
+    back_to(client)
+    classified(client, category, "Desk only")
+    ticket = ticket_named(db_session, "Desk only")
+
+    assert notify_assigned(db_session, ticket, outsider, "agent@example.com") is None
+    assert notifications_for(db_session, "outsider@example.com") == []
+
+
+def test_a_notification_about_a_ticket_that_left_my_team_disappears(client, db_session):
+    team, category, _ = desk(client, db_session)
+    bob = agent_in_desk(client, db_session, "bob@example.com")
+    back_to(client)
+    classified(client, category, "Moving out")
+    ticket = ticket_named(db_session, "Moving out")
+    note(client, ticket, "@bob look")
+    classified(client, category, "Staying")
+    staying = ticket_named(db_session, "Staying")
+    note(client, staying, "@bob look too")
+    client.post("/auth/logout")
+    login_as(client, "bob@example.com")
+    assert client.get("/notifications/count").text == "Notifications (2)"
+
+    other = create_team(db_session, "Network")
+    moved = db_session.get(Ticket, ticket.id)
+    moved.team_id = other.id
+    db_session.add(moved)
+    db_session.commit()
+
+    page = client.get("/notifications").text
+    assert "Moving out" not in page and "Staying" in page
+    assert client.get("/notifications/count").text == "Notifications (1)"
+
+
+def test_a_super_admin_still_sees_all_of_theirs(client, db_session):
+    team, category, _ = desk(client, db_session)
+    classified(client, category, "Admin sees")
+    ticket = ticket_named(db_session, "Admin sees")
+    client.post("/auth/logout")
+    admin_id = login_as(client, "admin@example.com")
+    set_role(db_session, admin_id, UserRole.SUPER_ADMIN)
+    from app.notifications import notify
+
+    notify(db_session, db_session.get(User, admin_id), "assigned", ticket, "x was assigned to you", "agent@example.com")
+    db_session.commit()
+
+    assert client.get("/notifications/count").text == "Notifications (1)"
+
+
+def test_read_all_is_one_statement_and_reports_how_many(client, db_session):
+    from app.notifications import mark_all_read
+
+    team, category, _ = desk(client, db_session)
+    bob = agent_in_desk(client, db_session, "bob@example.com")
+    back_to(client)
+    classified(client, category, "Counting")
+    ticket = ticket_named(db_session, "Counting")
+    for i in range(4):
+        note(client, ticket, f"@bob {i}")
+
+    assert mark_all_read(db_session, bob) == 4
+    assert mark_all_read(db_session, bob) == 0
+
+
+def test_the_poll_is_not_swapped_into_the_menu_when_the_session_has_ended(client, db_session):
+    desk(client, db_session)
+    page = client.get("/tickets").text
+    assert "xhr.responseURL" in page and "event.detail.shouldSwap = false" in page and "/auth/" in page
+
+
+def test_there_is_an_index_for_the_unread_poll(db_session):
+    from sqlalchemy import inspect
+
+    indexes = {i["name"]: i for i in inspect(db_session.get_bind()).get_indexes("notification")}
+    unread = indexes["ix_notification_user_unread"]
+    assert unread["column_names"] == ["user_id"]
+    assert "read_at IS NULL" in str(unread.get("dialect_options", {}).get("postgresql_where"))  # only unread rows

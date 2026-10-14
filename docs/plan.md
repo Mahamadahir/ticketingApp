@@ -800,7 +800,11 @@ Automatic emails use admin-managed templates, previewed when edited.
   author. Emails to the requester do not mention anyone. Opening a notification and "mark all read"
   are POSTs, so a link scanner or prefetch cannot read them away. Everything that notifies goes
   through `notify()`, where later work adds the Teams copy, per-person settings and skipping
-  agents who are out of office.
+  agents who are out of office. The bell lists only notifications about tickets you can still
+  open (one about a ticket that moved to another team disappears), and the text carries the
+  ticket number (`#1042`), not a prefix that can change. Mentions match ASCII names only (letters,
+  digits, dot, dash, underscore). Not yet notified: the team an escalation lands in, and the agent
+  a team change unassigns; both belong with the team notifications of 2E and later.
 - A notification still unread after N minutes (user setting, default 5) is
   also sent to Teams.
 - Teams is used for assignments, mentions, P1s and SLA breaches. New tickets

@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 
-from sqlalchemy import UniqueConstraint, event, update
+from sqlalchemy import Index, UniqueConstraint, event, text, update
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -327,6 +327,10 @@ class TicketApproval(SQLModel, table=True):
 class Notification(SQLModel, table=True):
     """Something an agent should know about (app/notifications.py): shown in the bell until read.
     One row per recipient."""
+
+    # The bell counts unread rows for every open tab every 30 seconds; this keeps that cheap
+    # however much read history there is.
+    __table_args__ = (Index("ix_notification_user_unread", "user_id", postgresql_where=text("read_at IS NULL")),)
 
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="user.id", index=True)

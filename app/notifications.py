@@ -15,11 +15,11 @@ import re
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import func
+from sqlalchemy import and_, func, or_, update
 from sqlmodel import Session, select
 
 from app.models import Message, Notification, Ticket, User, UserRole
-from app.visibility import Access, access_context, ticket_access
+from app.visibility import Access, access_context, ticket_access, visible_ticket_condition
 
 ASSIGNED = "assigned"
 MENTIONED = "mentioned"
@@ -46,7 +46,14 @@ def notify(
 
 
 def notify_assigned(session: Session, ticket: Ticket, assignee: User, actor_email: Optional[str]) -> Optional[Notification]:
-    return notify(session, assignee, ASSIGNED, ticket, f"{ticket.reference} {ticket.subject} was assigned to you", actor_email)
+    if not _can_open(session, assignee, ticket):
+        return None  # a notification says what the ticket is, so only someone who can open it gets one
+    # The number with # rather than the reference: the prefix follows the ticket's type, which can change.
+    return notify(session, assignee, ASSIGNED, ticket, f"{ticket.tag} {ticket.subject} was assigned to you", actor_email)
+
+
+def _can_open(session: Session, person: User, ticket: Ticket) -> bool:
+    return ticket_access(person, ticket, access_context(session, person)) >= Access.READ
 
 
 def mentioned_in(session: Session, ticket: Ticket, body: str, author: User) -> list[User]:
@@ -81,16 +88,29 @@ def notify_mentions(session: Session, ticket: Ticket, note: Message, author: Use
     for person in mentioned_in(session, ticket, note.body, author):
         made = notify(
             session, person, MENTIONED, ticket,
-            f"{author.display_name} mentioned you on {ticket.reference} {ticket.subject}", author.email,
+            f"{author.display_name} mentioned you on {ticket.tag} {ticket.subject}", author.email,
         )
         if made is not None:
             notifications.append(made)
     return notifications
 
 
+def visible_to(session: Session, user: User):
+    """The SQL condition for the notifications this user may still see: their own, leaving out
+    those about a ticket they can no longer open (it moved to another team). A notification would
+    otherwise keep showing the subject of a ticket they have lost access to."""
+    visible = visible_ticket_condition(user, access_context(session, user))
+    if visible is None:  # a super admin can open every ticket
+        return Notification.user_id == user.id
+    return and_(
+        Notification.user_id == user.id,
+        or_(Notification.ticket_id.is_(None), Notification.ticket_id.in_(select(Ticket.id).where(visible))),
+    )
+
+
 def count_unread(session: Session, user: User) -> int:
     return session.exec(
-        select(func.count()).select_from(Notification).where(Notification.user_id == user.id, Notification.read_at.is_(None))
+        select(func.count()).select_from(Notification).where(visible_to(session, user), Notification.read_at.is_(None))
     ).one()
 
 
@@ -106,11 +126,10 @@ def mark_read(session: Session, user: User, notification_id: int) -> Optional[No
 
 
 def mark_all_read(session: Session, user: User) -> int:
-    rows = session.exec(
-        select(Notification).where(Notification.user_id == user.id, Notification.read_at.is_(None))
-    ).all()
-    now = datetime.now(timezone.utc)
-    for row in rows:
-        row.read_at = now
-        session.add(row)
-    return len(rows)
+    """Marks all of the user's unread notifications read in one statement. Returns how many."""
+    result = session.exec(
+        update(Notification)
+        .where(Notification.user_id == user.id, Notification.read_at.is_(None))
+        .values(read_at=datetime.now(timezone.utc))
+    )
+    return result.rowcount
