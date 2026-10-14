@@ -4,7 +4,7 @@ from sqlalchemy import event
 from sqlmodel import Session
 
 from app.database import engine
-from app.models import MembershipLevel, TicketEscalator, User, UserRole
+from app.models import AuditLog, MembershipLevel, TeamMembership as TeamMembershipRow, TicketEscalator, User, UserRole
 from app.visibility import Access, access_context
 from tests.conftest import add_membership, create_team
 from tests.test_visibility import agent_in, make_ticket
@@ -39,7 +39,7 @@ def test_a_commit_drops_the_cached_context(client, db_session):
         user = session.get(User, agent_id)
         assert set(access_context(session, user)) == {a.id}
         add_membership(db_session, agent_id, b.id, MembershipLevel.VIEWER)  # another connection commits
-        assert set(access_context(session, user)) == {a.id}  # same transaction: still the old snapshot
+        assert set(access_context(session, user)) == {a.id}  # the cache still holds what it loaded
         session.commit()
         assert access_context(session, user)[b.id] == Access.READ
 
@@ -61,11 +61,51 @@ def test_a_flush_in_the_same_session_drops_the_cached_context(client, db_session
 def test_the_context_follows_a_role_change(client, db_session):
     team = create_team(db_session, "Support")
     agent_id = agent_in(client, db_session, member_of=[team])
+    ticket = make_ticket(db_session, team.id)
+    db_session.add(TicketEscalator(ticket_id=ticket.id, user_id=agent_id))
+    db_session.commit()
     with Session(engine) as session:
         user = session.get(User, agent_id)
-        assert access_context(session, user)
-        user.role = UserRole.END_USER
+        assert ticket.id in access_context(session, user).escalated_ticket_ids
+        user.role = UserRole.END_USER  # not flushed yet: the key alone must notice
         assert access_context(session, user).escalated_ticket_ids == frozenset()
+
+
+def test_a_rolled_back_savepoint_does_not_leave_its_row_in_the_cache(client, db_session):
+    team = create_team(db_session, "Support")
+    agent_id = agent_in(client, db_session, member_of=[team])
+    ticket = make_ticket(db_session, team.id)
+    with Session(engine) as session:
+        user = session.get(User, agent_id)
+        savepoint = session.begin_nested()
+        session.add(TicketEscalator(ticket_id=ticket.id, user_id=agent_id))
+        session.flush()
+        assert ticket.id in access_context(session, user).escalated_ticket_ids
+        savepoint.rollback()
+        assert ticket.id not in access_context(session, user).escalated_ticket_ids
+
+
+def test_loading_with_a_pending_change_still_caches(client, db_session):
+    team = create_team(db_session, "Support")
+    agent_id = agent_in(client, db_session, member_of=[team])
+    other = create_team(db_session, "Other")
+    with Session(engine) as session:
+        user = session.get(User, agent_id)
+        session.add(TeamMembershipRow(user_id=agent_id, team_id=other.id, level=MembershipLevel.VIEWER))
+        first = access_context(session, user)  # the load autoflushes the pending row
+        assert first[other.id] == Access.READ
+        assert access_context(session, user) is first
+
+
+def test_a_flush_that_touches_nothing_access_related_keeps_the_cache(client, db_session):
+    team = create_team(db_session, "Support")
+    agent_id = agent_in(client, db_session, member_of=[team])
+    with Session(engine) as session:
+        user = session.get(User, agent_id)
+        first = access_context(session, user)
+        session.add(AuditLog(actor_email="x@example.com", entity_type="ticket", entity_id=1, action="noted"))
+        session.flush()
+        assert access_context(session, user) is first
 
 
 def test_opening_a_ticket_loads_the_agents_teams_once(client, db_session):

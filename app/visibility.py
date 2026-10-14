@@ -61,22 +61,40 @@ _CACHE_KEY = "access_context"
 def access_context(session: Session, user: User) -> AccessContext:
     """The one way to find out what a user can reach. Built once per database session
     (one per request) and reused, so a page that checks access several times asks the
-    database once. The copy is dropped whenever the session flushes or ends a
-    transaction, so a change made in the same request (a new escalation, a membership
-    edit) is never read back stale."""
-    cache = session.info.setdefault(_CACHE_KEY, {})
+    database once. The copy is dropped whenever the session starts, commits or rolls back
+    a transaction (a savepoint included), and when a flush changes memberships, teams,
+    escalations or users, so a change made in the same request is never read back stale.
+
+    Treat the result as read-only, and ask again after you change any of those: it is
+    one shared object, and a copy you keep will not follow later changes. Changes made with
+    a bulk update/delete statement (not through the ORM) do not clear it; commit afterwards."""
     key = (user.id, user.role)
-    if key not in cache:
-        cache[key] = _load_access_context(session, user)
-    return cache[key]
+    cached = session.info.get(_CACHE_KEY, {}).get(key)
+    if cached is not None:
+        return cached
+    context = _load_access_context(session, user)
+    # Looked up again: loading can autoflush, which drops the dict we started with.
+    session.info.setdefault(_CACHE_KEY, {})[key] = context
+    return context
+
+
+# What an AccessContext is built from. A flush that touches none of these leaves it alone.
+_ACCESS_MODELS = (TeamMembership, Team, TicketEscalator, User)
 
 
 def _forget_access_contexts(session, *args) -> None:
     session.info.pop(_CACHE_KEY, None)
 
 
-for _signal in ("after_flush", "after_commit", "after_rollback"):
+def _forget_after_flush(session, flush_context) -> None:
+    if any(isinstance(obj, _ACCESS_MODELS) for obj in (*session.new, *session.dirty, *session.deleted)):
+        session.info.pop(_CACHE_KEY, None)
+
+
+# after_soft_rollback fires for savepoint rollbacks as well as full ones.
+for _signal in ("after_begin", "after_commit", "after_soft_rollback"):
     event.listen(OrmSession, _signal, _forget_access_contexts)
+event.listen(OrmSession, "after_flush", _forget_after_flush)
 
 
 def _load_access_context(session: Session, user: User) -> AccessContext:
