@@ -4,7 +4,7 @@
 <p><a href="{{ '/tickets' if is_agent else '/portal' }}">&larr; back</a></p>
 <h2>Raise a request</h2>
 
-<form hx-post="/portal/new" hx-target="#flash" hx-swap="innerHTML">
+<form hx-post="/portal/new" hx-target="#flash" hx-swap="innerHTML" hx-disabled-elt="find button[type=submit]">
   <label>Subject <input type="text" name="subject" maxlength="{{ max_subject_length }}" required /></label>
   <label>Describe the problem
     <textarea name="description" rows="6" maxlength="{{ max_message_length }}" required></textarea>
@@ -52,7 +52,8 @@
     <h4>Fixed in person? (optional)</h4>
     <p class="note">
       If this was reported and fixed before you logged it, say when (UTC, up to 30 days back). A ticket with a
-      resolved time is created already resolved, needs a category, impact and urgency, and has no SLA.
+      resolved time is created already resolved, needs a category, impact and urgency, and has no SLA. Leave
+      Reported blank with a Resolved time and it is taken to have been reported at that moment.
     </p>
     <label>Reported <input type="datetime-local" name="reported_at" /></label>
     <label>Resolved <input type="datetime-local" name="resolved_at" /></label>

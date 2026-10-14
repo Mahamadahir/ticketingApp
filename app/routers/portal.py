@@ -24,6 +24,7 @@ from app.forms import MAX_MESSAGE_LENGTH, optional_int
 from app.raising import MAX_SUBJECT_LENGTH, RaiseError, is_agent, raise_ticket, source_label
 from app.sla import IMPACT_LABELS, URGENCY_LABELS, Level
 from app.triage import TriageError
+from app.visibility import Access, access_context, ticket_access
 from app.messages import about_labels, record_inbound, requester_visible_messages
 from app.splitting import has_sub_tickets, refresh_open_sub_tickets, sync_original_status
 from app.models import Category, Ticket, TicketSource, TicketStatus, TicketType, User, UserRole
@@ -156,8 +157,9 @@ def raise_new_ticket(
     if len(description.strip()) > MAX_MESSAGE_LENGTH:
         raise HTTPException(status_code=400, detail=f"The description can be at most {MAX_MESSAGE_LENGTH} characters")
     try:
-        chosen_category = session.get(Category, optional_int(category_id)) if optional_int(category_id) is not None else None
-        if optional_int(category_id) is not None and chosen_category is None:
+        category_choice = optional_int(category_id)
+        chosen_category = session.get(Category, category_choice) if category_choice is not None else None
+        if category_choice is not None and chosen_category is None:
             raise RaiseError("Choose a category from the list")
         chosen_agent = optional_int(agent_id)
         assignee = session.get(User, chosen_agent) if chosen_agent is not None else None
@@ -181,7 +183,11 @@ def raise_new_ticket(
         raise HTTPException(status_code=400, detail=str(error))
     session.commit()
 
-    destination = f"/tickets/{ticket.number}" if ticket.source == TicketSource.AGENT else f"/portal/{ticket.number}"
+    destination = f"/portal/{ticket.number}"
+    if ticket.source == TicketSource.AGENT:
+        # The agent may have classified it into a team they are not in, which they cannot open.
+        can_open = ticket_access(user, ticket, access_context(session, user)) >= Access.READ
+        destination = f"/tickets/{ticket.number}" if can_open else "/tickets"
     if request.headers.get("HX-Request"):
         return Response(status_code=204, headers={"HX-Redirect": destination})
     return RedirectResponse(destination, status_code=303)

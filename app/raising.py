@@ -71,6 +71,11 @@ def raise_ticket(
         raise RaiseError("Describe the problem")
 
     on_behalf = bool(for_email and for_email.strip())
+    if not on_behalf and ticket_type != TicketType.INCIDENT:
+        raise RaiseError("Only an agent can choose the type of a ticket")
+    if resolved_at is not None and reported_at is None:
+        # Fixed at the desk: it was reported the moment it was fixed, unless the agent says otherwise.
+        reported_at = resolved_at
     extras = (category, assignee, reported_at, resolved_at)
     if on_behalf:
         if not is_agent(creator):

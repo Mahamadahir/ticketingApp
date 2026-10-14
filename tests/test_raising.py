@@ -204,6 +204,7 @@ def test_reported_alone_backdates_without_resolving(client, db_session):
         {"reported_at": "{too_old}"},
         {"reported_at": "yesterday"},
         {"resolved_at": "{recent}"},  # resolved needs a category, impact and urgency
+        {"resolved_at": "{future}"},
     ],
 )
 def test_bad_dates_are_refused_and_nothing_is_created(client, db_session, fields):
@@ -285,3 +286,38 @@ def test_only_the_raise_module_creates_agent_sourced_tickets():
         if re.search(r"source\s*=\s*TicketSource\.AGENT", text) and path.name != "raising.py":
             offenders.append(str(path))
     assert offenders == []
+
+
+def test_a_resolved_time_alone_means_it_was_reported_at_that_moment(client, db_session):
+    team, category, _ = desk(client, db_session)
+    fixed = ago(hours=2)
+
+    response = raise_it(
+        client, for_email="walkin@example.com", category_id=category.id, impact="low", urgency="low",
+        resolved_at=fixed.strftime(FORMAT),
+    )
+
+    assert response.status_code == 204
+    ticket = last_ticket(db_session)
+    assert (ticket.reported_at, ticket.resolved_at, ticket.status) == (fixed, fixed, TicketStatus.RESOLVED)
+
+
+def test_an_end_user_cannot_pick_a_ticket_type(client, db_session):
+    login_as(client, "jo@example.com")
+    for kind in ("major_incident", "problem", "service_request"):
+        assert raise_it(client, ticket_type=kind).status_code == 400, kind
+    assert db_session.exec(select(Ticket)).all() == []
+    assert raise_it(client, ticket_type="incident").status_code == 204
+
+
+def test_an_agent_sent_to_a_ticket_they_cannot_open_lands_on_the_list(client, db_session):
+    team, _, _ = desk(client, db_session)
+    other = create_team(db_session, "Network")
+    elsewhere = create_category(db_session, other, "Wireless")
+
+    response = raise_it(
+        client, for_email="walkin@example.com", category_id=elsewhere.id, impact="low", urgency="low",
+    )
+
+    assert response.status_code == 204 and response.headers["HX-Redirect"] == "/tickets"
+    assert last_ticket(db_session).team_id == other.id
