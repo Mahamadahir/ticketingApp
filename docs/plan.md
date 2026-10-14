@@ -686,13 +686,20 @@ Automatic emails use admin-managed templates, previewed when edited.
 - Single MSP, address **TBC**.
 - "Send to MSP" button on any ticket. It is the same action as escalating to the MSP
   and the button may carry either label.
-- The agent chooses what goes: the **full thread** (the default), or **only the
-  original request** (the first email from the user, with the user's details, reference,
-  priority, category and attachments, and none of the internal escalation chatter or
-  notes). Use the second when the ticket was passed between teams and the MSP does not
-  need that history, for example 1st line triaged it, escalated it to 2nd line, and 2nd
-  line decided it is MSP work. The preview step shows exactly what will be sent. The
-  18:00 automatic send uses the full thread.
+- The agent chooses what goes: the **thread** (the default), or **only the original
+  request**. The thread holds only useful content: the user's messages, emails sent
+  and the comments and notes agents left. Ticket events (triage, assignment, escalation,
+  status changes) are never sent. A ticket that has been triaged and escalated with no
+  emails sent and no comments left therefore sends only the original request, whichever
+  option is chosen. The original request is the first email from the user, with the
+  user's details, reference, priority, category and attachments. Use "original only"
+  when the ticket was passed between teams and the MSP does not need that history, for
+  example 1st line triaged it, escalated it to 2nd line, and 2nd line decided it is MSP
+  work. The preview step shows exactly what will be sent. The 18:00 automatic send
+  uses the thread.
+- Each team has an admin setting, "include in the automatic 18:00 MSP handoff"
+  (a setting, not a constant). Tickets of a team with it off are never sent
+  automatically; an agent can still send them by hand.
 - At 18:00 daily, every ticket due to breach before the next business
   morning (08:00, Monday to Friday, UK bank holidays excluded) goes to the
   MSP, unless the assigned agent has put it on hold. A hold lasts until the

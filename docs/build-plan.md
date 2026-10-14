@@ -161,14 +161,15 @@ sleep, restart it and `docker start ticketingapp-db-1`.
   no reason, and the agent loses sight of it unless they already have visibility of
   that team (membership, parent team or a team link).
 - 14 Oct: Send to MSP and escalating to the MSP are the same action. It lets the agent
-  send the full thread (default) or only the original request, so the MSP is not sent
-  internal hand-offs between teams (`docs/plan.md`, "MSP").
+  send the thread (default) or only the original request. The thread holds only emails
+  and comments, never ticket events, so an escalated ticket nobody wrote on sends just
+  the original request. Teams also get an admin toggle for the automatic 18:00 handoff
+  (`docs/plan.md`, "MSP").
 
 ## Open questions
 
-None at the moment. Assumptions to confirm: a "view" team link can only read, not add a note; the 18:00
-automatic MSP send always includes the full thread; until the MSP handoff is built (phase
-5) a category whose target is the MSP cannot be escalated.
+None at the moment. Assumptions to confirm: a "view" team link can only read, not add a note; until the MSP
+handoff is built (phase 5) a category whose target is the MSP cannot be escalated.
 
 ## Staging checklist (Azure-only, cannot be proved locally)
 
