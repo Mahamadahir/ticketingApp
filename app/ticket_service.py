@@ -89,6 +89,7 @@ def create_ticket(
     ticket_type: TicketType = TicketType.INCIDENT,
     team_id: Optional[int] = None,
     actor_email: Optional[str] = None,
+    created_by_id: Optional[int] = None,
 ) -> Ticket:
     """Creates a ticket in the New (untriaged) status and records its first
     event. The number is assigned on insert, so the ticket is flushed here.
@@ -101,6 +102,7 @@ def create_ticket(
         source=source,
         type=ticket_type,
         team_id=team_id,
+        created_by_id=created_by_id,
     )
     session.add(ticket)
     session.flush()

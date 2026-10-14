@@ -5,7 +5,7 @@ from sqlmodel import select
 
 from app import sla
 from app.backdating import BackdateError, backdate_ticket, parse_moment
-from app.models import AuditLog, TicketSource, TicketStatus
+from app.models import AuditLog, Ticket, TicketSource, TicketStatus
 from tests.conftest import add_membership, create_category, create_team
 from tests.test_sla import triaged_ticket as _triaged_ticket
 from tests.test_triage import agent, events, new_ticket
@@ -14,7 +14,26 @@ FORMAT = "%Y-%m-%dT%H:%M"
 
 
 def triaged_ticket(client, db_session, impact="high", urgency="high", source=TicketSource.AGENT):
-    """Backdating is for tickets an agent raised on someone's behalf, so that is the default."""
+    """Backdating is for tickets an agent raised on someone's behalf, so by default the ticket is
+    raised that way, through the real raise form. The other sources have no creation path yet
+    (email and Teams arrive with their intake), so those are set by hand to show they are refused."""
+    if source == TicketSource.AGENT:
+        team = create_team(db_session, "Service Desk")
+        category = create_category(db_session, team, "Hardware")
+        agent(client, db_session, member_of=[team])
+        response = client.post(
+            "/portal/new",
+            headers={"HX-Request": "true"},
+            data={
+                "subject": "Printer on fire", "description": "They came to the desk",
+                "for_email": "walkin@example.com", "ticket_type": "incident",
+                "category_id": category.id, "impact": impact, "urgency": urgency,
+            },
+        )
+        assert response.status_code == 204, response.text
+        ticket = db_session.exec(select(Ticket).where(Ticket.requester_email == "walkin@example.com")).one()
+        assert ticket.source == TicketSource.AGENT
+        return ticket, team
     ticket, team = _triaged_ticket(client, db_session, impact, urgency)
     ticket.source = source
     db_session.add(ticket)

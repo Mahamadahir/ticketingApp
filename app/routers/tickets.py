@@ -22,6 +22,7 @@ from app.followers import (
 )
 from app.backdating import FORMAT as MOMENT_FORMAT, BackdateError, backdate_ticket, may_backdate, parse_moment
 from app.categories import CategoryError, create_category, path_of, selectable, team_id_for
+from app.raising import source_label
 from app.canned import active_canned, fill as fill_canned
 from app.search import normalise, search_condition
 from app.splitting import (
@@ -35,7 +36,7 @@ from app.splitting import (
 )
 from app.linking import PARENT_TYPES, LinkError, link_ticket, linked_summary, unlink_ticket
 from app.messages import UnknownRecipient, add_note, agent_timeline, email_requester, is_triaged
-from app.models import FINISHED_STATUSES, CannedResponse, Category, Team, Ticket, TicketStatus, TicketType, User, UserRole
+from app.models import FINISHED_STATUSES, CannedResponse, Category, Team, Ticket, TicketSource, TicketStatus, TicketType, User, UserRole
 from app.pagination import paginate
 from app.sla import (
     IMPACT_LABELS,
@@ -75,12 +76,12 @@ AGENT_ROLES = (UserRole.SUPER_ADMIN, UserRole.AGENT)
 WAITING_ON_US = (TicketStatus.OPEN, TicketStatus.IN_PROGRESS)
 
 
-def _list_link(q: str):
+def _list_link(q: str, source: str = ""):
     """Builds a link to the ticket list that keeps the current search; a filter passed in
     replaces the same filter (false, empty and None leave it out)."""
 
     def link(**params) -> str:
-        wanted = {"q": q, **params}
+        wanted = {"q": q, "source": source, **params}
         return "/tickets" + ("?" + urlencode({k: ("true" if v is True else v) for k, v in wanted.items() if v}) if any(wanted.values()) else "")
 
     return link
@@ -92,6 +93,7 @@ def list_tickets(
     mine: bool = False,
     team_id: Optional[int] = None,
     q: str = "",
+    source: Optional[TicketSource] = None,
     page: int = 1,
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
@@ -109,6 +111,8 @@ def list_tickets(
         query = query.where(matching)
     if team_id is not None:
         query = query.where(Ticket.team_id == team_id)
+    if source is not None:
+        query = query.where(Ticket.source == source)
 
     if mine:
         query = query.where(Ticket.assigned_agent_id == user.id)
@@ -133,7 +137,9 @@ def list_tickets(
             "mine": mine,
             "team_id": team_id,
             "q": q,
-            "list_link": _list_link(q),
+            "source": source.value if source else "",
+            "sources": [s.value for s in TicketSource],
+            "list_link": _list_link(q, source.value if source else ""),
         },
     )
 
@@ -774,6 +780,7 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             "sla": sla_view(ticket, datetime.now(timezone.utc), at_risk_percent(session)),
             "moment_format": MOMENT_FORMAT,
             "can_backdate": may_backdate(ticket),
+            "source_label": source_label(session, ticket),
             "can_set_priority": can_work and ticket.triaged_at is not None and ticket.status not in FINISHED_STATUSES,
             "category_options": options,
             "main_categories": [c for c, _ in options if c.parent_id is None and not c.is_other],

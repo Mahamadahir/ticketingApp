@@ -4,7 +4,8 @@
 <p><a href="/portal">&larr; back to my requests</a></p>
 
 <h2>{{ ticket.reference }} {{ ticket.subject }}</h2>
-<p><span class="status status-{{ ticket.status.value }}">{{ ticket.status.value.replace("_", " ") }}</span></p>
+<p><span class="status status-{{ ticket.status.value }}">{{ ticket.status.value.replace("_", " ") }}</span>
+  &middot; <span class="note">{{ source_label }}</span></p>
 
 <div id="thread">
   {% for message in messages %}
