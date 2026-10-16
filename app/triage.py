@@ -13,6 +13,7 @@ from sqlmodel import Session
 
 from app.approvals import start_approvals, status_after_triage
 from app.categories import is_selectable, path_of, team_id_for
+from app.notifications import notify_assigned
 from app.models import (
     Category,
     RequestType,
@@ -77,6 +78,8 @@ def _set_assignee(session: Session, ticket: Ticket, assignee: Optional[User], ac
         from_value=previous.email if previous else None,
         to_value=assignee.email if assignee else None,
     )
+    if assignee is not None:
+        notify_assigned(session, ticket, assignee, actor.email)
 
 
 def triage_ticket(

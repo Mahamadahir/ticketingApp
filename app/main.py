@@ -15,7 +15,7 @@ from app.auth import NotAuthenticated, get_current_user
 from app.visibility import NoTicketAccess
 from app.config import settings, unsafe_setting_errors
 from app.models import User, UserRole
-from app.routers import admin, approvals, auth, health, portal, tickets, webhooks
+from app.routers import admin, approvals, auth, health, notifications, portal, tickets, webhooks
 
 
 @asynccontextmanager
@@ -42,6 +42,7 @@ app.include_router(tickets.router)
 app.include_router(tickets.reference_router)
 app.include_router(portal.router)
 app.include_router(approvals.router)
+app.include_router(notifications.router)
 app.include_router(admin.router)
 app.include_router(webhooks.router)
 

@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 
-from sqlalchemy import UniqueConstraint, event, update
+from sqlalchemy import Index, UniqueConstraint, event, text, update
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -322,6 +322,24 @@ class TicketApproval(SQLModel, table=True):
     comment: str = Field(default="")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     decided_at: Optional[datetime] = Field(default=None)
+
+
+class Notification(SQLModel, table=True):
+    """Something an agent should know about (app/notifications.py): shown in the bell until read.
+    One row per recipient."""
+
+    # The bell counts unread rows for every open tab every 30 seconds; this keeps that cheap
+    # however much read history there is.
+    __table_args__ = (Index("ix_notification_user_unread", "user_id", postgresql_where=text("read_at IS NULL")),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    kind: str  # assigned, mentioned
+    ticket_id: Optional[int] = Field(default=None, foreign_key="ticket.id", index=True)
+    actor_email: Optional[str] = Field(default=None)  # who caused it; None for the system
+    text: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), index=True)
+    read_at: Optional[datetime] = Field(default=None)
 
 
 TICKET_COUNTER = "ticket"

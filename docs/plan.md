@@ -791,6 +791,20 @@ Automatic emails use admin-managed templates, previewed when edited.
 - In-app notifications with an unread count, refreshed by htmx polling every
   30 seconds.
 - @mentions in notes notify the mentioned agent.
+  *Built in 2A (14 Oct 2026):* the bell (`app/notifications.py`, `/notifications`): a link in the
+  agent menu that shows the unread count and refreshes every 30 seconds (the poll does not clear
+  the flash area). Two things notify so far: a ticket assigned to you (triage, assign, re-assign;
+  never to the person who did it) and an @mention in an internal note. `@bob` matches the part of an
+  email address before the @, any case; `@bob@example.com` matches the whole address; a name two
+  accounts share matches neither; only agents who can open the ticket are told, and never the
+  author. Emails to the requester do not mention anyone. Opening a notification and "mark all read"
+  are POSTs, so a link scanner or prefetch cannot read them away. Everything that notifies goes
+  through `notify()`, where later work adds the Teams copy, per-person settings and skipping
+  agents who are out of office. The bell lists only notifications about tickets you can still
+  open (one about a ticket that moved to another team disappears), and the text carries the
+  ticket number (`#1042`), not a prefix that can change. Mentions match ASCII names only (letters,
+  digits, dot, dash, underscore). Not yet notified: the team an escalation lands in, and the agent
+  a team change unassigns; both belong with the team notifications of 2E and later.
 - A notification still unread after N minutes (user setting, default 5) is
   also sent to Teams.
 - Teams is used for assignments, mentions, P1s and SLA breaches. New tickets

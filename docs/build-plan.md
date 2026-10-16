@@ -34,11 +34,17 @@ not exist (`infra/` compiles but has never run against a subscription).
 | 1G-i raise a ticket: portal form, agents raising for someone, optional triage and backdating at creation, source labels | merged (#28) | `app/raising.py` |
 | 1G-ii outbound email preview step; "tell the requester a ticket was raised for them" setting | merged (#31) | `app/messages.py` (`preview_email`), `app/raising.py` |
 | Team activity feed (agents see all activity in their teams) | merged (#30) | `app/team_activity.py` |
-| 1H-i request catalogue: request types with approvers, chosen on the raise form | built, in review | `app/request_types.py` |
-| 1H-ii approvals: Awaiting approval status, thresholds, approvers decide in the portal or from an emailed link | built, in review | `app/approvals.py`, `app/routers/approvals.py` |
+| 1H-i request catalogue: request types with approvers, chosen on the raise form | merged (#34) | `app/request_types.py` |
+| 1H-ii approvals: Awaiting approval status, thresholds, approvers decide in the portal or from an emailed link | merged (#35) | `app/approvals.py`, `app/routers/approvals.py` |
+| Phase 1 | complete | |
+| 2A in-app notifications (the bell): assignment and @mentions | built, in review | `app/notifications.py` |
+| 2B notification settings (channels per event type per person) | not started | |
+| 2C worker (APScheduler, heartbeat), unread-after-N-minutes to Teams | not started | |
+| 2D Teams channel webhook for new tickets | not started | |
+| 2E out-of-office detection (Graph presence) and skipping OOO agents | not started | |
 | Phases 2 to 9 | not started | `docs/plan.md`, "Build order" |
 
-Tests: 588 passing on Postgres 16.
+Tests: 611 passing on Postgres 16.
 
 ## Next up
 **Deferred from the escalation work (documented, not built).**
@@ -62,7 +68,7 @@ Tests: 588 passing on Postgres 16.
 
 **Email preview for the other emails.** The step exists for agent replies (1G-ii). Resolution emails (phase 4), MSP forwards and bulk resolves (listing every linked ticket and recipient) must reuse it, and automatic emails need admin-managed templates previewed when edited. Per-person opt-out of the "raised for you" email joins the setting when user notification settings exist.
 
-**Next.** Phase 2 onwards per docs/plan.md (Build order). Phase 3 (mail) will carry the approval emails with the link from pp/approval_links.py.
+**Phase 2**, in five PRs: 2A the bell (built), 2B notification settings (channels per event type per person; the plan says users and agents choose in portal settings), 2C the worker (python -m app.worker, APScheduler, heartbeat, a compose service; first job: an unread notification is also sent to Teams after N minutes, a per-person setting, default 5), 2D the Teams Workflows webhook for new tickets (the URL is a secret from the environment, never a setting; test with a mocked sender), 2E out-of-office detection (Graph presence, tested with simulated responses; Azure-only to prove) and skipping out-of-office agents for assignment and team notifications. Phase 3 (mail) will carry the approval emails with the link from pp/approval_links.py.
 
 ## Working agreement for every PR
 
