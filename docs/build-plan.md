@@ -46,7 +46,7 @@ not exist (`infra/` compiles but has never run against a subscription).
 | 2E out-of-office detection (Graph presence) and skipping OOO agents | not started | |
 | Phases 2 to 9 | not started | `docs/plan.md`, "Build order" |
 
-Tests: 663 passing on Postgres 16.
+Tests: 672 passing on Postgres 16.
 
 ## Next up
 **Deferred from the escalation work (documented, not built).**
@@ -124,6 +124,12 @@ single-quoted here-strings), the virtualenv is `.venv`. If Docker/WSL is down af
 sleep, restart it and `docker start ticketingapp-db-1`.
 
 ## Invariants (where rules live)
+
+- **Cross-site protection is `SameSite=Lax` on the session cookie** (`app/main.py`), not per-form
+  tokens. Browsers do not send that cookie on a cross-site POST, which is what keeps another site
+  from submitting our forms as the signed-in person (for example "untick everything" on the
+  notification settings). A test pins the setting. Anything that would weaken it (`SameSite=None`, an
+  embedded or cross-site login flow) needs form tokens first.
 
 - **Access** is decided only in `app/visibility.py` and comes from the ticket's
   team: member works, viewer reads. Assignee, triager, escalator and follower grant
