@@ -861,7 +861,7 @@ Automatic emails use admin-managed templates, previewed when edited.
   created and forgotten, and a Teams outage never slows the request. The worker calls `deliver_pending`, which sends
   the oldest unsent rows (a message carrying an Adaptive Card: number, subject, requester, how it arrived, and an "Open
   ticket" link when `PUBLIC_BASE_URL` is set), marks them sent, and keeps a failed one with its reason ("Teams answered
-  401", never the URL) for up to five attempts. Delivery is at least once. Every way in announces (email, portal, agent)
+  401", never the URL). A failure waits 2, 4, 8, 16, 32, 60, 60 minutes before the next try (eight attempts, so a Teams outage of a few hours is ridden out); a 4xx other than a timeout or rate limit is given up on at once. The subject and address on the card are escaped so a requester cannot put a link or formatting in the channel. A worker without the URL logs a warning while posts wait. Delivery is at least once. Every way in announces (email, portal, agent)
   except the parts of a split, which are not new. The webhook URL is only for the process that sends (the worker): web and
   public need just the switch. Test with a fake sender; whether Teams accepts the card is a staging check.
 - The requester hears that their ticket was picked up through the channel

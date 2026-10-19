@@ -15,19 +15,29 @@ collect a backlog. On with no URL, posts wait in the table until the worker has 
 The sender is passed in (post_card is the real one) so tests never touch the network.
 """
 
-from datetime import datetime, timezone
+import logging
+from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional
 
 import httpx
+from sqlalchemy import or_
 from sqlmodel import Session, select
 
 from app.config import settings
 from app.models import TeamsPost, Ticket, TicketSource
 
+log = logging.getLogger("app.teams")
+
 NEW_TICKET = "new_ticket"
-MAX_ATTEMPTS = 5
+# A failed post waits 2, 4, 8, 16, 32, 60, 60 minutes before its next try, so a Teams outage of a few
+# hours is ridden out; after that it is left alone with its reason.
+MAX_ATTEMPTS = 8
+MAX_BACKOFF_MINUTES = 60
 BATCH = 20
 TIMEOUT_SECONDS = 10
+# A 4xx other than these means the request itself is refused (a revoked or wrong webhook), which
+# retrying cannot fix.
+RETRYABLE_CLIENT_ERRORS = (408, 429)
 
 SOURCE_LABELS = {
     TicketSource.EMAIL: "Email",
@@ -46,16 +56,29 @@ def queue_new_ticket(session: Session, ticket: Ticket) -> Optional[TeamsPost]:
     return post
 
 
+MARKDOWN_CHARACTERS = set("\\`*_{}[]()<>#+-.!|~")
+MAX_CARD_TEXT = 200
+
+
+def plain(text: str) -> str:
+    """Text from a requester made safe for a card: Teams renders markdown in a TextBlock, so a
+    subject like [Reset your password](https://evil.example) would arrive as a clickable link in
+    the support channel. Every markdown character is escaped so it shows as typed, and the length
+    is capped."""
+    text = " ".join(text.split())[:MAX_CARD_TEXT]
+    return "".join("\\" + c if c in MARKDOWN_CHARACTERS else c for c in text)
+
+
 def new_ticket_card(ticket: Ticket) -> dict:
     """The Teams Workflows payload: a message carrying one Adaptive Card. The text is the ticket's
     number (#1042, which never changes), subject, how it arrived and who it is for."""
     body = [
         {"type": "TextBlock", "text": f"New ticket {ticket.tag}", "weight": "Bolder", "size": "Medium"},
-        {"type": "TextBlock", "text": ticket.subject, "wrap": True},
+        {"type": "TextBlock", "text": plain(ticket.subject), "wrap": True},
         {
             "type": "FactSet",
             "facts": [
-                {"title": "From", "value": ticket.requester_email},
+                {"title": "From", "value": plain(ticket.requester_email)},
                 {"title": "Via", "value": SOURCE_LABELS.get(ticket.source, ticket.source.value)},
             ],
         },
@@ -82,6 +105,16 @@ def post_card(payload: dict) -> None:
     response.raise_for_status()
 
 
+def is_permanent(error: Exception) -> bool:
+    """Whether trying again cannot help: Teams refused the request itself (a 4xx other than a timeout
+    or a rate limit)."""
+    return (
+        isinstance(error, httpx.HTTPStatusError)
+        and 400 <= error.response.status_code < 500
+        and error.response.status_code not in RETRYABLE_CLIENT_ERRORS
+    )
+
+
 def describe_failure(error: Exception) -> str:
     """Why a send failed, without the webhook URL (httpx puts it in its messages)."""
     if isinstance(error, httpx.HTTPStatusError):
@@ -89,27 +122,46 @@ def describe_failure(error: Exception) -> str:
     return type(error).__name__
 
 
+def give_up(post: TeamsPost, reason: str) -> None:
+    post.attempts = MAX_ATTEMPTS
+    post.last_error = reason
+
+
 def deliver_pending(
-    session: Session, send: Callable[[dict], None] = post_card, limit: int = BATCH
+    session: Session,
+    send: Callable[[dict], None] = post_card,
+    limit: int = BATCH,
+    now: Optional[datetime] = None,
 ) -> tuple[int, int]:
-    """Sends the oldest unsent posts, up to `limit`. A post that fails is counted and left for the
-    next run until it has failed MAX_ATTEMPTS times, then it is left alone (the row keeps the
-    reason). One failure never stops the rest. Returns (sent, failed). Does not commit."""
+    """Sends the oldest unsent posts that are due, up to `limit`. A post that fails waits longer each
+    time (see MAX_ATTEMPTS) and is given up on at once if Teams refuses the request itself. The row
+    keeps the reason. One failure never stops the rest. Returns (sent, failed). Does not commit;
+    the worker commits after the job."""
+    now = now or datetime.now(timezone.utc)
+    due = (
+        TeamsPost.sent_at.is_(None),
+        TeamsPost.attempts < MAX_ATTEMPTS,
+        or_(TeamsPost.next_attempt_at.is_(None), TeamsPost.next_attempt_at <= now),
+    )
     if not settings.teams_new_ticket_configured:
+        waiting = session.exec(select(TeamsPost.id).where(*due).limit(1)).first()
+        if waiting is not None:
+            # Announcing is switched on but this process cannot send: say so rather than let posts pile up.
+            log.warning("Teams posts are waiting but TEAMS_NEW_TICKET_WEBHOOK_URL is not set in this process")
         return 0, 0
     posts = session.exec(
-        select(TeamsPost)
-        .where(TeamsPost.sent_at.is_(None), TeamsPost.attempts < MAX_ATTEMPTS)
-        .order_by(TeamsPost.id)
-        .limit(limit)
-        .with_for_update(skip_locked=True)
+        select(TeamsPost).where(*due).order_by(TeamsPost.id).limit(limit).with_for_update(skip_locked=True)
     ).all()
     sent = failed = 0
     for post in posts:
         ticket = session.get(Ticket, post.ticket_id) if post.ticket_id else None
+        if post.kind != NEW_TICKET:
+            give_up(post, "Unknown kind")
+            session.add(post)
+            failed += 1
+            continue
         if ticket is None:
-            post.attempts = MAX_ATTEMPTS
-            post.last_error = "Ticket not found"
+            give_up(post, "Ticket not found")
             session.add(post)
             failed += 1
             continue
@@ -118,6 +170,11 @@ def deliver_pending(
         except Exception as error:
             post.attempts += 1
             post.last_error = describe_failure(error)
+            if is_permanent(error):
+                post.attempts = MAX_ATTEMPTS
+            else:
+                post.next_attempt_at = now + timedelta(minutes=min(2**post.attempts, MAX_BACKOFF_MINUTES))
+            log.warning("Teams post %s failed (attempt %s): %s", post.id, post.attempts, post.last_error)
             failed += 1
         else:
             post.sent_at = datetime.now(timezone.utc)

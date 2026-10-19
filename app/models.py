@@ -369,6 +369,7 @@ class TeamsPost(SQLModel, table=True):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     sent_at: Optional[datetime] = Field(default=None)
     attempts: int = Field(default=0, sa_column_kwargs={"server_default": "0"})
+    next_attempt_at: Optional[datetime] = Field(default=None)  # after a failure: not before this
     last_error: Optional[str] = Field(default=None)  # why the last attempt failed; never the URL
 
 

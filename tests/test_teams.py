@@ -1,10 +1,13 @@
+import logging
+from datetime import datetime, timedelta, timezone
+
 import httpx
 import pytest
 from sqlmodel import select
 
 from app.config import settings
 from app.models import TeamsPost, TicketSource
-from app.teams import MAX_ATTEMPTS, deliver_pending, new_ticket_card, post_card
+from app.teams import MAX_ATTEMPTS, deliver_pending, new_ticket_card, plain, post_card
 from app.ticket_service import create_ticket
 from tests.test_raising import desk, raise_it
 from tests.test_sla import triaged_ticket
@@ -101,7 +104,7 @@ def test_delivery_sends_the_card_and_marks_the_post_sent_once(client, db_session
     assert post.sent_at is not None and post.attempts == 0 and post.last_error is None
     [payload] = sender.sent
     text = str(payload)
-    assert ticket.tag in text and "Printer jam" in text and "jane@example.com" in text
+    assert ticket.tag in text and "Printer jam" in text and "jane@example" in text
     assert payload["type"] == "message"
     assert payload["attachments"][0]["contentType"] == "application/vnd.microsoft.card.adaptive"
 
@@ -151,17 +154,62 @@ def test_the_webhook_address_never_reaches_the_database(client, db_session, team
     assert "SECRET-TOKEN" not in post.last_error
 
 
+def later(minutes):
+    return datetime.now(timezone.utc) + timedelta(minutes=minutes)
+
+
+def test_a_failed_post_waits_longer_each_time_before_it_is_tried_again(client, db_session, teams_on):
+    new_ticket(db_session)
+    sender = Sender(fail_with=RuntimeError("down"))
+    assert deliver_pending(db_session, sender) == (0, 1)
+    db_session.commit()
+    assert deliver_pending(db_session, sender) == (0, 0)  # not due yet: a short outage must not burn the attempts
+    assert deliver_pending(db_session, sender, now=later(1)) == (0, 0)
+    assert deliver_pending(db_session, sender, now=later(3)) == (0, 1)  # due after 2 minutes
+    db_session.commit()
+    assert deliver_pending(db_session, sender, now=later(3 + 3)) == (0, 0)  # the second wait is 4 minutes
+    [post] = posts(db_session)
+    assert post.attempts == 2
+
+
+def test_a_post_that_recovers_is_sent_when_it_is_due(client, db_session, teams_on):
+    new_ticket(db_session)
+    assert deliver_pending(db_session, Sender(fail_with=httpx.ReadTimeout("slow"))) == (0, 1)
+    db_session.commit()
+    sender = Sender()
+    assert deliver_pending(db_session, sender, now=later(3)) == (1, 0)
+    assert len(sender.sent) == 1
+
+
+def test_a_request_teams_refuses_is_not_retried_but_a_rate_limit_is(client, db_session, teams_on):
+    def answering(code):
+        def send(payload):
+            raise httpx.HTTPStatusError("x", request=httpx.Request("POST", URL), response=httpx.Response(code))
+        return send
+
+    new_ticket(db_session, "Refused")
+    new_ticket(db_session, "Limited")
+
+    deliver_pending(db_session, answering(404), limit=1)
+    db_session.commit()
+    deliver_pending(db_session, answering(429), limit=1, now=later(0))
+    db_session.commit()
+    gone, kept = posts(db_session)
+    assert (gone.attempts, gone.last_error) == (MAX_ATTEMPTS, "Teams answered 404")  # given up at once
+    assert (kept.attempts, kept.last_error) == (1, "Teams answered 429")  # will be tried again
+
+
 def test_a_post_is_given_up_on_after_the_attempt_limit(client, db_session, teams_on):
     new_ticket(db_session)
     sender = Sender(fail_with=RuntimeError("down"))
-    for _ in range(MAX_ATTEMPTS + 2):
-        deliver_pending(db_session, sender)
+    for n in range(MAX_ATTEMPTS + 2):
+        deliver_pending(db_session, sender, now=later(24 * 60 * (n + 1)))  # each run well after the last wait
         db_session.commit()
     [post] = posts(db_session)
     assert post.attempts == MAX_ATTEMPTS and post.sent_at is None and post.last_error == "RuntimeError"
 
     working = Sender()
-    assert deliver_pending(db_session, working) == (0, 0)  # left alone; the reason stays on the row
+    assert deliver_pending(db_session, working, now=later(10 * 24 * 60)) == (0, 0)  # left alone; the reason stays
     assert working.sent == []
 
 
@@ -185,6 +233,39 @@ def test_a_post_whose_ticket_is_missing_is_marked_failed_not_retried(client, db_
     [post] = posts(db_session)
     assert (post.attempts, post.last_error) == (MAX_ATTEMPTS, "Ticket not found")
     assert sender.sent == []
+
+
+def test_a_post_of_an_unknown_kind_is_not_sent_as_a_new_ticket(client, db_session, teams_on):
+    ticket = new_ticket(db_session)
+    db_session.add(TeamsPost(kind="sla_breach", ticket_id=ticket.id))
+    db_session.commit()
+    sender = Sender()
+    assert deliver_pending(db_session, sender) == (1, 1)  # the new-ticket post went; the other did not
+    db_session.commit()
+    assert len(sender.sent) == 1
+    assert posts(db_session)[1].last_error == "Unknown kind"
+
+
+def test_text_from_a_requester_cannot_make_a_link_or_formatting_in_the_channel(client, db_session, teams_on):
+    assert plain("[Reset your password](https://evil.example)") == "\\[Reset your password\\]\\(https://evil\\.example\\)"
+    assert plain("**urgent** `x` <b>") == "\\*\\*urgent\\*\\* \\`x\\` \\<b\\>"
+    assert plain("line one\nline two   spaced") == "line one line two spaced"
+    assert len(plain("a" * 1000)) == 200
+    ticket = new_ticket(db_session, "[click](https://evil.example)")
+    card = str(new_ticket_card(ticket))
+    assert "[click](" not in card and "\\\\[click\\\\]" in card
+
+
+def test_a_process_that_cannot_send_says_so_when_posts_are_waiting(client, db_session, monkeypatch, caplog):
+    monkeypatch.setattr(settings, "teams_new_ticket_enabled", True)
+    monkeypatch.setattr(settings, "teams_new_ticket_webhook_url", "")
+    with caplog.at_level(logging.WARNING, logger="app.teams"):
+        deliver_pending(db_session, Sender())
+    assert "waiting" not in caplog.text  # nothing queued yet: nothing to say
+    new_ticket(db_session)
+    with caplog.at_level(logging.WARNING, logger="app.teams"):
+        deliver_pending(db_session, Sender())
+    assert "TEAMS_NEW_TICKET_WEBHOOK_URL is not set" in caplog.text
 
 
 def test_config_flag_follows_the_url(monkeypatch):

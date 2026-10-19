@@ -28,6 +28,7 @@ def upgrade() -> None:
         sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
         sa.Column('sent_at', sa.DateTime(timezone=True), nullable=True),
         sa.Column('attempts', sa.Integer(), server_default='0', nullable=False),
+        sa.Column('next_attempt_at', sa.DateTime(timezone=True), nullable=True),
         sa.Column('last_error', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
         sa.ForeignKeyConstraint(['ticket_id'], ['ticket.id']),
         sa.PrimaryKeyConstraint('id'),

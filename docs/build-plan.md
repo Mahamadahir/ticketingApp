@@ -233,7 +233,7 @@ sleep, restart it and `docker start ticketingapp-db-1`.
 
 - Teams new-ticket cards (2D): create a Workflows webhook ("Post to a channel when a webhook request is received") in the support
   channel, store its URL in Key Vault, switch `TEAMS_NEW_TICKET_ENABLED` on, raise a ticket and check the card arrives with the
-  right number, subject and (if `PUBLIC_BASE_URL` is set) a working "Open ticket" link. Locally only the payload shape and the
+  right number, subject and (if `PUBLIC_BASE_URL` is set) a working "Open ticket" link. Keep the channel IT-only: the card shows each new ticket's subject and requester before triage. Locally only the payload shape and the
   outbox were tested, with a fake sender, so confirm Teams accepts the Adaptive Card as sent, and what it answers (this code
   treats any 2xx as sent). Also confirm a wrong URL leaves the post unsent with "Teams answered 4xx" and no URL in the log.
 
