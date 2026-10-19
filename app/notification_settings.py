@@ -12,6 +12,7 @@ sends a notification asks is_enabled for its event type and channel, never a set
 from dataclasses import dataclass
 from typing import Optional
 
+from sqlalchemy import text
 from sqlmodel import Session, select
 
 from app.audit import log_action
@@ -22,6 +23,10 @@ TEAMS = "teams"
 EMAIL = "email"
 
 RAISED_FOR_YOU = "raised_for_you"
+
+# The first half of the (two-number) advisory lock that serialises one person's saves; the second
+# is their user id. A different space from the worker's single-number lock.
+SAVE_LOCK_SPACE = 726_002
 
 # Where each channel stands, shown beside it so nobody expects a message that cannot arrive yet.
 CHANNELS: dict[str, tuple[str, Optional[str]]] = {
@@ -101,8 +106,10 @@ def save_choices(session: Session, user: User, ticked: set[str]) -> int:
     """Stores the page's checkboxes, each named "kind:channel". Everything the person has that is
     not ticked is off. Returns how many settings changed. Does not commit."""
     # One save at a time per person: a double click or two open tabs would otherwise both read "no
-    # row yet" and both insert it. The second waits here, then sees the first's rows.
-    session.exec(select(User.id).where(User.id == user.id).with_for_update()).all()
+    # row yet" and both insert it. The second waits here, then sees the first's rows. An advisory
+    # lock held to the end of the transaction, not a lock on the user's row, so nothing else that
+    # writes that person (signing in, the lockout counter) is ever held up by a save.
+    session.exec(text("select pg_advisory_xact_lock(:space, :id)").bindparams(space=SAVE_LOCK_SPACE, id=user.id))
     existing = {
         (row.kind, row.channel): row
         for row in session.exec(select(NotificationPreference).where(NotificationPreference.user_id == user.id)).all()

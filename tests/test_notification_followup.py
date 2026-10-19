@@ -5,6 +5,7 @@ import threading
 import time
 
 import pytest
+from sqlalchemy import text
 from sqlmodel import Session, select
 
 from app.database import engine
@@ -133,8 +134,19 @@ def test_two_saves_at_once_queue_up_instead_of_clashing(client, db_session):
     assert first_has_the_lock.wait(10)
     two = threading.Thread(target=second)
     two.start()
-    time.sleep(0.7)
-    assert finished == []  # the second is waiting for the first, not racing it
+    # Wait until the database itself reports a session blocked on a lock (the second save, waiting
+    # for the first). Without the per-person lock nothing ever waits, and this fails.
+    waiting = 0
+    deadline = time.monotonic() + 8
+    while time.monotonic() < deadline and not waiting:
+        waiting = db_session.exec(
+            text("select count(*) from pg_stat_activity where wait_event_type = 'Lock' and datname = current_database()")
+        ).scalar()  # the number itself: a one-column row is always "true"
+        db_session.rollback()  # end the snapshot so the next look is fresh
+        if not waiting:
+            time.sleep(0.05)
+    assert waiting, "the second save never waited for the first"
+    assert finished == []  # and it has not got past it
     let_first_finish.set()
     one.join(10)
     two.join(10)

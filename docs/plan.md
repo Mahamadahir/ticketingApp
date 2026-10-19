@@ -849,7 +849,7 @@ Automatic emails use admin-managed templates, previewed when edited.
   decision "will this person be told by email?" is made then, while their address is known, and recorded
   on the ticket as a `requester_notice` event ("will be told" or "not told", with the reason: switched
   off for everyone in Settings, or they turned it off in their own notification settings); phase 3's
-  mail reads that event. Saving the settings page takes a per-person lock, so a double click or two
+  mail sends only if it asks again at send time and still gets "yes" (the event is history for the agent and can be stale: the switch or the person's choice may change before the email goes). Saving the settings page takes a per-person lock, so a double click or two
   open tabs queue up instead of both inserting the same row. Preferences stored for an event a role
   does not have are harmless: only agents are ever notified, and the choice returns with the role.
 - A notification still unread after N minutes (user setting, default 5) is

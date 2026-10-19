@@ -49,7 +49,11 @@ EVENT_REQUESTER_NOTICE = "requester_notice"  # on a ticket raised for someone: w
 def tell_requester_decision(session: Session, requester_email: Optional[str] = None) -> tuple[bool, str]:
     """Whether the requester is to be emailed that a ticket was raised for them, and why: the
     Settings switch, and, given their address, their own choice if they have an account. The
-    email is sent once mail exists (phase 3)."""
+    email is sent once mail exists (phase 3).
+
+    The answer is recorded on the ticket when it is raised, as history for the agent. It can go
+    stale (an admin flips the switch, the person opts out an hour later), so whatever sends the
+    email must ask again at send time and let a "no" win over the recorded "will be told"."""
     if not get_flag(session, TELL_REQUESTER_RAISED_FOR):
         return False, "switched off for everyone in Settings"
     requester = (
