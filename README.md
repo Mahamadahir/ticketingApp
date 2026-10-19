@@ -197,6 +197,11 @@ while `SESSION_SECRET_KEY` (or, once Graph is configured,
 `GRAPH_WEBHOOK_CLIENT_STATE`) is still a default value, and the session
 cookie is HTTPS-only.
 
+The background worker (`app/worker.py`, the scheduled jobs in `app/jobs`) is a separate
+service: `docker compose up worker` (or `python -m app.worker` with the database running).
+Run exactly one: a second copy refuses to start. It logs `heartbeat job=heartbeat status=ok`
+every `WORKER_HEARTBEAT_SECONDS` (default 60).
+
 Postgres is published on 127.0.0.1:5432 only (so the tests can reach it). To get a shell on it:
 
 ```bash

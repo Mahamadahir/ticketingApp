@@ -1,0 +1,141 @@
+"""The background worker (phase 2C): `python -m app.worker`.
+
+One process runs the scheduled jobs in app/jobs (later: Graph subscription renewal and mail
+catch-up, SLA timers, chase and auto-close, delayed Teams notifications, presence refresh). It is a
+separate service from the web app because jobs inside the web process would run once per uvicorn
+worker: in docker-compose it is the `worker` service, in Azure a Container App fixed at one replica.
+
+It enforces "exactly one" itself: it takes a Postgres advisory lock for its whole life, so a second
+worker (a mistaken scale-out, a rolling deploy that overlaps) refuses to start instead of running
+every job twice. The lock is released when the process ends, however it ends.
+
+Monitoring: each job that finishes writes one log line
+
+    heartbeat job=<name> status=ok duration_ms=<n>
+
+and a failure writes `job=<name> status=failed` with the traceback. The dead man's switch is a
+log-query alert that fires when no `heartbeat job=heartbeat` line has arrived within about three
+heartbeat intervals (docs/plan.md, "Health and monitoring"). A job that raises does not stop the
+worker or the other jobs; it simply gives no heartbeat.
+"""
+
+import logging
+import signal
+import sys
+import time
+from datetime import datetime, timezone
+from typing import Optional, Sequence
+
+from apscheduler.executors.pool import ThreadPoolExecutor
+from apscheduler.schedulers.blocking import BlockingScheduler
+from sqlalchemy import text
+from sqlalchemy.engine import Connection, Engine
+from sqlmodel import Session
+
+from app.config import settings, unsafe_setting_errors
+from app.database import engine
+from app.jobs import JOBS, Job
+
+log = logging.getLogger("app.worker")
+
+# The advisory lock id for "the worker". Any number nothing else in this database uses.
+WORKER_LOCK_ID = 726_001
+MAX_CONCURRENT_JOBS = 4
+
+
+def acquire_single_instance_lock(db: Engine) -> Optional[Connection]:
+    """Takes the worker's advisory lock on a connection kept open for the life of the process.
+    Returns that connection, or None when another worker already holds the lock."""
+    connection = db.connect().execution_options(isolation_level="AUTOCOMMIT")
+    got = connection.execute(text("select pg_try_advisory_lock(:id)"), {"id": WORKER_LOCK_ID}).scalar()
+    if not got:
+        connection.close()
+        return None
+    return connection
+
+
+def release_lock(connection: Connection) -> None:
+    """Gives the lock up. Closing a pooled connection only returns it to the pool, where it would
+    keep the lock, so unlock explicitly and throw the connection away."""
+    try:
+        connection.execute(text("select pg_advisory_unlock(:id)"), {"id": WORKER_LOCK_ID})
+    finally:
+        connection.invalidate()
+        connection.close()
+
+
+def run_job(job: Job) -> bool:
+    """Runs one job in its own session. Commits and logs the heartbeat on success; on any error
+    rolls back, logs the traceback and returns False, never raising into the scheduler."""
+    started = time.monotonic()
+    try:
+        with Session(engine) as session:
+            job.run(session)
+            session.commit()
+    except Exception:
+        log.exception("job=%s status=failed", job.name)
+        return False
+    log.info("heartbeat job=%s status=ok duration_ms=%d", job.name, (time.monotonic() - started) * 1000)
+    return True
+
+
+def build_scheduler(jobs: Optional[Sequence[Job]] = None) -> BlockingScheduler:
+    """A scheduler with every job registered, not started. Each job runs at most once at a time
+    (a slow run is not overlapped by the next), a pile-up of missed runs collapses into one, and
+    each is first due immediately so a restarted worker gives its heartbeat straight away."""
+    jobs = JOBS if jobs is None else jobs
+    names = [job.name for job in jobs]
+    if len(set(names)) != len(names):
+        raise ValueError(f"Job names must be unique: {names}")
+    scheduler = BlockingScheduler(
+        executors={"default": ThreadPoolExecutor(MAX_CONCURRENT_JOBS)},
+        job_defaults={"max_instances": 1, "coalesce": True, "misfire_grace_time": None},
+        timezone="UTC",
+    )
+    for job in jobs:
+        if job.every_seconds < 1:
+            raise ValueError(f"Job {job.name} must run at least every second")
+        scheduler.add_job(
+            run_job, "interval", seconds=job.every_seconds, args=[job], id=job.name, name=job.name,
+            next_run_time=datetime.now(timezone.utc),
+        )
+    return scheduler
+
+
+def install_signal_handlers(scheduler: BlockingScheduler) -> None:
+    """A stop request (Container Apps sends SIGTERM) lets running jobs finish and then returns."""
+
+    def stop(signum, frame):
+        log.info("worker stopping (signal %s)", signum)
+        scheduler.shutdown(wait=True)
+
+    signal.signal(signal.SIGINT, stop)
+    if hasattr(signal, "SIGTERM"):
+        signal.signal(signal.SIGTERM, stop)
+
+
+def main() -> int:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    errors = unsafe_setting_errors(settings)
+    for error in errors:
+        log.error("Refusing to start: %s", error)
+    if errors:
+        return 2
+
+    lock = acquire_single_instance_lock(engine)
+    if lock is None:
+        log.error("Another worker is already running (advisory lock %s is held); exiting", WORKER_LOCK_ID)
+        return 1
+    try:
+        scheduler = build_scheduler()
+        install_signal_handlers(scheduler)
+        log.info("worker started: %s", ", ".join(f"{j.name} every {j.every_seconds}s" for j in JOBS))
+        scheduler.start()  # blocks until a stop signal
+        log.info("worker stopped")
+        return 0
+    finally:
+        release_lock(lock)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

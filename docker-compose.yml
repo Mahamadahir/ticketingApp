@@ -28,5 +28,18 @@ services:
       db:
         condition: service_healthy
 
+  # The background worker (app/worker.py): same image, no migrations (the app service runs
+  # them), no ports. Exactly one: a second copy refuses to start (advisory lock).
+  worker:
+    build: .
+    command: ["python", "-m", "app.worker"]
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg2://ticketing:ticketing@db:5432/ticketing
+    depends_on:
+      db:
+        condition: service_healthy
+
 volumes:
   pgdata:
