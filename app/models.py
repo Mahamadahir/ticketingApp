@@ -342,6 +342,19 @@ class Notification(SQLModel, table=True):
     read_at: Optional[datetime] = Field(default=None)
 
 
+class NotificationPreference(SQLModel, table=True):
+    """One person's choice to differ from the default for one event on one channel
+    (app/notification_settings.py). A row exists only while it differs from the default."""
+
+    __table_args__ = (UniqueConstraint("user_id", "kind", "channel"),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    kind: str  # an event type: assigned, mentioned, raised_for_you
+    channel: str  # in_app, teams, email
+    enabled: bool
+
+
 TICKET_COUNTER = "ticket"
 
 

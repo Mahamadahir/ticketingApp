@@ -819,6 +819,16 @@ Automatic emails use admin-managed templates, previewed when edited.
   ticket number (`#1042`), not a prefix that can change. Mentions match ASCII names only (letters,
   digits, dot, dash, underscore). Not yet notified: the team an escalation lands in, and the agent
   a team change unassigns; both belong with the team notifications of 2E and later.
+  *Built in 2B (19 Oct 2026):* `/settings/notifications` (a "Settings" link for everyone signed in;
+  `app/notification_settings.py`). Each event type lists the channels it can use and which are on by
+  default: assigned and mentioned (agents: the bell and Teams, both on), "an agent raises a ticket for
+  you" (everyone: email, on). Only differences from the default are stored (`NotificationPreference`),
+  so changing a default reaches everyone who never touched it; saving writes an audit entry listing
+  what changed. `notify()` skips the bell when the person turned it off; the Teams and email choices
+  are recorded now and read through `is_enabled(session, user, kind, channel)` by 2C and phase 3, which
+  must not keep settings of their own. `should_tell_requester(session, email)` is the global switch AND
+  the person's own choice when they have an account. The per-person Teams delay (default 5 minutes)
+  is not here: it arrives with the worker in 2C.
 - A notification still unread after N minutes (user setting, default 5) is
   also sent to Teams.
 - Teams is used for assignments, mentions, P1s and SLA breaches. New tickets

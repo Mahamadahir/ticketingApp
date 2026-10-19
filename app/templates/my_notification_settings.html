@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}My notification settings{% endblock %}
+{% block content %}
+<h2>My notification settings</h2>
+<p class="note">
+  Choose how you are told about each event. Only the bell works today; Teams and email choices are
+  kept and take effect when those are connected.
+</p>
+{% if saved %}<p role="status">Saved.</p>{% endif %}
+
+<form method="post" action="/settings/notifications">
+  {% for event, options in choices %}
+  <fieldset>
+    <legend>{{ event.label }}</legend>
+    <p class="note">{{ event.description }}</p>
+    {% for channel, enabled in options %}
+    <label>
+      <input type="checkbox" name="on" value="{{ event.kind }}:{{ channel }}" {{ "checked" if enabled else "" }} />
+      {{ channels[channel][0] }}{% if channels[channel][1] %} <span class="note">({{ channels[channel][1] }})</span>{% endif %}
+    </label>
+    {% endfor %}
+  </fieldset>
+  {% endfor %}
+  <button type="submit">Save</button>
+</form>
+{% endblock %}

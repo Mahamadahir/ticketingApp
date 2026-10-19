@@ -16,6 +16,7 @@
         <a href="/notifications" data-poll hx-get="/notifications/count" hx-trigger="load, every 30s" hx-swap="innerHTML">Notifications</a>
         {% endif %}
         <a href="/portal">My requests</a>
+        <a href="/settings/notifications">Settings</a>
         {% if user.role.value == "super_admin" %}
         <a href="/admin/users">Admin</a>
         {% endif %}

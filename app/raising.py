@@ -29,6 +29,7 @@ from app.models import (
     User,
     UserRole,
 )
+from app.notification_settings import EMAIL, RAISED_FOR_YOU, is_enabled
 from app.settings_store import TELL_REQUESTER_RAISED_FOR, get_flag
 from app.sla import Level
 from app.ticket_service import EVENT_REQUEST_TYPE, AwaitingApproval, create_ticket, record_event, set_status
@@ -42,11 +43,18 @@ class RaiseError(ValueError):
     """A reason the ticket cannot be raised, worded for whoever is filling in the form."""
 
 
-def should_tell_requester(session: Session) -> bool:
-    """Whether the requester is to be emailed that a ticket was raised for them (the Settings
-    switch). The email is sent once mail exists (phase 3); the person's own opt-out joins
-    this check with the per-person notification settings."""
-    return get_flag(session, TELL_REQUESTER_RAISED_FOR)
+def should_tell_requester(session: Session, requester_email: Optional[str] = None) -> bool:
+    """Whether the requester is to be emailed that a ticket was raised for them: the Settings
+    switch, and, given their address, their own choice if they have an account. The email is
+    sent once mail exists (phase 3)."""
+    if not get_flag(session, TELL_REQUESTER_RAISED_FOR):
+        return False
+    requester = (
+        session.exec(select(User).where(User.email == requester_email.strip().lower())).first()
+        if requester_email
+        else None
+    )
+    return requester is None or is_enabled(session, requester, RAISED_FOR_YOU, EMAIL)
 
 
 def is_agent(user: User) -> bool:
