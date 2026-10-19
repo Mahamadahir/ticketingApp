@@ -79,6 +79,12 @@
       {% for t in teams %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
     </select>
   </label>
+  <label>Escalates to
+    <select name="escalation">
+      <option value="msp">MSP (not available yet: tickets in it cannot be escalated)</option>
+      {% for t in teams %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
+    </select>
+  </label>
   <button type="submit">Create</button>
 </form>
 
@@ -91,6 +97,13 @@
     </select>
   </label>
   <label>Name <input type="text" name="name" maxlength="80" required /></label>
+  <label>Escalates to
+    <select name="escalation">
+      <option value="inherit">Same as its main category</option>
+      <option value="msp">MSP (not available yet)</option>
+      {% for t in teams %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
+    </select>
+  </label>
   <button type="submit">Create</button>
 </form>
 {% endblock %}

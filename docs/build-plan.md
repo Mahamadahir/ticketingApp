@@ -31,6 +31,7 @@ not exist (`infra/` compiles but has never run against a subscription).
 | 1F-i search | merged (#25) | `app/search.py` |
 | 1F-ii canned responses | merged (#26) | `app/canned.py` |
 | 1B-ii sub-teams and escalation by category | merged (#29, #32) | `app/visibility.py`, `app/escalation.py`, `app/routers/admin.py` |
+| Escalation tidy-up: target chosen at category creation, reason also an internal note, escalate and re-assign share `move_ticket` | built, in review | `app/triage.py`, `app/escalation.py`, `app/categories.py` |
 | 1G-i raise a ticket: portal form, agents raising for someone, optional triage and backdating at creation, source labels | merged (#28) | `app/raising.py` |
 | 1G-ii outbound email preview step; "tell the requester a ticket was raised for them" setting | merged (#31) | `app/messages.py` (`preview_email`), `app/raising.py` |
 | Team activity feed (agents see all activity in their teams) | merged (#30) | `app/team_activity.py` |
@@ -44,7 +45,7 @@ not exist (`infra/` compiles but has never run against a subscription).
 | 2E out-of-office detection (Graph presence) and skipping OOO agents | not started | |
 | Phases 2 to 9 | not started | `docs/plan.md`, "Build order" |
 
-Tests: 611 passing on Postgres 16.
+Tests: 625 passing on Postgres 16.
 
 ## Next up
 **Deferred from the escalation work (documented, not built).**
@@ -183,6 +184,11 @@ sleep, restart it and `docker start ticketingapp-db-1`.
 - 14 Oct: re-assign is not escalation. It hands a ticket to a team, unassigned, needs
   no reason, and the agent loses sight of it unless they already have visibility of
   that team (membership or a parent team).
+- 19 Oct: escalate and re-assign are two actions (different rules for who picks the team and
+  what else happens) over one shared move, `move_ticket` in `app/triage.py`, not one action with
+  a type switch. The escalation target is set when a category is created. The escalation reason is
+  also saved as an internal note, so @mentions in it work and the receiving team sees it in the
+  conversation. One event per move (`team_changed` or `escalated`).
 - 14 Oct: Send to MSP and escalating to the MSP are the same action. It lets the agent
   send the thread (default) or only the original request. The thread holds only emails
   and comments, never ticket events, so an escalated ticket nobody wrote on sends just

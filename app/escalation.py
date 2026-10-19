@@ -21,8 +21,10 @@ from sqlmodel import Session, select
 from app.audit import log_action
 from app.categories import escalation_team_id_for
 from app.followers import add_follower
+from app.messages import add_note
 from app.models import FINISHED_STATUSES, Category, Team, Ticket, TicketEscalator, User
-from app.ticket_service import EVENT_ASSIGNED, EVENT_ESCALATED, record_event
+from app.notifications import notify_mentions
+from app.triage import MOVE_ESCALATE, move_ticket
 
 MSP_NOT_BUILT = (
     "Escalating from here goes to the MSP (the category's escalation team is the MSP, or the ticket is "
@@ -75,25 +77,20 @@ def escalate_ticket(session: Session, ticket: Ticket, actor: User, reason: str) 
     """Moves the ticket to its escalation team, unassigned, and records who and why.
     Returns the team. Raises EscalationError and changes nothing when it cannot."""
     new_team = escalation_target(session, ticket)
-    previous_team = session.get(Team, ticket.team_id) if ticket.team_id else None
-    previous_agent = session.get(User, ticket.assigned_agent_id) if ticket.assigned_agent_id else None
 
-    now = datetime.now(timezone.utc)
+    # The move itself (team, unassigning the agent, the event and its history) is the same code
+    # as a re-assign; what makes it an escalation is the rest of this function.
+    move_ticket(session, ticket, actor, new_team, None, kind=MOVE_ESCALATE, reason=reason)
     ticket.is_escalated = True
     ticket.escalation_reason = reason
     ticket.escalated_by_id = actor.id
-    ticket.escalated_at = now
-    ticket.team_id = new_team.id
-    ticket.assigned_agent_id = None
-    ticket.updated_at = now
+    ticket.escalated_at = datetime.now(timezone.utc)
     session.add(ticket)
-    record_event(
-        session, ticket, EVENT_ESCALATED, actor.email,
-        from_value=previous_team.name if previous_team else None, to_value=new_team.name, detail=reason,
-    )
-    if previous_agent is not None:
-        # Moving to another team unassigns the agent; the history must say so.
-        record_event(session, ticket, EVENT_ASSIGNED, actor.email, from_value=previous_agent.email, to_value=None)
+    # The reason is also an internal note, so the team receiving it reads it in the conversation
+    # and an @mention in it reaches the person named (the note is written after the move, so
+    # people in the new team can be mentioned).
+    note = add_note(session, ticket, actor, f"Escalated to {new_team.name}. Reason: {reason}")
+    notify_mentions(session, ticket, note, actor)
     try:
         # A savepoint, so a double click (two requests adding the same row) is a quiet no-op.
         with session.begin_nested():

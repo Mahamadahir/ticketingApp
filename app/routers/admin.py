@@ -24,6 +24,7 @@ from app.categories import (
     create_category,
     ensure_other,
     is_selectable,
+    parse_escalation,
     path_of,
     selectable,
 )
@@ -369,14 +370,22 @@ def add_category(
     name: str = Form(..., max_length=200),
     parent_id: Optional[str] = Form(None),
     team_id: Optional[str] = Form(None),
+    escalation: Optional[str] = Form(None),
     admin: User = Depends(require_super_admin),
     session: Session = Depends(get_session),
 ):
     try:
-        category = create_category(session, name, optional_int(parent_id), optional_int(team_id))
+        category = create_category(
+            session, name, optional_int(parent_id), optional_int(team_id), escalation or None
+        )
     except CategoryError as error:
         raise HTTPException(status_code=400, detail=str(error))
     log_action(session, admin.email, "category", category.id, "created", path_of(session, category))
+    if escalation:
+        log_action(
+            session, admin.email, "category", category.id, "escalation_changed",
+            f"{path_of(session, category)}: {_escalation_label(session, category)}",
+        )
     session.commit()
     return RedirectResponse("/admin/categories", status_code=303)
 
@@ -422,28 +431,26 @@ def update_category(
     return RedirectResponse("/admin/categories", status_code=303)
 
 
+def _escalation_label(session: Session, category: Category) -> str:
+    """The audit wording for a category's escalation target: inherit, MSP or the team's name."""
+    if category.escalation_inherits and category.parent_id is not None:
+        return "inherit"
+    return session.get(Team, category.escalation_team_id).name if category.escalation_team_id else "MSP"
+
+
 def _set_escalation(session: Session, admin: User, category: Category, choice: str) -> None:
     """choice is "inherit" (sub-categories only), "msp", or a team id."""
-    inherits, team_id = False, None
-    if choice == "inherit":
-        if category.parent_id is None:
-            raise HTTPException(status_code=400, detail="A main category sets its own escalation target")
-        inherits = True
-    elif choice != "msp":
-        team_id = optional_int(choice)
-        if team_id is None or session.get(Team, team_id) is None:
-            raise HTTPException(status_code=400, detail="That team does not exist")
-    if category.parent_id is None:
-        inherits = category.escalation_inherits  # unused for a main category; leave as it was
+    try:
+        inherits, team_id = parse_escalation(session, category, choice)
+    except CategoryError as error:
+        raise HTTPException(status_code=400, detail=str(error))
     if (category.escalation_inherits, category.escalation_team_id) != (inherits, team_id):
+        category.escalation_inherits, category.escalation_team_id = inherits, team_id
+        session.add(category)
         log_action(
             session, admin.email, "category", category.id, "escalation_changed",
-            f"{path_of(session, category)}: "
-            + ("inherit" if inherits else (session.get(Team, team_id).name if team_id else "MSP")),
+            f"{path_of(session, category)}: {_escalation_label(session, category)}",
         )
-        category.escalation_inherits = inherits
-        category.escalation_team_id = team_id
-        session.add(category)
 
 
 # ---- Canned responses -----------------------------------------------------------
