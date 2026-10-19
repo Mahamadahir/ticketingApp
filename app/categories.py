@@ -106,11 +106,33 @@ def selectable(session: Session) -> list[tuple[Category, str]]:
     return result
 
 
+def parse_escalation(session: Session, category: Category, choice: str) -> tuple[bool, Optional[int]]:
+    """Reads an escalation choice for this category: "inherit" (a sub-category follows its
+    parent), "msp", or a team id. Returns (inherits, team_id); None for the team means the MSP.
+    A main category cannot inherit, and keeps whatever "inherits" it had (unused for a main one)."""
+    inherits, team_id = False, None
+    if choice == "inherit":
+        if category.parent_id is None:
+            raise CategoryError("A main category sets its own escalation target")
+        inherits = True
+    elif choice != "msp":
+        # ASCII digits only (a number too big for any team simply finds none).
+        team_id = int(choice) if choice.isascii() and choice.isdigit() else None
+        if team_id is None or session.get(Team, team_id) is None:
+            raise CategoryError("That team does not exist")
+    if category.parent_id is None:
+        inherits = category.escalation_inherits
+    return inherits, team_id
+
+
 def create_category(
-    session: Session, name: str, parent_id: Optional[int] = None, team_id: Optional[int] = None
+    session: Session, name: str, parent_id: Optional[int] = None, team_id: Optional[int] = None,
+    escalation: Optional[str] = None,
 ) -> Category:
     """Creates a main category (needs a team) or a sub-category (inherits the
-    parent's team). Does not commit."""
+    parent's team). `escalation` says where escalating a ticket in it goes ("inherit" for
+    a sub-category, "msp", or a team id); left out it is the default: a sub-category follows
+    its parent, a main category goes to the MSP, which cannot be escalated to yet. Does not commit."""
     _lock_categories(session)  # taken first, so the duplicate check below cannot race
     name = " ".join(name.split())
     if not name or len(name) > MAX_NAME_LENGTH:
@@ -136,6 +158,8 @@ def create_category(
         raise CategoryError(f"There is already a category called '{name}' here")
 
     category = Category(name=name, parent_id=parent_id, team_id=team_id)
+    if escalation is not None:
+        category.escalation_inherits, category.escalation_team_id = parse_escalation(session, category, escalation)
     session.add(category)
     session.flush()
     return category

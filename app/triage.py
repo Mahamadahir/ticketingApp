@@ -26,6 +26,7 @@ from app.models import (
 from app.sla import Level, apply_impact_urgency, describe_priority
 from app.ticket_service import (
     EVENT_ASSIGNED,
+    EVENT_ESCALATED,
     EVENT_REQUEST_TYPE,
     EVENT_TEAM_CHANGED,
     EVENT_TRIAGED,
@@ -149,24 +150,42 @@ def triage_ticket(
             _set_assignee(session, ticket, None, actor)
 
 
-def reassign_ticket(
-    session: Session, ticket: Ticket, actor: User, *, team: Team, assignee: Optional[User] = None
-) -> bool:
-    """Moves a triaged ticket to a team and an agent in it, or leaves it
-    unassigned there. Returns whether anything changed. No reason is needed and
-    it is not an escalation."""
-    if ticket.triaged_at is None:
-        raise TriageError("Triage the ticket first; its category decides the team")
-    assignee = _assignee_for(session, team.id, assignee)
+MOVE_REASSIGN = "reassign"
+MOVE_ESCALATE = "escalate"
 
+
+def move_ticket(
+    session: Session,
+    ticket: Ticket,
+    actor: User,
+    team: Team,
+    assignee: Optional[User],
+    *,
+    kind: str,
+    reason: Optional[str] = None,
+) -> bool:
+    """The one place a ticket changes team: sets the team and the assignee (None leaves it
+    unassigned there), records the move and any assignment change, and touches the ticket.
+    Returns whether anything changed. Re-assign and escalation both go through it, and differ only
+    in who chose the team and what else they do (the extras of an escalation are in
+    app/escalation.py). The caller checks the move is allowed and that the assignee is in the team.
+
+    One event records the team change, by kind: team_changed for a re-assign, escalated
+    (carrying the reason) for an escalation, so a move is never recorded twice."""
+    if kind not in (MOVE_REASSIGN, MOVE_ESCALATE):
+        raise ValueError(f"Unknown kind of move: {kind}")
+    if kind == MOVE_ESCALATE and ticket.team_id == team.id:
+        # The caller marks the ticket escalated; with no move there would be no event to show it.
+        raise ValueError("An escalation must move the ticket to a different team")
     changed = False
     if ticket.team_id != team.id:
         previous_team = session.get(Team, ticket.team_id) if ticket.team_id else None
         ticket.team_id = team.id
         session.add(ticket)
         record_event(
-            session, ticket, EVENT_TEAM_CHANGED, actor.email,
+            session, ticket, EVENT_ESCALATED if kind == MOVE_ESCALATE else EVENT_TEAM_CHANGED, actor.email,
             from_value=previous_team.name if previous_team else None, to_value=team.name,
+            detail=reason if kind == MOVE_ESCALATE else None,
         )
         changed = True
 
@@ -177,3 +196,15 @@ def reassign_ticket(
         ticket.updated_at = datetime.now(timezone.utc)
         session.add(ticket)
     return changed
+
+
+def reassign_ticket(
+    session: Session, ticket: Ticket, actor: User, *, team: Team, assignee: Optional[User] = None
+) -> bool:
+    """Moves a triaged ticket to a team and an agent in it, or leaves it
+    unassigned there. Returns whether anything changed. No reason is needed and
+    it is not an escalation."""
+    if ticket.triaged_at is None:
+        raise TriageError("Triage the ticket first; its category decides the team")
+    assignee = _assignee_for(session, team.id, assignee)
+    return move_ticket(session, ticket, actor, team, assignee, kind=MOVE_REASSIGN)

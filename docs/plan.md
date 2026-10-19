@@ -537,6 +537,20 @@ already have visibility of that team through membership or a parent team.
   the ticket can remove any follower.
 - Changing a ticket's category after triage changes its escalation target, and is an
   event on the ticket.
+- *Tidy-up, built 19 Oct 2026.* **The escalation target is chosen when a category is created**
+  (Admin > Categories, both creation forms: a main category picks a team or the MSP, defaulting to
+  the MSP; a sub-category defaults to "same as its main category", or overrides), instead of every
+  new category starting as "cannot escalate" until someone edits it; editing it later is as before.
+  **The escalation reason is also written as an internal note** ("Escalated to Dev. Reason: ..."),
+  so the team receiving the ticket reads it in the conversation and an @mention in it notifies the
+  person named if they can open the ticket in its new team (the reason is still on the escalation
+  event and the ticket banner). **Escalate and re-assign share one move** (`move_ticket` in
+  `app/triage.py`): the team change, unassigning, the history and touching the ticket are one code
+  path; they differ in who chose the team (the agent, or the category) and in what escalation adds
+  (the reason, the escalator's access, the internal follower, the MSP refusal). A move records
+  one event by kind: `team_changed` for a re-assign, `escalated` (with the reason) for an
+  escalation, so a move is never recorded twice. Still not built: telling the team an escalation
+  lands in (with the team notifications of phase 2).
 
 **Linking.** Tickets link to a parent (Major Incident or Problem). Resolving
 the parent offers to resolve every linked ticket with the same notes.

@@ -28,8 +28,9 @@ starting a phase, and `README.md` for how to run it.
   `app/followers.py`; `cc_list` is what the sender will copy on every email. Access
   comes from the ticket's team only (not assignee, triager, escalator or follower);
   the exceptions are the shared untriaged queue, a parent team's sub-teams
-  and the ticket an agent escalated (`TicketEscalator`). Escalation is by category (`app/escalation.py`); the MSP
-  target waits for the phase 5 handoff.
+  and the ticket an agent escalated (`TicketEscalator`). Escalation is by category (`app/escalation.py`; the target is chosen when the category is
+  created, and the reason is also an internal note); escalate and re-assign are separate actions
+  over one shared `move_ticket` in `app/triage.py`; the MSP target waits for the phase 5 handoff.
 - Phase 1 progress: 1A, 1B, 1C (messages and followers) are merged. 1D is split in
   two: **1D-i** (explicit triage, categories with the "Other" review queue,
   settings, the re-assign control) is built in `app/triage.py`,
@@ -71,7 +72,9 @@ starting a phase, and `README.md` for how to run it.
 - Run `pytest` before saying work is done. Tests run against
   Postgres 16 (compose `db` locally, a service container in CI), never SQLite.
   Start it with `docker compose up -d db`; the tests create and wipe a separate
-  `ticketing_test` database. Python is 3.14.
+  `ticketing_test` database. Python is 3.14. Run only one pytest process per test database
+  (your own background suite included), and give your branch its own via `TEST_DATABASE_URL`;
+  how, and what to do when the database is down, is in `docs/build-plan.md` (working agreement).
 - No secrets in the repo, Bicep parameter files or app definitions. Secrets
   come from the environment at deploy time and live in Key Vault.
 - Values marked TBC in the plan are settings or environment config, never
