@@ -381,7 +381,8 @@ def add_category(
     except CategoryError as error:
         raise HTTPException(status_code=400, detail=str(error))
     log_action(session, admin.email, "category", category.id, "created", path_of(session, category))
-    if escalation:
+    default = "inherit" if category.parent_id is not None else "msp"
+    if escalation and escalation != default:
         log_action(
             session, admin.email, "category", category.id, "escalation_changed",
             f"{path_of(session, category)}: {_escalation_label(session, category)}",

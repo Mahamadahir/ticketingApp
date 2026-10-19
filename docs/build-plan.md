@@ -45,7 +45,7 @@ not exist (`infra/` compiles but has never run against a subscription).
 | 2E out-of-office detection (Graph presence) and skipping OOO agents | not started | |
 | Phases 2 to 9 | not started | `docs/plan.md`, "Build order" |
 
-Tests: 625 passing on Postgres 16.
+Tests: 627 passing on Postgres 16.
 
 ## Next up
 **Deferred from the escalation work (documented, not built).**
@@ -102,6 +102,20 @@ other's data and hang or fail oddly. Give your branch its own database before ru
 `$env:TEST_DATABASE_URL = "postgresql+psycopg2://ticketing:ticketing@127.0.0.1:5432/ticketing_<yourbranch>_test"`
 (the name must end in `_test`; it is created for you). A full run takes about 3.5 minutes on its own.
 Stage files by name, never `git add -A` (other agents' worktrees and files sit in the same tree).
+
+**One pytest process per test database, always, including your own.** A full suite running in the
+background and a targeted run in the foreground on the same database collide just like two agents
+do. While a full suite is running, give any other run a second database (for example
+`ticketing_<yourbranch>2_test`), and before starting any run list the running python processes
+(`Get-CimInstance Win32_Process -Filter "Name like 'python%'"`) and wait if a `pytest` is active
+on your database. Symptoms of a collision, which is not a code bug: `cannot drop table ... other
+objects depend on it` in test setup, runs that hang, or a run that ends with no summary line.
+
+**If the database is down** (`Connection refused` on 127.0.0.1:5432, usual after the laptop has
+slept): Docker lives inside WSL and its VM stops when the last command ends, taking the container
+with it. Start the container from a session that stays open, for example
+`wsl -e sh -c "docker start ticketingapp-db-1 && sleep 7200"` run in the background, then wait for
+the port to accept connections before running tests.
 
 Environment notes (Windows laptop): PowerShell 5.1 (no `&&`), write files without a
 BOM, avoid backticks and `\n` inside PowerShell strings (use the Edit tool or

@@ -174,6 +174,9 @@ def move_ticket(
     (carrying the reason) for an escalation, so a move is never recorded twice."""
     if kind not in (MOVE_REASSIGN, MOVE_ESCALATE):
         raise ValueError(f"Unknown kind of move: {kind}")
+    if kind == MOVE_ESCALATE and ticket.team_id == team.id:
+        # The caller marks the ticket escalated; with no move there would be no event to show it.
+        raise ValueError("An escalation must move the ticket to a different team")
     changed = False
     if ticket.team_id != team.id:
         previous_team = session.get(Team, ticket.team_id) if ticket.team_id else None

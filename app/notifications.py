@@ -83,9 +83,13 @@ def mentioned_in(session: Session, ticket: Ticket, body: str, author: User) -> l
     return found
 
 
-def notify_mentions(session: Session, ticket: Ticket, note: Message, author: User) -> list[Notification]:
+def notify_mentions(
+    session: Session, ticket: Ticket, note: Message, author: User, text: Optional[str] = None
+) -> list[Notification]:
+    """Tells the agents the note mentions. `text` is what to read mentions from when part of the
+    note was written by the system (an escalation's fixed lead-in), so only what the agent wrote counts."""
     notifications = []
-    for person in mentioned_in(session, ticket, note.body, author):
+    for person in mentioned_in(session, ticket, note.body if text is None else text, author):
         made = notify(
             session, person, MENTIONED, ticket,
             f"{author.display_name} mentioned you on {ticket.tag} {ticket.subject}", author.email,

@@ -90,7 +90,7 @@ def escalate_ticket(session: Session, ticket: Ticket, actor: User, reason: str) 
     # and an @mention in it reaches the person named (the note is written after the move, so
     # people in the new team can be mentioned).
     note = add_note(session, ticket, actor, f"Escalated to {new_team.name}. Reason: {reason}")
-    notify_mentions(session, ticket, note, actor)
+    notify_mentions(session, ticket, note, actor, text=reason)  # only what the agent wrote can mention
     try:
         # A savepoint, so a double click (two requests adding the same row) is a quiet no-op.
         with session.begin_nested():

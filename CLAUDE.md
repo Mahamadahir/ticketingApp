@@ -72,7 +72,9 @@ starting a phase, and `README.md` for how to run it.
 - Run `pytest` before saying work is done. Tests run against
   Postgres 16 (compose `db` locally, a service container in CI), never SQLite.
   Start it with `docker compose up -d db`; the tests create and wipe a separate
-  `ticketing_test` database. Python is 3.14.
+  `ticketing_test` database. Python is 3.14. Run only one pytest process per test database
+  (your own background suite included), and give your branch its own via `TEST_DATABASE_URL`;
+  how, and what to do when the database is down, is in `docs/build-plan.md` (working agreement).
 - No secrets in the repo, Bicep parameter files or app definitions. Secrets
   come from the environment at deploy time and live in Key Vault.
 - Values marked TBC in the plan are settings or environment config, never

@@ -52,15 +52,18 @@ def test_a_main_category_is_created_with_its_escalation_team(client, db_session)
     assert ("created", "Software") in actions and ("escalation_changed", "Software: Dev") in actions
 
 
-def test_leaving_the_escalation_out_keeps_the_default_and_logs_nothing_extra(client, db_session):
+def test_leaving_the_escalation_out_or_choosing_the_default_logs_nothing_extra(client, db_session):
     desk = create_team(db_session, "Support")
     admin(client)
 
-    client.post("/admin/categories", data={"name": "Hardware", "team_id": desk.id})
-
+    client.post("/admin/categories", data={"name": "Hardware", "team_id": desk.id})  # no field at all
+    client.post("/admin/categories", data={"name": "Network", "team_id": desk.id, "escalation": "msp"})  # the form's default
     hardware = category_named(db_session, "Hardware")
-    assert hardware.escalation_team_id is None  # the MSP, as before
-    assert [a.action for a in db_session.exec(select(AuditLog).where(AuditLog.entity_type == "category")).all()] == ["created"]
+    client.post("/admin/categories", data={"name": "Laptops", "parent_id": hardware.id, "escalation": "inherit"})  # a sub's default
+
+    assert category_named(db_session, "Hardware").escalation_team_id is None  # the MSP, as before
+    actions = [a.action for a in db_session.exec(select(AuditLog).where(AuditLog.entity_type == "category")).all()]
+    assert actions == ["created", "created", "created"]  # a default is not a change
 
 
 def test_a_sub_category_can_inherit_override_or_go_to_the_msp(client, db_session):
@@ -84,7 +87,8 @@ def test_a_sub_category_can_inherit_override_or_go_to_the_msp(client, db_session
 def test_a_bad_escalation_choice_refuses_the_whole_category(client, db_session):
     desk = create_team(db_session, "Support")
     admin(client)
-    for choice in ("inherit", "999999", "abc", "-1"):  # a main category cannot inherit; the team must exist
+    # a main category cannot inherit; the team must exist; a number too big for the database is just "no such team"
+    for choice in ("inherit", "999999", "abc", "-1", "99999999999999999999", "٣"):
         response = client.post("/admin/categories", data={"name": "Nope", "team_id": desk.id, "escalation": choice})
         assert response.status_code == 400, choice
     assert db_session.exec(select(Category).where(Category.name == "Nope")).all() == []
@@ -225,6 +229,31 @@ def test_the_move_itself_reports_whether_anything_changed(client, db_session):
     assert move_ticket(db_session, ticket, me, dev, None, kind=MOVE_REASSIGN) is False
     with pytest.raises(ValueError):
         move_ticket(db_session, ticket, me, desk, None, kind="teleport")
+
+
+def test_an_escalation_must_change_the_team(client, db_session):
+    desk = create_team(db_session, "Support")
+    me = db_session.get(User, agent_in(client, db_session, member_of=[desk]))
+    ticket = make_ticket(db_session, desk.id)
+
+    with pytest.raises(ValueError):
+        move_ticket(db_session, ticket, me, desk, None, kind=MOVE_ESCALATE, reason="nowhere to go")
+    assert events_of(db_session, ticket, "escalated") == []
+
+
+def test_only_what_the_agent_wrote_can_mention_someone(client, db_session):
+    desk, dev = create_team(db_session, "Support"), create_team(db_session, "Dev @dana")
+    agent_in(client, db_session, member_of=[dev], email="dana@example.com")
+    client.post("/auth/logout")
+    agent_in(client, db_session, member_of=[desk])
+    ticket = make_ticket(db_session, desk.id)
+    categorised(db_session, ticket, dev)
+
+    escalate(client, ticket, "Needs the dev team")  # the team is named "Dev @dana": the system's text, not a mention
+
+    db_session.expire_all()
+    dana = db_session.exec(select(User).where(User.email == "dana@example.com")).one()
+    assert db_session.exec(select(Notification).where(Notification.user_id == dana.id)).all() == []
 
 
 def test_the_reason_only_goes_on_an_escalation_event(client, db_session):

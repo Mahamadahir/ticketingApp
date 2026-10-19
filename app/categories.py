@@ -116,10 +116,8 @@ def parse_escalation(session: Session, category: Category, choice: str) -> tuple
             raise CategoryError("A main category sets its own escalation target")
         inherits = True
     elif choice != "msp":
-        try:
-            team_id = int(choice) if choice.isascii() and choice.isdigit() else None
-        except ValueError:
-            team_id = None
+        # ASCII digits only (a number too big for any team simply finds none).
+        team_id = int(choice) if choice.isascii() and choice.isdigit() else None
         if team_id is None or session.get(Team, team_id) is None:
             raise CategoryError("That team does not exist")
     if category.parent_id is None:
