@@ -3,8 +3,8 @@ a row is written for them, and the bell counts what they have not read.
 
 For now two things notify: a ticket being assigned to you, and an @mention in an internal note.
 Later phases add Teams (an unread notification is also sent to Teams after a delay, P1s and SLA
-breaches), per-person settings for which events reach which channel, and skipping agents who are
-out of office. Everything that notifies goes through notify() so those arrive in one place.
+breaches) and skipping agents who are out of office. Which events reach which channel is each
+person's choice (app/notification_settings.py); notify() honours the in-app one. Everything that notifies goes through notify() so those arrive in one place.
 
 Only agents are notified, and only about tickets they can open: a mention of someone outside
 the ticket's team does nothing (access follows the team, and a notification would say what the
@@ -19,6 +19,7 @@ from sqlalchemy import and_, func, or_, update
 from sqlmodel import Session, select
 
 from app.models import Message, Notification, Ticket, User, UserRole
+from app.notification_settings import IN_APP, is_enabled
 from app.visibility import Access, access_context, ticket_access, visible_ticket_condition
 
 ASSIGNED = "assigned"
@@ -37,6 +38,8 @@ def notify(
         return None
     if actor_email and recipient.email.lower() == actor_email.lower():
         return None
+    if not is_enabled(session, recipient, kind, IN_APP):
+        return None  # they turned the bell off for this (Settings, notifications)
     notification = Notification(
         user_id=recipient.id, kind=kind, ticket_id=ticket.id if ticket is not None else None,
         actor_email=actor_email, text=text,

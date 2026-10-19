@@ -276,7 +276,7 @@ def test_the_bell_is_for_agents_only_and_polls_without_clearing_messages(client,
     login_as(client, "jo@example.com")
     assert client.get("/notifications").status_code == 403
     assert client.get("/notifications/count").status_code == 403
-    assert "/notifications" not in client.get("/portal").text  # no bell for end users
+    assert 'href="/notifications"' not in client.get("/portal").text  # no bell for end users
 
     client.post("/auth/logout")
     desk(client, db_session)

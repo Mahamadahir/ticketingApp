@@ -31,21 +31,21 @@ not exist (`infra/` compiles but has never run against a subscription).
 | 1F-i search | merged (#25) | `app/search.py` |
 | 1F-ii canned responses | merged (#26) | `app/canned.py` |
 | 1B-ii sub-teams and escalation by category | merged (#29, #32) | `app/visibility.py`, `app/escalation.py`, `app/routers/admin.py` |
-| Escalation tidy-up: target chosen at category creation, reason also an internal note, escalate and re-assign share `move_ticket` | built, in review | `app/triage.py`, `app/escalation.py`, `app/categories.py` |
+| Escalation tidy-up: target chosen at category creation, reason also an internal note, escalate and re-assign share `move_ticket` | merged (#37) | `app/triage.py`, `app/escalation.py`, `app/categories.py` |
 | 1G-i raise a ticket: portal form, agents raising for someone, optional triage and backdating at creation, source labels | merged (#28) | `app/raising.py` |
 | 1G-ii outbound email preview step; "tell the requester a ticket was raised for them" setting | merged (#31) | `app/messages.py` (`preview_email`), `app/raising.py` |
 | Team activity feed (agents see all activity in their teams) | merged (#30) | `app/team_activity.py` |
 | 1H-i request catalogue: request types with approvers, chosen on the raise form | merged (#34) | `app/request_types.py` |
 | 1H-ii approvals: Awaiting approval status, thresholds, approvers decide in the portal or from an emailed link | merged (#35) | `app/approvals.py`, `app/routers/approvals.py` |
 | Phase 1 | complete | |
-| 2A in-app notifications (the bell): assignment and @mentions | built, in review | `app/notifications.py` |
-| 2B notification settings (channels per event type per person) | not started | |
+| 2A in-app notifications (the bell): assignment and @mentions | merged (#36) | `app/notifications.py` |
+| 2B notification settings (channels per event type per person) | built, in review | `app/notification_settings.py`, `app/routers/my_settings.py` |
 | 2C worker (APScheduler, heartbeat), unread-after-N-minutes to Teams | not started | |
 | 2D Teams channel webhook for new tickets | not started | |
 | 2E out-of-office detection (Graph presence) and skipping OOO agents | not started | |
 | Phases 2 to 9 | not started | `docs/plan.md`, "Build order" |
 
-Tests: 627 passing on Postgres 16.
+Tests: 634 passing on Postgres 16.
 
 ## Next up
 **Deferred from the escalation work (documented, not built).**
@@ -69,7 +69,7 @@ Tests: 627 passing on Postgres 16.
 
 **Email preview for the other emails.** The step exists for agent replies (1G-ii). Resolution emails (phase 4), MSP forwards and bulk resolves (listing every linked ticket and recipient) must reuse it, and automatic emails need admin-managed templates previewed when edited. Per-person opt-out of the "raised for you" email joins the setting when user notification settings exist.
 
-**Phase 2**, in five PRs: 2A the bell (built), 2B notification settings (channels per event type per person; the plan says users and agents choose in portal settings), 2C the worker (python -m app.worker, APScheduler, heartbeat, a compose service; first job: an unread notification is also sent to Teams after N minutes, a per-person setting, default 5), 2D the Teams Workflows webhook for new tickets (the URL is a secret from the environment, never a setting; test with a mocked sender), 2E out-of-office detection (Graph presence, tested with simulated responses; Azure-only to prove) and skipping out-of-office agents for assignment and team notifications. Phase 3 (mail) will carry the approval emails with the link from pp/approval_links.py.
+**Phase 2**, in five PRs: 2A the bell (merged, #36), 2B notification settings (built: `/settings/notifications`, anyone signed in chooses channels per event type; only the bell delivers, Teams and email choices are stored for 2C and phase 3 to read through `is_enabled`), 2C the worker (python -m app.worker, APScheduler, heartbeat, a compose service; first job: an unread notification is also sent to Teams after N minutes, a per-person setting, default 5). Note for 2C: notify() writes no Notification row when the bell is off, so a Teams copy that reads unread rows would never fire for someone with the bell off and Teams on; 2C must decide that (for example, write the row already read, or send Teams from notify() itself), 2D the Teams Workflows webhook for new tickets (the URL is a secret from the environment, never a setting; test with a mocked sender), 2E out-of-office detection (Graph presence, tested with simulated responses; Azure-only to prove) and skipping out-of-office agents for assignment and team notifications. Phase 3 (mail) will carry the approval emails with the link from pp/approval_links.py.
 
 ## Working agreement for every PR
 
