@@ -845,6 +845,13 @@ Automatic emails use admin-managed templates, previewed when edited.
   must not keep settings of their own. `should_tell_requester(session, email)` is the global switch AND
   the person's own choice when they have an account. The per-person Teams delay (default 5 minutes)
   is not here: it arrives with the worker in 2C.
+  *Follow-up (20 Oct 2026, from the review of #38):* when an agent raises a ticket for someone, the
+  decision "will this person be told by email?" is made then, while their address is known, and recorded
+  on the ticket as a `requester_notice` event ("will be told" or "not told", with the reason: switched
+  off for everyone in Settings, or they turned it off in their own notification settings); phase 3's
+  mail reads that event. Saving the settings page takes a per-person lock, so a double click or two
+  open tabs queue up instead of both inserting the same row. Preferences stored for an event a role
+  does not have are harmless: only agents are ever notified, and the choice returns with the role.
 - A notification still unread after N minutes (user setting, default 5) is
   also sent to Teams.
 - Teams is used for assignments, mentions, P1s and SLA breaches. New tickets

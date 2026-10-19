@@ -4,7 +4,8 @@ a row is written for them, and the bell counts what they have not read.
 For now two things notify: a ticket being assigned to you, and an @mention in an internal note.
 Later phases add Teams (an unread notification is also sent to Teams after a delay, P1s and SLA
 breaches) and skipping agents who are out of office. Which events reach which channel is each
-person's choice (app/notification_settings.py); notify() honours the in-app one. Everything that notifies goes through notify() so those arrive in one place.
+person's choice (app/notification_settings.py); notify() honours the in-app one. Everything
+that notifies goes through notify() so those arrive in one place.
 
 Only agents are notified, and only about tickets they can open: a mention of someone outside
 the ticket's team does nothing (access follows the team, and a notification would say what the

@@ -100,6 +100,9 @@ def choices_for(session: Session, user: User) -> list[tuple[EventType, list[tupl
 def save_choices(session: Session, user: User, ticked: set[str]) -> int:
     """Stores the page's checkboxes, each named "kind:channel". Everything the person has that is
     not ticked is off. Returns how many settings changed. Does not commit."""
+    # One save at a time per person: a double click or two open tabs would otherwise both read "no
+    # row yet" and both insert it. The second waits here, then sees the first's rows.
+    session.exec(select(User.id).where(User.id == user.id).with_for_update()).all()
     existing = {
         (row.kind, row.channel): row
         for row in session.exec(select(NotificationPreference).where(NotificationPreference.user_id == user.id)).all()

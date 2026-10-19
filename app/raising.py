@@ -43,18 +43,27 @@ class RaiseError(ValueError):
     """A reason the ticket cannot be raised, worded for whoever is filling in the form."""
 
 
-def should_tell_requester(session: Session, requester_email: Optional[str] = None) -> bool:
-    """Whether the requester is to be emailed that a ticket was raised for them: the Settings
-    switch, and, given their address, their own choice if they have an account. The email is
-    sent once mail exists (phase 3)."""
+EVENT_REQUESTER_NOTICE = "requester_notice"  # on a ticket raised for someone: whether they are to be told
+
+
+def tell_requester_decision(session: Session, requester_email: Optional[str] = None) -> tuple[bool, str]:
+    """Whether the requester is to be emailed that a ticket was raised for them, and why: the
+    Settings switch, and, given their address, their own choice if they have an account. The
+    email is sent once mail exists (phase 3)."""
     if not get_flag(session, TELL_REQUESTER_RAISED_FOR):
-        return False
+        return False, "switched off for everyone in Settings"
     requester = (
         session.exec(select(User).where(User.email == requester_email.strip().lower())).first()
         if requester_email
         else None
     )
-    return requester is None or is_enabled(session, requester, RAISED_FOR_YOU, EMAIL)
+    if requester is not None and not is_enabled(session, requester, RAISED_FOR_YOU, EMAIL):
+        return False, "they turned this off in their own notification settings"
+    return True, "they will be told by email once mail is connected"
+
+
+def should_tell_requester(session: Session, requester_email: Optional[str] = None) -> bool:
+    return tell_requester_decision(session, requester_email)[0]
 
 
 def is_agent(user: User) -> bool:
@@ -129,6 +138,13 @@ def raise_ticket(
     if request_type is not None:
         record_event(session, ticket, EVENT_REQUEST_TYPE, creator.email, to_value=request_type.name)
     if on_behalf:
+        # Settled now, while the requester is known, and kept on the ticket for phase 3's mail to read:
+        # an agent can see on the ticket whether the person will hear about it, and why not.
+        will_tell, why = tell_requester_decision(session, requester)
+        record_event(
+            session, ticket, EVENT_REQUESTER_NOTICE, creator.email,
+            to_value="will be told" if will_tell else "not told", detail=why,
+        )
         # Stored as the requester's own first message; who typed it is in the sender.
         record_inbound(
             session, ticket, sender=f"Logged by {creator.display_name} on behalf of {requester}", body=description,
