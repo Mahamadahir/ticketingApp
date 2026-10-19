@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     # a way into /admin before any roles have been assigned there.
     super_admin_emails: str = ""
 
+    # How often the background worker (app/worker.py) writes its heartbeat line. The dead man's
+    # switch alert is set to a few multiples of this.
+    worker_heartbeat_seconds: int = 60
+
     model_config = SettingsConfigDict(env_file=".env")
 
     @property

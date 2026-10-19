@@ -39,13 +39,14 @@ not exist (`infra/` compiles but has never run against a subscription).
 | 1H-ii approvals: Awaiting approval status, thresholds, approvers decide in the portal or from an emailed link | merged (#35) | `app/approvals.py`, `app/routers/approvals.py` |
 | Phase 1 | complete | |
 | 2A in-app notifications (the bell): assignment and @mentions | merged (#36) | `app/notifications.py` |
-| 2B notification settings (channels per event type per person) | built, in review | `app/notification_settings.py`, `app/routers/my_settings.py` |
-| 2C worker (APScheduler, heartbeat), unread-after-N-minutes to Teams | not started | |
+| 2B notification settings (channels per event type per person) | merged (#38) | `app/notification_settings.py`, `app/routers/my_settings.py` |
+| 2C-i worker skeleton: `python -m app.worker`, APScheduler, heartbeat line, single-instance lock, compose service | built, in review | `app/worker.py`, `app/jobs/` |
+| 2C-ii unread-after-N-minutes notification to Teams (needs the decisions in the Phase 2 note below) | not started | |
 | 2D Teams channel webhook for new tickets | not started | |
 | 2E out-of-office detection (Graph presence) and skipping OOO agents | not started | |
 | Phases 2 to 9 | not started | `docs/plan.md`, "Build order" |
 
-Tests: 634 passing on Postgres 16.
+Tests: 663 passing on Postgres 16.
 
 ## Next up
 **Deferred from the escalation work (documented, not built).**
@@ -224,6 +225,7 @@ The full list is "Azure-only verification" in `docs/plan.md`. Added by work so f
   canned-response picker and raise-a-ticket forms, including the `HX-Redirect` after raising);
   tests use the HTTP layer only.
 - Entra sign-in and the SSO activity events against a real redirect URI.
+- The worker (deployWorker, currently false in Bicep): set it true once real jobs exist, and add the log-query dead man's switch alert on the heartbeat job=heartbeat line (docs/plan.md, Health and monitoring). Its single-instance lock is a *session* advisory lock held on one connection: if staging Postgres is reached through PgBouncer in transaction-pooling mode the lock would not hold, so connect the worker to the server directly (or use session pooling). Verify on staging by starting a second worker and seeing it exit with Another worker is already running.
 - The emailed approval link carries its token in the URL path, so web server, ingress and
   Application Insights request logs will record a working credential for the link's lifetime
   (14 days by default). Redact `/approvals/*` paths in access logs and telemetry on staging, and

@@ -110,7 +110,8 @@ staging checklist. The full list is under "Azure-only verification" in
 ## Code the Azure plan still needs
 
 Listed with phases in `docs/plan.md` ("Code changes the Azure plan needs"):
-`APP_ROLE` router split (`web` / `public` / `worker`), worker entrypoint,
+`APP_ROLE` router split (`web` / `public` / `worker`), the worker's real jobs (its
+entrypoint, `python -m app.worker`, is built; jobs go in `app/jobs`),
 storage interface with local and Blob implementations, Application Insights,
 rate limiting on public routes, and a new deploy workflow. The `RUN_MIGRATIONS`
 switch is done; proxy headers need only `FORWARDED_ALLOW_IPS`, set in the Bicep

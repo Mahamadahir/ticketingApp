@@ -45,7 +45,9 @@ Attachments older than a year move to the cool storage tier.
   notifies the action group (email now, Teams webhook later).
 - Dead man's switch: the worker and each scheduled job write a heartbeat log
   line (or custom event) on success, with a log-query alert that fires when
-  none has arrived within the expected interval.
+  none has arrived within the expected interval. The line is exactly
+  `heartbeat job=<name> status=ok duration_ms=<n>`; alert on no `heartbeat job=heartbeat`
+  line for about three `WORKER_HEARTBEAT_SECONDS` (the alert itself is Bicep, not built yet).
 - `/health` also warns when: Graph subscription expiry is under 24 hours or
   the last catch-up poll is over 15 minutes old. The database alerts cover
   storage and CPU. Backup age and disk checks are no longer needed: backups
@@ -175,7 +177,21 @@ least-privilege database role is a later hardening step.
   request with a forged `X-Forwarded-For` is recorded with the real address.
 - Settings check per role: once `APP_ROLE` exists, require `SESSION_SECRET_KEY`
   only for `web`, then drop the internal session key secret.
-- Worker entrypoint (`python -m app.worker`), phase 2.
+- Worker entrypoint (`python -m app.worker`), phase 2. **Skeleton built (2C-i, 19 Oct 2026):**
+  `app/worker.py` runs the jobs listed in `app/jobs/__init__.py` with APScheduler. Each job gets
+  its own session, is committed on success and rolled back on failure, never overlaps itself, and
+  is first due at start. It writes `heartbeat job=<name> status=ok duration_ms=<n>` on success
+  and `job=<name> status=failed` with the traceback on failure; a failing job does not stop the
+  others. The worker takes a Postgres advisory lock for its whole life, so a second copy refuses to
+  start (exit 1) instead of running every job twice; unsafe settings or a job interval under a
+  second exit 2. The lock is a session lock that could vanish silently if its idle connection is dropped
+  (an idle timeout, a failover), so a watchdog job checks every 30 seconds that the connection still
+  holds it and, if not, stops the worker (exit 3) so two never run together; the compose service is
+  `restart: unless-stopped`, and the restarted worker waits for the lock like any other. SIGTERM/SIGINT
+  let running jobs finish, and are safe before the scheduler has started or if sent twice. The only job so far is `heartbeat` (every `WORKER_HEARTBEAT_SECONDS`,
+  default 60). `docker compose up worker` runs it locally; the Bicep already starts it with this
+  command at one replica. Real jobs (unread notification to Teams, new-ticket Teams cards,
+  presence refresh, mail catch-up, SLA timers ...) are added to `JOBS` by their own PRs.
 - Storage layer behind an interface, with a local-disk or Azurite
   implementation for development and a Blob implementation using
   `DefaultAzureCredential`, phase 3.
