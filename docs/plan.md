@@ -856,6 +856,14 @@ Automatic emails use admin-managed templates, previewed when edited.
   also sent to Teams.
 - Teams is used for assignments, mentions, P1s and SLA breaches. New tickets
   post to a Teams channel through a Teams Workflows webhook.
+  *Built in 2D (19 Oct 2026):* `app/teams.py`. Creating a ticket (`create_ticket`) writes a `TeamsPost` row in the
+  ticket's own transaction when `TEAMS_NEW_TICKET_ENABLED` is on, so a ticket is never announced and rolled back or
+  created and forgotten, and a Teams outage never slows the request. The worker calls `deliver_pending`, which sends
+  the oldest unsent rows (a message carrying an Adaptive Card: number, subject, requester, how it arrived, and an "Open
+  ticket" link when `PUBLIC_BASE_URL` is set), marks them sent, and keeps a failed one with its reason ("Teams answered
+  401", never the URL) for up to five attempts. Delivery is at least once. Every way in announces (email, portal, agent)
+  except the parts of a split, which are not new. The webhook URL is only for the process that sends (the worker): web and
+  public need just the switch. Test with a fake sender; whether Teams accepts the card is a staging check.
 - The requester hears that their ticket was picked up through the channel
   it was raised from, unless their settings say otherwise. Users and agents
   choose channels per event type in portal settings.

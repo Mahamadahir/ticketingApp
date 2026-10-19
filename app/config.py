@@ -32,6 +32,15 @@ class Settings(BaseSettings):
 
     session_secret_key: str = "dev-secret-change-me"
 
+    # Announcing new tickets in a Teams channel (phase 2D). The web and public apps only queue the
+    # announcement, so they need just the switch; the worker sends it, so only the worker needs the
+    # URL. The URL is a credential (anyone holding it can post to the channel): it comes from the
+    # environment (Key Vault in Azure), never from a setting or the database.
+    teams_new_ticket_enabled: bool = False
+    teams_new_ticket_webhook_url: str = ""
+    # Where the app is reached, so a Teams card can link to the ticket. Blank: no link on the card.
+    public_base_url: str = ""
+
     # Comma-separated emails granted super_admin on first login, so there's
     # a way into /admin before any roles have been assigned there.
     super_admin_emails: str = ""
@@ -49,6 +58,11 @@ class Settings(BaseSettings):
     @property
     def graph_configured(self) -> bool:
         return bool(self.graph_tenant_id and self.graph_client_id and self.graph_client_secret)
+
+    @property
+    def teams_new_ticket_configured(self) -> bool:
+        """Whether this process can send: it holds the webhook URL (the worker)."""
+        return bool(self.teams_new_ticket_webhook_url)
 
     @property
     def sso_configured(self) -> bool:
