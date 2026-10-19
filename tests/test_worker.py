@@ -154,6 +154,9 @@ def test_main_runs_the_scheduler_then_releases_the_lock(monkeypatch):
     calls = []
 
     class FakeScheduler:
+        def add_job(self, *args, **kwargs):
+            calls.append("watchdog")
+
         def start(self):
             calls.append("start")
 
@@ -161,11 +164,11 @@ def test_main_runs_the_scheduler_then_releases_the_lock(monkeypatch):
             calls.append("shutdown")
 
     monkeypatch.setattr(worker, "build_scheduler", lambda: FakeScheduler())
-    monkeypatch.setattr(worker, "install_signal_handlers", lambda scheduler: calls.append("handlers"))
+    monkeypatch.setattr(worker, "install_signal_handlers", lambda scheduler, state=None: calls.append("handlers"))
 
     assert worker.main() == 0
 
-    assert calls == ["handlers", "start"]
+    assert calls == ["watchdog", "handlers", "start"]
     again = worker.acquire_single_instance_lock(engine)  # released on the way out
     assert again is not None
     worker.release_lock(again)
@@ -210,6 +213,188 @@ def test_the_connection_is_thrown_away_even_if_the_unlock_fails():
     assert calls == ["execute", "invalidate", "close"]
 
 
+def test_the_watchdog_sees_whether_the_lock_is_still_held(db_session):
+    connection = worker.acquire_single_instance_lock(engine)
+    try:
+        assert worker.lock_is_held(connection) is True
+        connection.execute(text("select pg_advisory_unlock(:id)"), {"id": worker.WORKER_LOCK_ID})
+        assert worker.lock_is_held(connection) is False  # the lock is gone though the connection is fine
+    finally:
+        connection.close()
+
+
+def test_a_dropped_lock_connection_counts_as_a_lost_lock(db_session):
+    connection = worker.acquire_single_instance_lock(engine)
+    pid = connection.execute(text("select pg_backend_pid()")).scalar()
+    try:
+        with engine.connect() as other:  # a failover, an idle timeout or an admin kills the session
+            other.execute(text("select pg_terminate_backend(:pid)"), {"pid": pid})
+            other.commit()
+        assert worker.lock_is_held(connection) is False  # no exception, just "not held"
+    finally:
+        connection.invalidate()
+        connection.close()
+    free = worker.acquire_single_instance_lock(engine)  # and the lock really is free for a successor
+    assert free is not None
+    worker.release_lock(free)
+
+
+def test_a_lost_lock_stops_the_scheduler_and_is_remembered(monkeypatch, caplog):
+    stopped = []
+
+    class FakeScheduler:
+        def shutdown(self, wait=True):
+            stopped.append(wait)
+
+    state = worker.WorkerState()
+    monkeypatch.setattr(worker, "lock_is_held", lambda connection: False)
+
+    worker.make_lock_watchdog(object(), FakeScheduler(), state)()
+
+    assert state.lost_lock is True and stopped == [False]
+    assert "lock was lost" in caplog.text
+
+
+def test_a_held_lock_leaves_the_worker_alone(monkeypatch):
+    class FakeScheduler:
+        def shutdown(self, wait=True):
+            raise AssertionError("must not stop")
+
+    state = worker.WorkerState()
+    monkeypatch.setattr(worker, "lock_is_held", lambda connection: True)
+    worker.make_lock_watchdog(object(), FakeScheduler(), state)()
+    assert state.lost_lock is False
+
+
+def test_the_watchdog_copes_with_a_scheduler_that_is_not_running(monkeypatch):
+    from apscheduler.schedulers import SchedulerNotRunningError
+
+    class FakeScheduler:
+        def shutdown(self, wait=True):
+            raise SchedulerNotRunningError()
+
+    monkeypatch.setattr(worker, "lock_is_held", lambda connection: False)
+    worker.make_lock_watchdog(object(), FakeScheduler(), worker.WorkerState())()  # does not raise
+
+
+def test_main_exits_with_3_when_the_lock_is_lost(monkeypatch):
+    watchdog = []
+
+    class FakeScheduler:
+        def add_job(self, function, *args, **kwargs):
+            watchdog.append(function)
+
+        def start(self):
+            watchdog[0]()  # the periodic check runs and finds the lock gone
+
+        def shutdown(self, wait=True):
+            pass
+
+    monkeypatch.setattr(worker, "build_scheduler", lambda: FakeScheduler())
+    monkeypatch.setattr(worker, "install_signal_handlers", lambda scheduler, state=None: None)
+    monkeypatch.setattr(worker, "lock_is_held", lambda connection: False)
+
+    assert worker.main() == 3
+
+    free = worker.acquire_single_instance_lock(engine)  # and it still let the lock go
+    assert free is not None
+    worker.release_lock(free)
+
+
+def test_main_still_returns_normally_if_the_lock_cannot_be_released(monkeypatch, caplog):
+    class FakeScheduler:
+        def add_job(self, *args, **kwargs):
+            pass
+
+        def start(self):
+            pass
+
+    monkeypatch.setattr(worker, "build_scheduler", lambda: FakeScheduler())
+    monkeypatch.setattr(worker, "install_signal_handlers", lambda scheduler, state=None: None)
+    real_release = worker.release_lock
+
+    def failing_release(connection):
+        real_release(connection)  # really let it go, then report the failure
+        raise RuntimeError("connection already gone")
+
+    monkeypatch.setattr(worker, "release_lock", failing_release)
+
+    assert worker.main() == 0
+    assert "could not release the worker lock cleanly" in caplog.text
+
+
+def test_the_lock_is_checked_often_enough_that_a_lost_one_is_noticed_quickly(monkeypatch):
+    registered = []
+
+    class FakeScheduler:
+        def add_job(self, function, trigger, **kwargs):
+            registered.append((trigger, kwargs))
+
+        def start(self):
+            pass
+
+    monkeypatch.setattr(worker, "build_scheduler", lambda: FakeScheduler())
+    monkeypatch.setattr(worker, "install_signal_handlers", lambda scheduler, state=None: None)
+
+    worker.main()
+
+    [(trigger, kwargs)] = registered
+    assert trigger == "interval" and kwargs["seconds"] == worker.LOCK_CHECK_SECONDS
+    assert kwargs["id"] == "lock-watchdog" and kwargs["max_instances"] == 1
+    assert worker.LOCK_CHECK_SECONDS <= 60  # a lost lock must not go unnoticed for long
+
+
+def test_a_stop_signal_before_the_scheduler_starts_is_safe(monkeypatch):
+    import signal
+    from apscheduler.schedulers import SchedulerNotRunningError
+
+    handlers = {}
+    monkeypatch.setattr(signal, "signal", lambda signum, handler: handlers.__setitem__(signum, handler))
+
+    class NotStarted:
+        def shutdown(self, wait=True):
+            raise SchedulerNotRunningError()
+
+    state = worker.WorkerState()
+    worker.install_signal_handlers(NotStarted(), state)
+    handlers[signal.SIGINT](signal.SIGINT, None)  # must not raise
+    handlers[signal.SIGINT](signal.SIGINT, None)  # nor on a second signal
+
+    assert state.stopping is True
+
+
+def test_main_returns_without_starting_when_a_stop_signal_came_during_startup(monkeypatch):
+    started = []
+
+    class FakeScheduler:
+        def add_job(self, *args, **kwargs):
+            pass
+
+        def start(self):
+            started.append(True)
+
+        def shutdown(self, wait=True):
+            pass
+
+    monkeypatch.setattr(worker, "build_scheduler", lambda: FakeScheduler())
+    monkeypatch.setattr(worker, "install_signal_handlers", lambda scheduler, state=None: setattr(state, "stopping", True))
+
+    assert worker.main() == 0
+    assert started == []
+
+
+def test_a_bad_job_interval_is_a_clean_refusal_before_any_lock(monkeypatch, caplog):
+    monkeypatch.setattr(worker, "JOBS", [Job("slow", 0, wrote_an_audit_row)])
+    monkeypatch.setattr(worker, "build_scheduler", lambda: pytest.fail("started with a bad interval"))
+
+    assert worker.main() == 2
+
+    assert "Refusing to start: Job slow must run at least every second" in caplog.text
+    free = worker.acquire_single_instance_lock(engine)
+    assert free is not None  # it took no lock
+    worker.release_lock(free)
+
+
 # ---- How it is run ------------------------------------------------------------------------------------
 
 
@@ -219,6 +404,7 @@ def test_compose_runs_the_worker_from_the_same_image_without_migrating_or_publis
     assert '["python", "-m", "app.worker"]' in section
     assert "build: ." in section
     assert "ports:" not in section and "docker-entrypoint" not in section
+    assert "restart: unless-stopped" in section  # brought back if it exits (a lost lock, a database blip)
 
 
 def test_the_bicep_starts_the_same_command():

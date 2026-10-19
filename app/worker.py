@@ -27,6 +27,7 @@ from datetime import datetime, timezone
 from typing import Optional, Sequence
 
 from apscheduler.executors.pool import ThreadPoolExecutor
+from apscheduler.schedulers import SchedulerNotRunningError
 from apscheduler.schedulers.blocking import BlockingScheduler
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
@@ -41,6 +42,14 @@ log = logging.getLogger("app.worker")
 # The advisory lock id for "the worker". Any number nothing else in this database uses.
 WORKER_LOCK_ID = 726_001
 MAX_CONCURRENT_JOBS = 4
+LOCK_CHECK_SECONDS = 30  # how often the worker checks it still holds its lock (also keeps that connection busy)
+
+
+class WorkerState:
+    """What the signal handler and the lock watchdog tell main()."""
+
+    stopping = False  # a stop signal arrived
+    lost_lock = False  # the single-instance lock was lost
 
 
 def acquire_single_instance_lock(db: Engine) -> Optional[Connection]:
@@ -52,6 +61,50 @@ def acquire_single_instance_lock(db: Engine) -> Optional[Connection]:
         connection.close()
         return None
     return connection
+
+
+def lock_is_held(connection: Connection) -> bool:
+    """Whether this connection still holds the worker lock. A session lock disappears silently if
+    its connection is dropped (an idle timeout, a failover), so the worker checks rather than
+    assumes. A dead connection counts as not held."""
+    try:
+        row = connection.execute(
+            text(
+                "select 1 from pg_locks where locktype = 'advisory' and classid = 0 "
+                "and objid = :id and pid = pg_backend_pid() and granted"
+            ),
+            {"id": WORKER_LOCK_ID},
+        ).first()
+    except Exception:
+        return False
+    return row is not None
+
+
+def make_lock_watchdog(connection: Connection, scheduler: BlockingScheduler, state: WorkerState):
+    """A job body that stops the worker when it no longer holds the lock: another worker may be
+    running by now, and two workers run every job twice. Exiting lets the supervisor restart it,
+    and the restarted worker waits for the lock like any other."""
+
+    def check() -> None:
+        if lock_is_held(connection):
+            return
+        log.error("The single-instance lock was lost; stopping so that two workers never run together")
+        state.lost_lock = True
+        try:
+            scheduler.shutdown(wait=False)
+        except SchedulerNotRunningError:
+            pass
+
+    return check
+
+
+def job_errors(jobs: Sequence[Job]) -> list[str]:
+    errors = []
+    names = [job.name for job in jobs]
+    if len(set(names)) != len(names):
+        errors.append(f"Job names must be unique: {names}")
+    errors += [f"Job {job.name} must run at least every second (it is set to {job.every_seconds})" for job in jobs if job.every_seconds < 1]
+    return errors
 
 
 def release_lock(connection: Connection) -> None:
@@ -84,17 +137,14 @@ def build_scheduler(jobs: Optional[Sequence[Job]] = None) -> BlockingScheduler:
     (a slow run is not overlapped by the next), a pile-up of missed runs collapses into one, and
     each is first due immediately so a restarted worker gives its heartbeat straight away."""
     jobs = JOBS if jobs is None else jobs
-    names = [job.name for job in jobs]
-    if len(set(names)) != len(names):
-        raise ValueError(f"Job names must be unique: {names}")
+    if errors := job_errors(jobs):
+        raise ValueError("; ".join(errors))
     scheduler = BlockingScheduler(
         executors={"default": ThreadPoolExecutor(MAX_CONCURRENT_JOBS)},
         job_defaults={"max_instances": 1, "coalesce": True, "misfire_grace_time": None},
         timezone="UTC",
     )
     for job in jobs:
-        if job.every_seconds < 1:
-            raise ValueError(f"Job {job.name} must run at least every second")
         scheduler.add_job(
             run_job, "interval", seconds=job.every_seconds, args=[job], id=job.name, name=job.name,
             next_run_time=datetime.now(timezone.utc),
@@ -102,12 +152,18 @@ def build_scheduler(jobs: Optional[Sequence[Job]] = None) -> BlockingScheduler:
     return scheduler
 
 
-def install_signal_handlers(scheduler: BlockingScheduler) -> None:
-    """A stop request (Container Apps sends SIGTERM) lets running jobs finish and then returns."""
+def install_signal_handlers(scheduler: BlockingScheduler, state: Optional[WorkerState] = None) -> None:
+    """A stop request (Container Apps sends SIGTERM) lets running jobs finish and then returns.
+    Safe when the scheduler has not started yet or is already stopping (a second signal)."""
 
     def stop(signum, frame):
         log.info("worker stopping (signal %s)", signum)
-        scheduler.shutdown(wait=True)
+        if state is not None:
+            state.stopping = True
+        try:
+            scheduler.shutdown(wait=True)
+        except SchedulerNotRunningError:
+            pass  # not started yet (main() then returns before starting) or already stopping
 
     signal.signal(signal.SIGINT, stop)
     if hasattr(signal, "SIGTERM"):
@@ -122,19 +178,37 @@ def main() -> int:
     if errors:
         return 2
 
+    errors = job_errors(JOBS)
+    for error in errors:
+        log.error("Refusing to start: %s", error)
+    if errors:
+        return 2
+
     lock = acquire_single_instance_lock(engine)
     if lock is None:
         log.error("Another worker is already running (advisory lock %s is held); exiting", WORKER_LOCK_ID)
         return 1
+    state = WorkerState()
     try:
         scheduler = build_scheduler()
-        install_signal_handlers(scheduler)
+        scheduler.add_job(
+            make_lock_watchdog(lock, scheduler, state), "interval", seconds=LOCK_CHECK_SECONDS,
+            id="lock-watchdog", max_instances=1, coalesce=True,
+        )
+        install_signal_handlers(scheduler, state)
+        if state.stopping:  # a stop signal came in during startup
+            return 0
         log.info("worker started: %s", ", ".join(f"{j.name} every {j.every_seconds}s" for j in JOBS))
-        scheduler.start()  # blocks until a stop signal
+        scheduler.start()  # blocks until a stop signal or the lock is lost
+        if state.lost_lock:
+            return 3
         log.info("worker stopped")
         return 0
     finally:
-        release_lock(lock)
+        try:
+            release_lock(lock)
+        except Exception:  # the connection may be gone; the lock went with it
+            log.warning("could not release the worker lock cleanly")
 
 
 if __name__ == "__main__":

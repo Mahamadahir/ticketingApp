@@ -33,6 +33,8 @@ services:
   worker:
     build: .
     command: ["python", "-m", "app.worker"]
+    # Brought back if it stops (a lost lock, a database blip). A second copy just keeps waiting its turn.
+    restart: unless-stopped
     env_file:
       - .env
     environment:

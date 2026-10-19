@@ -46,7 +46,7 @@ not exist (`infra/` compiles but has never run against a subscription).
 | 2E out-of-office detection (Graph presence) and skipping OOO agents | not started | |
 | Phases 2 to 9 | not started | `docs/plan.md`, "Build order" |
 
-Tests: 652 passing on Postgres 16.
+Tests: 663 passing on Postgres 16.
 
 ## Next up
 **Deferred from the escalation work (documented, not built).**

@@ -183,8 +183,12 @@ least-privilege database role is a later hardening step.
   is first due at start. It writes `heartbeat job=<name> status=ok duration_ms=<n>` on success
   and `job=<name> status=failed` with the traceback on failure; a failing job does not stop the
   others. The worker takes a Postgres advisory lock for its whole life, so a second copy refuses to
-  start (exit 1) instead of running every job twice; unsafe settings exit 2. SIGTERM/SIGINT let
-  running jobs finish. The only job so far is `heartbeat` (every `WORKER_HEARTBEAT_SECONDS`,
+  start (exit 1) instead of running every job twice; unsafe settings or a job interval under a
+  second exit 2. The lock is a session lock that could vanish silently if its idle connection is dropped
+  (an idle timeout, a failover), so a watchdog job checks every 30 seconds that the connection still
+  holds it and, if not, stops the worker (exit 3) so two never run together; the compose service is
+  `restart: unless-stopped`, and the restarted worker waits for the lock like any other. SIGTERM/SIGINT
+  let running jobs finish, and are safe before the scheduler has started or if sent twice. The only job so far is `heartbeat` (every `WORKER_HEARTBEAT_SECONDS`,
   default 60). `docker compose up worker` runs it locally; the Bicep already starts it with this
   command at one replica. Real jobs (unread notification to Teams, new-ticket Teams cards,
   presence refresh, mail catch-up, SLA timers ...) are added to `JOBS` by their own PRs.
