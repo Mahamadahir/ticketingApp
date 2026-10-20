@@ -113,11 +113,14 @@ def notify_mentions(
 
 
 def notify_reply(session: Session, ticket: Ticket, replier_email: str) -> list[Notification]:
-    """Tells the assigned agent that the requester (or a follower) replied, whatever the ticket's status:
+    """Tells the assigned agent ("Ticket updated by <name>") that the requester (or a follower) replied, whatever the ticket's status:
     a reply on a ticket with the MSP or a supplier moves nothing, so this is the only sign of it. A reply
     on a split original also tells the assignees of its open parts, since each of them sees the reply.
     Each agent once; never the replier; nobody who cannot open the ticket they are told about. A ticket
     nobody is assigned to tells nobody (an open question in docs/build-plan.md). Does not commit."""
+    replier = session.exec(select(User).where(func.lower(User.email) == replier_email.lower())).first()
+    name = (replier.display_name or "").strip() if replier is not None else ""
+    name = name or replier_email  # a follower without an account, or no name: their email
     targets = [ticket]
     targets += session.exec(
         select(Ticket).where(Ticket.split_from_id == ticket.id, Ticket.status.not_in(FINISHED_STATUSES)).order_by(Ticket.id)
@@ -131,7 +134,7 @@ def notify_reply(session: Session, ticket: Ticket, replier_email: str) -> list[N
         if agent is None or not _can_open(session, agent, target):
             continue
         notification = notify(
-            session, agent, REPLIED, target, f"{target.tag} {target.subject}: the requester replied", replier_email
+            session, agent, REPLIED, target, f"{target.tag} {target.subject}: Ticket updated by {name}", replier_email
         )
         if notification is not None:
             told.add(agent.id)

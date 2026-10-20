@@ -55,7 +55,7 @@ def test_a_reply_notifies_the_assignee_whatever_the_status(client, db_session, s
 
     [told] = notifications_for(db_session, "agent@example.com")
     assert (told.kind, told.ticket_id, told.actor_email, told.read_at) == ("replied", ticket.id, "jo@example.com", None)
-    assert told.text == f"{ticket.tag} Printer jam: the requester replied"
+    assert told.text == f"{ticket.tag} Printer jam: Ticket updated by Test User"
     expected = TicketStatus.IN_PROGRESS if status == TicketStatus.AWAITING_USER else status
     assert db_session.get(Ticket, ticket.id).status == expected  # status behaviour is unchanged
 
@@ -77,6 +77,23 @@ def test_a_reply_on_a_triaged_ticket_nobody_owns_tells_nobody(client, db_session
     comment_as(client, "jo@example.com", ticket)
 
     assert all_notifications(db_session) == []
+
+
+def test_the_notification_names_the_replier_and_falls_back_to_their_email(client, db_session):
+    ticket, team, ann_id = assigned_ticket(client, db_session)
+    client.post("/auth/logout")
+    login_as(client, "kim@example.com", "Kim Lee")
+    add_follower(db_session, ticket, "kim@example.com", "jo@example.com")
+    db_session.commit()
+    client.post(f"/portal/{ticket.number}/comment", data={"body": "hello"})
+    kim = db_session.exec(select(User).where(User.email == "kim@example.com")).one()
+    kim.display_name = ""
+    db_session.add(kim)
+    db_session.commit()
+    client.post(f"/portal/{ticket.number}/comment", data={"body": "again"})
+
+    texts = [n.text for n in notifications_for(db_session, "agent@example.com")]
+    assert texts == [f"{ticket.tag} Printer jam: Ticket updated by Kim Lee", f"{ticket.tag} Printer jam: Ticket updated by kim@example.com"]
 
 
 def test_a_follower_reply_notifies(client, db_session):

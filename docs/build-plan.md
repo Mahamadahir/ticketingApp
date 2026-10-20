@@ -259,6 +259,8 @@ sleep, restart it and `docker start ticketingapp-db-1`.
   and comments, never ticket events, so an escalated ticket nobody wrote on sends just
   the original request. Teams also get an admin toggle for the automatic 18:00 handoff
   (`docs/plan.md`, "MSP").
+- 20 Oct: a reply from the requester or a follower notifies the ticket's assignee only, as "Ticket updated by <display name>"
+  (their email when they have no name). Decided: when there is no assignee, no one is notified (not the team).
 - 14 Oct: added phase 10 (security hardening and go-live gate) to `docs/plan.md`, and agreed that
   background work is driven by the database (rows with leases and retries) rather than in-memory
   timers. Where that stands (20 Oct): sending is built that way (the `TeamsPost` and `OutboundEmail`
@@ -273,8 +275,6 @@ sleep, restart it and `docker start ticketingapp-db-1`.
   waiting on a supplier counts against the target. Pausing would be one line in `app/sla.py` `on_status_change`, but it would make a
   ticket look healthy while it waits on someone we do not control. Also decide whether a requester reply on a With supplier ticket
   should stay a no-op (built: it changes nothing, like With MSP) and whether chase emails to the supplier are wanted later.
-- **A reply on a triaged ticket nobody is assigned to.** The assigned agent is told of a reply; if the ticket is Open but unassigned,
-  nobody is told today. Should the ticket's team be told instead (a bell for every member, or the Teams channel)? Not decided.
 - **Out-of-office lookups (2E).** A directory lookup that fails or finds nobody is retried on every 15-minute run, and inactive agents are
   polled (there is no active flag). A "last looked up" column to stop the retries is worth doing if the logs show repeated failed
   lookups. One failing batch (only above 650 agents) rolls back the whole run; the three-hour stale cutoff makes that safe.
