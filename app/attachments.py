@@ -103,8 +103,9 @@ def store_attachment(
     inline picture was too small to keep (a signature logo). Raises AttachmentRejected for a
     file that may not be stored. Adds the row to the session; the caller commits.
 
-    The bytes are stored under their hash, so the same file added twice is one blob. An
-    inline picture already on the ticket is not added again: its existing row is returned."""
+    The bytes are stored under their hash, so the same file added twice is one blob (one that
+    ends up with no row, because the request failed afterwards, is harmless and costs a few
+    bytes). An inline picture already on the same message is not added again: its row is returned."""
     if not data:
         raise AttachmentRejected("The file is empty.")
     if len(data) > settings.attachment_max_bytes:
@@ -124,9 +125,14 @@ def store_attachment(
 
     content_hash = hashlib.sha256(data).hexdigest()
     if inline:
+        # The same picture on the same message (or on the ticket itself) once; on another message it
+        # is its own row, so each message can show it to whoever may see that message.
         existing = session.exec(
             select(Attachment).where(
-                Attachment.ticket_id == ticket.id, Attachment.content_hash == content_hash, Attachment.is_inline
+                Attachment.ticket_id == ticket.id,
+                Attachment.content_hash == content_hash,
+                Attachment.is_inline,
+                Attachment.message_id == (message.id if message is not None else None),
             )
         ).first()
         if existing is not None:

@@ -15,7 +15,10 @@ Azure-only to prove: DefaultAzureCredential with the managed identity, the user-
 and the SAS it signs. Tests use a fake client; Azurite may not support user-delegation SAS.
 """
 
+import logging
 import re
+import threading
+import uuid
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
@@ -32,7 +35,8 @@ class Storage(Protocol):
 
     def exists(self, key: str) -> bool: ...
 
-    def read(self, key: str) -> bytes: ...
+    def read(self, key: str) -> bytes:
+        """Raises FileNotFoundError when the blob is gone."""
 
     def download_url(self, key: str, *, filename: str, content_type: str, inline: bool) -> Optional[str]:
         """A short-lived address the browser can be sent to, or None when the app has to stream
@@ -69,7 +73,8 @@ class LocalStorage:
     def put(self, key: str, data: bytes, content_type: str) -> None:
         path = self._path(key)
         path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = path.with_suffix(".part")
+        # A name of its own, so two uploads of the same new file cannot trip over each other.
+        temporary = path.with_suffix(f".{uuid.uuid4().hex}.part")
         temporary.write_bytes(data)
         temporary.replace(path)  # never leaves a half-written file under the real name
 
@@ -110,6 +115,7 @@ class BlobStorage:
         self._service = service_client
         self._delegation_key = None
         self._delegation_expiry: Optional[datetime] = None
+        self._key_lock = threading.Lock()  # routes run on several threads
 
     @property
     def account_url(self) -> str:
@@ -137,14 +143,20 @@ class BlobStorage:
         return bool(self._blob(key).exists())
 
     def read(self, key: str) -> bytes:
-        return self._blob(key).download_blob().readall()
+        from azure.core.exceptions import ResourceNotFoundError
+
+        try:
+            return self._blob(key).download_blob().readall()
+        except ResourceNotFoundError as error:
+            raise FileNotFoundError(key) from error
 
     def _key(self, now: datetime):
-        if self._delegation_key is None or now >= self._delegation_expiry - self._KEY_REFRESH_BEFORE:
-            expiry = now + self._KEY_LIFETIME
-            self._delegation_key = self.service.get_user_delegation_key(now - timedelta(minutes=5), expiry)
-            self._delegation_expiry = expiry
-        return self._delegation_key
+        with self._key_lock:
+            if self._delegation_key is None or now >= self._delegation_expiry - self._KEY_REFRESH_BEFORE:
+                expiry = now + self._KEY_LIFETIME
+                self._delegation_key = self.service.get_user_delegation_key(now - timedelta(minutes=5), expiry)
+                self._delegation_expiry = expiry
+            return self._delegation_key
 
     def download_url(self, key: str, *, filename: str, content_type: str, inline: bool) -> Optional[str]:
         from azure.storage.blob import BlobSasPermissions, generate_blob_sas
@@ -172,6 +184,12 @@ class BlobStorage:
 def get_storage() -> Storage:
     """The store the settings name. A FastAPI dependency, so tests swap it with
     app.dependency_overrides."""
+    if settings.storage_kind == "local" and not settings.is_dev:
+        logging.getLogger(__name__).warning(
+            "Attachments are stored on local disk (%s): set STORAGE_ACCOUNT_NAME, or files are lost when "
+            "the container restarts.",
+            settings.storage_local_path,
+        )
     if settings.storage_kind == "blob":
         return BlobStorage(
             settings.storage_account_name, settings.storage_container, link_seconds=settings.attachment_link_seconds

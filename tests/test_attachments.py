@@ -354,3 +354,31 @@ def test_with_a_blob_store_the_browser_is_redirected_not_streamed(client, db_ses
     assert response.status_code == 302
     assert response.headers["location"] == f"https://stticketing.blob.core.windows.net/attachments/{attachment.blob_key}?sig=x&inline=True"
     assert "no-store" in response.headers["cache-control"]
+    assert response.headers["referrer-policy"] == "no-referrer"  # the signed address must not leak
+
+
+def test_a_file_whose_blob_is_gone_is_a_clean_404(client, db_session, storage):
+    team = create_team(db_session, "Service Desk")
+    attachment = attach(db_session, storage, make_ticket(db_session, team.id), PDF)
+    agent_on(client, db_session, team)
+    (storage.root / attachment.blob_key).unlink()
+
+    assert client.get(f"/attachments/{attachment.id}").status_code == 404
+
+
+def test_an_agent_who_raised_a_ticket_outside_their_teams_sees_only_what_a_requester_would(client, db_session, storage):
+    team, other = create_team(db_session, "Service Desk"), create_team(db_session, "Network")
+    ticket = make_ticket(db_session, team.id, requester="agent@example.com")
+    public = attach(db_session, storage, ticket, PDF, message=make_message(db_session, ticket))
+    note = attach(db_session, storage, ticket, PDF + b"2", message=make_message(db_session, ticket, internal=True))
+    agent_on(client, db_session, other)
+
+    assert client.get(f"/attachments/{public.id}").status_code == 200
+    assert client.get(f"/attachments/{note.id}").status_code == 403
+
+
+def test_the_same_logo_on_another_message_is_its_own_row(db_session, storage):
+    ticket = make_ticket(db_session)
+    first = attach(db_session, storage, ticket, BIG_PNG, "logo.png", inline=True, message=make_message(db_session, ticket, internal=True))
+    second = attach(db_session, storage, ticket, BIG_PNG, "logo.png", inline=True, message=make_message(db_session, ticket))
+    assert first.id != second.id and first.blob_key == second.blob_key
