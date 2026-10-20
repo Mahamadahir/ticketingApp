@@ -1,7 +1,7 @@
 """attachments: a file on a ticket, its bytes in storage under a content-hash key
 
 Revision ID: d8a3c6f1b247
-Revises: a9d3c6e1f275
+Revises: d5a8b1c4e630
 Create Date: 2026-10-20 13:25:38.906615
 
 """
@@ -14,7 +14,7 @@ import sqlmodel
 
 # revision identifiers, used by Alembic.
 revision: str = 'd8a3c6f1b247'
-down_revision: Union[str, Sequence[str], None] = 'a9d3c6e1f275'
+down_revision: Union[str, Sequence[str], None] = 'd5a8b1c4e630'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
