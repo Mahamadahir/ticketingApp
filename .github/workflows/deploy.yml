@@ -94,6 +94,12 @@ jobs:
       DEPLOY_PUBLIC_APP: ${{ vars.DEPLOY_PUBLIC_APP }}
       DEPLOY_WORKER: ${{ vars.DEPLOY_WORKER }}
       MAIL_SENDING: ${{ vars.MAIL_SENDING }}
+      GRAPH_SUBSCRIPTION_ENABLED: ${{ vars.GRAPH_SUBSCRIPTION_ENABLED }}
+      MAIL_CATCH_UP_ENABLED: ${{ vars.MAIL_CATCH_UP_ENABLED }}
+      INBOUND_ENABLED: ${{ vars.INBOUND_ENABLED }}
+      INBOUND_MAX_ATTACHMENTS: ${{ vars.INBOUND_MAX_ATTACHMENTS }}
+      INBOUND_MAX_PER_SENDER_HOUR: ${{ vars.INBOUND_MAX_PER_SENDER_HOUR }}
+      INBOUND_MAX_CC: ${{ vars.INBOUND_MAX_CC }}
       WEB_BASE_URL: ${{ vars.WEB_BASE_URL }}
       PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
     steps:
@@ -150,7 +156,7 @@ jobs:
           set -euo pipefail
           fail=0
           # Read the way the param files read them: any case, spaces around are ignored.
-          for name in TEAMS_NEW_TICKET_ENABLED TEAMS_NOTIFICATIONS_ENABLED PRESENCE_ENABLED DEPLOY_PUBLIC_APP DEPLOY_WORKER MAIL_SENDING; do
+          for name in TEAMS_NEW_TICKET_ENABLED TEAMS_NOTIFICATIONS_ENABLED PRESENCE_ENABLED GRAPH_SUBSCRIPTION_ENABLED MAIL_CATCH_UP_ENABLED INBOUND_ENABLED DEPLOY_PUBLIC_APP DEPLOY_WORKER MAIL_SENDING; do
             value="$(printf '%s' "${!name:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
             case "$name:$value" in
               MAIL_SENDING:"" | MAIL_SENDING:off | MAIL_SENDING:graph) printf -v "$name" '%s' "$value" ;;
@@ -163,6 +169,10 @@ jobs:
           default=false
           if [ "$ENVIRONMENT_NAME" = staging ]; then default=true; fi
           worker_on="${DEPLOY_WORKER:-$default}"
+          public_on="${DEPLOY_PUBLIC_APP:-$default}"
+          if { [ "${MAIL_SENDING:-}" = graph ] || [ "${GRAPH_SUBSCRIPTION_ENABLED:-}" = true ]; } && [ "$public_on" != true ] && [ -z "${PUBLIC_BASE_URL:-}" ]; then
+            echo "::warning::Mail sending or the Graph subscription is on but the public app is not deployed (DEPLOY_PUBLIC_APP) and PUBLIC_BASE_URL is empty: approval links and Graph notifications have nowhere to go."
+          fi
           if { [ "${TEAMS_NEW_TICKET_ENABLED:-}" = true ] || [ "${TEAMS_NOTIFICATIONS_ENABLED:-}" = true ] || [ "${PRESENCE_ENABLED:-}" = true ] || [ "${MAIL_SENDING:-}" = graph ]; } && [ "$worker_on" != true ]; then
             echo "::warning::A Teams, presence or mail switch is on but the worker is not deployed (DEPLOY_WORKER), and the worker does the sending and the presence checks. Posts and emails will queue and nothing will send them."
           fi

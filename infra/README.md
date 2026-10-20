@@ -112,8 +112,7 @@ the Graph webhook; with the worker off, Teams posts and mail queue and nothing s
 "Open ticket" at the web app, so the worker is given both: `PUBLIC_BASE_URL` (the public app) and
 `WEB_BASE_URL` (the web app). By default they are the generated Azure addresses, printed as the
 deployment outputs `publicUrl` and `webUrl`. When a custom domain is set up, pass it as
-`PUBLIC_BASE_URL` (the public app) and `WEB_BASE_URL` (the web app) to the deploy; the Bicep
-parameter for the web address is still called `publicBaseUrl`, despite the name.
+`PUBLIC_BASE_URL` (the public app) and `WEB_BASE_URL` (the web app) to the deploy.
 
 **Mail.** `MAIL_SENDING` is `off` (default, nothing is queued) or `graph` (the worker sends from
 `GRAPH_SHARED_MAILBOX` through Graph). `graph` needs the `GRAPH_*` tenant, client and secret and the
@@ -204,6 +203,8 @@ The subject must match the GitHub Environment name exactly.
 | Variable | `TEAMS_NEW_TICKET_ENABLED`, `TEAMS_NOTIFICATIONS_ENABLED`, `PRESENCE_ENABLED` | optional; `true` switches the feature on, unset means off (see "Teams and out-of-office") |
 | Variable | `DEPLOY_PUBLIC_APP`, `DEPLOY_WORKER` | optional; `true`/`false`. Empty: staging `true`, production `false` |
 | Variable | `MAIL_SENDING` | optional; `off` (default) or `graph` (needs the `GRAPH_*` values and `GRAPH_SHARED_MAILBOX`) |
+| Variable | `GRAPH_SUBSCRIPTION_ENABLED`, `MAIL_CATCH_UP_ENABLED`, `INBOUND_ENABLED` | optional; `true` turns on, on the worker only (phases 3B/3C: the Graph subscription pointing at the public app's `/webhooks/graph/notifications`, the missed-mail sweep, and turning fetched mail into replies and tickets). Off by default |
+| Variable | `INBOUND_MAX_ATTACHMENTS`, `INBOUND_MAX_PER_SENDER_HOUR`, `INBOUND_MAX_CC` | optional numbers; empty keeps the app's default |
 | Variable | `WEB_BASE_URL`, `PUBLIC_BASE_URL` | optional; custom domains of the web and public apps. Empty: the generated Azure addresses |
 | Variable | `HEALTH_URL` | optional extra base URL to probe |
 | Secret | `POSTGRES_ADMIN_PASSWORD`, `SESSION_SECRET_KEY`, `INTERNAL_SESSION_SECRET_KEY`, `GRAPH_WEBHOOK_CLIENT_STATE` | required, same values as the platform deploy |
@@ -270,7 +271,7 @@ be reachable from the certificate authority, including at every renewal. So
 `web` uses a certificate you supply (kept in Key Vault) rather than a managed
 one. The `public` app has no IP restriction and can use a managed certificate.
 Both need a CNAME to the app's generated name plus a TXT record for ownership.
-Update the Entra redirect URI and the web address (`WEB_BASE_URL`, Bicep `publicBaseUrl`) at the same
+Update the Entra redirect URI and the web address (`WEB_BASE_URL`, Bicep `webAppBaseUrl`) at the same
 time, and `PUBLIC_BASE_URL` for the public app, which the emailed approval links use.
 
 ## Not covered yet

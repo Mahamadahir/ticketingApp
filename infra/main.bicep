@@ -33,8 +33,8 @@ param deployWorker bool = false
 @description('Office and VPN ranges allowed to reach the web app, e.g. ["203.0.113.0/24"]. Required, so nobody opens the agent console to the internet by leaving it out. To really allow everyone (a staging test), say so with "0.0.0.0/0".')
 param webAllowedCidrs array
 
-@description('Where the WEB app (agent console) is reached, despite the name, e.g. https://tickets.example.org. Empty uses the generated Azure URL. Becomes WEB_BASE_URL and the Entra redirect address.')
-param publicBaseUrl string = ''
+@description('Where the WEB app (agent console) is reached, e.g. https://tickets.example.org. Empty uses the generated Azure URL. Becomes WEB_BASE_URL and the Entra redirect address.')
+param webAppBaseUrl string = ''
 
 @description('Where the PUBLIC app is reached, e.g. https://respond.example.org. Empty uses the generated Azure URL. Becomes PUBLIC_BASE_URL, which the emailed approval link is built on.')
 param publicAppBaseUrl string = ''
@@ -74,6 +74,17 @@ param graphTenantId string = ''
 param graphClientId string = ''
 param graphSharedMailbox string = ''
 param superAdminEmails string = ''
+
+@description('Worker keeps the Graph change-notification subscription alive (phase 3C). Needs the public app, whose webhook address it registers, and the Graph settings.')
+param graphSubscriptionEnabled bool = false
+@description('Worker re-reads the mailbox to find mail whose notification was missed (phase 3C).')
+param mailCatchUpEnabled bool = false
+@description('Worker turns fetched mail into replies and tickets (phase 3B).')
+param inboundEnabled bool = false
+@description('Inbound mail limits (phase 3B). -1 leaves the app default.')
+param inboundMaxAttachments int = -1
+param inboundMaxPerSenderHour int = -1
+param inboundMaxCc int = -1
 
 @allowed(['off', 'graph'])
 @description('Whether the worker sends email from the shared mailbox through Graph (phase 3D). graph needs the Graph tenant, client and secret and GRAPH_SHARED_MAILBOX, with Mail.Send granted in Entra and limited to that mailbox. (The app also has a dev mode; it only works in the dev environment and is not allowed here.)')
@@ -319,7 +330,7 @@ var workerSecretEnv = [for n in workerSecretNames: { name: secretEnvNames[n], se
 var migrateSecretEnv = [for n in migrateSecretNames: { name: secretEnvNames[n], secretRef: n }]
 
 var webName = 'ca-${prefix}-${environmentName}-web'
-var webBaseUrl = !empty(publicBaseUrl) ? publicBaseUrl : 'https://${webName}.${appEnvironment.outputs.defaultDomain}'
+var webBaseUrl = !empty(webAppBaseUrl) ? webAppBaseUrl : 'https://${webName}.${appEnvironment.outputs.defaultDomain}'
 var publicName = 'ca-${prefix}-${environmentName}-public'
 // Empty when there is no public app to point at, so an approval email waits (the app refuses to
 // build a link without it) instead of going out with a link to a host that does not exist.
@@ -353,6 +364,13 @@ var commonEnv = [
   { name: 'TEAMS_NEW_TICKET_ENABLED', value: toLower(string(teamsNewTicketEnabled)) }
   { name: 'TEAMS_NOTIFICATIONS_ENABLED', value: toLower(string(teamsNotificationsEnabled)) }
 ]
+
+// Only the limits that were set; the others keep the app's own defaults.
+var inboundLimitEnv = concat(
+  inboundMaxAttachments >= 0 ? [{ name: 'INBOUND_MAX_ATTACHMENTS', value: string(inboundMaxAttachments) }] : [],
+  inboundMaxPerSenderHour >= 0 ? [{ name: 'INBOUND_MAX_PER_SENDER_HOUR', value: string(inboundMaxPerSenderHour) }] : [],
+  inboundMaxCc >= 0 ? [{ name: 'INBOUND_MAX_CC', value: string(inboundMaxCc) }] : []
+)
 
 var allowRules = [
   for (cidr, i) in webAllowedCidrs: {
@@ -452,9 +470,14 @@ module worker 'modules/container-app.bicep' = if (deployApps && deployWorker) {
     image: image
     command: ['python', '-m', 'app.worker']
     secrets: workerSecrets
-    env: concat(commonEnv, workerSecretEnv, [
+    env: concat(commonEnv, workerSecretEnv, inboundLimitEnv, [
       { name: 'APP_ROLE', value: 'worker' }
       { name: 'PRESENCE_ENABLED', value: toLower(string(presenceEnabled)) }
+      { name: 'GRAPH_SUBSCRIPTION_ENABLED', value: toLower(string(graphSubscriptionEnabled)) }
+      // Where Microsoft delivers notifications: the public app (https only). Empty when there is none.
+      { name: 'GRAPH_NOTIFICATION_URL', value: !empty(publicAppUrl) ? '${publicAppUrl}/webhooks/graph/notifications' : '' }
+      { name: 'MAIL_CATCH_UP_ENABLED', value: toLower(string(mailCatchUpEnabled)) }
+      { name: 'INBOUND_ENABLED', value: toLower(string(inboundEnabled)) }
       { name: 'AZURE_CLIENT_ID', value: identityWorker.properties.clientId }
     ])
     ingress: null
