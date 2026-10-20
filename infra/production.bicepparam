@@ -6,17 +6,20 @@ param environmentName = 'production'
 // deploy workflow sets IMAGE to deploy the apps.
 param image = readEnvironmentVariable('IMAGE', '')
 
-// Off until the app has the APP_ROLE=public mode (phase 3) and the worker entrypoint
-// (phase 2). Turned on earlier they would serve the whole agent console on an open
-// address and crash-loop respectively.
-param deployPublicApp = false
-param deployWorker = false
+// The public app (webhook and approval links) and the worker (Teams, presence, mail) both exist
+// now. Production leaves them off until staging has proved them; say DEPLOY_PUBLIC_APP=true and
+// DEPLOY_WORKER=true to turn them on.
+param deployPublicApp = toLower(trim(readEnvironmentVariable('DEPLOY_PUBLIC_APP', 'false'))) == 'true'
+param deployWorker = toLower(trim(readEnvironmentVariable('DEPLOY_WORKER', 'false'))) == 'true'
 
 // Office and VPN ranges, comma separated, e.g. WEB_ALLOWED_CIDRS=203.0.113.0/24.
 // Required: the deploy fails without it, so production is never opened by omission.
 param webAllowedCidrs = filter(map(split(readEnvironmentVariable('WEB_ALLOWED_CIDRS'), ','), cidr => trim(cidr)), cidr => !empty(cidr))
-// The internal domain, once DNS and a certificate exist, e.g. https://tickets.example.org
-param publicBaseUrl = ''
+// The internal domain of the web app, once DNS and a certificate exist, e.g. https://tickets.example.org,
+// and the public app's address for the emailed links. Empty: the generated Azure addresses.
+param publicBaseUrl = readEnvironmentVariable('WEB_BASE_URL', '')
+param publicAppBaseUrl = readEnvironmentVariable('PUBLIC_BASE_URL', '')
+param mailSending = toLower(trim(readEnvironmentVariable('MAIL_SENDING', 'off')))
 
 param alertEmail = readEnvironmentVariable('ALERT_EMAIL')
 

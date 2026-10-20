@@ -34,6 +34,7 @@ from sqlalchemy.engine import Connection, Engine
 from sqlmodel import Session
 
 from app.config import settings, unsafe_setting_errors
+from app.telemetry import start_telemetry
 from app.database import engine
 from app.jobs import JOBS, Job
 
@@ -172,6 +173,7 @@ def install_signal_handlers(scheduler: BlockingScheduler, state: Optional[Worker
 
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    start_telemetry()
     errors = unsafe_setting_errors(settings)
     for error in errors:
         log.error("Refusing to start: %s", error)

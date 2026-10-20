@@ -21,10 +21,10 @@ param prefix string = 'ticketing'
 @description('Full image reference, e.g. <acr>.azurecr.io/ticketing:<sha>. Empty creates the platform only (network, database, storage, vault, registry, monitoring), which is the first deploy because the registry has no image yet. Setting it deploys the apps and the migrate job.')
 param image string = ''
 
-@description('Second app that serves only the Graph webhook, feedback/reopen links and /health. Leave false until the app has an APP_ROLE=public mode (plan: phase 3). Without that mode it would serve the whole agent console on an open address.')
+@description('Second app (APP_ROLE=public) that serves only the Graph webhook, the emailed approval links and /health, on an address open to the internet. The app mounts only those routes in this mode (app/main.py), so it cannot serve the agent console.')
 param deployPublicApp bool = false
 
-@description('Background worker. Leave false until the worker entrypoint exists (plan: phase 2). Without it the container crash-loops.')
+@description('Background worker (python -m app.worker): the Teams posts, presence checks, mail and the heartbeat. One replica, no ingress.')
 param deployWorker bool = false
 
 // ---- Access -----------------------------------------------------------------
@@ -33,8 +33,11 @@ param deployWorker bool = false
 @description('Office and VPN ranges allowed to reach the web app, e.g. ["203.0.113.0/24"]. Required, so nobody opens the agent console to the internet by leaving it out. To really allow everyone (a staging test), say so with "0.0.0.0/0".')
 param webAllowedCidrs array
 
-@description('Where the web app is reached, e.g. https://tickets.example.org. Empty uses the generated Azure URL.')
+@description('Where the WEB app (agent console) is reached, despite the name, e.g. https://tickets.example.org. Empty uses the generated Azure URL. Becomes WEB_BASE_URL and the Entra redirect address.')
 param publicBaseUrl string = ''
+
+@description('Where the PUBLIC app is reached, e.g. https://respond.example.org. Empty uses the generated Azure URL. Becomes PUBLIC_BASE_URL, which the emailed approval link is built on.')
+param publicAppBaseUrl string = ''
 
 // ---- Sizing -----------------------------------------------------------------
 
@@ -71,6 +74,10 @@ param graphTenantId string = ''
 param graphClientId string = ''
 param graphSharedMailbox string = ''
 param superAdminEmails string = ''
+
+@allowed(['off', 'graph'])
+@description('Whether the worker sends email from the shared mailbox through Graph (phase 3D). graph needs the Graph tenant, client and secret and GRAPH_SHARED_MAILBOX, with Mail.Send granted in Entra and limited to that mailbox. (The app also has a dev mode; it only works in the dev environment and is not allowed here.)')
+param mailSending string = 'off'
 
 @description('Teams channel post for each new ticket (phase 2D). The webhook URL secret is also needed, or posts wait in the outbox.')
 param teamsNewTicketEnabled bool = false
@@ -270,13 +277,14 @@ var webSecretNames = concat(
   optionalSsoSecret,
   optionalGraphSecret
 )
-var publicSecretNames = concat(
-  ['database-url', 'session-secret-key-internal', 'graph-webhook-client-state'],
-  optionalGraphSecret
-)
+// Public receives the webhook and stores it (it checks the client state and writes to the database;
+// it makes no Graph calls) and checks the emailed approval links with the internal key the worker
+// signs them with. It holds no Graph secret: the worker is the only app that calls Graph with one
+// besides web.
+var publicSecretNames = ['database-url', 'session-secret-key-internal', 'graph-webhook-client-state']
 var optionalTeamsSecret = !empty(teamsNewTicketWebhookUrl) ? ['teams-new-ticket-webhook-url'] : []
 // The worker is the only app that posts to Teams.
-var workerSecretNames = concat(publicSecretNames, optionalTeamsSecret)
+var workerSecretNames = concat(publicSecretNames, optionalGraphSecret, optionalTeamsSecret)
 var migrateSecretNames = ['database-url']
 
 // Handed to the key vault module, which grants each identity read access to
@@ -312,6 +320,8 @@ var migrateSecretEnv = [for n in migrateSecretNames: { name: secretEnvNames[n], 
 
 var webName = 'ca-${prefix}-${environmentName}-web'
 var webBaseUrl = !empty(publicBaseUrl) ? publicBaseUrl : 'https://${webName}.${appEnvironment.outputs.defaultDomain}'
+var publicName = 'ca-${prefix}-${environmentName}-public'
+var publicAppUrl = !empty(publicAppBaseUrl) ? publicAppBaseUrl : 'https://${publicName}.${appEnvironment.outputs.defaultDomain}'
 
 var commonEnv = [
   { name: 'ENV', value: environmentName }
@@ -332,6 +342,12 @@ var commonEnv = [
   { name: 'GRAPH_CLIENT_ID', value: graphClientId }
   { name: 'GRAPH_SHARED_MAILBOX', value: graphSharedMailbox }
   { name: 'SUPER_ADMIN_EMAILS', value: superAdminEmails }
+  // Every process that queues mail needs the mode (off queues nothing); the worker sends it.
+  { name: 'MAIL_SENDING', value: mailSending }
+  // Two addresses: the approval link in an email points at the public app, a Teams card's
+  // "Open ticket" points at the web app.
+  { name: 'PUBLIC_BASE_URL', value: publicAppUrl }
+  { name: 'WEB_BASE_URL', value: webBaseUrl }
   { name: 'TEAMS_NEW_TICKET_ENABLED', value: toLower(string(teamsNewTicketEnabled)) }
   { name: 'TEAMS_NOTIFICATIONS_ENABLED', value: toLower(string(teamsNotificationsEnabled)) }
 ]
@@ -391,7 +407,7 @@ module publicApp 'modules/container-app.bicep' = if (deployApps && deployPublicA
   params: {
     location: location
     tags: tags
-    name: 'ca-${prefix}-${environmentName}-public'
+    name: publicName
     environmentId: appEnvironment.outputs.id
     identityId: identityPublic.id
     registryServer: registry.outputs.loginServer
@@ -482,4 +498,6 @@ output containerAppsEnvironmentName string = appEnvironment.outputs.name
 output webAppName string = webName
 output migrateJobName string = 'job-${prefix}-${environmentName}-migrate'
 output webUrl string = webBaseUrl
+output publicAppName string = publicName
+output publicUrl string = publicAppUrl
 output webIdentityClientId string = identityWeb.properties.clientId

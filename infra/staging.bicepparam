@@ -6,14 +6,18 @@ param environmentName = 'staging'
 // deploy workflow sets IMAGE to deploy the apps.
 param image = readEnvironmentVariable('IMAGE', '')
 
-// Turn on as the app grows the matching mode (see docs/plan.md).
-param deployPublicApp = false
-param deployWorker = false
+// The public app (webhook and approval links) and the worker (Teams, presence, mail) both exist now.
+// Staging runs them by default; DEPLOY_PUBLIC_APP and DEPLOY_WORKER say true or false.
+param deployPublicApp = toLower(trim(readEnvironmentVariable('DEPLOY_PUBLIC_APP', 'true'))) == 'true'
+param deployWorker = toLower(trim(readEnvironmentVariable('DEPLOY_WORKER', 'true'))) == 'true'
 
 // Office and VPN ranges, comma separated, e.g. WEB_ALLOWED_CIDRS=203.0.113.0/24,198.51.100.7/32.
 // Required. Use 0.0.0.0/0 only as a deliberate choice for a throwaway test.
 param webAllowedCidrs = filter(map(split(readEnvironmentVariable('WEB_ALLOWED_CIDRS'), ','), cidr => trim(cidr)), cidr => !empty(cidr))
-param publicBaseUrl = ''
+// Empty: the generated Azure addresses. Set when a custom domain is in place (infra/README.md).
+param publicBaseUrl = readEnvironmentVariable('WEB_BASE_URL', '')
+param publicAppBaseUrl = readEnvironmentVariable('PUBLIC_BASE_URL', '')
+param mailSending = toLower(trim(readEnvironmentVariable('MAIL_SENDING', 'off')))
 
 param alertEmail = readEnvironmentVariable('ALERT_EMAIL')
 

@@ -15,6 +15,7 @@ from app.auth import NotAuthenticated, get_current_user
 from app.visibility import NoTicketAccess
 from app.config import settings, unsafe_setting_errors
 from app.log_redaction import redact_approval_tokens
+from app.telemetry import start_telemetry
 from app.models import User, UserRole
 from app.routers import admin, approvals, attachments, auth, dev_tools, health, my_settings, notifications, portal, tickets, webhooks
 
@@ -124,6 +125,7 @@ def build_app(role: str) -> FastAPI:
 
 
 redact_approval_tokens()
+start_telemetry()
 # An unknown role is not served as anything wider than public: the start-up check refuses it with a
 # clear message, and until then it gets the smallest set of routes.
 app = build_app(settings.app_role if settings.app_role in ROLE_ROUTERS else "public")

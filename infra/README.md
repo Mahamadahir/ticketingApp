@@ -29,8 +29,8 @@ compromised app can use only what it was granted. This matters most for
 | Identity | Pulls images | Reads these Key Vault secrets | Blob access |
 |---|---|---|---|
 | web | yes | database URL, session key, webhook state, SSO secret, Graph secret | yes |
-| public | yes | database URL, internal session key, webhook state, Graph secret | no |
-| worker | yes | same as public | yes |
+| public | yes | database URL, internal session key, webhook state | no |
+| worker | yes | same as public, plus the Graph secret and the Teams webhook URL when set | yes |
 | migrate | yes | database URL only | no |
 
 Secrets are granted one by one (role assignment on the secret, not the vault).
@@ -93,10 +93,44 @@ has no image yet), and no apps or job are deployed.
    (job first, then apps); on the very first image deploy the job does not exist
    until the template creates it, so the workflow runs it straight after.
 
-`deployPublicApp` and `deployWorker` stay false until the app has the
-`APP_ROLE=public` mode and the worker entrypoint. Turned on earlier, `public`
-would serve the whole agent console on an open address and the worker would
-crash-loop.
+## The three apps (web, public, worker)
+
+All three run the same image; `APP_ROLE` (set by the template) picks what each does.
+
+| App | Role | Address | Does |
+|---|---|---|---|
+| `web` | `web` | IP restricted | the agent console and portal, attachments, sign-in |
+| `public` | `public` | open to the internet | only `/health`, the Graph webhook and the emailed approval links; no sign-in, no files |
+| `worker` | `worker` | none | Teams posts, presence, mail (once the mail jobs exist), the heartbeat; exactly one replica |
+
+`DEPLOY_PUBLIC_APP` and `DEPLOY_WORKER` (`true`/`false`, read by `infra/*.bicepparam`) choose
+which of the last two exist. Staging defaults both to `true`; production defaults both to `false`
+until staging has proved them. With the public app off there is nowhere for Microsoft to deliver
+the Graph webhook; with the worker off, Teams posts and mail queue and nothing sends them.
+
+**Two addresses.** The emailed approval link must point at the public app and a Teams card's
+"Open ticket" at the web app, so the worker is given both: `PUBLIC_BASE_URL` (the public app) and
+`WEB_BASE_URL` (the web app). By default they are the generated Azure addresses, printed as the
+deployment outputs `publicUrl` and `webUrl`. When a custom domain is set up, pass it as
+`PUBLIC_BASE_URL` (the public app) and `WEB_BASE_URL` (the web app) to the deploy; the Bicep
+parameter for the web address is still called `publicBaseUrl`, despite the name.
+
+**Mail.** `MAIL_SENDING` is `off` (default, nothing is queued) or `graph` (the worker sends from
+`GRAPH_SHARED_MAILBOX` through Graph). `graph` needs the `GRAPH_*` tenant, client and secret and the
+mailbox, with `Mail.Send` granted in Entra and restricted to that mailbox (an application access
+policy). The deploy workflow refuses `graph` without them. The app also has a `dev` mode that
+sends nothing; it only works in the dev environment and the template does not allow it.
+
+**Application Insights.** Every app receives `APPLICATIONINSIGHTS_CONNECTION_STRING` and the app
+starts telemetry from it (`app/telemetry.py`; blank means off). The approval link carries a working
+credential in its path, so `/approvals/` requests are excluded from request telemetry; uvicorn's
+own access log redacts the token (`app/log_redaction.py`). Ingress logs are Azure's own and still
+need checking on staging (docs/build-plan.md checklist).
+
+**Storage.** `STORAGE_ACCOUNT_NAME` is set on every app, so the app uses Blob Storage with its own
+managed identity (no keys). Only web (downloads, uploads) and worker (mail attachments) hold the
+Blob Data Contributor and Delegator roles; the public app and migrate job have none, and the public
+app cannot serve files (no route).
 
 ## Every deploy after that
 
@@ -168,6 +202,9 @@ The subject must match the GitHub Environment name exactly.
 | Variable | `ALERT_EMAIL`, `WEB_ALLOWED_CIDRS` | required, as in "First deploy" |
 | Variable | `SSO_TENANT_ID`, `SSO_CLIENT_ID`, `GRAPH_TENANT_ID`, `GRAPH_CLIENT_ID`, `GRAPH_SHARED_MAILBOX`, `SUPER_ADMIN_EMAILS` | optional; empty if unset |
 | Variable | `TEAMS_NEW_TICKET_ENABLED`, `TEAMS_NOTIFICATIONS_ENABLED`, `PRESENCE_ENABLED` | optional; `true` switches the feature on, unset means off (see "Teams and out-of-office") |
+| Variable | `DEPLOY_PUBLIC_APP`, `DEPLOY_WORKER` | optional; `true`/`false`. Empty: staging `true`, production `false` |
+| Variable | `MAIL_SENDING` | optional; `off` (default) or `graph` (needs the `GRAPH_*` values and `GRAPH_SHARED_MAILBOX`) |
+| Variable | `WEB_BASE_URL`, `PUBLIC_BASE_URL` | optional; custom domains of the web and public apps. Empty: the generated Azure addresses |
 | Variable | `HEALTH_URL` | optional extra base URL to probe |
 | Secret | `POSTGRES_ADMIN_PASSWORD`, `SESSION_SECRET_KEY`, `INTERNAL_SESSION_SECRET_KEY`, `GRAPH_WEBHOOK_CLIENT_STATE` | required, same values as the platform deploy |
 | Secret | `SSO_CLIENT_SECRET`, `GRAPH_CLIENT_SECRET`, `TEAMS_NEW_TICKET_WEBHOOK_URL` | optional; supply on every deploy once set, or the revision loses them |
@@ -233,7 +270,8 @@ be reachable from the certificate authority, including at every renewal. So
 `web` uses a certificate you supply (kept in Key Vault) rather than a managed
 one. The `public` app has no IP restriction and can use a managed certificate.
 Both need a CNAME to the app's generated name plus a TXT record for ownership.
-Update the Entra redirect URI and `publicBaseUrl` at the same time.
+Update the Entra redirect URI and the web address (`WEB_BASE_URL`, Bicep `publicBaseUrl`) at the same
+time, and `PUBLIC_BASE_URL` for the public app, which the emailed approval links use.
 
 ## Not covered yet
 
