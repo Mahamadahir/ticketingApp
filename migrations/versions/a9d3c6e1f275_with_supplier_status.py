@@ -1,7 +1,7 @@
 """With supplier ticket status
 
 Revision ID: a9d3c6e1f275
-Revises: c4f7a0b3d529
+Revises: d5a8b1c4e730
 Create Date: 2026-10-20 10:00:00.000000
 
 """
