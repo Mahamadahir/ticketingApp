@@ -268,6 +268,54 @@ def test_a_process_that_cannot_send_says_so_when_posts_are_waiting(client, db_se
     assert "TEAMS_NEW_TICKET_WEBHOOK_URL is not set" in caplog.text
 
 
+def test_the_worker_runs_the_teams_job_every_minute_and_it_sends_what_is_waiting(
+    client, db_session, teams_on, monkeypatch
+):
+    from app import teams
+    from app.jobs import JOBS
+
+    [job] = [j for j in JOBS if j.name == "teams-posts"]
+    assert job.every_seconds == 60
+    new_ticket(db_session, "Waiting for the worker")
+    sender = Sender()
+    monkeypatch.setattr(teams, "post_card", sender)
+
+    job.run(db_session)
+    db_session.commit()
+
+    assert len(sender.sent) == 1 and "Waiting for the worker" in str(sender.sent[0])
+    assert posts(db_session)[0].sent_at is not None
+
+
+def test_a_new_kind_of_post_needs_only_a_builder(client, db_session, teams_on, monkeypatch):
+    from app import teams
+
+    ticket = new_ticket(db_session)
+    db_session.add(TeamsPost(kind="other", ticket_id=ticket.id))
+    db_session.commit()
+    monkeypatch.setitem(teams.CARD_BUILDERS, "other", lambda session, post: {"hello": post.kind})
+    sender = Sender()
+
+    assert deliver_pending(db_session, sender) == (2, 0)
+    assert {"hello": "other"} in sender.sent
+
+
+def test_a_builder_that_cannot_build_gives_up_with_its_reason(client, db_session, teams_on, monkeypatch):
+    from app import teams
+
+    ticket = new_ticket(db_session)
+    db_session.add(TeamsPost(kind="other", ticket_id=ticket.id))
+    db_session.commit()
+
+    def gone(session, post):
+        raise teams.Unsendable("Person not found")
+
+    monkeypatch.setitem(teams.CARD_BUILDERS, "other", gone)
+    assert deliver_pending(db_session, Sender()) == (1, 1)
+    db_session.commit()
+    assert (posts(db_session)[1].attempts, posts(db_session)[1].last_error) == (MAX_ATTEMPTS, "Person not found")
+
+
 def test_config_flag_follows_the_url(monkeypatch):
     monkeypatch.setattr(settings, "teams_new_ticket_webhook_url", "")
     assert settings.teams_new_ticket_configured is False

@@ -42,11 +42,11 @@ not exist (`infra/` compiles but has never run against a subscription).
 | 2B notification settings (channels per event type per person) | merged (#38) | `app/notification_settings.py`, `app/routers/my_settings.py` |
 | 2C-i worker skeleton: `python -m app.worker`, APScheduler, heartbeat line, single-instance lock, compose service | merged (#39) | `app/worker.py`, `app/jobs/` |
 | 2C-ii unread-after-N-minutes notification to Teams (needs the decisions in the Phase 2 note below) | not started | |
-| 2D Teams channel webhook for new tickets: outbox, card, sender (the worker job and the Bicep wiring follow, see Next up) | built, in review | `app/teams.py` |
+| 2D Teams channel webhook for new tickets: outbox, card, sender (the worker job is in; the Bicep wiring follows, see Next up) | built, in review | `app/teams.py` |
 | 2E out-of-office detection (Graph presence) and skipping OOO agents | not started | |
 | Phases 2 to 9 | not started | `docs/plan.md`, "Build order" |
 
-Tests: 691 passing on Postgres 16.
+Tests: 694 passing on Postgres 16.
 
 ## Next up
 **Deferred from the escalation work (documented, not built).**
@@ -72,12 +72,7 @@ Tests: 691 passing on Postgres 16.
 
 **Phase 2**, in five PRs: 2A the bell (merged, #36), 2B notification settings (built: `/settings/notifications`, anyone signed in chooses channels per event type; only the bell delivers, Teams and email choices are stored for 2C and phase 3 to read through `is_enabled`), 2C the worker (python -m app.worker, APScheduler, heartbeat, a compose service; first job: an unread notification is also sent to Teams after N minutes, a per-person setting, default 5). Note for 2C: notify() writes no Notification row when the bell is off, so a Teams copy that reads unread rows would never fire for someone with the bell off and Teams on; 2C must decide that (for example, write the row already read, or send Teams from notify() itself), 2D the Teams Workflows webhook for new tickets (the URL is a secret from the environment, never a setting; test with a mocked sender), 2E out-of-office detection (Graph presence, tested with simulated responses; Azure-only to prove) and skipping out-of-office agents for assignment and team notifications. Phase 3 (mail) will carry the approval emails with the link from pp/approval_links.py.
 
-**To finish 2D once the worker (2C-i) is merged.** (1) Add a `JOBS` entry that calls `app.teams.deliver_pending(session)` every
-minute or so (the worker commits after the job). Until then, nothing sends: with `TEAMS_NEW_TICKET_ENABLED` on, posts wait
-in the `teamspost` table. (2) Bicep: `TEAMS_NEW_TICKET_ENABLED` as a plain environment variable on web, public and worker;
-the webhook URL as a Key Vault secret (`teams-new-ticket-webhook-url` -> `TEAMS_NEW_TICKET_WEBHOOK_URL`) readable by the
-worker identity only. Validate with `bicep lint` and `build-params`. (3) Prune old sent `TeamsPost` rows when a housekeeping
-job exists.
+**Still to do for 2D.** (1) Bicep: `TEAMS_NEW_TICKET_ENABLED` as a plain environment variable on web, public and worker; the webhook URL as a Key Vault secret (`teams-new-ticket-webhook-url` -> `TEAMS_NEW_TICKET_WEBHOOK_URL`) readable by the worker identity only. Validate with `bicep lint` and `build-params`. Until then the worker has no URL, so posts wait in the `teamspost` table and the worker logs a warning every minute. (2) Prune old sent `TeamsPost` rows when a housekeeping job exists. The `teams-posts` job (every 60 seconds) is in `app/jobs/__init__.py`. Another kind of post is one builder in `app.teams.CARD_BUILDERS` (it turns the row into the payload, or raises `Unsendable`); sending, backoff and giving up are shared.
 
 ## Working agreement for every PR
 

@@ -18,6 +18,7 @@ from sqlalchemy import text
 from sqlmodel import Session
 
 from app.config import settings
+from app.teams import deliver_pending
 
 
 @dataclass(frozen=True)
@@ -33,6 +34,15 @@ def heartbeat(session: Session) -> None:
     session.exec(text("select 1"))
 
 
+def teams_posts(session: Session) -> None:
+    """Sends the Teams posts that are waiting (app/teams.py). With no webhook URL it sends nothing and
+    logs a warning if posts are waiting."""
+    deliver_pending(session)
+
+
+TEAMS_POSTS_EVERY_SECONDS = 60
+
 JOBS: list[Job] = [
     Job("heartbeat", settings.worker_heartbeat_seconds, heartbeat),
+    Job("teams-posts", TEAMS_POSTS_EVERY_SECONDS, teams_posts),
 ]

@@ -122,6 +122,25 @@ def describe_failure(error: Exception) -> str:
     return type(error).__name__
 
 
+class Unsendable(Exception):
+    """Raised by a card builder when its post can never be sent (what it is about is gone). The
+    message is the reason kept on the row."""
+
+
+def new_ticket_post(session: Session, post: TeamsPost) -> dict:
+    ticket = session.get(Ticket, post.ticket_id) if post.ticket_id else None
+    if ticket is None:
+        raise Unsendable("Ticket not found")
+    return new_ticket_card(ticket)
+
+
+# One builder per kind of post: it turns the row into the payload to send, or raises Unsendable.
+# A new kind of post is one builder and one entry here; sending, backoff and giving up are shared.
+CARD_BUILDERS: dict[str, Callable[[Session, TeamsPost], dict]] = {
+    NEW_TICKET: new_ticket_post,
+}
+
+
 def give_up(post: TeamsPost, reason: str) -> None:
     post.attempts = MAX_ATTEMPTS
     post.last_error = reason
@@ -129,7 +148,7 @@ def give_up(post: TeamsPost, reason: str) -> None:
 
 def deliver_pending(
     session: Session,
-    send: Callable[[dict], None] = post_card,
+    send: Optional[Callable[[dict], None]] = None,
     limit: int = BATCH,
     now: Optional[datetime] = None,
 ) -> tuple[int, int]:
@@ -137,6 +156,7 @@ def deliver_pending(
     time (see MAX_ATTEMPTS) and is given up on at once if Teams refuses the request itself. The row
     keeps the reason. One failure never stops the rest. Returns (sent, failed). Does not commit;
     the worker commits after the job."""
+    send = send or post_card
     now = now or datetime.now(timezone.utc)
     due = (
         TeamsPost.sent_at.is_(None),
@@ -154,19 +174,21 @@ def deliver_pending(
     ).all()
     sent = failed = 0
     for post in posts:
-        ticket = session.get(Ticket, post.ticket_id) if post.ticket_id else None
-        if post.kind != NEW_TICKET:
+        builder = CARD_BUILDERS.get(post.kind)
+        if builder is None:
             give_up(post, "Unknown kind")
             session.add(post)
             failed += 1
             continue
-        if ticket is None:
-            give_up(post, "Ticket not found")
+        try:
+            payload = builder(session, post)
+        except Unsendable as reason:
+            give_up(post, str(reason))
             session.add(post)
             failed += 1
             continue
         try:
-            send(new_ticket_card(ticket))
+            send(payload)
         except Exception as error:
             post.attempts += 1
             post.last_error = describe_failure(error)
