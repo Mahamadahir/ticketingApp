@@ -448,7 +448,7 @@ def fill_from_canned(
 def _status_after_email(session: Session, ticket: Ticket) -> Optional[TicketStatus]:
     """Emailing the user always means we are now waiting on them, so the ticket moves to
     Awaiting user by itself (the agent is not asked, and cannot opt out). That pauses the SLA
-    clock and starts the chase timer. A ticket With MSP is waiting on someone else, and a
+    clock and starts the chase timer. A ticket With supplier or With MSP is waiting on someone else, and a
     Resolved or Closed one is finished, so those stay as they are. An original's status
     follows its sub-tickets instead; emailing from a part moves that part. None: no change."""
     if ticket.status in WAITING_ON_US and not has_sub_tickets(session, ticket):

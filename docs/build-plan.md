@@ -45,15 +45,16 @@ not exist (`infra/` compiles but has never run against a subscription).
 | 2D Teams channel webhook for new tickets: outbox, card, sender, worker job (the Bicep wiring is in progress, see Next up) | merged (#40) | `app/teams.py` |
 | 2E out-of-office detection (Graph presence): the worker's `presence` job stores each agent's flag; OOO agents are labelled in the assignee pickers and left out of team-wide notifications | merged (#44) | `app/presence.py` |
 | Phase 2 | complete | |
+| With supplier status (waiting on an outside supplier or vendor; set by hand, SLA clock keeps running) | in review | `app/models.py`, migration `a9d3c6e1f275` |
 | 3A public surface: `APP_ROLE` split, Graph webhook stores and returns 202, rate limiting | not started | |
 | 3B inbound mail: worker fetches stored notifications, replies join tickets, new mail raises tickets, auto-reply filter | not started | |
 | 3C subscriptions and delta catch-up | not started | |
-| 3D outbound mail: outbox, real send, approval and "raised for you" emails (`MAIL_SENDING` off / dev / graph; Admin > Outbound mail) | built, in review | `app/outbox.py`, `app/mail.py` |
+| 3D outbound mail: outbox, real send, approval and "raised for you" emails (`MAIL_SENDING` off / dev / graph; Admin > Outbound mail) | merged (#52) | `app/outbox.py`, `app/mail.py` |
 | 3E attachments: storage interface, table, safe serving | not started | |
 | 3F wiring: Bicep and deploy workflow for the public app, mailbox, storage, Application Insights | not started | |
 | Phases 4 to 9 | not started | `docs/plan.md`, "Build order" |
 
-Tests: 815 passing on Postgres 16.
+Tests: 832 passing on Postgres 16.
 
 ## Next up
 
@@ -267,6 +268,10 @@ sleep, restart it and `docker start ticketingapp-db-1`.
 
 ## Open questions
 
+- **With supplier: should it pause the SLA clock?** Built with the clock running (only Awaiting user pauses it today), so time spent
+  waiting on a supplier counts against the target. Pausing would be one line in `app/sla.py` `on_status_change`, but it would make a
+  ticket look healthy while it waits on someone we do not control. Also decide whether a requester reply on a With supplier ticket
+  should stay a no-op (built: it changes nothing, like With MSP) and whether chase emails to the supplier are wanted later.
 - **Out-of-office lookups (2E).** A directory lookup that fails or finds nobody is retried on every 15-minute run, and inactive agents are
   polled (there is no active flag). A "last looked up" column to stop the retries is worth doing if the logs show repeated failed
   lookups. One failing batch (only above 650 agents) rolls back the whole run; the three-hour stale cutoff makes that safe.
