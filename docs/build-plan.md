@@ -47,6 +47,7 @@ not exist (`infra/` compiles but has never run against a subscription).
 | Phase 2 | complete | |
 | With supplier status (waiting on an outside supplier or vendor; set by hand, SLA clock keeps running) | merged (#53) | `app/models.py`, migration `a9d3c6e1f275` |
 | 3A public surface: `APP_ROLE` split (`build_app` in `app/main.py`), Graph webhook stores each notification and returns 202, rate limiting, approval tokens kept out of the access log | built, in review | `app/main.py`, `app/routers/webhooks.py`, `app/rate_limit.py`, `app/log_redaction.py` |
+| Dependency hygiene 1: dropped unused `pytest-cov` and the `uvicorn[standard]` extras; Dependabot (pip, docker, actions; weekly, minor and patch grouped); `pip-audit` on requirements changes and nightly (`.github/workflows/pip-audit.yml`) | built, in review | `.github/dependabot.yml`, `.github/workflows/pip-audit.yml` |
 | 3B inbound mail: worker fetches stored notifications, replies join tickets, new mail raises tickets, auto-reply filter | not started | |
 | 3C subscriptions and delta catch-up | not started | |
 | 3D outbound mail: outbox, real send, approval and "raised for you" emails (`MAIL_SENDING` off / dev / graph; Admin > Outbound mail) | merged (#52) | `app/outbox.py`, `app/mail.py` |
@@ -199,6 +200,7 @@ sleep, restart it and `docker start ticketingapp-db-1`.
 
 ## Decisions log
 
+- 20 Oct 2026: dependency hygiene is two PRs. PR 1 (this one): kept `httpx2` (nothing in our code imports it, but Starlette's `TestClient` prefers it and warns "install httpx2 instead" when only `httpx` is present, so it is the test client's backend), removed `pytest-cov` (no `--cov` in pytest.ini, CI or docs) and the `uvicorn[standard]` extras (the entrypoint uses `--workers`, never `--reload`; plain uvicorn falls back to asyncio and h11); Dependabot; `pip-audit` in its own workflow so the `test` check is untouched (a requirements change on a PR, nightly at 05:17 UTC, manual run). PR 2 (after PR 1 merges): a lock file with hashes installed with `--require-hashes`, the base image pinned by digest, actions pinned by SHA (azure/login first) and htmx vendored into `app/static`. Dependabot cannot yet bump transitives; PR 2 fixes that. The nightly failure notice goes to whoever last edited the cron line; if that is not the right person, edit the line.
 - 20 Oct 2026: out of office is a label in the assignee pickers, never a block or a skip. Sometimes only one person can fix a
   problem, so they are assigned regardless of availability and deal with it when free. Do not turn it into a refusal or a filter.
 - 12 Oct 2026: per-inbox routing and sub-teams agreed (`docs/plan.md`).
