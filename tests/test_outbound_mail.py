@@ -173,7 +173,7 @@ def test_an_internal_note_cannot_be_built_into_an_email_even_if_a_row_points_at_
         mail.build_message_mail(db_session, row)
 
 
-def test_an_untriaged_ticket_cannot_be_emailed(client, db_session, dev_mail):
+def test_an_untriaged_ticket_cannot_be_emailed_yet_and_the_email_waits_for_triage(client, db_session, dev_mail):
     ticket = ticket_for_email(client, db_session)
     email(client, ticket)
     row = reply_row(db_session, ticket)
@@ -181,8 +181,20 @@ def test_an_untriaged_ticket_cannot_be_emailed(client, db_session, dev_mail):
     t.triaged_at = None
     db_session.add(t)
     db_session.commit()
-    with pytest.raises(Unsendable, match="triaged"):
+    with pytest.raises(mail.NotReady, match="triaged"):
         mail.build_message_mail(db_session, row)
+
+    now = datetime.now(timezone.utc)
+    mail.deliver_mail(db_session, now=now)
+    row = reply_row(db_session, ticket)
+    assert row.sent_at is None and row.attempts == 0 and row.next_attempt_at == now + mail.NOT_READY_WAIT
+
+    t = db_session.get(Ticket, ticket.id)  # triaged a few minutes later
+    t.triaged_at = datetime.now(timezone.utc)
+    db_session.add(t)
+    db_session.commit()
+    mail.deliver_mail(db_session, now=now + timedelta(minutes=11))
+    assert reply_row(db_session, ticket).sent_at is not None
 
 
 def test_the_raised_for_you_email_asks_again_and_a_later_opt_out_wins(client, db_session, dev_mail):
@@ -223,18 +235,39 @@ def test_an_approval_email_is_dropped_once_the_approval_is_decided(client, db_se
         mail.build_approval_mail(db_session, row)
 
 
-def test_an_approval_email_waits_rather_than_goes_without_a_link(client, db_session, monkeypatch):
+def test_an_approval_email_waits_for_the_address_without_using_its_tries_and_goes_once_it_is_set(
+    client, db_session, monkeypatch
+):
     monkeypatch.setattr(settings, "mail_sending", "dev")
     monkeypatch.setattr(settings, "public_base_url", "")
     person(client, db_session, "boss@example.com")
     raised_and_triaged(client, db_session, request_type(db_session, ["boss@example.com"]))
     now = datetime.now(timezone.utc)
 
-    assert mail.deliver_mail(db_session, now=now) == (0, 1)
+    assert mail.deliver_mail(db_session, now=now) == (0, 0)
+    [row] = rows(db_session, outbox.APPROVAL)
+    assert row.sent_at is None and row.attempts == 0 and "PUBLIC_BASE_URL" in row.last_error
+    assert row.next_attempt_at == now + mail.NOT_READY_WAIT
+
+    for hours in (1, 5, 24):  # however long the address stays unset, the tries are not used up
+        mail.deliver_mail(db_session, now=now + timedelta(hours=hours))
+    assert rows(db_session, outbox.APPROVAL)[0].attempts == 0
+
+    monkeypatch.setattr(settings, "public_base_url", "https://tickets.example.org")
+    assert mail.deliver_mail(db_session, now=now + timedelta(hours=25)) == (1, 0)
+    assert rows(db_session, outbox.APPROVAL)[0].sent_at is not None
+
+
+def test_an_email_that_cannot_go_for_three_days_is_given_up_on(client, db_session, monkeypatch):
+    monkeypatch.setattr(settings, "mail_sending", "dev")
+    monkeypatch.setattr(settings, "public_base_url", "")
+    person(client, db_session, "boss@example.com")
+    raised_and_triaged(client, db_session, request_type(db_session, ["boss@example.com"]))
+
+    mail.deliver_mail(db_session, now=datetime.now(timezone.utc) + mail.NOT_READY_LIMIT + timedelta(hours=1))
 
     [row] = rows(db_session, outbox.APPROVAL)
-    assert row.sent_at is None and row.attempts == 1 and "PUBLIC_BASE_URL" in row.last_error
-    assert row.next_attempt_at > now  # tried again later, not given up on
+    assert row.attempts == MAX_ATTEMPTS and "Gave up after 3 days" in row.last_error
 
 
 def test_the_shared_mailbox_is_never_written_to(client, db_session, dev_mail, monkeypatch):
@@ -245,6 +278,35 @@ def test_the_shared_mailbox_is_never_written_to(client, db_session, dev_mail, mo
     row.to_address = "it-support@example.com"
     with pytest.raises(Unsendable, match="shared mailbox"):
         mail.build_message_mail(db_session, row)
+
+
+def test_a_part_of_a_split_quotes_its_own_words_not_its_originals(client, db_session, dev_mail):
+    original = ticket_for_email(client, db_session, subject="Two things")
+    split(client, original, ("Keyboard", ""), ("Office", ""))
+    part = subs_of(db_session, original)[0]
+    row = OutboundEmail(kind="raised_for_you", ticket_id=part.id, to_address=part.requester_email)
+
+    built = mail.build_raised_for_mail(db_session, row)
+
+    assert "It is smoking" not in built.body  # the original's first message
+    assert f"Reference: {part.reference}" in built.body
+
+
+def test_the_requesters_words_in_an_approval_email_are_labelled_and_cut(client, db_session, dev_mail):
+    person(client, db_session, "boss@example.com")
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, ["boss@example.com"]))
+    first = db_session.exec(select(Message).where(Message.ticket_id == ticket.id)).first()
+    first.body = "Click here to approve: https://evil.example " + "x" * 3000
+    db_session.add(first)
+    db_session.commit()
+    [row] = rows(db_session, outbox.APPROVAL)
+
+    built = mail.build_approval_mail(db_session, row)
+
+    assert "the requester's own words, not from IT" in built.body
+    quote = built.body.split("---\n")[1]
+    assert len(quote) < mail.MAX_QUOTED + 40 and "[cut short]" in quote
+    assert built.body.index("not from IT") < built.body.index("/approvals/")  # said before the real link
 
 
 # ---- Delivery -------------------------------------------------------------------------------------
@@ -316,21 +378,62 @@ def test_graph_refusing_the_message_is_final_but_a_credential_or_busy_error_is_r
     assert (row.attempts == MAX_ATTEMPTS) is permanent and row.last_error == f"Graph answered {code}"
 
 
-def test_an_email_that_went_stays_recorded_when_a_later_one_crashes_the_job(client, db_session, dev_mail, monkeypatch):
+def test_an_email_that_cannot_be_built_because_of_a_bug_does_not_block_the_ones_behind_it(
+    client, db_session, dev_mail, monkeypatch
+):
     ticket = ticket_for_email(client, db_session)
     email(client, ticket)
+    real = mail.BUILDERS[outbox.RAISED_FOR]
 
-    def crash(session, row):
+    def broken(session, row):
         raise ValueError("a bug, not a refusal")
 
-    monkeypatch.setitem(mail.BUILDERS, outbox.REPLY, crash)  # the raised-for-you email goes first, then this
+    monkeypatch.setitem(mail.BUILDERS, outbox.RAISED_FOR, broken)  # the oldest email is the broken one
+    now = datetime.now(timezone.utc)
 
-    with pytest.raises(ValueError):
+    assert mail.deliver_mail(db_session, now=now) == (1, 1)  # the reply behind it still went
+
+    broken_row, reply = rows(db_session)
+    assert broken_row.sent_at is None and broken_row.attempts == 1 and broken_row.next_attempt_at > now
+    assert broken_row.last_error == "Could not be built: ValueError" and reply.sent_at is not None
+    monkeypatch.setitem(mail.BUILDERS, outbox.RAISED_FOR, real)
+    assert mail.deliver_mail(db_session, now=now + timedelta(hours=1)) == (1, 0)  # fixed, so it goes
+
+
+def test_an_email_that_went_stays_recorded_when_the_job_dies_afterwards(client, db_session, dev_mail, monkeypatch):
+    ticket = ticket_for_email(client, db_session)
+    email(client, ticket)
+    real = mail._next_due
+    calls = []
+
+    def dies_on_the_second_look(session, now):
+        calls.append(1)
+        if len(calls) == 2:
+            raise RuntimeError("the database went away")
+        return real(session, now)
+
+    monkeypatch.setattr(mail, "_next_due", dies_on_the_second_look)
+
+    with pytest.raises(RuntimeError):
         mail.deliver_mail(db_session)
     db_session.rollback()  # the worker rolls back a job that raised
 
     first, second = rows(db_session)
     assert first.kind == "raised_for_you" and first.sent_at is not None and second.sent_at is None
+
+
+def test_a_failed_email_keeps_no_text_it_never_sent(client, db_session, dev_mail):
+    ticket = ticket_for_email(client, db_session)
+    email(client, ticket, body="Secret wording")
+
+    def refuse(_mail):
+        raise httpx.ConnectError("down")
+
+    mail.deliver_mail(db_session, send=refuse)
+
+    assert all(r.subject is None and r.body is None and r.cc is None for r in rows(db_session))
+    mail.deliver_mail(db_session, now=datetime.now(timezone.utc) + timedelta(hours=1))
+    assert reply_row(db_session, ticket).body == "Secret wording"
 
 
 def test_the_job_is_registered_once_and_runs_the_sender(client, db_session, dev_mail):
@@ -345,7 +448,7 @@ def test_the_job_is_registered_once_and_runs_the_sender(client, db_session, dev_
 # ---- The cap on automatic mail ----------------------------------------------------------------------
 
 
-def test_automatic_emails_to_one_ticket_stop_at_the_cap_but_agent_replies_never_count(client, db_session, dev_mail):
+def test_automatic_emails_to_one_ticket_are_held_at_the_cap_but_agent_replies_never_count(client, db_session, dev_mail):
     ticket = ticket_for_email(client, db_session)  # one raised-for-you email already queued
     t = db_session.get(Ticket, ticket.id)
     set_setting(db_session, AUTOMATIC_EMAIL_CAP, "2")
@@ -354,15 +457,21 @@ def test_automatic_emails_to_one_ticket_stop_at_the_cap_but_agent_replies_never_
     for n in range(3):
         record_notice(db_session, t, f"Notice {n}")
     db_session.commit()
+    now = datetime.now(timezone.utc)
 
-    mail.deliver_mail(db_session)
+    assert mail.deliver_mail(db_session, now=now) == (3, 0)  # raised-for-you, the reply, one notice
 
-    by_state = {(r.kind, bool(r.sent_at)): r for r in rows(db_session)}
     automatic = [r for r in rows(db_session) if r.kind in outbox.AUTOMATIC_TO_REQUESTER]
     assert sum(1 for r in automatic if r.sent_at) == 2  # the cap
     held = [r for r in automatic if not r.sent_at]
-    assert len(held) == 2 and all("limit" in r.last_error and r.attempts == MAX_ATTEMPTS for r in held)
-    assert by_state[("reply", True)].sent_at is not None
+    assert len(held) == 2
+    for row in held:  # held back, not lost: no try used, not given up, due when the day's count allows
+        assert row.attempts == 0 and "Held back" in row.last_error and row.next_attempt_at > now
+    assert reply_row(db_session, ticket).sent_at is not None
+
+    assert mail.deliver_mail(db_session, now=now + timedelta(hours=1)) == (0, 0)  # still within the day
+    assert mail.deliver_mail(db_session, now=now + timedelta(hours=25)) == (2, 0)  # a day on, both go
+    assert all(r.sent_at for r in rows(db_session))
 
 
 def test_the_cap_only_counts_the_last_day(client, db_session, dev_mail):
