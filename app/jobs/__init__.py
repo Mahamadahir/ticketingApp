@@ -18,6 +18,7 @@ from sqlalchemy import text
 from sqlmodel import Session
 
 from app.config import settings
+from app.presence import CHECK_EVERY_SECONDS, refresh_presence
 from app.notifications import drop_due_for_teams, hand_to_teams
 from app.teams import deliver_pending, queue_notification
 
@@ -51,10 +52,19 @@ def teams_copies(session: Session) -> None:
         drop_due_for_teams(session)
 
 
+def presence(session: Session) -> None:
+    """Reads agents' out-of-office status from Graph (app/presence.py). Does nothing unless switched on
+    and Graph is configured. If Graph fails the job fails and the worker rolls back; the stored
+    readings go stale and are then ignored."""
+    if settings.presence_enabled and settings.graph_configured:
+        refresh_presence(session)
+
+
 TEAMS_POSTS_EVERY_SECONDS = 60
 
 JOBS: list[Job] = [
     Job("heartbeat", settings.worker_heartbeat_seconds, heartbeat),
     Job("teams-copies", TEAMS_POSTS_EVERY_SECONDS, teams_copies),
     Job("teams-posts", TEAMS_POSTS_EVERY_SECONDS, teams_posts),
+    Job("presence", CHECK_EVERY_SECONDS, presence),
 ]
