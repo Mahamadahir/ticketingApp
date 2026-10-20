@@ -19,6 +19,11 @@ from tests.test_teams_copy import an_agent
 NOW = datetime.now(timezone.utc)
 
 
+@pytest.fixture(autouse=True)
+def restore_switch(monkeypatch):
+    monkeypatch.setattr(settings, "teams_notifications_enabled", settings.teams_notifications_enabled)
+
+
 @pytest.fixture
 def on(monkeypatch):
     monkeypatch.setattr(settings, "teams_notifications_enabled", True)
@@ -120,6 +125,7 @@ def test_dropping_leaves_alone_what_is_not_due(client, db_session):
 
 
 def card_for(db_session, n):
+    settings.teams_notifications_enabled = True  # restored by the autouse fixture below
     post = TeamsPost(kind="notification", notification_id=n.id)  # not saved: the builder only reads it
     payload = teams.CARD_BUILDERS["notification"](db_session, post)
     return payload["attachments"][0]["content"]
@@ -190,7 +196,30 @@ def test_a_person_with_no_usable_name_is_mentioned_by_the_start_of_their_email(c
     assert card_for(db_session, n)["msteams"]["entities"][0]["mentioned"]["name"] == "bob"
 
 
-def test_a_post_whose_notification_has_gone_is_unsendable_not_retried(client, db_session):
+def test_underscores_are_left_out_of_the_mention_name(client, db_session):
+    bob, _ = an_agent(client, db_session)
+    bob.display_name = "bob_the_builder"
+    db_session.add(bob)
+    n = due_notification(db_session, bob)
+    db_session.commit()
+    assert card_for(db_session, n)["msteams"]["entities"][0]["mentioned"]["name"] == "bobthebuilder"
+
+
+def test_a_queued_post_is_not_sent_if_the_switch_was_turned_off_since(client, db_session, on, monkeypatch):
+    bob, _ = an_agent(client, db_session)
+    due_notification(db_session, bob)
+    teams_copies(db_session)
+    db_session.commit()
+    monkeypatch.setattr(settings, "teams_notifications_enabled", False)
+    sent = []
+
+    assert teams.deliver_pending(db_session, send=sent.append) == (0, 1)
+    db_session.commit()
+
+    assert sent == [] and posts(db_session)[0].attempts == teams.MAX_ATTEMPTS
+
+
+def test_a_post_whose_notification_has_gone_is_unsendable_not_retried(client, db_session, on):
     post = TeamsPost(kind="notification", notification_id=None)
     db_session.add(post)
     db_session.commit()
@@ -235,6 +264,37 @@ def test_a_failed_send_is_retried_with_the_shared_backoff_and_the_url_is_never_k
     [post] = posts(db_session)
     assert post.attempts == 1 and post.sent_at is None and post.next_attempt_at > NOW
     assert "hook-secret" not in (post.last_error or "")
+
+
+def test_a_notification_of_a_kind_with_no_teams_channel_is_never_wanted_there(client, db_session):
+    from app.notifications import notify
+
+    bob, _ = an_agent(client, db_session)
+    n = notify(db_session, bob, "some_future_kind", None, "x", "ann@example.com")
+    db_session.commit()
+    assert n is not None and n.teams_wanted is False
+
+
+def test_a_notification_read_in_time_is_retired_and_not_sent(client, db_session, on):
+    bob, _ = an_agent(client, db_session)
+    n = due_notification(db_session, bob, read_at=datetime.now(timezone.utc))
+
+    teams_copies(db_session)
+    db_session.commit()
+
+    assert posts(db_session) == []
+    assert db_session.get(Notification, n.id).teams_handled_at is not None
+
+
+def test_a_hidden_teams_only_row_cannot_be_opened_by_id(client, db_session):
+    from app.notifications import mark_read
+
+    bob, _ = an_agent(client, db_session)
+    n = due_notification(db_session, bob, read_at=None)
+    n.bell = False
+    db_session.add(n)
+    db_session.commit()
+    assert mark_read(db_session, bob, n.id) is None
 
 
 def test_both_kinds_of_post_are_built(client, db_session, on):

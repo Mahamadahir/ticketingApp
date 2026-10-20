@@ -20,7 +20,7 @@ from sqlalchemy import and_, func, or_, update
 from sqlmodel import Session, select
 
 from app.models import Message, Notification, Ticket, User, UserRole
-from app.notification_settings import IN_APP, TEAMS, is_enabled
+from app.notification_settings import IN_APP, TEAMS, is_enabled, offers
 from app.settings_store import TEAMS_UNREAD_MINUTES, get_int_setting
 from app.visibility import Access, access_context, ticket_access, visible_ticket_condition
 
@@ -41,7 +41,7 @@ def notify(
     if actor_email and recipient.email.lower() == actor_email.lower():
         return None
     bell = is_enabled(session, recipient, kind, IN_APP)
-    teams = is_enabled(session, recipient, kind, TEAMS)
+    teams = offers(kind, TEAMS) and is_enabled(session, recipient, kind, TEAMS)
     if not bell and not teams:
         return None  # they turned both off for this (Settings, notifications)
     notification = Notification(
@@ -133,8 +133,8 @@ def count_unread(session: Session, user: User) -> int:
 def mark_read(session: Session, user: User, notification_id: int) -> Optional[Notification]:
     """Marks one of the user's own notifications read. None when it is not theirs."""
     notification = session.get(Notification, notification_id)
-    if notification is None or notification.user_id != user.id:
-        return None
+    if notification is None or notification.user_id != user.id or not notification.bell:
+        return None  # not theirs, or Teams-only (never shown in the bell)
     if notification.read_at is None:
         notification.read_at = datetime.now(timezone.utc)
         session.add(notification)
@@ -166,8 +166,22 @@ def default_teams_delay(session: Session) -> int:
     return get_int_setting(session, TEAMS_UNREAD_MINUTES) or 5
 
 
-def teams_delay_for(session: Session, user: User) -> int:
-    return user.teams_delay_minutes or default_teams_delay(session)
+def retire_read_for_teams(session: Session, now: Optional[datetime] = None) -> int:
+    """Marks dealt with every bell notification the person has read before its Teams copy went out:
+    they have seen it, so no copy. Without this a row read in time would stay waiting for ever, and
+    the index the worker uses would grow with all the read history. Returns how many. Does not commit."""
+    now = now or datetime.now(timezone.utc)
+    result = session.exec(
+        update(Notification)
+        .where(
+            Notification.teams_wanted.is_(True),
+            Notification.teams_handled_at.is_(None),
+            Notification.bell.is_(True),
+            Notification.read_at.is_not(None),
+        )
+        .values(teams_handled_at=now)
+    )
+    return result.rowcount
 
 
 def due_for_teams(session: Session, now: Optional[datetime] = None, limit: int = TEAMS_BATCH) -> list[Notification]:
@@ -206,11 +220,12 @@ def hand_to_teams(
     no longer open its ticket (a Teams message would say what the ticket is). Returns (handed, dropped).
     Does not commit; the worker commits after the job. If `enqueue` raises, nothing from this run is kept."""
     now = now or datetime.now(timezone.utc)
+    retire_read_for_teams(session, now)
     handed = dropped = 0
     for notification in due_for_teams(session, now, limit):
         person = session.get(User, notification.user_id)
         ticket = session.get(Ticket, notification.ticket_id) if notification.ticket_id else None
-        still_wanted = is_enabled(session, person, notification.kind, TEAMS)
+        still_wanted = offers(notification.kind, TEAMS) and is_enabled(session, person, notification.kind, TEAMS)
         can_open = notification.ticket_id is None or (ticket is not None and _can_open(session, person, ticket))
         if still_wanted and can_open:
             enqueue(session, notification)
@@ -221,11 +236,15 @@ def hand_to_teams(
         session.add(notification)
     return handed, dropped
 
-def drop_due_for_teams(session: Session, now: Optional[datetime] = None, limit: int = TEAMS_BATCH) -> int:
+DROP_BATCH = 1000  # dropping is cheap, so a backlog drains quickly
+
+
+def drop_due_for_teams(session: Session, now: Optional[datetime] = None, limit: int = DROP_BATCH) -> int:
     """Marks the due Teams copies dealt with without sending them: what the worker does while sending
     notifications to Teams is switched off, so nothing is left waiting to arrive in a flood when it
     is switched on. Returns how many. Does not commit."""
     now = now or datetime.now(timezone.utc)
+    retire_read_for_teams(session, now)
     rows = due_for_teams(session, now, limit)
     for notification in rows:
         notification.teams_handled_at = now

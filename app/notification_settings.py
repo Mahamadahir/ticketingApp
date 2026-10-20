@@ -70,6 +70,14 @@ EVENT_TYPES: tuple[EventType, ...] = (
 _BY_KIND = {event.kind: event for event in EVENT_TYPES}
 
 
+def offers(kind: str, channel: str) -> bool:
+    """Whether this kind of event can use this channel at all. An unlisted kind offers none, so it is
+    never sent anywhere a person has not been able to choose (is_enabled alone says yes to an unlisted
+    channel, which suits the bell but would put an unchosen @mention in a shared channel)."""
+    event = _BY_KIND.get(kind)
+    return event is not None and channel in event.channels
+
+
 def events_for(user: User) -> list[EventType]:
     return [event for event in EVENT_TYPES if user.role in event.roles]
 

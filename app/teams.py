@@ -71,6 +71,14 @@ def plain(text: str) -> str:
     return "".join("\\" + c if c in MARKDOWN_CHARACTERS else c for c in text)
 
 
+def message(card: dict) -> dict:
+    """The Teams Workflows payload: a message carrying one Adaptive Card."""
+    return {
+        "type": "message",
+        "attachments": [{"contentType": "application/vnd.microsoft.card.adaptive", "content": card}],
+    }
+
+
 def new_ticket_card(ticket: Ticket) -> dict:
     """The Teams Workflows payload: a message carrying one Adaptive Card. The text is the ticket's
     number (#1042, which never changes), subject, how it arrived and who it is for."""
@@ -94,10 +102,7 @@ def new_ticket_card(ticket: Ticket) -> dict:
     if settings.public_base_url:
         link = f"{settings.public_base_url.rstrip('/')}/tickets/{ticket.number}"
         card["actions"] = [{"type": "Action.OpenUrl", "title": "Open ticket", "url": link}]
-    return {
-        "type": "message",
-        "attachments": [{"contentType": "application/vnd.microsoft.card.adaptive", "content": card}],
-    }
+    return message(card)
 
 
 def post_card(payload: dict) -> None:
@@ -151,7 +156,7 @@ KIND_LABELS = {"assigned": "Assigned to you", "mentioned": "You were mentioned"}
 def mention_name(user: User) -> str:
     """A name safe to put inside <at>...</at>: no markup or markdown, so it cannot close the tag or
     bold the line, and it matches the mention entity exactly."""
-    name = re.sub(r"[^\w .'-]", "", user.display_name or "")
+    name = re.sub(r"[^\w .'-]|_", "", user.display_name or "")  # underscores would be read as italics
     name = " ".join(name.split())[:80]
     return name or user.email.partition("@")[0]
 
@@ -186,13 +191,13 @@ def notification_card(notification: Notification, person: User, ticket: Optional
     if ticket is not None and settings.public_base_url:
         link = f"{settings.public_base_url.rstrip('/')}/tickets/{ticket.number}"
         card["actions"] = [{"type": "Action.OpenUrl", "title": "Open ticket", "url": link}]
-    return {
-        "type": "message",
-        "attachments": [{"contentType": "application/vnd.microsoft.card.adaptive", "content": card}],
-    }
+    return message(card)
 
 
 def notification_post(session: Session, post: TeamsPost) -> dict:
+    if not settings.teams_notifications_enabled:
+        # Switched off after this was queued: the switch is checked again at send time, not only when queuing.
+        raise Unsendable("Sending notifications to Teams is switched off")
     notification = session.get(Notification, post.notification_id) if post.notification_id else None
     if notification is None:
         raise Unsendable("Notification not found")
@@ -237,7 +242,7 @@ def deliver_pending(
         waiting = session.exec(select(TeamsPost.id).where(*due).limit(1)).first()
         if waiting is not None:
             # Announcing is switched on but this process cannot send: say so rather than let posts pile up.
-            log.warning("Teams posts are waiting but TEAMS_NEW_TICKET_WEBHOOK_URL is not set in this process")
+            log.warning("Teams posts are waiting but TEAMS_NEW_TICKET_WEBHOOK_URL is not set in this process (it is the one webhook for every kind of post)")
         return 0, 0
     posts = session.exec(
         select(TeamsPost).where(*due).order_by(TeamsPost.id).limit(limit).with_for_update(skip_locked=True)

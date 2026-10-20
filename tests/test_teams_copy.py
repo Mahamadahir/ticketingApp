@@ -17,7 +17,6 @@ from app.notifications import (
     hand_to_teams,
     mark_all_read,
     notify,
-    teams_delay_for,
 )
 from app.settings_store import TEAMS_UNREAD_MINUTES, REGISTRY, set_setting
 from tests.conftest import add_membership, create_team, login_as, set_role
@@ -147,19 +146,19 @@ def test_exactly_on_the_delay_is_due_and_a_second_before_is_not(client, db_sessi
 def test_a_persons_own_delay_beats_the_default_and_the_default_is_a_setting(client, db_session):
     bob, _ = an_agent(client, db_session)
     seven_minutes_old = row(db_session, bob, age_minutes=7)
-    assert (default_teams_delay(db_session), teams_delay_for(db_session, bob)) == (5, 5)
+    assert default_teams_delay(db_session) == 5
     assert due_ids(db_session) == [seven_minutes_old]
 
     bob.teams_delay_minutes = 10  # a longer delay of their own
     db_session.add(bob)
     db_session.commit()
-    assert teams_delay_for(db_session, bob) == 10 and due_ids(db_session) == []
+    assert due_ids(db_session) == []
 
     bob.teams_delay_minutes = None  # back to the default, which an admin changes
     db_session.add(bob)
     set_setting(db_session, TEAMS_UNREAD_MINUTES, "30")
     db_session.commit()
-    assert default_teams_delay(db_session) == 30 and teams_delay_for(db_session, bob) == 30
+    assert default_teams_delay(db_session) == 30
     assert due_ids(db_session) == []
     set_setting(db_session, TEAMS_UNREAD_MINUTES, "1")
     db_session.commit()
