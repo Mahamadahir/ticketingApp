@@ -68,6 +68,18 @@ class Settings(BaseSettings):
     # until the catch-up sync finds the mail.
     rate_limit_approvals_per_minute: int = 30
     rate_limit_webhook_per_minute: int = 600
+    # Attachments (phase 3E, app/storage.py). STORAGE_BACKEND is "local" (a directory, for development
+    # and tests) or "blob" (Azure Blob Storage through the app's managed identity: no account keys).
+    # Left blank it is blob when STORAGE_ACCOUNT_NAME is set (the Bicep sets it) and local otherwise.
+    storage_backend: str = ""
+    storage_local_path: str = "data/attachments"
+    storage_account_name: str = ""
+    storage_container: str = "attachments"
+    # A download link lives this long: long enough for the browser to follow the redirect.
+    attachment_link_seconds: int = 90
+    attachment_max_bytes: int = 10 * 1024 * 1024
+    # An inline picture smaller than this (a signature logo, a tracking pixel) is not kept.
+    attachment_inline_min_bytes: int = 5 * 1024
 
     # Comma-separated emails granted super_admin on first login, so there's
     # a way into /admin before any roles have been assigned there.
@@ -86,6 +98,12 @@ class Settings(BaseSettings):
     @property
     def graph_configured(self) -> bool:
         return bool(self.graph_tenant_id and self.graph_client_id and self.graph_client_secret)
+
+    @property
+    def storage_kind(self) -> str:
+        if self.storage_backend:
+            return self.storage_backend.lower()
+        return "blob" if self.storage_account_name else "local"
 
     @property
     def teams_new_ticket_configured(self) -> bool:
@@ -127,6 +145,10 @@ def unsafe_setting_errors(config: Settings) -> list[str]:
     # The public app is open to the internet: it must not be able to sign anyone in.
     if config.app_role == "public" and config.sso_client_secret:
         errors.append("The public app must not hold the SSO secret (SSO_CLIENT_SECRET)")
+    if config.storage_kind not in ("local", "blob"):
+        errors.append("STORAGE_BACKEND must be 'local' or 'blob'")
+    elif config.storage_kind == "blob" and not config.storage_account_name:
+        errors.append("STORAGE_BACKEND is blob but STORAGE_ACCOUNT_NAME is unset")
     return errors
 
 
