@@ -46,6 +46,10 @@ class Settings(BaseSettings):
     # Out-of-office detection (phase 2E): the worker reads agents' presence from Graph
     # (Presence.Read.All) and marks those who are out of office. Needs the GRAPH_* credentials.
     presence_enabled: bool = False
+    # Email out of the shared mailbox (phase 3D). "off": nothing is queued. "dev": emails are queued and
+    # the worker records them as sent without contacting Graph (dev only; see /admin/outbound-mail).
+    # "graph": the worker sends them through Graph, so it needs the GRAPH_* values and the mailbox.
+    mail_sending: str = "off"
     # Where the app is reached, so a Teams card can link to the ticket. Blank: no link on the card.
     public_base_url: str = ""
 
@@ -81,11 +85,17 @@ class Settings(BaseSettings):
         return [e.strip().lower() for e in self.super_admin_emails.split(",") if e.strip()]
 
 
-def unsafe_setting_errors(config: Settings) -> list[str]:
-    if config.is_dev:
-        return []
+MAIL_SENDING_MODES = ("off", "dev", "graph")
 
+
+def unsafe_setting_errors(config: Settings) -> list[str]:
     errors = []
+    if config.mail_sending not in MAIL_SENDING_MODES:
+        errors.append(f"MAIL_SENDING must be one of {', '.join(MAIL_SENDING_MODES)}")
+    if config.is_dev:
+        return errors
+    if config.mail_sending == "dev":
+        errors.append("MAIL_SENDING=dev only works in the dev environment (it sends nothing)")
     if config.session_secret_key in INSECURE_SECRETS:
         errors.append("SESSION_SECRET_KEY is unset or a default value")
     if config.graph_configured and config.graph_webhook_client_state in INSECURE_SECRETS:

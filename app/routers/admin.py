@@ -46,6 +46,7 @@ from app.canned import (
     create_canned,
     update_canned,
 )
+from app.config import settings
 from app.database import get_session
 from app.forms import MAX_MESSAGE_LENGTH, optional_int
 from app.models import (
@@ -54,6 +55,7 @@ from app.models import (
     AuditLog,
     CannedResponse,
     Category,
+    OutboundEmail,
     RequestType,
     MembershipLevel,
     Team,
@@ -64,6 +66,7 @@ from app.models import (
 )
 from app.pagination import paginate
 from app.settings_store import REGISTRY, get_setting, set_setting
+from app.teams import MAX_ATTEMPTS
 from app.ticket_service import EVENT_CATEGORY_REVIEWED, get_by_number, record_event
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -740,6 +743,9 @@ def save_setting(
         # Up to a year; a blank value means the target is not tracked.
         if not (value.isascii() and value.isdigit()) or not 1 <= int(value) <= 525600:
             raise HTTPException(status_code=400, detail="Enter a whole number of minutes, 1 to 525600, or leave it blank")
+    if definition.kind == "count":
+        if not (value.isascii() and value.isdigit()) or not 1 <= int(value) <= 1000:
+            raise HTTPException(status_code=400, detail="Enter a whole number from 1 to 1000")
     if definition.kind == "flag" and value not in ("on", "off"):
         raise HTTPException(status_code=400, detail="Choose on or off")
     if definition.kind == "percent":
@@ -820,5 +826,36 @@ def view_activity_log(
             "date_from": date_from or "",
             "date_to": date_to or "",
             "user": user,
+        },
+    )
+
+
+# ---- Outbound mail --------------------------------------------------------------
+
+@router.get("/outbound-mail", response_class=HTMLResponse)
+def view_outbound_mail(
+    request: Request,
+    waiting: bool = False,
+    page: int = 1,
+    user: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    """Emails queued from the shared mailbox, newest first: what was sent (or in dev mode, would
+    have been), to whom, and why a failed one failed. Approval emails show the text with the answer
+    link left out. 'Waiting only' shows those not sent yet."""
+    query = select(OutboundEmail).order_by(OutboundEmail.id.desc())
+    if waiting:
+        query = query.where(OutboundEmail.sent_at.is_(None))
+    rows_page = paginate(session, query, page, request.query_params)
+    tickets = {
+        t.id: t
+        for t in session.exec(select(Ticket).where(Ticket.id.in_({r.ticket_id for r in rows_page.items}))).all()
+    } if rows_page.items else {}
+    return templates.TemplateResponse(
+        request,
+        "admin_outbound_mail.html",
+        {
+            "page": rows_page, "tickets": tickets, "waiting": waiting, "mode": settings.mail_sending,
+            "max_attempts": MAX_ATTEMPTS, "user": user,
         },
     )

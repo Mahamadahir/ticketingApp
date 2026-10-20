@@ -58,7 +58,7 @@ def test_a_preview_shows_who_gets_it_and_what_it_says_and_records_nothing(client
     assert response.status_code == 200
     page = response.text
     assert "To:</b> walkin@example.com" in page and "boss@example.com" in page
-    assert "Subject:</b> Printer jam" in page and "Please restart it\nthen tell me" in page
+    assert f"Subject:</b> [{ticket.reference}] Printer jam" in page and "Please restart it\nthen tell me" in page
     assert "moves this ticket to awaiting user" in page
     assert recorded(db_session) == before
     db_session.refresh(ticket)
@@ -147,7 +147,7 @@ def test_a_split_originals_status_is_not_moved_and_a_part_is_about_itself(client
     assert "leaves the ticket's status as it is" in preview(client, original).text
     from_part = preview(client, part).text
     assert "moves this ticket to awaiting user" in from_part
-    assert "Subject:</b> Two things" in from_part  # the family's one thread subject
+    assert f"Subject:</b> [{original.reference}] Two things" in from_part  # the family's one thread subject and reference
     assert f"About: {part.reference} Keyboard" in from_part
 
 
