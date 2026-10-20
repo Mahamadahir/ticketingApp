@@ -1,7 +1,7 @@
 """graph notifications: change notifications stored by the public webhook
 
 Revision ID: d5a8b1c4e630
-Revises: c4f7a0b3d529
+Revises: a9d3c6e1f275
 Create Date: 2026-10-20 15:00:00.000000
 
 """
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = 'd5a8b1c4e630'
-down_revision: Union[str, Sequence[str], None] = 'c4f7a0b3d529'
+down_revision: Union[str, Sequence[str], None] = 'a9d3c6e1f275'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
