@@ -54,7 +54,7 @@ not exist (`infra/` compiles but has never run against a subscription).
 | 3F wiring: Bicep and deploy workflow for the public app, mailbox, storage, Application Insights | not started | |
 | Phases 4 to 9 | not started | `docs/plan.md`, "Build order" |
 
-Tests: 832 passing on Postgres 16.
+Tests: 868 passing on Postgres 16.
 
 ## Next up
 
