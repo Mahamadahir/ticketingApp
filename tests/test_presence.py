@@ -285,6 +285,32 @@ def test_the_job_reads_presence_only_when_switched_on_and_graph_is_set_up(
     assert len(calls) == runs
 
 
+def test_two_users_cannot_share_one_directory_id_but_many_can_have_none(client, db_session):
+    from sqlalchemy.exc import IntegrityError
+
+    for n in range(3):  # no id yet: any number of users
+        db_session.add(User(email=f"none{n}@example.com", display_name="None", role=UserRole.AGENT))
+    db_session.add(User(email="one@example.com", display_name="One", role=UserRole.AGENT, entra_object_id="oid-1"))
+    db_session.commit()
+
+    db_session.add(User(email="two@example.com", display_name="Two", role=UserRole.AGENT, entra_object_id="oid-1"))
+    with pytest.raises(IntegrityError):
+        db_session.commit()
+    db_session.rollback()
+
+
+def test_an_out_of_office_agent_can_still_be_assigned(client, db_session):
+    team = create_team(db_session, "Support")
+    me = login_as(client, "me@example.com", "Me")
+    set_role(db_session, me, UserRole.AGENT, team.id)
+    away = an_agent(db_session, "away@example.com", "Ann Away", team)
+    refresh(db_session, FakeGraph({"away@example.com": "oid-away"}, away={"oid-away"}), now=datetime.now(timezone.utc))
+    assert is_out_of_office(db_session.get(User, away.id))
+    # the picker still offers them (a label, never a block)
+    page = client.get(f"/tickets/agents-for-team?team_id={team.id}").text
+    assert f'value="{away.id}"' in page
+
+
 def test_the_flag_defaults_to_off_for_everyone(client, db_session):
     person = User(email="new@example.com", display_name="New", role=UserRole.AGENT)
     db_session.add(person)
