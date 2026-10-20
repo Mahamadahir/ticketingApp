@@ -42,7 +42,7 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # Built once and pushed to each environment's registry, so what reaches
       # production is the image that was deployed to staging.
@@ -98,7 +98,7 @@ jobs:
           echo "::error::Production deploys only from main (this run is on $GITHUB_REF)." >&2
           exit 1
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: actions/download-artifact@v8
         with:
