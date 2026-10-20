@@ -119,7 +119,12 @@ applied, so write migrations that the previous release can live with. To go back
 re-run the workflow on the earlier commit, or `az containerapp revision activate`
 the previous revision.
 
-Limits: the workflow does not wait for CI, so run it only on a commit whose CI is
+Limits: production deploys only from `main` (the run fails otherwise); the
+migrate job is repointed at the new image but its other settings (env vars,
+secrets) only change when the template runs afterwards, so a release that adds a
+setting its migrations need must be deployed in two steps; a re-run of the same
+commit overwrites the registry tag with a rebuilt image (apps keep the old one if
+the template is unchanged); the workflow does not wait for CI, so run it only on a commit whose CI is
 green; a failed `what-if` or deploy leaves the migration it already ran in place;
 the web app is IP restricted so the runner cannot probe it (set the optional
 `HEALTH_URL` variable if the runner's address is allowed).

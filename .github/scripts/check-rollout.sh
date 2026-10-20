@@ -28,13 +28,16 @@ for app in $apps; do
       revision="$(az containerapp revision show --name "$app" --resource-group "$rg" --revision "$latest" --output json)"
       health="$(jq -r '.properties.healthState' <<<"$revision")"
       running="$(jq -r '.properties.runningState' <<<"$revision")"
-      actual="$(jq -r '.properties.template.containers[0].image' <<<"$revision")"
+      has_image="$(jq -r --arg image "$image" '[.properties.template.containers[].image] | index($image) != null' <<<"$revision")"
       echo "  $latest health=$health running=$running"
-      if [ "$actual" != "$image" ]; then
-        echo "::error::$app revision $latest runs $actual, expected $image" >&2
+      if [ "$has_image" != "true" ]; then
+        echo "::error::$app revision $latest does not run $image" >&2
         exit 1
       fi
-      if [ "$health" = "Healthy" ] && [[ "$running" == Running* ]]; then
+      # An app without ingress (the worker) has no probes, so it has no health
+      # state to wait for; running is all that can be checked.
+      has_ingress="$(az containerapp show --name "$app" --resource-group "$rg" --query 'properties.configuration.ingress != null' --output tsv)"
+      if [[ "$running" == Running* ]] && { [ "$health" = "Healthy" ] || [ "$has_ingress" != "true" ]; }; then
         break
       fi
     else

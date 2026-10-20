@@ -28,8 +28,9 @@ on:
 permissions:
   contents: read
 
-# One deploy at a time per branch; a second run waits rather than cancelling a
-# deploy that is half way through a migration.
+# One deploy at a time, for all environments. A running deploy is never
+# cancelled mid-migration, but GitHub keeps only one waiting run: dispatching a
+# third cancels the second while it still waits.
 concurrency:
   group: deploy
   cancel-in-progress: false
@@ -76,10 +77,9 @@ jobs:
     env:
       RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
       BICEP_PARAMS: infra/${{ matrix.environment }}.bicepparam
-      # The variables infra/<environment>.bicepparam reads with
-      # readEnvironmentVariable. Every secret must be supplied on every deploy or
-      # the new revision silently loses it (infra/README.md, "Things that bite
-      # on redeploys").
+      # Non-secret settings infra/<environment>.bicepparam reads with
+      # readEnvironmentVariable. The secrets are set only on the two steps that
+      # run az deployment, not on every step.
       ALERT_EMAIL: ${{ vars.ALERT_EMAIL }}
       WEB_ALLOWED_CIDRS: ${{ vars.WEB_ALLOWED_CIDRS }}
       SSO_TENANT_ID: ${{ vars.SSO_TENANT_ID }}
@@ -88,13 +88,13 @@ jobs:
       GRAPH_CLIENT_ID: ${{ vars.GRAPH_CLIENT_ID }}
       GRAPH_SHARED_MAILBOX: ${{ vars.GRAPH_SHARED_MAILBOX }}
       SUPER_ADMIN_EMAILS: ${{ vars.SUPER_ADMIN_EMAILS }}
-      POSTGRES_ADMIN_PASSWORD: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
-      SESSION_SECRET_KEY: ${{ secrets.SESSION_SECRET_KEY }}
-      INTERNAL_SESSION_SECRET_KEY: ${{ secrets.INTERNAL_SESSION_SECRET_KEY }}
-      GRAPH_WEBHOOK_CLIENT_STATE: ${{ secrets.GRAPH_WEBHOOK_CLIENT_STATE }}
-      SSO_CLIENT_SECRET: ${{ secrets.SSO_CLIENT_SECRET }}
-      GRAPH_CLIENT_SECRET: ${{ secrets.GRAPH_CLIENT_SECRET }}
     steps:
+      - name: Production deploys only from main
+        if: matrix.environment == 'production' && github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Production deploys only from main (this run is on $GITHUB_REF)." >&2
+          exit 1
+
       - uses: actions/checkout@v6
 
       - uses: actions/download-artifact@v8
@@ -134,6 +134,14 @@ jobs:
       - name: Preview the deployment
         env:
           IMAGE: ${{ steps.image.outputs.image }}
+          # Every secret must be supplied on every deploy or the new revision
+          # silently loses it (infra/README.md, "Things that bite on redeploys").
+          POSTGRES_ADMIN_PASSWORD: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
+          SESSION_SECRET_KEY: ${{ secrets.SESSION_SECRET_KEY }}
+          INTERNAL_SESSION_SECRET_KEY: ${{ secrets.INTERNAL_SESSION_SECRET_KEY }}
+          GRAPH_WEBHOOK_CLIENT_STATE: ${{ secrets.GRAPH_WEBHOOK_CLIENT_STATE }}
+          SSO_CLIENT_SECRET: ${{ secrets.SSO_CLIENT_SECRET }}
+          GRAPH_CLIENT_SECRET: ${{ secrets.GRAPH_CLIENT_SECRET }}
         run: |
           az deployment group what-if \
             --resource-group "$RESOURCE_GROUP" \
@@ -168,6 +176,14 @@ jobs:
         id: deploy
         env:
           IMAGE: ${{ steps.image.outputs.image }}
+          # Every secret must be supplied on every deploy or the new revision
+          # silently loses it (infra/README.md, "Things that bite on redeploys").
+          POSTGRES_ADMIN_PASSWORD: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
+          SESSION_SECRET_KEY: ${{ secrets.SESSION_SECRET_KEY }}
+          INTERNAL_SESSION_SECRET_KEY: ${{ secrets.INTERNAL_SESSION_SECRET_KEY }}
+          GRAPH_WEBHOOK_CLIENT_STATE: ${{ secrets.GRAPH_WEBHOOK_CLIENT_STATE }}
+          SSO_CLIENT_SECRET: ${{ secrets.SSO_CLIENT_SECRET }}
+          GRAPH_CLIENT_SECRET: ${{ secrets.GRAPH_CLIENT_SECRET }}
         run: |
           set -euo pipefail
           az deployment group create \
@@ -177,7 +193,12 @@ jobs:
             --parameters "$BICEP_PARAMS" \
             --query properties.outputs.migrateJobName.value \
             --output tsv > migrate-job-name.txt
-          echo "job=$(cat migrate-job-name.txt)" >> "$GITHUB_OUTPUT"
+          job="$(cat migrate-job-name.txt)"
+          if [ -z "$job" ]; then
+            echo "::error::The deployment returned no migrateJobName." >&2
+            exit 1
+          fi
+          echo "job=$job" >> "$GITHUB_OUTPUT"
 
       - name: Run migrations (first image deploy)
         if: steps.migrate.outputs.existing == 'false'
