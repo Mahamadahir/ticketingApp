@@ -34,6 +34,7 @@ Rules that live here and nowhere else:
 import inspect
 import logging
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional, Protocol
@@ -146,7 +147,8 @@ def _text(value) -> str:
     """Text safe to store: Postgres refuses a NUL, and other control characters are only noise."""
     if not isinstance(value, str):
         return ""
-    return "".join(c for c in value if c in "\n\t\r" or (c.isprintable() or c == " "))
+    # Only control characters (NUL included) and lone surrogates go; spaces such as U+00A0 and joiners stay.
+    return "".join(c for c in value if c in "\n\t\r" or unicodedata.category(c) not in ("Cc", "Cs"))
 
 
 def _message_id(value) -> Optional[str]:
@@ -255,7 +257,7 @@ def _ticket_of_conversation(session: Session, conversation_id: Optional[str]) ->
     ticket_id = session.exec(
         select(InboundMail.ticket_id)
         .where(InboundMail.conversation_id == conversation_id, InboundMail.ticket_id.is_not(None))
-        .order_by(InboundMail.id.desc())
+        .order_by(InboundMail.id)  # the first mail of the thread: a later stranger's mail must not take it over
         .limit(1)
     ).first()
     return session.get(Ticket, ticket_id) if ticket_id else None
@@ -465,7 +467,7 @@ def process_message(
     mail = parse_graph_message(raw)
     mail.graph_message_id = graph_message_id  # the id we asked for is the one we dedupe on
     files: list[IncomingAttachment] = []
-    if mail.has_attachments and automatic_reason(mail) is None:
+    if mail.has_attachments and automatic_reason(mail) is None and not _flooding(session, mail.sender, datetime.now(timezone.utc)):
         files = load_attachments(client, graph_message_id)  # before any ticket is made: no lock is held while Graph answers
     return ingest_mail(session, mail, files, storage)
 

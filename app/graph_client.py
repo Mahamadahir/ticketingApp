@@ -198,12 +198,14 @@ class GraphClient:
         response.raise_for_status()
         return response.json()
 
-    def _mail_get(self, path: str, params: dict | None = None, headers: dict | None = None) -> httpx.Response:
+    def _mail_get(
+        self, path: str, params: dict | None = None, headers: dict | None = None, timeout: int = 30
+    ) -> httpx.Response:
         return httpx.get(
             f"{GRAPH_BASE_URL}/users/{quote(settings.graph_shared_mailbox, safe='@')}/{path}",
             params=params,
             headers={"Authorization": f"Bearer {self._get_access_token()}", **(headers or {})},
-            timeout=30,
+            timeout=timeout,
         )
 
     def get_message(self, message_id: str) -> dict | None:
@@ -242,7 +244,7 @@ class GraphClient:
 
     def get_attachment_bytes(self, message_id: str, attachment_id: str) -> bytes | None:
         """The raw bytes of one attachment: GET .../attachments/{id}/$value. None if it is gone."""
-        response = self._mail_get(f"messages/{quote(message_id, safe='')}/attachments/{quote(attachment_id, safe='')}/$value")
+        response = self._mail_get(f"messages/{quote(message_id, safe='')}/attachments/{quote(attachment_id, safe='')}/$value", timeout=120)
         if response.status_code == 404:
             return None
         response.raise_for_status()

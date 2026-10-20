@@ -316,7 +316,7 @@ sleep, restart it and `docker start ticketingapp-db-1`.
   (2) Exchange may give two separate mails with the same subject the same `conversationId`; a new mail from the requester could then join
   an old (even closed) ticket until phase 4's "reply after closure makes a new ticket". (3) Nothing yet acknowledges a new ticket ("your ticket
   is open"); that automatic notice is not built. (4) Mail is trusted on its From address (Mimecast / Exchange are expected to enforce
-  SPF, DKIM and DMARC); the code does not read Authentication-Results. (5) The Cc of an alias or distribution list becomes a follower like a person.
+  SPF, DKIM and DMARC); the code does not read Authentication-Results. (5) The Cc of an alias or distribution list becomes a follower like a person. (6) The own-mail guard compares the exact From address, so mail from an alias of the mailbox is caught only by its headers; list the mailbox's aliases if there are any.
 - **With supplier: should it pause the SLA clock?** Built with the clock running (only Awaiting user pauses it today), so time spent
   waiting on a supplier counts against the target. Pausing would be one line in `app/sla.py` `on_status_change`, but it would make a
   ticket look healthy while it waits on someone we do not control. Also decide whether a requester reply on a With supplier ticket

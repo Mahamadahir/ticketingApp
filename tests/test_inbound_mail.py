@@ -824,3 +824,29 @@ def test_the_dev_helper_applies_the_same_filters(client, db_session):
         "/webhooks/dev/simulate-inbound", data={"requester_email": MAILBOX, "subject": "Loop", "body": "x"}
     ).json()
     assert body == {"outcome": IGNORED_OWN} and tickets(db_session) == []
+
+
+def test_a_strangers_mail_in_a_thread_does_not_take_the_thread_over(db_session):
+    ticket = open_ticket(db_session, message_id="a")
+    ingest_mail(db_session, mail("x1", sender="stranger@evil.example", conversation_id="conv-a"))
+    db_session.commit()
+    result = ingest_mail(db_session, mail("r1", conversation_id="conv-a", subject="no reference"))
+    assert result.outcome == REPLY_ADDED and result.ticket.id == ticket.id
+
+
+def test_spaces_and_joiners_survive_but_control_characters_do_not(db_session):
+    raw = graph_message("p1", subject="Hello\u00a0world \u200d", body="a\u00a0b\x00\x07c\u2028d")
+    result = ingest_mail(db_session, parse_graph_message(raw))
+    assert result.ticket.subject == "Hello world \u200d"  # the subject's white space is normalised to single spaces
+    assert messages_of(db_session, result.ticket)[0].body == "a\u00a0bc\u2028d"
+
+
+def test_a_flooding_senders_files_are_not_downloaded(db_session, storage, monkeypatch):
+    monkeypatch.setattr(settings, "inbound_max_per_sender_hour", 1)
+    graph = FakeGraph()
+    graph.add("m1")
+    graph.add("m2")
+    graph.attach("m2", "report.pdf", PDF)
+    assert process_message(db_session, "m1", graph, storage).outcome == TICKET_CREATED
+    assert process_message(db_session, "m2", graph, storage).outcome == IGNORED_FLOOD
+    assert graph.downloaded == []
