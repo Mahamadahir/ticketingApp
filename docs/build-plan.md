@@ -40,13 +40,13 @@ not exist (`infra/` compiles but has never run against a subscription).
 | Phase 1 | complete | |
 | 2A in-app notifications (the bell): assignment and @mentions | merged (#36) | `app/notifications.py` |
 | 2B notification settings (channels per event type per person) | merged (#38) | `app/notification_settings.py`, `app/routers/my_settings.py` |
-| 2C-i worker skeleton: `python -m app.worker`, APScheduler, heartbeat line, single-instance lock, compose service | built, in review | `app/worker.py`, `app/jobs/` |
+| 2C-i worker skeleton: `python -m app.worker`, APScheduler, heartbeat line, single-instance lock, compose service | merged (#39) | `app/worker.py`, `app/jobs/` |
 | 2C-ii unread-after-N-minutes notification to Teams (needs the decisions in the Phase 2 note below) | not started | |
-| 2D Teams channel webhook for new tickets | not started | |
+| 2D Teams channel webhook for new tickets: outbox, card, sender (the worker job is in; the Bicep wiring follows, see Next up) | built, in review | `app/teams.py` |
 | 2E out-of-office detection (Graph presence) and skipping OOO agents | not started | |
 | Phases 2 to 9 | not started | `docs/plan.md`, "Build order" |
 
-Tests: 672 passing on Postgres 16.
+Tests: 694 passing on Postgres 16.
 
 ## Next up
 **Deferred from the escalation work (documented, not built).**
@@ -71,6 +71,8 @@ Tests: 672 passing on Postgres 16.
 **Email preview for the other emails.** The step exists for agent replies (1G-ii). Resolution emails (phase 4), MSP forwards and bulk resolves (listing every linked ticket and recipient) must reuse it, and automatic emails need admin-managed templates previewed when edited. Per-person opt-out of the "raised for you" email joins the setting when user notification settings exist.
 
 **Phase 2**, in five PRs: 2A the bell (merged, #36), 2B notification settings (built: `/settings/notifications`, anyone signed in chooses channels per event type; only the bell delivers, Teams and email choices are stored for 2C and phase 3 to read through `is_enabled`), 2C the worker (python -m app.worker, APScheduler, heartbeat, a compose service; first job: an unread notification is also sent to Teams after N minutes, a per-person setting, default 5). Note for 2C: notify() writes no Notification row when the bell is off, so a Teams copy that reads unread rows would never fire for someone with the bell off and Teams on; 2C must decide that (for example, write the row already read, or send Teams from notify() itself), 2D the Teams Workflows webhook for new tickets (the URL is a secret from the environment, never a setting; test with a mocked sender), 2E out-of-office detection (Graph presence, tested with simulated responses; Azure-only to prove) and skipping out-of-office agents for assignment and team notifications. Phase 3 (mail) will carry the approval emails with the link from pp/approval_links.py.
+
+**Still to do for 2D.** (1) Bicep: `TEAMS_NEW_TICKET_ENABLED` as a plain environment variable on web, public and worker; the webhook URL as a Key Vault secret (`teams-new-ticket-webhook-url` -> `TEAMS_NEW_TICKET_WEBHOOK_URL`) readable by the worker identity only. Validate with `bicep lint` and `build-params`. Until then the worker has no URL, so posts wait in the `teamspost` table and the worker logs a warning every minute. (2) Prune old sent `TeamsPost` rows when a housekeeping job exists. The `teams-posts` job (every 60 seconds) is in `app/jobs/__init__.py`. Another kind of post is one builder in `app.teams.CARD_BUILDERS` (it turns the row into the payload, or raises `Unsendable`); sending, backoff and giving up are shared.
 
 ## Working agreement for every PR
 
@@ -223,6 +225,12 @@ sleep, restart it and `docker start ticketingapp-db-1`.
   category whose target is the MSP cannot be escalated.
 
 ## Staging checklist (Azure-only, cannot be proved locally)
+
+- Teams new-ticket cards (2D): create a Workflows webhook ("Post to a channel when a webhook request is received") in the support
+  channel, store its URL in Key Vault, switch `TEAMS_NEW_TICKET_ENABLED` on, raise a ticket and check the card arrives with the
+  right number, subject and (if `PUBLIC_BASE_URL` is set) a working "Open ticket" link. Keep the channel IT-only: the card shows each new ticket's subject and requester before triage. Locally only the payload shape and the
+  outbox were tested, with a fake sender, so confirm Teams accepts the Adaptive Card as sent, and what it answers (this code
+  treats any 2xx as sent). Also confirm a wrong URL leaves the post unsent with "Teams answered 4xx" and no URL in the log.
 
 The full list is "Azure-only verification" in `docs/plan.md`. Added by work so far:
 - `FORWARDED_ALLOW_IPS` set to the Container Apps subnet, so the activity log records

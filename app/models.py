@@ -355,6 +355,24 @@ class NotificationPreference(SQLModel, table=True):
     enabled: bool
 
 
+class TeamsPost(SQLModel, table=True):
+    """A message waiting to go to a Teams channel (app/teams.py). Written in the same transaction as
+    what it announces, so a ticket is never announced and then rolled back, or created and
+    forgotten. The worker sends it and marks it sent."""
+
+    # The sender looks for unsent rows only; this keeps that cheap however many were sent.
+    __table_args__ = (Index("ix_teamspost_unsent", "id", postgresql_where=text("sent_at IS NULL")),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    kind: str  # new_ticket
+    ticket_id: Optional[int] = Field(default=None, foreign_key="ticket.id", index=True)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    sent_at: Optional[datetime] = Field(default=None)
+    attempts: int = Field(default=0, sa_column_kwargs={"server_default": "0"})
+    next_attempt_at: Optional[datetime] = Field(default=None)  # after a failure: not before this
+    last_error: Optional[str] = Field(default=None)  # why the last attempt failed; never the URL
+
+
 TICKET_COUNTER = "ticket"
 
 
