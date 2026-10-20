@@ -212,7 +212,7 @@ supplied at deploy time like the other secrets, never put in a file, and optiona
 without it posts wait in the outbox and the worker logs a warning every minute.
 Create the webhook in Teams ("Post to a channel when a webhook request is received")
 and keep the channel IT-only, since cards show ticket subjects. Supply it on every
-deploy once set, or the new revision loses it.
+deploy once set, or the new revision loses it. To remove the webhook, delete the `teams-new-ticket-webhook-url` secret and the worker's role assignment on it by hand: deploying with it empty only stops wiring it, and incremental deployments never delete either.
 
 The deploy workflow refuses a switch that is on without what it needs (Teams on with no webhook secret, presence on without the `GRAPH_*` settings) or a value other than `true`/`false`. A manual deploy has no such check. Turning a Teams switch on while `deployWorker` is false queues posts that nothing sends until the worker runs.
 

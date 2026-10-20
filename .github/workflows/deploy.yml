@@ -143,13 +143,17 @@ jobs:
         run: |
           set -euo pipefail
           fail=0
+          # Read the way the param files read them: any case, spaces around are ignored.
           for name in TEAMS_NEW_TICKET_ENABLED TEAMS_NOTIFICATIONS_ENABLED PRESENCE_ENABLED; do
-            value="${!name:-}"
+            value="$(printf '%s' "${!name:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
             case "$value" in
-              "" | true | false) ;;
-              *) echo "::error::$name must be 'true' or 'false', not '$value'." >&2; fail=1 ;;
+              "" | true | false) printf -v "$name" '%s' "$value" ;;
+              *) echo "::error::$name must be true or false, not '${!name}'." >&2; fail=1 ;;
             esac
           done
+          if { [ "${TEAMS_NEW_TICKET_ENABLED:-}" = true ] || [ "${TEAMS_NOTIFICATIONS_ENABLED:-}" = true ] || [ "${PRESENCE_ENABLED:-}" = true ]; }             && ! grep -Eq '^param deployWorker = true' "$BICEP_PARAMS"; then
+            echo "::warning::A Teams or presence switch is on but $BICEP_PARAMS does not deploy the worker (deployWorker), which does the sending and the presence checks. Posts will queue and nothing will send them."
+          fi
           if [ "${TEAMS_NEW_TICKET_ENABLED:-}" = true ] || [ "${TEAMS_NOTIFICATIONS_ENABLED:-}" = true ]; then
             if [ -z "$TEAMS_NEW_TICKET_WEBHOOK_URL" ]; then
               echo "::error::Teams posts are on but the TEAMS_NEW_TICKET_WEBHOOK_URL secret is empty." >&2
