@@ -18,6 +18,35 @@ uvicorn worker. Jobs: Graph subscription renewal, mail catch-up, SLA timers,
 MSP handoff, chase emails, auto-close, delayed Teams notifications, presence
 refresh.
 
+**Jobs are driven by the database, not by APScheduler memory** (agreed 14 Oct 2026). The
+worker restarts on every deploy and any crash, and a single replica is a single point of
+failure, so nothing may depend on a timer that lived only in the process.
+- *Recurring jobs* (renewal, catch-up poll, 18:00 MSP handoff, chase, auto-close, presence)
+  are rows in a `scheduled_job` table: name, `next_run_at`, `last_success_at`, lease owner and
+  expiry. APScheduler (or a plain loop) only wakes every minute and runs whatever is due. After
+  downtime the job simply runs late, and each job is written to be safe to run late and twice
+  (it works out what is due from ticket data, e.g. "tickets that will breach before 08:00 and
+  have not been handed over", rather than "what happened since the last tick").
+- *One-off work* (a Graph notification to fetch, a Teams message to send after N minutes, an
+  email to send) is a row in a `job` table with status, attempts, `run_after`, `last_error`. The
+  worker claims rows with `SELECT ... FOR UPDATE SKIP LOCKED`, so a second replica (or a
+  rolling deploy overlap) cannot double-process. Failure schedules a retry with exponential
+  backoff up to a limit, then marks the row `dead` and raises an alert and an admin page entry.
+- *Missed-run guard.* The 18:00 handoff also has a late-run rule: if the worker is found past
+  18:00 with the job not yet run, it runs at once (and says so in the audit log); a heartbeat
+  alert covers the case where the worker is down entirely.
+- The Graph webhook (public app) only inserts a `job` row and returns 202; the worker does
+  the fetch. This is the queue the Mail section relies on.
+- Uses Postgres only, no extra Azure service. A Service Bus queue is the upgrade path if
+  volume ever needs it.
+- *Where this stands (20 Oct 2026).* One-off work is built this way: the Teams and email outboxes
+  (`TeamsPost`, `OutboundEmail`) are rows the worker claims with `FOR UPDATE SKIP LOCKED` and retries
+  with backoff, and the Graph webhook (3A) will only insert a row and return 202. The recurring-jobs
+  table is not built: the worker (`app/worker.py`) runs its jobs from APScheduler on a fixed interval
+  and a single-instance lock, and `presence` and `mail-out` are such jobs. That is acceptable while every
+  job is safe to run late and twice; build the `scheduled_job` table and its late-run rule before the
+  18:00 MSP handoff (phase 5), which must not be missed.
+
 **Attachments.** Private Azure Blob Storage container. Files are served
 through short-lived user-delegation SAS links after a ticket visibility check
 (details under "Hosting on Azure"). One upload size limit (**TBC**) for portal
@@ -389,12 +418,20 @@ integration later. Change control is later.
 **Status follows the conversation** (agreed 12 Oct 2026). The SLA clock pauses in
 Awaiting user and chase emails are sent from it, so the status must be right
 without anyone remembering to set it by hand.
-- **Agent emails the user.** The ticket moves to **Awaiting user** by itself. The
-  agent is not asked and cannot opt out: there is no tick-box or choice on the
-  form (agents can still set a status by hand with the status buttons). It applies
-  to Open and In progress tickets; a ticket With MSP is waiting on someone else, and
-  a Resolved or Closed one is finished, so those do not move. It does not apply to
-  the resolution email, which is the resolve action in phase 4.
+- **Agent emails the user or adds a note.** *Changed 14 Oct 2026* (was: always moves to
+  Awaiting user with no choice). The Email user and Add note forms end with a **Status**
+  dropdown. For an email on an Open or In progress ticket it defaults to **Awaiting user**, so
+  the usual case is still one click, but the agent can pick any other status (for example In
+  progress for "we're looking into it", which keeps the SLA clock running and stops the chase
+  timer). For an internal note the default is "no change". The ticket takes the chosen status
+  when the message is saved, in one step, as an ordinary status event naming the agent. On a
+  ticket With MSP, Resolved or Closed the dropdown defaults to the current status (nothing
+  moves unless the agent picks something), and Resolved or Closed are not offered here:
+  resolving is the resolve action in phase 4. The Status buttons stay for changes made without
+  a message. For a split original the dropdown is not shown, since its status is derived; an
+  email from a part sets that part's status. *Code to change:* today the email always sets
+  Awaiting user (`app/routers/tickets.py`, `app/messages.py`), and the preview step (1G-ii)
+  should show the chosen status.
 - **The user replies.** When the requester, or a follower, replies while the ticket
   is Awaiting user, it moves back to In progress automatically and the SLA clock
   resumes. This covers portal comments now and email replies once mail intake
@@ -942,12 +979,57 @@ for all of them.
 | 7 | Reporting and CSV export, subject access export, anonymisation |
 | 8 | Teams bot: direct messages to agents and ticket intake from Teams |
 | 9 | Google Stitch redesign once the UI is feature-complete, to WCAG 2.2 AA |
+| 10 | Security hardening and the go-live gate (see "Security hardening phase"). Nothing here is optional for production; small items are done earlier when their feature is built |
 
 The Azure infrastructure (`infra/`, Bicep) is scaffolded and not deployed.
 Staging is deployed when the app is ready for testing, then initial roll-out
 on the internal domain, then production before go-live. The code changes it
 needs are listed under "Hosting on Azure"; infrastructure work runs
 independently of the code phases.
+
+## Security hardening phase
+
+Added 14 Oct 2026 from a review of this plan. A final pass before production. Where the item
+belongs to a feature (the link pages in phase 4), build it with that feature and tick it off
+here; this list is what the go-live review checks.
+
+1. **Emailed links must survive scanners.** `/reopen/*` and `/feedback/*` GETs only show a
+   confirmation page; the action (reopen, rate) happens on POST, with a CSRF-safe form. Mail
+   scanners that prefetch links then neither reopen tickets nor use up single-use tokens.
+   Test: a GET never changes state.
+2. **Session revocation.** Sessions are signed cookies (Starlette `SessionMiddleware`, default
+   14-day lifetime, no server-side record). Nothing can end one early. Move to a server-side
+   session (a `user_session` table: id in the cookie, user, created, last seen, expiry, revoked
+   flag) or add a per-user `session_version` checked on every request, plus a short idle
+   timeout. Needed for: outage mode ending password sessions, lockout, role removal, a leaver
+   disabled in Entra, and a "sign out everywhere" button. Also add `User.is_active`, which does not
+   exist yet, and check it in `get_current_user`.
+3. **Match users on the Entra object id (`oid`)** before any real users sign in. Not urgent while
+   the app is only run in development; it is a go-live gate item, and may be built with Entra
+   app roles in phase 6.
+4. **Graph mailbox scoping.** (The by-hand steps are in `docs/azure-setup.md`, section 3; this item is the go-live check that it was done and tested.) Application permissions such as `Mail.ReadWrite` cover every
+   mailbox in the tenant. Restrict the app registration to the shared mailbox(es) only
+   (Exchange RBAC for Applications, or an application access policy) and verify it on staging
+   by trying to read another mailbox. Same check for `Presence.Read.All`: confirm what scoping
+   is possible.
+5. **Rate limiting with a shared store** (Postgres table or Redis), not per-process memory:
+   `public` runs several uvicorn workers across replicas. Keyed on the real client IP, which
+   depends on `FORWARDED_ALLOW_IPS` being right.
+6. **Mail loop protection** beyond `Auto-Submitted`: also `Precedence: bulk/junk/list`,
+   `X-Auto-Response-Suppress`, `X-Autoreply`, bounce (NDR) messages and `mailer-daemon`
+   senders, and ignore mail from our own mailbox. Set `Auto-Submitted: auto-generated` and
+   `X-Auto-Response-Suppress: All` on everything the system sends.
+7. **Secrets that live in settings.** Teams Workflows webhook URLs let anyone post to the
+   channel, so keep them in Key Vault (or encrypted), never in a plain settings row or logs.
+8. **Anonymisation and erasure are complete.** Besides name, email and attachments: message
+   bodies and signatures, followers, the activity log (IP, browser), audit entries that name the
+   person. Document what remains (Postgres backups up to the retention window, blob soft-delete
+   and version retention) and how long it takes to leave.
+9. **Verify the presence API** (`outOfOfficeSettings`) is in Graph v1.0, not beta only, before
+   relying on it.
+10. **Go-live gate.** Production needs, as a minimum: phases 1 to 6 (including resolution and
+    feedback, break-glass and outage mode), this list, the Azure-only verification list passed on
+    staging, a restore test, and the retention decision from the data protection lead.
 
 ## Later and stretch
 
