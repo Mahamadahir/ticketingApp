@@ -197,8 +197,10 @@ least-privilege database role is a later hardening step.
   `DefaultAzureCredential`, phase 3.
 - Application Insights via the `azure-monitor-opentelemetry` package.
 - App-level rate limiting on the public routes.
-- Write the deploy workflow (the old SSH-to-EC2 one was removed): OIDC login,
-  build and push, migrate job, deploy.
+- Deploy workflow (the old SSH-to-EC2 one was removed): **drafted, never run**
+  (`.github/workflows/deploy.yml`, helper scripts in `.github/scripts/`): OIDC login,
+  build once and push, `what-if`, migrate job, template deploy, rollout and `/health`
+  check, staging then a production approval gate. Setup is in `infra/README.md`.
 
 **Azure-only verification.** The app is tested locally until it is ready.
 These cannot be proved locally and are checked on staging, flagged as each

@@ -249,3 +249,12 @@ The full list is "Azure-only verification" in `docs/plan.md`. Added by work so f
   signed-in alternative that has no such token.
 - Approve / Decline pages (portal and emailed link) in a real browser, including that a mail
   security scanner opening the link does not decide anything (phase 3, with real mail).
+- Deploy workflow (`.github/workflows/deploy.yml`, drafted, linted with actionlint only): nothing in it has run. On the first
+  staging run check: the federated credential subject matches the environment name; `azure/login` v3 and the role assignments
+  (including the conditioned RBAC Administrator) let `what-if` and the deployment pass; `az acr login` and the push work for the
+  AcrPush identity; the `docker save` / `load` / push gives the same image in both registries; `az containerapp job update --image`,
+  `job start`, `job execution show` (status values, the `job logs show` flags) behave as `run-migrate-job.sh` assumes; the first
+  image deploy path (no job yet, migrate after the template); `latestReadyRevisionName`, `healthState` and `runningState` read as
+  `check-rollout.sh` expects, and a deliberately bad image fails the run while the old revision keeps serving; `/health` is
+  reachable on the public app; the `production` required-reviewers gate pauses the second matrix leg and `max-parallel: 1` runs
+  staging first; secrets left unset really arrive as empty strings in `readEnvironmentVariable`.
