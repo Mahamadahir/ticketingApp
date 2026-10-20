@@ -150,7 +150,7 @@
     <label>Assign to (without triaging)
       <select name="agent_id">
         {% for agent in team_agents %}
-        <option value="{{ agent.id }}" {{ "selected" if assigned_agent and agent.id == assigned_agent.id else "" }}>{{ agent.display_name }}</option>
+        <option value="{{ agent.id }}" {{ "selected" if assigned_agent and agent.id == assigned_agent.id else "" }}>{{ agent_label(agent) }}</option>
         {% endfor %}
       </select>
     </label>
@@ -207,7 +207,7 @@
       <select name="agent_id" id="reassign-agent">
         <option value="">Leave unassigned</option>
         {% for agent in reassign_agents %}
-        <option value="{{ agent.id }}" {{ "selected" if assigned_agent and agent.id == assigned_agent.id else "" }}>{{ agent.display_name }}</option>
+        <option value="{{ agent.id }}" {{ "selected" if assigned_agent and agent.id == assigned_agent.id else "" }}>{{ agent_label(agent) }}</option>
         {% endfor %}
       </select>
     </label>

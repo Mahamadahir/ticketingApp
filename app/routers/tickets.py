@@ -28,6 +28,7 @@ from app.request_types import request_type_of
 from app.canned import active_canned, fill as fill_canned
 from app.approvals import ApprovalError, approvals_of, describe_rule, waive
 from app.notifications import notify_assigned, notify_mentions
+from app.presence import agent_label
 from app.search import normalise, search_condition
 from app.splitting import (
     MAX_PARTS,
@@ -82,6 +83,7 @@ router = APIRouter(prefix="/tickets", tags=["tickets"])
 reference_router = APIRouter(tags=["tickets"])
 templates = Jinja2Templates(directory="app/templates")
 templates.env.globals["max_message_length"] = MAX_MESSAGE_LENGTH
+templates.env.globals["agent_label"] = agent_label  # a name, plus "(out of office)" when they are
 
 AGENT_ROLES = (UserRole.SUPER_ADMIN, UserRole.AGENT)
 

@@ -11,12 +11,14 @@ GRAPH_* values in .env and flesh out the TODOs when that's ready.
 """
 
 import time
+from urllib.parse import quote
 
 import httpx
 
 from app.config import settings
 
 GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0"
+PRESENCE_BATCH = 650  # the most ids getPresencesByUserId accepts in one request
 TOKEN_URL_TEMPLATE = "https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
 
 
@@ -44,6 +46,39 @@ class GraphClient:
         self._access_token = payload["access_token"]
         self._token_expires_at = time.time() + payload["expires_in"] - 60
         return self._access_token
+
+    def object_id_for(self, email: str) -> str | None:
+        """The person's Entra object id (what the presence API wants), or None if the directory has
+        no such user. GET /users/{email}?$select=id treats the email as the user principal name, the
+        usual case; anyone whose sign-in name differs is not found and so never marked out of office.
+        Needs User.Read.All (application)."""
+        response = httpx.get(
+            f"{GRAPH_BASE_URL}/users/{quote(email)}",
+            params={"$select": "id"},
+            headers={"Authorization": f"Bearer {self._get_access_token()}"},
+            timeout=15,
+        )
+        if response.status_code == 404:
+            return None
+        response.raise_for_status()
+        return response.json().get("id")
+
+    def presences(self, object_ids: list[str]) -> list[dict]:
+        """POST /communications/getPresencesByUserId: one reading per id, up to 650 ids a request
+        (Presence.Read.All, application). Each reading carries outOfOfficeSettings.isOutOfOffice, which
+        covers Outlook automatic replies, Teams scheduled out of office and calendar events marked
+        out of office."""
+        readings: list[dict] = []
+        for start in range(0, len(object_ids), PRESENCE_BATCH):
+            response = httpx.post(
+                f"{GRAPH_BASE_URL}/communications/getPresencesByUserId",
+                json={"ids": object_ids[start : start + PRESENCE_BATCH]},
+                headers={"Authorization": f"Bearer {self._get_access_token()}"},
+                timeout=30,
+            )
+            response.raise_for_status()
+            readings.extend(response.json().get("value", []))
+        return readings
 
     def send_mail(self, to_address: str, subject: str, body: str, reply_to_message_id: str | None = None) -> None:
         """Send a reply from the shared mailbox so it lands as a normal

@@ -895,6 +895,15 @@ Automatic emails use admin-managed templates, previewed when edited.
   presence API (`Presence.Read.All`, application, admin consent; up to 650
   users per request). It covers Outlook automatic replies, Teams scheduled
   out of office, and calendar events marked out of office.
+  *Built in 2E (20 Oct 2026):* `app/presence.py`. The `presence` job (every 15 minutes, only with `PRESENCE_ENABLED` and the
+  GRAPH_* credentials) looks each agent up in the directory once by email (cached as `User.entra_object_id`; an agent Graph
+  does not know is never marked), then reads everyone's presence in batches of 650 and stores `out_of_office` and when it was
+  read. Readers use `is_out_of_office`, which ignores a reading older than three hours, so a stopped job or an outage never
+  leaves anyone out of office for good. What it changes: an out-of-office agent is labelled "(out of office)" in the assign,
+  re-assign and triage pickers (still selectable, since the status can be wrong or about to end), and `notifiable_members`
+  drops them from any message to a whole team. Nothing sends to a whole team yet (the team an escalation lands in and the agent
+  a team change unassigns are still not notified), so that helper is the hook for those. A notification meant for one person
+  (assigned, mentioned) still reaches them. Tested with simulated Graph responses; real Graph is a staging check.
 
 ## Admin portal
 

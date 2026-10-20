@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     # left to pile up). They go to the same channel as the new-ticket cards, so the one webhook URL
     # above is the only credential, and it is needed only by the worker.
     teams_notifications_enabled: bool = False
+    # Out-of-office detection (phase 2E): the worker reads agents' presence from Graph
+    # (Presence.Read.All) and marks those who are out of office. Needs the GRAPH_* credentials.
+    presence_enabled: bool = False
     # Where the app is reached, so a Teams card can link to the ticket. Blank: no link on the card.
     public_base_url: str = ""
 

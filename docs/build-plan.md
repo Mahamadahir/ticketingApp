@@ -43,10 +43,10 @@ not exist (`infra/` compiles but has never run against a subscription).
 | 2C-i worker skeleton: `python -m app.worker`, APScheduler, heartbeat line, single-instance lock, compose service | merged (#39) | `app/worker.py`, `app/jobs/` |
 | 2C-ii unread-after-N-minutes notification to Teams: which notifications want a copy and when (Teams-only rows, per-person delay, admin default), then queued in the Teams outbox and sent by the worker | built, in review | `app/notifications.py`, `app/teams.py`, `app/notification_settings.py` |
 | 2D Teams channel webhook for new tickets: outbox, card, sender, worker job (the Bicep wiring follows, see Next up) | merged (#40) | `app/teams.py` |
-| 2E out-of-office detection (Graph presence) and skipping OOO agents | not started | |
+| 2E out-of-office detection (Graph presence): the worker's `presence` job stores each agent's flag; OOO agents are labelled in the assignee pickers and left out of team-wide notifications | built, in review | `app/presence.py` |
 | Phases 2 to 9 | not started | `docs/plan.md`, "Build order" |
 
-Tests: 741 passing on Postgres 16.
+Tests: 764 passing on Postgres 16.
 
 ## Next up
 **Deferred from the escalation work (documented, not built).**
@@ -240,6 +240,7 @@ The full list is "Azure-only verification" in `docs/plan.md`. Added by work so f
   canned-response picker and raise-a-ticket forms, including the `HX-Redirect` after raising);
   tests use the HTTP layer only.
 - Entra sign-in and the SSO activity events against a real redirect URI.
+- Out-of-office detection (2E): with the GRAPH_* credentials set and `PRESENCE_ENABLED=true` on the worker, grant the app registration `Presence.Read.All` and `User.Read.All` (application, admin consent). Put an agent out of office (an Outlook automatic reply, a Teams scheduled out of office, or a calendar event marked out of office) and within 15 minutes check the worker log shows `heartbeat job=presence`, the agent shows "(out of office)" in the assign, re-assign and triage pickers, and is unmarked again once back. Check an agent whose sign-in name differs from their email is simply never marked (the directory lookup treats the email as the user principal name), and that a 403 from Graph shows up as `job=presence status=failed` rather than silently marking nobody. Bicep wiring for PRESENCE_ENABLED and the extra Graph permissions is not built.
 - Teams notification copies (2C-ii): with TEAMS_NOTIFICATIONS_ENABLED on and the webhook URL set, assign a ticket to a test agent who has Teams ticked and leave it unread past their delay: check the card arrives in the support channel and the agent is actually @mentioned (the mention id is their email; an agent whose Teams sign-in differs from their email, or a local account with no Teams user, will show plain text and no ping). Check Teams accepts the msteams.entities mention in a Workflows card. The channel then shows each notified ticket's subject to everyone in it, so keep it IT-only (a dedicated notifications channel and second webhook is a later option). Bicep wiring for TEAMS_NOTIFICATIONS_ENABLED is not built.
 - The worker (deployWorker, currently false in Bicep): set it true once real jobs exist, and add the log-query dead man's switch alert on the heartbeat job=heartbeat line (docs/plan.md, Health and monitoring). Its single-instance lock is a *session* advisory lock held on one connection: if staging Postgres is reached through PgBouncer in transaction-pooling mode the lock would not hold, so connect the worker to the server directly (or use session pooling). Verify on staging by starting a second worker and seeing it exit with Another worker is already running.
 - The emailed approval link carries its token in the URL path, so web server, ingress and

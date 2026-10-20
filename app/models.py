@@ -107,6 +107,12 @@ class User(SQLModel, table=True):
     # How long an unread notification waits before it is also sent to Teams, for this person.
     # None means the default (the "teams_unread_minutes" setting).
     teams_delay_minutes: Optional[int] = Field(default=None)
+    # Out-of-office detection (phase 2E, app/presence.py). The Entra object id is looked up once from
+    # the email; the flag is what the worker last read from Graph, and when. Read it through
+    # app.presence.is_out_of_office, which ignores a stale reading.
+    entra_object_id: Optional[str] = Field(default=None)
+    out_of_office: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
+    out_of_office_checked_at: Optional[datetime] = Field(default=None)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
