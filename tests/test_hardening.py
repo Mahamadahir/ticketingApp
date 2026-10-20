@@ -79,7 +79,7 @@ def test_webhook_rejects_bad_json_and_ignores_wrong_client_state(client):
     assert client.post("/webhooks/graph/notifications", json=["a list"]).status_code == 400
 
     wrong = client.post("/webhooks/graph/notifications", json={"value": [{"clientState": 5}, "junk", {}]})
-    assert wrong.status_code == 200
+    assert wrong.status_code == 202
     assert wrong.json() == {"status": "accepted"}
 
 

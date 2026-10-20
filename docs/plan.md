@@ -193,9 +193,15 @@ least-privilege database role is a later hardening step.
 
 **Code changes the Azure plan needs:**
 
-- `APP_ROLE` (`web`, `public`, `worker`) selects which routers are mounted.
-  Needed before `public` can be deployed; due with the Graph webhook (phase 3).
-  Not made yet.
+- `APP_ROLE` (`web`, `public`, `worker`) selects which routers are mounted. **Built in 3A (20 Oct 2026):**
+  `build_app(role)` in `app/main.py`. `web` serves the console, portal, admin and the dev helper; `public` serves
+  only `/health`, `/webhooks/graph/notifications` and `/approvals/{token}` and has no session cookie; `worker`
+  serves nothing; `all` (the default) serves everything for local development and tests and is refused outside
+  dev, so a deployment that forgets to say what it is does not put the agent console on the internet.
+  The webhook stores one `GraphNotification` row per notification (ids only, no mail content) after checking
+  `clientState` in constant time, and answers 202; 3B reads the rows. Public routes are rate limited per caller
+  address, per replica (`app/rate_limit.py`; approvals 30 a minute, webhook 600, both settings). The access log
+  replaces an approval token with `{token}` (`app/log_redaction.py`).
 - `RUN_MIGRATIONS=false` makes the entrypoint skip `alembic upgrade head`, so
   replicas do not race; the migrate job runs it instead. Done.
 - uvicorn proxy headers: uvicorn trusts `X-Forwarded-*` from the addresses in
@@ -204,8 +210,12 @@ least-privilege database role is a later hardening step.
   `X-Forwarded-For` entry as the client address, and a client can forge that.
   No code change needed. Verify on staging: the HTTPS-only cookie works, and a
   request with a forged `X-Forwarded-For` is recorded with the real address.
-- Settings check per role: once `APP_ROLE` exists, require `SESSION_SECRET_KEY`
-  only for `web`, then drop the internal session key secret.
+- Settings check per role: **built in 3A.** `unsafe_setting_errors` refuses an unknown role, `all` outside dev, a default
+  `SESSION_SECRET_KEY`, a default `GRAPH_WEBHOOK_CLIENT_STATE` on `public` (even before Graph is configured), and the SSO
+  secret on `public`. Decision: the internal session key is not dropped. On `public` and `worker` there is no cookie, but
+  the same value signs and checks the emailed approval links (`app/approval_links.py`), which the worker mints (3D) and
+  the public app checks, so it stays as a shared link-signing secret. Rename it if that is confusing (the Bicep still
+  calls it `INTERNAL_SESSION_SECRET_KEY`); a separate `APPROVAL_LINK_SECRET_KEY` is a possible tidy-up.
 - Worker entrypoint (`python -m app.worker`), phase 2. **Skeleton built (2C-i, 19 Oct 2026):**
   `app/worker.py` runs the jobs listed in `app/jobs/__init__.py` with APScheduler. Each job gets
   its own session, is committed on success and rolled back on failure, never overlaps itself, and
@@ -225,7 +235,7 @@ least-privilege database role is a later hardening step.
   implementation for development and a Blob implementation using
   `DefaultAzureCredential`, phase 3.
 - Application Insights via the `azure-monitor-opentelemetry` package.
-- App-level rate limiting on the public routes.
+- App-level rate limiting on the public routes. Built in 3A (see above).
 - Deploy workflow (the old SSH-to-EC2 one was removed): **drafted, never run**
   (`.github/workflows/deploy.yml`, helper scripts in `.github/scripts/`): OIDC login,
   build once and push, `what-if`, migrate job, template deploy, rollout and `/health`

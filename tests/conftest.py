@@ -65,6 +65,16 @@ def fresh_database():
     SQLModel.metadata.drop_all(engine)
 
 
+@pytest.fixture(autouse=True)
+def fresh_rate_limits():
+    """The public routes' counters are in memory and the test client is always the same caller."""
+    from app import rate_limit
+
+    rate_limit.APPROVALS.reset()
+    rate_limit.WEBHOOK.reset()
+    yield
+
+
 @pytest.fixture
 def db_session():
     with Session(engine) as session:
