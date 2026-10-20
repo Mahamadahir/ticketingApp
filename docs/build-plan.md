@@ -44,6 +44,7 @@ not exist (`infra/` compiles but has never run against a subscription).
 | 2C-ii unread-after-N-minutes notification to Teams: which notifications want a copy and when (Teams-only rows, per-person delay, admin default), then queued in the Teams outbox and sent by the worker | merged (#42) | `app/notifications.py`, `app/teams.py`, `app/notification_settings.py` |
 | 2D Teams channel webhook for new tickets: outbox, card, sender, worker job (Bicep wired) | merged (#40) | `app/teams.py` |
 | 2E out-of-office detection (Graph presence): the worker's `presence` job stores each agent's flag; OOO agents are labelled in the assignee pickers and left out of team-wide notifications | merged (#44) | `app/presence.py` |
+| Reply notification: the assigned agent is told when the requester or a follower replies, whatever the status | PR open | `app/notifications.py` (`notify_reply`), `app/messages.py` |
 | Phase 2 | complete | |
 | With supplier status (waiting on an outside supplier or vendor; set by hand, SLA clock keeps running) | merged (#53) | `app/models.py`, migration `a9d3c6e1f275` |
 | 3A public surface: `APP_ROLE` split (`build_app` in `app/main.py`), Graph webhook stores each notification and returns 202, rate limiting, approval tokens kept out of the access log | built, in review | `app/main.py`, `app/routers/webhooks.py`, `app/rate_limit.py`, `app/log_redaction.py` |
@@ -272,6 +273,8 @@ sleep, restart it and `docker start ticketingapp-db-1`.
   waiting on a supplier counts against the target. Pausing would be one line in `app/sla.py` `on_status_change`, but it would make a
   ticket look healthy while it waits on someone we do not control. Also decide whether a requester reply on a With supplier ticket
   should stay a no-op (built: it changes nothing, like With MSP) and whether chase emails to the supplier are wanted later.
+- **A reply on a triaged ticket nobody is assigned to.** The assigned agent is told of a reply; if the ticket is Open but unassigned,
+  nobody is told today. Should the ticket's team be told instead (a bell for every member, or the Teams channel)? Not decided.
 - **Out-of-office lookups (2E).** A directory lookup that fails or finds nobody is retried on every 15-minute run, and inactive agents are
   polled (there is no active flag). A "last looked up" column to stop the retries is worth doing if the logs show repeated failed
   lookups. One failing batch (only above 650 agents) rolls back the whole run; the three-hour stale cutoff makes that safe.

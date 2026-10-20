@@ -26,6 +26,7 @@ from app.models import (
     TicketEvent,
     User,
 )
+from app.notifications import notify_reply
 from app.sla import note_first_response
 from app.ticket_service import NotTriaged
 from app.visibility import Access, is_untriaged, ticket_access, visible_ticket_condition
@@ -175,14 +176,27 @@ def add_note(session: Session, ticket: Ticket, author: User, body: str) -> Messa
 
 
 def record_inbound(
-    session: Session, ticket: Ticket, *, sender: str, body: str, author_user_id: Optional[int] = None
+    session: Session,
+    ticket: Ticket,
+    *,
+    sender: str,
+    body: str,
+    author_user_id: Optional[int] = None,
+    reply_by: Optional[str] = None,
 ) -> Message:
     """A message from the requester (portal comment, or mail once Graph is wired
-    up). Always public: the requester wrote it and may see it."""
-    return _record(
+    up). Always public: the requester wrote it and may see it.
+
+    reply_by is the email of the person replying: pass it for a reply on an existing ticket and the
+    assigned agent is notified (whatever the status). Leave it out for the message a ticket is
+    created with, which tells nobody."""
+    message = _record(
         session, ticket, sender=sender, body=body, author_user_id=author_user_id,
         direction=MessageDirection.INBOUND, visibility=MessageVisibility.PUBLIC,
     )
+    if reply_by is not None:
+        notify_reply(session, ticket, reply_by)
+    return message
 
 
 def _sub_tickets(session: Session, ticket: Ticket, viewer=None) -> list[Ticket]:

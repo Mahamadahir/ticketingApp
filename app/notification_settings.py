@@ -61,6 +61,12 @@ EVENT_TYPES: tuple[EventType, ...] = (
         AGENT_ROLES, (IN_APP, TEAMS), (IN_APP, TEAMS),
     ),
     EventType(
+        "replied", "The requester replies on your ticket",
+        "The requester, or someone copied on the ticket, replies on a ticket assigned to you, whatever its "
+        "status (also with the MSP or a supplier, where a reply moves nothing).",
+        AGENT_ROLES, (IN_APP, TEAMS), (IN_APP, TEAMS),
+    ),
+    EventType(
         RAISED_FOR_YOU, "An agent raises a ticket for you",
         "An email telling you a ticket was raised on your behalf. Also off for everyone if an admin "
         "switches it off in Settings.",
