@@ -1,0 +1,215 @@
+name: Deploy
+
+# DRAFT: written but never run. It cannot be proved without an Azure subscription,
+# so the first run on staging is also its test (see "Staging checklist" in
+# docs/build-plan.md). Setup it needs is in infra/README.md.
+#
+# Nothing here is hard-coded: Azure IDs, the resource group and every setting
+# come from the GitHub Environment (variables and secrets); the registry and
+# app names are found in the resource group. No secret is stored for Azure
+# itself: login is OIDC.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Where to deploy this commit"
+        type: choice
+        default: staging
+        options:
+          - staging
+          - staging-then-production
+  # To deploy every push to main to staging (never production), remove the
+  # leading '#' from the next three lines.
+  # push:
+  #   branches: [main]
+  #   paths-ignore: ["docs/**", "**/*.md", "*.md"]
+
+permissions:
+  contents: read
+
+# One deploy at a time, for all environments. A running deploy is never
+# cancelled mid-migration, but GitHub keeps only one waiting run: dispatching a
+# third cancels the second while it still waits.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  IMAGE_NAME: ticketing
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      # Built once and pushed to each environment's registry, so what reaches
+      # production is the image that was deployed to staging.
+      - name: Build image
+        run: docker build --tag "$IMAGE_NAME:$GITHUB_SHA" .
+
+      - name: Save image
+        run: docker save "$IMAGE_NAME:$GITHUB_SHA" --output image.tar
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: image
+          path: image.tar
+          retention-days: 1
+          compression-level: 6
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    # Staging first, then production only if staging succeeded (fail-fast stops
+    # the second leg). Production waits for the required reviewers set on the
+    # `production` GitHub Environment.
+    strategy:
+      max-parallel: 1
+      fail-fast: true
+      matrix:
+        environment: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.target == 'staging-then-production' && '["staging","production"]' || '["staging"]') }}
+    environment: ${{ matrix.environment }}
+    permissions:
+      id-token: write # OIDC token for azure/login
+      contents: read
+    env:
+      RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      BICEP_PARAMS: infra/${{ matrix.environment }}.bicepparam
+      # Non-secret settings infra/<environment>.bicepparam reads with
+      # readEnvironmentVariable. The secrets are set only on the two steps that
+      # run az deployment, not on every step.
+      ALERT_EMAIL: ${{ vars.ALERT_EMAIL }}
+      WEB_ALLOWED_CIDRS: ${{ vars.WEB_ALLOWED_CIDRS }}
+      SSO_TENANT_ID: ${{ vars.SSO_TENANT_ID }}
+      SSO_CLIENT_ID: ${{ vars.SSO_CLIENT_ID }}
+      GRAPH_TENANT_ID: ${{ vars.GRAPH_TENANT_ID }}
+      GRAPH_CLIENT_ID: ${{ vars.GRAPH_CLIENT_ID }}
+      GRAPH_SHARED_MAILBOX: ${{ vars.GRAPH_SHARED_MAILBOX }}
+      SUPER_ADMIN_EMAILS: ${{ vars.SUPER_ADMIN_EMAILS }}
+    steps:
+      - name: Production deploys only from main
+        if: matrix.environment == 'production' && github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Production deploys only from main (this run is on $GITHUB_REF)." >&2
+          exit 1
+
+      - uses: actions/checkout@v6
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: image
+
+      - name: Load image
+        run: docker load --input image.tar
+
+      - uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Find the registry and push the image
+        id: image
+        run: |
+          set -euo pipefail
+          # One registry per resource group, created by infra/main.bicep.
+          registry="$(az acr list --resource-group "$RESOURCE_GROUP" --query '[0].name' --output tsv)"
+          if [ -z "$registry" ]; then
+            echo "::error::No container registry in $RESOURCE_GROUP. Deploy the platform first (infra/README.md)." >&2
+            exit 1
+          fi
+          server="$(az acr show --name "$registry" --query loginServer --output tsv)"
+          image="$server/$IMAGE_NAME:$GITHUB_SHA"
+          az acr login --name "$registry"
+          docker tag "$IMAGE_NAME:$GITHUB_SHA" "$image"
+          docker push "$image"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+
+      # The same variables the README tells you to set in your shell:
+      # infra/<environment>.bicepparam reads them with readEnvironmentVariable.
+      # Every secret must be supplied on every deploy or the new revision
+      # silently loses it (infra/README.md, "Things that bite on redeploys").
+      - name: Preview the deployment
+        env:
+          IMAGE: ${{ steps.image.outputs.image }}
+          # Every secret must be supplied on every deploy or the new revision
+          # silently loses it (infra/README.md, "Things that bite on redeploys").
+          POSTGRES_ADMIN_PASSWORD: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
+          SESSION_SECRET_KEY: ${{ secrets.SESSION_SECRET_KEY }}
+          INTERNAL_SESSION_SECRET_KEY: ${{ secrets.INTERNAL_SESSION_SECRET_KEY }}
+          GRAPH_WEBHOOK_CLIENT_STATE: ${{ secrets.GRAPH_WEBHOOK_CLIENT_STATE }}
+          SSO_CLIENT_SECRET: ${{ secrets.SSO_CLIENT_SECRET }}
+          GRAPH_CLIENT_SECRET: ${{ secrets.GRAPH_CLIENT_SECRET }}
+        run: |
+          az deployment group what-if \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file infra/main.bicep \
+            --parameters "$BICEP_PARAMS" \
+            --no-pretty-print
+
+      # Migrations run before the apps move to the new image. The job already
+      # exists after the first image deploy: point it at the new image, run it,
+      # then roll out the apps. On the very first image deploy the job does not
+      # exist yet; the template creates it, so it runs after (below).
+      - name: Run migrations (existing job)
+        id: migrate
+        run: |
+          set -euo pipefail
+          job="$(az containerapp job list --resource-group "$RESOURCE_GROUP" --query "[?contains(name, 'migrate')].name | [0]" --output tsv)"
+          if [ -z "$job" ]; then
+            echo "No migrate job yet: first image deploy. Migrations run after the template."
+            echo "existing=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          az containerapp job update --name "$job" --resource-group "$RESOURCE_GROUP" --image "$IMAGE"
+          .github/scripts/run-migrate-job.sh "$job" "$RESOURCE_GROUP"
+          echo "existing=true" >> "$GITHUB_OUTPUT"
+        env:
+          IMAGE: ${{ steps.image.outputs.image }}
+
+      # Sets IMAGE on web, public and worker (whichever main.bicep deploys) and
+      # on the job. A new revision is created for each; in Single revision mode
+      # traffic moves only once it is ready.
+      - name: Deploy infrastructure and apps
+        id: deploy
+        env:
+          IMAGE: ${{ steps.image.outputs.image }}
+          # Every secret must be supplied on every deploy or the new revision
+          # silently loses it (infra/README.md, "Things that bite on redeploys").
+          POSTGRES_ADMIN_PASSWORD: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
+          SESSION_SECRET_KEY: ${{ secrets.SESSION_SECRET_KEY }}
+          INTERNAL_SESSION_SECRET_KEY: ${{ secrets.INTERNAL_SESSION_SECRET_KEY }}
+          GRAPH_WEBHOOK_CLIENT_STATE: ${{ secrets.GRAPH_WEBHOOK_CLIENT_STATE }}
+          SSO_CLIENT_SECRET: ${{ secrets.SSO_CLIENT_SECRET }}
+          GRAPH_CLIENT_SECRET: ${{ secrets.GRAPH_CLIENT_SECRET }}
+        run: |
+          set -euo pipefail
+          az deployment group create \
+            --name "deploy-${GITHUB_SHA::12}" \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file infra/main.bicep \
+            --parameters "$BICEP_PARAMS" \
+            --query properties.outputs.migrateJobName.value \
+            --output tsv > migrate-job-name.txt
+          job="$(cat migrate-job-name.txt)"
+          if [ -z "$job" ]; then
+            echo "::error::The deployment returned no migrateJobName." >&2
+            exit 1
+          fi
+          echo "job=$job" >> "$GITHUB_OUTPUT"
+
+      - name: Run migrations (first image deploy)
+        if: steps.migrate.outputs.existing == 'false'
+        run: .github/scripts/run-migrate-job.sh "$JOB" "$RESOURCE_GROUP"
+        env:
+          JOB: ${{ steps.deploy.outputs.job }}
+
+      - name: Check the rollout and /health
+        run: .github/scripts/check-rollout.sh "$RESOURCE_GROUP" "$IMAGE"
+        env:
+          IMAGE: ${{ steps.image.outputs.image }}
+          # Optional. The web app is IP restricted and cannot be reached from a
+          # GitHub runner; an open public app is probed automatically.
+          HEALTH_URL: ${{ vars.HEALTH_URL }}

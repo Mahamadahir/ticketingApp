@@ -89,8 +89,9 @@ has no image yet), and no apps or job are deployed.
    starts the job for you. Until you run step 3 the apps are up but the database
    has no tables, so requests fail (`/health` still reports ok, because it only
    checks the connection). Run the job straight after the deployment. Once the
-   deploy workflow exists it does this in order: start the job, wait for it,
-   then update the apps.
+   deploy workflow does this itself on an environment that already has a job
+   (job first, then apps); on the very first image deploy the job does not exist
+   until the template creates it, so the workflow runs it straight after.
 
 `deployPublicApp` and `deployWorker` stay false until the app has the
 `APP_ROLE=public` mode and the worker entrypoint. Turned on earlier, `public`
@@ -99,10 +100,34 @@ crash-loop.
 
 ## Every deploy after that
 
-The GitHub workflow (not written yet) will: log in with OIDC, build and push
-the image tagged with the commit SHA, start the migrate job and wait for it,
-then deploy with the new `IMAGE`. Redeploying the template always sets the
-image, so pass it every time.
+`.github/workflows/deploy.yml` (a draft, never run) does, per environment: log in
+with OIDC, push the image tagged with the commit SHA to that environment's
+registry, run `what-if`, point the migrate job at the new image and wait for it,
+deploy `infra/main.bicep` with the new `IMAGE` (this moves web, public and worker,
+whichever the template deploys), then check each app's newest revision is ready,
+healthy and on the new image, and probe `/health` on any app open to the
+internet. Redeploying the template always sets the image, so it passes it every
+time. Run it from the Actions tab ("Deploy", `workflow_dispatch`): `staging`, or
+`staging-then-production`, where production starts only if staging succeeded and
+then waits for the reviewers on the `production` environment. The image is built
+once and the same build is pushed to both registries. A push-to-main trigger for
+staging is in the file, commented out.
+
+A failed rollout does not take traffic (Single revision mode keeps the old
+revision serving), but the run goes red. If a migration has already run, it stays
+applied, so write migrations that the previous release can live with. To go back,
+re-run the workflow on the earlier commit, or `az containerapp revision activate`
+the previous revision.
+
+Limits: production deploys only from `main` (the run fails otherwise); the
+migrate job is repointed at the new image but its other settings (env vars,
+secrets) only change when the template runs afterwards, so a release that adds a
+setting its migrations need must be deployed in two steps; a re-run of the same
+commit overwrites the registry tag with a rebuilt image (apps keep the old one if
+the template is unchanged); the workflow does not wait for CI, so run it only on a commit whose CI is
+green; a failed `what-if` or deploy leaves the migration it already ran in place;
+the web app is IP restricted so the runner cannot probe it (set the optional
+`HEALTH_URL` variable if the runner's address is allowed).
 
 Things that bite on redeploys and first runs:
 
@@ -127,7 +152,28 @@ Things that bite on redeploys and first runs:
 
 Create an app registration with a federated credential for the repository's
 `staging` and `production` GitHub Environments. Store the client, tenant and
-subscription IDs as GitHub Environment variables. No secrets are needed.
+subscription IDs as GitHub Environment variables. No secrets are needed for Azure.
+
+One federated credential per environment: issuer
+`https://token.actions.githubusercontent.com`, audience `api://AzureADTokenExchange`,
+subject `repo:<owner>/<repo>:environment:staging` (and `...:environment:production`).
+The subject must match the GitHub Environment name exactly.
+
+**GitHub setup** (Settings > Environments), for both `staging` and `production`:
+
+| Kind | Name | Notes |
+|---|---|---|
+| Variable | `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID` | the app registration and subscription |
+| Variable | `AZURE_RESOURCE_GROUP` | e.g. `rg-ticketing-staging` |
+| Variable | `ALERT_EMAIL`, `WEB_ALLOWED_CIDRS` | required, as in "First deploy" |
+| Variable | `SSO_TENANT_ID`, `SSO_CLIENT_ID`, `GRAPH_TENANT_ID`, `GRAPH_CLIENT_ID`, `GRAPH_SHARED_MAILBOX`, `SUPER_ADMIN_EMAILS` | optional; empty if unset |
+| Variable | `HEALTH_URL` | optional extra base URL to probe |
+| Secret | `POSTGRES_ADMIN_PASSWORD`, `SESSION_SECRET_KEY`, `INTERNAL_SESSION_SECRET_KEY`, `GRAPH_WEBHOOK_CLIENT_STATE` | required, same values as the platform deploy |
+| Secret | `SSO_CLIENT_SECRET`, `GRAPH_CLIENT_SECRET` | supply on every deploy once set, or the revision loses them |
+
+Add **required reviewers** on `production` (that is the approval gate) and,
+optionally, restrict both environments to the `main` branch. The platform-only
+deploy (README above) must have run first: the workflow expects the registry to exist.
 
 Grant it, on each resource group:
 
@@ -139,6 +185,10 @@ Grant it, on each resource group:
   cannot do that, so without this the first redeploy from CI fails with an
   authorization error. The condition stops the pipeline granting itself Owner.
 - **AcrPush** on each registry, to push images.
+
+Contributor also covers what the workflow does besides deploying: listing the
+registry, job and apps, updating the job image, and starting and reading job
+executions.
 
 The alternative is to move all role assignments into a separate template run
 by hand, and keep the pipeline at Contributor.
