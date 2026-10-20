@@ -1,0 +1,38 @@
+name: Dependency audit
+
+# Separate from ci.yml so the `test` check and its triggers stay as they are and
+# the audit never adds time to it. Checks the pinned packages (and what they pull
+# in) against the Python advisory database.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "requirements.txt"
+      - "requirements-dev.txt"
+      - ".github/workflows/pip-audit.yml"
+  schedule:
+    # Nightly: an advisory can appear against a pin that has not changed.
+    # A failure sends the repository's failed-workflow email to whoever last
+    # edited the cron line (GitHub's rule for scheduled runs).
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pip-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+
+      # requirements-dev.txt includes requirements.txt, so one run covers both.
+      - name: Audit requirements
+        run: |
+          pip install pip-audit==2.10.1
+          pip-audit --strict -r requirements-dev.txt
