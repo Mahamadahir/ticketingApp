@@ -1,7 +1,8 @@
 """In-app notifications (phase 2A): the bell. Something happens that an agent should know about,
 a row is written for them, and the bell counts what they have not read.
 
-Three things notify: a ticket being assigned to you, an @mention in an internal note, and the requester replying on your ticket.
+Three things notify: a ticket being assigned to you, an @mention in an internal note, and the
+requester (or a follower) replying on your ticket.
 Later phases add Teams (an unread notification is also sent to Teams after a delay, P1s and SLA
 breaches) and skipping agents who are out of office. Which events reach which channel is each
 person's choice (app/notification_settings.py); notify() honours the in-app one. Everything

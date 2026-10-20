@@ -201,3 +201,18 @@ def test_record_inbound_notifies_only_when_told_it_is_a_reply(client, db_session
     record_inbound(db_session, ticket, sender="Jo", body="a reply", reply_by="jo@example.com")
     db_session.commit()
     assert [n.kind for n in all_notifications(db_session)] == ["replied"]
+
+
+def test_an_unassigned_split_original_still_tells_its_open_parts_assignee(client, db_session):
+    original, desk_team = world(client, db_session)
+    split(client, original, ("One", ""), ("Two", ""))
+    bob = agent_in_desk(client, db_session, "bob@example.com", "Bob Builder")
+    one, two = subs_of(db_session, original)
+    one.assigned_agent_id = bob.id
+    db_session.add(one)
+    db_session.commit()
+    one_id = one.id
+
+    comment_as(client, "me@example.com", original)
+
+    assert [n.ticket_id for n in notifications_for(db_session, "bob@example.com")] == [one_id]
