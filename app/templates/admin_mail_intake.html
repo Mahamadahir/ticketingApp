@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Admin: Mail intake{% endblock %}
+{% block content %}
+{% set active = "/admin/mail-intake" %}
+{% include "_admin_tabs.html" %}
+
+<h2>Mail intake</h2>
+<p class="note">
+  How mail from the shared mailbox reaches the app: Microsoft tells the public app about new mail
+  (the subscription), and the worker also asks every few minutes for anything that was missed (the catch-up).
+  Times are UTC. Settings for both are under Settings.
+</p>
+
+{% if warnings %}
+<ul>
+  {% for warning in warnings %}<li>{{ warning }}</li>{% endfor %}
+</ul>
+{% else %}
+<p>No problems found.</p>
+{% endif %}
+
+<h3>Subscription</h3>
+{% if subscription %}
+<table>
+  <tbody>
+    <tr><th>Resource</th><td>{{ subscription.resource }}</td></tr>
+    <tr><th>Subscription id</th><td>{{ subscription.subscription_id or "none" }}</td></tr>
+    <tr><th>Expires</th><td>{{ subscription.expires_at.strftime("%Y-%m-%d %H:%M") if subscription.expires_at else "unknown" }}</td></tr>
+    <tr><th>Last created or renewed</th><td>{{ subscription.last_renewed_at.strftime("%Y-%m-%d %H:%M") if subscription.last_renewed_at else "never" }}</td></tr>
+    <tr><th>Last checked</th><td>{{ subscription.last_checked_at.strftime("%Y-%m-%d %H:%M") if subscription.last_checked_at else "never" }}</td></tr>
+    <tr><th>Last error</th><td>{% if subscription.last_error %}{{ subscription.last_error }} ({{ subscription.last_error_at.strftime("%Y-%m-%d %H:%M") }}){% else %}none{% endif %}</td></tr>
+  </tbody>
+</table>
+{% else %}
+<p>The worker has not set up a subscription (it is off, or has not run yet).</p>
+{% endif %}
+
+<h3>Catch-up</h3>
+{% if sync %}
+<table>
+  <tbody>
+    <tr><th>Last completed</th><td>{{ sync.last_synced_at.strftime("%Y-%m-%d %H:%M") if sync.last_synced_at else "never" }}</td></tr>
+    <tr><th>New messages found at that run</th><td>{{ sync.last_handed_over }}</td></tr>
+    <tr><th>Part way through a long run</th><td>{{ "yes" if sync.resume_link else "no" }}</td></tr>
+    <tr><th>Last error</th><td>{% if sync.last_error %}{{ sync.last_error }} ({{ sync.last_error_at.strftime("%Y-%m-%d %H:%M") }}){% else %}none{% endif %}</td></tr>
+  </tbody>
+</table>
+{% else %}
+<p>The catch-up has not run (it is off, or has not run yet).</p>
+{% endif %}
+
+<h3>Received, not yet processed</h3>
+<p>{{ waiting }} message notification{{ "" if waiting == 1 else "s" }}{% if oldest %}, the oldest from {{ oldest.strftime("%Y-%m-%d %H:%M") }}{% endif %}.</p>
+{% endblock %}

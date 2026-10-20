@@ -50,7 +50,7 @@ not exist (`infra/` compiles but has never run against a subscription).
 | 3A public surface: `APP_ROLE` split (`build_app` in `app/main.py`), Graph webhook stores each notification and returns 202, rate limiting, approval tokens kept out of the access log | built, in review | `app/main.py`, `app/routers/webhooks.py`, `app/rate_limit.py`, `app/log_redaction.py` |
 | Dependency hygiene 1: dropped unused `pytest-cov` and the `uvicorn[standard]` extras; Dependabot (pip, docker, actions; weekly, minor and patch grouped); `pip-audit` on requirements changes and nightly (`.github/workflows/pip-audit.yml`) | built, in review | `.github/dependabot.yml`, `.github/workflows/pip-audit.yml` |
 | 3B inbound mail: worker fetches stored notifications, replies join tickets, new mail raises tickets, auto-reply filter | not started | |
-| 3C subscriptions and delta catch-up | not started | |
+| 3C subscriptions and delta catch-up: the worker creates, renews and recreates the mailbox subscription, acts on lifecycle notifications, and catches up missed mail with an inbox delta query; Admin > Mail intake; `/health` warnings | built, in review | `app/subscriptions.py`, migration `c3b7e1a94d20` |
 | 3D outbound mail: outbox, real send, approval and "raised for you" emails (`MAIL_SENDING` off / dev / graph; Admin > Outbound mail) | merged (#52) | `app/outbox.py`, `app/mail.py` |
 | 3E-storage attachments: storage interface (local directory, Azure Blob with user-delegation SAS), `attachment` table, `/attachments/{id}`, content-type detection and safe serving | built, in review (#49) | `app/storage.py`, `app/attachments.py`, `app/routers/attachments.py` |
 | 3F wiring: Bicep and deploy workflow for the public app, mailbox, storage, Application Insights | not started | |
@@ -80,7 +80,7 @@ notification settings that 2B stores and nothing yet sends. The Graph client in 
 - *3C Subscriptions and catch-up:* create, renew (under 24 hours left), recreate on 404; the lifecycle endpoint
   (`reauthorizationRequired` -> PATCH, `subscriptionRemoved` -> recreate then delta sync, `missed` -> delta sync; never
   `/reauthorize` and PATCH within 10 minutes); delta catch-up every 5 to 10 minutes; `/health` warns when expiry is under 24 hours.
-  Not assigned yet.
+  *Built (PR 3C):* see "Mail intake seam (3C)" below.
 - *3D Outbound mail:* an outbox with retry and backoff (like `TeamsPost`), real send through Graph for agent replies, automatic
   notices, approval emails with the signed link and the "raised for you" email; threading, CC from followers, a per-ticket cap on
   automatic emails, the preview step reused. Agent 1.
@@ -114,6 +114,21 @@ notification settings that 2B stores and nothing yet sends. The Graph client in 
 **Phase 2 (complete), in five PRs:** 2A the bell (#36); 2B notification settings (#38; `/settings/notifications`, anyone signed in chooses channels per event type; the bell, Teams and email choices are read through `is_enabled`, and email is stored for phase 3); 2C the worker, in two parts (#39 the skeleton: `python -m app.worker`, APScheduler, heartbeat, a compose service; #42 the first job that matters: an unread notification is also sent to Teams after the person's delay, default 5 minutes, through the Teams outbox; `notify()` writes a Teams-only row already read when the bell is off, so the copy still has a row to read); 2D the Teams Workflows webhook for new tickets (#40; the URL is a secret from the environment, never a setting); 2E out-of-office detection (#44; Graph presence read by the `presence` job, tested with simulated responses, Azure-only to prove; decision: out of office is a label in the pickers, never a block or a skip).
 
 **Still to do after Phase 2.** (1) Bicep: done (wired in `infra/main.bicep` for `TEAMS_NEW_TICKET_ENABLED`, `TEAMS_NOTIFICATIONS_ENABLED` and `PRESENCE_ENABLED`, with the webhook URL as a worker-only Key Vault secret; documented in `infra/README.md`, "Teams and out-of-office"; unproved until staging, see the staging checklist). (2) Prune old sent `TeamsPost` rows when a housekeeping job exists. The `teams-posts` job (every 60 seconds) is in `app/jobs/__init__.py`. Another kind of post is one builder in `app.teams.CARD_BUILDERS` (it turns the row into the payload, or raises `Unsendable`); sending, backoff and giving up are shared.
+
+**Mail intake seam (3C, for 3B).** `app/subscriptions.py` owns keeping mail arriving; 3B owns turning it into tickets.
+- The webhook (3A) and the catch-up both end the same way: a `GraphNotification` row with `resource_id` = the Graph message id and
+  `processed_at` NULL. 3B's job processes rows where `lifecycle_event IS NULL`. **Rows with a `lifecycle_event` belong to 3C**
+  (`graph-subscription` job marks them processed); 3B must skip them.
+- The catch-up (`catch_up`, job `mail-catch-up`, every 5 minutes) hands ids to a `MailIntake` callable
+  `(session, message_ids, source) -> new count`. The default `record_for_processing` inserts a `GraphNotification` row for each id
+  that has no row yet (any state), so 3B needs no code change; it dedupes on `resource_id`, and 3B's unique `internetMessageId` is
+  the backstop (a webhook and a catch-up can race and write two rows for one id). If 3B wants a different hand-over it passes its own
+  function to `catch_up(intake=...)`.
+- Switches (worker env, all off by default): `GRAPH_SUBSCRIPTION_ENABLED` + `GRAPH_NOTIFICATION_URL` (public https address of the
+  webhook, also the lifecycle address), `MAIL_CATCH_UP_ENABLED` (polling only, needs no public URL). Settings: subscription lifetime
+  (10000 min, capped at 10070), renew margin (1440 min), backfill days (3). The first catch-up collects the last 3 days of the inbox,
+  including mail that is already read. `/health` stays 200 and adds `warnings` when the subscription is near expiry, expired, or a
+  check failed. 3F: pass the three env vars to the worker (Bicep not touched here).
 
 ## Working agreement for every PR
 
@@ -294,6 +309,8 @@ sleep, restart it and `docker start ticketingapp-db-1`.
   right number, subject and (if `PUBLIC_BASE_URL` is set) a working "Open ticket" link. Keep the channel IT-only: the card shows each new ticket's subject and requester before triage. Locally only the payload shape and the
   outbox were tested, with a fake sender, so confirm Teams accepts the Adaptive Card as sent, and what it answers (this code
   treats any 2xx as sent). Also confirm a wrong URL leaves the post unsent with "Teams answered 4xx" and no URL in the log.
+
+- Mail subscription and catch-up (3C; tested locally with a fake Graph client and a faked HTTP layer only): with `GRAPH_SUBSCRIPTION_ENABLED=true`, `GRAPH_NOTIFICATION_URL` set to the public app's `/webhooks/graph/notifications` and the worker deployed (public app up first, since Graph calls it during creation), grant Mail.Read (mailbox-scoped) and check the worker creates exactly one subscription (Admin > Mail intake, and `GET /subscriptions`), that Graph accepts a lifetime of 10000 minutes (limit believed to be 10070 for mail), that a new mail produces a `graphnotification` row, and that `clientState` matches. Restart the worker and scale a second one: still one subscription. Shorten the lifetime setting to ~2 hours with a margin of 60 to watch a real renewal. Delete the subscription in Graph and check it is recreated within 5 minutes. Check lifecycle notifications really arrive at the same address (`reauthorizationRequired`, `subscriptionRemoved`, `missed`) and are handled without `/reauthorize`. Stop the public app for an hour, send mail, and check the catch-up finds it; check the delta query accepts `$filter=receivedDateTime ge` with `$select=id,receivedDateTime`, that the stored deltaLink works on the next run, and that a 410 restarts cleanly. `/health` warnings show on staging.
 
 The full list is "Azure-only verification" in `docs/plan.md`. Added by work so far:
 - `FORWARDED_ALLOW_IPS` set to the Container Apps subnet, so the activity log records

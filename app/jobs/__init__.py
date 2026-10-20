@@ -20,6 +20,7 @@ from sqlmodel import Session
 from app.config import settings
 from app.mail import deliver_mail
 from app.presence import CHECK_EVERY_SECONDS, refresh_presence
+from app.subscriptions import CATCH_UP_EVERY_SECONDS, SUBSCRIPTION_EVERY_SECONDS, catch_up, keep_subscription_alive
 from app.notifications import drop_due_for_teams, hand_to_teams
 from app.teams import deliver_pending, queue_notification
 
@@ -67,6 +68,23 @@ def mail_out(session: Session) -> None:
     deliver_mail(session)
 
 
+def graph_subscription(session: Session) -> None:
+    """Keeps the Graph mail subscription alive (app/subscriptions.py): creates it, renews it before it
+    runs low, recreates it when Microsoft lost it, and acts on the lifecycle notifications. Does nothing
+    unless switched on. On failure it records why (shown at Admin > Mail intake) and the job fails."""
+    if settings.graph_subscription_enabled:
+        outcome = keep_subscription_alive(session)
+        if outcome.sync_wanted and settings.mail_catch_up_enabled:
+            catch_up(session)  # a missed or removed subscription may have cost us mail
+
+
+def mail_catch_up(session: Session) -> None:
+    """Finds mail the webhook missed with a delta query on the inbox and hands the ids to inbound mail
+    (app/subscriptions.py). Does nothing unless switched on."""
+    if settings.mail_catch_up_enabled:
+        catch_up(session)
+
+
 TEAMS_POSTS_EVERY_SECONDS = 60
 MAIL_OUT_EVERY_SECONDS = 30
 
@@ -76,4 +94,6 @@ JOBS: list[Job] = [
     Job("teams-posts", TEAMS_POSTS_EVERY_SECONDS, teams_posts),
     Job("presence", CHECK_EVERY_SECONDS, presence),
     Job("mail-out", MAIL_OUT_EVERY_SECONDS, mail_out),
+    Job("graph-subscription", SUBSCRIPTION_EVERY_SECONDS, graph_subscription),
+    Job("mail-catch-up", CATCH_UP_EVERY_SECONDS, mail_catch_up),
 ]

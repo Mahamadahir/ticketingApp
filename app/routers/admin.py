@@ -55,6 +55,9 @@ from app.models import (
     AuditLog,
     CannedResponse,
     Category,
+    GraphNotification,
+    GraphSubscription,
+    MailSyncState,
     OutboundEmail,
     RequestType,
     MembershipLevel,
@@ -66,6 +69,7 @@ from app.models import (
 )
 from app.pagination import paginate
 from app.settings_store import REGISTRY, get_setting, set_setting
+from app.subscriptions import health_warnings, mail_folder, subscription_resource
 from app.teams import MAX_ATTEMPTS
 from app.ticket_service import EVENT_CATEGORY_REVIEWED, get_by_number, record_event
 
@@ -857,5 +861,42 @@ def view_outbound_mail(
         {
             "page": rows_page, "tickets": tickets, "waiting": waiting, "mode": settings.mail_sending,
             "max_attempts": MAX_ATTEMPTS, "user": user,
+        },
+    )
+
+
+# ---- Mail intake ----------------------------------------------------------------------------------
+
+@router.get("/mail-intake", response_class=HTMLResponse)
+def view_mail_intake(
+    request: Request,
+    user: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    """Is mail reaching us? The Graph subscription (when it expires, when it was last renewed, the last
+    error), the catch-up sync, and how many received notifications still wait to be processed. Tokens
+    and the clientState are never shown."""
+    now = datetime.now(timezone.utc)
+    subscription = session.exec(
+        select(GraphSubscription).where(GraphSubscription.resource == subscription_resource())
+    ).first()
+    sync = session.exec(select(MailSyncState).where(MailSyncState.folder == mail_folder())).first()
+    waiting = session.exec(
+        select(func.count()).select_from(GraphNotification).where(
+            GraphNotification.processed_at.is_(None), GraphNotification.lifecycle_event.is_(None)
+        )
+    ).one()
+    oldest = session.exec(
+        select(func.min(GraphNotification.received_at)).where(
+            GraphNotification.processed_at.is_(None), GraphNotification.lifecycle_event.is_(None)
+        )
+    ).one()
+    return templates.TemplateResponse(
+        request,
+        "admin_mail_intake.html",
+        {
+            "subscription": subscription, "sync": sync, "waiting": waiting, "oldest": oldest, "now": now,
+            "warnings": health_warnings(session, now),
+            "user": user,
         },
     )
