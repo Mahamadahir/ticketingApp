@@ -41,14 +41,52 @@ not exist (`infra/` compiles but has never run against a subscription).
 | 2A in-app notifications (the bell): assignment and @mentions | merged (#36) | `app/notifications.py` |
 | 2B notification settings (channels per event type per person) | merged (#38) | `app/notification_settings.py`, `app/routers/my_settings.py` |
 | 2C-i worker skeleton: `python -m app.worker`, APScheduler, heartbeat line, single-instance lock, compose service | merged (#39) | `app/worker.py`, `app/jobs/` |
-| 2C-ii unread-after-N-minutes notification to Teams: which notifications want a copy and when (Teams-only rows, per-person delay, admin default), then queued in the Teams outbox and sent by the worker | built, in review | `app/notifications.py`, `app/teams.py`, `app/notification_settings.py` |
-| 2D Teams channel webhook for new tickets: outbox, card, sender, worker job (the Bicep wiring follows, see Next up) | merged (#40) | `app/teams.py` |
-| 2E out-of-office detection (Graph presence): the worker's `presence` job stores each agent's flag; OOO agents are labelled in the assignee pickers and left out of team-wide notifications | built, in review | `app/presence.py` |
-| Phases 2 to 9 | not started | `docs/plan.md`, "Build order" |
+| 2C-ii unread-after-N-minutes notification to Teams: which notifications want a copy and when (Teams-only rows, per-person delay, admin default), then queued in the Teams outbox and sent by the worker | merged (#42) | `app/notifications.py`, `app/teams.py`, `app/notification_settings.py` |
+| 2D Teams channel webhook for new tickets: outbox, card, sender, worker job (the Bicep wiring is in progress, see Next up) | merged (#40) | `app/teams.py` |
+| 2E out-of-office detection (Graph presence): the worker's `presence` job stores each agent's flag; OOO agents are labelled in the assignee pickers and left out of team-wide notifications | merged (#44) | `app/presence.py` |
+| Phase 2 | complete | |
+| 3A public surface: `APP_ROLE` split, Graph webhook stores and returns 202, rate limiting | not started | |
+| 3B inbound mail: worker fetches stored notifications, replies join tickets, new mail raises tickets, auto-reply filter | not started | |
+| 3C subscriptions and delta catch-up | not started | |
+| 3D outbound mail: outbox, real send, approval and "raised for you" emails | not started | |
+| 3E attachments: storage interface, table, safe serving | not started | |
+| 3F wiring: Bicep and deploy workflow for the public app, mailbox, storage, Application Insights | not started | |
+| Phases 4 to 9 | not started | `docs/plan.md`, "Build order" |
 
 Tests: 769 passing on Postgres 16.
 
 ## Next up
+
+**Phase 3 (Graph mail) is next:** intake, threaded replies, `uniqueBody`, delta catch-up, subscription renewal and lifecycle
+handling, the auto-reply filter, attachments in Blob Storage, and the `public` app mode for the webhook (`docs/plan.md`, "Build
+order"). Phase 3 also carries the approval emails with the link from `app/approval_links.py`, and the email channel for the
+notification settings that 2B stores and nothing yet sends. The Graph client in `app/graph_client.py` still has `send_mail`,
+`create_subscription` and `get_message` stubbed; the presence calls are the first real ones.
+
+**Phase 3 plan (agreed 20 Oct 2026; order: 3A, 3B, then 3D with 3C and 3E alongside).**
+- *3A Public surface:* the `APP_ROLE` split (web / public / worker) with per-role settings checks (the public app and worker need no
+  session or SSO secrets; see the `INTERNAL_SESSION_SECRET_KEY` note in `infra/README.md`). `/webhooks/graph/notifications` and the
+  approval-link route move to public. The webhook stores each notification in a table and returns 202 inside 3 seconds
+  (`validationToken` echo, constant-time `clientState` check as today). Rate limiting on public routes. The approval link carries its token in the URL path, so the public app must also keep that path
+  out of its own request logs (and, with 3F, out of Application Insights). Agent 2.
+- *3B Inbound mail:* a worker job fetches each stored message with `$select=uniqueBody` through `app/graph_client.py`. A reply is
+  added to the ticket (match Graph `conversationId`, then the reference in the subject); anything else is a new ticket in the shared
+  untriaged queue (source email). Unique constraint on `internetMessageId`. Auto-reply filter (`Auto-Submitted` and the usual headers).
+  The dev simulate-inbound is rebuilt on the same path. Tested with a fake Graph client and simulated payloads. A reply on a
+  resolved or closed ticket is only recorded here; reopen and ignore-list rules are Phase 4. Agent 2.
+- *3C Subscriptions and catch-up:* create, renew (under 24 hours left), recreate on 404; the lifecycle endpoint
+  (`reauthorizationRequired` -> PATCH, `subscriptionRemoved` -> recreate then delta sync, `missed` -> delta sync; never
+  `/reauthorize` and PATCH within 10 minutes); delta catch-up every 5 to 10 minutes; `/health` warns when expiry is under 24 hours.
+  Not assigned yet.
+- *3D Outbound mail:* an outbox with retry and backoff (like `TeamsPost`), real send through Graph for agent replies, automatic
+  notices, approval emails with the signed link and the "raised for you" email; threading, CC from followers, a per-ticket cap on
+  automatic emails, the preview step reused. Agent 1.
+- *3E Attachments:* a storage interface (local and Blob), an attachment table, inbound attachments saved, `/attachments/{id}` with a
+  visibility check and a short-lived SAS redirect, server-side type detection, `nosniff`, inline only PNG, JPEG, GIF and WebP.
+  Agent 3 does the storage interface; ingestion joins 3B later.
+- *3F Wiring:* Bicep and the deploy workflow for the public app, mailbox variables, storage identity, Application Insights. Agent 3.
+- `docs/azure-setup.md` (a separate PR by Agent 1) is the by-hand Azure setup checklist.
+
 **Deferred from the escalation work (documented, not built).**
 - *MSP handoff (phase 5):* Send to MSP / escalate to the MSP, the "thread only has emails
   and comments, or original request only" choice and its preview, the per-team toggle for
@@ -70,9 +108,9 @@ Tests: 769 passing on Postgres 16.
 
 **Email preview for the other emails.** The step exists for agent replies (1G-ii). Resolution emails (phase 4), MSP forwards and bulk resolves (listing every linked ticket and recipient) must reuse it, and automatic emails need admin-managed templates previewed when edited. Per-person opt-out of the "raised for you" email joins the setting when user notification settings exist.
 
-**Phase 2**, in five PRs: 2A the bell (merged, #36), 2B notification settings (built: `/settings/notifications`, anyone signed in chooses channels per event type; only the bell delivers, Teams and email choices are stored for 2C and phase 3 to read through `is_enabled`), 2C the worker (python -m app.worker, APScheduler, heartbeat, a compose service; first job: an unread notification is also sent to Teams after N minutes, a per-person setting, default 5). Note for 2C: notify() writes no Notification row when the bell is off, so a Teams copy that reads unread rows would never fire for someone with the bell off and Teams on; 2C must decide that (for example, write the row already read, or send Teams from notify() itself), 2D the Teams Workflows webhook for new tickets (the URL is a secret from the environment, never a setting; test with a mocked sender), 2E out-of-office detection (Graph presence, tested with simulated responses; Azure-only to prove) and skipping out-of-office agents for assignment and team notifications. Phase 3 (mail) will carry the approval emails with the link from pp/approval_links.py.
+**Phase 2 (complete), in five PRs:** 2A the bell (#36); 2B notification settings (#38; `/settings/notifications`, anyone signed in chooses channels per event type; the bell, Teams and email choices are read through `is_enabled`, and email is stored for phase 3); 2C the worker, in two parts (#39 the skeleton: `python -m app.worker`, APScheduler, heartbeat, a compose service; #42 the first job that matters: an unread notification is also sent to Teams after the person's delay, default 5 minutes, through the Teams outbox; `notify()` writes a Teams-only row already read when the bell is off, so the copy still has a row to read); 2D the Teams Workflows webhook for new tickets (#40; the URL is a secret from the environment, never a setting); 2E out-of-office detection (#44; Graph presence read by the `presence` job, tested with simulated responses, Azure-only to prove; decision: out of office is a label in the pickers, never a block or a skip).
 
-**Still to do for 2D.** (1) Bicep: `TEAMS_NEW_TICKET_ENABLED` as a plain environment variable on web, public and worker; the webhook URL as a Key Vault secret (`teams-new-ticket-webhook-url` -> `TEAMS_NEW_TICKET_WEBHOOK_URL`) readable by the worker identity only. Validate with `bicep lint` and `build-params`. Until then the worker has no URL, so posts wait in the `teamspost` table and the worker logs a warning every minute. (2) Prune old sent `TeamsPost` rows when a housekeeping job exists. The `teams-posts` job (every 60 seconds) is in `app/jobs/__init__.py`. Another kind of post is one builder in `app.teams.CARD_BUILDERS` (it turns the row into the payload, or raises `Unsendable`); sending, backoff and giving up are shared.
+**Still to do after Phase 2.** (1) Bicep (in progress in its own PR by Agent 3, branch `bicep-teams-presence`; not built here): `TEAMS_NEW_TICKET_ENABLED` as a plain environment variable on web, public and worker; the webhook URL as a Key Vault secret (`teams-new-ticket-webhook-url` -> `TEAMS_NEW_TICKET_WEBHOOK_URL`) readable by the worker identity only. It also covers `TEAMS_NOTIFICATIONS_ENABLED` and `PRESENCE_ENABLED`. Validate with `bicep lint` and `build-params`. Until then the worker has no URL, so posts wait in the `teamspost` table and the worker logs a warning every minute. (2) Prune old sent `TeamsPost` rows when a housekeeping job exists. The `teams-posts` job (every 60 seconds) is in `app/jobs/__init__.py`. Another kind of post is one builder in `app.teams.CARD_BUILDERS` (it turns the row into the payload, or raises `Unsendable`); sending, backoff and giving up are shared.
 
 ## Working agreement for every PR
 
@@ -245,8 +283,8 @@ The full list is "Azure-only verification" in `docs/plan.md`. Added by work so f
   canned-response picker and raise-a-ticket forms, including the `HX-Redirect` after raising);
   tests use the HTTP layer only.
 - Entra sign-in and the SSO activity events against a real redirect URI.
-- Out-of-office detection (2E): with the GRAPH_* credentials set and `PRESENCE_ENABLED=true` on the worker, grant the app registration `Presence.Read.All` and `User.Read.All` (application, admin consent). Put an agent out of office (an Outlook automatic reply, a Teams scheduled out of office, or a calendar event marked out of office) and within 15 minutes check the worker log shows `heartbeat job=presence`, the agent shows "(out of office)" in the assign, re-assign and triage pickers, and is unmarked again once back. Check an agent whose sign-in name differs from their email is simply never marked (the directory lookup treats the email as the user principal name), and that a 403 from Graph shows up as `job=presence status=failed` rather than silently marking nobody. Bicep wiring for PRESENCE_ENABLED and the extra Graph permissions is not built.
-- Teams notification copies (2C-ii): with TEAMS_NOTIFICATIONS_ENABLED on and the webhook URL set, assign a ticket to a test agent who has Teams ticked and leave it unread past their delay: check the card arrives in the support channel and the agent is actually @mentioned (the mention id is their email; an agent whose Teams sign-in differs from their email, or a local account with no Teams user, will show plain text and no ping). Check Teams accepts the msteams.entities mention in a Workflows card. The channel then shows each notified ticket's subject to everyone in it, so keep it IT-only (a dedicated notifications channel and second webhook is a later option). Bicep wiring for TEAMS_NOTIFICATIONS_ENABLED is not built.
+- Out-of-office detection (2E): with the GRAPH_* credentials set and `PRESENCE_ENABLED=true` on the worker, grant the app registration `Presence.Read.All` and `User.Read.All` (application, admin consent). Put an agent out of office (an Outlook automatic reply, a Teams scheduled out of office, or a calendar event marked out of office) and within 15 minutes check the worker log shows `heartbeat job=presence`, the agent shows "(out of office)" in the assign, re-assign and triage pickers, and is unmarked again once back. Check an agent whose sign-in name differs from their email is simply never marked (the directory lookup treats the email as the user principal name), and that a 403 from Graph shows up as `job=presence status=failed` rather than silently marking nobody. Bicep wiring for PRESENCE_ENABLED is in progress in its own PR.
+- Teams notification copies (2C-ii): with TEAMS_NOTIFICATIONS_ENABLED on and the webhook URL set, assign a ticket to a test agent who has Teams ticked and leave it unread past their delay: check the card arrives in the support channel and the agent is actually @mentioned (the mention id is their email; an agent whose Teams sign-in differs from their email, or a local account with no Teams user, will show plain text and no ping). Check Teams accepts the msteams.entities mention in a Workflows card. The channel then shows each notified ticket's subject to everyone in it, so keep it IT-only (a dedicated notifications channel and second webhook is a later option). Bicep wiring for TEAMS_NOTIFICATIONS_ENABLED is in progress in its own PR.
 - The worker (deployWorker, currently false in Bicep): set it true once real jobs exist, and add the log-query dead man's switch alert on the heartbeat job=heartbeat line (docs/plan.md, Health and monitoring). Its single-instance lock is a *session* advisory lock held on one connection: if staging Postgres is reached through PgBouncer in transaction-pooling mode the lock would not hold, so connect the worker to the server directly (or use session pooling). Verify on staging by starting a second worker and seeing it exit with Another worker is already running.
 - The emailed approval link carries its token in the URL path, so web server, ingress and
   Application Insights request logs will record a working credential for the link's lifetime
