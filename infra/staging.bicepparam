@@ -24,6 +24,11 @@ param graphClientId = readEnvironmentVariable('GRAPH_CLIENT_ID', '')
 param graphSharedMailbox = readEnvironmentVariable('GRAPH_SHARED_MAILBOX', '')
 param superAdminEmails = readEnvironmentVariable('SUPER_ADMIN_EMAILS', '')
 
+// Teams posts and out-of-office detection, off unless set to 'true'.
+param teamsNewTicketEnabled = toLower(trim(readEnvironmentVariable('TEAMS_NEW_TICKET_ENABLED', 'false'))) == 'true'
+param teamsNotificationsEnabled = toLower(trim(readEnvironmentVariable('TEAMS_NOTIFICATIONS_ENABLED', 'false'))) == 'true'
+param presenceEnabled = toLower(trim(readEnvironmentVariable('PRESENCE_ENABLED', 'false'))) == 'true'
+
 // Secrets come from the environment at deploy time. Never write values here.
 param postgresAdminPassword = readEnvironmentVariable('POSTGRES_ADMIN_PASSWORD')
 param sessionSecretKey = readEnvironmentVariable('SESSION_SECRET_KEY')
@@ -31,6 +36,7 @@ param internalSessionSecretKey = readEnvironmentVariable('INTERNAL_SESSION_SECRE
 param graphWebhookClientState = readEnvironmentVariable('GRAPH_WEBHOOK_CLIENT_STATE')
 param ssoClientSecret = readEnvironmentVariable('SSO_CLIENT_SECRET', '')
 param graphClientSecret = readEnvironmentVariable('GRAPH_CLIENT_SECRET', '')
+param teamsNewTicketWebhookUrl = readEnvironmentVariable('TEAMS_NEW_TICKET_WEBHOOK_URL', '')
 
 // Small and cheap: staging holds test data only.
 param postgresSku = 'Standard_B1ms'

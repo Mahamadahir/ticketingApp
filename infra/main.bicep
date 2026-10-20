@@ -72,6 +72,13 @@ param graphClientId string = ''
 param graphSharedMailbox string = ''
 param superAdminEmails string = ''
 
+@description('Teams channel post for each new ticket (phase 2D). The webhook URL secret is also needed, or posts wait in the outbox.')
+param teamsNewTicketEnabled bool = false
+@description('Also copy an unread notification to Teams after the delay each person has set (phase 2C-ii). Uses the same webhook URL.')
+param teamsNotificationsEnabled bool = false
+@description('Worker marks agents who are out of office from Graph presence (phase 2E). Needs the Graph settings and the Presence.Read.All and User.Read.All application permissions, granted in Entra.')
+param presenceEnabled bool = false
+
 // ---- Secrets (supplied at deploy time, stored in Key Vault) -----------------
 
 @secure()
@@ -89,6 +96,9 @@ param ssoClientSecret string = ''
 @secure()
 @description('Optional until Graph mail is set up (plan: phase 3).')
 param graphClientSecret string = ''
+@secure()
+@description('Teams Workflows webhook URL for the support channel. Optional until Teams posts are switched on; only the worker can read it.')
+param teamsNewTicketWebhookUrl string = ''
 
 // ---- Names ------------------------------------------------------------------
 
@@ -220,6 +230,7 @@ module keyvault 'modules/keyvault.bicep' = {
     graphWebhookClientState: graphWebhookClientState
     ssoClientSecret: ssoClientSecret
     graphClientSecret: graphClientSecret
+    teamsNewTicketWebhookUrl: teamsNewTicketWebhookUrl
   }
 }
 
@@ -263,7 +274,9 @@ var publicSecretNames = concat(
   ['database-url', 'session-secret-key-internal', 'graph-webhook-client-state'],
   optionalGraphSecret
 )
-var workerSecretNames = publicSecretNames
+var optionalTeamsSecret = !empty(teamsNewTicketWebhookUrl) ? ['teams-new-ticket-webhook-url'] : []
+// The worker is the only app that posts to Teams.
+var workerSecretNames = concat(publicSecretNames, optionalTeamsSecret)
 var migrateSecretNames = ['database-url']
 
 // Handed to the key vault module, which grants each identity read access to
@@ -282,6 +295,7 @@ var secretEnvNames = {
   'graph-webhook-client-state': 'GRAPH_WEBHOOK_CLIENT_STATE'
   'sso-client-secret': 'SSO_CLIENT_SECRET'
   'graph-client-secret': 'GRAPH_CLIENT_SECRET'
+  'teams-new-ticket-webhook-url': 'TEAMS_NEW_TICKET_WEBHOOK_URL'
 }
 var vaultSecretsUrl = 'https://${keyVaultName}${environment().suffixes.keyvaultDns}/secrets/'
 
@@ -318,6 +332,8 @@ var commonEnv = [
   { name: 'GRAPH_CLIENT_ID', value: graphClientId }
   { name: 'GRAPH_SHARED_MAILBOX', value: graphSharedMailbox }
   { name: 'SUPER_ADMIN_EMAILS', value: superAdminEmails }
+  { name: 'TEAMS_NEW_TICKET_ENABLED', value: toLower(string(teamsNewTicketEnabled)) }
+  { name: 'TEAMS_NOTIFICATIONS_ENABLED', value: toLower(string(teamsNotificationsEnabled)) }
 ]
 
 var allowRules = [
@@ -420,6 +436,7 @@ module worker 'modules/container-app.bicep' = if (deployApps && deployWorker) {
     secrets: workerSecrets
     env: concat(commonEnv, workerSecretEnv, [
       { name: 'APP_ROLE', value: 'worker' }
+      { name: 'PRESENCE_ENABLED', value: toLower(string(presenceEnabled)) }
       { name: 'AZURE_CLIENT_ID', value: identityWorker.properties.clientId }
     ])
     ingress: null
