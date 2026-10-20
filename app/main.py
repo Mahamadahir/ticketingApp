@@ -16,7 +16,7 @@ from app.visibility import NoTicketAccess
 from app.config import settings, unsafe_setting_errors
 from app.log_redaction import redact_approval_tokens
 from app.models import User, UserRole
-from app.routers import admin, approvals, auth, dev_tools, health, my_settings, notifications, portal, tickets, webhooks
+from app.routers import admin, approvals, attachments, auth, dev_tools, health, my_settings, notifications, portal, tickets, webhooks
 
 
 @asynccontextmanager
@@ -85,6 +85,7 @@ PUBLIC_ROUTERS = [health.router, webhooks.router, approvals.router]
 WEB_ROUTERS = [
     health.router, auth.router, tickets.router, tickets.reference_router, portal.router,
     notifications.router, my_settings.router, admin.router, dev_tools.router,
+    attachments.router,
 ]
 ROLE_ROUTERS = {
     "web": WEB_ROUTERS,

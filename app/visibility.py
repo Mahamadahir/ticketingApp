@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session as OrmSession
 from sqlmodel import Session, select
 
 from app.models import (
+    Attachment,
     MembershipLevel,
     Team,
     TeamMembership,
@@ -200,6 +201,32 @@ def visible_ticket_condition(user: User, levels: AccessContext):
 def require_access(user: User, ticket: Ticket, levels: AccessContext, needed: Access) -> None:
     if ticket_access(user, ticket, levels) < needed:
         raise NoTicketAccess()
+
+
+def may_view_attachment(
+    session: Session, user: User, attachment: Attachment, ticket: Ticket, levels: AccessContext
+) -> bool:
+    """Whether this person may download the file. The only place that decides it; the download
+    route asks and never looks at the ticket itself.
+
+    An agent or super admin: whoever can read the ticket (internal notes' files included).
+    Otherwise a requester, or someone following the ticket from outside: only files that arrived with a
+    message the requester may see (app.messages.requester_visible_messages, which is the single
+    rule for that), or a file they added themselves. Never an internal note's file."""
+    if user.role in (UserRole.AGENT, UserRole.SUPER_ADMIN) and ticket_access(user, ticket, levels) >= Access.READ:
+        return True
+    # Anyone else, including an agent who raised or follows a ticket outside their teams, is held
+    # to what the requester may see.
+    # Imported here: both modules import this one.
+    from app.followers import is_follower
+    from app.messages import requester_visible_messages
+
+    is_requester = ticket.requester_email.lower() == user.email.lower()
+    if not (is_requester or is_follower(session, ticket, user.email, include_internal=False)):
+        return False
+    if attachment.message_id is None:
+        return attachment.uploaded_by_id == user.id
+    return attachment.message_id in {m.id for m in requester_visible_messages(session, ticket)}
 
 
 def assignable_agents(session: Session, ticket: Ticket) -> list[User]:

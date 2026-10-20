@@ -11,3 +11,5 @@ msal==1.39.0
 bcrypt==5.0.0
 itsdangerous==2.2.0
 APScheduler==3.11.3
+azure-storage-blob==12.31.0
+azure-identity==1.26.0

@@ -233,6 +233,29 @@ class Message(SQLModel, table=True):
     ticket: Ticket = Relationship(back_populates="messages")
 
 
+class Attachment(SQLModel, table=True):
+    """A file on a ticket (app/attachments.py). The bytes live in storage (app/storage.py) under
+    blob_key, which is derived from the content hash, so identical files share one blob. Only
+    content_type, detected from the bytes, ever decides how the file is served; the sender's
+    claimed type and the filename are never trusted."""
+
+    __table_args__ = (Index("ix_attachment_ticket_hash", "ticket_id", "content_hash"),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ticket_id: int = Field(foreign_key="ticket.id", index=True)
+    # The message it arrived with or was attached to; None for a file added to the ticket itself.
+    message_id: Optional[int] = Field(default=None, foreign_key="message.id", index=True)
+    filename: str
+    size: int
+    content_type: str
+    content_hash: str  # sha-256, hex
+    blob_key: str
+    # Picture embedded in the body (a signature logo) rather than a file someone attached.
+    is_inline: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
+    uploaded_by_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 class TicketFollower(SQLModel, table=True):
     """Someone who is copied on a ticket's public emails.
 

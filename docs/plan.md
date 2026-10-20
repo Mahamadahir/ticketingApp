@@ -231,9 +231,14 @@ least-privilege database role is a later hardening step.
   default 60). `docker compose up worker` runs it locally; the Bicep already starts it with this
   command at one replica. Real jobs (unread notification to Teams, new-ticket Teams cards,
   presence refresh, mail catch-up, SLA timers ...) are added to `JOBS` by their own PRs.
-- Storage layer behind an interface, with a local-disk or Azurite
-  implementation for development and a Blob implementation using
-  `DefaultAzureCredential`, phase 3.
+- Storage layer behind an interface, phase 3. **Built (3E-storage):** `app/storage.py` has a
+  local-directory implementation (development and tests, streamed by the app) and a Blob one
+  (`DefaultAzureCredential`, no account keys, user-delegation SAS for 90 seconds with the
+  Content-Disposition and Content-Type forced by the link), chosen by `STORAGE_BACKEND` (blank:
+  blob when `STORAGE_ACCOUNT_NAME` is set, which the Bicep does). `app/attachments.py` is the one
+  place a file is checked and stored (size limit, blocked program types, type detected from the
+  bytes, tiny inline pictures skipped, dedupe by content hash); `/attachments/{id}` asks only
+  `visibility.may_view_attachment`. No upload form yet and mail ingestion joins in 3B.
 - Application Insights via the `azure-monitor-opentelemetry` package.
 - App-level rate limiting on the public routes. Built in 3A (see above).
 - Deploy workflow (the old SSH-to-EC2 one was removed): **drafted, never run**

@@ -50,11 +50,11 @@ not exist (`infra/` compiles but has never run against a subscription).
 | 3B inbound mail: worker fetches stored notifications, replies join tickets, new mail raises tickets, auto-reply filter | not started | |
 | 3C subscriptions and delta catch-up | not started | |
 | 3D outbound mail: outbox, real send, approval and "raised for you" emails (`MAIL_SENDING` off / dev / graph; Admin > Outbound mail) | merged (#52) | `app/outbox.py`, `app/mail.py` |
-| 3E attachments: storage interface, table, safe serving | not started | |
+| 3E-storage attachments: storage interface (local directory, Azure Blob with user-delegation SAS), `attachment` table, `/attachments/{id}`, content-type detection and safe serving | built, in review (#49) | `app/storage.py`, `app/attachments.py`, `app/routers/attachments.py` |
 | 3F wiring: Bicep and deploy workflow for the public app, mailbox, storage, Application Insights | not started | |
 | Phases 4 to 9 | not started | `docs/plan.md`, "Build order" |
 
-Tests: 868 passing on Postgres 16.
+Tests: 934 passing on Postgres 16.
 
 ## Next up
 
@@ -318,3 +318,4 @@ The full list is "Azure-only verification" in `docs/plan.md`. Added by work so f
   reachable on the public app; the `production` required-reviewers gate pauses the second matrix leg and `max-parallel: 1` runs
   staging first; secrets left unset really arrive as empty strings in `readEnvironmentVariable`.
 - Teams/presence Bicep wiring (linted and built with `build-params` only): the `teams-new-ticket-webhook-url` secret is created in Key Vault from `TEAMS_NEW_TICKET_WEBHOOK_URL` and is readable by the worker identity only (try reading it with the web and public tokens: it must be refused); the worker revision gets `TEAMS_NEW_TICKET_WEBHOOK_URL`, the three `*_ENABLED` flags arrive as `true`/`false` on web, public and worker (`PRESENCE_ENABLED` on the worker only), and the app reads them; supplying the secret on a later deploy without it drops it from the revision; the deploy workflow passes the new variables and secret through (unset variables become empty strings and mean off).
+- Attachment storage (3E-storage; tested locally with a directory and a fake Blob client only): with `STORAGE_ACCOUNT_NAME` set and no keys anywhere, the app's managed identity can create a user-delegation key and read/write the `attachments` container (the Bicep gives web and worker Storage Blob Data Contributor and the Storage Blob Delegator role; check the delegator role is really present, since signing a delegation key needs it); a `/attachments/{id}` link redirects to a SAS URL that works for about 90 seconds and then fails with 403; the browser shows a PNG inline and downloads a PDF, an `.html` and an `.svg` from the storage origin (check the forced `Content-Disposition` and `Content-Type` in the response headers, whether the storage origin sends `X-Content-Type-Options: nosniff` on its own, since the redirect path cannot add it or the sandboxing policy, and that the SVG never renders); the public app and migrate job, which have no blob role, cannot fetch a blob. Azurite probably cannot issue user-delegation SAS, so this is staging-only. Also decide the app's image content-security policy once attachments show in the page: it must allow the storage domain (`img-src https://<account>.blob.core.windows.net`); today no page shows attachments, so nothing sets it.
