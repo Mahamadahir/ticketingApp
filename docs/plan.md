@@ -413,7 +413,13 @@ Projects are a separate entity tickets can link to, with Azure DevOps
 integration later. Change control is later.
 
 **Statuses.** New (untriaged), Open, In progress, Awaiting user, Awaiting approval
-(a service request waiting for its approvers, 14 Oct 2026), With MSP, Resolved, Closed. Reopening is a recorded event, not a status.
+(a service request waiting for its approvers, 14 Oct 2026), With supplier (added 20 Oct 2026:
+waiting on an outside supplier or vendor we raised it with; not the MSP, which has With MSP
+and its own phase 5 handoff), With MSP, Resolved, Closed. Reopening is a recorded event, not a status.
+With supplier is set by hand (the Status buttons, or the Status dropdown once it exists) and is
+an open status: it is not finished, nobody's access changes, and the SLA clock keeps running
+(only Awaiting user pauses it; whether With supplier should too is an open question in
+`docs/build-plan.md`). Emailing the requester leaves it as it is, like With MSP.
 
 **Status follows the conversation** (agreed 12 Oct 2026). The SLA clock pauses in
 Awaiting user and chase emails are sent from it, so the status must be right
@@ -425,7 +431,7 @@ without anyone remembering to set it by hand.
   progress for "we're looking into it", which keeps the SLA clock running and stops the chase
   timer). For an internal note the default is "no change". The ticket takes the chosen status
   when the message is saved, in one step, as an ordinary status event naming the agent. On a
-  ticket With MSP, Resolved or Closed the dropdown defaults to the current status (nothing
+  ticket With supplier, With MSP, Resolved or Closed the dropdown defaults to the current status (nothing
   moves unless the agent picks something), and Resolved or Closed are not offered here:
   resolving is the resolve action in phase 4. The Status buttons stay for changes made without
   a message. For a split original the dropdown is not shown, since its status is derived; an
@@ -435,7 +441,7 @@ without anyone remembering to set it by hand.
 - **The user replies.** When the requester, or a follower, replies while the ticket
   is Awaiting user, it moves back to In progress automatically and the SLA clock
   resumes. This covers portal comments now and email replies once mail intake
-  exists. A reply on a New ticket changes nothing; on a With MSP ticket it changes
+  exists. A reply on a New ticket changes nothing; on a With supplier or With MSP ticket it changes
   nothing (the agent decides); on a Resolved or Closed ticket it is the reopen flow
   in phase 4.
 - Both moves are ordinary status events in the timeline and the audit log, with

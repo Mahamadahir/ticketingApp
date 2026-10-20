@@ -13,6 +13,7 @@ class TicketStatus(str, Enum):
     IN_PROGRESS = "in_progress"
     AWAITING_USER = "awaiting_user"
     AWAITING_APPROVAL = "awaiting_approval"  # a service request waiting for its approvers (app/approvals.py)
+    WITH_SUPPLIER = "with_supplier"  # waiting on an outside supplier or vendor (not the MSP)
     WITH_MSP = "with_msp"
     RESOLVED = "resolved"
     CLOSED = "closed"
