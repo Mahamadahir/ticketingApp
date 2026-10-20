@@ -321,7 +321,9 @@ var migrateSecretEnv = [for n in migrateSecretNames: { name: secretEnvNames[n], 
 var webName = 'ca-${prefix}-${environmentName}-web'
 var webBaseUrl = !empty(publicBaseUrl) ? publicBaseUrl : 'https://${webName}.${appEnvironment.outputs.defaultDomain}'
 var publicName = 'ca-${prefix}-${environmentName}-public'
-var publicAppUrl = !empty(publicAppBaseUrl) ? publicAppBaseUrl : 'https://${publicName}.${appEnvironment.outputs.defaultDomain}'
+// Empty when there is no public app to point at, so an approval email waits (the app refuses to
+// build a link without it) instead of going out with a link to a host that does not exist.
+var publicAppUrl = !empty(publicAppBaseUrl) ? publicAppBaseUrl : (deployPublicApp ? 'https://${publicName}.${appEnvironment.outputs.defaultDomain}' : '')
 
 var commonEnv = [
   { name: 'ENV', value: environmentName }
