@@ -104,6 +104,9 @@ class User(SQLModel, table=True):
     password_hash: Optional[str] = Field(default=None)
     failed_login_count: int = Field(default=0, sa_column_kwargs={"server_default": "0"})
     locked_until: Optional[datetime] = Field(default=None)
+    # How long an unread notification waits before it is also sent to Teams, for this person.
+    # None means the default (the "teams_unread_minutes" setting).
+    teams_delay_minutes: Optional[int] = Field(default=None)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -330,7 +333,14 @@ class Notification(SQLModel, table=True):
 
     # The bell counts unread rows for every open tab every 30 seconds; this keeps that cheap
     # however much read history there is.
-    __table_args__ = (Index("ix_notification_user_unread", "user_id", postgresql_where=text("read_at IS NULL")),)
+    __table_args__ = (
+        Index("ix_notification_user_unread", "user_id", postgresql_where=text("read_at IS NULL")),
+        # The worker looks only for rows wanting a Teams copy that has not been dealt with.
+        Index(
+            "ix_notification_teams_due", "created_at",
+            postgresql_where=text("teams_wanted AND teams_handled_at IS NULL"),
+        ),
+    )
 
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="user.id", index=True)
@@ -340,6 +350,14 @@ class Notification(SQLModel, table=True):
     text: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), index=True)
     read_at: Optional[datetime] = Field(default=None)
+    # Whether it shows in the bell. False when the person turned the bell off for this event but
+    # still wants Teams: such a row is written already read, so the bell never counts it.
+    bell: bool = Field(default=True, sa_column_kwargs={"server_default": "true"})
+    # The person wanted a Teams copy when it was written. teams_handled_at is set once the worker has
+    # dealt with it: handed to Teams, or dropped (they turned Teams off since, or can no longer open
+    # the ticket). A copy is sent only if it is still wanted at that moment.
+    teams_wanted: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
+    teams_handled_at: Optional[datetime] = Field(default=None)
 
 
 class NotificationPreference(SQLModel, table=True):
@@ -364,8 +382,11 @@ class TeamsPost(SQLModel, table=True):
     __table_args__ = (Index("ix_teamspost_unsent", "id", postgresql_where=text("sent_at IS NULL")),)
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    kind: str  # new_ticket
+    kind: str  # new_ticket, notification
     ticket_id: Optional[int] = Field(default=None, foreign_key="ticket.id", index=True)
+    # For a "notification" post: the notification it carries. Unique, so one notification can never
+    # be posted twice, whatever happens to the job that queues it.
+    notification_id: Optional[int] = Field(default=None, foreign_key="notification.id", unique=True)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     sent_at: Optional[datetime] = Field(default=None)
     attempts: int = Field(default=0, sa_column_kwargs={"server_default": "0"})

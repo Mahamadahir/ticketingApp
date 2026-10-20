@@ -23,6 +23,7 @@ class SettingDef:
 DEFAULT_TRIAGE_TEAM = "default_triage_team_id"
 TELL_REQUESTER_RAISED_FOR = "tell_requester_when_raised_for_them"
 APPROVAL_LINK_MINUTES = "approval_link_minutes"
+TEAMS_UNREAD_MINUTES = "teams_unread_minutes"
 SLA_AT_RISK_PERCENT = "sla_at_risk_percent"
 
 # PLACEHOLDER SLA targets, in minutes on a 24/7 clock, until the real ones are agreed
@@ -84,6 +85,18 @@ REGISTRY: dict[str, SettingDef] = {
             "Each person will also be able to turn it off in their own notification settings."
         ),
         default="on",
+    ),
+    TEAMS_UNREAD_MINUTES: SettingDef(
+        key=TEAMS_UNREAD_MINUTES,
+        label="Unread notifications are also sent to Teams after (minutes)",
+        kind="minutes",
+        description=(
+            "A notification still unread in the app after this long is also sent to Teams, for people "
+            "who have Teams on for that event. Each person can set their own delay in their notification "
+            "settings; this is the default for everyone who has not. The Teams delivery itself starts "
+            "once Teams is connected."
+        ),
+        default="5",
     ),
     APPROVAL_LINK_MINUTES: SettingDef(
         key=APPROVAL_LINK_MINUTES,

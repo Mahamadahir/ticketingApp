@@ -16,6 +16,7 @@ The sender is passed in (post_card is the real one) so tests never touch the net
 """
 
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional
 
@@ -24,11 +25,12 @@ from sqlalchemy import or_
 from sqlmodel import Session, select
 
 from app.config import settings
-from app.models import TeamsPost, Ticket, TicketSource
+from app.models import Notification, TeamsPost, Ticket, TicketSource, User
 
 log = logging.getLogger("app.teams")
 
 NEW_TICKET = "new_ticket"
+NOTIFICATION = "notification"  # an agent's unread notification, sent as a post that @mentions them
 # A failed post waits 2, 4, 8, 16, 32, 60, 60 minutes before its next try, so a Teams outage of a few
 # hours is ridden out; after that it is left alone with its reason.
 MAX_ATTEMPTS = 8
@@ -69,6 +71,14 @@ def plain(text: str) -> str:
     return "".join("\\" + c if c in MARKDOWN_CHARACTERS else c for c in text)
 
 
+def message(card: dict) -> dict:
+    """The Teams Workflows payload: a message carrying one Adaptive Card."""
+    return {
+        "type": "message",
+        "attachments": [{"contentType": "application/vnd.microsoft.card.adaptive", "content": card}],
+    }
+
+
 def new_ticket_card(ticket: Ticket) -> dict:
     """The Teams Workflows payload: a message carrying one Adaptive Card. The text is the ticket's
     number (#1042, which never changes), subject, how it arrived and who it is for."""
@@ -92,10 +102,7 @@ def new_ticket_card(ticket: Ticket) -> dict:
     if settings.public_base_url:
         link = f"{settings.public_base_url.rstrip('/')}/tickets/{ticket.number}"
         card["actions"] = [{"type": "Action.OpenUrl", "title": "Open ticket", "url": link}]
-    return {
-        "type": "message",
-        "attachments": [{"contentType": "application/vnd.microsoft.card.adaptive", "content": card}],
-    }
+    return message(card)
 
 
 def post_card(payload: dict) -> None:
@@ -134,10 +141,78 @@ def new_ticket_post(session: Session, post: TeamsPost) -> dict:
     return new_ticket_card(ticket)
 
 
+def queue_notification(session: Session, notification: Notification) -> TeamsPost:
+    """Queues the Teams copy of a notification (app.notifications.hand_to_teams calls this for each one
+    that is due). Written in the worker's transaction. One post per notification, enforced by the
+    database."""
+    post = TeamsPost(kind=NOTIFICATION, notification_id=notification.id, ticket_id=notification.ticket_id)
+    session.add(post)
+    return post
+
+
+KIND_LABELS = {"assigned": "Assigned to you", "mentioned": "You were mentioned"}
+
+
+def mention_name(user: User) -> str:
+    """A name safe to put inside <at>...</at>: no markup or markdown, so it cannot close the tag or
+    bold the line, and it matches the mention entity exactly."""
+    name = re.sub(r"[^\w .'-]|_", "", user.display_name or "")  # underscores would be read as italics
+    name = " ".join(name.split())[:80]
+    return name or user.email.partition("@")[0]
+
+
+def notification_card(notification: Notification, person: User, ticket: Optional[Ticket]) -> dict:
+    """The Teams payload for a notification: a card that @mentions the person (by email, which is what
+    Teams knows them by) with the notification's text and a link to the ticket. The text can hold a
+    requester's words (a ticket subject), so it is made plain like the new-ticket card's."""
+    name = mention_name(person)
+    at = f"<at>{name}</at>"
+    body = [
+        {"type": "TextBlock", "text": f"{at} {plain(notification.text)}", "wrap": True},
+        {
+            "type": "FactSet",
+            "facts": [
+                {"title": "What", "value": KIND_LABELS.get(notification.kind, plain(notification.kind))},
+                *([{"title": "By", "value": plain(notification.actor_email)}] if notification.actor_email else []),
+            ],
+        },
+    ]
+    card = {
+        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+        "type": "AdaptiveCard",
+        "version": "1.4",
+        "body": body,
+        "msteams": {
+            "entities": [
+                {"type": "mention", "text": at, "mentioned": {"id": person.email, "name": name}},
+            ]
+        },
+    }
+    if ticket is not None and settings.public_base_url:
+        link = f"{settings.public_base_url.rstrip('/')}/tickets/{ticket.number}"
+        card["actions"] = [{"type": "Action.OpenUrl", "title": "Open ticket", "url": link}]
+    return message(card)
+
+
+def notification_post(session: Session, post: TeamsPost) -> dict:
+    if not settings.teams_notifications_enabled:
+        # Switched off after this was queued: the switch is checked again at send time, not only when queuing.
+        raise Unsendable("Sending notifications to Teams is switched off")
+    notification = session.get(Notification, post.notification_id) if post.notification_id else None
+    if notification is None:
+        raise Unsendable("Notification not found")
+    person = session.get(User, notification.user_id)
+    if person is None:
+        raise Unsendable("Person not found")
+    ticket = session.get(Ticket, notification.ticket_id) if notification.ticket_id else None
+    return notification_card(notification, person, ticket)
+
+
 # One builder per kind of post: it turns the row into the payload to send, or raises Unsendable.
 # A new kind of post is one builder and one entry here; sending, backoff and giving up are shared.
 CARD_BUILDERS: dict[str, Callable[[Session, TeamsPost], dict]] = {
     NEW_TICKET: new_ticket_post,
+    NOTIFICATION: notification_post,
 }
 
 
@@ -167,7 +242,7 @@ def deliver_pending(
         waiting = session.exec(select(TeamsPost.id).where(*due).limit(1)).first()
         if waiting is not None:
             # Announcing is switched on but this process cannot send: say so rather than let posts pile up.
-            log.warning("Teams posts are waiting but TEAMS_NEW_TICKET_WEBHOOK_URL is not set in this process")
+            log.warning("Teams posts are waiting but TEAMS_NEW_TICKET_WEBHOOK_URL is not set in this process (it is the one webhook for every kind of post)")
         return 0, 0
     posts = session.exec(
         select(TeamsPost).where(*due).order_by(TeamsPost.id).limit(limit).with_for_update(skip_locked=True)

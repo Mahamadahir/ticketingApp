@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     # environment (Key Vault in Azure), never from a setting or the database.
     teams_new_ticket_enabled: bool = False
     teams_new_ticket_webhook_url: str = ""
+    # Sending an agent's unread notifications to Teams (phase 2C-ii). Every process needs the switch
+    # (the worker queues copies only when it is on; with it off, due copies are dropped rather than
+    # left to pile up). They go to the same channel as the new-ticket cards, so the one webhook URL
+    # above is the only credential, and it is needed only by the worker.
+    teams_notifications_enabled: bool = False
     # Where the app is reached, so a Teams card can link to the ticket. Blank: no link on the card.
     public_base_url: str = ""
 

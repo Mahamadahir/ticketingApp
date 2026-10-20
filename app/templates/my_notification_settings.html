@@ -21,6 +21,19 @@
     {% endfor %}
   </fieldset>
   {% endfor %}
+  {% if is_agent %}
+  <fieldset>
+    <legend>Unread notifications and Teams</legend>
+    <p class="note">
+      A notification you have not read in the app is also sent to Teams after this many minutes, for the
+      events where you have Teams ticked. Leave it blank for the usual {{ default_delay }} minutes. If
+      you have the app turned off for an event but Teams on, it goes to Teams straight away.
+    </p>
+    <label>Minutes
+      <input type="number" name="teams_delay" min="1" max="{{ max_delay }}" value="{{ user.teams_delay_minutes or '' }}" placeholder="{{ default_delay }}" />
+    </label>
+  </fieldset>
+  {% endif %}
   <button type="submit">Save</button>
 </form>
 {% endblock %}
