@@ -41,12 +41,12 @@ not exist (`infra/` compiles but has never run against a subscription).
 | 2A in-app notifications (the bell): assignment and @mentions | merged (#36) | `app/notifications.py` |
 | 2B notification settings (channels per event type per person) | merged (#38) | `app/notification_settings.py`, `app/routers/my_settings.py` |
 | 2C-i worker skeleton: `python -m app.worker`, APScheduler, heartbeat line, single-instance lock, compose service | merged (#39) | `app/worker.py`, `app/jobs/` |
-| 2C-ii unread-after-N-minutes notification to Teams (needs the decisions in the Phase 2 note below) | not started | |
-| 2D Teams channel webhook for new tickets: outbox, card, sender (the worker job is in; the Bicep wiring follows, see Next up) | built, in review | `app/teams.py` |
+| 2C-ii unread-after-N-minutes notification to Teams: which notifications want a copy and when (Teams-only rows, per-person delay, admin default), then queued in the Teams outbox and sent by the worker | built, in review | `app/notifications.py`, `app/teams.py`, `app/notification_settings.py` |
+| 2D Teams channel webhook for new tickets: outbox, card, sender, worker job (the Bicep wiring follows, see Next up) | merged (#40) | `app/teams.py` |
 | 2E out-of-office detection (Graph presence) and skipping OOO agents | not started | |
 | Phases 2 to 9 | not started | `docs/plan.md`, "Build order" |
 
-Tests: 694 passing on Postgres 16.
+Tests: 741 passing on Postgres 16.
 
 ## Next up
 **Deferred from the escalation work (documented, not built).**
@@ -220,6 +220,7 @@ sleep, restart it and `docker start ticketingapp-db-1`.
 
 ## Open questions
 
+- **How a Teams copy reaches a person (built on working defaults; say if any should change).** A Workflows webhook posts to a channel, not to one person, so the copy is a post in the support channel that @mentions the person by email (messaging a person directly is the phase 8 bot). Defaults taken: the row is always written when either channel is wanted (Teams-only rows hidden from the bell); a nullable per-person delay with an admin default of 5 minutes; the same channel and webhook as the new-ticket cards, behind its own switch; the outbox's retries (backoff, give up after 8 tries or at once on a refused request). Only staging can prove the mention resolves.
 - **Approvals, remaining.** Approval emails and chasing (email and Teams) wait for phase 3. Not decided: whether an approver may delegate (someone on leave), and whether a request should be able to be withdrawn by its requester while it waits. Today an absent approver is handled by a super admin waiving the approval.
 - **MSP escalation (assumption to confirm).** Until the MSP handoff is built (phase 5) a
   category whose target is the MSP cannot be escalated.
@@ -239,6 +240,7 @@ The full list is "Azure-only verification" in `docs/plan.md`. Added by work so f
   canned-response picker and raise-a-ticket forms, including the `HX-Redirect` after raising);
   tests use the HTTP layer only.
 - Entra sign-in and the SSO activity events against a real redirect URI.
+- Teams notification copies (2C-ii): with TEAMS_NOTIFICATIONS_ENABLED on and the webhook URL set, assign a ticket to a test agent who has Teams ticked and leave it unread past their delay: check the card arrives in the support channel and the agent is actually @mentioned (the mention id is their email; an agent whose Teams sign-in differs from their email, or a local account with no Teams user, will show plain text and no ping). Check Teams accepts the msteams.entities mention in a Workflows card. The channel then shows each notified ticket's subject to everyone in it, so keep it IT-only (a dedicated notifications channel and second webhook is a later option). Bicep wiring for TEAMS_NOTIFICATIONS_ENABLED is not built.
 - The worker (deployWorker, currently false in Bicep): set it true once real jobs exist, and add the log-query dead man's switch alert on the heartbeat job=heartbeat line (docs/plan.md, Health and monitoring). Its single-instance lock is a *session* advisory lock held on one connection: if staging Postgres is reached through PgBouncer in transaction-pooling mode the lock would not hold, so connect the worker to the server directly (or use session pooling). Verify on staging by starting a second worker and seeing it exit with Another worker is already running.
 - The emailed approval link carries its token in the URL path, so web server, ingress and
   Application Insights request logs will record a working credential for the link's lifetime

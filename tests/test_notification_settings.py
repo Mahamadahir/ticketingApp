@@ -99,7 +99,7 @@ def test_turning_the_bell_off_for_an_event_stops_that_notification_only(client, 
     ticket = ticket_named(db_session, "Router down")
 
     note(client, ticket, "Look at this, @bob")
-    assert notifications_for(db_session, "bob@example.com") == []
+    assert [n for n in notifications_for(db_session, "bob@example.com") if n.bell] == []  # nothing in the bell
 
     bob = user_named(db_session, "bob@example.com")
     client.post("/auth/logout")
@@ -107,14 +107,14 @@ def test_turning_the_bell_off_for_an_event_stops_that_notification_only(client, 
     save(client, "assigned:in_app", "assigned:teams", "mentioned:teams")
     back_to(client)
     note(client, ticket, "Again @bob")
-    assert notifications_for(db_session, "bob@example.com") == []
+    assert [n for n in notifications_for(db_session, "bob@example.com") if n.bell] == []
 
     client.post("/auth/logout")
     login_as(client, "bob@example.com", "Bob Builder")
     save(client, "assigned:in_app", "assigned:teams", "mentioned:in_app", "mentioned:teams")  # back on
     back_to(client)
     note(client, ticket, "Third time @bob")
-    assert [n.kind for n in notifications_for(db_session, "bob@example.com")] == ["mentioned"]
+    assert [n.kind for n in notifications_for(db_session, "bob@example.com") if n.bell] == ["mentioned"]
     assert bob.id
 
 

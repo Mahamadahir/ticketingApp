@@ -854,6 +854,29 @@ Automatic emails use admin-managed templates, previewed when edited.
   does not have are harmless: only agents are ever notified, and the choice returns with the role.
 - A notification still unread after N minutes (user setting, default 5) is
   also sent to Teams.
+  *Built in 2C-ii (20 Oct 2026):* a notification is written whenever
+  the person wants the bell or Teams for that event (neither: none). It records both wishes; a
+  Teams-only one is written already read and hidden from the bell, so the bell never shows or counts it.
+  A Teams copy is **due** straight away for a Teams-only row, or once a bell row has stayed unread for
+  the person's delay: their own number of minutes (their notification settings, 1 to 1440, blank =
+  default) or the admin default, the setting "Unread notifications are also sent to Teams after
+  (minutes)", initially 5. Reading it in time means no copy. `hand_to_teams` (run by the worker) hands
+  each due row to a sender once, locking the rows so two workers cannot take the same one, and drops it
+  instead if the person has since turned Teams off for that event or can no longer open its ticket
+  (a Teams message says what the ticket is). Rows written before this change get no Teams copy, so
+  switching it on sends no flood of old notifications.
+  *Sending:* the worker job `teams-copies` (every minute) calls `hand_to_teams`, which queues each due
+  notification as a `TeamsPost` of kind `notification` (one per notification, enforced by a unique
+  column) in the same outbox as the new-ticket cards; the existing `teams-posts` job then sends it with
+  the shared retry/backoff. The card is an Adaptive Card that **@mentions the person by their email**
+  (a `msteams.entities` mention, which is how a channel post can reach one person; messaging a person
+  directly is the phase 8 bot), says what happened and who did it, and links to the ticket when
+  `PUBLIC_BASE_URL` is set. It goes to the same channel and webhook as the new-ticket cards, behind its
+  own switch `TEAMS_NOTIFICATIONS_ENABLED` (off by default, every process needs it). With the switch off
+  the due copies are dropped, not kept, so nothing floods out when it is switched on. The text is made
+  plain (a requester's subject cannot become a link or markup) and the mention name is stripped of
+  anything that could close the tag. The settings page stops saying Teams is "not connected yet" once the
+  switch is on.
 - Teams is used for assignments, mentions, P1s and SLA breaches. New tickets
   post to a Teams channel through a Teams Workflows webhook.
   *Built in 2D (19 Oct 2026):* `app/teams.py`. Creating a ticket (`create_ticket`) writes a `TeamsPost` row in the

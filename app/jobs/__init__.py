@@ -18,7 +18,8 @@ from sqlalchemy import text
 from sqlmodel import Session
 
 from app.config import settings
-from app.teams import deliver_pending
+from app.notifications import drop_due_for_teams, hand_to_teams
+from app.teams import deliver_pending, queue_notification
 
 
 @dataclass(frozen=True)
@@ -40,9 +41,20 @@ def teams_posts(session: Session) -> None:
     deliver_pending(session)
 
 
+def teams_copies(session: Session) -> None:
+    """Queues the Teams copy of each notification that is due (app.notifications.hand_to_teams); the
+    teams-posts job then sends them. With the switch off, due copies are dropped, not left to pile up
+    and arrive in a flood the day it is switched on."""
+    if settings.teams_notifications_enabled:
+        hand_to_teams(session, queue_notification)
+    else:
+        drop_due_for_teams(session)
+
+
 TEAMS_POSTS_EVERY_SECONDS = 60
 
 JOBS: list[Job] = [
     Job("heartbeat", settings.worker_heartbeat_seconds, heartbeat),
+    Job("teams-copies", TEAMS_POSTS_EVERY_SECONDS, teams_copies),
     Job("teams-posts", TEAMS_POSTS_EVERY_SECONDS, teams_posts),
 ]

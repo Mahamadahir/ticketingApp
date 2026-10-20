@@ -133,3 +133,34 @@ def save_choices(session: Session, user: User, ticked: set[str]) -> int:
     if changed:
         log_action(session, user.email, "notification_settings", user.id, "update", ", ".join(changed))
     return len(changed)
+
+MAX_TEAMS_DELAY_MINUTES = 24 * 60
+
+
+class InvalidDelay(ValueError):
+    """The delay typed on the settings page is not a whole number of minutes in range."""
+
+
+def parse_teams_delay(raw: Optional[str]) -> Optional[int]:
+    """The page's "unread for how many minutes" box: blank means the default (None), otherwise a
+    whole number of minutes from 1 to a day."""
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+    if not (raw.isascii() and raw.isdigit()) or not 1 <= int(raw) <= MAX_TEAMS_DELAY_MINUTES:
+        raise InvalidDelay(f"Enter a whole number of minutes from 1 to {MAX_TEAMS_DELAY_MINUTES}, or leave it blank")
+    return int(raw)
+
+
+def save_teams_delay(session: Session, user: User, delay: Optional[int]) -> bool:
+    """Stores how long this person's unread notifications wait before also going to Teams (None: the
+    default). Returns whether it changed. Does not commit."""
+    if delay == user.teams_delay_minutes:
+        return False
+    log_action(
+        session, user.email, "notification_settings", user.id, "update",
+        f"teams delay {user.teams_delay_minutes or 'default'} -> {delay or 'default'}",
+    )
+    user.teams_delay_minutes = delay
+    session.add(user)
+    return True
