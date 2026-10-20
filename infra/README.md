@@ -167,9 +167,10 @@ The subject must match the GitHub Environment name exactly.
 | Variable | `AZURE_RESOURCE_GROUP` | e.g. `rg-ticketing-staging` |
 | Variable | `ALERT_EMAIL`, `WEB_ALLOWED_CIDRS` | required, as in "First deploy" |
 | Variable | `SSO_TENANT_ID`, `SSO_CLIENT_ID`, `GRAPH_TENANT_ID`, `GRAPH_CLIENT_ID`, `GRAPH_SHARED_MAILBOX`, `SUPER_ADMIN_EMAILS` | optional; empty if unset |
+| Variable | `TEAMS_NEW_TICKET_ENABLED`, `TEAMS_NOTIFICATIONS_ENABLED`, `PRESENCE_ENABLED` | optional; `true` switches the feature on, unset means off (see "Teams and out-of-office") |
 | Variable | `HEALTH_URL` | optional extra base URL to probe |
 | Secret | `POSTGRES_ADMIN_PASSWORD`, `SESSION_SECRET_KEY`, `INTERNAL_SESSION_SECRET_KEY`, `GRAPH_WEBHOOK_CLIENT_STATE` | required, same values as the platform deploy |
-| Secret | `SSO_CLIENT_SECRET`, `GRAPH_CLIENT_SECRET` | supply on every deploy once set, or the revision loses them |
+| Secret | `SSO_CLIENT_SECRET`, `GRAPH_CLIENT_SECRET`, `TEAMS_NEW_TICKET_WEBHOOK_URL` | optional; supply on every deploy once set, or the revision loses them |
 
 Add **required reviewers** on `production` (that is the approval gate) and,
 optionally, restrict both environments to the `main` branch. The platform-only
@@ -192,6 +193,36 @@ executions.
 
 The alternative is to move all role assignments into a separate template run
 by hand, and keep the pipeline at Contributor.
+
+## Teams and out-of-office (phase 2)
+
+Three switches, all off unless set to `true` (environment variables in your shell,
+or GitHub Environment variables for the workflow; `infra/*.bicepparam` reads them):
+
+| Variable | Where it lands | What it does |
+|---|---|---|
+| `TEAMS_NEW_TICKET_ENABLED` | web, public, worker, migrate job | A Teams channel post for each new ticket |
+| `TEAMS_NOTIFICATIONS_ENABLED` | web, public, worker, migrate job | Also copies an unread notification to Teams after the person's delay |
+| `PRESENCE_ENABLED` | worker only | The `presence` job marks agents who are out of office |
+
+`TEAMS_NEW_TICKET_WEBHOOK_URL` (a Teams Workflows webhook for the support channel)
+is a secret: the template stores it in Key Vault as `teams-new-ticket-webhook-url`
+and only the worker identity may read it, since only the worker posts. It is
+supplied at deploy time like the other secrets, never put in a file, and optional:
+without it posts wait in the outbox and the worker logs a warning every minute.
+Create the webhook in Teams ("Post to a channel when a webhook request is received")
+and keep the channel IT-only, since cards show ticket subjects. Supply it on every
+deploy once set, or the new revision loses it.
+
+All of these only act in the worker, so `deployWorker` in the param files must be
+`true` as well (it is `false` until the worker has the jobs you want).
+
+**Out-of-office detection needs Graph permissions that the Bicep does not grant.**
+Nothing here manages the Entra app registration, so in Entra, on the registration
+behind `GRAPH_CLIENT_ID`, add the Microsoft Graph **application** permissions
+`Presence.Read.All` and `User.Read.All` and grant admin consent. The `GRAPH_*`
+tenant, client and secret must also be set. Without the consent the job logs
+`job=presence status=failed` (a 403) and marks nobody.
 
 ## Custom domain (at roll-out)
 

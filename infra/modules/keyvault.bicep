@@ -25,6 +25,9 @@ param graphWebhookClientState string
 param ssoClientSecret string
 @secure()
 param graphClientSecret string
+@secure()
+@description('Optional. Only the worker identity is listed as a reader of it.')
+param teamsNewTicketWebhookUrl string = ''
 
 var secretsUserRoleId = '4633458b-17de-406a-b58b-ae56cf9b3dff'
 
@@ -102,6 +105,14 @@ resource graphSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (!empty
   }
 }
 
+resource teamsWebhookSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (!empty(teamsNewTicketWebhookUrl)) {
+  parent: vault
+  name: 'teams-new-ticket-webhook-url'
+  properties: {
+    value: teamsNewTicketWebhookUrl
+  }
+}
+
 // Read access is granted on each secret, so a compromised app can read only
 // what its own definition lists. Incremental deployments only add: removing a
 // secret from an identity's list does not delete the old assignment (README).
@@ -128,6 +139,7 @@ resource readers 'Microsoft.Authorization/roleAssignments@2022-04-01' = [
       webhookState
       ssoSecret
       graphSecret
+      teamsWebhookSecret
     ]
   }
 ]

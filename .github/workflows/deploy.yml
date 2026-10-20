@@ -88,6 +88,9 @@ jobs:
       GRAPH_CLIENT_ID: ${{ vars.GRAPH_CLIENT_ID }}
       GRAPH_SHARED_MAILBOX: ${{ vars.GRAPH_SHARED_MAILBOX }}
       SUPER_ADMIN_EMAILS: ${{ vars.SUPER_ADMIN_EMAILS }}
+      TEAMS_NEW_TICKET_ENABLED: ${{ vars.TEAMS_NEW_TICKET_ENABLED }}
+      TEAMS_NOTIFICATIONS_ENABLED: ${{ vars.TEAMS_NOTIFICATIONS_ENABLED }}
+      PRESENCE_ENABLED: ${{ vars.PRESENCE_ENABLED }}
     steps:
       - name: Production deploys only from main
         if: matrix.environment == 'production' && github.ref != 'refs/heads/main'
@@ -142,6 +145,7 @@ jobs:
           GRAPH_WEBHOOK_CLIENT_STATE: ${{ secrets.GRAPH_WEBHOOK_CLIENT_STATE }}
           SSO_CLIENT_SECRET: ${{ secrets.SSO_CLIENT_SECRET }}
           GRAPH_CLIENT_SECRET: ${{ secrets.GRAPH_CLIENT_SECRET }}
+          TEAMS_NEW_TICKET_WEBHOOK_URL: ${{ secrets.TEAMS_NEW_TICKET_WEBHOOK_URL }}
         run: |
           az deployment group what-if \
             --resource-group "$RESOURCE_GROUP" \
@@ -184,6 +188,7 @@ jobs:
           GRAPH_WEBHOOK_CLIENT_STATE: ${{ secrets.GRAPH_WEBHOOK_CLIENT_STATE }}
           SSO_CLIENT_SECRET: ${{ secrets.SSO_CLIENT_SECRET }}
           GRAPH_CLIENT_SECRET: ${{ secrets.GRAPH_CLIENT_SECRET }}
+          TEAMS_NEW_TICKET_WEBHOOK_URL: ${{ secrets.TEAMS_NEW_TICKET_WEBHOOK_URL }}
         run: |
           set -euo pipefail
           az deployment group create \
