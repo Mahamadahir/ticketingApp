@@ -528,9 +528,8 @@ def email_user(
     session.commit()
     session.refresh(ticket)
 
-    # TODO: once Graph credentials are wired up, send this as an actual email
-    # to ticket.requester_email via graph_client.send_mail, as a reply in the
-    # ticket's mail conversation, so the requester sees one chain.
+    # The email itself was queued by email_requester (app/outbox.py) in the transaction above; the
+    # worker's mail-out job sends it (app/mail.py).
 
     return _render_ticket_detail(request, ticket, user, session)
 

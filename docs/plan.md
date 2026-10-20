@@ -799,6 +799,27 @@ Automatic emails use admin-managed templates, previewed when edited.
 - Replies read with `$select=uniqueBody` to get only the new text.
 - Auto-replies filtered on the `Auto-Submitted` header.
 - Per-ticket cap on automatic emails to stop mail loops.
+- *Outbound mail, built in 3D (20 Oct 2026):* `app/outbox.py` queues an `OutboundEmail` row in the same
+  transaction as what it is about (an agent reply, an automatic notice, an approval request, "a ticket
+  was raised for you"); the worker's `mail-out` job (every 30 s, `app/mail.py`) builds each email when
+  it goes and sends it through `POST /users/{mailbox}/sendMail` as plain text. The rules are asked again
+  at send time: the message must still be one the requester may see and the ticket triaged
+  (`app/messages.py`), "raised for you" must still be wanted (an opt-out after queuing wins), an approval
+  must still be pending. The approval link is signed at send time and never stored. Subject is
+  `[INC-1042] subject` (a split request's parts use their original's reference and subject, plus the
+  "About:" line), so a reply is matched back by the reference. The cap is the setting "Automatic emails
+  to one ticket's requester, at most per day" (placeholder 10, TBC); agent replies never count. The
+  switch is `MAIL_SENDING`: `off` queues nothing (so switching on never sends a backlog), `dev` records
+  the text on the row and sends nothing (read it at Admin > Outbound mail), `graph` sends. Delivery is
+  at least once; each email is committed as it goes. Graph's 4xx other than 401/403/408/429 is final;
+  those four are retried with the Teams outbox's backoff, since they are fixed on the Azure side.
+  *Not proved locally (staging):* real `sendMail` with Mimecast in front and the mailbox-scoped
+  `Mail.Send` grant; that `X-Auto-Response-Suppress` is accepted as a custom header; that a reply keeps
+  the reference in the subject through a mail client's own "Re:" handling. Real `In-Reply-To`
+  threading (replying to the Graph message id with `createReply`) is a follow-up once inbound mail (3B)
+  stores that id on the message; until then threading is by the reference in the subject.
+  *Not built:* admin-managed templates previewed when edited (the automatic wording is in code), and
+  attachments on outgoing mail (3E).
 - Later: route by sender's Entra attributes; agents forwarding an email to
   the mailbox creates a ticket for the original sender.
 

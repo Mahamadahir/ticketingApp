@@ -80,16 +80,34 @@ class GraphClient:
             readings.extend(response.json().get("value", []))
         return readings
 
-    def send_mail(self, to_address: str, subject: str, body: str, reply_to_message_id: str | None = None) -> None:
-        """Send a reply from the shared mailbox so it lands as a normal
-        email reply in the requester's inbox.
-
-        TODO: once a real app registration exists, call
-        POST /users/{mailbox}/sendMail (new thread) or
-        POST /users/{mailbox}/messages/{id}/reply (threaded reply) depending
-        on whether reply_to_message_id is set.
-        """
-        raise NotImplementedError("Wire up Graph credentials in .env before sending mail")
+    def send_mail(
+        self,
+        to_address: str,
+        subject: str,
+        body: str,
+        cc: list[str] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> None:
+        """Sends a plain-text email from the shared mailbox: POST /users/{mailbox}/sendMail (Mail.Send,
+        application, limited to that mailbox). Graph answers 202 and the message goes to Sent Items.
+        Raises on any failure; the exception text can hold the address, so callers record
+        describe_failure() and never str() of it. Graph accepts only X- headers here, and threading
+        rests on the ticket reference in the subject, which the inbound side matches on."""
+        message = {
+            "subject": subject,
+            "body": {"contentType": "Text", "content": body},
+            "toRecipients": [{"emailAddress": {"address": to_address}}],
+            "ccRecipients": [{"emailAddress": {"address": address}} for address in (cc or [])],
+        }
+        if headers:
+            message["internetMessageHeaders"] = [{"name": name, "value": value} for name, value in headers.items()]
+        response = httpx.post(
+            f"{GRAPH_BASE_URL}/users/{quote(settings.graph_shared_mailbox, safe='@')}/sendMail",
+            json={"message": message, "saveToSentItems": True},
+            headers={"Authorization": f"Bearer {self._get_access_token()}"},
+            timeout=30,
+        )
+        response.raise_for_status()
 
     def create_subscription(self, notification_url: str) -> dict:
         """Create a Graph change notification subscription on the shared

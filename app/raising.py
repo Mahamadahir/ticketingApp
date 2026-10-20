@@ -19,6 +19,7 @@ from sqlmodel import Session, select
 from app.backdating import BackdateError, backdate_ticket
 from app.followers import InvalidEmail, normalise_email
 from app.messages import record_inbound
+from app.outbox import queue_raised_for
 from app.models import (
     Category,
     RequestType,
@@ -149,6 +150,8 @@ def raise_ticket(
             session, ticket, EVENT_REQUESTER_NOTICE, creator.email,
             to_value="will be told" if will_tell else "not told", detail=why,
         )
+        if will_tell:
+            queue_raised_for(session, ticket)
         # Stored as the requester's own first message; who typed it is in the sender.
         record_inbound(
             session, ticket, sender=f"Logged by {creator.display_name} on behalf of {requester}", body=description,

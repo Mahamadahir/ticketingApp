@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Admin: Outbound mail{% endblock %}
+{% block content %}
+{% set active = "/admin/outbound-mail" %}
+{% include "_admin_tabs.html" %}
+
+<h2>Outbound mail</h2>
+<p class="note">
+  Emails queued from the shared mailbox, newest first. Sending is <strong>{{ mode }}</strong>:
+  {% if mode == "off" %}nothing is queued.
+  {% elif mode == "dev" %}emails are recorded here and nothing leaves this machine.
+  {% else %}the worker sends them through Graph.{% endif %}
+  A failed email is retried with longer waits, and given up on after {{ max_attempts }} tries or at once
+  when it can never go. Approval emails show the text with the answer link left out. Times are UTC.
+</p>
+
+<form class="filter-form" method="get" action="/admin/outbound-mail">
+  <label><input type="checkbox" name="waiting" value="true" {{ "checked" if waiting else "" }} /> Waiting only</label>
+  <button type="submit">Filter</button>
+</form>
+
+<table>
+  <thead>
+    <tr><th>Queued</th><th>Kind</th><th>Ticket</th><th>To</th><th>Subject</th><th>State</th><th>Detail</th></tr>
+  </thead>
+  <tbody>
+    {% for row in page.items %}
+    {% set ticket = tickets.get(row.ticket_id) %}
+    <tr>
+      <td>{{ row.created_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>
+      <td>{{ row.kind.replace("_", " ") }}</td>
+      <td>{% if ticket %}<a href="/tickets/{{ ticket.number }}">{{ ticket.reference }}</a>{% endif %}</td>
+      <td>{{ row.to_address }}{% if row.cc %}<br />cc {{ row.cc }}{% endif %}</td>
+      <td>{{ row.subject or "" }}</td>
+      <td>
+        {% if row.sent_at %}sent {{ row.sent_at.strftime("%Y-%m-%d %H:%M:%S") }}
+        {% elif row.attempts >= max_attempts %}given up
+        {% elif row.attempts %}retrying (try {{ row.attempts }}){% else %}waiting{% endif %}
+      </td>
+      <td>
+        {% if row.last_error %}{{ row.last_error }}{% endif %}
+        {% if row.body %}<details><summary>Text</summary><pre>{{ row.body }}</pre></details>{% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7">No emails yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% include "_pagination.html" %}
+{% endblock %}

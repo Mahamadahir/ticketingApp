@@ -401,6 +401,33 @@ class TeamsPost(SQLModel, table=True):
     last_error: Optional[str] = Field(default=None)  # why the last attempt failed; never the URL
 
 
+class OutboundEmail(SQLModel, table=True):
+    """An email waiting to go out from the shared mailbox (app/outbox.py queues it, app/mail.py
+    builds and sends it). Written in the same transaction as what it is about, so a reply is never
+    recorded and then forgotten, or sent and then rolled back. The row keeps what was sent
+    (subject, copied addresses, text) and, for a failure, why."""
+
+    __table_args__ = (Index("ix_outboundemail_unsent", "id", postgresql_where=text("sent_at IS NULL")),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    kind: str  # reply, notice, raised_for_you, approval
+    ticket_id: int = Field(foreign_key="ticket.id", index=True)
+    # For a reply or notice: the message it carries. Unique, so one message can never be emailed twice.
+    message_id: Optional[int] = Field(default=None, foreign_key="message.id", unique=True)
+    # For an approval email: the approval it asks about. The link is made when the email is sent.
+    approval_id: Optional[int] = Field(default=None, foreign_key="ticketapproval.id", index=True)
+    to_address: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    sent_at: Optional[datetime] = Field(default=None)
+    attempts: int = Field(default=0, sa_column_kwargs={"server_default": "0"})
+    next_attempt_at: Optional[datetime] = Field(default=None)  # after a failure: not before this
+    last_error: Optional[str] = Field(default=None)
+    # What was built for the send (never an approval link).
+    subject: Optional[str] = Field(default=None)
+    cc: Optional[str] = Field(default=None)
+    body: Optional[str] = Field(default=None)
+
+
 TICKET_COUNTER = "ticket"
 
 

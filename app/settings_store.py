@@ -15,7 +15,7 @@ from app.models import Setting
 class SettingDef:
     key: str
     label: str
-    kind: str  # "team": a team id, empty for none; "minutes": a whole number; "percent": 1 to 99; "flag": on or off
+    kind: str  # "team": a team id, empty for none; "minutes": a whole number; "percent": 1 to 99; "flag": on or off; "count": a whole number, 1 to 1000
     description: str
     default: str = ""
 
@@ -24,6 +24,7 @@ DEFAULT_TRIAGE_TEAM = "default_triage_team_id"
 TELL_REQUESTER_RAISED_FOR = "tell_requester_when_raised_for_them"
 APPROVAL_LINK_MINUTES = "approval_link_minutes"
 TEAMS_UNREAD_MINUTES = "teams_unread_minutes"
+AUTOMATIC_EMAIL_CAP = "automatic_email_cap_per_ticket"
 SLA_AT_RISK_PERCENT = "sla_at_risk_percent"
 
 # PLACEHOLDER SLA targets, in minutes on a 24/7 clock, until the real ones are agreed
@@ -107,6 +108,17 @@ REGISTRY: dict[str, SettingDef] = {
             "the link stops working and they use the portal instead. 20160 is 14 days."
         ),
         default="20160",
+    ),
+    AUTOMATIC_EMAIL_CAP: SettingDef(
+        key=AUTOMATIC_EMAIL_CAP,
+        label="Automatic emails to one ticket's requester, at most per day",
+        kind="count",
+        description=(
+            "Stops a mail loop: automatic emails (approval decisions, 'a ticket was raised for you') "
+            "to the same ticket are held back once this many have gone in the last 24 hours. Agent "
+            "replies are never counted. Placeholder value until the real limit is agreed."
+        ),
+        default="10",
     ),
     SLA_AT_RISK_PERCENT: SettingDef(
         key=SLA_AT_RISK_PERCENT,

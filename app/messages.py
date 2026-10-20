@@ -16,6 +16,7 @@ from typing import Optional
 from sqlmodel import Session, select
 
 from app.followers import followers_of
+from app.outbox import queue_message
 from app.models import (
     FINISHED_STATUSES,
     Message,
@@ -111,23 +112,27 @@ def preview_email(
     if not body.strip():
         raise EmptyEmail()
     chosen = _copied_followers(session, ticket, cc_emails)
-    in_a_split = ticket.split_from_id is not None or session.exec(
-        select(Ticket.id).where(Ticket.split_from_id == ticket.id).limit(1)
-    ).first() is not None
     return EmailPreview(
         to=ticket.requester_email,
         cc=[f.email for f in chosen],
-        subject=thread_subject(session, ticket),
-        about=about_text(ticket) if in_a_split else None,
+        subject=mail_subject(session, ticket),
+        about=about_text(ticket) if in_a_split(session, ticket) else None,
         body=body,
     )
+
+
+def in_a_split(session: Session, ticket: Ticket) -> bool:
+    """Whether the ticket is a part of a split request, or the original of one."""
+    return ticket.split_from_id is not None or session.exec(
+        select(Ticket.id).where(Ticket.split_from_id == ticket.id).limit(1)
+    ).first() is not None
 
 
 def email_requester(
     session: Session, ticket: Ticket, author: User, body: str, cc_emails: Optional[list[str]] = None
 ) -> Message:
-    """A public message from an agent to the requester. Does not send mail yet
-    (that arrives with Graph in phase 3); it records what will be sent.
+    """A public message from an agent to the requester. Records it and queues the email
+    (app/outbox.py); the worker sends it (app/mail.py).
 
     Every follower is copied unless the agent unticks them for this email: pass
     cc_emails as the addresses to copy (None means all of them). Unticking does not
@@ -142,19 +147,23 @@ def email_requester(
     chosen = _copied_followers(session, ticket, cc_emails)
     cc = ", ".join(f.email for f in chosen) or None
     note_first_response(ticket, datetime.now(timezone.utc))
-    return _record(
+    message = _record(
         session, ticket, sender=author.display_name, body=body, author_user_id=author.id,
         direction=MessageDirection.OUTBOUND, visibility=MessageVisibility.PUBLIC, cc=cc,
     )
+    queue_message(session, message, ticket)
+    return message
 
 
 def record_notice(session: Session, ticket: Ticket, body: str) -> Message:
     """An automatic public message to the requester (an approval decision, say). Not an agent's
-    email, so it does not count as a first response. Mail for it arrives with phase 3."""
-    return _record(
+    email, so it does not count as a first response. It is queued as an email too."""
+    message = _record(
         session, ticket, sender="IT Support (automatic)", body=body,
         direction=MessageDirection.OUTBOUND, visibility=MessageVisibility.PUBLIC,
     )
+    queue_message(session, message, ticket)
+    return message
 
 
 def add_note(session: Session, ticket: Ticket, author: User, body: str) -> Message:
@@ -230,6 +239,19 @@ def thread_subject(session: Session, ticket: Ticket) -> str:
         if original is not None:
             return original.subject
     return ticket.subject
+
+
+def mail_subject(session: Session, ticket: Ticket) -> str:
+    """The subject of every email about this ticket: "[INC-1042] Printer jam". The reference in
+    brackets is what lets a reply be matched back to the ticket, so it is the family's: a part of a
+    split request goes out under its original's reference and subject, one conversation for the
+    requester. The preview shows exactly this."""
+    root = ticket
+    if ticket.split_from_id is not None:
+        original = session.get(Ticket, ticket.split_from_id)
+        if original is not None:
+            root = original
+    return f"[{root.reference}] {thread_subject(session, ticket)}"
 
 
 def about_text(ticket: Ticket) -> str:

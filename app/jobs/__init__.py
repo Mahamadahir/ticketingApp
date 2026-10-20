@@ -18,6 +18,7 @@ from sqlalchemy import text
 from sqlmodel import Session
 
 from app.config import settings
+from app.mail import deliver_mail
 from app.presence import CHECK_EVERY_SECONDS, refresh_presence
 from app.notifications import drop_due_for_teams, hand_to_teams
 from app.teams import deliver_pending, queue_notification
@@ -60,11 +61,19 @@ def presence(session: Session) -> None:
         refresh_presence(session)
 
 
+def mail_out(session: Session) -> None:
+    """Sends the emails that are waiting (app/mail.py). With MAIL_SENDING off it does nothing. It
+    commits after each email itself, so one that went is recorded even if a later one fails."""
+    deliver_mail(session)
+
+
 TEAMS_POSTS_EVERY_SECONDS = 60
+MAIL_OUT_EVERY_SECONDS = 30
 
 JOBS: list[Job] = [
     Job("heartbeat", settings.worker_heartbeat_seconds, heartbeat),
     Job("teams-copies", TEAMS_POSTS_EVERY_SECONDS, teams_copies),
     Job("teams-posts", TEAMS_POSTS_EVERY_SECONDS, teams_posts),
     Job("presence", CHECK_EVERY_SECONDS, presence),
+    Job("mail-out", MAIL_OUT_EVERY_SECONDS, mail_out),
 ]

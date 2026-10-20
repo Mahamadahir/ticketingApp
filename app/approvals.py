@@ -29,6 +29,7 @@ from sqlmodel import Session, select
 
 from app.audit import log_action
 from app.messages import record_notice
+from app.outbox import queue_approval
 from app.models import (
     RequestType,
     RequestTypeApprover,
@@ -97,6 +98,8 @@ def start_approvals(session: Session, ticket: Ticket, actor_email: str) -> list[
     rows = [TicketApproval(ticket_id=ticket.id, approver_id=a.id) for a in approvers]
     session.add_all(rows)
     session.flush()
+    for row, approver in zip(rows, approvers):
+        queue_approval(session, row, approver)
     record_event(
         session, ticket, EVENT_APPROVAL_REQUESTED, actor_email,
         to_value=", ".join(a.email for a in approvers),
