@@ -274,7 +274,33 @@ def test_other_paths_are_logged_as_they_are():
     assert "/tickets/INC-1042" in entry.getMessage()
 
 
-def test_the_filter_is_on_the_access_log_exactly_once():
+@pytest.mark.parametrize("name", ["uvicorn.access", "uvicorn.error"])
+def test_the_filter_is_on_uvicorns_logs_exactly_once(name):
     redact_approval_tokens()
     redact_approval_tokens()
-    assert sum(isinstance(f, ApprovalTokenFilter) for f in logging.getLogger("uvicorn.access").filters) == 1
+    assert sum(isinstance(f, ApprovalTokenFilter) for f in logging.getLogger(name).filters) == 1
+
+
+def test_the_public_app_does_not_write_an_activity_row_for_every_post(db_session, client_state):
+    from app.models import ActivityLog
+
+    with TestClient(build_app("public")) as public:
+        for _ in range(3):
+            public.post(WEBHOOK, json={"value": [notification(clientState="forged")]})
+            public.post("/approvals/not-a-real-token", data={"decision": "approve"})
+
+    assert db_session.exec(select(ActivityLog)).all() == []
+
+
+def test_the_dev_helper_is_not_mounted_outside_dev(monkeypatch):
+    monkeypatch.setattr(settings, "env", "production")
+
+    assert "/webhooks/dev/simulate-inbound" not in paths(build_app("web"))
+    assert "/webhooks/dev/simulate-inbound" not in paths(build_app("all"))
+
+
+def test_with_no_client_state_configured_nothing_is_accepted(client, db_session, monkeypatch):
+    monkeypatch.setattr(settings, "graph_webhook_client_state", "")
+
+    assert client.post(WEBHOOK, json={"value": [notification(clientState="")]}).status_code == 202
+    assert db_session.exec(select(GraphNotification)).all() == []

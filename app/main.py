@@ -100,9 +100,11 @@ def build_app(role: str) -> FastAPI:
     app.add_exception_handler(RequestValidationError, handle_validation_error)
     app.add_exception_handler(NoTicketAccess, handle_no_ticket_access)
     app.add_exception_handler(NotAuthenticated, handle_not_authenticated)
-    # Added first, so it runs inside the session middleware and can see who is signed in.
-    app.add_middleware(ActivityMiddleware)
     if role != "public":
+        # Added first, so it runs inside the session middleware and can see who is signed in. Not on
+        # the public app: anyone on the internet can POST to its routes, and each request would cost
+        # a database write and a permanent row.
+        app.add_middleware(ActivityMiddleware)
         # The public app has no sign-in, so no session cookie and no cookie key.
         app.add_middleware(
             SessionMiddleware,
@@ -112,6 +114,8 @@ def build_app(role: str) -> FastAPI:
         )
     app.mount("/static", StaticFiles(directory="app/static"), name="static")
     for router in ROLE_ROUTERS[role]:
+        if router is dev_tools.router and not settings.is_dev:
+            continue  # the dev helper exists only in dev, not merely refuses outside it
         app.include_router(router)
     if role in ("web", "all"):
         app.add_api_route("/", root, methods=["GET"])

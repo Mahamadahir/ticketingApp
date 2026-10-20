@@ -7,6 +7,7 @@ a ticket and everything else happens in the worker (3B), from those rows.
 """
 
 import hmac
+import json
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -30,8 +31,9 @@ def _text(value: Any) -> Optional[str]:
 
 def _matches_client_state(notification: Any) -> bool:
     client_state = notification.get("clientState") if isinstance(notification, dict) else None
-    # Constant-time compare, and anything not a string never matches.
-    return isinstance(client_state, str) and hmac.compare_digest(
+    # Constant-time compare, and anything not a string never matches. With no state configured nothing
+    # can be checked, so nothing is accepted (an empty clientState would otherwise match an empty setting).
+    return bool(settings.graph_webhook_client_state) and isinstance(client_state, str) and hmac.compare_digest(
         client_state.encode(), settings.graph_webhook_client_state.encode()
     )
 
@@ -60,11 +62,15 @@ async def graph_notifications(request: Request, session: Session = Depends(get_s
     declared = request.headers.get("content-length")
     if declared and declared.isdigit() and int(declared) > MAX_BODY_BYTES:
         raise HTTPException(status_code=413, detail="Body too large")
-    body = await request.body()
-    if len(body) > MAX_BODY_BYTES:
-        raise HTTPException(status_code=413, detail="Body too large")
+    # Read in pieces and stop at the cap, so a request with no (or a false) length cannot make the
+    # server hold an unbounded body in memory.
+    body = bytearray()
+    async for chunk in request.stream():
+        body += chunk
+        if len(body) > MAX_BODY_BYTES:
+            raise HTTPException(status_code=413, detail="Body too large")
     try:
-        payload = await request.json()
+        payload = json.loads(bytes(body))
     except ValueError:
         raise HTTPException(status_code=400, detail="Body is not valid JSON")
     if not isinstance(payload, dict):

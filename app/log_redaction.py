@@ -26,7 +26,8 @@ class ApprovalTokenFilter(logging.Filter):
 
 
 def redact_approval_tokens() -> None:
-    """Adds the filter to uvicorn's access log, once however many times this is called."""
-    log = logging.getLogger("uvicorn.access")
-    if not any(isinstance(f, ApprovalTokenFilter) for f in log.filters):
-        log.addFilter(ApprovalTokenFilter())
+    """Adds the filter to uvicorn's access and error logs, once however many times this is called."""
+    for name in ("uvicorn.access", "uvicorn.error"):
+        log = logging.getLogger(name)
+        if not any(isinstance(f, ApprovalTokenFilter) for f in log.filters):
+            log.addFilter(ApprovalTokenFilter())
