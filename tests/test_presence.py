@@ -104,6 +104,27 @@ def test_an_agent_the_directory_does_not_know_is_never_out_of_office(client, db_
     assert db_session.get(User, unknown.id).out_of_office_checked_at is None
 
 
+def test_an_agent_graph_stops_reporting_is_no_longer_out_of_office(client, db_session):
+    agent = an_agent(db_session, "ann@example.com", "Ann")
+    graph = FakeGraph({"ann@example.com": "oid-ann"}, away={"oid-ann"})
+    refresh(db_session, graph)
+    graph.presences = lambda ids: []  # Graph returns nothing for them now
+
+    refresh(db_session, graph, now=NOW + timedelta(minutes=15))
+
+    assert not db_session.get(User, agent.id).out_of_office
+
+
+def test_a_differently_cased_id_from_graph_still_matches(client, db_session):
+    agent = an_agent(db_session, "ann@example.com", "Ann")
+    graph = FakeGraph({"ann@example.com": "OID-Ann"})
+    graph.presences = lambda ids: [{"id": "oid-ann", "outOfOfficeSettings": {"isOutOfOffice": True}}]
+
+    refresh(db_session, graph)
+
+    assert is_out_of_office(db_session.get(User, agent.id), NOW)
+
+
 def test_end_users_are_not_looked_up(client, db_session):
     db_session.add(User(email="req@example.com", display_name="Requester", role=UserRole.END_USER))
     db_session.commit()
@@ -213,6 +234,18 @@ def test_a_graph_error_on_presence_is_raised_not_swallowed(monkeypatch):
 
     with pytest.raises(httpx.HTTPStatusError):
         graph_with(monkeypatch, handler).presences(["id-1"])
+
+
+def test_a_slash_in_an_email_cannot_change_the_graph_route(monkeypatch):
+    seen = []
+
+    def handler(method, url, **kw):
+        seen.append(url)
+        return httpx.Response(200, json={"id": "x"}, request=httpx.Request(method, url))
+
+    graph_with(monkeypatch, handler).object_id_for("a/b@example.com")
+
+    assert seen[0].endswith("/users/a%2Fb%40example.com")
 
 
 def test_a_user_graph_does_not_know_has_no_object_id(monkeypatch):

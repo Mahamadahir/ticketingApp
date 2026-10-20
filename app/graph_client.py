@@ -53,7 +53,7 @@ class GraphClient:
         usual case; anyone whose sign-in name differs is not found and so never marked out of office.
         Needs User.Read.All (application)."""
         response = httpx.get(
-            f"{GRAPH_BASE_URL}/users/{quote(email)}",
+            f"{GRAPH_BASE_URL}/users/{quote(email, safe='')}",
             params={"$select": "id"},
             headers={"Authorization": f"Bearer {self._get_access_token()}"},
             timeout=15,

@@ -46,7 +46,7 @@ not exist (`infra/` compiles but has never run against a subscription).
 | 2E out-of-office detection (Graph presence): the worker's `presence` job stores each agent's flag; OOO agents are labelled in the assignee pickers and left out of team-wide notifications | built, in review | `app/presence.py` |
 | Phases 2 to 9 | not started | `docs/plan.md`, "Build order" |
 
-Tests: 764 passing on Postgres 16.
+Tests: 767 passing on Postgres 16.
 
 ## Next up
 **Deferred from the escalation work (documented, not built).**

@@ -64,18 +64,24 @@ def refresh_presence(
         if agent.entra_object_id is None:
             try:
                 agent.entra_object_id = object_id_for(agent.email)
-            except Exception:
-                logger.warning("presence: could not look up an agent in the directory", exc_info=True)
+            except Exception as error:
+                logger.warning("presence: could not look up an agent in the directory (%s)", type(error).__name__)
             session.add(agent)
-    known = {agent.entra_object_id: agent for agent in agents if agent.entra_object_id}
+    known = {agent.entra_object_id.lower(): agent for agent in agents if agent.entra_object_id}
     if not known:
         return 0
     readings = presences(list(known))
+    read = set()
     for reading in readings:
-        agent = known.get(reading.get("id"))
+        agent = known.get(str(reading.get("id") or "").lower())
         if agent is None:
             continue
+        read.add(agent.id)
         agent.out_of_office = bool((reading.get("outOfOfficeSettings") or {}).get("isOutOfOffice"))
         agent.out_of_office_checked_at = now
         session.add(agent)
+    for agent in known.values():
+        if agent.id not in read and agent.out_of_office:
+            agent.out_of_office = False  # Graph no longer reports them: do not keep the old reading alive
+            session.add(agent)
     return len(readings)
