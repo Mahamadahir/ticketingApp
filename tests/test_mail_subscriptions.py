@@ -696,6 +696,21 @@ def test_a_lifecycle_catch_up_request_runs_the_catch_up_too(db_session, mail, mo
     assert [n.resource_id for n in notified(db_session) if n.lifecycle_event is None] == ["lost"]
 
 
+def test_a_failing_catch_up_does_not_undo_the_subscription_work(db_session, mail, monkeypatch):
+    monkeypatch.setattr(settings, "graph_subscription_enabled", True)
+    monkeypatch.setattr(settings, "mail_catch_up_enabled", True)
+    monkeypatch.setattr(subscriptions, "_graph", lambda graph=None: mail)
+    graph_subscription(db_session)
+    db_session.commit()
+    note = lifecycle(db_session, "missed", row(db_session).subscription_id)
+    mail.fail["delta"] = http_error(503, "ServiceUnavailable")
+
+    with pytest.raises(SubscriptionError):
+        graph_subscription(db_session)
+
+    assert handled(db_session, note)  # the notice was dealt with; only the catch-up failed
+
+
 def test_switching_on_without_the_graph_values_or_an_https_address_is_refused():
     assert mail_sync_errors(Settings(graph_subscription_enabled=True))
     assert mail_sync_errors(Settings(mail_catch_up_enabled=True))

@@ -124,6 +124,10 @@ notification settings that 2B stores and nothing yet sends. The Graph client in 
   that has no row yet (any state), so 3B needs no code change; it dedupes on `resource_id`, and 3B's unique `internetMessageId` is
   the backstop (a webhook and a catch-up can race and write two rows for one id). If 3B wants a different hand-over it passes its own
   function to `catch_up(intake=...)`.
+- **Race to be aware of:** a webhook and a catch-up run can both insert a `GraphNotification` row for one message id (the table has
+  no unique constraint on `resource_id`, so the webhook stays a plain insert inside Graph's 3 seconds). Two rows must never mean
+  two tickets: 3B's processing has to be idempotent per message, with the unique constraint on the message's `internetMessageId`
+  (and the Graph message id) as the backstop, and the second row simply marked processed.
 - Switches (worker env, all off by default): `GRAPH_SUBSCRIPTION_ENABLED` + `GRAPH_NOTIFICATION_URL` (public https address of the
   webhook, also the lifecycle address), `MAIL_CATCH_UP_ENABLED` (polling only, needs no public URL). Settings: subscription lifetime
   (10000 min, capped at 10070), renew margin (1440 min), backfill days (3). The first catch-up collects the last 3 days of the inbox,

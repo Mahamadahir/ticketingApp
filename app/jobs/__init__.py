@@ -75,6 +75,9 @@ def graph_subscription(session: Session) -> None:
     if settings.graph_subscription_enabled:
         outcome = keep_subscription_alive(session)
         if outcome.sync_wanted and settings.mail_catch_up_enabled:
+            # Keep what the subscription check did (handled notices, a renewal): a failing catch-up
+            # rolls back its own session, and must not undo that.
+            session.commit()
             catch_up(session)  # a missed or removed subscription may have cost us mail
 
 
