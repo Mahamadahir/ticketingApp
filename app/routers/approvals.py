@@ -2,7 +2,8 @@
 
 GET shows the request and asks; it never decides. Deciding is the POST from that page, so a
 mail scanner or link preview that fetches the link cannot approve or decline for the person.
-This is an internet-facing route: it belongs with the public routers when APP_ROLE splits them.
+This is an internet-facing route, served by the public app (APP_ROLE=public), so it is rate limited
+per caller address: the token is a credential in an address, and guessing it should be impractical.
 """
 
 from typing import Optional
@@ -23,10 +24,11 @@ from app.approvals import (
 )
 from app.database import get_session
 from app.messages import requester_visible_messages
+from app.rate_limit import APPROVALS, rate_limited
 from app.models import RequestType, Ticket, TicketApproval, TicketStatus, User
 from app.settings_store import APPROVAL_LINK_MINUTES, get_int_setting
 
-router = APIRouter(prefix="/approvals", tags=["approvals"])
+router = APIRouter(prefix="/approvals", tags=["approvals"], dependencies=[Depends(rate_limited(APPROVALS))])
 templates = Jinja2Templates(directory="app/templates")
 
 # The token is in the address, so keep it out of caches and Referer headers.

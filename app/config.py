@@ -3,11 +3,20 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 INSECURE_SECRETS = {"", "change-me", "dev-secret-change-me"}
 
+# Which routes a process serves (app/main.py build_app), and for the worker which settings it needs.
+# web: the agent console, portal and admin. public: only the Graph webhook, the emailed approval
+# link and /health, open to the internet. worker: no routes (python -m app.worker). all: every route
+# in one process, for local development and tests only.
+APP_ROLES = ("all", "web", "public", "worker")
+
 
 class Settings(BaseSettings):
     # dev, staging or production. Defaults to production so a missing
     # setting can never switch on dev-only routes.
     env: str = "production"
+    # What this process is for (APP_ROLES). "all" serves everything and is refused outside dev, so a
+    # deployment that forgets to say what it is does not put the agent console on the internet.
+    app_role: str = "all"
 
     database_url: str = "postgresql+psycopg2://ticketing:ticketing@db:5432/ticketing"
 
@@ -53,6 +62,13 @@ class Settings(BaseSettings):
     # Where the app is reached, so a Teams card can link to the ticket. Blank: no link on the card.
     public_base_url: str = ""
 
+    # Rate limits on the public routes, per caller address per minute, per replica (app/rate_limit.py).
+    # The approval link is a credential in an address, so guessing it is slowed down; the Graph webhook
+    # gets a high limit because Microsoft sends from few addresses and a refused notification is lost
+    # until the catch-up sync finds the mail.
+    rate_limit_approvals_per_minute: int = 30
+    rate_limit_webhook_per_minute: int = 600
+
     # Comma-separated emails granted super_admin on first login, so there's
     # a way into /admin before any roles have been assigned there.
     super_admin_emails: str = ""
@@ -92,14 +108,25 @@ def unsafe_setting_errors(config: Settings) -> list[str]:
     errors = []
     if config.mail_sending not in MAIL_SENDING_MODES:
         errors.append(f"MAIL_SENDING must be one of {', '.join(MAIL_SENDING_MODES)}")
+    if config.app_role not in APP_ROLES:
+        errors.append(f"APP_ROLE must be one of {', '.join(APP_ROLES)}")
     if config.is_dev:
         return errors
     if config.mail_sending == "dev":
         errors.append("MAIL_SENDING=dev only works in the dev environment (it sends nothing)")
+
+    if config.app_role == "all":
+        errors.append("APP_ROLE is unset: say web, public or worker, so the process serves only its own routes")
+    # On web this signs the session cookie. On public and the worker there is no cookie; it signs and
+    # checks the emailed approval links, which web never does, so it is the one secret they share.
     if config.session_secret_key in INSECURE_SECRETS:
         errors.append("SESSION_SECRET_KEY is unset or a default value")
-    if config.graph_configured and config.graph_webhook_client_state in INSECURE_SECRETS:
+    # The public app is the one that receives the webhook, so it needs the state to check it against.
+    if (config.graph_configured or config.app_role == "public") and config.graph_webhook_client_state in INSECURE_SECRETS:
         errors.append("GRAPH_WEBHOOK_CLIENT_STATE is unset or a default value")
+    # The public app is open to the internet: it must not be able to sign anyone in.
+    if config.app_role == "public" and config.sso_client_secret:
+        errors.append("The public app must not hold the SSO secret (SSO_CLIENT_SECRET)")
     return errors
 
 

@@ -429,6 +429,28 @@ class OutboundEmail(SQLModel, table=True):
     body: Optional[str] = Field(default=None)
 
 
+class GraphNotification(SQLModel, table=True):
+    """A change notification Microsoft Graph sent to the webhook (phase 3A). The webhook only checks
+    the clientState and stores one row per notification, then answers 202 within Graph's three
+    seconds. The worker (3B) fetches the message and turns it into a ticket or a reply, and (3C) acts
+    on subscription lifecycle events. Nothing here is mail content: Graph sends only ids."""
+
+    # The worker looks for unprocessed rows only; this keeps that cheap however many were handled.
+    __table_args__ = (Index("ix_graphnotification_unprocessed", "id", postgresql_where=text("processed_at IS NULL")),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    received_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    subscription_id: Optional[str] = Field(default=None)
+    change_type: Optional[str] = Field(default=None)  # created, updated, deleted
+    # Set on a lifecycle notification (reauthorizationRequired, subscriptionRemoved, missed), which
+    # arrives at the same address; blank for a change to a message.
+    lifecycle_event: Optional[str] = Field(default=None)
+    resource: Optional[str] = Field(default=None)  # e.g. users/<mailbox>/messages/<id>
+    resource_id: Optional[str] = Field(default=None)  # the message id, from resourceData.id
+    processed_at: Optional[datetime] = Field(default=None)
+    last_error: Optional[str] = Field(default=None)
+
+
 TICKET_COUNTER = "ticket"
 
 

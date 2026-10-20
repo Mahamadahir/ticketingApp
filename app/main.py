@@ -14,8 +14,9 @@ from app.activity import ActivityMiddleware
 from app.auth import NotAuthenticated, get_current_user
 from app.visibility import NoTicketAccess
 from app.config import settings, unsafe_setting_errors
+from app.log_redaction import redact_approval_tokens
 from app.models import User, UserRole
-from app.routers import admin, approvals, auth, health, my_settings, notifications, portal, tickets, webhooks
+from app.routers import admin, approvals, auth, dev_tools, health, my_settings, notifications, portal, tickets, webhooks
 
 
 @asynccontextmanager
@@ -24,28 +25,6 @@ async def lifespan(app: FastAPI):
     if errors:
         raise RuntimeError("Refusing to start: " + "; ".join(errors))
     yield
-
-
-app = FastAPI(title="IT Support Ticketing", lifespan=lifespan)
-# Added first, so it runs inside the session middleware and can see who is signed in.
-app.add_middleware(ActivityMiddleware)
-app.add_middleware(
-    SessionMiddleware,
-    secret_key=settings.session_secret_key,
-    https_only=not settings.is_dev,
-    same_site="lax",
-)
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
-app.include_router(health.router)
-app.include_router(auth.router)
-app.include_router(tickets.router)
-app.include_router(tickets.reference_router)
-app.include_router(portal.router)
-app.include_router(approvals.router)
-app.include_router(notifications.router)
-app.include_router(my_settings.router)
-app.include_router(admin.router)
-app.include_router(webhooks.router)
 
 
 templates = Jinja2Templates(directory="app/templates")
@@ -68,21 +47,18 @@ def _htmx_error(message: str, status_code: int) -> HTMLResponse:
     )
 
 
-@app.exception_handler(StarletteHTTPException)
 async def handle_http_exception(request: Request, exc: StarletteHTTPException):
     if _is_htmx(request) and 400 <= exc.status_code < 500:
         return _htmx_error(str(exc.detail), exc.status_code)
     return await http_exception_handler(request, exc)
 
 
-@app.exception_handler(RequestValidationError)
 async def handle_validation_error(request: Request, exc: RequestValidationError):
     if _is_htmx(request):
         return _htmx_error("Check what you entered: a field is missing, too long or not valid.", 422)
     return await request_validation_exception_handler(request, exc)
 
 
-@app.exception_handler(NoTicketAccess)
 def handle_no_ticket_access(request: Request, exc: NoTicketAccess):
     if _is_htmx(request):
         return _htmx_error("You don't have access to do that on this ticket.", 403)
@@ -91,13 +67,58 @@ def handle_no_ticket_access(request: Request, exc: NoTicketAccess):
     return templates.TemplateResponse(request, "no_access.html", {"user": getattr(request.state, "user", None)}, status_code=403)
 
 
-@app.exception_handler(NotAuthenticated)
 def handle_not_authenticated(request: Request, exc: NotAuthenticated):
     return RedirectResponse(url="/auth/login")
 
 
-@app.get("/")
 def root(user: User = Depends(get_current_user)):
     if user.role == UserRole.END_USER:
         return RedirectResponse(url="/portal")
     return RedirectResponse(url="/tickets")
+
+
+# Which routers each role serves. The public app is open to the internet, so it carries only what
+# Microsoft and people off the VPN must reach (the Graph webhook, the emailed approval link) and
+# /health; nothing that needs a signed-in agent. "all" is every route in one process, for local
+# development and tests (it is refused outside dev, see unsafe_setting_errors).
+PUBLIC_ROUTERS = [health.router, webhooks.router, approvals.router]
+WEB_ROUTERS = [
+    health.router, auth.router, tickets.router, tickets.reference_router, portal.router,
+    notifications.router, my_settings.router, admin.router, dev_tools.router,
+]
+ROLE_ROUTERS = {
+    "web": WEB_ROUTERS,
+    "public": PUBLIC_ROUTERS,
+    "all": WEB_ROUTERS + [webhooks.router, approvals.router],
+    "worker": [health.router],  # the worker runs python -m app.worker and serves nothing
+}
+
+
+def build_app(role: str) -> FastAPI:
+    app = FastAPI(title="IT Support Ticketing", lifespan=lifespan)
+    app.add_exception_handler(StarletteHTTPException, handle_http_exception)
+    app.add_exception_handler(RequestValidationError, handle_validation_error)
+    app.add_exception_handler(NoTicketAccess, handle_no_ticket_access)
+    app.add_exception_handler(NotAuthenticated, handle_not_authenticated)
+    # Added first, so it runs inside the session middleware and can see who is signed in.
+    app.add_middleware(ActivityMiddleware)
+    if role != "public":
+        # The public app has no sign-in, so no session cookie and no cookie key.
+        app.add_middleware(
+            SessionMiddleware,
+            secret_key=settings.session_secret_key,
+            https_only=not settings.is_dev,
+            same_site="lax",
+        )
+    app.mount("/static", StaticFiles(directory="app/static"), name="static")
+    for router in ROLE_ROUTERS[role]:
+        app.include_router(router)
+    if role in ("web", "all"):
+        app.add_api_route("/", root, methods=["GET"])
+    return app
+
+
+redact_approval_tokens()
+# An unknown role is not served as anything wider than public: the start-up check refuses it with a
+# clear message, and until then it gets the smallest set of routes.
+app = build_app(settings.app_role if settings.app_role in ROLE_ROUTERS else "public")

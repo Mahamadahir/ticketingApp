@@ -62,7 +62,7 @@ def test_production_rejects_default_client_state_once_graph_is_configured():
 
 
 def test_production_accepts_real_secrets():
-    assert unsafe_setting_errors(Settings(env="production", session_secret_key="a-real-secret")) == []
+    assert unsafe_setting_errors(Settings(env="production", app_role="web", session_secret_key="a-real-secret")) == []
 
 
 def test_dev_login_still_works_in_dev(client):
