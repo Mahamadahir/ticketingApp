@@ -23,6 +23,7 @@ permissions:
 
 jobs:
   test:
+    # Pinned until a run on Ubuntu 26 (the new ubuntu-latest) has been checked.
     runs-on: ubuntu-24.04
 
     services:
