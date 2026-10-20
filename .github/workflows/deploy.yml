@@ -134,6 +134,36 @@ jobs:
       # infra/<environment>.bicepparam reads them with readEnvironmentVariable.
       # Every secret must be supplied on every deploy or the new revision
       # silently loses it (infra/README.md, "Things that bite on redeploys").
+      # A switch that is on without what it needs deploys cleanly and then does
+      # nothing (or queues Teams posts nobody sends), so refuse it here.
+      - name: Check the Teams and presence settings
+        env:
+          TEAMS_NEW_TICKET_WEBHOOK_URL: ${{ secrets.TEAMS_NEW_TICKET_WEBHOOK_URL }}
+          GRAPH_CLIENT_SECRET: ${{ secrets.GRAPH_CLIENT_SECRET }}
+        run: |
+          set -euo pipefail
+          fail=0
+          for name in TEAMS_NEW_TICKET_ENABLED TEAMS_NOTIFICATIONS_ENABLED PRESENCE_ENABLED; do
+            value="${!name:-}"
+            case "$value" in
+              "" | true | false) ;;
+              *) echo "::error::$name must be 'true' or 'false', not '$value'." >&2; fail=1 ;;
+            esac
+          done
+          if [ "${TEAMS_NEW_TICKET_ENABLED:-}" = true ] || [ "${TEAMS_NOTIFICATIONS_ENABLED:-}" = true ]; then
+            if [ -z "$TEAMS_NEW_TICKET_WEBHOOK_URL" ]; then
+              echo "::error::Teams posts are on but the TEAMS_NEW_TICKET_WEBHOOK_URL secret is empty." >&2
+              fail=1
+            fi
+          fi
+          if [ "${PRESENCE_ENABLED:-}" = true ]; then
+            if [ -z "$GRAPH_TENANT_ID" ] || [ -z "$GRAPH_CLIENT_ID" ] || [ -z "$GRAPH_CLIENT_SECRET" ]; then
+              echo "::error::PRESENCE_ENABLED needs GRAPH_TENANT_ID, GRAPH_CLIENT_ID and GRAPH_CLIENT_SECRET." >&2
+              fail=1
+            fi
+          fi
+          exit "$fail"
+
       - name: Preview the deployment
         env:
           IMAGE: ${{ steps.image.outputs.image }}

@@ -28,9 +28,9 @@ param graphSharedMailbox = readEnvironmentVariable('GRAPH_SHARED_MAILBOX', '')
 param superAdminEmails = readEnvironmentVariable('SUPER_ADMIN_EMAILS', '')
 
 // Teams posts and out-of-office detection, off unless set to 'true'.
-param teamsNewTicketEnabled = toLower(readEnvironmentVariable('TEAMS_NEW_TICKET_ENABLED', 'false')) == 'true'
-param teamsNotificationsEnabled = toLower(readEnvironmentVariable('TEAMS_NOTIFICATIONS_ENABLED', 'false')) == 'true'
-param presenceEnabled = toLower(readEnvironmentVariable('PRESENCE_ENABLED', 'false')) == 'true'
+param teamsNewTicketEnabled = toLower(trim(readEnvironmentVariable('TEAMS_NEW_TICKET_ENABLED', 'false'))) == 'true'
+param teamsNotificationsEnabled = toLower(trim(readEnvironmentVariable('TEAMS_NOTIFICATIONS_ENABLED', 'false'))) == 'true'
+param presenceEnabled = toLower(trim(readEnvironmentVariable('PRESENCE_ENABLED', 'false'))) == 'true'
 
 param postgresAdminPassword = readEnvironmentVariable('POSTGRES_ADMIN_PASSWORD')
 param sessionSecretKey = readEnvironmentVariable('SESSION_SECRET_KEY')

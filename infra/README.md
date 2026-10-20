@@ -214,6 +214,8 @@ Create the webhook in Teams ("Post to a channel when a webhook request is receiv
 and keep the channel IT-only, since cards show ticket subjects. Supply it on every
 deploy once set, or the new revision loses it.
 
+The deploy workflow refuses a switch that is on without what it needs (Teams on with no webhook secret, presence on without the `GRAPH_*` settings) or a value other than `true`/`false`. A manual deploy has no such check. Turning a Teams switch on while `deployWorker` is false queues posts that nothing sends until the worker runs.
+
 All of these only act in the worker, so `deployWorker` in the param files must be
 `true` as well (it is `false` until the worker has the jobs you want).
 
