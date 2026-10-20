@@ -49,8 +49,8 @@ not exist (`infra/` compiles but has never run against a subscription).
 | With supplier status (waiting on an outside supplier or vendor; set by hand, SLA clock keeps running) | merged (#53) | `app/models.py`, migration `a9d3c6e1f275` |
 | 3A public surface: `APP_ROLE` split (`build_app` in `app/main.py`), Graph webhook stores each notification and returns 202, rate limiting, approval tokens kept out of the access log | built, in review | `app/main.py`, `app/routers/webhooks.py`, `app/rate_limit.py`, `app/log_redaction.py` |
 | Dependency hygiene 1: dropped unused `pytest-cov` and the `uvicorn[standard]` extras; Dependabot (pip, docker, actions; weekly, minor and patch grouped); `pip-audit` on requirements changes and nightly (`.github/workflows/pip-audit.yml`) | built, in review | `.github/dependabot.yml`, `.github/workflows/pip-audit.yml` |
-| 3B inbound mail: worker fetches stored notifications, replies join tickets, new mail raises tickets, auto-reply filter | not started | |
 | 3C subscriptions and delta catch-up: the worker creates, renews and recreates the mailbox subscription, acts on lifecycle notifications, and catches up missed mail with an inbox delta query; Admin > Mail intake; `/health` warnings | built, in review | `app/subscriptions.py`, migration `c3b7e1a94d20` |
+| 3B inbound mail: the `mail-in` worker job turns stored notifications into tickets (source email) and replies, de-duplicated, own-mail and auto-reply filter, Cc becomes followers, files saved through the attachment rules; the dev simulate-inbound runs the same intake (`INBOUND_ENABLED`, off by default) | built, in review | `app/inbound.py`, `app/graph_client.py`, migration `e4b7c1a9d052` |
 | 3D outbound mail: outbox, real send, approval and "raised for you" emails (`MAIL_SENDING` off / dev / graph; Admin > Outbound mail) | merged (#52) | `app/outbox.py`, `app/mail.py` |
 | 3E-storage attachments: storage interface (local directory, Azure Blob with user-delegation SAS), `attachment` table, `/attachments/{id}`, content-type detection and safe serving | built, in review (#49) | `app/storage.py`, `app/attachments.py`, `app/routers/attachments.py` |
 | 3F wiring: Bicep and deploy workflow for the public app, mailbox, storage, Application Insights | not started | |
@@ -89,6 +89,19 @@ notification settings that 2B stores and nothing yet sends. The Graph client in 
   Agent 3 does the storage interface; ingestion joins 3B later.
 - *3F Wiring:* Bicep and the deploy workflow for the public app, mailbox variables, storage identity, Application Insights. Agent 3.
 - `docs/azure-setup.md` (a separate PR by Agent 1) is the by-hand Azure setup checklist.
+
+**3B seam with 3C (agreed in code).** `app.inbound.process_message(session, graph_message_id, client=None, storage=None)` reads one
+message (and its files) from Graph and handles it; it is idempotent (unique Graph id and Message-ID in `InboundMail`, claimed in the
+same transaction as the ticket) and does not commit, so the delta catch-up job (3C) calls it for every message id it finds and the
+duplicates fall away. It returns `Handled(outcome, ticket, message)`; outcomes are `ticket_created`, `reply_added`, `duplicate`, `gone`
+and `ignored_*`. The `mail-in` job (`process_notifications`) handles only `GraphNotification` rows with no `lifecycle_event` and
+`change_type=created`; other change types are marked done, and lifecycle rows are left untouched for 3C to process and mark. Retries use
+the new `attempts` / `next_attempt_at` columns and give up (marked done with the reason) after the outbox's limit; the catch-up is what
+recovers a given-up mail. `Message.graph_message_id` now holds the Graph id of each received mail, so a later change can reply to it
+with `createReply` (sendMail returns no id, so a sent message has none).
+
+**Reply notification shim.** `record_inbound(..., reply_by=)` arrives with PR #54. Until it merges, `app/inbound.py` passes `reply_by=<sender>`
+only if the argument exists (`_HAS_REPLY_BY`); once #54 is on main delete the shim and pass it directly.
 
 **Deferred from the escalation work (documented, not built).**
 - *MSP handoff (phase 5):* Send to MSP / escalate to the MSP, the "thread only has emails
@@ -283,6 +296,11 @@ sleep, restart it and `docker start ticketingapp-db-1`.
   (`docs/plan.md`, "MSP").
 - 20 Oct: a reply from the requester or a follower notifies the ticket's assignee only, as "Ticket updated by <display name>"
   (their email when they have no name). Decided: when there is no assignee, no one is notified (not the team).
+- 20 Oct (3B): a mail is added to an existing ticket only if its sender is the requester or an external follower, however the ticket was
+  found (conversation, the Message-ID it answers, then the `[INC-n]` reference in the subject). The reference is on every email, so
+  anyone who saw one could otherwise write on that ticket; anyone else gets a ticket of their own with an event naming the one they cited.
+  Only the Cc of the mail that opens a ticket makes followers. A sender making more than `INBOUND_MAX_PER_SENDER_HOUR` (30, TBC) tickets
+  and replies in an hour is set aside as a probable loop. A reply on a Resolved or Closed ticket is only recorded (phase 4 does reopen).
 - 14 Oct: added phase 10 (security hardening and go-live gate) to `docs/plan.md`, and agreed that
   background work is driven by the database (rows with leases and retries) rather than in-memory
   timers. Where that stands (20 Oct): sending is built that way (the `TeamsPost` and `OutboundEmail`
@@ -293,6 +311,12 @@ sleep, restart it and `docker start ticketingapp-db-1`.
 
 ## Open questions
 
+- **Inbound mail (3B), to confirm.** (1) A person CC'd on a thread who then replies without being a follower becomes a new ticket, not a
+  follower of the old one; should a reply-all from an unknown address join as a follower when the thread (not just the reference) matches?
+  (2) Exchange may give two separate mails with the same subject the same `conversationId`; a new mail from the requester could then join
+  an old (even closed) ticket until phase 4's "reply after closure makes a new ticket". (3) Nothing yet acknowledges a new ticket ("your ticket
+  is open"); that automatic notice is not built. (4) Mail is trusted on its From address (Mimecast / Exchange are expected to enforce
+  SPF, DKIM and DMARC); the code does not read Authentication-Results. (5) The Cc of an alias or distribution list becomes a follower like a person.
 - **With supplier: should it pause the SLA clock?** Built with the clock running (only Awaiting user pauses it today), so time spent
   waiting on a supplier counts against the target. Pausing would be one line in `app/sla.py` `on_status_change`, but it would make a
   ticket look healthy while it waits on someone we do not control. Also decide whether a requester reply on a With supplier ticket
@@ -316,6 +340,18 @@ sleep, restart it and `docker start ticketingapp-db-1`.
   treats any 2xx as sent). Also confirm a wrong URL leaves the post unsent with "Teams answered 4xx" and no URL in the log.
 
 - Mail subscription and catch-up (3C; tested locally with a fake Graph client and a faked HTTP layer only): with `GRAPH_SUBSCRIPTION_ENABLED=true`, `GRAPH_NOTIFICATION_URL` set to the public app's `/webhooks/graph/notifications` and the worker deployed (public app up first, since Graph calls it during creation), grant Mail.Read (mailbox-scoped) and check the worker creates exactly one subscription (Admin > Mail intake, and `GET /subscriptions`), that Graph accepts a lifetime of 10000 minutes (limit believed to be 10070 for mail), that a new mail produces a `graphnotification` row, and that `clientState` matches. Restart the worker and scale a second one: still one subscription. Shorten the lifetime setting to ~2 hours with a margin of 60 to watch a real renewal. Delete the subscription in Graph and check it is recreated within 5 minutes. Check lifecycle notifications really arrive at the same address (`reauthorizationRequired`, `subscriptionRemoved`, `missed`) and are handled without `/reauthorize`. Stop the public app for an hour, send mail, and check the catch-up finds it; check the delta query accepts `$filter=receivedDateTime ge` with `$select=id,receivedDateTime`, that the stored deltaLink works on the next run, and that a 410 restarts cleanly. `/health` warnings show on staging.
+- Inbound mail (3B; tested locally with a fake Graph and simulated payloads only): after 3C creates the subscription and with `INBOUND_ENABLED=true`
+  on the worker (it needs the GRAPH_* values and `GRAPH_SHARED_MAILBOX`, `Mail.Read` admin-consented and limited to the mailbox): send a
+  mail from a test account and check a ticket (source email) appears within about 30 seconds with the right requester, subject, text (a
+  plain-text `uniqueBody`, no quoted thread on a reply) and Cc people as followers; reply to our own email from the requester's mail client and
+  check it joins the ticket (by the reference and by the thread), wakes an Awaiting user ticket, and keeps only the new text; check
+  `Prefer: outlook.body-content-type="text"` is honoured for HTML-only and Outlook mail; send an Outlook out-of-office reply, a bounce and a
+  mailing-list mail and check each is ignored (`inboundmail.outcome`), and that mail from the mailbox itself is; check `internetMessageHeaders`
+  really contains `Auto-Submitted` and `In-Reply-To` after Mimecast; attach a PDF, a picture, an `.exe`, a file over the limit and an attached
+  email and check each is stored or noted; kill the worker mid-run and check no ticket is doubled; check a stranger quoting a `[INC-n]`
+  reference gets a new ticket, not a message on the old one; check a `Mail.Read` 403 shows as `last_error` on the notification and retries.
+  Not proved locally: real Graph payload shapes (`from`, `uniqueBody`, header names and casing), `conversationId` behaviour, attachment
+  download for files over 3 MB, Mimecast rewriting or stripping headers.
 
 The full list is "Azure-only verification" in `docs/plan.md`. Added by work so far:
 - `FORWARDED_ALLOW_IPS` set to the Container Apps subnet, so the activity log records

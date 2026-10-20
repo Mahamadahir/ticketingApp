@@ -226,7 +226,9 @@ class Message(SQLModel, table=True):
     # Who was copied on an outgoing email, as a comma-separated list, recorded at
     # send time so the timeline shows exactly who received it.
     cc: Optional[str] = Field(default=None)
-    graph_message_id: Optional[str] = Field(default=None)
+    # The Graph id of the mail this message arrived as (app/inbound.py); blank for notes, portal
+    # comments and outgoing mail, whose id sendMail does not return. A reply can be threaded onto it.
+    graph_message_id: Optional[str] = Field(default=None, index=True)
     author_user_id: Optional[int] = Field(default=None, foreign_key="user.id")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -476,6 +478,28 @@ class GraphNotification(SQLModel, table=True):
     resource_id: Optional[str] = Field(default=None)  # the message id, from resourceData.id
     processed_at: Optional[datetime] = Field(default=None)
     last_error: Optional[str] = Field(default=None)
+    # 3B: tries so far and the earliest next one, so a message Graph cannot give us yet backs off and
+    # one that never works is given up on instead of being fetched every run.
+    attempts: int = Field(default=0, sa_column_kwargs={"server_default": "0"})
+    next_attempt_at: Optional[datetime] = Field(default=None)
+
+
+class InboundMail(SQLModel, table=True):
+    """One row for every mail the intake has handled, whatever came of it (app/inbound.py). The unique
+    Graph id and internet message id are what stop the same mail becoming two tickets or two replies, however
+    often a notification or the catch-up job hands it over. Holds ids and the outcome, not the mail."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    graph_message_id: str = Field(unique=True)
+    # The Message-ID header: the same email reaching the mailbox twice gets two Graph ids but one of these.
+    internet_message_id: Optional[str] = Field(default=None, unique=True)
+    # Graph's thread id. A later mail in the same conversation is matched to this row's ticket.
+    conversation_id: Optional[str] = Field(default=None, index=True)
+    sender: Optional[str] = Field(default=None, index=True)
+    outcome: str  # ticket_created, reply_added or ignored_*
+    ticket_id: Optional[int] = Field(default=None, foreign_key="ticket.id", index=True)
+    message_id: Optional[int] = Field(default=None, foreign_key="message.id")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class GraphSubscription(SQLModel, table=True):

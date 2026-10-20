@@ -844,8 +844,18 @@ Automatic emails use admin-managed templates, previewed when edited.
   *Not proved locally (staging):* real `sendMail` with Mimecast in front and the mailbox-scoped
   `Mail.Send` grant; that `X-Auto-Response-Suppress` is accepted as a custom header; that a reply keeps
   the reference in the subject through a mail client's own "Re:" handling. Real `In-Reply-To`
-  threading (replying to the Graph message id with `createReply`) is a follow-up once inbound mail (3B)
-  stores that id on the message; until then threading is by the reference in the subject.
+  threading (replying to the Graph message id with `createReply`) is a follow-up: inbound mail (3B) now stores
+  the Graph id on each received message; until then threading is by the reference in the subject.
+- *Inbound mail, built in 3B (20 Oct 2026):* `app/inbound.py`. The worker's `mail-in` job (`INBOUND_ENABLED`) takes each stored
+  `GraphNotification`, fetches the message (`$select` with `uniqueBody` and the headers, `Prefer: outlook.body-content-type="text"`)
+  and calls `process_message`, which the 3C catch-up also uses. Every handled mail is recorded in `InboundMail` (unique Graph id and
+  Message-ID), so duplicates and re-deliveries do nothing. Our own mail, automatic replies (Auto-Submitted, X-Auto-Response-Suppress,
+  Precedence, list and bounce headers), drafts and a sender flooding more than a set number an hour are ignored. A mail joins a ticket
+  by Graph conversation, then the Message-ID it answers, then the `[INC-1042]` reference, but only if the sender is the requester or a
+  follower; otherwise it opens its own ticket. A reply goes through `record_inbound` and the portal's status rule, so Awaiting user
+  returns to In progress and a split original refreshes its parts. A new mail opens an untriaged `email` ticket and the Cc people
+  become followers. Files go through `store_attachment` with the size limit and a per-mail count (settings); refused ones leave an event.
+  `/webhooks/dev/simulate-inbound` runs the same intake. *Not proved locally (staging):* real Graph and Mimecast behaviour.
   *Not built:* admin-managed templates previewed when edited (the automatic wording is in code), and
   attachments on outgoing mail (3E).
 - Later: route by sender's Entra attributes; agents forwarding an email to

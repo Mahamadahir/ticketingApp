@@ -44,10 +44,10 @@ from app.sla import IMPACT_LABELS, URGENCY_LABELS, Level
 from app.triage import TriageError
 from app.visibility import Access, access_context, ticket_access
 from app.messages import about_labels, record_inbound, requester_visible_messages
-from app.splitting import has_sub_tickets, refresh_open_sub_tickets, sync_original_status
+from app.splitting import apply_requester_reply
 from app.request_types import active_request_types, request_type_of
 from app.models import Category, RequestType, Ticket, TicketSource, TicketStatus, TicketType, User, UserRole
-from app.ticket_service import get_by_number, set_status
+from app.ticket_service import get_by_number
 from app.pagination import paginate
 
 router = APIRouter(prefix="/portal", tags=["portal"])
@@ -302,21 +302,9 @@ def add_comment(
 
     record_inbound(session, ticket, sender=user.display_name, body=body, author_user_id=user.id, reply_by=user.email)
     log_action(session, user.email, "ticket", ticket.id, "commented", body[:200])
-    # A reply from the requester or a follower hands the ticket back to us: it leaves
-    # Awaiting user, which resumes the SLA clock. Any other status is left alone (a
-    # reply on a Resolved ticket is the reopen flow, phase 4).
-    if has_sub_tickets(session, ticket):
-        # The original's status follows its parts, so it is never set here. The system
-        # cannot tell which part the reply is about, so each open part sees it, and the
-        # original is re-derived from them.
-        refresh_open_sub_tickets(session, ticket, user.email)
-        sync_original_status(session, ticket.id)
-    elif ticket.status == TicketStatus.AWAITING_USER:
-        set_status(session, ticket, TicketStatus.IN_PROGRESS, user.email)
-        log_action(
-            session, user.email, "ticket", ticket.id, "status_changed",
-            f"{TicketStatus.AWAITING_USER.value} -> {TicketStatus.IN_PROGRESS.value}",
-        )
+    moved = apply_requester_reply(session, ticket, user.email)
+    if moved:
+        log_action(session, user.email, "ticket", ticket.id, "status_changed", f"{moved[0]} -> {moved[1]}")
     session.commit()
     session.refresh(ticket)
 
