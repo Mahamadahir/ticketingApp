@@ -23,7 +23,8 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Pinned until a run on Ubuntu 26 (the new ubuntu-latest) has been checked.
+    runs-on: ubuntu-24.04
 
     services:
       postgres:
@@ -46,9 +47,9 @@ jobs:
       TEST_DATABASE_URL: postgresql+psycopg2://ticketing:ticketing@localhost:5432/ticketing_test
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.14"
 
