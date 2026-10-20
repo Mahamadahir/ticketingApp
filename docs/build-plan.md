@@ -48,12 +48,12 @@ not exist (`infra/` compiles but has never run against a subscription).
 | 3A public surface: `APP_ROLE` split, Graph webhook stores and returns 202, rate limiting | not started | |
 | 3B inbound mail: worker fetches stored notifications, replies join tickets, new mail raises tickets, auto-reply filter | not started | |
 | 3C subscriptions and delta catch-up | not started | |
-| 3D outbound mail: outbox, real send, approval and "raised for you" emails | not started | |
+| 3D outbound mail: outbox, real send, approval and "raised for you" emails (`MAIL_SENDING` off / dev / graph; Admin > Outbound mail) | built, in review | `app/outbox.py`, `app/mail.py` |
 | 3E attachments: storage interface, table, safe serving | not started | |
 | 3F wiring: Bicep and deploy workflow for the public app, mailbox, storage, Application Insights | not started | |
 | Phases 4 to 9 | not started | `docs/plan.md`, "Build order" |
 
-Tests: 769 passing on Postgres 16.
+Tests: 810 passing on Postgres 16.
 
 ## Next up
 
@@ -276,6 +276,8 @@ sleep, restart it and `docker start ticketingapp-db-1`.
   category whose target is the MSP cannot be escalated.
 
 ## Staging checklist (Azure-only, cannot be proved locally)
+
+- Outbound mail (3D): set `MAIL_SENDING=graph` on the worker with the Graph app and `GRAPH_SHARED_MAILBOX` (Mail.Send, admin-consented and limited to that mailbox). Reply to a ticket from the app and check the requester receives it from the shared mailbox with `[INC-n] subject` as the subject and the followers copied; check the mail is not caught by Mimecast or spam, that `X-Auto-Response-Suppress` is accepted as a custom header, and that a reply from the requester (their mail client adds "Re:") still carries the reference. Raise a ticket for someone and check the "raised for you" email; send an approval request and check the link opens the page and decides nothing on GET. Force a 403 (remove the grant) and check the email waits and goes once it is fixed. Try `MAIL_SENDING=dev` locally first and read the text at Admin > Outbound mail.
 
 - Teams new-ticket cards (2D): create a Workflows webhook ("Post to a channel when a webhook request is received") in the support
   channel, store its URL in Key Vault, switch `TEAMS_NEW_TICKET_ENABLED` on, raise a ticket and check the card arrives with the
