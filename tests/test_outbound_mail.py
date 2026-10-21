@@ -16,6 +16,7 @@ from app.jobs import JOBS, mail_out
 from app.messages import add_note, mail_subject, preview_email, record_notice
 from app.models import (
     Message,
+    NotificationPreference,
     OutboundEmail,
     Setting,
     Ticket,
@@ -130,6 +131,34 @@ def test_each_approver_gets_one_email(client, db_session, dev_mail):
 
     assert sent_to == ["boss@example.com", "lead@example.com"]
     assert all(r.ticket_id == ticket.id and r.vote_id for r in rows(db_session, outbox.APPROVAL))
+
+
+def opt_out_of_approval_emails(db_session, email):
+    user = db_session.exec(select(User).where(User.email == email)).one()
+    db_session.add(NotificationPreference(user_id=user.id, kind="approval_request", channel="email", enabled=False))
+    db_session.commit()
+
+
+def test_an_approver_who_opted_out_gets_no_email_but_still_sees_the_request_in_the_portal(client, db_session, dev_mail):
+    for address in ("boss@example.com", "lead@example.com"):
+        person(client, db_session, address)
+    opt_out_of_approval_emails(db_session, "boss@example.com")
+    raised_and_triaged(client, db_session, request_type(db_session, ["boss@example.com", "lead@example.com"]))
+
+    assert [r.to_address for r in rows(db_session, outbox.APPROVAL)] == ["lead@example.com"]
+    client.post("/auth/logout")
+    login_as(client, "boss@example.com")
+    assert "Waiting for your approval (1)" in client.get("/portal").text
+    assert "Starter on Monday" in client.get("/portal/approvals").text
+
+
+def test_an_email_already_queued_is_dropped_if_the_approver_opts_out_before_it_goes(client, db_session, dev_mail):
+    person(client, db_session, "boss@example.com")
+    raised_and_triaged(client, db_session, request_type(db_session, ["boss@example.com"]))
+    [row] = rows(db_session, outbox.APPROVAL)
+    opt_out_of_approval_emails(db_session, "boss@example.com")
+    with pytest.raises(Unsendable, match="turned approval emails off"):
+        mail.build_approval_mail(db_session, row)
 
 
 # ---- What an email says ---------------------------------------------------------------------------

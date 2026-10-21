@@ -557,9 +557,9 @@ Notification settings (phase 2B): which channels each person wants for each kind
 File: `app/notification_settings.py`
 
 - Classes: `EventType`, `InvalidDelay`
-- Functions: `choices_for`, `events_for`, `is_enabled`, `offers`, `parse_teams_delay`, `save_choices`, `save_teams_delay`
+- Functions: `choices_for`, `events_for`, `is_enabled`, `offers`, `parse_teams_delay`, `save_choices`, `save_teams_delay`, `wants_approval_email`
 - Imports: `app.audit`, `app.models`
-- Imported by: `app.mail`, `app.notifications`, `app.raising`, `app.routers.my_settings`
+- Imported by: `app.mail`, `app.notifications`, `app.outbox`, `app.raising`, `app.routers.my_settings`
 - Tests: `test_notification_followup.py`, `test_notification_settings.py`, `test_teams_copy.py`
 
 ### `app.notifications`
@@ -576,7 +576,7 @@ File: `app/notifications.py`
 Queuing email out of the shared mailbox (phase 3D). Nothing here commits, and nothing here sends:  
 File: `app/outbox.py`
 - Functions: `is_on`, `queue_acknowledgement`, `queue_approval`, `queue_follower_update`, `queue_message`, `queue_raised_for`
-- Imports: `app.config`, `app.models`
+- Imports: `app.config`, `app.models`, `app.notification_settings`
 - Imported by: `app.approvals`, `app.follower_updates`, `app.inbound`, `app.mail`, `app.messages`, `app.raising`
 - Tests: `test_acknowledgement.py`, `test_email_templates.py`, `test_follower_updates.py`, `test_outbound_mail.py`, `test_resolution.py`
 

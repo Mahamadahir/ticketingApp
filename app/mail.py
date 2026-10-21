@@ -34,7 +34,7 @@ from app.graph_client import graph_client
 from app.messages import about_text, in_a_split, is_triaged, mail_subject, requester_visible_messages
 from app.never_follow import is_listed
 from app.approval_groups import is_member
-from app.notification_settings import EMAIL, FOLLOWER_UPDATE as FOLLOWER_UPDATE_EVENT, is_enabled
+from app.notification_settings import EMAIL, FOLLOWER_UPDATE as FOLLOWER_UPDATE_EVENT, is_enabled, wants_approval_email
 from app.models import (
     Message,
     MessageDirection,
@@ -223,6 +223,8 @@ def build_approval_mail(session: Session, row: OutboundEmail) -> Mail:
     approver = session.get(User, vote.voter_id)
     if approver is None:
         raise Unsendable("Approver not found")
+    if not wants_approval_email(session, approver):
+        raise Unsendable("The person turned approval emails off in their notification settings")
     _guard_recipient(row)
     if not settings.public_base_url:
         raise NotReady("PUBLIC_BASE_URL is not set, so the email has no link to answer from")

@@ -1424,11 +1424,13 @@
         "offers",
         "parse_teams_delay",
         "save_choices",
-        "save_teams_delay"
+        "save_teams_delay",
+        "wants_approval_email"
       ],
       "imported_by": [
         "app.mail",
         "app.notifications",
+        "app.outbox",
         "app.raising",
         "app.routers.my_settings"
       ],
@@ -1515,7 +1517,8 @@
       ],
       "imports": [
         "app.config",
-        "app.models"
+        "app.models",
+        "app.notification_settings"
       ],
       "module": "app.outbox",
       "routes": [],
