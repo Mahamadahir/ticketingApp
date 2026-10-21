@@ -25,7 +25,6 @@ any change that adds, removes or renames modules, routes, models, jobs, settings
 - `access-in-visibility` app/routers/admin.py in `list_teams`: select(Ticket) in a route (allowed: Admin pages are behind require_super_admin (super admins see every ticket): team ticket counts, the category review queue and ticket lookups for the outbound mail table.)
 - `access-in-visibility` app/routers/admin.py in `list_users`: select(TeamMembership) in a route (allowed: Admin pages are behind require_super_admin and count or list memberships for the admin tables; there is no per-agent access decision to make.)
 - `access-in-visibility` app/routers/admin.py in `view_outbound_mail`: select(Ticket) in a route (allowed: Admin pages are behind require_super_admin (super admins see every ticket): team ticket counts, the category review queue and ticket lookups for the outbound mail table.)
-- `access-in-visibility` app/routers/portal.py in `list_my_tickets`: select(Ticket) in a route (allowed: My tickets in the portal is the requester's own tickets (requester_email equals the signed-in user); agent access rules do not apply to it.)
 - `messages-via-messages-module` app/mail.py in `own_first_message`: select() on Message (allowed: own_first_message reads only the requester's PUBLIC inbound message, to quote the original in outbound mail; it never returns notes.)
 - `messages-via-messages-module` app/search.py in `search_condition`: select() on Message (allowed: Agent search matches message bodies inside a condition that visibility.visible_ticket_condition already narrowed; the requester never sees search.)
 - `messages-via-messages-module` app/team_activity.py in `feed_query`: select() on Message (allowed: The agent team activity feed lists messages (including notes) of tickets the agent can open, filtered by visible_ticket_condition; the requester never sees it.)
@@ -365,7 +364,7 @@ Followers: people copied on a ticket's public emails.
 File: `app/followers.py`
 
 - Classes: `InvalidEmail`, `TooManyFollowers`
-- Functions: `add_follower`, `cc_list`, `followers_of`, `is_follower`, `normalise_email`, `remove_follower`, `tickets_followed_by`
+- Functions: `add_follower`, `cc_list`, `followers_of`, `is_follower`, `normalise_email`, `remove_follower`
 - Imports: `app.models`, `app.ticket_service`
 - Imported by: `app.escalation`, `app.inbound`, `app.messages`, `app.raising`, `app.request_types`, `app.routers.portal`, `app.routers.tickets`, `app.visibility`
 - Tests: `test_bell_access.py`, `test_followers.py`, `test_inbound_mail.py`, `test_reply_notification.py`
@@ -388,6 +387,15 @@ File: `app/graph_client.py`
 - Imports: `app.config`
 - Imported by: `app.inbound`, `app.mail`, `app.presence`, `app.subscriptions`
 - Tests: `test_inbound_mail.py`, `test_mail_subscriptions.py`, `test_outbound_mail.py`, `test_presence.py`
+
+### `app.identity`
+
+Which tickets a signed-in person counts as their own in the portal.  
+File: `app/identity.py`
+- Functions: `is_follower_of`, `is_requester`, `my_tickets_query`, `requester_emails`
+- Imports: `app.models`
+- Imported by: `app.routers.portal`
+- Tests: `test_portal.py`
 
 ### `app.inbound`
 
@@ -475,7 +483,7 @@ File: `app/models.py`
 - Functions: `allocate_number`
 - Tables: `activitylog`, `attachment`, `auditlog`, `cannedresponse`, `category`, `graphnotification`, `graphsubscription`, `inboundmail`, `mailsyncstate`, `message`, `notification`, `notificationpreference`, `numbercounter`, `outboundemail`, `requesttype`, `requesttypeapprover`, `setting`, `team`, `teammembership`, `teamspost`, `ticket`, `ticketapproval`, `ticketescalator`, `ticketevent`, `ticketfollower`, `user`
 - Imports: none
-- Imported by: `app.activity`, `app.approvals`, `app.attachments`, `app.audit`, `app.auth`, `app.backdating`, `app.canned`, `app.categories`, `app.escalation`, `app.followers`, `app.inbound`, `app.linking`, `app.mail`, `app.main`, `app.messages`, `app.notification_settings`, `app.notifications`, `app.outbox`, `app.presence`, `app.raising`, `app.request_types`, `app.routers.admin`, `app.routers.approvals`, `app.routers.attachments`, `app.routers.auth`, `app.routers.my_settings`, `app.routers.notifications`, `app.routers.portal`, `app.routers.tickets`, `app.routers.webhooks`, `app.search`, `app.settings_store`, `app.sla`, `app.splitting`, `app.subscriptions`, `app.team_activity`, `app.teams`, `app.ticket_service`, `app.triage`, `app.visibility`
+- Imported by: `app.activity`, `app.approvals`, `app.attachments`, `app.audit`, `app.auth`, `app.backdating`, `app.canned`, `app.categories`, `app.escalation`, `app.followers`, `app.identity`, `app.inbound`, `app.linking`, `app.mail`, `app.main`, `app.messages`, `app.notification_settings`, `app.notifications`, `app.outbox`, `app.presence`, `app.raising`, `app.request_types`, `app.routers.admin`, `app.routers.approvals`, `app.routers.attachments`, `app.routers.auth`, `app.routers.my_settings`, `app.routers.notifications`, `app.routers.portal`, `app.routers.tickets`, `app.routers.webhooks`, `app.search`, `app.settings_store`, `app.sla`, `app.splitting`, `app.subscriptions`, `app.team_activity`, `app.teams`, `app.ticket_service`, `app.triage`, `app.visibility`
 - Tests: `conftest.py`, `test_access_context.py`, `test_activity_log.py`, `test_admin.py`, `test_approvals.py`, `test_attachments.py`, `test_auth.py`, `test_backdating.py`, `test_bell_access.py`, `test_canned.py`, `test_category_admin.py`, `test_email_preview.py`, `test_escalation.py`, `test_escalation_tidy.py`, `test_followers.py`, `test_hardening.py`, `test_htmx_errors.py`, `test_htmx_partials.py`, `test_inbound_mail.py`, `test_linking.py`, `test_login_lockout.py`, `test_mail_subscriptions.py`, `test_messages.py`, `test_notification_followup.py`, `test_notification_settings.py`, `test_notifications.py`, `test_outbound_mail.py`, `test_pagination_and_limits.py`, `test_portal.py`, `test_presence.py`, `test_public_surface.py`, `test_raising.py`, `test_reply_notification.py`, `test_request_types.py`, `test_search.py`, `test_sla.py`, `test_split_family.py`, `test_splitting.py`, `test_status_follows_conversation.py`, `test_team_activity.py`, `test_teams.py`, `test_teams_copy.py`, `test_teams_copy_sending.py`, `test_ticket_core.py`, `test_ticket_urls.py`, `test_tickets_rbac.py`, `test_triage.py`, `test_visibility.py`, `test_wiring_3f.py`, `test_with_supplier.py`, `test_worker.py`
 
 ### `app.notification_settings`
@@ -654,7 +662,7 @@ File: `app/routers/notifications.py`
 File: `app/routers/portal.py`
 - Functions: `add_comment`, `add_ticket_follower`, `decide_approval`, `list_my_tickets`, `my_approvals`, `new_ticket_form`, `raise_new_ticket`, `remove_ticket_follower`, `view_my_ticket`
 - Routes: GET `/portal`, GET `/portal/approvals`, GET `/portal/new`, POST `/portal/new`, GET `/portal/{number}`, POST `/portal/{number}/approval`, POST `/portal/{number}/comment`, POST `/portal/{number}/followers`, POST `/portal/{number}/followers/{follower_id}/remove`
-- Imports: `app.approvals`, `app.audit`, `app.auth`, `app.backdating`, `app.categories`, `app.database`, `app.followers`, `app.forms`, `app.messages`, `app.models`, `app.pagination`, `app.raising`, `app.request_types`, `app.sla`, `app.splitting`, `app.templating`, `app.ticket_service`, `app.triage`, `app.visibility`
+- Imports: `app.approvals`, `app.audit`, `app.auth`, `app.backdating`, `app.categories`, `app.database`, `app.followers`, `app.forms`, `app.identity`, `app.messages`, `app.models`, `app.pagination`, `app.raising`, `app.request_types`, `app.sla`, `app.splitting`, `app.templating`, `app.ticket_service`, `app.triage`, `app.visibility`
 - Imported by: `app.main`
 - Tests: none
 
@@ -791,7 +799,7 @@ File: `app/ticket_service.py`
 - Functions: `create_ticket`, `find_ticket`, `get_by_number`, `parse_ticket_number`, `record_event`, `set_status`
 - Imports: `app.models`, `app.settings_store`, `app.sla`, `app.splitting`, `app.teams`
 - Imported by: `app.approvals`, `app.backdating`, `app.followers`, `app.inbound`, `app.linking`, `app.messages`, `app.raising`, `app.routers.admin`, `app.routers.portal`, `app.routers.tickets`, `app.search`, `app.sla`, `app.splitting`, `app.triage`
-- Tests: `test_category_admin.py`, `test_email_preview.py`, `test_reply_notification.py`, `test_split_family.py`, `test_teams.py`, `test_ticket_core.py`, `test_triage.py`
+- Tests: `test_category_admin.py`, `test_email_preview.py`, `test_portal.py`, `test_reply_notification.py`, `test_split_family.py`, `test_teams.py`, `test_ticket_core.py`, `test_triage.py`
 
 ### `app.triage`
 
