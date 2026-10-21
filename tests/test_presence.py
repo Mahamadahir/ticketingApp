@@ -346,7 +346,7 @@ def test_a_directory_error_counts_as_a_failed_lookup(client, db_session):
     for minutes in (0, 30):
         refresh_presence(db_session, broken, FakeGraph({}).presences, now=NOW + timedelta(minutes=minutes))
         db_session.commit()
-    assert calls == ["oops@example.com"]
+    assert calls == ["oops@example.com"]  # an error waits too, as the issue asks
 
 
 def test_the_retry_interval_is_a_setting(client, db_session):
@@ -365,22 +365,39 @@ def test_the_retry_interval_is_a_setting(client, db_session):
 
 def test_an_agent_with_no_presence_reading_waits_and_a_later_reading_clears_the_wait(client, db_session):
     agent = an_agent(db_session, "ann@example.com", "Ann")
+    an_agent(db_session, "hal@example.com", "Hal")
 
-    class Silent(FakeGraph):
-        def presences(self, ids):
+    class Skips(FakeGraph):
+        def presences(self, ids):  # answers for Hal only
             self.asked.append(list(ids))
-            return []
+            return [{"id": "oid-hal", "outOfOfficeSettings": {"isOutOfOffice": False}}]
 
-    silent = Silent({"ann@example.com": "oid-ann"})
+    silent = Skips({"ann@example.com": "oid-ann", "hal@example.com": "oid-hal"})
     refresh(db_session, silent)
     assert db_session.get(User, agent.id).last_presence_lookup_at is not None
     refresh(db_session, silent, now=NOW + timedelta(minutes=15))
-    assert len(silent.asked) == 1  # still waiting
+    assert silent.asked[1] == ["oid-hal"]  # Ann is still waiting
 
     graph = FakeGraph({"ann@example.com": "oid-ann"}, away={"oid-ann"})
     refresh(db_session, graph, now=NOW + timedelta(days=2))
     after = db_session.get(User, agent.id)
     assert after.last_presence_lookup_at is None and is_out_of_office(after, NOW + timedelta(days=2))
+
+
+def test_an_empty_answer_for_everyone_is_a_graph_gap_and_starts_no_wait(client, db_session):
+    agent = an_agent(db_session, "ann@example.com", "Ann")
+
+    class Empty(FakeGraph):
+        def presences(self, ids):
+            self.asked.append(list(ids))
+            return []
+
+    graph = Empty({"ann@example.com": "oid-ann"})
+    refresh(db_session, graph)
+    refresh(db_session, graph, now=NOW + timedelta(minutes=15))
+
+    assert len(graph.asked) == 2
+    assert db_session.get(User, agent.id).last_presence_lookup_at is None
 
 
 def test_inactive_agents_are_never_polled_and_nothing_else_about_them_changes(client, db_session):

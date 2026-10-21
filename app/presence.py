@@ -27,13 +27,14 @@ STALE_AFTER = timedelta(hours=3)  # the job runs every 15 minutes; a reading thi
 CHECK_EVERY_SECONDS = 15 * 60
 
 
+def _aware(moment: datetime) -> datetime:
+    return moment if moment.tzinfo is not None else moment.replace(tzinfo=timezone.utc)
+
+
 def is_out_of_office(user: User, now: Optional[datetime] = None) -> bool:
     if not user.out_of_office or user.out_of_office_checked_at is None:
         return False
-    checked = user.out_of_office_checked_at
-    if checked.tzinfo is None:
-        checked = checked.replace(tzinfo=timezone.utc)
-    return (now or datetime.now(timezone.utc)) - checked < STALE_AFTER
+    return (now or datetime.now(timezone.utc)) - _aware(user.out_of_office_checked_at) < STALE_AFTER
 
 
 def notifiable_members(users: list[User], now: Optional[datetime] = None) -> list[User]:
@@ -47,11 +48,7 @@ def agent_label(user: User, now: Optional[datetime] = None) -> str:
 
 def _waiting_to_retry(user: User, now: datetime, retry_after: timedelta) -> bool:
     failed = user.last_presence_lookup_at
-    if failed is None:
-        return False
-    if failed.tzinfo is None:
-        failed = failed.replace(tzinfo=timezone.utc)
-    return now - failed < retry_after
+    return failed is not None and now - _aware(failed) < retry_after
 
 
 def refresh_presence(
@@ -103,7 +100,8 @@ def refresh_presence(
         session.add(agent)
     for agent in known.values():
         if agent.id not in read:
-            agent.last_presence_lookup_at = now
+            if read:  # an empty answer for everyone is a Graph gap, not a person it does not know: no wait
+                agent.last_presence_lookup_at = now
             if agent.out_of_office:
                 agent.out_of_office = False  # Graph no longer reports them: do not keep the old reading alive
             session.add(agent)
