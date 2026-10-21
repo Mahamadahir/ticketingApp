@@ -144,6 +144,23 @@ def refresh_open_sub_tickets(session: Session, original: Ticket, actor_email: st
             set_status(session, part, TicketStatus.IN_PROGRESS, actor_email, detail="requester replied")
 
 
+def apply_requester_reply(session: Session, ticket: Ticket, actor_email: str) -> Optional[tuple[str, str]]:
+    """What a reply from the requester or a follower does to the ticket, whether it came from the portal
+    or from mail. It hands the ticket back to us: one waiting on the requester (Awaiting user) goes back to
+    In progress, which resumes its SLA clock. Any other status is left alone (a reply on a Resolved ticket is
+    the reopen flow, phase 4). A split original's status follows its parts, so it is never set here: each open
+    part is refreshed and the original re-derived. Returns (from, to) status values when a status moved,
+    for the caller's audit entry, else None."""
+    if has_sub_tickets(session, ticket):
+        refresh_open_sub_tickets(session, ticket, actor_email)
+        sync_original_status(session, ticket.id)
+        return None
+    if ticket.status == TicketStatus.AWAITING_USER:
+        set_status(session, ticket, TicketStatus.IN_PROGRESS, actor_email)
+        return TicketStatus.AWAITING_USER.value, TicketStatus.IN_PROGRESS.value
+    return None
+
+
 def split_ticket(
     session: Session, original: Ticket, actor: User, parts: list[tuple[str, str]]
 ) -> list[Ticket]:

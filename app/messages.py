@@ -346,6 +346,10 @@ def agent_timeline(session: Session, ticket: Ticket, viewer=None) -> list[Timeli
         if message.direction != MessageDirection.INBOUND:
             return None
         author = emails.get(message.author_user_id)
+        if author is None and message.author_user_id is None:
+            # Mail from someone without an account (app/inbound.py) is stored under their address.
+            sender = message.sender.strip().lower()
+            return "follower" if "@" in sender and " " not in sender and sender != requester else "requester"
         return "follower" if author is not None and author != requester else "requester"
 
     for item in other_items:

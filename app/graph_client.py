@@ -198,12 +198,57 @@ class GraphClient:
         response.raise_for_status()
         return response.json()
 
-    def get_message(self, message_id: str) -> dict:
-        """TODO: GET /users/{mailbox}/messages/{message_id} to fetch the
-        full message body/sender after a change notification arrives (the
-        notification payload itself only carries IDs, not content).
-        """
-        raise NotImplementedError("Wire up Graph credentials in .env before fetching messages")
+    def _mail_get(
+        self, path: str, params: dict | None = None, headers: dict | None = None, timeout: int = 30
+    ) -> httpx.Response:
+        return httpx.get(
+            f"{GRAPH_BASE_URL}/users/{quote(settings.graph_shared_mailbox, safe='@')}/{path}",
+            params=params,
+            headers={"Authorization": f"Bearer {self._get_access_token()}", **(headers or {})},
+            timeout=timeout,
+        )
+
+    def get_message(self, message_id: str) -> dict | None:
+        """One message of the shared mailbox, or None if it is gone (moved or deleted since Graph told us):
+        GET /users/{mailbox}/messages/{id} (Mail.Read, application, limited to that mailbox). A change
+        notification carries only ids, so this is where the mail itself is read. uniqueBody is the new text
+        of a reply without the quoted thread, and the Prefer header makes Graph give it as plain text, so no
+        HTML is parsed here. internetMessageHeaders carries Auto-Submitted and the other headers the auto-reply
+        filter reads. Raises on any other failure (the caller retries)."""
+        response = self._mail_get(
+            f"messages/{quote(message_id, safe='')}",
+            params={
+                "$select": "id,internetMessageId,conversationId,subject,from,sender,toRecipients,ccRecipients,"
+                "uniqueBody,body,internetMessageHeaders,hasAttachments,receivedDateTime,isDraft"
+            },
+            headers={"Prefer": 'outlook.body-content-type="text"'},
+        )
+        if response.status_code == 404:
+            return None
+        response.raise_for_status()
+        return response.json()
+
+    def get_attachments(self, message_id: str) -> list[dict]:
+        """What is attached to a message (GET .../messages/{id}/attachments): id, name, contentType, size, isInline
+        and @odata.type for each, without the bytes, so a file over the size limit is never downloaded. Item and
+        reference attachments (an attached email, a link) come back too, with another @odata.type, for the
+        caller to skip. The bytes of a file come from get_attachment_bytes."""
+        response = self._mail_get(
+            f"messages/{quote(message_id, safe='')}/attachments",
+            params={"$select": "id,name,contentType,size,isInline"},
+        )
+        if response.status_code == 404:
+            return []
+        response.raise_for_status()
+        return response.json().get("value", [])
+
+    def get_attachment_bytes(self, message_id: str, attachment_id: str) -> bytes | None:
+        """The raw bytes of one attachment: GET .../attachments/{id}/$value. None if it is gone."""
+        response = self._mail_get(f"messages/{quote(message_id, safe='')}/attachments/{quote(attachment_id, safe='')}/$value", timeout=120)
+        if response.status_code == 404:
+            return None
+        response.raise_for_status()
+        return response.content
 
 
 graph_client = GraphClient()

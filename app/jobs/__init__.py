@@ -18,6 +18,7 @@ from sqlalchemy import text
 from sqlmodel import Session
 
 from app.config import settings
+from app.inbound import process_notifications
 from app.mail import deliver_mail
 from app.presence import CHECK_EVERY_SECONDS, refresh_presence
 from app.subscriptions import CATCH_UP_EVERY_SECONDS, SUBSCRIPTION_EVERY_SECONDS, catch_up, keep_subscription_alive
@@ -88,8 +89,17 @@ def mail_catch_up(session: Session) -> None:
         catch_up(session)
 
 
+def mail_in(session: Session) -> None:
+    """Turns the mail notifications the webhook stored into tickets and replies (app/inbound.py). Does
+    nothing unless INBOUND_ENABLED is on and Graph and the mailbox are configured. It commits after each
+    notification itself, so one that was handled is recorded even if a later one fails."""
+    if settings.inbound_enabled and settings.graph_configured and settings.graph_shared_mailbox:
+        process_notifications(session)
+
+
 TEAMS_POSTS_EVERY_SECONDS = 60
 MAIL_OUT_EVERY_SECONDS = 30
+MAIL_IN_EVERY_SECONDS = 15
 
 JOBS: list[Job] = [
     Job("heartbeat", settings.worker_heartbeat_seconds, heartbeat),
@@ -99,4 +109,5 @@ JOBS: list[Job] = [
     Job("mail-out", MAIL_OUT_EVERY_SECONDS, mail_out),
     Job("graph-subscription", SUBSCRIPTION_EVERY_SECONDS, graph_subscription),
     Job("mail-catch-up", CATCH_UP_EVERY_SECONDS, mail_catch_up),
+    Job("mail-in", MAIL_IN_EVERY_SECONDS, mail_in),
 ]
