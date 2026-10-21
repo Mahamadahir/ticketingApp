@@ -67,6 +67,7 @@ those. Do not record test counts or merge status here.
 | 4T admin-managed email templates: a registry of keys (placeholders, default subject and body), safe `{placeholder}` rendering, Admin > Email templates with live preview, reset and audit; the raised-for-you, approval request and approval notices use it | built | `app/email_templates.py`, `EmailTemplate`, migration `a3f6d0b8c471` |
 | 4A recurring jobs table: `scheduled_job` rows with `next_run_at` and a lease, one `scheduled-jobs` worker tick a minute that claims due jobs with `FOR UPDATE SKIP LOCKED`, runs each once (late runs write an audit line, no catch-up), records failures and retries, and takes over a crashed run when its lease expires; Admin > Recurring jobs status line; the registry is empty until 4C-3 and 4H add jobs | built | `app/scheduled_jobs.py`, `ScheduledJob`, migration `b4e7a0d3c158` |
 | 4D resolve action: notes required, `resolved_by_id` / `closed_at` / `reopen_count` fields, resolution email from the admin template with the preview step, `set_status` refuses a bare Resolved, split original rule, backdated raise uses the same helper | built | `app/resolution.py`, migration `158132f3603a` |
+| 4C-1 approval groups with vote percentages (in progress) | in progress | `app/approvals.py` |
 | Phases 4 to 9 | not started | `docs/plan.md`, "Build order" |
 
 ## Next up
