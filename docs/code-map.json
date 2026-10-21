@@ -44,6 +44,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/a3f6d0b8c471_email_templates.py",
+        "revision": "a3f6d0b8c471"
+      },
+      {
         "file": "migrations/versions/e4b7c1a9d052_inbound_mail_handled_mail_record_.py",
         "revision": "e4b7c1a9d052"
       },
@@ -58,17 +62,13 @@
       {
         "file": "migrations/versions/d5a8b1c4e630_graph_notification.py",
         "revision": "d5a8b1c4e630"
-      },
-      {
-        "file": "migrations/versions/a9d3c6e1f275_with_supplier_status.py",
-        "revision": "a9d3c6e1f275"
       }
     ],
-    "count": 30,
+    "count": 31,
     "heads": [
       {
-        "file": "migrations/versions/e4b7c1a9d052_inbound_mail_handled_mail_record_.py",
-        "revision": "e4b7c1a9d052"
+        "file": "migrations/versions/a3f6d0b8c471_email_templates.py",
+        "revision": "a3f6d0b8c471"
       }
     ]
   },
@@ -165,6 +165,7 @@
       ],
       "imports": [
         "app.audit",
+        "app.email_templates",
         "app.messages",
         "app.models",
         "app.outbox",
@@ -176,7 +177,8 @@
       "summary": "Approvals (phase 1H): a ticket that needs sign-off before the work goes ahead.",
       "tables": [],
       "tests": [
-        "tests/test_approvals.py"
+        "tests/test_approvals.py",
+        "tests/test_email_templates.py"
       ]
     },
     {
@@ -494,6 +496,40 @@
     },
     {
       "classes": [
+        "Rendered",
+        "TemplateDef",
+        "TemplateError"
+      ],
+      "file": "app/email_templates.py",
+      "functions": [
+        "current_text",
+        "definition",
+        "is_customised",
+        "render_preview",
+        "render_template",
+        "render_text",
+        "reset_template",
+        "save_template",
+        "validate"
+      ],
+      "imported_by": [
+        "app.approvals",
+        "app.mail",
+        "app.routers.admin"
+      ],
+      "imports": [
+        "app.models"
+      ],
+      "module": "app.email_templates",
+      "routes": [],
+      "summary": "Admin-managed wording for the emails the app sends by itself (phase 4T).",
+      "tables": [],
+      "tests": [
+        "tests/test_email_templates.py"
+      ]
+    },
+    {
+      "classes": [
         "EscalationError"
       ],
       "file": "app/escalation.py",
@@ -795,6 +831,7 @@
         "app.approval_links",
         "app.approvals",
         "app.config",
+        "app.email_templates",
         "app.graph_client",
         "app.messages",
         "app.models",
@@ -808,6 +845,7 @@
       "summary": "Building and sending the emails that app/outbox.py queued (phase 3D).",
       "tables": [],
       "tests": [
+        "tests/test_email_templates.py",
         "tests/test_outbound_mail.py"
       ]
     },
@@ -925,6 +963,7 @@
         "AuditLog",
         "CannedResponse",
         "Category",
+        "EmailTemplate",
         "GraphNotification",
         "GraphSubscription",
         "InboundMail",
@@ -967,6 +1006,7 @@
         "app.backdating",
         "app.canned",
         "app.categories",
+        "app.email_templates",
         "app.escalation",
         "app.followers",
         "app.identity",
@@ -1025,6 +1065,10 @@
         {
           "class": "Category",
           "table": "category"
+        },
+        {
+          "class": "EmailTemplate",
+          "table": "emailtemplate"
         },
         {
           "class": "GraphNotification",
@@ -1124,6 +1168,7 @@
         "tests/test_canned.py",
         "tests/test_category_admin.py",
         "tests/test_email_preview.py",
+        "tests/test_email_templates.py",
         "tests/test_escalation.py",
         "tests/test_escalation_tidy.py",
         "tests/test_followers.py",
@@ -1269,6 +1314,7 @@
       "summary": "Queuing email out of the shared mailbox (phase 3D). Nothing here commits, and nothing here sends:",
       "tables": [],
       "tests": [
+        "tests/test_email_templates.py",
         "tests/test_outbound_mail.py"
       ]
     },
@@ -1445,11 +1491,15 @@
         "edit_request_type",
         "list_canned",
         "list_categories",
+        "list_email_templates",
         "list_request_types",
         "list_teams",
         "list_users",
+        "preview_email_template",
         "remove_membership",
+        "reset_email_template",
         "review_category",
+        "save_email_template",
         "save_setting",
         "set_membership",
         "unlock_user",
@@ -1472,6 +1522,7 @@
         "app.categories",
         "app.config",
         "app.database",
+        "app.email_templates",
         "app.forms",
         "app.models",
         "app.pagination",
@@ -1533,6 +1584,26 @@
           "handler": "review_category",
           "method": "POST",
           "path": "/admin/category-review/{number}"
+        },
+        {
+          "handler": "list_email_templates",
+          "method": "GET",
+          "path": "/admin/email-templates"
+        },
+        {
+          "handler": "save_email_template",
+          "method": "POST",
+          "path": "/admin/email-templates/{key}"
+        },
+        {
+          "handler": "preview_email_template",
+          "method": "POST",
+          "path": "/admin/email-templates/{key}/preview"
+        },
+        {
+          "handler": "reset_email_template",
+          "method": "POST",
+          "path": "/admin/email-templates/{key}/reset"
         },
         {
           "handler": "view_mail_intake",
@@ -2997,6 +3068,7 @@
     "tests/test_category_admin.py",
     "tests/test_code_map.py",
     "tests/test_email_preview.py",
+    "tests/test_email_templates.py",
     "tests/test_escalation.py",
     "tests/test_escalation_tidy.py",
     "tests/test_followers.py",

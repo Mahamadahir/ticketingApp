@@ -839,7 +839,8 @@ the email itself arrives with phase 3.
 Every email an agent triggers that reaches an end user (replies,
 resolutions, bulk resolves, MSP forwards) shows a preview and an "Are you
 sure?" step. Bulk resolves list every linked ticket and recipient.
-Automatic emails use admin-managed templates, previewed when edited.
+Automatic emails use admin-managed templates, previewed when edited (built in 4T: `app/email_templates.py`; Admin > Email templates).
+A template is plain text with `{placeholders}` from a fixed list per email; the signed approval link is only ever `{link}`, made at send time.
 
 ## Mail (Microsoft Graph)
 
@@ -909,8 +910,7 @@ Automatic emails use admin-managed templates, previewed when edited.
   returns to In progress and a split original refreshes its parts. A new mail opens an untriaged `email` ticket and the Cc people
   become followers. Files go through `store_attachment` with the size limit and a per-mail count (settings); refused ones leave an event.
   `/webhooks/dev/simulate-inbound` runs the same intake. *Not proved locally (staging):* real Graph and Mimecast behaviour.
-  *Not built:* admin-managed templates previewed when edited (the automatic wording is in code), and
-  attachments on outgoing mail (3E).
+  *Not built:* attachments on outgoing mail (3E). (Admin-managed templates were added in 4T.)
 - Later: route by sender's Entra attributes; agents forwarding an email to
   the mailbox creates a ticket for the original sender.
 

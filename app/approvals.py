@@ -28,6 +28,7 @@ from sqlalchemy import func
 from sqlmodel import Session, select
 
 from app.audit import log_action
+from app.email_templates import render_template
 from app.messages import record_notice
 from app.outbox import queue_approval
 from app.models import (
@@ -174,6 +175,12 @@ def count_pending_for(session: Session, user: User) -> int:
     ).one()
 
 
+def _notice(session: Session, ticket: Ticket, key: str, **extra: str) -> str:
+    """The wording of an automatic notice, from the admin-managed template (app/email_templates.py)."""
+    values = {"reference": ticket.reference, "ticket_number": str(ticket.number), "subject": ticket.subject, **extra}
+    return render_template(session, key, values).body
+
+
 def _settle(session: Session, ticket: Ticket, result: str, approvals: list[TicketApproval], who: User) -> None:
     now = datetime.now(timezone.utc)
     for approval in approvals:
@@ -183,15 +190,12 @@ def _settle(session: Session, ticket: Ticket, result: str, approvals: list[Ticke
     record_event(session, ticket, EVENT_APPROVAL_OUTCOME, who.email, to_value=result)
     if result == APPROVED:
         set_status(session, ticket, TicketStatus.OPEN, who.email, detail="approved", by_approval=True)
-        record_notice(session, ticket, "Your request has been approved. IT will pick it up.")
+        record_notice(session, ticket, _notice(session, ticket, "approval_approved"))
     else:
         set_status(session, ticket, TicketStatus.CLOSED, who.email, detail="approval declined", by_approval=True)
         reasons = [a.comment for a in approvals if a.decision == DECLINED and a.comment]
-        record_notice(
-            session, ticket,
-            "Your request was not approved, so it has been closed."
-            + (f" Reason: {' / '.join(reasons)}" if reasons else ""),
-        )
+        reason_text = f" Reason: {' / '.join(reasons)}" if reasons else ""
+        record_notice(session, ticket, _notice(session, ticket, "approval_declined", reason_text=reason_text))
 
 
 def _still_an_approver(session: Session, ticket: Ticket, approval: TicketApproval) -> bool:
@@ -264,4 +268,4 @@ def waive(session: Session, ticket: Ticket, actor: User) -> None:
             session.add(approval)
     record_event(session, ticket, EVENT_APPROVAL_OUTCOME, actor.email, to_value="waived")
     set_status(session, ticket, TicketStatus.OPEN, actor.email, detail="approval waived", by_approval=True)
-    record_notice(session, ticket, "Your request is going ahead: IT has let it through without waiting for further approval.")
+    record_notice(session, ticket, _notice(session, ticket, "approval_waived"))
