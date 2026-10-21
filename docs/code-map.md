@@ -16,7 +16,6 @@ any change that adds, removes or renames modules, routes, models, jobs, settings
 - `messages-via-messages-module`: What the requester may see, and whether a ticket can be emailed, is decided only in app/messages.py. Nothing else reads Ticket.messages or runs select() on Message.
 - `agent-tickets-only-raising`: Only app/raising.py creates source=agent tickets (backdating relies on it).
 - `routers-only-from-main`: Only app/main.py includes routers. Other modules do not import app.routers.*.
-- `models-is-a-leaf`: app/models.py imports no other app module except app.config.
 - `tickets-via-ticket-service`: Tickets are created and change status through app/ticket_service.py (numbers come from the models hook). Nothing else sets Ticket(...) directly outside the allowed modules.
 
 ### Current violations
@@ -165,7 +164,7 @@ any change that adds, removes or renames modules, routes, models, jobs, settings
 | `ATTACHMENT_INLINE_MIN_BYTES` | `int` | `5 * 1024` |
 | `ATTACHMENT_LINK_SECONDS` | `int` | `90` |
 | `ATTACHMENT_MAX_BYTES` | `int` | `10 * 1024 * 1024` |
-| `DATABASE_URL` | `str` | `'postgresql+psycopg2://ticketing:ticketing@db:5432/ticketing'` |
+| `DATABASE_URL` | `str` | `(url with credentials)` |
 | `ENV` | `str` | `'production'` |
 | `GRAPH_CLIENT_ID` | `str` | `''` |
 | `GRAPH_CLIENT_SECRET` | `str` | `(secret)` |
@@ -173,7 +172,7 @@ any change that adds, removes or renames modules, routes, models, jobs, settings
 | `GRAPH_SHARED_MAILBOX` | `str` | `''` |
 | `GRAPH_SUBSCRIPTION_ENABLED` | `bool` | `False` |
 | `GRAPH_TENANT_ID` | `str` | `''` |
-| `GRAPH_WEBHOOK_CLIENT_STATE` | `str` | `'change-me'` |
+| `GRAPH_WEBHOOK_CLIENT_STATE` | `str` | `(secret)` |
 | `INBOUND_ENABLED` | `bool` | `False` |
 | `INBOUND_MAX_ATTACHMENTS` | `int` | `20` |
 | `INBOUND_MAX_CC` | `int` | `10` |

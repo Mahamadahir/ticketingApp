@@ -1,14 +1,65 @@
 [
-  {"rule": "access-in-visibility", "file": "app/routers/admin.py", "contains": "select(TeamMembership)",
-   "reason": "Admin pages are behind require_super_admin and count or list memberships for the admin tables; there is no per-agent access decision to make."},
-  {"rule": "access-in-visibility", "file": "app/routers/admin.py", "contains": "select(Ticket)",
-   "reason": "Admin pages are behind require_super_admin (super admins see every ticket): team ticket counts, the category review queue and ticket lookups for the outbound mail table."},
-  {"rule": "access-in-visibility", "file": "app/routers/portal.py", "contains": "select(Ticket)",
-   "reason": "My tickets in the portal is the requester's own tickets (requester_email equals the signed-in user); agent access rules do not apply to it."},
-  {"rule": "messages-via-messages-module", "file": "app/mail.py", "contains": "select() on Message",
-   "reason": "own_first_message reads only the requester's PUBLIC inbound message, to quote the original in outbound mail; it never returns notes."},
-  {"rule": "messages-via-messages-module", "file": "app/search.py", "contains": "select() on Message",
-   "reason": "Agent search matches message bodies inside a condition that visibility.visible_ticket_condition already narrowed; the requester never sees search."},
-  {"rule": "messages-via-messages-module", "file": "app/team_activity.py", "contains": "select() on Message",
-   "reason": "The agent team activity feed lists messages (including notes) of tickets the agent can open, filtered by visible_ticket_condition; the requester never sees it."}
+  {
+    "rule": "access-in-visibility",
+    "file": "app/routers/admin.py",
+    "in": "list_teams",
+    "contains": "select(TeamMembership)",
+    "reason": "Admin pages are behind require_super_admin and count or list memberships for the admin tables; there is no per-agent access decision to make."
+  },
+  {
+    "rule": "access-in-visibility",
+    "file": "app/routers/admin.py",
+    "in": "list_users",
+    "contains": "select(TeamMembership)",
+    "reason": "Admin pages are behind require_super_admin and count or list memberships for the admin tables; there is no per-agent access decision to make."
+  },
+  {
+    "rule": "access-in-visibility",
+    "file": "app/routers/admin.py",
+    "in": "_review_queue",
+    "contains": "select(Ticket)",
+    "reason": "Admin pages are behind require_super_admin (super admins see every ticket): team ticket counts, the category review queue and ticket lookups for the outbound mail table."
+  },
+  {
+    "rule": "access-in-visibility",
+    "file": "app/routers/admin.py",
+    "in": "list_teams",
+    "contains": "select(Ticket)",
+    "reason": "Admin pages are behind require_super_admin (super admins see every ticket): team ticket counts, the category review queue and ticket lookups for the outbound mail table."
+  },
+  {
+    "rule": "access-in-visibility",
+    "file": "app/routers/admin.py",
+    "in": "view_outbound_mail",
+    "contains": "select(Ticket)",
+    "reason": "Admin pages are behind require_super_admin (super admins see every ticket): team ticket counts, the category review queue and ticket lookups for the outbound mail table."
+  },
+  {
+    "rule": "access-in-visibility",
+    "file": "app/routers/portal.py",
+    "in": "list_my_tickets",
+    "contains": "select(Ticket)",
+    "reason": "My tickets in the portal is the requester's own tickets (requester_email equals the signed-in user); agent access rules do not apply to it."
+  },
+  {
+    "rule": "messages-via-messages-module",
+    "file": "app/mail.py",
+    "in": "own_first_message",
+    "contains": "select() on Message",
+    "reason": "own_first_message reads only the requester's PUBLIC inbound message, to quote the original in outbound mail; it never returns notes."
+  },
+  {
+    "rule": "messages-via-messages-module",
+    "file": "app/search.py",
+    "in": "search_condition",
+    "contains": "select() on Message",
+    "reason": "Agent search matches message bodies inside a condition that visibility.visible_ticket_condition already narrowed; the requester never sees search."
+  },
+  {
+    "rule": "messages-via-messages-module",
+    "file": "app/team_activity.py",
+    "in": "feed_query",
+    "contains": "select() on Message",
+    "reason": "The agent team activity feed lists messages (including notes) of tickets the agent can open, filtered by visible_ticket_condition; the requester never sees it."
+  }
 ]

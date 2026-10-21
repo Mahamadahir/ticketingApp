@@ -130,7 +130,7 @@ def test_allowlist_marks_but_never_hides(tmp_path):
     write(
         repo,
         "tools/code_map_allowlist.json",
-        json.dumps([{"rule": "routers-only-from-main", "file": "app/other.py", "reason": "because"}]),
+        json.dumps([{"rule": "routers-only-from-main", "file": "app/other.py", "in": "<module>", "reason": "because"}]),
     )
     violations = json.loads(code_map.generate(repo)[code_map.MAP_JSON])["seams"]["violations"]
     other = [v for v in violations if v["file"] == "app/other.py"]

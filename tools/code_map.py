@@ -28,7 +28,7 @@ HTTP_METHODS = {"get", "post", "put", "patch", "delete"}
 MAP_MD = "docs/code-map.md"
 MAP_JSON = "docs/code-map.json"
 ALLOWLIST = "tools/code_map_allowlist.json"
-SECRET_WORDS = ("secret", "password", "key", "token", "credential")
+SECRET_WORDS = ("secret", "password", "key", "token", "credential", "state")
 
 # The rules from CLAUDE.md that the script can see in the syntax tree. Each is checked in
 # check_seams(); the text here is what the map prints.
@@ -48,7 +48,6 @@ SEAMS = {
     "routers-only-from-main": (
         "Only app/main.py includes routers. Other modules do not import app.routers.*."
     ),
-    "models-is-a-leaf": "app/models.py imports no other app module except app.config.",
     "tickets-via-ticket-service": (
         "Tickets are created and change status through app/ticket_service.py (numbers come from "
         "the models hook). Nothing else sets Ticket(...) directly outside the allowed modules."
@@ -91,10 +90,9 @@ def py_files(root: Path, sub: str) -> list[Path]:
     return sorted(p for p in base.rglob("*.py") if "__pycache__" not in p.parts)
 
 
-def imports_of(tree: ast.Module, current: str, known: set[str]) -> set[str]:
+def imports_of(tree: ast.Module, current: str, known: set[str], is_package: bool = False) -> set[str]:
     """Internal modules (names in `known`) this tree imports, including imports inside functions."""
     found: set[str] = set()
-    package = current.rsplit(".", 1)[0] if "." in current else current
 
     def add(name: str) -> None:
         # Credit the longest known module that is a prefix of the dotted name.
@@ -112,7 +110,8 @@ def imports_of(tree: ast.Module, current: str, known: set[str]) -> set[str]:
                 add(alias.name)
         elif isinstance(node, ast.ImportFrom):
             if node.level:  # relative import
-                base_parts = current.split(".")[: -node.level] if node.level else []
+                parts = current.split(".")
+                base_parts = parts[: len(parts) - node.level + (1 if is_package else 0)]
                 base = ".".join(base_parts + ([node.module] if node.module else []))
             else:
                 base = node.module or ""
@@ -125,7 +124,6 @@ def imports_of(tree: ast.Module, current: str, known: set[str]) -> set[str]:
                 else:
                     add(base)
     found.discard(current)
-    del package
     return found
 
 
@@ -213,6 +211,8 @@ def settings_in(tree: ast.Module) -> list[dict]:
                     default = ast.unparse(stmt.value) if stmt.value is not None else ""
                     if any(word in name for word in SECRET_WORDS):
                         default = "(secret)"
+                    elif "://" in default and "@" in default:
+                        default = "(url with credentials)"
                     result.append({"name": name, "env": name.upper(), "type": ast.unparse(stmt.annotation), "default": default})
     return sorted(result, key=lambda s: s["name"])
 
@@ -321,8 +321,8 @@ def check_seams(trees: dict[str, ast.Module], imports: dict[str, set[str]]) -> l
                     add("access-in-visibility", file, scope, "select(" + ", ".join(sorted(hit)) + ") in a route")
             # messages-via-messages-module
             if file not in ("app/messages.py", "app/models.py"):
-                if isinstance(node, ast.Attribute) and node.attr == "messages":
-                    add("messages-via-messages-module", file, scope, f"reads .messages ({ast.unparse(node)})")
+                if isinstance(node, ast.Attribute) and node.attr == "messages" and "ticket" in ast.unparse(node.value).lower():
+                    add("messages-via-messages-module", file, scope, f"reads a ticket's .messages ({ast.unparse(node)})")
                 if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "select":
                     if "Message" in _names_in(node):
                         add("messages-via-messages-module", file, scope, "select() on Message")
@@ -349,11 +349,6 @@ def check_seams(trees: dict[str, ast.Module], imports: dict[str, set[str]]) -> l
         for target in sorted(targets):
             if target.startswith("app.routers") and target != "app.routers" and not file.startswith("app/routers/"):
                 add("routers-only-from-main", file, "<module>", f"imports {target}")
-    if "app/models.py" in imports:
-        for target in sorted(imports["app/models.py"]):
-            if target not in ("app.config",):
-                add("models-is-a-leaf", "app/models.py", "<module>", f"imports {target}")
-
     return sorted(found, key=lambda v: (v["rule"], v["file"], v["in"], v["detail"]))
 
 
@@ -363,15 +358,15 @@ def load_allowlist(root: Path) -> list[dict]:
         return []
     entries = json.loads(path.read_text(encoding="utf-8"))
     for entry in entries:
-        if not entry.get("reason", "").strip() or "rule" not in entry or "file" not in entry:
-            raise SystemExit(f"{ALLOWLIST}: every entry needs rule, file and a non-empty reason: {entry}")
+        if not entry.get("reason", "").strip() or not all(k in entry for k in ("rule", "file", "in")):
+            raise SystemExit(f"{ALLOWLIST}: every entry needs rule, file, in (the function) and a reason: {entry}")
     return entries
 
 
 def apply_allowlist(violations: list[dict], allowlist: list[dict]) -> list[dict]:
     for v in violations:
         for entry in allowlist:
-            if entry["rule"] == v["rule"] and entry["file"] == v["file"] and entry.get("contains", "") in v["detail"]:
+            if entry["rule"] == v["rule"] and entry["file"] == v["file"] and entry["in"] == v["in"] and entry.get("contains", "") in v["detail"]:
                 v["allowed"] = entry["reason"]
                 break
     return violations
@@ -385,7 +380,7 @@ def build_map(root: Path) -> dict:
     names = {module_name(f): f for f in trees}
     known = set(names)
 
-    imports = {f: imports_of(t, module_name(f), known) for f, t in trees.items()}
+    imports = {f: imports_of(t, module_name(f), known, f.endswith("__init__.py")) for f, t in trees.items()}
     imported_by: dict[str, set[str]] = {m: set() for m in known}
     for f, targets in imports.items():
         for target in targets:

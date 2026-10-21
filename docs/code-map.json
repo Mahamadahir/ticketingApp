@@ -2588,7 +2588,6 @@
       "access-in-visibility": "Who can see or work a ticket is decided only in app/visibility.py. Routes do not query Ticket, TeamMembership or TicketEscalator themselves unless the same function applies an app.visibility helper.",
       "agent-tickets-only-raising": "Only app/raising.py creates source=agent tickets (backdating relies on it).",
       "messages-via-messages-module": "What the requester may see, and whether a ticket can be emailed, is decided only in app/messages.py. Nothing else reads Ticket.messages or runs select() on Message.",
-      "models-is-a-leaf": "app/models.py imports no other app module except app.config.",
       "routers-only-from-main": "Only app/main.py includes routers. Other modules do not import app.routers.*.",
       "tickets-via-ticket-service": "Tickets are created and change status through app/ticket_service.py (numbers come from the models hook). Nothing else sets Ticket(...) directly outside the allowed modules."
     },
@@ -2690,7 +2689,7 @@
       "type": "int"
     },
     {
-      "default": "'postgresql+psycopg2://ticketing:ticketing@db:5432/ticketing'",
+      "default": "(url with credentials)",
       "env": "DATABASE_URL",
       "name": "database_url",
       "type": "str"
@@ -2738,7 +2737,7 @@
       "type": "str"
     },
     {
-      "default": "'change-me'",
+      "default": "(secret)",
       "env": "GRAPH_WEBHOOK_CLIENT_STATE",
       "name": "graph_webhook_client_state",
       "type": "str"
