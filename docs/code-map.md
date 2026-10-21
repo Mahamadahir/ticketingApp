@@ -181,9 +181,6 @@ any change that adds, removes or renames modules, routes, models, jobs, settings
 | `GRAPH_TENANT_ID` | `str` | `''` |
 | `GRAPH_WEBHOOK_CLIENT_STATE` | `str` | `(secret)` |
 | `INBOUND_ENABLED` | `bool` | `False` |
-| `INBOUND_MAX_ATTACHMENTS` | `int` | `20` |
-| `INBOUND_MAX_CC` | `int` | `10` |
-| `INBOUND_MAX_PER_SENDER_HOUR` | `int` | `30` |
 | `MAIL_CATCH_UP_ENABLED` | `bool` | `False` |
 | `MAIL_SENDING` | `str` | `'off'` |
 | `PRESENCE_ENABLED` | `bool` | `False` |
@@ -423,8 +420,8 @@ File: `app/inbound.py`
 
 - Classes: `Handled`, `IncomingAttachment`, `IncomingMail`, `MailSource`
 - Functions: `automatic_reason`, `find_ticket_for`, `ingest_mail`, `load_attachments`, `may_reply`, `parse_graph_message`, `process_message`, `process_notifications`, `referenced_ticket`
-- Imports: `app.attachments`, `app.audit`, `app.config`, `app.followers`, `app.forms`, `app.graph_client`, `app.mail`, `app.messages`, `app.models`, `app.raising`, `app.splitting`, `app.storage`, `app.teams`, `app.ticket_service`
-- Imported by: `app.jobs`, `app.routers.dev_tools`
+- Imports: `app.attachments`, `app.audit`, `app.config`, `app.followers`, `app.forms`, `app.graph_client`, `app.mail`, `app.messages`, `app.models`, `app.raising`, `app.settings_store`, `app.splitting`, `app.storage`, `app.teams`, `app.ticket_service`
+- Imported by: `app.jobs`, `app.routers.admin`, `app.routers.dev_tools`
 - Tests: `test_inbound_mail.py`
 
 ### `app.jobs`
@@ -601,7 +598,7 @@ File: `app/routers/__init__.py`
 File: `app/routers/admin.py`
 - Functions: `add_canned`, `add_category`, `add_request_type`, `category_review`, `create_local_user`, `create_team`, `edit_canned`, `edit_request_type`, `list_canned`, `list_categories`, `list_email_templates`, `list_request_types`, `list_teams`, `list_users`, `preview_email_template`, `remove_membership`, `reset_email_template`, `review_category`, `save_email_template`, `save_setting`, `set_membership`, `unlock_user`, `update_category`, `update_user`, `view_activity_log`, `view_audit_log`, `view_mail_intake`, `view_outbound_mail`, `view_scheduled_jobs`, `view_settings`
 - Routes: GET `/admin/activity-log`, GET `/admin/audit-log`, GET `/admin/canned`, POST `/admin/canned`, POST `/admin/canned/{canned_id}`, GET `/admin/categories`, POST `/admin/categories`, POST `/admin/categories/{category_id}`, GET `/admin/category-review`, POST `/admin/category-review/{number}`, GET `/admin/email-templates`, POST `/admin/email-templates/{key}`, POST `/admin/email-templates/{key}/preview`, POST `/admin/email-templates/{key}/reset`, GET `/admin/mail-intake`, GET `/admin/outbound-mail`, GET `/admin/request-types`, POST `/admin/request-types`, POST `/admin/request-types/{type_id}`, GET `/admin/scheduled-jobs`, GET `/admin/settings`, POST `/admin/settings`, GET `/admin/teams`, POST `/admin/teams`, GET `/admin/users`, POST `/admin/users`, POST `/admin/users/{user_id}`, POST `/admin/users/{user_id}/memberships`, POST `/admin/users/{user_id}/memberships/{team_id}/remove`, POST `/admin/users/{user_id}/unlock`
-- Imports: `app.activity`, `app.audit`, `app.auth`, `app.canned`, `app.categories`, `app.config`, `app.database`, `app.email_templates`, `app.forms`, `app.models`, `app.pagination`, `app.request_types`, `app.scheduled_jobs`, `app.settings_store`, `app.subscriptions`, `app.teams`, `app.templating`, `app.ticket_service`
+- Imports: `app.activity`, `app.audit`, `app.auth`, `app.canned`, `app.categories`, `app.config`, `app.database`, `app.email_templates`, `app.forms`, `app.inbound`, `app.models`, `app.pagination`, `app.request_types`, `app.scheduled_jobs`, `app.settings_store`, `app.subscriptions`, `app.teams`, `app.templating`, `app.ticket_service`
 - Imported by: `app.main`
 - Tests: none
 
@@ -731,10 +728,10 @@ Admin-editable settings. Values are stored as text in the setting table; this
 File: `app/settings_store.py`
 
 - Classes: `SettingDef`
-- Functions: `get_flag`, `get_int_setting`, `get_setting`, `set_setting`, `sla_key`
+- Functions: `count_setting`, `get_flag`, `get_int_setting`, `get_setting`, `set_setting`, `sla_key`
 - Imports: `app.models`
-- Imported by: `app.categories`, `app.mail`, `app.notifications`, `app.raising`, `app.routers.admin`, `app.routers.approvals`, `app.scheduled_jobs`, `app.sla`, `app.subscriptions`, `app.ticket_service`
-- Tests: `test_approvals.py`, `test_category_admin.py`, `test_mail_subscriptions.py`, `test_notification_followup.py`, `test_outbound_mail.py`, `test_scheduled_jobs.py`, `test_sla.py`, `test_teams_copy.py`, `test_triage.py`
+- Imported by: `app.categories`, `app.inbound`, `app.mail`, `app.notifications`, `app.raising`, `app.routers.admin`, `app.routers.approvals`, `app.scheduled_jobs`, `app.sla`, `app.subscriptions`, `app.ticket_service`
+- Tests: `test_approvals.py`, `test_category_admin.py`, `test_inbound_mail.py`, `test_mail_subscriptions.py`, `test_notification_followup.py`, `test_outbound_mail.py`, `test_scheduled_jobs.py`, `test_sla.py`, `test_teams_copy.py`, `test_triage.py`
 
 ### `app.sla`
 

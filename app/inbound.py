@@ -17,7 +17,7 @@ Rules that live here and nowhere else:
 - Our own mail and automatic replies (Auto-Submitted, X-Auto-Response-Suppress, bulk and list mail,
   bounces) never become tickets or replies. This is the loop guard on the inbound side; the outbound
   side (the per-ticket cap, never mailing the mailbox itself) is in app/mail.py. A sender who produces
-  more than INBOUND_MAX_PER_SENDER_HOUR tickets and replies in an hour is set aside as a probable loop.
+  more than inbound_max_per_sender_hour (an admin setting) tickets and replies in an hour is set aside as a probable loop.
 - Which ticket a mail belongs to: the Graph conversation of an earlier mail, then the Message-ID the
   mail replies to, then the [INC-1042] reference in the subject. The requester and followers may always
   add to a ticket. Someone else may only when the match is a STRONG one (the Graph conversation or the
@@ -50,6 +50,7 @@ from sqlmodel import Session, func, select
 from app.attachments import AttachmentRejected, clean_filename, store_attachment
 from app.audit import log_action
 from app.config import settings
+from app.settings_store import INBOUND_MAX_ATTACHMENTS, INBOUND_MAX_CC, INBOUND_MAX_PER_SENDER_HOUR, count_setting
 from app.followers import InvalidEmail, TooManyFollowers, add_follower, is_follower, normalise_email
 from app.forms import MAX_MESSAGE_LENGTH
 from app.graph_client import graph_client
@@ -200,19 +201,20 @@ def parse_graph_message(raw: dict) -> IncomingMail:
     )
 
 
-def load_attachments(client: MailSource, graph_message_id: str) -> list[IncomingAttachment]:
+def load_attachments(session: Session, client: MailSource, graph_message_id: str) -> list[IncomingAttachment]:
     """The files on a message, fetched within the limits (settings, TBC): how many, and how large each
     is. One over a limit is listed as skipped, with why, and never downloaded. app/attachments.py then
     decides what may be stored."""
     limit_mb = settings.attachment_max_bytes // (1024 * 1024)
+    max_files = count_setting(session, INBOUND_MAX_ATTACHMENTS)
     found: list[IncomingAttachment] = []
     for index, item in enumerate(client.get_attachments(graph_message_id)):
         if not isinstance(item, dict):
             continue
         name = clean_filename(_text(item.get("name")))
         inline = bool(item.get("isInline"))
-        if index >= settings.inbound_max_attachments:
-            found.append(IncomingAttachment(name, skipped=f"more than {settings.inbound_max_attachments} files on one email"))
+        if index >= max_files:
+            found.append(IncomingAttachment(name, skipped=f"more than {max_files} files on one email"))
         elif item.get("@odata.type") != "#microsoft.graph.fileAttachment":
             found.append(IncomingAttachment(name, skipped="not a file (an attached email or a link)"))
         elif not isinstance(item.get("size"), int) or item["size"] > settings.attachment_max_bytes:
@@ -363,9 +365,7 @@ def _store_files(
 
 
 def _flooding(session: Session, sender: str, now: datetime) -> bool:
-    limit = settings.inbound_max_per_sender_hour
-    if limit <= 0:
-        return False
+    limit = count_setting(session, INBOUND_MAX_PER_SENDER_HOUR)
     count = session.exec(
         select(func.count()).select_from(InboundMail).where(
             InboundMail.sender == sender,
@@ -461,7 +461,7 @@ def ingest_mail(
     session.flush()
     log_action(session, sender, "ticket", new.id, "created_by_email")
     mailbox = settings.graph_shared_mailbox.strip().lower()
-    for address in mail.cc[: settings.inbound_max_cc]:
+    for address in mail.cc[: count_setting(session, INBOUND_MAX_CC)]:
         if address in (sender, mailbox):
             continue
         try:
@@ -490,7 +490,7 @@ def process_message(
     mail.graph_message_id = graph_message_id  # the id we asked for is the one we dedupe on
     files: list[IncomingAttachment] = []
     if mail.has_attachments and automatic_reason(mail) is None and not _flooding(session, mail.sender, datetime.now(timezone.utc)):
-        files = load_attachments(client, graph_message_id)  # before any ticket is made: no lock is held while Graph answers
+        files = load_attachments(session, client, graph_message_id)  # before any ticket is made: no lock is held while Graph answers
     return ingest_mail(session, mail, files, storage)
 
 

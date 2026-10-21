@@ -81,10 +81,6 @@ param graphSubscriptionEnabled bool = false
 param mailCatchUpEnabled bool = false
 @description('Worker turns fetched mail into replies and tickets (phase 3B).')
 param inboundEnabled bool = false
-@description('Inbound mail limits (phase 3B). -1 leaves the app default.')
-param inboundMaxAttachments int = -1
-param inboundMaxPerSenderHour int = -1
-param inboundMaxCc int = -1
 
 @allowed(['off', 'graph'])
 @description('Whether the worker sends email from the shared mailbox through Graph (phase 3D). graph needs the Graph tenant, client and secret and GRAPH_SHARED_MAILBOX, with Mail.Send granted in Entra and limited to that mailbox. (The app also has a dev mode; it only works in the dev environment and is not allowed here.)')
@@ -365,13 +361,6 @@ var commonEnv = [
   { name: 'TEAMS_NOTIFICATIONS_ENABLED', value: toLower(string(teamsNotificationsEnabled)) }
 ]
 
-// Only the limits that were set; the others keep the app's own defaults.
-var inboundLimitEnv = concat(
-  inboundMaxAttachments >= 0 ? [{ name: 'INBOUND_MAX_ATTACHMENTS', value: string(inboundMaxAttachments) }] : [],
-  inboundMaxPerSenderHour >= 0 ? [{ name: 'INBOUND_MAX_PER_SENDER_HOUR', value: string(inboundMaxPerSenderHour) }] : [],
-  inboundMaxCc >= 0 ? [{ name: 'INBOUND_MAX_CC', value: string(inboundMaxCc) }] : []
-)
-
 var allowRules = [
   for (cidr, i) in webAllowedCidrs: {
     name: 'allow-${i}'
@@ -470,7 +459,7 @@ module worker 'modules/container-app.bicep' = if (deployApps && deployWorker) {
     image: image
     command: ['python', '-m', 'app.worker']
     secrets: workerSecrets
-    env: concat(commonEnv, workerSecretEnv, inboundLimitEnv, [
+    env: concat(commonEnv, workerSecretEnv, [
       { name: 'APP_ROLE', value: 'worker' }
       { name: 'PRESENCE_ENABLED', value: toLower(string(presenceEnabled)) }
       { name: 'GRAPH_SUBSCRIPTION_ENABLED', value: toLower(string(graphSubscriptionEnabled)) }

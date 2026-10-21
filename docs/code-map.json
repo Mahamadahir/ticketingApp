@@ -698,6 +698,7 @@
       ],
       "imported_by": [
         "app.jobs",
+        "app.routers.admin",
         "app.routers.dev_tools"
       ],
       "imports": [
@@ -711,6 +712,7 @@
         "app.messages",
         "app.models",
         "app.raising",
+        "app.settings_store",
         "app.splitting",
         "app.storage",
         "app.teams",
@@ -1543,6 +1545,7 @@
         "app.database",
         "app.email_templates",
         "app.forms",
+        "app.inbound",
         "app.models",
         "app.pagination",
         "app.request_types",
@@ -2342,6 +2345,7 @@
       ],
       "file": "app/settings_store.py",
       "functions": [
+        "count_setting",
         "get_flag",
         "get_int_setting",
         "get_setting",
@@ -2350,6 +2354,7 @@
       ],
       "imported_by": [
         "app.categories",
+        "app.inbound",
         "app.mail",
         "app.notifications",
         "app.raising",
@@ -2370,6 +2375,7 @@
       "tests": [
         "tests/test_approvals.py",
         "tests/test_category_admin.py",
+        "tests/test_inbound_mail.py",
         "tests/test_mail_subscriptions.py",
         "tests/test_notification_followup.py",
         "tests/test_outbound_mail.py",
@@ -2973,24 +2979,6 @@
       "env": "INBOUND_ENABLED",
       "name": "inbound_enabled",
       "type": "bool"
-    },
-    {
-      "default": "20",
-      "env": "INBOUND_MAX_ATTACHMENTS",
-      "name": "inbound_max_attachments",
-      "type": "int"
-    },
-    {
-      "default": "10",
-      "env": "INBOUND_MAX_CC",
-      "name": "inbound_max_cc",
-      "type": "int"
-    },
-    {
-      "default": "30",
-      "env": "INBOUND_MAX_PER_SENDER_HOUR",
-      "name": "inbound_max_per_sender_hour",
-      "type": "int"
     },
     {
       "default": "False",

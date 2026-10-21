@@ -97,15 +97,10 @@ class Settings(BaseSettings):
     # An inline picture smaller than this (a signature logo, a tracking pixel) is not kept.
     attachment_inline_min_bytes: int = 5 * 1024
 
-    # Inbound mail (phase 3B, app/inbound.py). All placeholders, TBC. INBOUND_ENABLED switches the worker's
-    # mail-in job on (it also needs the GRAPH_* values and the mailbox). A mail keeps at most this many
-    # attachments (the rest are noted on the ticket), and a sender may make at most this many tickets or
-    # replies an hour before the rest are set aside as a probable mail loop (0 turns the limit off).
+    # Inbound mail (phase 3B, app/inbound.py). INBOUND_ENABLED switches the worker's mail-in job on (it
+    # also needs the GRAPH_* values and the mailbox). The intake limits (attachments, Cc, mails per sender
+    # an hour) are admin settings, not environment values (app/settings_store.py).
     inbound_enabled: bool = False
-    inbound_max_attachments: int = 20
-    inbound_max_per_sender_hour: int = 30
-    # Followers made from the Cc line of a mail that opens a ticket (followers.MAX_EXTERNAL_FOLLOWERS caps all).
-    inbound_max_cc: int = 10
 
     # Comma-separated emails granted super_admin on first login, so there's
     # a way into /admin before any roles have been assigned there.
@@ -115,7 +110,7 @@ class Settings(BaseSettings):
     # switch alert is set to a few multiples of this.
     worker_heartbeat_seconds: int = 60
 
-    model_config = SettingsConfigDict(env_file=".env")
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")  # ignore keys left in an old .env (e.g. the retired INBOUND_MAX_*)
 
     @property
     def is_dev(self) -> bool:

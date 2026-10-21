@@ -14,7 +14,7 @@ from app import subscriptions
 from app.config import Settings, mail_sync_errors, settings
 from app.database import engine
 from app.jobs import JOBS, graph_subscription, mail_catch_up
-from app.models import GraphNotification, GraphSubscription, MailSyncState, Setting
+from app.models import GraphNotification, GraphSubscription, InboundMail, MailSyncState, Setting
 from app.settings_store import (
     GRAPH_RENEW_MARGIN_MINUTES,
     GRAPH_SUBSCRIPTION_MINUTES,
@@ -821,6 +821,21 @@ def test_the_admin_page_shows_the_state_and_no_secrets(client, db_session, mail)
     assert resource() in response.text.replace("&#39;", "'")
     assert "1 message notification" in response.text
     assert "state-xyz" not in response.text and "Bearer" not in response.text
+
+
+def test_the_admin_page_lists_mail_set_aside_as_a_loop(client, db_session):
+    now = datetime.now(timezone.utc)
+    db_session.add(InboundMail(graph_message_id="f1", sender="loop@example.com", outcome="ignored_flood", created_at=now))
+    db_session.add(InboundMail(graph_message_id="f2", sender="old@example.com", outcome="ignored_flood", created_at=now - timedelta(days=3)))
+    db_session.add(InboundMail(graph_message_id="ok", sender="fine@example.com", outcome="ticket_created", created_at=now))
+    db_session.commit()
+    login_as(client, "admin@example.com")
+
+    text = client.get("/admin/mail-intake").text
+
+    assert text.count("Set aside as a probable loop") == 1 and "<title>Admin: Mail intake" in text
+    assert "1 mail in the last 24 hours, 2 in all" in text
+    assert "loop@example.com" in text and "old@example.com" in text and "fine@example.com" not in text
 
 
 def test_the_admin_page_is_for_super_admins_only(client):
