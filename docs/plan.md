@@ -801,10 +801,13 @@ requester sees the request name only. Sub-tickets from a split do not inherit th
   each member gets their own emailed link (GET shows, POST decides). Handing over for leave or a leaver is adding or removing a
   person in the group, so there is no per-approval re-assignment and no standing delegate accounts (someone removed mid-request still
   counts as a voter but can no longer answer; a super admin can waive). A group may later map to an Entra security group. Withdrawing
-  a request while it waits (4C-2, built: the requester only, closes it as "withdrawn", approval status `withdrawn`, the unanswered approvers told), reminders (4C-3) follow. The per-person email preference is built (4C-4): approvers get the approval email unless they switch it off under their notification settings (the portal list is unaffected).
-- **Not chasing yet.** Approvers who never answer are not chased before phase 3. When mail and
-  Teams exist, asking an approver and chasing them go by **email and Teams**, like the other
-  notifications; approvals will want a reminder schedule alongside the auto-close timers.
+  a request while it waits (4C-2, built: the requester only, closes it as "withdrawn", approval status `withdrawn`, the unanswered approvers told), reminders (4C-3, built: see "Approval reminders" below). The per-person email preference is built (4C-4): approvers get the approval email unless they switch it off under their notification settings (the portal list is unaffected).
+- **Approval reminders (4C-3, built).** A job on the database-driven scheduler (`approval-reminders`, hourly) emails each approver who has
+  not answered: first after X days, then every Y days, at most N, all admin settings (placeholders 2, 2, 3). It stops when the request is
+  approved, declined, waived or withdrawn, or the member answers; it skips a person who switched approval emails off or left the group. The
+  reminder counts toward the automatic-email cap (its own allowance per approver). After Z days (placeholder 7) the super admins get one bell
+  notification so they can chase or waive. What is due is worked out from each vote's reminder count and last-reminded time, so a late or
+  repeated run sends once. Off by default until staging (`approval_reminders_enabled`). Teams reminders wait for the phase 8 bot.
 
 **History.** A `ticket_event` table records every status change,
 assignment, priority change, SLA pause, reopen and MSP handoff with time and

@@ -36,6 +36,7 @@ from sqlalchemy import or_
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlmodel import Session, select
 
+from app.approval_reminders import send_approval_reminders
 from app.audit import log_action
 from app.database import engine
 from app.models import ScheduledJob
@@ -57,7 +58,9 @@ class ScheduledJobDef:
 
 
 # The registry: add a ScheduledJobDef here to add a recurring job.
-SCHEDULED_JOBS: list[ScheduledJobDef] = []
+SCHEDULED_JOBS: list[ScheduledJobDef] = [
+    ScheduledJobDef("approval-reminders", 3600, send_approval_reminders),
+]
 
 
 def utcnow() -> datetime:

@@ -46,7 +46,7 @@ from app.models import (
     TicketStatus,
     User,
 )
-from app.outbox import ACKNOWLEDGEMENT, APPROVAL, APPROVAL_WITHDRAWN, AUTOMATIC_TO_REQUESTER, FOLLOWER_UPDATE, NOTICE, RAISED_FOR, REPLY
+from app.outbox import ACKNOWLEDGEMENT, APPROVAL, APPROVAL_REMINDER, APPROVAL_WITHDRAWN, AUTOMATIC_TO_REQUESTER, FOLLOWER_UPDATE, NOTICE, RAISED_FOR, REPLY
 from app.raising import should_tell_requester
 from app.settings_store import APPROVAL_LINK_MINUTES, AUTOMATIC_EMAIL_CAP, get_int_setting
 from app.teams import MAX_ATTEMPTS, MAX_BACKOFF_MINUTES, Unsendable
@@ -210,7 +210,7 @@ def build_follower_update_mail(session: Session, row: OutboundEmail) -> Mail:
     )
 
 
-def build_approval_mail(session: Session, row: OutboundEmail) -> Mail:
+def build_approval_mail(session: Session, row: OutboundEmail, template: str = "approval_request") -> Mail:
     ticket = _ticket_of(session, row)
     vote = session.get(ApprovalVote, row.vote_id) if row.vote_id else None
     approval = session.get(TicketApproval, vote.approval_id) if vote is not None else None
@@ -237,14 +237,21 @@ def build_approval_mail(session: Session, row: OutboundEmail) -> Mail:
         # Their words, not IT's: said so, set apart and cut, since they sit beside a genuine link.
         "request_block": REQUEST_BLOCK.format(words=quoted(first.body)) if first else "",
         "link_days": str(days),
+        "days_waiting": str(max(0, (datetime.now(timezone.utc) - vote.created_at).days)),
     }
-    subject, text = current_text(session, "approval_request")
+    subject, text = current_text(session, template)
     # The row keeps the text with the link left out; the link is never stored.
     return Mail(
         to=row.to_address, cc=[], subject=render_text(subject, values),
         body=render_text(text, {**values, "link": link}), record=render_text(text, {**values, "link": LINK_LEFT_OUT}),
         automatic=True, reference=ticket.reference,
     )
+
+
+def build_approval_reminder_mail(session: Session, row: OutboundEmail) -> Mail:
+    """The reminder: every check of the approval email (still pending, still a member, still wants the email),
+    with the reminder wording."""
+    return build_approval_mail(session, row, "approval_reminder")
 
 
 def build_approval_withdrawn_mail(session: Session, row: OutboundEmail) -> Mail:
@@ -279,10 +286,15 @@ BUILDERS: dict[str, Callable[[Session, OutboundEmail], Mail]] = {
     NOTICE: build_message_mail,
     RAISED_FOR: build_raised_for_mail,
     APPROVAL: build_approval_mail,
+    APPROVAL_REMINDER: build_approval_reminder_mail,
     APPROVAL_WITHDRAWN: build_approval_withdrawn_mail,
     ACKNOWLEDGEMENT: build_acknowledgement_mail,
     FOLLOWER_UPDATE: build_follower_update_mail,
 }
+
+
+# Kinds with an allowance of their own, counted per recipient (see cap_release).
+PER_RECIPIENT_ALLOWANCE = (FOLLOWER_UPDATE, APPROVAL_REMINDER)
 
 
 def automatic_cap(session: Session) -> int:
@@ -295,10 +307,10 @@ def cap_release(session: Session, row: OutboundEmail, now: datetime) -> Optional
     drops below the limit is returned, so the email is held back, not lost. Counts those actually sent.
     Two separate allowances: the requester's own automatic mail (notices, receipts), and follower updates,
     counted per recipient, so a chatty follower cannot hold back the requester's resolution or approval
-    notice, and each follower has a count of their own."""
-    if row.kind not in AUTOMATIC_TO_REQUESTER and row.kind != FOLLOWER_UPDATE:
+    notice, and each follower has a count of their own. Approval reminders are counted the same way, per approver."""
+    if row.kind not in AUTOMATIC_TO_REQUESTER and row.kind not in PER_RECIPIENT_ALLOWANCE:
         return None
-    kinds = (FOLLOWER_UPDATE,) if row.kind == FOLLOWER_UPDATE else AUTOMATIC_TO_REQUESTER
+    kinds = (row.kind,) if row.kind in PER_RECIPIENT_ALLOWANCE else AUTOMATIC_TO_REQUESTER
     sent = session.exec(
         select(OutboundEmail.sent_at).where(
             OutboundEmail.ticket_id == row.ticket_id,

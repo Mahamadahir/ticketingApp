@@ -183,6 +183,41 @@ REGISTRY: dict[str, TemplateDef] = {
             },
         ),
         TemplateDef(
+            key="approval_reminder",
+            label="Approval reminder",
+            description=(
+                "Sent to an approver who has not answered, after the delay set under Settings. Only while the "
+                "request is still waiting; the link is made when the email is sent."
+            ),
+            subject_default="[{reference}] Reminder, approval needed: {subject}",
+            subject_placeholders=_COMMON,
+            body_default=(
+                "This is a reminder: {requester_email} asked for something that still needs your approval "
+                "({days_waiting} days ago).\n\n"
+                "Reference: {reference}\nSubject: {subject}\n\n{request_block}\n\n{link}\n\n"
+                "Open the link to approve or decline. Opening it decides nothing.\n"
+                "The link works for {link_days} days."
+            ),
+            body_placeholders={
+                **_COMMON,
+                "requester_email": "who asked",
+                "request_block": "the requester's own words, set apart and marked as theirs (left out if none)",
+                "link": "the personal link to answer from, made when the email is sent",
+                "link_days": "how many days the link works",
+                "days_waiting": "how many days ago the request was sent to this approver",
+            },
+            required=("link",),
+            subject_required=("reference",),  # the [INC-n] that lets a reply find its ticket
+            sample={
+                **_COMMON_SAMPLE,
+                "requester_email": "sam@example.com",
+                "request_block": REQUEST_BLOCK.format(words="Please install the design software on my laptop."),
+                "link": "https://tickets.example.org/approvals/(a personal link, signed when sent)",
+                "link_days": "14",
+                "days_waiting": "3",
+            },
+        ),
+        TemplateDef(
             key="approval_withdrawn",
             label="Approval withdrawn",
             description="Sent to each approver who had not answered when the requester withdrew the request.",
