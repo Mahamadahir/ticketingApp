@@ -48,6 +48,9 @@ any change that adds, removes or renames modules, routes, models, jobs, settings
 | POST | `/admin/email-templates/{key}/preview` | `preview_email_template` | `app.routers.admin` |
 | POST | `/admin/email-templates/{key}/reset` | `reset_email_template` | `app.routers.admin` |
 | GET | `/admin/mail-intake` | `view_mail_intake` | `app.routers.admin` |
+| GET | `/admin/never-follow` | `list_never_follow` | `app.routers.admin` |
+| POST | `/admin/never-follow` | `add_never_follow` | `app.routers.admin` |
+| POST | `/admin/never-follow/{row_id}/remove` | `remove_never_follow` | `app.routers.admin` |
 | GET | `/admin/outbound-mail` | `view_outbound_mail` | `app.routers.admin` |
 | GET | `/admin/request-types` | `list_request_types` | `app.routers.admin` |
 | POST | `/admin/request-types` | `add_request_type` | `app.routers.admin` |
@@ -130,6 +133,7 @@ any change that adds, removes or renames modules, routes, models, jobs, settings
 | `inboundmail` | `InboundMail` | `app.models` |
 | `mailsyncstate` | `MailSyncState` | `app.models` |
 | `message` | `Message` | `app.models` |
+| `neverfollowaddress` | `NeverFollowAddress` | `app.models` |
 | `notification` | `Notification` | `app.models` |
 | `notificationpreference` | `NotificationPreference` | `app.models` |
 | `numbercounter` | `NumberCounter` | `app.models` |
@@ -205,15 +209,15 @@ any change that adds, removes or renames modules, routes, models, jobs, settings
 
 ## Migrations
 
-32 revisions. Head: `b4e7a0d3c158`.
+33 revisions. Head: `7c76517851fa`.
 
 Chain tail (newest first):
 
+- `7c76517851fa` migrations/versions/7c76517851fa_never_follow_address.py
 - `b4e7a0d3c158` migrations/versions/b4e7a0d3c158_scheduled_job.py
 - `a3f6d0b8c471` migrations/versions/a3f6d0b8c471_email_templates.py
 - `e4b7c1a9d052` migrations/versions/e4b7c1a9d052_inbound_mail_handled_mail_record_.py
 - `c3b7e1a94d20` migrations/versions/c3b7e1a94d20_graph_subscription_and_mail_sync_state.py
-- `d8a3c6f1b247` migrations/versions/d8a3c6f1b247_attachments.py
 
 ## Modules
 
@@ -379,11 +383,11 @@ File: `app/escalation.py`
 Followers: people copied on a ticket's public emails.  
 File: `app/followers.py`
 
-- Classes: `InvalidEmail`, `TooManyFollowers`
+- Classes: `InvalidEmail`, `NeverFollowListed`, `TooManyFollowers`
 - Functions: `add_follower`, `cc_list`, `followers_of`, `is_follower`, `normalise_email`, `remove_follower`
-- Imports: `app.models`, `app.ticket_service`
-- Imported by: `app.escalation`, `app.inbound`, `app.messages`, `app.raising`, `app.request_types`, `app.routers.portal`, `app.routers.tickets`, `app.visibility`
-- Tests: `test_bell_access.py`, `test_followers.py`, `test_inbound_mail.py`, `test_reply_notification.py`
+- Imports: `app.models`, `app.never_follow`, `app.ticket_service`
+- Imported by: `app.escalation`, `app.inbound`, `app.messages`, `app.raising`, `app.request_types`, `app.routers.admin`, `app.routers.portal`, `app.routers.tickets`, `app.visibility`
+- Tests: `test_bell_access.py`, `test_followers.py`, `test_inbound_mail.py`, `test_never_follow.py`, `test_reply_notification.py`
 
 ### `app.forms`
 
@@ -422,7 +426,7 @@ File: `app/inbound.py`
 - Functions: `automatic_reason`, `find_ticket_for`, `ingest_mail`, `load_attachments`, `may_reply`, `parse_graph_message`, `process_message`, `process_notifications`, `referenced_ticket`
 - Imports: `app.attachments`, `app.audit`, `app.config`, `app.followers`, `app.forms`, `app.graph_client`, `app.mail`, `app.messages`, `app.models`, `app.raising`, `app.settings_store`, `app.splitting`, `app.storage`, `app.teams`, `app.ticket_service`
 - Imported by: `app.jobs`, `app.routers.admin`, `app.routers.dev_tools`
-- Tests: `test_inbound_mail.py`
+- Tests: `test_inbound_mail.py`, `test_never_follow.py`
 
 ### `app.jobs`
 
@@ -495,12 +499,23 @@ File: `app/messages.py`
 (no docstring)  
 File: `app/models.py`
 
-- Classes: `ActivityLog`, `Attachment`, `AuditLog`, `CannedResponse`, `Category`, `EmailTemplate`, `GraphNotification`, `GraphSubscription`, `InboundMail`, `MailSyncState`, `MembershipLevel`, `Message`, `MessageDirection`, `MessageVisibility`, `Notification`, `NotificationPreference`, `NumberCounter`, `OutboundEmail`, `RequestType`, `RequestTypeApprover`, `ScheduledJob`, `Setting`, `Team`, `TeamMembership`, `TeamsPost`, `Ticket`, `TicketApproval`, `TicketEscalator`, `TicketEvent`, `TicketFollower`, `TicketSource`, `TicketStatus`, `TicketType`, `User`, `UserRole`
+- Classes: `ActivityLog`, `Attachment`, `AuditLog`, `CannedResponse`, `Category`, `EmailTemplate`, `GraphNotification`, `GraphSubscription`, `InboundMail`, `MailSyncState`, `MembershipLevel`, `Message`, `MessageDirection`, `MessageVisibility`, `NeverFollowAddress`, `Notification`, `NotificationPreference`, `NumberCounter`, `OutboundEmail`, `RequestType`, `RequestTypeApprover`, `ScheduledJob`, `Setting`, `Team`, `TeamMembership`, `TeamsPost`, `Ticket`, `TicketApproval`, `TicketEscalator`, `TicketEvent`, `TicketFollower`, `TicketSource`, `TicketStatus`, `TicketType`, `User`, `UserRole`
 - Functions: `allocate_number`
-- Tables: `activitylog`, `attachment`, `auditlog`, `cannedresponse`, `category`, `emailtemplate`, `graphnotification`, `graphsubscription`, `inboundmail`, `mailsyncstate`, `message`, `notification`, `notificationpreference`, `numbercounter`, `outboundemail`, `requesttype`, `requesttypeapprover`, `scheduledjob`, `setting`, `team`, `teammembership`, `teamspost`, `ticket`, `ticketapproval`, `ticketescalator`, `ticketevent`, `ticketfollower`, `user`
+- Tables: `activitylog`, `attachment`, `auditlog`, `cannedresponse`, `category`, `emailtemplate`, `graphnotification`, `graphsubscription`, `inboundmail`, `mailsyncstate`, `message`, `neverfollowaddress`, `notification`, `notificationpreference`, `numbercounter`, `outboundemail`, `requesttype`, `requesttypeapprover`, `scheduledjob`, `setting`, `team`, `teammembership`, `teamspost`, `ticket`, `ticketapproval`, `ticketescalator`, `ticketevent`, `ticketfollower`, `user`
 - Imports: none
-- Imported by: `app.activity`, `app.approvals`, `app.attachments`, `app.audit`, `app.auth`, `app.backdating`, `app.canned`, `app.categories`, `app.email_templates`, `app.escalation`, `app.followers`, `app.identity`, `app.inbound`, `app.linking`, `app.mail`, `app.main`, `app.messages`, `app.notification_settings`, `app.notifications`, `app.outbox`, `app.presence`, `app.raising`, `app.request_types`, `app.routers.admin`, `app.routers.approvals`, `app.routers.attachments`, `app.routers.auth`, `app.routers.my_settings`, `app.routers.notifications`, `app.routers.portal`, `app.routers.tickets`, `app.routers.webhooks`, `app.scheduled_jobs`, `app.search`, `app.settings_store`, `app.sla`, `app.splitting`, `app.subscriptions`, `app.team_activity`, `app.teams`, `app.ticket_service`, `app.triage`, `app.visibility`
-- Tests: `conftest.py`, `test_access_context.py`, `test_activity_log.py`, `test_admin.py`, `test_approvals.py`, `test_attachments.py`, `test_auth.py`, `test_backdating.py`, `test_bell_access.py`, `test_canned.py`, `test_category_admin.py`, `test_email_preview.py`, `test_email_templates.py`, `test_escalation.py`, `test_escalation_tidy.py`, `test_followers.py`, `test_hardening.py`, `test_htmx_errors.py`, `test_htmx_partials.py`, `test_inbound_mail.py`, `test_linking.py`, `test_login_lockout.py`, `test_mail_subscriptions.py`, `test_messages.py`, `test_notification_followup.py`, `test_notification_settings.py`, `test_notifications.py`, `test_outbound_mail.py`, `test_pagination_and_limits.py`, `test_portal.py`, `test_presence.py`, `test_public_surface.py`, `test_raising.py`, `test_reply_notification.py`, `test_request_types.py`, `test_scheduled_jobs.py`, `test_search.py`, `test_sla.py`, `test_split_family.py`, `test_splitting.py`, `test_status_follows_conversation.py`, `test_team_activity.py`, `test_teams.py`, `test_teams_copy.py`, `test_teams_copy_sending.py`, `test_ticket_core.py`, `test_ticket_urls.py`, `test_tickets_rbac.py`, `test_triage.py`, `test_visibility.py`, `test_wiring_3f.py`, `test_with_supplier.py`, `test_worker.py`
+- Imported by: `app.activity`, `app.approvals`, `app.attachments`, `app.audit`, `app.auth`, `app.backdating`, `app.canned`, `app.categories`, `app.email_templates`, `app.escalation`, `app.followers`, `app.identity`, `app.inbound`, `app.linking`, `app.mail`, `app.main`, `app.messages`, `app.never_follow`, `app.notification_settings`, `app.notifications`, `app.outbox`, `app.presence`, `app.raising`, `app.request_types`, `app.routers.admin`, `app.routers.approvals`, `app.routers.attachments`, `app.routers.auth`, `app.routers.my_settings`, `app.routers.notifications`, `app.routers.portal`, `app.routers.tickets`, `app.routers.webhooks`, `app.scheduled_jobs`, `app.search`, `app.settings_store`, `app.sla`, `app.splitting`, `app.subscriptions`, `app.team_activity`, `app.teams`, `app.ticket_service`, `app.triage`, `app.visibility`
+- Tests: `conftest.py`, `test_access_context.py`, `test_activity_log.py`, `test_admin.py`, `test_approvals.py`, `test_attachments.py`, `test_auth.py`, `test_backdating.py`, `test_bell_access.py`, `test_canned.py`, `test_category_admin.py`, `test_email_preview.py`, `test_email_templates.py`, `test_escalation.py`, `test_escalation_tidy.py`, `test_followers.py`, `test_hardening.py`, `test_htmx_errors.py`, `test_htmx_partials.py`, `test_inbound_mail.py`, `test_linking.py`, `test_login_lockout.py`, `test_mail_subscriptions.py`, `test_messages.py`, `test_never_follow.py`, `test_notification_followup.py`, `test_notification_settings.py`, `test_notifications.py`, `test_outbound_mail.py`, `test_pagination_and_limits.py`, `test_portal.py`, `test_presence.py`, `test_public_surface.py`, `test_raising.py`, `test_reply_notification.py`, `test_request_types.py`, `test_scheduled_jobs.py`, `test_search.py`, `test_sla.py`, `test_split_family.py`, `test_splitting.py`, `test_status_follows_conversation.py`, `test_team_activity.py`, `test_teams.py`, `test_teams_copy.py`, `test_teams_copy_sending.py`, `test_ticket_core.py`, `test_ticket_urls.py`, `test_tickets_rbac.py`, `test_triage.py`, `test_visibility.py`, `test_wiring_3f.py`, `test_with_supplier.py`, `test_worker.py`
+
+### `app.never_follow`
+
+The never-follow list: addresses that must never become followers (4B-2).  
+File: `app/never_follow.py`
+
+- Classes: `NeverFollowError`
+- Functions: `add_listed`, `all_listed`, `is_listed`, `remove_listed`
+- Imports: `app.models`
+- Imported by: `app.followers`, `app.routers.admin`
+- Tests: `test_never_follow.py`
 
 ### `app.notification_settings`
 
@@ -596,9 +611,9 @@ File: `app/routers/__init__.py`
 
 (no docstring)  
 File: `app/routers/admin.py`
-- Functions: `add_canned`, `add_category`, `add_request_type`, `category_review`, `create_local_user`, `create_team`, `edit_canned`, `edit_request_type`, `list_canned`, `list_categories`, `list_email_templates`, `list_request_types`, `list_teams`, `list_users`, `preview_email_template`, `remove_membership`, `reset_email_template`, `review_category`, `save_email_template`, `save_setting`, `set_membership`, `unlock_user`, `update_category`, `update_user`, `view_activity_log`, `view_audit_log`, `view_mail_intake`, `view_outbound_mail`, `view_scheduled_jobs`, `view_settings`
-- Routes: GET `/admin/activity-log`, GET `/admin/audit-log`, GET `/admin/canned`, POST `/admin/canned`, POST `/admin/canned/{canned_id}`, GET `/admin/categories`, POST `/admin/categories`, POST `/admin/categories/{category_id}`, GET `/admin/category-review`, POST `/admin/category-review/{number}`, GET `/admin/email-templates`, POST `/admin/email-templates/{key}`, POST `/admin/email-templates/{key}/preview`, POST `/admin/email-templates/{key}/reset`, GET `/admin/mail-intake`, GET `/admin/outbound-mail`, GET `/admin/request-types`, POST `/admin/request-types`, POST `/admin/request-types/{type_id}`, GET `/admin/scheduled-jobs`, GET `/admin/settings`, POST `/admin/settings`, GET `/admin/teams`, POST `/admin/teams`, GET `/admin/users`, POST `/admin/users`, POST `/admin/users/{user_id}`, POST `/admin/users/{user_id}/memberships`, POST `/admin/users/{user_id}/memberships/{team_id}/remove`, POST `/admin/users/{user_id}/unlock`
-- Imports: `app.activity`, `app.audit`, `app.auth`, `app.canned`, `app.categories`, `app.config`, `app.database`, `app.email_templates`, `app.forms`, `app.inbound`, `app.models`, `app.pagination`, `app.request_types`, `app.scheduled_jobs`, `app.settings_store`, `app.subscriptions`, `app.teams`, `app.templating`, `app.ticket_service`
+- Functions: `add_canned`, `add_category`, `add_never_follow`, `add_request_type`, `category_review`, `create_local_user`, `create_team`, `edit_canned`, `edit_request_type`, `list_canned`, `list_categories`, `list_email_templates`, `list_never_follow`, `list_request_types`, `list_teams`, `list_users`, `preview_email_template`, `remove_membership`, `remove_never_follow`, `reset_email_template`, `review_category`, `save_email_template`, `save_setting`, `set_membership`, `unlock_user`, `update_category`, `update_user`, `view_activity_log`, `view_audit_log`, `view_mail_intake`, `view_outbound_mail`, `view_scheduled_jobs`, `view_settings`
+- Routes: GET `/admin/activity-log`, GET `/admin/audit-log`, GET `/admin/canned`, POST `/admin/canned`, POST `/admin/canned/{canned_id}`, GET `/admin/categories`, POST `/admin/categories`, POST `/admin/categories/{category_id}`, GET `/admin/category-review`, POST `/admin/category-review/{number}`, GET `/admin/email-templates`, POST `/admin/email-templates/{key}`, POST `/admin/email-templates/{key}/preview`, POST `/admin/email-templates/{key}/reset`, GET `/admin/mail-intake`, GET `/admin/never-follow`, POST `/admin/never-follow`, POST `/admin/never-follow/{row_id}/remove`, GET `/admin/outbound-mail`, GET `/admin/request-types`, POST `/admin/request-types`, POST `/admin/request-types/{type_id}`, GET `/admin/scheduled-jobs`, GET `/admin/settings`, POST `/admin/settings`, GET `/admin/teams`, POST `/admin/teams`, GET `/admin/users`, POST `/admin/users`, POST `/admin/users/{user_id}`, POST `/admin/users/{user_id}/memberships`, POST `/admin/users/{user_id}/memberships/{team_id}/remove`, POST `/admin/users/{user_id}/unlock`
+- Imports: `app.activity`, `app.audit`, `app.auth`, `app.canned`, `app.categories`, `app.config`, `app.database`, `app.email_templates`, `app.followers`, `app.forms`, `app.inbound`, `app.models`, `app.never_follow`, `app.pagination`, `app.request_types`, `app.scheduled_jobs`, `app.settings_store`, `app.subscriptions`, `app.teams`, `app.templating`, `app.ticket_service`
 - Imported by: `app.main`
 - Tests: none
 

@@ -38,6 +38,8 @@ from app.request_types import (
     create_request_type,
     update_request_type,
 )
+from app.followers import InvalidEmail, normalise_email
+from app.never_follow import MAX_REASON_LENGTH, NeverFollowError, add_listed, all_listed, remove_listed
 from app.canned import (
     MAX_TITLE_LENGTH,
     PLACEHOLDERS,
@@ -544,6 +546,54 @@ def edit_canned(
         )
     session.commit()
     return RedirectResponse("/admin/canned", status_code=303)
+
+
+# ---- Never-follow list (4B-2) ----------------------------------------------------------
+
+
+@router.get("/never-follow", response_class=HTMLResponse)
+def list_never_follow(
+    request: Request,
+    user: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    return templates.TemplateResponse(
+        request, "admin_never_follow.html",
+        {"rows": all_listed(session), "max_reason_length": MAX_REASON_LENGTH, "user": user},
+    )
+
+
+@router.post("/never-follow")
+def add_never_follow(
+    email: str = Form(..., max_length=254),
+    reason: str = Form("", max_length=1000),
+    admin: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    try:
+        address = normalise_email(email)
+        row = add_listed(session, address, reason, admin.email)
+    except InvalidEmail:
+        raise HTTPException(status_code=400, detail="That is not a valid email address")
+    except NeverFollowError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    log_action(session, admin.email, "never_follow", row.id, "added", f"{row.email}: {row.reason}" if row.reason else row.email)
+    session.commit()
+    return RedirectResponse("/admin/never-follow", status_code=303)
+
+
+@router.post("/never-follow/{row_id}/remove")
+def remove_never_follow(
+    row_id: int,
+    admin: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    email = remove_listed(session, row_id)
+    if email is None:
+        raise HTTPException(status_code=404, detail="Address not on the list")
+    log_action(session, admin.email, "never_follow", row_id, "removed", email)
+    session.commit()
+    return RedirectResponse("/admin/never-follow", status_code=303)
 
 
 MAX_FORM_TEXT = 50000  # a generous cap on posted template text; the real limits are in app/email_templates.py

@@ -18,6 +18,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, func, select
 
 from app.models import Ticket, TicketFollower, User
+from app.never_follow import is_listed
 from app.ticket_service import record_event
 
 MAX_EXTERNAL_FOLLOWERS = 20
@@ -38,6 +39,17 @@ class InvalidEmail(ValueError):
 
 class TooManyFollowers(ValueError):
     pass
+
+
+class NeverFollowListed(ValueError):
+    """The address is on the admin's never-follow list (a shared mailbox or distribution list)."""
+
+    def __init__(self, email: str):
+        super().__init__(email)
+        self.email = email
+
+    def message(self) -> str:
+        return f"{self.email} is on the never-follow list (a shared mailbox or distribution list), so it cannot be copied on tickets"
 
 
 def normalise_email(raw: str) -> str:
@@ -76,7 +88,7 @@ def add_follower(
 ) -> Optional[TicketFollower]:
     """Adds a follower and records the event. Returns None when there is nothing
     to add (already following, or the address is the requester's, who is already
-    a recipient). Pass internal_user to add an agent as an internal follower, who is then
+    a recipient). Raises NeverFollowListed for an address on the never-follow list. Pass internal_user to add an agent as an internal follower, who is then
     always copied (no access comes with it); that is allowed even when the agent is
     the ticket's requester. Safe to call twice at once. Does not commit."""
     # An agent's own account address is trusted as it is: re-checking it with the
@@ -84,6 +96,9 @@ def add_follower(
     email = internal_user.email.strip().lower() if internal_user else normalise_email(raw_email)
     if internal_user is None and email == ticket.requester_email.lower():
         return None
+    # An agent's own account address is never checked: it is not a typed-in address.
+    if internal_user is None and is_listed(session, email):
+        raise NeverFollowListed(email)
 
     existing = session.exec(
         select(TicketFollower).where(TicketFollower.ticket_id == ticket.id, TicketFollower.email == email)

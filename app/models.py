@@ -330,6 +330,18 @@ class EmailTemplate(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class NeverFollowAddress(SQLModel, table=True):
+    """An address that must never become a follower (the shared mailbox and its aliases, a
+    distribution list). Managed by admins in app/never_follow.py; the address is stored
+    normalised (lower case) and matched exactly."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    email: str = Field(unique=True, index=True)
+    reason: str = Field(default="")
+    added_by: str  # the admin's email
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 class RequestType(SQLModel, table=True):
     """A thing people can ask IT for ("New starter", "Software install"), each with the
     people who approve it. Managed by admins in app/request_types.py. Switching one off hides

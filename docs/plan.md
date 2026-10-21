@@ -348,7 +348,7 @@ reference users. "My requests" matches tickets by lower-cased email through one 
 `app/identity.py`) and also lists tickets the person follows. For agents, a nightly Entra `accountEnabled` check sets an `is_active`
 flag (the same flag as the out-of-office item under Notifications, and the leaver step of the session work in "Security
 hardening phase"); it is built in phase 6, alongside matching users on the Entra object id. An admin-managed **never-follow
-list** (the shared mailbox, distribution lists) keeps those addresses from being added as followers from a Cc.
+list** (the shared mailbox, distribution lists; built in 4B-2, `app/never_follow.py`) keeps those addresses from being added as followers, by an inbound Cc or by hand.
 
 **Linked identities** (decided 22 Oct 2026; phase 6; manual, super admin only). One person can have two Entra accounts on the
 same tenant (for example upn@companyA.com and upn@companyB.com). A super admin links a secondary account to a primary person:
