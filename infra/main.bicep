@@ -334,7 +334,7 @@ var webBaseUrl = !empty(webAppBaseUrl) ? webAppBaseUrl : 'https://${webName}.${a
 var publicName = 'ca-${prefix}-${environmentName}-public'
 // Empty when there is no public app to point at, so an approval email waits (the app refuses to
 // build a link without it) instead of going out with a link to a host that does not exist.
-var publicAppUrl = !empty(publicAppBaseUrl) ? publicAppBaseUrl : (deployPublicApp ? 'https://${publicName}.${appEnvironment.outputs.defaultDomain}' : '')
+var publicAppUrl = deployPublicApp ? (!empty(publicAppBaseUrl) ? publicAppBaseUrl : 'https://${publicName}.${appEnvironment.outputs.defaultDomain}') : ''
 
 var commonEnv = [
   { name: 'ENV', value: environmentName }

@@ -170,10 +170,10 @@ jobs:
           if [ "$ENVIRONMENT_NAME" = staging ]; then default=true; fi
           worker_on="${DEPLOY_WORKER:-$default}"
           public_on="${DEPLOY_PUBLIC_APP:-$default}"
-          if { [ "${MAIL_SENDING:-}" = graph ] || [ "${GRAPH_SUBSCRIPTION_ENABLED:-}" = true ]; } && [ "$public_on" != true ] && [ -z "${PUBLIC_BASE_URL:-}" ]; then
-            echo "::warning::Mail sending or the Graph subscription is on but the public app is not deployed (DEPLOY_PUBLIC_APP) and PUBLIC_BASE_URL is empty: approval links and Graph notifications have nowhere to go."
+          if { [ "${MAIL_SENDING:-}" = graph ] || [ "${GRAPH_SUBSCRIPTION_ENABLED:-}" = true ]; } && [ "$public_on" != true ]; then
+            echo "::warning::Mail sending or the Graph subscription is on but the public app is not deployed (DEPLOY_PUBLIC_APP): approval links and Graph notifications have nowhere to go."
           fi
-          if { [ "${TEAMS_NEW_TICKET_ENABLED:-}" = true ] || [ "${TEAMS_NOTIFICATIONS_ENABLED:-}" = true ] || [ "${PRESENCE_ENABLED:-}" = true ] || [ "${MAIL_SENDING:-}" = graph ]; } && [ "$worker_on" != true ]; then
+          if { [ "${TEAMS_NEW_TICKET_ENABLED:-}" = true ] || [ "${TEAMS_NOTIFICATIONS_ENABLED:-}" = true ] || [ "${PRESENCE_ENABLED:-}" = true ] || [ "${MAIL_SENDING:-}" = graph ] || [ "${GRAPH_SUBSCRIPTION_ENABLED:-}" = true ] || [ "${MAIL_CATCH_UP_ENABLED:-}" = true ] || [ "${INBOUND_ENABLED:-}" = true ]; } && [ "$worker_on" != true ]; then
             echo "::warning::A Teams, presence or mail switch is on but the worker is not deployed (DEPLOY_WORKER), and the worker does the sending and the presence checks. Posts and emails will queue and nothing will send them."
           fi
           if [ "${TEAMS_NEW_TICKET_ENABLED:-}" = true ] || [ "${TEAMS_NOTIFICATIONS_ENABLED:-}" = true ]; then
@@ -182,9 +182,9 @@ jobs:
               fail=1
             fi
           fi
-          if [ "${PRESENCE_ENABLED:-}" = true ] || [ "${MAIL_SENDING:-}" = graph ]; then
+          if [ "${PRESENCE_ENABLED:-}" = true ] || [ "${MAIL_SENDING:-}" = graph ] || [ "${GRAPH_SUBSCRIPTION_ENABLED:-}" = true ] || [ "${MAIL_CATCH_UP_ENABLED:-}" = true ] || [ "${INBOUND_ENABLED:-}" = true ]; then
             if [ -z "$GRAPH_TENANT_ID" ] || [ -z "$GRAPH_CLIENT_ID" ] || [ -z "$GRAPH_CLIENT_SECRET" ]; then
-              echo "::error::Presence and mail sending need GRAPH_TENANT_ID, GRAPH_CLIENT_ID and GRAPH_CLIENT_SECRET." >&2
+              echo "::error::Presence, mail sending and the inbound mail switches need GRAPH_TENANT_ID, GRAPH_CLIENT_ID and GRAPH_CLIENT_SECRET." >&2
               fail=1
             fi
           fi

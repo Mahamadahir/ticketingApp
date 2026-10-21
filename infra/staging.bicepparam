@@ -8,8 +8,10 @@ param image = readEnvironmentVariable('IMAGE', '')
 
 // The public app (webhook and approval links) and the worker (Teams, presence, mail) both exist now.
 // Staging runs them by default; DEPLOY_PUBLIC_APP and DEPLOY_WORKER say true or false.
-param deployPublicApp = toLower(trim(readEnvironmentVariable('DEPLOY_PUBLIC_APP', 'true'))) == 'true'
-param deployWorker = toLower(trim(readEnvironmentVariable('DEPLOY_WORKER', 'true'))) == 'true'
+var deployPublicAppRaw = toLower(trim(readEnvironmentVariable('DEPLOY_PUBLIC_APP', '')))
+param deployPublicApp = empty(deployPublicAppRaw) ? true : deployPublicAppRaw == 'true'
+var deployWorkerRaw = toLower(trim(readEnvironmentVariable('DEPLOY_WORKER', '')))
+param deployWorker = empty(deployWorkerRaw) ? true : deployWorkerRaw == 'true'
 
 // Office and VPN ranges, comma separated, e.g. WEB_ALLOWED_CIDRS=203.0.113.0/24,198.51.100.7/32.
 // Required. Use 0.0.0.0/0 only as a deliberate choice for a throwaway test.
@@ -24,7 +26,8 @@ param inboundEnabled = toLower(trim(readEnvironmentVariable('INBOUND_ENABLED', '
 param inboundMaxAttachments = empty(trim(readEnvironmentVariable('INBOUND_MAX_ATTACHMENTS', ''))) ? -1 : int(trim(readEnvironmentVariable('INBOUND_MAX_ATTACHMENTS', '')))
 param inboundMaxPerSenderHour = empty(trim(readEnvironmentVariable('INBOUND_MAX_PER_SENDER_HOUR', ''))) ? -1 : int(trim(readEnvironmentVariable('INBOUND_MAX_PER_SENDER_HOUR', '')))
 param inboundMaxCc = empty(trim(readEnvironmentVariable('INBOUND_MAX_CC', ''))) ? -1 : int(trim(readEnvironmentVariable('INBOUND_MAX_CC', '')))
-param mailSending = toLower(trim(readEnvironmentVariable('MAIL_SENDING', 'off')))
+var mailSendingRaw = toLower(trim(readEnvironmentVariable('MAIL_SENDING', '')))
+param mailSending = empty(mailSendingRaw) ? 'off' : (mailSendingRaw == 'graph' ? 'graph' : 'off')
 
 param alertEmail = readEnvironmentVariable('ALERT_EMAIL')
 
