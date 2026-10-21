@@ -833,6 +833,7 @@ def test_the_admin_page_lists_mail_set_aside_as_a_loop(client, db_session):
 
     text = client.get("/admin/mail-intake").text
 
+    assert text.count("Set aside as a probable loop") == 1 and "<title>Admin: Mail intake" in text
     assert "1 mail in the last 24 hours, 2 in all" in text
     assert "loop@example.com" in text and "old@example.com" in text and "fine@example.com" not in text
 

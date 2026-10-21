@@ -110,7 +110,7 @@ class Settings(BaseSettings):
     # switch alert is set to a few multiples of this.
     worker_heartbeat_seconds: int = 60
 
-    model_config = SettingsConfigDict(env_file=".env")
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")  # ignore keys left in an old .env (e.g. the retired INBOUND_MAX_*)
 
     @property
     def is_dev(self) -> bool:

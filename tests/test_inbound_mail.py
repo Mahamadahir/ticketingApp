@@ -203,7 +203,7 @@ def test_everyone_copied_on_the_opening_mail_follows_the_ticket_but_not_the_mail
     assert {f.added_by_email for f in followers} == {"jo@example.com"} and not any(f.is_internal for f in followers)
 
 
-def test_the_cc_line_is_limited_so_one_mail_cannot_fill_the_follower_list(db_session, monkeypatch):
+def test_the_cc_line_is_limited_so_one_mail_cannot_fill_the_follower_list(db_session):
     set_setting(db_session, INBOUND_MAX_CC, "2")
     result = ingest_mail(db_session, mail(cc=[f"p{i}@example.com" for i in range(6)]))
     db_session.commit()
@@ -341,7 +341,7 @@ def test_a_draft_and_a_mail_with_no_usable_sender_are_set_aside(db_session):
     assert tickets(db_session) == []
 
 
-def test_a_sender_who_floods_the_mailbox_is_set_aside_after_the_limit(db_session, monkeypatch):
+def test_a_sender_who_floods_the_mailbox_is_set_aside_after_the_limit(db_session):
     set_setting(db_session, INBOUND_MAX_PER_SENDER_HOUR, "3")
     outcomes = [ingest_mail(db_session, mail(f"f{i}", subject=f"Help {i}")).outcome for i in range(5)]
     assert outcomes == [TICKET_CREATED] * 3 + [IGNORED_FLOOD] * 2
@@ -696,7 +696,7 @@ def test_a_file_that_lies_about_its_size_is_caught_after_download(db_session, st
     assert len(events_of(db_session, result.ticket, "attachment_skipped")) == 1
 
 
-def test_only_so_many_files_are_kept_per_mail_and_attached_emails_are_skipped(db_session, storage, monkeypatch):
+def test_only_so_many_files_are_kept_per_mail_and_attached_emails_are_skipped(db_session, storage):
     set_setting(db_session, INBOUND_MAX_ATTACHMENTS, "2")
     graph = FakeGraph()
     graph.add("m1")
@@ -947,7 +947,7 @@ def test_spaces_and_joiners_survive_but_control_characters_do_not(db_session):
     assert messages_of(db_session, result.ticket)[0].body == "a\u00a0bc\u2028d"
 
 
-def test_a_flooding_senders_files_are_not_downloaded(db_session, storage, monkeypatch):
+def test_a_flooding_senders_files_are_not_downloaded(db_session, storage):
     set_setting(db_session, INBOUND_MAX_PER_SENDER_HOUR, "1")
     graph = FakeGraph()
     graph.add("m1")

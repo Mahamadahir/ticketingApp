@@ -1,21 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Admin: Mail intake
-<h3>Set aside as a probable loop</h3>
-<p>
-  {{ flood_day }} mail{{ "" if flood_day == 1 else "s" }} in the last 24 hours, {{ flood_total }} in all, from a sender who passed the
-  limit of tickets and replies in an hour (Settings, "Inbound mail"). Nothing was made from them.
-</p>
-{% if flood_recent %}
-<table>
-  <thead><tr><th>Received (UTC)</th><th>Sender</th></tr></thead>
-  <tbody>
-    {% for row in flood_recent %}
-    <tr><td>{{ row.created_at.strftime("%Y-%m-%d %H:%M") }}</td><td>{{ row.sender or "unknown" }}</td></tr>
-    {% endfor %}
-  </tbody>
-</table>
-{% endif %}
-{% endblock %}
+{% block title %}Admin: Mail intake{% endblock %}
 {% block content %}
 {% set active = "/admin/mail-intake" %}
 {% include "_admin_tabs.html" %}
