@@ -23,6 +23,7 @@ TEAMS = "teams"
 EMAIL = "email"
 
 RAISED_FOR_YOU = "raised_for_you"
+FOLLOWER_UPDATE = "follower_update"
 
 # The first half of the (two-number) advisory lock that serialises one person's saves; the second
 # is their user id. A different space from the worker's single-number lock.
@@ -70,6 +71,12 @@ EVENT_TYPES: tuple[EventType, ...] = (
         RAISED_FOR_YOU, "An agent raises a ticket for you",
         "An email telling you a ticket was raised on your behalf. Also off for everyone if an admin "
         "switches it off in Settings.",
+        EVERYONE, (EMAIL,), (EMAIL,),
+    ),
+    EventType(
+        FOLLOWER_UPDATE, "Someone else updates a ticket you are on",
+        "An email passing on what the requester or a follower wrote on a ticket you raised or follow, when you "
+        "were not already sent it.",
         EVERYONE, (EMAIL,), (EMAIL,),
     ),
 )

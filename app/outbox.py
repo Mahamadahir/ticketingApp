@@ -11,6 +11,7 @@ does that), so messages.py can call it without a cycle.
 
 from typing import Optional
 
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from app.config import settings
@@ -21,6 +22,7 @@ NOTICE = "notice"  # an automatic message to the requester (an approval decision
 RAISED_FOR = "raised_for_you"  # "an agent raised a ticket for you"
 APPROVAL = "approval"  # asks an approver to approve or decline
 ACKNOWLEDGEMENT = "acknowledgement"  # "your issue has been logged", once, for a ticket that arrived by email
+FOLLOWER_UPDATE = "follower_update"  # an inbound update passed to someone who was not on the mail it came in
 
 # Kinds that go to the requester without an agent having just written them. These are what the
 # per-ticket cap counts; an agent's own reply never is.
@@ -85,4 +87,23 @@ def queue_acknowledgement(session: Session, ticket: Ticket) -> Optional[Outbound
         return None
     row = OutboundEmail(kind=ACKNOWLEDGEMENT, ticket_id=ticket.id, to_address=ticket.requester_email)
     session.add(row)
+    return row
+
+
+def queue_follower_update(session: Session, ticket: Ticket, message: Message, to_address: str) -> Optional[OutboundEmail]:
+    """Queues one person's copy of an inbound update (app/follower_updates.py picks who). One per
+    person per message, enforced by the database, so a replay queues nothing. Whether they are still
+    to be told, and whether the message is one the requester may see, is asked again when it is sent."""
+    if not is_on():
+        return None
+    session.flush()
+    row = OutboundEmail(
+        kind=FOLLOWER_UPDATE, ticket_id=ticket.id, about_message_id=message.id, to_address=to_address.strip().lower()
+    )
+    try:
+        with session.begin_nested():
+            session.add(row)
+            session.flush()
+    except IntegrityError:
+        return None
     return row

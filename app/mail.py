@@ -8,7 +8,7 @@ An email is built when it is sent, not when it is queued, and the rules are aske
 - An approval email goes only while that approval is pending and the ticket still waits for it. Its
   link is signed at send time, so it has its full life however long the email waited, and it is
   never stored: the row keeps the text with the link left out.
-- Automatic emails to one ticket's requester are capped per day (a setting) to stop a mail loop; over the cap an email is held back until the count allows it, not lost.
+- Automatic emails to one person on a ticket (the requester, or a follower told of an update) are capped per day (a setting) to stop a mail loop; over the cap an email is held back until the count allows it, not lost.
 
 The sender is one row at a time, committed as it goes, so an email that went is never sent again
 because a later one failed. Delivery is still at least once: if the process dies between Graph
@@ -23,14 +23,17 @@ from typing import Callable, Optional
 
 import httpx
 from sqlalchemy import or_
-from sqlmodel import Session, select
+from sqlmodel import Session, func, select
 
 from app.approval_links import make_token
 from app.approvals import PENDING
 from app.config import settings
 from app.email_templates import LINK_LEFT_OUT, REQUEST_BLOCK, current_text, render_template, render_text, ticket_values
+from app.followers import is_follower
 from app.graph_client import graph_client
 from app.messages import about_text, in_a_split, is_triaged, mail_subject, requester_visible_messages
+from app.never_follow import is_listed
+from app.notification_settings import EMAIL, FOLLOWER_UPDATE as FOLLOWER_UPDATE_EVENT, is_enabled
 from app.models import (
     Message,
     MessageDirection,
@@ -41,7 +44,7 @@ from app.models import (
     TicketStatus,
     User,
 )
-from app.outbox import ACKNOWLEDGEMENT, APPROVAL, AUTOMATIC_TO_REQUESTER, NOTICE, RAISED_FOR, REPLY
+from app.outbox import ACKNOWLEDGEMENT, APPROVAL, AUTOMATIC_TO_REQUESTER, FOLLOWER_UPDATE, NOTICE, RAISED_FOR, REPLY
 from app.raising import should_tell_requester
 from app.settings_store import APPROVAL_LINK_MINUTES, AUTOMATIC_EMAIL_CAP, get_int_setting
 from app.teams import MAX_ATTEMPTS, MAX_BACKOFF_MINUTES, Unsendable
@@ -174,6 +177,37 @@ def build_acknowledgement_mail(session: Session, row: OutboundEmail) -> Mail:
     )
 
 
+def build_follower_update_mail(session: Session, row: OutboundEmail) -> Mail:
+    """An update from the requester or a follower, passed to someone who was not on the mail. Asked
+    again now: the ticket is triaged, the requester may see the message, the person still follows the
+    ticket (or is its requester), is not on the never-follow list and has not turned these off."""
+    ticket = _ticket_of(session, row)
+    message = session.get(Message, row.about_message_id) if row.about_message_id else None
+    if message is None:
+        raise Unsendable("Message not found")
+    if not is_triaged(ticket):
+        raise NotReady("The ticket has not been triaged yet, so it cannot be emailed")
+    if message.id not in {m.id for m in requester_visible_messages(session, ticket)}:
+        raise Unsendable("The requester may not see this message")
+    _guard_recipient(row)
+    to = row.to_address.strip().lower()
+    if to != ticket.requester_email.lower() and not is_follower(session, ticket, to, include_internal=False):
+        raise Unsendable("The person no longer follows the ticket")
+    if is_listed(session, to):
+        raise Unsendable("The address is on the never-follow list")
+    account = session.exec(select(User).where(func.lower(User.email) == to)).first()
+    if account is not None and not is_enabled(session, account, FOLLOWER_UPDATE_EVENT, EMAIL):
+        raise Unsendable("The person turned these updates off in their notification settings")
+    rendered = render_template(session, "follower_update", {
+        **ticket_values(ticket), "sender": message.sender, "message_text": message.body,
+    })
+    body = _with_about(session, ticket, rendered.body)
+    return Mail(
+        to=row.to_address, cc=[], subject=mail_subject(session, ticket),
+        body=body, record=body, automatic=True, reference=ticket.reference,
+    )
+
+
 def build_approval_mail(session: Session, row: OutboundEmail) -> Mail:
     ticket = _ticket_of(session, row)
     approval = session.get(TicketApproval, row.approval_id) if row.approval_id else None
@@ -214,6 +248,7 @@ BUILDERS: dict[str, Callable[[Session, OutboundEmail], Mail]] = {
     RAISED_FOR: build_raised_for_mail,
     APPROVAL: build_approval_mail,
     ACKNOWLEDGEMENT: build_acknowledgement_mail,
+    FOLLOWER_UPDATE: build_follower_update_mail,
 }
 
 
@@ -222,15 +257,20 @@ def automatic_cap(session: Session) -> int:
 
 
 def cap_release(session: Session, row: OutboundEmail, now: datetime) -> Optional[datetime]:
-    """None if this email may go. Otherwise when it may: this ticket's requester has already had the
-    most automatic emails allowed in the last 24 hours, and the earliest moment the count drops below
-    the limit is returned, so the email is held back, not lost. Counts those actually sent."""
-    if row.kind not in AUTOMATIC_TO_REQUESTER:
+    """None if this email may go. Otherwise when it may: this person has already had the most automatic
+    emails of this sort allowed in the last 24 hours on this ticket, and the earliest moment the count
+    drops below the limit is returned, so the email is held back, not lost. Counts those actually sent.
+    Two separate allowances: the requester's own automatic mail (notices, receipts), and follower updates,
+    counted per recipient, so a chatty follower cannot hold back the requester's resolution or approval
+    notice, and each follower has a count of their own."""
+    if row.kind not in AUTOMATIC_TO_REQUESTER and row.kind != FOLLOWER_UPDATE:
         return None
+    kinds = (FOLLOWER_UPDATE,) if row.kind == FOLLOWER_UPDATE else AUTOMATIC_TO_REQUESTER
     sent = session.exec(
         select(OutboundEmail.sent_at).where(
             OutboundEmail.ticket_id == row.ticket_id,
-            OutboundEmail.kind.in_(AUTOMATIC_TO_REQUESTER),
+            OutboundEmail.kind.in_(kinds),
+            func.lower(OutboundEmail.to_address) == row.to_address.strip().lower(),
             OutboundEmail.sent_at.is_not(None),
             OutboundEmail.sent_at >= now - CAP_WINDOW,
         ).order_by(OutboundEmail.sent_at)
@@ -320,7 +360,7 @@ def deliver_mail(
             release = cap_release(session, row, now)
             if release is not None:
                 # Held back until the day's count allows it: not a failure and no try used.
-                row.last_error = "Held back: the limit on automatic emails to this ticket was reached"
+                row.last_error = "Held back: the limit on automatic emails to this person on this ticket was reached"
                 row.next_attempt_at = release
                 session.add(row)
                 session.commit()

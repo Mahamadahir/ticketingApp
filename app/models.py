@@ -470,15 +470,22 @@ class OutboundEmail(SQLModel, table=True):
     recorded and then forgotten, or sent and then rolled back. The row keeps what was sent
     (subject, copied addresses, text) and, for a failure, why."""
 
-    __table_args__ = (Index("ix_outboundemail_unsent", "id", postgresql_where=text("sent_at IS NULL")),)
+    __table_args__ = (
+        Index("ix_outboundemail_unsent", "id", postgresql_where=text("sent_at IS NULL")),
+        # One follower update per person per message, so a replay can never tell anyone twice.
+        UniqueConstraint("about_message_id", "to_address", name="uq_outboundemail_about_message_to"),
+    )
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    kind: str  # reply, notice, raised_for_you, approval, acknowledgement
+    kind: str  # reply, notice, raised_for_you, approval, acknowledgement, follower_update
     ticket_id: int = Field(foreign_key="ticket.id", index=True)
     # For a reply or notice: the message it carries. Unique, so one message can never be emailed twice.
     message_id: Optional[int] = Field(default=None, foreign_key="message.id", unique=True)
     # For an approval email: the approval it asks about. The link is made when the email is sent.
     approval_id: Optional[int] = Field(default=None, foreign_key="ticketapproval.id", index=True)
+    # For a follower update: the inbound message being passed on. Not unique by itself (one message is
+    # passed to several people); the pair with to_address is.
+    about_message_id: Optional[int] = Field(default=None, foreign_key="message.id", index=True)
     to_address: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     sent_at: Optional[datetime] = Field(default=None)
@@ -551,6 +558,10 @@ class InboundMail(SQLModel, table=True):
     # Graph's thread id. A later mail in the same conversation is matched to this row's ticket.
     conversation_id: Optional[str] = Field(default=None, index=True)
     sender: Optional[str] = Field(default=None, index=True)
+    # Who the mail was addressed to, lower-case bare addresses joined by ", " (4B-6). What decides which
+    # followers were not copied is worked out from the mail itself; these are the record of it.
+    to_addresses: Optional[str] = Field(default=None)
+    cc_addresses: Optional[str] = Field(default=None)
     outcome: str  # ticket_created, reply_added or ignored_*
     ticket_id: Optional[int] = Field(default=None, foreign_key="ticket.id", index=True)
     message_id: Optional[int] = Field(default=None, foreign_key="message.id")

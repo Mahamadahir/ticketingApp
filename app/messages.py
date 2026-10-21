@@ -15,7 +15,7 @@ from typing import Optional
 
 from sqlmodel import Session, select
 
-from app.followers import followers_of
+from app.followers import copyable_followers
 from app.outbox import queue_message
 from app.models import (
     FINISHED_STATUSES,
@@ -83,8 +83,7 @@ def _copied_followers(session: Session, ticket: Ticket, cc_emails: Optional[list
     """Who an email on this ticket copies: every follower, or only those the agent left
     ticked (internal followers are always copied). The one place this is worked out, so the
     preview and the email that is then sent cannot disagree."""
-    requester = ticket.requester_email.lower()
-    candidates = [f for f in followers_of(session, ticket) if f.email != requester]
+    candidates = copyable_followers(session, ticket)
     if cc_emails is None:
         return candidates
     wanted = {address.strip().lower() for address in cc_emails}

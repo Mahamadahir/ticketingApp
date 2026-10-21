@@ -175,3 +175,26 @@ def test_an_address_listed_after_it_followed_stays_but_is_not_copied(db_session)
 def test_add_listed_normalises_the_address(db_session):
     row = add_listed(db_session, " All-Staff@Corp.Example ", "", "admin@example.com")
     assert row.email == LISTED
+
+
+# ---- A follower listed after following is not copied by an agent's email either (a gap from 4B-2) ----
+
+
+def test_an_agents_email_and_its_preview_skip_a_follower_listed_after_following(client, db_session):
+    from app.followers import cc_list, copyable_followers
+    from app.messages import UnknownRecipient, email_requester, preview_email
+    from tests.test_email_preview import follow, ticket_for_email
+
+    ticket = ticket_for_email(client, db_session)
+    follow(client, ticket, "pat@example.com", "sam@example.com")
+    db_session.add(NeverFollowAddress(email="sam@example.com", added_by="admin@example.com"))
+    db_session.commit()
+    ticket = db_session.get(Ticket, ticket.id)
+    agent = db_session.exec(select(User).where(User.email == "agent@example.com")).one()
+
+    assert preview_email(db_session, ticket, "Hello").cc == ["pat@example.com"]
+    assert [f.email for f in copyable_followers(db_session, ticket)] == ["pat@example.com"]
+    with pytest.raises(UnknownRecipient):
+        preview_email(db_session, ticket, "Hello", cc_emails=["pat@example.com", "sam@example.com"])
+    assert email_requester(db_session, ticket, agent, "Hello").cc == "pat@example.com"
+    assert cc_list(db_session, ticket) == ["pat@example.com"]  # the same rule as the portal and mail
