@@ -469,6 +469,8 @@ without anyone remembering to set it by hand.
 - Both moves are ordinary status events in the timeline and the audit log, with
   the person who caused them.
 
+**Who counts as "me" in the portal.** The portal matches the signed-in person to a ticket by lower-cased email, never by an exact string, and every such comparison goes through one helper (`requester_emails` in `app/identity.py`). It is one address today. It is a deliberate seam because merging accounts is planned, and then only that helper changes. "My requests" lists tickets the person raised first, then tickets they follow, marked "following". Agent access is separate and stays in `app/visibility.py`. Tickets store the requester lower-cased (`create_ticket`).
+
 **Raising a ticket in the portal** (phase 1G, agreed 12 Oct 2026). One form with
 two modes. "For myself" is the normal end-user case (source: portal). Agents also
 get "For someone else": the requester's email, subject and description, with

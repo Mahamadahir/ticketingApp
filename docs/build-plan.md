@@ -22,6 +22,7 @@ The app is not live and has no users; open questions are design choices, not liv
 | 1B teams and visibility | merged | `app/visibility.py` |
 | 1C messages and followers | merged | `app/messages.py`, `app/followers.py` |
 | Followers respond in the portal; emailing moves status | merged | `app/routers/portal.py` |
+| "My requests" matches the person by lower-cased email through one helper and lists followed tickets too (own first, marked "following"); tickets store a lower-cased requester | in review | `app/identity.py`, `app/routers/portal.py` |
 | 1D-i triage, categories, settings | merged | `app/triage.py`, `app/categories.py`, `app/settings_store.py` |
 | Sign-in and activity log | merged (#15) | `app/activity.py` |
 | 1D-ii impact, urgency, priority, SLA clock and queue | merged (#16) | `app/sla.py` |
