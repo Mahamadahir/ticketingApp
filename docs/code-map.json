@@ -31,6 +31,11 @@
       "name": "presence"
     },
     {
+      "every": "TICK_EVERY_SECONDS",
+      "function": "scheduled_jobs_tick",
+      "name": "scheduled-jobs"
+    },
+    {
       "every": "TEAMS_POSTS_EVERY_SECONDS",
       "function": "teams_copies",
       "name": "teams-copies"
@@ -43,6 +48,10 @@
   ],
   "migrations": {
     "chain_tail": [
+      {
+        "file": "migrations/versions/b4e7a0d3c158_scheduled_job.py",
+        "revision": "b4e7a0d3c158"
+      },
       {
         "file": "migrations/versions/a3f6d0b8c471_email_templates.py",
         "revision": "a3f6d0b8c471"
@@ -58,17 +67,13 @@
       {
         "file": "migrations/versions/d8a3c6f1b247_attachments.py",
         "revision": "d8a3c6f1b247"
-      },
-      {
-        "file": "migrations/versions/d5a8b1c4e630_graph_notification.py",
-        "revision": "d5a8b1c4e630"
       }
     ],
-    "count": 31,
+    "count": 32,
     "heads": [
       {
-        "file": "migrations/versions/a3f6d0b8c471_email_templates.py",
-        "revision": "a3f6d0b8c471"
+        "file": "migrations/versions/b4e7a0d3c158_scheduled_job.py",
+        "revision": "b4e7a0d3c158"
       }
     ]
   },
@@ -226,7 +231,8 @@
         "app.notification_settings",
         "app.routers.admin",
         "app.routers.portal",
-        "app.routers.tickets"
+        "app.routers.tickets",
+        "app.scheduled_jobs"
       ],
       "imports": [
         "app.models"
@@ -464,6 +470,7 @@
         "app.routers.portal",
         "app.routers.tickets",
         "app.routers.webhooks",
+        "app.scheduled_jobs",
         "app.worker"
       ],
       "imports": [
@@ -486,6 +493,7 @@
         "tests/test_mail_subscriptions.py",
         "tests/test_notification_followup.py",
         "tests/test_outbound_mail.py",
+        "tests/test_scheduled_jobs.py",
         "tests/test_split_family.py",
         "tests/test_splitting.py",
         "tests/test_teams_copy.py",
@@ -740,6 +748,7 @@
         "app.mail",
         "app.notifications",
         "app.presence",
+        "app.scheduled_jobs",
         "app.subscriptions",
         "app.teams"
       ],
@@ -752,6 +761,7 @@
         "tests/test_mail_subscriptions.py",
         "tests/test_outbound_mail.py",
         "tests/test_presence.py",
+        "tests/test_scheduled_jobs.py",
         "tests/test_teams.py",
         "tests/test_teams_copy_sending.py",
         "tests/test_worker.py"
@@ -979,6 +989,7 @@
         "OutboundEmail",
         "RequestType",
         "RequestTypeApprover",
+        "ScheduledJob",
         "Setting",
         "Team",
         "TeamMembership",
@@ -1031,6 +1042,7 @@
         "app.routers.portal",
         "app.routers.tickets",
         "app.routers.webhooks",
+        "app.scheduled_jobs",
         "app.search",
         "app.settings_store",
         "app.sla",
@@ -1116,6 +1128,10 @@
           "table": "requesttypeapprover"
         },
         {
+          "class": "ScheduledJob",
+          "table": "scheduledjob"
+        },
+        {
           "class": "Setting",
           "table": "setting"
         },
@@ -1192,6 +1208,7 @@
         "tests/test_raising.py",
         "tests/test_reply_notification.py",
         "tests/test_request_types.py",
+        "tests/test_scheduled_jobs.py",
         "tests/test_search.py",
         "tests/test_sla.py",
         "tests/test_split_family.py",
@@ -1510,6 +1527,7 @@
         "view_audit_log",
         "view_mail_intake",
         "view_outbound_mail",
+        "view_scheduled_jobs",
         "view_settings"
       ],
       "imported_by": [
@@ -1528,6 +1546,7 @@
         "app.models",
         "app.pagination",
         "app.request_types",
+        "app.scheduled_jobs",
         "app.settings_store",
         "app.subscriptions",
         "app.teams",
@@ -1630,6 +1649,11 @@
           "handler": "edit_request_type",
           "method": "POST",
           "path": "/admin/request-types/{type_id}"
+        },
+        {
+          "handler": "view_scheduled_jobs",
+          "method": "GET",
+          "path": "/admin/scheduled-jobs"
         },
         {
           "handler": "view_settings",
@@ -2254,6 +2278,41 @@
       "tests": []
     },
     {
+      "classes": [
+        "ScheduledJobDef"
+      ],
+      "file": "app/scheduled_jobs.py",
+      "functions": [
+        "claim_next_due",
+        "ensure_rows",
+        "registry_errors",
+        "run_claimed",
+        "run_due_jobs",
+        "scheduled_jobs_tick",
+        "status_line",
+        "utcnow",
+        "worker_id"
+      ],
+      "imported_by": [
+        "app.jobs",
+        "app.routers.admin",
+        "app.worker"
+      ],
+      "imports": [
+        "app.audit",
+        "app.database",
+        "app.models",
+        "app.settings_store"
+      ],
+      "module": "app.scheduled_jobs",
+      "routes": [],
+      "summary": "Recurring jobs driven by the database (phase 4A): the `scheduled_job` table.",
+      "tables": [],
+      "tests": [
+        "tests/test_scheduled_jobs.py"
+      ]
+    },
+    {
       "classes": [],
       "file": "app/search.py",
       "functions": [
@@ -2294,6 +2353,7 @@
         "app.raising",
         "app.routers.admin",
         "app.routers.approvals",
+        "app.scheduled_jobs",
         "app.sla",
         "app.subscriptions",
         "app.ticket_service"
@@ -2741,6 +2801,7 @@
         "app.config",
         "app.database",
         "app.jobs",
+        "app.scheduled_jobs",
         "app.telemetry"
       ],
       "module": "app.worker",
@@ -3094,6 +3155,7 @@
     "tests/test_raising.py",
     "tests/test_reply_notification.py",
     "tests/test_request_types.py",
+    "tests/test_scheduled_jobs.py",
     "tests/test_search.py",
     "tests/test_security.py",
     "tests/test_sla.py",

@@ -29,6 +29,9 @@ SLA_AT_RISK_PERCENT = "sla_at_risk_percent"
 GRAPH_SUBSCRIPTION_MINUTES = "graph_subscription_minutes"
 GRAPH_RENEW_MARGIN_MINUTES = "graph_renew_margin_minutes"
 MAIL_BACKFILL_DAYS = "mail_backfill_days"
+JOB_LEASE_MINUTES = "scheduled_job_lease_minutes"
+JOB_RETRY_MINUTES = "scheduled_job_retry_minutes"
+JOB_LATE_MINUTES = "scheduled_job_late_minutes"
 
 # PLACEHOLDER SLA targets, in minutes on a 24/7 clock, until the real ones are agreed
 # (TBC in docs/plan.md). They are settings, changed under Admin > Settings; a blank
@@ -153,6 +156,34 @@ REGISTRY: dict[str, SettingDef] = {
             "collects mail received in this many days. The very first run never looks back (mail already in "
             "the inbox is not imported); later runs carry on from where the last one stopped, however long "
             "ago that was. Mail already collected is never collected twice."
+        ),
+        default="3",
+    ),
+    JOB_LEASE_MINUTES: SettingDef(
+        key=JOB_LEASE_MINUTES,
+        label="Recurring jobs: how long a run may hold its job (minutes)",
+        kind="minutes",
+        description=(
+            "A recurring job (auto-close, chase, reminders) is held by the worker that runs it. If that "
+            "worker dies mid-run, the job is free to run again once this long has passed. Set it longer "
+            "than the slowest job takes. Placeholder until the real jobs exist."
+        ),
+        default="10",
+    ),
+    JOB_RETRY_MINUTES: SettingDef(
+        key=JOB_RETRY_MINUTES,
+        label="Recurring jobs: wait before retrying a failed run (minutes)",
+        kind="minutes",
+        description="After a failure the job is tried again after this long, or at its next normal time if that is sooner.",
+        default="5",
+    ),
+    JOB_LATE_MINUTES: SettingDef(
+        key=JOB_LATE_MINUTES,
+        label="Recurring jobs: how overdue counts as late (minutes)",
+        kind="minutes",
+        description=(
+            "A job that starts this much after it was due (the worker was down, or a run overran) still "
+            "runs once, and the audit log records that it was late."
         ),
         default="3",
     ),

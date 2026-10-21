@@ -8,7 +8,8 @@ success; they just do their work against the session they are given.
 To add a job, write its function (in its own module under app/jobs/ once there are several),
 add a Job to JOBS, and test it by calling the function with a test session. Jobs must be safe to
 run twice in a row and to miss a run: the worker is one process that restarts, and nothing queues
-a run it missed.
+a run it missed. Recurring work that must not be missed (auto-close, chase, reminders) does not go
+here: it is registered in app/scheduled_jobs.py and driven by the scheduled_job table.
 """
 
 from dataclasses import dataclass
@@ -20,6 +21,7 @@ from sqlmodel import Session
 from app.config import settings
 from app.inbound import process_notifications
 from app.mail import deliver_mail
+from app.scheduled_jobs import TICK_EVERY_SECONDS, scheduled_jobs_tick
 from app.presence import CHECK_EVERY_SECONDS, refresh_presence
 from app.subscriptions import CATCH_UP_EVERY_SECONDS, SUBSCRIPTION_EVERY_SECONDS, catch_up, keep_subscription_alive
 from app.notifications import drop_due_for_teams, hand_to_teams
@@ -110,4 +112,6 @@ JOBS: list[Job] = [
     Job("graph-subscription", SUBSCRIPTION_EVERY_SECONDS, graph_subscription),
     Job("mail-catch-up", CATCH_UP_EVERY_SECONDS, mail_catch_up),
     Job("mail-in", MAIL_IN_EVERY_SECONDS, mail_in),
+    # Runs the jobs in app/scheduled_jobs.py (the scheduled_job table); register new recurring jobs there.
+    Job("scheduled-jobs", TICK_EVERY_SECONDS, scheduled_jobs_tick),
 ]
