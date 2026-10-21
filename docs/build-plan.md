@@ -64,6 +64,7 @@ those. Do not record test counts or merge status here.
 | 3E-storage attachments: storage interface (local directory, Azure Blob with user-delegation SAS), `attachment` table, `/attachments/{id}`, content-type detection and safe serving | built (#49) | `app/storage.py`, `app/attachments.py`, `app/routers/attachments.py` |
 | 3F wiring: Bicep and deploy workflow for the public app, mailbox (`MAIL_SENDING`), the two base URLs, Application Insights started from the connection string (approval links kept out of request telemetry) | built | `infra/main.bicep`, `.github/workflows/deploy.yml`, `app/telemetry.py` |
 | Code map: `tools/code_map.py` generates `docs/code-map.md` and `.json` (modules, routes, tables, jobs, settings, migrations, tests, seam violations); CI `code-map-current` | built | `tools/code_map.py`, `.github/workflows/code-map.yml` |
+| 4T admin-managed email templates (in progress) | in progress | `app/email_templates.py` |
 | Phases 4 to 9 | not started | `docs/plan.md`, "Build order" |
 
 ## Next up
