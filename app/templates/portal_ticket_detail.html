@@ -8,6 +8,16 @@
   &middot; <span class="note">{{ source_label }}</span>
   {% if request_info %}&middot; <span class="note">Request: {{ request_info[0].name }}</span>{% endif %}</p>
 
+{% if can_reopen %}
+<form method="post" action="/portal/{{ ticket.number }}/reopen" class="inline-form">
+  <button type="submit">Reopen this request</button>
+</form>
+{% endif %}
+{% if related %}
+<p class="note">Related:
+  {% for other, which in related %}<a href="/portal/{{ other.number }}">{{ other.reference }}</a> {{ other.subject }} ({{ "this follows on from it" if which == "earlier" else "opened after this was closed" }}){{ "; " if not loop.last }}{% endfor %}
+</p>
+{% endif %}
 {% if approval_rule %}
 <p class="note">Waiting for approval ({{ approval_rule }}).</p>
 {% endif %}
@@ -33,6 +43,7 @@
 </div>
 
 {% if can_comment %}
+{% if ticket.status.value == "closed" %}<p class="note">This request is closed. Adding a comment opens a new request linked to it.</p>{% endif %}
 <form hx-post="/portal/{{ ticket.number }}/comment" hx-target="main" hx-swap="innerHTML">
   <textarea name="body" rows="4" maxlength="{{ max_message_length }}" placeholder="Add a comment..." required></textarea>
   <button type="submit">Add comment</button>

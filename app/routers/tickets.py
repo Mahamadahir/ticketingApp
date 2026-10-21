@@ -37,6 +37,7 @@ from app.splitting import (
     SplitError,
     all_sub_tickets_finished,
     check_manual_status,
+    has_sub_tickets,
     split_ticket,
     sub_tickets_summary,
 )
@@ -66,6 +67,16 @@ from app.sla import (
     queue_order,
     set_impact_urgency,
     sla_view,
+)
+from app.reopening import (
+    MAX_REASON_LENGTH,
+    RECLOSE_REASONS,
+    ReopenError,
+    check_can_reclose,
+    check_can_reopen,
+    reclose_ticket,
+    related_tickets,
+    reopen_ticket,
 )
 from app.resolution import ResolveError, check_can_resolve, preview_resolution, resolve_ticket
 from app.ticket_service import AwaitingApproval, EVENT_ASSIGNED, NotTriaged, ResolutionRequired, find_ticket, get_by_number, record_event, set_status
@@ -592,6 +603,17 @@ def change_status(
     if status == TicketStatus.NEW:
         raise HTTPException(status_code=400, detail="A ticket only starts in New; it leaves New by being triaged")
 
+    if ticket.status == TicketStatus.RESOLVED and status not in FINISHED_STATUSES and not has_sub_tickets(session, ticket):
+        # Taking a resolved ticket back to an open status is a reopen: counted, recorded with a reason
+        # and the assignee is told (app/reopening.py).
+        try:
+            reopen_ticket(session, ticket, user.email, "Status set by hand", status=status, tell_assignee=True)
+        except ReopenError as error:
+            session.rollback()
+            raise HTTPException(status_code=400, detail=str(error))
+        session.commit()
+        session.refresh(ticket)
+        return _render_ticket_detail(request, ticket, user, session)
     try:
         check_manual_status(session, ticket, status)
     except SplitError as error:
@@ -666,6 +688,48 @@ def resolve(
     except UnknownRecipient as error:
         session.rollback()
         raise HTTPException(status_code=400, detail=f"Not a follower of this ticket: {error}")
+    session.commit()
+    session.refresh(ticket)
+    return _render_ticket_detail(request, ticket, user, session)
+
+
+@router.post("/{number}/reopen", response_class=HTMLResponse)
+def reopen(
+    number: int,
+    request: Request,
+    reason: str = Form("", max_length=MAX_REASON_LENGTH + 500),
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """Reopen a resolved ticket, with the reason. It goes back to In progress (Open if nobody is assigned)
+    and the assigned agent is told, through app/reopening.py."""
+    ticket = _get_ticket(session, number, user)
+    try:
+        reopen_ticket(session, ticket, user.email, reason)
+    except ReopenError as error:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(error))
+    session.commit()
+    session.refresh(ticket)
+    return _render_ticket_detail(request, ticket, user, session)
+
+
+@router.post("/{number}/reclose", response_class=HTMLResponse)
+def reclose(
+    number: int,
+    request: Request,
+    reason: str = Form("", max_length=100),
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """Close a reopened ticket again with one of the fixed reasons (said thanks, duplicate, raised
+    separately, reopened in error)."""
+    ticket = _get_ticket(session, number, user)
+    try:
+        reclose_ticket(session, ticket, user.email, reason)
+    except ReopenError as error:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(error))
     session.commit()
     session.refresh(ticket)
     return _render_ticket_detail(request, ticket, user, session)
@@ -879,13 +943,18 @@ def remove_ticket_follower(
     return _render_ticket_detail(request, ticket, user, session)
 
 
-def _may_resolve(session: Session, ticket: Ticket) -> bool:
-    """Whether to offer the Resolve form: the service's own rules (app/resolution.py), so the page and the action agree."""
+def _may(check, refusal, *args) -> bool:
+    """Whether a service's own check passes (it raises `refusal` when not), so the page and the action agree."""
     try:
-        check_can_resolve(session, ticket)
-    except ResolveError:
+        check(*args)
+    except refusal:
         return False
     return True
+
+
+def _may_resolve(session: Session, ticket: Ticket) -> bool:
+    """Whether to offer the Resolve form."""
+    return _may(check_can_resolve, ResolveError, session, ticket)
 
 
 def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session: Session) -> HTMLResponse:
@@ -983,6 +1052,15 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             ],
             "resolved_by": session.get(User, ticket.resolved_by_id) if ticket.resolved_by_id else None,
             "can_resolve": can_work and _may_resolve(session, ticket),
+            "can_reopen": can_work and _may(check_can_reopen, ReopenError, ticket),
+            "can_reclose": can_work and _may(check_can_reclose, ReopenError, session, ticket),
+            "reclose_reasons": RECLOSE_REASONS,
+            "max_reason_length": MAX_REASON_LENGTH,
+            # Tickets linked by a reply after closure, only those this viewer could open anyway.
+            "related": [
+                (other, which) for other, which in related_tickets(session, ticket)
+                if ticket_access(user, other, levels) >= Access.READ
+            ],
             "can_triage": can_triage,
             "can_self_assign": can_self_assign,
             "ticket_types": list(TicketType),

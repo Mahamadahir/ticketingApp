@@ -28,8 +28,9 @@ Rules that live here and nowhere else:
   follower: that sender's mail opens a ticket of its own (with an event saying why). If the ticket
   already has its full number of external followers, the stranger is not added and gets a ticket too.
 - A reply is recorded through `record_inbound`, so what the requester may see stays in app/messages.py,
-  and its status effect is the portal's (`apply_requester_reply`). A reply on a Resolved or Closed
-  ticket is only recorded here; reopening is phase 4. Who can see the ticket is app/visibility.py's
+  and its status effect is the portal's (`apply_requester_reply`). A reply on a Resolved
+  ticket reopens it (apply_requester_reply). A reply on a Closed ticket opens a new ticket linked to it
+  (app/reopening.py), and later mail in that thread follows the link to the newest ticket. Who can see the ticket is app/visibility.py's
   business, not this module's: it never decides access.
 - The people copied on the mail that opens a ticket become its followers (app/followers.py). A reply
   is passed on to the followers who were not on its To or Cc (app/follower_updates.py).
@@ -53,6 +54,7 @@ from app.audit import log_action
 from app.config import settings
 from app.settings_store import INBOUND_MAX_ATTACHMENTS, INBOUND_MAX_CC, INBOUND_MAX_PER_SENDER_HOUR, count_setting
 from app.follower_updates import queue_follower_updates
+from app.reopening import latest_follow_on, open_follow_on_ticket
 from app.followers import (
     InvalidEmail,
     NeverFollowListed,
@@ -73,6 +75,7 @@ from app.models import (
     Message,
     Ticket,
     TicketSource,
+    TicketStatus,
     User,
 )
 from app.never_follow import is_listed
@@ -452,6 +455,16 @@ def ingest_mail(
     author_id = account.id if account is not None else None
 
     ticket, how = find_ticket_for(session, mail)
+    closed = None
+    if ticket is not None:
+        # A thread that already carried on in a ticket opened after closure goes on in that one.
+        newer = latest_follow_on(session, ticket)
+        if newer.id != ticket.id and may_reply(session, newer, sender):
+            ticket = newer  # not when it is someone else's ticket: the sender then gets one of their own
+        if ticket.status == TicketStatus.CLOSED and (may_reply(session, ticket, sender) or how in STRONG_MATCHES):
+            # A reply after closure is not added to the closed ticket: it opens a new one, linked to it
+            # (below). Nobody joins the closed ticket as a follower.
+            closed, ticket = ticket, None
     allowed = ticket is not None and may_reply(session, ticket, sender)
     joined = False
     if ticket is not None and not allowed and how in STRONG_MATCHES:
@@ -470,7 +483,13 @@ def ingest_mail(
         queue_follower_updates(session, ticket, message, sender, copied=mail.to + mail.cc)
         return settle(REPLY_ADDED, ticket, message)
 
-    new = create_ticket(session, subject=_subject_of(mail), requester_email=sender, source=TicketSource.EMAIL)
+    if closed is not None:
+        new = open_follow_on_ticket(
+            session, closed, subject=_subject_of(mail), sender_email=sender, source=TicketSource.EMAIL,
+            actor_email=None,
+        )
+    else:
+        new = create_ticket(session, subject=_subject_of(mail), requester_email=sender, source=TicketSource.EMAIL)
     if ticket is not None:
         record_event(
             session, new, EVENT_REFERENCE_NOT_USED, None, to_value=ticket.tag,
@@ -493,7 +512,7 @@ def ingest_mail(
     _store_files(session, storage, new, message, files)
     # A receipt to a real person only: automatic mail, bounces, our own mail and floods were set
     # aside above, and a never-follow address (a list or shared mailbox) is not answered either.
-    if is_on() and not is_listed(session, sender):
+    if is_on() and not is_listed(session, sender) and sender == new.requester_email:
         queue_acknowledgement(session, new)
     return settle(TICKET_CREATED, new, message)
 

@@ -56,7 +56,7 @@ def test_a_reply_notifies_the_assignee_whatever_the_status(client, db_session, s
     [told] = notifications_for(db_session, "agent@example.com")
     assert (told.kind, told.ticket_id, told.actor_email, told.read_at) == ("replied", ticket.id, "jo@example.com", None)
     assert told.text == f"{ticket.tag} Printer jam: Ticket updated by Test User"
-    expected = TicketStatus.IN_PROGRESS if status == TicketStatus.AWAITING_USER else status
+    expected = {TicketStatus.AWAITING_USER: TicketStatus.IN_PROGRESS, TicketStatus.RESOLVED: TicketStatus.IN_PROGRESS}.get(status, status)  # a reply reopens a Resolved ticket (4E-1)
     assert db_session.get(Ticket, ticket.id).status == expected  # status behaviour is unchanged
 
 

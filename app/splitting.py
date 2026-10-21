@@ -147,10 +147,20 @@ def refresh_open_sub_tickets(session: Session, original: Ticket, actor_email: st
 def apply_requester_reply(session: Session, ticket: Ticket, actor_email: str) -> Optional[tuple[str, str]]:
     """What a reply from the requester or a follower does to the ticket, whether it came from the portal
     or from mail. It hands the ticket back to us: one waiting on the requester (Awaiting user) goes back to
-    In progress, which resumes its SLA clock. Any other status is left alone (a reply on a Resolved ticket is
-    the reopen flow, phase 4). A split original's status follows its parts, so it is never set here: each open
-    part is refreshed and the original re-derived. Returns (from, to) status values when a status moved,
-    for the caller's audit entry, else None."""
+    In progress, which resumes its SLA clock. A reply on a Resolved ticket reopens it (app/reopening.py; the
+    assigned agent was already told of the reply). Any other status is left alone. A split original's
+    status follows its parts, so it is never set here: each open part is refreshed and the original
+    re-derived. Returns (from, to) status values when a status moved, for the caller's audit entry, else None.
+    (A reply on a Closed ticket never gets here: it opens a new ticket, app/reopening.py.)"""
+    if ticket.status == TicketStatus.RESOLVED and ticket.triaged_at is not None:
+        from app.reopening import ReopenError, reopen_ticket  # here because app.reopening builds on this module
+
+        try:
+            # The assignee of this ticket was just told of the reply; the family reopened with it is told now.
+            went_to = reopen_ticket(session, ticket, actor_email, "The requester replied", already_told=ticket.id)
+            return TicketStatus.RESOLVED.value, went_to.value
+        except ReopenError:
+            pass  # reopened by someone else a moment ago: carry on as for an open ticket
     if has_sub_tickets(session, ticket):
         refresh_open_sub_tickets(session, ticket, actor_email)
         sync_original_status(session, ticket.id)

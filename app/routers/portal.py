@@ -44,6 +44,7 @@ from app.triage import TriageError
 from app.visibility import Access, access_context, ticket_access
 from app.messages import about_labels, record_inbound, requester_visible_messages
 from app.follower_updates import queue_follower_updates
+from app.reopening import ReopenError, latest_follow_on, open_follow_on_ticket, related_tickets, reopen_ticket
 from app.splitting import apply_requester_reply
 from app.request_types import active_request_types, request_type_of
 from app.models import Category, RequestType, Ticket, TicketSource, TicketStatus, TicketType, User, UserRole
@@ -149,6 +150,12 @@ def _render_ticket(request: Request, ticket: Ticket, user: User, session: Sessio
                 else []
             ),
             "is_requester": _is_requester(ticket, user),
+            "can_reopen": _is_requester(ticket, user) and ticket.status == TicketStatus.RESOLVED,
+            # The earlier or later request this one is linked to by a reply after closure, if the person can read it.
+            "related": [
+                (other, which) for other, which in related_tickets(session, ticket)
+                if _is_requester(other, user) or is_follower_of(session, other, user)
+            ],
             # The requester and ordinary followers can reply; an internal follower is an
             # agent and replies from the agent console.
             "can_comment": _is_requester(ticket, user) or is_follower_of(session, ticket, user, include_internal=False),
@@ -301,6 +308,27 @@ def add_comment(
 ):
     ticket = _get_commentable_ticket(session, number, user)
 
+    if ticket.status == TicketStatus.CLOSED:
+        # Serialise two replies on the same closed ticket (a double click); if an earlier reply already
+        # opened a request, this one belongs on the newest in the chain (or, if that is closed too, after it).
+        session.refresh(ticket, with_for_update=True)
+        newest = latest_follow_on(session, ticket)
+        if newest.id != ticket.id and (_is_requester(newest, user) or is_follower_of(session, newest, user, include_internal=False)):
+            ticket = newest  # not someone else's request that the chain happens to end in
+    if ticket.status == TicketStatus.CLOSED:
+        # A reply after closure opens a new request linked to this one, not a comment on a closed ticket.
+        follow_on = open_follow_on_ticket(
+            session, ticket, subject=ticket.subject, sender_email=user.email, source=TicketSource.PORTAL,
+            actor_email=user.email,
+        )
+        record_inbound(session, follow_on, sender=user.display_name, body=body, author_user_id=user.id)
+        log_action(session, user.email, "ticket", follow_on.id, "commented", body[:200])
+        session.commit()
+        destination = f"/portal/{follow_on.number}"
+        if request.headers.get("HX-Request"):
+            return Response(status_code=204, headers={"HX-Redirect": destination})
+        return RedirectResponse(destination, status_code=303)
+
     message = record_inbound(session, ticket, sender=user.display_name, body=body, author_user_id=user.id, reply_by=user.email)
     log_action(session, user.email, "ticket", ticket.id, "commented", body[:200])
     queue_follower_updates(session, ticket, message, user.email)  # nobody was sent a portal comment
@@ -311,6 +339,23 @@ def add_comment(
     session.refresh(ticket)
 
     return _render_ticket(request, ticket, user, session)
+
+
+@router.post("/{number}/reopen")
+def reopen_my_ticket(
+    number: int,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """The signed-in requester reopens their resolved ticket (no emailed link needed). Followers cannot."""
+    ticket = _get_own_ticket(session, number, user)
+    try:
+        reopen_ticket(session, ticket, user.email, "The requester reopened it from the portal")
+    except ReopenError:
+        session.rollback()  # reopened or closed since the page was drawn: show them the ticket as it is now
+        return RedirectResponse(f"/portal/{ticket.number}", status_code=303)
+    session.commit()
+    return RedirectResponse(f"/portal/{ticket.number}", status_code=303)
 
 
 @router.post("/{number}/followers", response_class=HTMLResponse)
