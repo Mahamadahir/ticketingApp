@@ -6,7 +6,7 @@ from fastapi.exception_handlers import http_exception_handler, request_validatio
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
+from app.templating import is_htmx, templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -38,13 +38,6 @@ class AppStaticFiles(StaticFiles):
         return response
 
 
-templates = Jinja2Templates(directory="app/templates")
-
-
-def _is_htmx(request: Request) -> bool:
-    return request.headers.get("HX-Request") == "true"
-
-
 def _htmx_error(message: str, status_code: int) -> HTMLResponse:
     """A small message for a form that was submitted with htmx. htmx ignores 4xx
     responses unless told otherwise, so the response names its own target (the
@@ -59,19 +52,19 @@ def _htmx_error(message: str, status_code: int) -> HTMLResponse:
 
 
 async def handle_http_exception(request: Request, exc: StarletteHTTPException):
-    if _is_htmx(request) and 400 <= exc.status_code < 500:
+    if is_htmx(request) and 400 <= exc.status_code < 500:
         return _htmx_error(str(exc.detail), exc.status_code)
     return await http_exception_handler(request, exc)
 
 
 async def handle_validation_error(request: Request, exc: RequestValidationError):
-    if _is_htmx(request):
+    if is_htmx(request):
         return _htmx_error("Check what you entered: a field is missing, too long or not valid.", 422)
     return await request_validation_exception_handler(request, exc)
 
 
 def handle_no_ticket_access(request: Request, exc: NoTicketAccess):
-    if _is_htmx(request):
+    if is_htmx(request):
         return _htmx_error("You don't have access to do that on this ticket.", 403)
     # The viewer is signed in (a route that raises this has already resolved
     # the user), so the page can show the normal navigation.

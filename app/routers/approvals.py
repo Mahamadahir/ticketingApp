@@ -10,7 +10,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
+from app.templating import templates
 from sqlmodel import Session
 
 from app.approval_links import read_token
@@ -29,7 +29,6 @@ from app.models import RequestType, Ticket, TicketApproval, TicketStatus, User
 from app.settings_store import APPROVAL_LINK_MINUTES, get_int_setting
 
 router = APIRouter(prefix="/approvals", tags=["approvals"], dependencies=[Depends(rate_limited(APPROVALS))])
-templates = Jinja2Templates(directory="app/templates")
 
 # The token is in the address, so keep it out of caches and Referer headers.
 _HEADERS = {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}

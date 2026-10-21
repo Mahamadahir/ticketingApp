@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
+from app.templating import templates
 from sqlmodel import Session, select
 
 from app.auth import require_roles
@@ -12,7 +12,6 @@ from app.notifications import AGENT_ROLES, count_unread, mark_all_read, mark_rea
 from app.pagination import paginate
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
-templates = Jinja2Templates(directory="app/templates")
 
 agent_only = require_roles(*AGENT_ROLES)
 

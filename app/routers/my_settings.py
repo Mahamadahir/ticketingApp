@@ -3,7 +3,7 @@ agent or requester, and only their own."""
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
+from app.templating import templates
 from sqlmodel import Session
 
 from app.auth import get_current_user
@@ -23,7 +23,6 @@ from app.notification_settings import (
 from app.notifications import AGENT_ROLES, default_teams_delay
 
 router = APIRouter(prefix="/settings", tags=["settings"])
-templates = Jinja2Templates(directory="app/templates")
 
 
 def _channels() -> dict:

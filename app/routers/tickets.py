@@ -5,7 +5,7 @@ from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
+from app.templating import templates
 from sqlmodel import Session, select
 
 from app.audit import log_action
@@ -81,9 +81,6 @@ from app.visibility import (
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 # Shareable links live outside /tickets: /t/1042 (the number; a prefix such as INC-1042 is accepted).
 reference_router = APIRouter(tags=["tickets"])
-templates = Jinja2Templates(directory="app/templates")
-templates.env.globals["max_message_length"] = MAX_MESSAGE_LENGTH
-templates.env.globals["agent_label"] = agent_label  # a name, plus "(out of office)" when they are
 
 AGENT_ROLES = (UserRole.SUPER_ADMIN, UserRole.AGENT)
 
