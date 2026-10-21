@@ -436,6 +436,7 @@
       "summary": "",
       "tables": [],
       "tests": [
+        "tests/test_acknowledgement.py",
         "tests/test_activity_log.py",
         "tests/test_attachments.py",
         "tests/test_inbound_mail.py",
@@ -537,6 +538,7 @@
       "summary": "Admin-managed wording for the emails the app sends by itself (phase 4T).",
       "tables": [],
       "tests": [
+        "tests/test_acknowledgement.py",
         "tests/test_email_templates.py",
         "tests/test_resolution.py"
       ]
@@ -721,6 +723,8 @@
         "app.mail",
         "app.messages",
         "app.models",
+        "app.never_follow",
+        "app.outbox",
         "app.raising",
         "app.settings_store",
         "app.splitting",
@@ -733,6 +737,7 @@
       "summary": "Inbound mail (phase 3B): turning a mail in the shared mailbox into a ticket or a reply.",
       "tables": [],
       "tests": [
+        "tests/test_acknowledgement.py",
         "tests/test_inbound_mail.py",
         "tests/test_never_follow.py"
       ]
@@ -834,6 +839,7 @@
       "file": "app/mail.py",
       "functions": [
         "automatic_cap",
+        "build_acknowledgement_mail",
         "build_approval_mail",
         "build_message_mail",
         "build_raised_for_mail",
@@ -869,6 +875,7 @@
       "summary": "Building and sending the emails that app/outbox.py queued (phase 3D).",
       "tables": [],
       "tests": [
+        "tests/test_acknowledgement.py",
         "tests/test_email_templates.py",
         "tests/test_outbound_mail.py",
         "tests/test_resolution.py"
@@ -1198,6 +1205,7 @@
       "tests": [
         "tests/conftest.py",
         "tests/test_access_context.py",
+        "tests/test_acknowledgement.py",
         "tests/test_activity_log.py",
         "tests/test_admin.py",
         "tests/test_approvals.py",
@@ -1267,6 +1275,7 @@
       ],
       "imported_by": [
         "app.followers",
+        "app.inbound",
         "app.routers.admin"
       ],
       "imports": [
@@ -1365,12 +1374,14 @@
       "file": "app/outbox.py",
       "functions": [
         "is_on",
+        "queue_acknowledgement",
         "queue_approval",
         "queue_message",
         "queue_raised_for"
       ],
       "imported_by": [
         "app.approvals",
+        "app.inbound",
         "app.mail",
         "app.messages",
         "app.raising"
@@ -1384,6 +1395,7 @@
       "summary": "Queuing email out of the shared mailbox (phase 3D). Nothing here commits, and nothing here sends:",
       "tables": [],
       "tests": [
+        "tests/test_acknowledgement.py",
         "tests/test_email_templates.py",
         "tests/test_outbound_mail.py",
         "tests/test_resolution.py"
@@ -2492,6 +2504,7 @@
       "summary": "Admin-editable settings. Values are stored as text in the setting table; this",
       "tables": [],
       "tests": [
+        "tests/test_acknowledgement.py",
         "tests/test_approvals.py",
         "tests/test_category_admin.py",
         "tests/test_inbound_mail.py",
@@ -3234,6 +3247,7 @@
   "tests": [
     "tests/conftest.py",
     "tests/test_access_context.py",
+    "tests/test_acknowledgement.py",
     "tests/test_activity_log.py",
     "tests/test_admin.py",
     "tests/test_approvals.py",
