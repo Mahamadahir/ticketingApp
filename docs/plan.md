@@ -948,7 +948,8 @@ Automatic emails use admin-managed templates, previewed when edited.
   another team, or they left the team; followers and the past notification grant nothing) is hidden
   everywhere: not listed, not counted, opening it is a 404, and "mark all read" leaves it unread.
   It returns if access returns. Ticket numbers and subjects reach the page only through
-  `bell_tickets`, which applies `visible_ticket_condition`.
+  `bell_tickets`, which applies `visible_ticket_condition`. The Teams copy checks access again at send
+  time (a queued post for a ticket that has since moved is unsendable).
   *Built in 2B (19 Oct 2026):* `/settings/notifications` (a "Settings" link for everyone signed in;
   `app/notification_settings.py`). Each event type lists the channels it can use and which are on by
   default: assigned and mentioned (agents: the bell and Teams, both on), "an agent raises a ticket for

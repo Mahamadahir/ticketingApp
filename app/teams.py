@@ -26,6 +26,7 @@ from sqlmodel import Session, select
 
 from app.config import settings
 from app.models import Notification, TeamsPost, Ticket, TicketSource, User
+from app.visibility import Access, access_context, ticket_access
 
 log = logging.getLogger("app.teams")
 
@@ -205,6 +206,9 @@ def notification_post(session: Session, post: TeamsPost) -> dict:
     if person is None:
         raise Unsendable("Person not found")
     ticket = session.get(Ticket, notification.ticket_id) if notification.ticket_id else None
+    if ticket is not None and ticket_access(person, ticket, access_context(session, person)) < Access.READ:
+        # Checked again at send time: the ticket may have moved team since the copy was queued.
+        raise Unsendable("The person can no longer open the ticket")
     return notification_card(notification, person, ticket)
 
 
