@@ -26,6 +26,9 @@ APPROVAL_LINK_MINUTES = "approval_link_minutes"
 TEAMS_UNREAD_MINUTES = "teams_unread_minutes"
 AUTOMATIC_EMAIL_CAP = "automatic_email_cap_per_ticket"
 SLA_AT_RISK_PERCENT = "sla_at_risk_percent"
+GRAPH_SUBSCRIPTION_MINUTES = "graph_subscription_minutes"
+GRAPH_RENEW_MARGIN_MINUTES = "graph_renew_margin_minutes"
+MAIL_BACKFILL_DAYS = "mail_backfill_days"
 
 # PLACEHOLDER SLA targets, in minutes on a 24/7 clock, until the real ones are agreed
 # (TBC in docs/plan.md). They are settings, changed under Admin > Settings; a blank
@@ -119,6 +122,39 @@ REGISTRY: dict[str, SettingDef] = {
             "replies are never counted. Placeholder value until the real limit is agreed."
         ),
         default="10",
+    ),
+    GRAPH_SUBSCRIPTION_MINUTES: SettingDef(
+        key=GRAPH_SUBSCRIPTION_MINUTES,
+        label="Mail subscription lifetime when created or renewed (minutes)",
+        kind="minutes",
+        description=(
+            "How far ahead the worker asks Microsoft to extend the mailbox subscription each time. Graph "
+            "allows at most 10070 minutes for mail (a larger number is cut to that). Placeholder until "
+            "proved on staging."
+        ),
+        default="10000",
+    ),
+    GRAPH_RENEW_MARGIN_MINUTES: SettingDef(
+        key=GRAPH_RENEW_MARGIN_MINUTES,
+        label="Renew the mail subscription when this little time is left (minutes)",
+        kind="minutes",
+        description=(
+            "The worker renews the subscription once less than this is left, and /health warns below it. "
+            "1440 is 24 hours: a worker outage of a day still leaves the subscription alive."
+        ),
+        default="1440",
+    ),
+    MAIL_BACKFILL_DAYS: SettingDef(
+        key=MAIL_BACKFILL_DAYS,
+        label="Mail catch-up: how many days back a restarted sync looks",
+        kind="count",
+        description=(
+            "Used only when Microsoft has discarded the catch-up's place and it must start again: it then "
+            "collects mail received in this many days. The very first run never looks back (mail already in "
+            "the inbox is not imported); later runs carry on from where the last one stopped, however long "
+            "ago that was. Mail already collected is never collected twice."
+        ),
+        default="3",
     ),
     SLA_AT_RISK_PERCENT: SettingDef(
         key=SLA_AT_RISK_PERCENT,

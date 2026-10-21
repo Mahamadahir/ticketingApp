@@ -812,7 +812,14 @@ Automatic emails use admin-managed templates, previewed when edited.
   notifications to persistently slow endpoints.
 - Duplicates prevented by a unique constraint on `internetMessageId`.
 - Subscriptions last up to 10,080 minutes. The worker renews any with under
-  24 hours left and recreates on 404.
+  24 hours left and recreates on 404. *Built in 3C (20 Oct 2026):* `app/subscriptions.py`; one
+  `GraphSubscription` row (unique resource, locked with `SKIP LOCKED`) plus a check of what Graph itself
+  holds before anything is created, so restarts and two replicas never make two; renew margin, lifetime
+  and backfill window are settings (the window applies only when Graph forgets the catch-up's place; the very
+  first run looks back nothing and imports no existing mail); lifecycle notifications are acted on from the stored rows; the
+  catch-up stores its deltaLink in `MailSyncState` and hands new message ids to inbound mail through
+  `GraphNotification`; Admin > Mail intake and `/health` warnings show the state. Real creation,
+  renewal and lifecycle events are staging-only (see the build plan's staging checklist).
 - `lifecycleNotificationUrl` set at creation (it can't be added later):
   `reauthorizationRequired` renews via `PATCH`, `subscriptionRemoved`
   recreates then runs a delta sync, `missed` runs a delta sync. Never

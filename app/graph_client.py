@@ -11,6 +11,7 @@ GRAPH_* values in .env and flesh out the TODOs when that's ready.
 """
 
 import time
+from datetime import datetime, timezone
 from urllib.parse import quote
 
 import httpx
@@ -20,6 +21,13 @@ from app.config import settings
 GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0"
 PRESENCE_BATCH = 650  # the most ids getPresencesByUserId accepts in one request
 TOKEN_URL_TEMPLATE = "https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
+
+
+def _graph_time(moment: datetime) -> str:
+    """Graph wants an ISO 8601 UTC time ("2026-10-27T10:00:00Z")."""
+    if moment.tzinfo is not None:
+        moment = moment.astimezone(timezone.utc)
+    return moment.replace(microsecond=0, tzinfo=None).isoformat() + "Z"
 
 
 class GraphClient:
@@ -109,17 +117,86 @@ class GraphClient:
         )
         response.raise_for_status()
 
-    def create_subscription(self, notification_url: str) -> dict:
-        """Create a Graph change notification subscription on the shared
-        mailbox so new mail triggers POST /webhooks/graph/notifications.
+    def _authorized(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self._get_access_token()}"}
 
-        TODO: call POST /subscriptions with resource
-        "users/{mailbox}/mailFolders('Inbox')/messages", changeType
-        "created", and settings.graph_webhook_client_state as clientState.
-        Subscriptions expire (max ~3 days for mail) and need renewal via a
-        scheduled job.
-        """
-        raise NotImplementedError("Wire up Graph credentials in .env before creating subscriptions")
+    def list_subscriptions(self) -> list[dict]:
+        """GET /subscriptions: every subscription this app registration holds (following pages)."""
+        subscriptions: list[dict] = []
+        url: str | None = f"{GRAPH_BASE_URL}/subscriptions"
+        while url:
+            body = self._get_json(url)
+            subscriptions.extend(body.get("value", []))
+            url = body.get("@odata.nextLink")
+        return subscriptions
+
+    def create_subscription(
+        self, resource: str, notification_url: str, lifecycle_url: str, client_state: str, expires_at: datetime
+    ) -> dict:
+        """POST /subscriptions for new mail. Graph calls notification_url back (validationToken) before it
+        answers, so the public app must be reachable. lifecycleNotificationUrl can only be set here.
+        The reply carries the subscription id and the expiry Graph actually granted."""
+        response = httpx.post(
+            f"{GRAPH_BASE_URL}/subscriptions",
+            json={
+                "changeType": "created",
+                "notificationUrl": notification_url,
+                "lifecycleNotificationUrl": lifecycle_url,
+                "resource": resource,
+                "expirationDateTime": _graph_time(expires_at),
+                "clientState": client_state,
+            },
+            headers=self._authorized(),
+            timeout=30,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def renew_subscription(self, subscription_id: str, expires_at: datetime) -> dict:
+        """PATCH /subscriptions/{id}: the new expiry. 404 means the subscription is gone."""
+        response = httpx.patch(
+            f"{GRAPH_BASE_URL}/subscriptions/{quote(subscription_id, safe='')}",
+            json={"expirationDateTime": _graph_time(expires_at)},
+            headers=self._authorized(),
+            timeout=30,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def delete_subscription(self, subscription_id: str) -> None:
+        """DELETE /subscriptions/{id}. Already gone counts as done."""
+        response = httpx.delete(
+            f"{GRAPH_BASE_URL}/subscriptions/{quote(subscription_id, safe='')}",
+            headers=self._authorized(),
+            timeout=30,
+        )
+        if response.status_code != 404:
+            response.raise_for_status()
+
+    def inbox_delta_page(self, link: str | None, since: datetime | None = None) -> dict:
+        """One page of the inbox delta query (GET .../mailFolders/inbox/messages/delta). With no link it
+        starts a fresh sync of mail received since `since`; with a link (a nextLink or the deltaLink of
+        an earlier run) it carries on from there. The reply holds `value` and either `@odata.nextLink`
+        or `@odata.deltaLink`. Only ids are asked for: the mail itself is fetched by inbound processing.
+        Needs Mail.Read, limited to the mailbox."""
+        if link is None:
+            mailbox = quote(settings.graph_shared_mailbox, safe="@")
+            params = {"$select": "id,receivedDateTime"}
+            if since is not None:
+                params["$filter"] = f"receivedDateTime ge {_graph_time(since)}"
+            return self._get_json(f"{GRAPH_BASE_URL}/users/{mailbox}/mailFolders/inbox/messages/delta", params=params)
+        return self._get_json(link)
+
+    def _get_json(self, url: str, params: dict | None = None) -> dict:
+        # A stored or server-supplied link is only ever followed on Graph itself, so the token is
+        # never sent anywhere else.
+        if not url.startswith(GRAPH_BASE_URL + "/"):
+            raise ValueError("Refusing to send a Graph token to a link outside Graph")
+        response = httpx.get(
+            url, params=params, headers={**self._authorized(), "Prefer": "odata.maxpagesize=50"}, timeout=30
+        )
+        response.raise_for_status()
+        return response.json()
 
     def get_message(self, message_id: str) -> dict:
         """TODO: GET /users/{mailbox}/messages/{message_id} to fetch the

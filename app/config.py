@@ -55,6 +55,15 @@ class Settings(BaseSettings):
     # Out-of-office detection (phase 2E): the worker reads agents' presence from Graph
     # (Presence.Read.All) and marks those who are out of office. Needs the GRAPH_* credentials.
     presence_enabled: bool = False
+    # Keeping a Graph change-notification subscription on the shared mailbox alive (phase 3C), run by the
+    # worker. GRAPH_NOTIFICATION_URL is the public address of POST /webhooks/graph/notifications on the
+    # public app (https, reachable from Microsoft); lifecycle notifications come to the same address.
+    # Not set in dev: a subscription needs a public URL, so only staging can prove it.
+    graph_subscription_enabled: bool = False
+    graph_notification_url: str = ""
+    # The catch-up sync (delta query on the inbox) finds mail a webhook missed. It needs no public URL,
+    # so it can run without the subscription (polling only).
+    mail_catch_up_enabled: bool = False
     # Email out of the shared mailbox (phase 3D). "off": nothing is queued. "dev": emails are queued and
     # the worker records them as sent without contacting Graph (dev only; see /admin/outbound-mail).
     # "graph": the worker sends them through Graph, so it needs the GRAPH_* values and the mailbox.
@@ -122,8 +131,19 @@ class Settings(BaseSettings):
 MAIL_SENDING_MODES = ("off", "dev", "graph")
 
 
-def unsafe_setting_errors(config: Settings) -> list[str]:
+def mail_sync_errors(config: Settings) -> list[str]:
     errors = []
+    if (config.graph_subscription_enabled or config.mail_catch_up_enabled) and not (
+        config.graph_configured and config.graph_shared_mailbox
+    ):
+        errors.append("GRAPH_SUBSCRIPTION_ENABLED / MAIL_CATCH_UP_ENABLED need the GRAPH_* values and GRAPH_SHARED_MAILBOX")
+    if config.graph_subscription_enabled and not config.graph_notification_url.lower().startswith("https://"):
+        errors.append("GRAPH_SUBSCRIPTION_ENABLED needs GRAPH_NOTIFICATION_URL, an https address Microsoft can reach")
+    return errors
+
+
+def unsafe_setting_errors(config: Settings) -> list[str]:
+    errors = mail_sync_errors(config)
     if config.mail_sending not in MAIL_SENDING_MODES:
         errors.append(f"MAIL_SENDING must be one of {', '.join(MAIL_SENDING_MODES)}")
     if config.app_role not in APP_ROLES:

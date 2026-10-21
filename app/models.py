@@ -459,7 +459,11 @@ class GraphNotification(SQLModel, table=True):
     on subscription lifecycle events. Nothing here is mail content: Graph sends only ids."""
 
     # The worker looks for unprocessed rows only; this keeps that cheap however many were handled.
-    __table_args__ = (Index("ix_graphnotification_unprocessed", "id", postgresql_where=text("processed_at IS NULL")),)
+    __table_args__ = (
+        Index("ix_graphnotification_unprocessed", "id", postgresql_where=text("processed_at IS NULL")),
+        # The catch-up sync (app/subscriptions.py) asks which message ids it has already handed over.
+        Index("ix_graphnotification_resource_id", "resource_id"),
+    )
 
     id: Optional[int] = Field(default=None, primary_key=True)
     received_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -472,6 +476,44 @@ class GraphNotification(SQLModel, table=True):
     resource_id: Optional[str] = Field(default=None)  # the message id, from resourceData.id
     processed_at: Optional[datetime] = Field(default=None)
     last_error: Optional[str] = Field(default=None)
+
+
+class GraphSubscription(SQLModel, table=True):
+    """The one Graph change-notification subscription this app keeps on the shared mailbox's inbox
+    (phase 3C, app/subscriptions.py). One row per watched resource: the unique `resource` is what stops
+    two workers, or a restart, from each creating their own. The row is locked while it is checked,
+    created or renewed. Holds no secret: the clientState is kept only as a short fingerprint, so a
+    changed GRAPH_WEBHOOK_CLIENT_STATE is noticed and the subscription recreated."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    resource: str = Field(unique=True)
+    subscription_id: Optional[str] = Field(default=None)  # Graph's id; None until created (or after it was lost)
+    expires_at: Optional[datetime] = Field(default=None)
+    client_state_fingerprint: Optional[str] = Field(default=None)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    last_renewed_at: Optional[datetime] = Field(default=None)  # a create or a renewal
+    last_checked_at: Optional[datetime] = Field(default=None)
+    last_error: Optional[str] = Field(default=None)
+    last_error_at: Optional[datetime] = Field(default=None)
+
+
+class MailSyncState(SQLModel, table=True):
+    """Where the catch-up sync of a mailbox folder has got to (phase 3C): Graph's delta query hands
+    back a deltaLink that means "everything changed since here", kept so the next run starts there.
+    `resume_link` is the next page of a run that was cut short. Opaque links, not secrets, and never logged."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    folder: str = Field(unique=True)  # e.g. users/<mailbox>/mailFolders/inbox
+    delta_link: Optional[str] = Field(default=None)
+    resume_link: Optional[str] = Field(default=None)
+    # Where this folder's mail starts counting: set to "now" by the very first run (which hands nothing
+    # over, so existing inbox mail is never imported), or to the start of the backfill window when
+    # Graph forgot our place. None means no run has started yet.
+    starting_point_at: Optional[datetime] = Field(default=None)
+    last_synced_at: Optional[datetime] = Field(default=None)
+    last_handed_over: int = Field(default=0, sa_column_kwargs={"server_default": "0"})  # new ids at the last run
+    last_error: Optional[str] = Field(default=None)
+    last_error_at: Optional[datetime] = Field(default=None)
 
 
 TICKET_COUNTER = "ticket"
