@@ -133,9 +133,9 @@ REGISTRY: dict[str, TemplateDef] = {
             body_default=(
                 "Your ticket {reference} has been resolved.\n\n"
                 "What was done:\n{resolution_notes}\n\n"
-                "If this has not fixed the problem, you can reopen the ticket here:\n{reopen_link}\n"
-                "or reply to this email and tell us.\n\n"
-                "Tell us how we did:\n{feedback_link}"
+                "If this has not fixed the problem, reply to this email and tell us, or reopen the ticket.\n"
+                "Reopen this ticket: {reopen_link}\n"
+                "Tell us how we did: {feedback_link}"
             ),
             body_placeholders={
                 **_COMMON,
@@ -305,7 +305,7 @@ def validate(defn: TemplateDef, subject: Optional[str], body: str) -> tuple[Opti
     _check_text(body, defn.body_placeholders, "text")
     if "/approvals/" in body.lower():
         raise TemplateError("Approval links cannot be written into a template; use {link}, which is made when the email is sent")
-    if "/feedback/" in body.lower() or "/reopen/" in body.lower():
+    if "feedback_link" in defn.body_placeholders and ("/feedback/" in body.lower() or "/reopen/" in body.lower()):
         raise TemplateError("Feedback and reopen links cannot be written into a template; use {feedback_link} and {reopen_link}, which are made when the email is sent")
     for name in defn.required:
         if "{" + name + "}" not in body:

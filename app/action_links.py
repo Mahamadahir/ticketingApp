@@ -24,12 +24,12 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from sqlalchemy import update
+from sqlalchemy import delete, update
 from sqlmodel import Session, select
 
 from app.config import settings
 from app.models import ActionToken, Ticket, TicketFeedback, TicketStatus
-from app.reopening import ReopenError, reopen_ticket
+from app.reopening import ReopenError, check_can_reopen, reopen_ticket
 from app.settings_store import FEEDBACK_LINK_MINUTES, REGISTRY, REOPEN_LINK_MINUTES, get_int_setting
 
 log = logging.getLogger("app.action_links")
@@ -40,8 +40,9 @@ PATHS = {FEEDBACK: "/feedback/", REOPEN: "/reopen/"}
 LIFETIME_SETTINGS = {FEEDBACK: FEEDBACK_LINK_MINUTES, REOPEN: REOPEN_LINK_MINUTES}
 
 # What stands in for each link in the stored resolution text.
-FEEDBACK_MARKER = "[feedback link]"
-REOPEN_MARKER = "[reopen link]"
+# Worded to read sensibly where the requester sees the stored text (the portal timeline).
+FEEDBACK_MARKER = "(your personal feedback link is in the email)"
+REOPEN_MARKER = "(your personal reopen link is in the email)"
 MARKERS = {FEEDBACK: FEEDBACK_MARKER, REOPEN: REOPEN_MARKER}
 
 MAX_COMMENT_LENGTH = 2000
@@ -57,8 +58,13 @@ def hash_token(token: str) -> str:
 
 
 def mint(session: Session, ticket: Ticket, kind: str, now: Optional[datetime] = None) -> str:
-    """A new single-use token for the ticket. Returns the token itself, which is not stored."""
+    """A new single-use token for the ticket. Returns the token itself, which is not stored. Unused links of the
+    same kind for this ticket are withdrawn: a link from an earlier resolution, or from an email attempt that
+    failed, stops working and its row goes, so retries cannot pile up live credentials."""
     now = now or datetime.now(timezone.utc)
+    session.execute(delete(ActionToken).where(
+        ActionToken.ticket_id == ticket.id, ActionToken.kind == kind, ActionToken.used_at.is_(None)
+    ))
     key = LIFETIME_SETTINGS[kind]
     minutes = get_int_setting(session, key) or int(REGISTRY[key].default)
     token = secrets.token_urlsafe(TOKEN_BYTES)
@@ -94,8 +100,8 @@ def claim(session: Session, row: ActionToken, now: Optional[datetime] = None) ->
 
 def submit_feedback(session: Session, row: ActionToken, rating: int, comment: str) -> TicketFeedback:
     """Records the rating and uses up the link, or raises LinkError and changes nothing."""
-    comment = (comment or "").replace("\r\n", "\n").strip()
-    if not 1 <= rating <= 5:
+    comment = (comment or "").replace("\r\n", "\n").replace("\x00", "").strip()
+    if not isinstance(rating, int) or not 1 <= rating <= 5:
         raise LinkError("Choose a rating from 1 to 5")
     if len(comment) > MAX_COMMENT_LENGTH:
         raise LinkError(f"The comment can be at most {MAX_COMMENT_LENGTH} characters")
@@ -109,7 +115,12 @@ def submit_feedback(session: Session, row: ActionToken, rating: int, comment: st
 
 
 def can_reopen(ticket: Ticket) -> bool:
-    return ticket.status == TicketStatus.RESOLVED and ticket.triaged_at is not None
+    """Whether reopen_ticket would accept this ticket now (its own rule, not a copy of it)."""
+    try:
+        check_can_reopen(ticket)
+    except ReopenError:
+        return False
+    return True
 
 
 def reopen_from_link(session: Session, row: ActionToken, ticket: Ticket) -> None:

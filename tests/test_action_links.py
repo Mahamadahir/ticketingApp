@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import select
 
 from app import action_links, mail, outbox
+from app.action_links import FEEDBACK_MARKER, REOPEN_MARKER
 from app.config import settings
 from app.log_redaction import ApprovalTokenFilter
 from app.main import build_app
@@ -90,7 +91,7 @@ def test_the_email_carries_both_links_but_nothing_stores_them(client, db_session
     for token in found.values():
         assert token not in hashes and action_links.hash_token(token) in hashes
     [message] = db_session.exec(select(Message).where(Message.ticket_id == ticket.id, Message.direction == "outbound")).all()
-    assert "[feedback link]" in message.body and "[reopen link]" in message.body
+    assert FEEDBACK_MARKER in message.body and REOPEN_MARKER in message.body
     assert not LINK.search(message.body)
 
 
@@ -102,7 +103,7 @@ def test_a_sent_row_never_keeps_a_link(client, db_session):
         select(OutboundEmail).where(OutboundEmail.ticket_id == ticket.id, OutboundEmail.kind == outbox.REPLY)
     ).all()
     assert row.sent_at is not None and "/feedback/" not in row.body and "/reopen/" not in row.body
-    assert "[feedback link]" in row.body
+    assert FEEDBACK_MARKER in row.body
     assert len(tokens_of(db_session, ticket)) == 2  # the links that went out were made at send time
 
 
@@ -120,7 +121,9 @@ def test_no_public_address_means_no_link_lines_rather_than_dead_markers(client, 
     ticket = resolved_ticket(client, db_session)
     monkeypatch.setattr(settings, "public_base_url", "")
     _, built = sent_email(db_session, ticket)
-    assert "[feedback link]" not in built.body and "[reopen link]" not in built.body and "/reopen/" not in built.body
+    assert FEEDBACK_MARKER not in built.body and REOPEN_MARKER not in built.body and "/reopen/" not in built.body
+    assert "Reopen this ticket" not in built.body and "Tell us how we did" not in built.body  # no orphaned lead-in
+    assert "reply to this email" in built.body
     assert not tokens_of(db_session, ticket)
 
 
@@ -130,7 +133,7 @@ def test_a_ticket_reopened_before_the_email_goes_out_gets_no_links(client, db_se
     db_session.add(ticket)
     db_session.commit()
     _, built = sent_email(db_session, ticket)
-    assert "/reopen/" not in built.body and "[reopen link]" not in built.body and not tokens_of(db_session, ticket)
+    assert "/reopen/" not in built.body and REOPEN_MARKER not in built.body and not tokens_of(db_session, ticket)
 
 
 # ---- A GET never changes anything -------------------------------------------------------------------
@@ -180,14 +183,14 @@ def test_a_second_post_of_the_same_feedback_link_changes_nothing(client, db_sess
     assert feedback.rating == 5 and feedback.comment == ""
 
 
-@pytest.mark.parametrize("rating", ["0", "6", "-1", "abc", ""])
+@pytest.mark.parametrize("rating", ["0", "6", "-1", "abc", "", "4.5"])
 def test_a_rating_outside_one_to_five_is_refused_and_the_link_stays_usable(client, db_session, public, rating):
     ticket = resolved_ticket(client, db_session)
     found = links(db_session, ticket)
 
     refused = public.post(f"/feedback/{found['feedback']}", data={"rating": rating})
 
-    assert refused.status_code in (200, 422) and not feedbacks(db_session)
+    assert refused.status_code == 200 and "Choose a rating from 1 to 5" in refused.text and not feedbacks(db_session)
     assert all(t.used_at is None for t in tokens_of(db_session, ticket))
     assert public.post(f"/feedback/{found['feedback']}", data={"rating": "3"}).status_code == 200
     assert len(feedbacks(db_session)) == 1
@@ -359,3 +362,26 @@ def test_a_template_cannot_have_a_pasted_feedback_or_reopen_address(db_session):
     for pasted in ("https://x.example/feedback/abc", "https://x.example/reopen/abc"):
         with pytest.raises(TemplateError):
             validate(definition("resolution"), None, "{resolution_notes} " + pasted)
+
+
+def test_a_nul_in_the_comment_is_dropped_not_a_server_error(client, db_session, public):
+    ticket = resolved_ticket(client, db_session)
+    found = links(db_session, ticket)
+    assert public.post(f"/feedback/{found['feedback']}", data={"rating": "3", "comment": "a\x00b"}).status_code == 200
+    assert feedbacks(db_session)[0].comment == "ab"
+
+
+def test_a_new_email_withdraws_the_unused_links_of_the_earlier_one(client, db_session, public):
+    ticket = resolved_ticket(client, db_session)
+    old = links(db_session, ticket)
+    new = links(db_session, ticket)  # a retry, or the next resolution's email
+
+    assert len(tokens_of(db_session, ticket)) == 2
+    assert public.get(f"/reopen/{old['reopen']}").status_code == 404
+    assert public.get(f"/reopen/{new['reopen']}").status_code == 200
+
+
+def test_an_ordinary_address_with_feedback_in_it_is_fine_in_another_template(db_session):
+    from app.email_templates import definition, validate
+
+    validate(definition("acknowledgement"), None, "Logged as {reference}. See https://intranet.example.org/feedback/survey")

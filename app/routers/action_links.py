@@ -15,7 +15,7 @@ from sqlmodel import Session
 from app import action_links
 from app.action_links import FEEDBACK, REOPEN, LinkError
 from app.database import get_session
-from app.models import ActionToken, Ticket
+from app.models import ActionToken, Ticket, TicketStatus
 from app.rate_limit import ACTION_LINKS, rate_limited
 from app.templating import templates
 
@@ -51,7 +51,7 @@ def _state(kind: str, row: ActionToken, ticket: Ticket) -> str:
     if action_links.is_expired(row):
         return "expired"
     if kind == REOPEN and not action_links.can_reopen(ticket):
-        return "closed" if ticket.status.value == "closed" else "not_resolved"
+        return "closed" if ticket.status == TicketStatus.CLOSED else "not_resolved"
     return "ready"
 
 
@@ -72,7 +72,7 @@ def show_feedback(request: Request, token: str, session: Session = Depends(get_s
 def give_feedback(
     request: Request,
     token: str,
-    rating: int = Form(...),
+    rating: str = Form(""),
     comment: str = Form("", max_length=action_links.MAX_COMMENT_LENGTH + 500),
     session: Session = Depends(get_session),
 ):
@@ -80,7 +80,9 @@ def give_feedback(
     if row is None or ticket is None:
         return _page(request, FEEDBACK, token, None, None, "invalid", status_code=404)
     try:
-        action_links.submit_feedback(session, row, rating, comment)
+        # Parsed here, not by FastAPI, so a bad value gets this page's message and not a bare JSON error.
+        number = int(rating) if rating.strip().isascii() and rating.strip().isdigit() else 0
+        action_links.submit_feedback(session, row, number, comment)
     except LinkError as error:
         session.rollback()
         return _show(request, session, FEEDBACK, token, message=str(error))
