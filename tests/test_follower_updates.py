@@ -268,6 +268,17 @@ def test_the_cap_is_counted_per_person_and_holds_not_loses(db_session, dev_mail)
     assert sent["sam@example.com"].next_attempt_at is not None
 
 
+def test_follower_updates_never_use_up_the_requesters_allowance_for_their_own_notices(db_session, dev_mail):
+    ticket = world(db_session)
+    set_setting(db_session, AUTOMATIC_EMAIL_CAP, "2")  # the receipt has used one
+    db_session.add(OutboundEmail(
+        kind=outbox.FOLLOWER_UPDATE, ticket_id=ticket.id, to_address="jo@example.com", sent_at=datetime.now(timezone.utc),
+    ))
+    db_session.commit()
+    notice = OutboundEmail(kind=outbox.NOTICE, ticket_id=ticket.id, to_address="jo@example.com")
+    assert mail.cap_release(db_session, notice, datetime.now(timezone.utc)) is None
+
+
 def test_the_admin_wording_is_used(db_session, dev_mail):
     ticket = world(db_session)
     defn = et.definition("follower_update")

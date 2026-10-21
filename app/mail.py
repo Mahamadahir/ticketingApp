@@ -257,17 +257,19 @@ def automatic_cap(session: Session) -> int:
 
 
 def cap_release(session: Session, row: OutboundEmail, now: datetime) -> Optional[datetime]:
-    """None if this email may go. Otherwise when it may: this ticket's requester has already had the
-    most automatic emails allowed in the last 24 hours, and the earliest moment the count drops below
-    the limit is returned, so the email is held back, not lost. Counts those actually sent."""
+    """None if this email may go. Otherwise when it may: this person has already had the most automatic
+    emails of this sort allowed in the last 24 hours on this ticket, and the earliest moment the count
+    drops below the limit is returned, so the email is held back, not lost. Counts those actually sent.
+    Two separate allowances: the requester's own automatic mail (notices, receipts), and follower updates,
+    counted per recipient, so a chatty follower cannot hold back the requester's resolution or approval
+    notice, and each follower has a count of their own."""
     if row.kind not in AUTOMATIC_TO_REQUESTER and row.kind != FOLLOWER_UPDATE:
         return None
-    # Counted per person: a follower update goes to a follower as well as to the requester, so one
-    # burst of updates cannot use up the requester's allowance, and each person has their own.
+    kinds = (FOLLOWER_UPDATE,) if row.kind == FOLLOWER_UPDATE else AUTOMATIC_TO_REQUESTER
     sent = session.exec(
         select(OutboundEmail.sent_at).where(
             OutboundEmail.ticket_id == row.ticket_id,
-            OutboundEmail.kind.in_(AUTOMATIC_TO_REQUESTER + (FOLLOWER_UPDATE,)),
+            OutboundEmail.kind.in_(kinds),
             func.lower(OutboundEmail.to_address) == row.to_address.strip().lower(),
             OutboundEmail.sent_at.is_not(None),
             OutboundEmail.sent_at >= now - CAP_WINDOW,
@@ -358,7 +360,7 @@ def deliver_mail(
             release = cap_release(session, row, now)
             if release is not None:
                 # Held back until the day's count allows it: not a failure and no try used.
-                row.last_error = "Held back: the limit on automatic emails to this ticket was reached"
+                row.last_error = "Held back: the limit on automatic emails to this person on this ticket was reached"
                 row.next_attempt_at = release
                 session.add(row)
                 session.commit()

@@ -18,6 +18,7 @@ from app.followers import (
     NeverFollowListed,
     TooManyFollowers,
     add_follower,
+    copyable_followers,
     followers_of,
     remove_follower,
 )
@@ -46,7 +47,6 @@ from app.messages import (
     UnknownRecipient,
     add_note,
     agent_timeline,
-    copy_candidates,
     email_requester,
     chosen_status,
     default_status_after_email,
@@ -964,7 +964,7 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             "escalators": escalators_of(session, ticket),
             "followers": followers_of(session, ticket),
             # Who the Email user form offers to copy: everyone except the requester and any never-follow address.
-            "cc_candidates": copy_candidates(session, ticket),
+            "cc_candidates": copyable_followers(session, ticket),
             "can_email": can_work and is_triaged(ticket),
             "canned": active_canned(session) if can_work and is_triaged(ticket) else [],
             "can_edit_followers": can_work,

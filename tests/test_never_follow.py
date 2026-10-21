@@ -181,8 +181,8 @@ def test_add_listed_normalises_the_address(db_session):
 
 
 def test_an_agents_email_and_its_preview_skip_a_follower_listed_after_following(client, db_session):
-    from app.followers import cc_list
-    from app.messages import UnknownRecipient, copy_candidates, email_requester, preview_email
+    from app.followers import cc_list, copyable_followers
+    from app.messages import UnknownRecipient, email_requester, preview_email
     from tests.test_email_preview import follow, ticket_for_email
 
     ticket = ticket_for_email(client, db_session)
@@ -193,7 +193,7 @@ def test_an_agents_email_and_its_preview_skip_a_follower_listed_after_following(
     agent = db_session.exec(select(User).where(User.email == "agent@example.com")).one()
 
     assert preview_email(db_session, ticket, "Hello").cc == ["pat@example.com"]
-    assert [f.email for f in copy_candidates(db_session, ticket)] == ["pat@example.com"]
+    assert [f.email for f in copyable_followers(db_session, ticket)] == ["pat@example.com"]
     with pytest.raises(UnknownRecipient):
         preview_email(db_session, ticket, "Hello", cc_emails=["pat@example.com", "sam@example.com"])
     assert email_requester(db_session, ticket, agent, "Hello").cc == "pat@example.com"

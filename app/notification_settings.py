@@ -74,9 +74,9 @@ EVENT_TYPES: tuple[EventType, ...] = (
         EVERYONE, (EMAIL,), (EMAIL,),
     ),
     EventType(
-        FOLLOWER_UPDATE, "A ticket you follow is updated by someone else",
-        "An email passing on what the requester or another follower wrote on a ticket you follow, when you were "
-        "not already sent it.",
+        FOLLOWER_UPDATE, "Someone else updates a ticket you are on",
+        "An email passing on what the requester or a follower wrote on a ticket you raised or follow, when you "
+        "were not already sent it.",
         EVERYONE, (EMAIL,), (EMAIL,),
     ),
 )

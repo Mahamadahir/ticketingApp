@@ -985,7 +985,6 @@
         "add_note",
         "agent_timeline",
         "chosen_status",
-        "copy_candidates",
         "default_status_after_email",
         "email_requester",
         "in_a_split",

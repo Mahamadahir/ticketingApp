@@ -93,11 +93,6 @@ def _copied_followers(session: Session, ticket: Ticket, cc_emails: Optional[list
     return [f for f in candidates if f.is_internal or f.email in wanted]
 
 
-def copy_candidates(session: Session, ticket: Ticket) -> list:
-    """The followers an agent can tick to copy on an email (the tick list of the forms)."""
-    return copyable_followers(session, ticket)
-
-
 @dataclass
 class EmailPreview:
     """What email_requester would send, for the "are you sure?" step. Nothing is recorded."""

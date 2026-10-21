@@ -501,7 +501,7 @@ Everything about the messages on a ticket: emailing the requester, internal
 File: `app/messages.py`
 
 - Classes: `BadStatusChoice`, `EmailPreview`, `EmptyEmail`, `TimelineItem`, `UnknownRecipient`
-- Functions: `about_labels`, `about_text`, `add_note`, `agent_timeline`, `chosen_status`, `copy_candidates`, `default_status_after_email`, `email_requester`, `in_a_split`, `is_triaged`, `mail_subject`, `preview_email`, `record_inbound`, `record_notice`, `requester_visible_messages`, `status_choices`, `thread_subject`
+- Functions: `about_labels`, `about_text`, `add_note`, `agent_timeline`, `chosen_status`, `default_status_after_email`, `email_requester`, `in_a_split`, `is_triaged`, `mail_subject`, `preview_email`, `record_inbound`, `record_notice`, `requester_visible_messages`, `status_choices`, `thread_subject`
 - Imports: `app.followers`, `app.models`, `app.notifications`, `app.outbox`, `app.sla`, `app.splitting`, `app.ticket_service`, `app.visibility`
 - Imported by: `app.approvals`, `app.escalation`, `app.inbound`, `app.mail`, `app.raising`, `app.resolution`, `app.routers.approvals`, `app.routers.portal`, `app.routers.tickets`, `app.splitting`, `app.visibility`
 - Tests: `test_email_preview.py`, `test_escalation_tidy.py`, `test_follower_updates.py`, `test_inbound_mail.py`, `test_messages.py`, `test_never_follow.py`, `test_outbound_mail.py`, `test_reply_notification.py`, `test_resolution.py`, `test_split_family.py`
