@@ -15,7 +15,9 @@
 </p>
 <pre class="message-body">{{ description }}</pre>
 
-{% if can_answer %}
+{% if withdrawn %}
+<p>The requester has withdrawn this request. It no longer needs an answer.</p>
+{% elif can_answer %}
 <form method="post" action="/approvals/{{ token }}">
   <label>Comment (optional; shown to the requester if you decline)
     <textarea name="comment" rows="3" maxlength="{{ max_comment_length }}"></textarea>

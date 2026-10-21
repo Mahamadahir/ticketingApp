@@ -17,6 +17,7 @@ from app.approval_links import read_token
 from app.approvals import (
     MAX_COMMENT_LENGTH,
     PENDING,
+    WITHDRAWN,
     ApprovalError,
     describe_rule,
     record_decision,
@@ -55,6 +56,7 @@ def _page(request: Request, session: Session, vote: ApprovalVote, token: str, me
             "approver": approver,
             "request_type": request_type,
             "description": said[0].body if said else "",
+            "withdrawn": approval.status == WITHDRAWN,
             "can_answer": vote.decision == PENDING and approval.status == PENDING and ticket.status == TicketStatus.AWAITING_APPROVAL,
             "rule": describe_rule(approval),
             "max_comment_length": MAX_COMMENT_LENGTH,

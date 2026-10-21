@@ -13,6 +13,11 @@
   <button type="submit">Reopen this request</button>
 </form>
 {% endif %}
+{% if can_withdraw %}
+<form method="post" action="/portal/{{ ticket.number }}/withdraw" class="inline-form">
+  <button type="submit" class="button-outline">Withdraw this request</button>
+</form>
+{% endif %}
 {% if related %}
 <p class="note">Related:
   {% for other, which in related %}<a href="/portal/{{ other.number }}">{{ other.reference }}</a> {{ other.subject }} ({{ "this follows on from it" if which == "earlier" else "opened after this was closed" }}){{ "; " if not loop.last }}{% endfor %}

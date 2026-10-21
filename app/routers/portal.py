@@ -22,6 +22,7 @@ from app.approvals import (
     PENDING,
     ApprovalError,
     current_approval,
+    withdraw,
     count_pending_for,
     describe_rule,
     pending_for,
@@ -150,6 +151,7 @@ def _render_ticket(request: Request, ticket: Ticket, user: User, session: Sessio
                 else []
             ),
             "is_requester": _is_requester(ticket, user),
+            "can_withdraw": _is_requester(ticket, user) and ticket.status == TicketStatus.AWAITING_APPROVAL,
             "can_reopen": _is_requester(ticket, user) and ticket.status == TicketStatus.RESOLVED,
             # The earlier or later request this one is linked to by a reply after closure, if the person can read it.
             "related": [
@@ -353,6 +355,23 @@ def reopen_my_ticket(
         reopen_ticket(session, ticket, user.email, "The requester reopened it from the portal")
     except ReopenError:
         session.rollback()  # reopened or closed since the page was drawn: show them the ticket as it is now
+        return RedirectResponse(f"/portal/{ticket.number}", status_code=303)
+    session.commit()
+    return RedirectResponse(f"/portal/{ticket.number}", status_code=303)
+
+
+@router.post("/{number}/withdraw")
+def withdraw_my_request(
+    number: int,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """The signed-in requester withdraws their request while it waits for approval. Followers cannot."""
+    ticket = _get_own_ticket(session, number, user)
+    try:
+        withdraw(session, ticket, user.email)
+    except ApprovalError:
+        session.rollback()  # decided or closed since the page was drawn: show them the ticket as it is now
         return RedirectResponse(f"/portal/{ticket.number}", status_code=303)
     session.commit()
     return RedirectResponse(f"/portal/{ticket.number}", status_code=303)

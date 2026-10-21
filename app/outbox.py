@@ -22,6 +22,7 @@ REPLY = "reply"  # an agent's email to the requester (counts as a first response
 NOTICE = "notice"  # an automatic message to the requester (an approval decision, say)
 RAISED_FOR = "raised_for_you"  # "an agent raised a ticket for you"
 APPROVAL = "approval"  # asks an approver to approve or decline
+APPROVAL_WITHDRAWN = "approval_withdrawn"  # tells an approver the requester withdrew the request
 ACKNOWLEDGEMENT = "acknowledgement"  # "your issue has been logged", once, for a ticket that arrived by email
 FOLLOWER_UPDATE = "follower_update"  # an inbound update passed to someone who was not on the mail it came in
 
@@ -69,6 +70,18 @@ def queue_approval(session: Session, vote: ApprovalVote, approver: User) -> Opti
     session.flush()
     approval = session.get(TicketApproval, vote.approval_id)
     row = OutboundEmail(kind=APPROVAL, ticket_id=approval.ticket_id, vote_id=vote.id, to_address=approver.email)
+    session.add(row)
+    return row
+
+
+def queue_approval_withdrawn(session: Session, vote: ApprovalVote, approver: User) -> Optional[OutboundEmail]:
+    """Queues "the request you were asked to approve was withdrawn" for one voter who had not answered.
+    Follows the same preference as the approval request itself (wants_approval_email)."""
+    if not is_on() or not wants_approval_email(session, approver):
+        return None
+    session.flush()
+    approval = session.get(TicketApproval, vote.approval_id)
+    row = OutboundEmail(kind=APPROVAL_WITHDRAWN, ticket_id=approval.ticket_id, vote_id=vote.id, to_address=approver.email)
     session.add(row)
     return row
 

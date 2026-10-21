@@ -183,6 +183,20 @@ REGISTRY: dict[str, TemplateDef] = {
             },
         ),
         TemplateDef(
+            key="approval_withdrawn",
+            label="Approval withdrawn",
+            description="Sent to each approver who had not answered when the requester withdrew the request.",
+            subject_default="[{reference}] Withdrawn: {subject}",
+            subject_placeholders=_COMMON,
+            body_default=(
+                "{requester_email} has withdrawn the request {reference} ({subject}).\n\n"
+                "You do not need to answer it, and any link to approve or decline it no longer does anything."
+            ),
+            body_placeholders={**_COMMON, "requester_email": "who withdrew the request"},
+            subject_required=("reference",),
+            sample={**_COMMON_SAMPLE, "requester_email": "sam@example.com"},
+        ),
+        TemplateDef(
             key="approval_approved",
             label="Notice: request approved",
             description="Told to the requester when their request has been approved.",

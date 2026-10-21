@@ -29,6 +29,7 @@ ASSIGNED = "assigned"
 MENTIONED = "mentioned"
 REPLIED = "replied"
 REOPENED = "reopened"
+APPROVAL_WITHDRAWN = "approval_withdrawn"
 AGENT_ROLES = (UserRole.AGENT, UserRole.SUPER_ADMIN)
 
 # @alice or @alice@example.com: letters, digits, dots, dashes and underscores.
@@ -313,4 +314,15 @@ def notify_reopened(session: Session, ticket: Ticket, actor_email: Optional[str]
         return None
     return notify(
         session, agent, REOPENED, ticket, f"{ticket.tag} {ticket.subject} was reopened: {reason[:200]}", actor_email
+    )
+
+
+def notify_approval_withdrawn(session: Session, ticket: Ticket, approver: User, actor_email: Optional[str]) -> Optional[Notification]:
+    """Tells an agent who was asked to approve that the requester withdrew the request. Only an agent has a
+    bell, and only one who can open the ticket is told what it is. Does not commit."""
+    if not _can_open(session, approver, ticket):
+        return None
+    return notify(
+        session, approver, APPROVAL_WITHDRAWN, ticket,
+        f"{ticket.tag} {ticket.subject} was withdrawn by the requester, so it no longer needs your approval", actor_email,
     )

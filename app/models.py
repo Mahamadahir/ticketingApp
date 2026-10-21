@@ -416,7 +416,7 @@ class TicketApproval(SQLModel, table=True):
     pass_percent: int
     fail_percent: int
     voters: int  # fixed when the approval starts
-    status: str = Field(default="pending")  # pending, approved, declined, waived
+    status: str = Field(default="pending")  # pending, approved, declined, waived, withdrawn
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     settled_at: Optional[datetime] = Field(default=None)
 
@@ -516,7 +516,7 @@ class OutboundEmail(SQLModel, table=True):
     )
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    kind: str  # reply, notice, raised_for_you, approval, acknowledgement, follower_update
+    kind: str  # reply, notice, raised_for_you, approval, approval_withdrawn, acknowledgement, follower_update
     ticket_id: int = Field(foreign_key="ticket.id", index=True)
     # For a reply or notice: the message it carries. Unique, so one message can never be emailed twice.
     message_id: Optional[int] = Field(default=None, foreign_key="message.id", unique=True)
