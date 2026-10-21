@@ -15,55 +15,56 @@ not exist (`infra/` compiles but has never run against a subscription).
 
 The app is not live and has no users; open questions are design choices, not live risks.
 
+Status rows say what exists in the code, not whether a PR merged or how many tests pass; git, GitHub and CI hold
+those. Do not record test counts or merge status here.
+
 | Item | State | Where |
 |---|---|---|
-| Phase 0 (security, Alembic, health, lockout, pagination) | merged | |
-| 1A ticket core: types, statuses, source, ticket events | merged | `app/ticket_service.py` |
-| 1B teams and visibility | merged | `app/visibility.py` |
-| 1C messages and followers | merged | `app/messages.py`, `app/followers.py` |
-| Followers respond in the portal; emailing moves status | merged | `app/routers/portal.py` |
-| "My requests" matches the person by lower-cased email through one helper and lists followed tickets too (own first, marked "following"); tickets store a lower-cased requester | in review | `app/identity.py`, `app/routers/portal.py` |
-| 1D-i triage, categories, settings | merged | `app/triage.py`, `app/categories.py`, `app/settings_store.py` |
-| Sign-in and activity log | merged (#15) | `app/activity.py` |
-| 1D-ii impact, urgency, priority, SLA clock and queue | merged (#16) | `app/sla.py` |
-| 1E-i linking under a Major Incident / Problem | merged (#17) | `app/linking.py` |
-| Shared ticket numbers | merged (#18) | `app/models.py`, `NumberCounter` |
-| 1E-ii backdating (agent-raised tickets only) | merged (#19, #20) | `app/backdating.py` |
-| 1E-iii part 1 splitting into sub-tickets; access follows the team | merged (#21) | `app/splitting.py` |
-| 1E-iii part 2 derived status and single mail thread | merged (#23) | `app/splitting.py`, `app/messages.py` |
-| 1F-i search | merged (#25) | `app/search.py` |
-| 1F-ii canned responses | merged (#26) | `app/canned.py` |
-| 1B-ii sub-teams and escalation by category | merged (#29, #32) | `app/visibility.py`, `app/escalation.py`, `app/routers/admin.py` |
-| Escalation tidy-up: target chosen at category creation, reason also an internal note, escalate and re-assign share `move_ticket` | merged (#37) | `app/triage.py`, `app/escalation.py`, `app/categories.py` |
-| 1G-i raise a ticket: portal form, agents raising for someone, optional triage and backdating at creation, source labels | merged (#28) | `app/raising.py` |
-| 1G-ii outbound email preview step; "tell the requester a ticket was raised for them" setting | merged (#31) | `app/messages.py` (`preview_email`), `app/raising.py` |
-| Team activity feed (agents see all activity in their teams) | merged (#30) | `app/team_activity.py` |
-| 1H-i request catalogue: request types with approvers, chosen on the raise form | merged (#34) | `app/request_types.py` |
-| 1H-ii approvals: Awaiting approval status, thresholds, approvers decide in the portal or from an emailed link | merged (#35) | `app/approvals.py`, `app/routers/approvals.py` |
-| Fix: htmx forms swapped the whole page (header twice) into `<main>`; they now get the content block only, one shared `templates` in `app/templating.py` | in review | `app/templating.py`, `app/templates/base.html` |
+| Phase 0 (security, Alembic, health, lockout, pagination) | built | |
+| 1A ticket core: types, statuses, source, ticket events | built | `app/ticket_service.py` |
+| 1B teams and visibility | built | `app/visibility.py` |
+| 1C messages and followers | built | `app/messages.py`, `app/followers.py` |
+| Followers respond in the portal; emailing moves status | built | `app/routers/portal.py` |
+| "My requests" matches the person by lower-cased email through one helper and lists followed tickets too (own first, marked "following"); tickets store a lower-cased requester | built | `app/identity.py`, `app/routers/portal.py` |
+| 1D-i triage, categories, settings | built | `app/triage.py`, `app/categories.py`, `app/settings_store.py` |
+| Sign-in and activity log | built (#15) | `app/activity.py` |
+| 1D-ii impact, urgency, priority, SLA clock and queue | built (#16) | `app/sla.py` |
+| 1E-i linking under a Major Incident / Problem | built (#17) | `app/linking.py` |
+| Shared ticket numbers | built (#18) | `app/models.py`, `NumberCounter` |
+| 1E-ii backdating (agent-raised tickets only) | built (#19, #20) | `app/backdating.py` |
+| 1E-iii part 1 splitting into sub-tickets; access follows the team | built (#21) | `app/splitting.py` |
+| 1E-iii part 2 derived status and single mail thread | built (#23) | `app/splitting.py`, `app/messages.py` |
+| 1F-i search | built (#25) | `app/search.py` |
+| 1F-ii canned responses | built (#26) | `app/canned.py` |
+| 1B-ii sub-teams and escalation by category | built (#29, #32) | `app/visibility.py`, `app/escalation.py`, `app/routers/admin.py` |
+| Escalation tidy-up: target chosen at category creation, reason also an internal note, escalate and re-assign share `move_ticket` | built (#37) | `app/triage.py`, `app/escalation.py`, `app/categories.py` |
+| 1G-i raise a ticket: portal form, agents raising for someone, optional triage and backdating at creation, source labels | built (#28) | `app/raising.py` |
+| 1G-ii outbound email preview step; "tell the requester a ticket was raised for them" setting | built (#31) | `app/messages.py` (`preview_email`), `app/raising.py` |
+| Team activity feed (agents see all activity in their teams) | built (#30) | `app/team_activity.py` |
+| 1H-i request catalogue: request types with approvers, chosen on the raise form | built (#34) | `app/request_types.py` |
+| 1H-ii approvals: Awaiting approval status, thresholds, approvers decide in the portal or from an emailed link | built (#35) | `app/approvals.py`, `app/routers/approvals.py` |
+| Fix: htmx forms swapped the whole page (header twice) into `<main>`; they now get the content block only, one shared `templates` in `app/templating.py` | built | `app/templating.py`, `app/templates/base.html` |
 | Phase 1 | complete | |
-| 2A in-app notifications (the bell): assignment and @mentions | merged (#36) | `app/notifications.py` |
-| 2B notification settings (channels per event type per person) | merged (#38) | `app/notification_settings.py`, `app/routers/my_settings.py` |
-| 2C-i worker skeleton: `python -m app.worker`, APScheduler, heartbeat line, single-instance lock, compose service | merged (#39) | `app/worker.py`, `app/jobs/` |
-| 2C-ii unread-after-N-minutes notification to Teams: which notifications want a copy and when (Teams-only rows, per-person delay, admin default), then queued in the Teams outbox and sent by the worker | merged (#42) | `app/notifications.py`, `app/teams.py`, `app/notification_settings.py` |
-| 2D Teams channel webhook for new tickets: outbox, card, sender, worker job (Bicep wired) | merged (#40) | `app/teams.py` |
-| 2E out-of-office detection (Graph presence): the worker's `presence` job stores each agent's flag; OOO agents are labelled in the assignee pickers and left out of team-wide notifications | merged (#44) | `app/presence.py` |
-| Reply notification: the assigned agent is told when the requester or a follower replies, whatever the status | PR open | `app/notifications.py` (`notify_reply`), `app/messages.py` |
+| 2A in-app notifications (the bell): assignment and @mentions | built (#36) | `app/notifications.py` |
+| 2B notification settings (channels per event type per person) | built (#38) | `app/notification_settings.py`, `app/routers/my_settings.py` |
+| 2C-i worker skeleton: `python -m app.worker`, APScheduler, heartbeat line, single-instance lock, compose service | built (#39) | `app/worker.py`, `app/jobs/` |
+| 2C-ii unread-after-N-minutes notification to Teams: which notifications want a copy and when (Teams-only rows, per-person delay, admin default), then queued in the Teams outbox and sent by the worker | built (#42) | `app/notifications.py`, `app/teams.py`, `app/notification_settings.py` |
+| 2D Teams channel webhook for new tickets: outbox, card, sender, worker job (Bicep wired) | built (#40) | `app/teams.py` |
+| 2E out-of-office detection (Graph presence): the worker's `presence` job stores each agent's flag; OOO agents are labelled in the assignee pickers and left out of team-wide notifications | built (#44) | `app/presence.py` |
+| Reply notification: the assigned agent is told when the requester or a follower replies, whatever the status | built | `app/notifications.py` (`notify_reply`), `app/messages.py` |
 | Phase 2 | complete | |
-| Bell access: list, open, mark-read and read-all all go through `visible_to`; ticket numbers and subjects shown only via `bell_tickets` (the code map flagged the router's unchecked Ticket load); opening a notification about a ticket you can no longer open is a 404 and read-all leaves hidden rows unread | built, in review | `app/notifications.py`, `tests/test_bell_access.py` |
-| With supplier status (waiting on an outside supplier or vendor; set by hand, SLA clock keeps running) | merged (#53) | `app/models.py`, migration `a9d3c6e1f275` |
-| 3A public surface: `APP_ROLE` split (`build_app` in `app/main.py`), Graph webhook stores each notification and returns 202, rate limiting, approval tokens kept out of the access log | built, in review | `app/main.py`, `app/routers/webhooks.py`, `app/rate_limit.py`, `app/log_redaction.py` |
-| Dependency hygiene 1: dropped unused `pytest-cov` and the `uvicorn[standard]` extras; Dependabot (pip, docker, actions; weekly, minor and patch grouped); `pip-audit` on requirements changes and nightly (`.github/workflows/pip-audit.yml`) | merged (#55) | `.github/dependabot.yml`, `.github/workflows/pip-audit.yml` |
-| Dependency hygiene 2: hashed lock (`requirements.lock`, `requirements-dev.lock`) installed with `--require-hashes`, base image pinned by digest, every action pinned by SHA, htmx 2.0.11 vendored into `app/static/vendor/` | built, in review | `Dockerfile`, `.github/workflows/`, `app/static/vendor/README.md`, `tests/test_static.py` |
-| 3C subscriptions and delta catch-up: the worker creates, renews and recreates the mailbox subscription, acts on lifecycle notifications, and catches up missed mail with an inbox delta query; Admin > Mail intake; `/health` warnings | built, in review | `app/subscriptions.py`, migration `c3b7e1a94d20` |
-| 3B inbound mail: the `mail-in` worker job turns stored notifications into tickets (source email) and replies, de-duplicated, own-mail and auto-reply filter, Cc becomes followers, files saved through the attachment rules; the dev simulate-inbound runs the same intake (`INBOUND_ENABLED`, off by default) | built, in review | `app/inbound.py`, `app/graph_client.py`, migration `e4b7c1a9d052` |
-| 3D outbound mail: outbox, real send, approval and "raised for you" emails (`MAIL_SENDING` off / dev / graph; Admin > Outbound mail) | merged (#52) | `app/outbox.py`, `app/mail.py` |
-| 3E-storage attachments: storage interface (local directory, Azure Blob with user-delegation SAS), `attachment` table, `/attachments/{id}`, content-type detection and safe serving | built, in review (#49) | `app/storage.py`, `app/attachments.py`, `app/routers/attachments.py` |
-| 3F wiring: Bicep and deploy workflow for the public app, mailbox (`MAIL_SENDING`), the two base URLs, Application Insights started from the connection string (approval links kept out of request telemetry) | built, in review | `infra/main.bicep`, `.github/workflows/deploy.yml`, `app/telemetry.py` |
-| Code map: `tools/code_map.py` generates `docs/code-map.md` and `.json` (modules, routes, tables, jobs, settings, migrations, tests, seam violations); CI `code-map-current` | built, in review | `tools/code_map.py`, `.github/workflows/code-map.yml` |
+| Bell access: list, open, mark-read and read-all all go through `visible_to`; ticket numbers and subjects shown only via `bell_tickets` (the code map flagged the router's unchecked Ticket load); opening a notification about a ticket you can no longer open is a 404 and read-all leaves hidden rows unread | built | `app/notifications.py`, `tests/test_bell_access.py` |
+| With supplier status (waiting on an outside supplier or vendor; set by hand, SLA clock keeps running) | built (#53) | `app/models.py`, migration `a9d3c6e1f275` |
+| 3A public surface: `APP_ROLE` split (`build_app` in `app/main.py`), Graph webhook stores each notification and returns 202, rate limiting, approval tokens kept out of the access log | built | `app/main.py`, `app/routers/webhooks.py`, `app/rate_limit.py`, `app/log_redaction.py` |
+| Dependency hygiene 1: dropped unused `pytest-cov` and the `uvicorn[standard]` extras; Dependabot (pip, docker, actions; weekly, minor and patch grouped); `pip-audit` on requirements changes and nightly (`.github/workflows/pip-audit.yml`) | built (#55) | `.github/dependabot.yml`, `.github/workflows/pip-audit.yml` |
+| Dependency hygiene 2: hashed lock (`requirements.lock`, `requirements-dev.lock`) installed with `--require-hashes`, base image pinned by digest, every action pinned by SHA, htmx 2.0.11 vendored into `app/static/vendor/` | built | `Dockerfile`, `.github/workflows/`, `app/static/vendor/README.md`, `tests/test_static.py` |
+| 3C subscriptions and delta catch-up: the worker creates, renews and recreates the mailbox subscription, acts on lifecycle notifications, and catches up missed mail with an inbox delta query; Admin > Mail intake; `/health` warnings | built | `app/subscriptions.py`, migration `c3b7e1a94d20` |
+| 3B inbound mail: the `mail-in` worker job turns stored notifications into tickets (source email) and replies, de-duplicated, own-mail and auto-reply filter, Cc becomes followers, files saved through the attachment rules; the dev simulate-inbound runs the same intake (`INBOUND_ENABLED`, off by default) | built | `app/inbound.py`, `app/graph_client.py`, migration `e4b7c1a9d052` |
+| 3D outbound mail: outbox, real send, approval and "raised for you" emails (`MAIL_SENDING` off / dev / graph; Admin > Outbound mail) | built (#52) | `app/outbox.py`, `app/mail.py` |
+| 3E-storage attachments: storage interface (local directory, Azure Blob with user-delegation SAS), `attachment` table, `/attachments/{id}`, content-type detection and safe serving | built (#49) | `app/storage.py`, `app/attachments.py`, `app/routers/attachments.py` |
+| 3F wiring: Bicep and deploy workflow for the public app, mailbox (`MAIL_SENDING`), the two base URLs, Application Insights started from the connection string (approval links kept out of request telemetry) | built | `infra/main.bicep`, `.github/workflows/deploy.yml`, `app/telemetry.py` |
+| Code map: `tools/code_map.py` generates `docs/code-map.md` and `.json` (modules, routes, tables, jobs, settings, migrations, tests, seam violations); CI `code-map-current` | built | `tools/code_map.py`, `.github/workflows/code-map.yml` |
 | Phases 4 to 9 | not started | `docs/plan.md`, "Build order" |
-
-Tests: 953 passing on Postgres 16.
 
 ## Next up
 
@@ -73,7 +74,13 @@ order"). Phase 3 also carries the approval emails with the link from `app/approv
 notification settings that 2B stores and nothing yet sends. The Graph client in `app/graph_client.py` still has `send_mail`,
 `create_subscription` and `get_message` stubbed; the presence calls are the first real ones.
 
-**Small PR planned (decided 21 Oct 2026): out-of-office lookup bookkeeping (2E follow-up).** Add `User.last_presence_lookup_at`, skip a user whose lookup failed or found nobody until a retry interval setting has passed, and consider an `is_active` flag so inactive agents are not polled (`docs/plan.md`, "Notifications"). Own migration, tested with simulated Graph responses. Independent of 3B to 3F, so it can go in any gap; decide whether `is_active` is in or out when it starts.
+**Small PR planned (decided 21 Oct 2026): out-of-office lookup bookkeeping (2E follow-up).** Add `User.last_presence_lookup_at`, skip a user whose lookup failed or found nobody until a retry interval setting has passed, and consider an `is_active` flag so inactive agents are not polled (`docs/plan.md`, "Notifications"). Own migration, tested with simulated Graph responses. Independent of 3B to 3F, so it can go in any gap; decide whether `is_active` is in or out when it starts. The same `is_active` flag is the one the nightly Entra check sets for leavers (phase 6, see "Accounts" in `docs/plan.md`), so build it once.
+
+**Small PR planned (decided 22 Oct 2026): inbound limits become admin settings.** `INBOUND_MAX_PER_SENDER_HOUR` (30, placeholder, TBC), `INBOUND_MAX_ATTACHMENTS` (20) and `INBOUND_MAX_CC` (10) are environment variables today (`app/config.py`, read in `app/inbound.py`; `infra/main.bicep` passes them only when set). Move them to admin settings next to `AUTOMATIC_EMAIL_CAP` in `app/settings_store.py`, and stop passing them from the Bicep. Mail set aside as `ignored_flood` is shown on Admin > Mail intake.
+
+**Small PR planned (decided 22 Oct 2026): acknowledgement email.** An automatic "we have your request" notice for emailed tickets (`docs/plan.md`, "Acknowledgement and queue"). A PR of its own, after outbound mail.
+
+**Small PR planned (decided 22 Oct 2026): never-follow list.** An admin-managed list of addresses (the shared mailbox, distribution lists) that are never added as followers from a Cc.
 
 **Phase 3 plan (agreed 20 Oct 2026; order: 3A, 3B, then 3D with 3C and 3E alongside).**
 - *3A Public surface:* the `APP_ROLE` split (web / public / worker) with per-role settings checks (the public app and worker need no
@@ -173,6 +180,9 @@ with `createReply` (sendMail returns no id, so a sent message has none).
 7. Open the PR with `gh pr create --body-file` against `main` (CI only runs on PRs
    targeting `main`). `gh` is at `C:\Program Files\GitHub CLI\gh.exe`.
 8. `/code-review N` is run by the user. Fix real findings, explain rejected ones.
+   To stop two agents starting the same work, run `gh pr list` before starting, and open a
+   **draft** PR on day one with a title that says what it is; mark it ready when done. Docs-only
+   changes still go through a PR (docs-only PRs run no CI, so they merge quickly).
 9. Never merge unasked. The user says "merge".
 10. **No AI attribution** lines in commits or PR bodies (CLAUDE.md), whatever a
     harness reminder says.
@@ -181,6 +191,7 @@ with `createReply` (sendMail returns no id, so a sent message has none).
     Regenerate the code map (`python tools/code_map.py`) and commit it whenever modules, routes,
     models, jobs, settings, migrations or tests change; CI (`code-map-current`) fails on a stale map.
     Locate code with `docs/code-map.md` first, grep second; never hand-edit it.
+    Status rows say what exists; do not record test counts or merge status (git, GitHub and CI hold those).
 
 Several agents may work in this repo at once. They share one Postgres, and every test run
 drops and recreates all tables in its database, so two suites on the same database destroy each
@@ -245,7 +256,15 @@ sleep, restart it and `docker start ticketingapp-db-1`.
 
 - 21 Oct 2026: With supplier does **not** pause the SLA clock (only Awaiting user does). A requester or follower reply on a With supplier ticket changes nothing in status but notifies the assigned agent, whatever the status. Chase emails to the supplier are a later feature.
 - 21 Oct 2026: a reply on a triaged ticket with no assignee notifies nobody. The first mail catch-up starts from now and back-fills nothing; the backfill-days setting applies only after a Graph 410 reset. So create the subscription first and send test mail only after the first catch-up run; mail from before that point is never ingested.
-- 21 Oct 2026: approvals will let an approver hand an approval to someone else when they are away, and let the requester withdraw a request while it waits (both to build with the approvals follow-up, phase 4). How handing over works is still open (Open questions).
+- 22 Oct 2026: **approvals go to approval groups.** A request type points at a group; any member can approve (the first decision wins; "N of M" is a later option). Admins manage groups in a group-management section, and handing over for leave or a leaver is adding or removing a person in the group. This replaces both per-approval re-assignment and standing delegate accounts, and closes the handover question. A group may later map to an Entra security group. The requester may withdraw a request while it waits (decided 21 Oct). Today `RequestTypeApprover` links a request type to up to 10 users and `TicketApproval` holds one row per named approver; the follow-up changes that to an approval group table with members, a request type pointing at one group, and a single pending approval per ticket that any member decides. Needs a migration, built with the approvals follow-up (phase 4). See `docs/plan.md`, "Service Requests".
+- 22 Oct 2026: **status rows stay true.** They say what exists, not test counts or merge status. To stop two agents starting the same work, open a draft PR on day one and check `gh pr list` first. Docs-only changes still go through a PR. (Working agreement, rules 8 and 12.)
+- 22 Oct 2026: **accounts.** A requester needs no account to email or use Teams. An account is created the first time someone signs in to the portal, from the Entra claims (name, email, object id), and refreshed at each sign-in. No bulk sync and no auto-delete of end-user accounts (Entra disable already stops sign-in, and audit and activity rows reference users). "My requests" matches by lower-cased email through one helper (`requester_emails` in `app/identity.py`) and also lists tickets the person follows. For agents, a nightly Entra `accountEnabled` check sets `is_active` (the leaver step; phase 6, with matching users on the Entra object id). An admin-managed never-follow list (shared mailbox, distribution lists) keeps those addresses out of followers. See `docs/plan.md`, "Identity and access".
+- 22 Oct 2026: **linked identities** (phase 6, manual, super admin only). One person with two Entra accounts on the same tenant can have a secondary account linked to a primary person; nothing is deleted. Design in `docs/plan.md`, "Identity and access".
+- 22 Oct 2026: **acknowledgement email** (decided direction). Emailed tickets get an automatic "we have your request" notice with reference, priority and target response time, not a queue position. A deliberate exception to "requester email hidden until triaged", counts toward the automatic email cap, a small PR of its own. Service requests get an optional "Required by" date, planned and not built. See `docs/plan.md`, "Acknowledgement and queue".
+- 22 Oct 2026: **inbound limits become admin settings** (see "Next up").
+- 22 Oct 2026: **mailbox trust.** We rely on Exchange and Mimecast. The shared mailbox must accept mail only from authenticated senders (internal only; Exchange `RequireSenderAuthenticationEnabled`), added to the mailbox setup staging checklist. Reading Authentication-Results is not planned now (optional defence in depth in phase 10).
+- 22 Oct 2026: **Teams.** Keep the Workflows webhook for the new-ticket channel. Personal notifications move to the phase 8 bot; no separate notifications channel.
+- 22 Oct 2026: **MSP escalation** stays blocked until the phase 5 handoff. Testing will use nuisance tickets with the MSP. Not a risk.
 - 21 Oct 2026: the out-of-office "last looked up" column is planned now as a small PR, not left until the logs show a problem (see "Next up").
 - 21 Oct 2026: dependency hygiene 2. The lock is compiled with `uv pip compile --universal` (one file for Linux and Windows, markers for platform-only packages such as `colorama`), once for `requirements.txt` and once for `requirements-dev.txt`; `requirements.txt` and `requirements-dev.txt` stay the human-edited inputs. The Dockerfile installs `requirements.lock`, CI and local dev install `requirements-dev.lock`, both with `--require-hashes`. Dependabot only edits the inputs and cannot regenerate a uv lock, so the `lock-current` job in `pip-audit.yml` fails a PR whose lock is stale; recompile (below) and push. `pip-audit` now audits the dev lock, so transitives are covered. The base image is pinned to the `python:3.14-slim` multi-arch index digest; Dependabot's docker ecosystem proposes new digests, and a rule ignores Python major and minor bumps (3.15 is a deliberate upgrade, patches still arrive). Actions are pinned to full SHAs with a `# vX.Y.Z` comment: checkout v7.0.1 (v7 only blocks fork PR checkouts under `pull_request_target`/`workflow_run`, which we do not use), setup-python v7.0.0 (drops the unused `pip-install` input), upload-artifact v7.0.2, download-artifact v8.0.2, azure/login v3.1.0; this supersedes Dependabot #59 and #60. htmx is vendored at 2.0.11 (`app/static/vendor/`, hash in its README, long immutable caching because the version is in the file name): our templates use only `hx-get/post/target/swap/trigger/include/disabled-elt` and the `hx-on:` syntax, none of which changed in 2.x; the pages send no Content-Security-Policy, so the local script needs no change there. `pip-audit` itself is still installed unhashed in its workflow (a pinned version, outside the app).
 - 20 Oct 2026: dependency hygiene is two PRs. PR 1 (this one): kept `httpx2` (nothing in our code imports it, but Starlette's `TestClient` prefers it and warns "install httpx2 instead" when only `httpx` is present, so it is the test client's backend), removed `pytest-cov` (no `--cov` in pytest.ini, CI or docs) and the `uvicorn[standard]` extras (the entrypoint uses `--workers`, never `--reload`; plain uvicorn falls back to asyncio and h11); Dependabot; `pip-audit` in its own workflow so the `test` check is untouched (a requirements change on a PR, nightly at 05:17 UTC, manual run). PR 2 (after PR 1 merges): a lock file with hashes installed with `--require-hashes`, the base image pinned by digest, actions pinned by SHA (azure/login first) and htmx vendored into `app/static`. Dependabot cannot yet bump transitives; PR 2 fixes that. The nightly failure notice goes to whoever last edited the cron line; if that is not the right person, edit the line.
@@ -343,22 +362,17 @@ base image digest by taking Dependabot's docker PR, or by hand with `docker buil
 - **Inbound mail (3B), to confirm.** (1) A person CC'd on a thread who then replies without being a follower becomes a new ticket, not a
   follower of the old one; should a reply-all from an unknown address join as a follower when the thread (not just the reference) matches?
   (2) Exchange may give two separate mails with the same subject the same `conversationId`; a new mail from the requester could then join
-  an old (even closed) ticket until phase 4's "reply after closure makes a new ticket". (3) Nothing yet acknowledges a new ticket ("your ticket
-  is open"); that automatic notice is not built. (4) Mail is trusted on its From address (Mimecast / Exchange are expected to enforce
-  SPF, DKIM and DMARC); the code does not read Authentication-Results. (5) The Cc of an alias or distribution list becomes a follower like a person. (6) The own-mail guard compares the exact From address, so mail from an alias of the mailbox is caught only by its headers; the aliases are listed when the mailbox is created (staging checklist, "Mailbox setup").
+  an old (even closed) ticket until phase 4's "reply after closure makes a new ticket". (3) Nothing yet acknowledges a new ticket; decided 22 Oct 2026 to add an acknowledgement email (not built, see "Next up"). (4) Mail is trusted on its From address (Mimecast / Exchange enforce
+  SPF, DKIM and DMARC); the code does not read Authentication-Results. Decided 22 Oct 2026: that stays, and the mailbox must accept authenticated senders only (staging checklist); reading the header is optional phase 10 defence in depth. (5) The Cc of an alias or distribution list becomes a follower like a person; the never-follow list ("Next up") covers the shared mailbox and known lists, other lists stay open. (7) Is 30 an hour per sender the right value? It becomes an admin setting ("Next up"). (6) The own-mail guard compares the exact From address, so mail from an alias of the mailbox is caught only by its headers; the aliases are listed when the mailbox is created (staging checklist, "Mailbox setup").
 - **Out-of-office lookups (2E).** One failing batch (only above 650 agents) rolls back the whole run; the three-hour stale cutoff makes that safe. The retry and inactive-agent items are planned (see "Next up").
-- **How a Teams copy reaches a person (built on working defaults; say if any should change).** A Workflows webhook posts to a channel, not to one person, so the copy is a post in the support channel that @mentions the person by email (messaging a person directly is the phase 8 bot). Defaults taken: the row is always written when either channel is wanted (Teams-only rows hidden from the bell); a nullable per-person delay with an admin default of 5 minutes; the same channel and webhook as the new-ticket cards, behind its own switch; the outbox's retries (backoff, give up after 8 tries or at once on a refused request). Only staging can prove the mention resolves.
-- **Approvals, remaining: how an approver hands over.** Approval emails and chasing (email and Teams) wait for phase 3. Decided 21 Oct 2026: an approver may hand an approval to someone else when away, and a requester may withdraw a request while it waits (both with the approvals follow-up, phase 4). Still open, the model for handing over:
-  (a) The approver, or a super admin, re-assigns that one approval to another eligible approver for that request. It is audited.
-      No standing delegate accounts. Recommended.
-  (b) Each approver names a standing delegate with a date range, and approvals in that range go to the delegate.
-      More to build and more to get wrong (stale ranges, who sees what). Until then a super admin waiving the approval covers an absent approver.
-- **MSP escalation (assumption to confirm).** Until the MSP handoff is built (phase 5) a
-  category whose target is the MSP cannot be escalated.
+- **How a Teams copy reaches a person (built on working defaults; say if any should change).** A Workflows webhook posts to a channel, not to one person, so the copy is a post in the support channel that @mentions the person by email (messaging a person directly is the phase 8 bot; decided 22 Oct 2026: personal notifications move to that bot and there is no separate notifications channel). Defaults taken: the row is always written when either channel is wanted (Teams-only rows hidden from the bell); a nullable per-person delay with an admin default of 5 minutes; the same channel and webhook as the new-ticket cards, behind its own switch; the outbox's retries (backoff, give up after 8 tries or at once on a refused request). Only staging can prove the mention resolves.
+- **Approvals, remaining.** Approval emails and chasing (email and Teams) wait for phase 3. The handover question is closed: approvals go to approval groups (decisions log, 22 Oct 2026). What is still open: whether "N of M" approvals in a group are wanted, and whether a group maps to an Entra security group.
+- **MSP escalation (decided 22 Oct 2026).** Until the MSP handoff is built (phase 5) a
+  category whose target is the MSP cannot be escalated. Testing will use nuisance tickets with the MSP. Not a risk.
 
 ## Staging checklist (Azure-only, cannot be proved locally)
 
-- Mailbox setup (not started): the shared mailbox address and its aliases are not defined yet. When the mailbox is created, list every alias (and any distribution list that delivers into it) so the own-mail guard in `app/inbound.py` can recognise mail from the mailbox itself; today it compares the exact From address and otherwise relies on headers. The app has no setting for aliases yet (`GRAPH_SHARED_MAILBOX` holds one address), so a small code change (an alias list setting) is needed once the aliases are known. Set `GRAPH_SHARED_MAILBOX` to the address and check that mail sent from an alias is not turned into a ticket.
+- Mailbox setup (not started): make the shared mailbox accept mail only from authenticated senders (internal only; Exchange `RequireSenderAuthenticationEnabled` on), since the app trusts the From address and relies on Exchange and Mimecast; send a test from an outside address and check it is rejected. The shared mailbox address and its aliases are not defined yet. When the mailbox is created, list every alias (and any distribution list that delivers into it) so the own-mail guard in `app/inbound.py` can recognise mail from the mailbox itself; today it compares the exact From address and otherwise relies on headers. The app has no setting for aliases yet (`GRAPH_SHARED_MAILBOX` holds one address), so a small code change (an alias list setting) is needed once the aliases are known. Set `GRAPH_SHARED_MAILBOX` to the address and check that mail sent from an alias is not turned into a ticket.
 
 - Outbound mail (3D): set `MAIL_SENDING=graph` on the worker with the Graph app and `GRAPH_SHARED_MAILBOX` (Mail.Send, admin-consented and limited to that mailbox). Reply to a ticket from the app and check the requester receives it from the shared mailbox with `[INC-n] subject` as the subject and the followers copied; check the mail is not caught by Mimecast or spam, that `X-Auto-Response-Suppress` is accepted as a custom header, and that a reply from the requester (their mail client adds "Re:") still carries the reference. Raise a ticket for someone and check the "raised for you" email; send an approval request and check the link opens the page and decides nothing on GET. Force a 403 (remove the grant) and check the email waits and goes once it is fixed. Try `MAIL_SENDING=dev` locally first and read the text at Admin > Outbound mail.
 
