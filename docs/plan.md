@@ -801,7 +801,7 @@ requester sees the request name only. Sub-tickets from a split do not inherit th
   each member gets their own emailed link (GET shows, POST decides). Handing over for leave or a leaver is adding or removing a
   person in the group, so there is no per-approval re-assignment and no standing delegate accounts (someone removed mid-request still
   counts as a voter but can no longer answer; a super admin can waive). A group may later map to an Entra security group. Withdrawing
-  a request while it waits (4C-2), reminders (4C-3) and the per-person email preference (4C-4) follow.
+  a request while it waits (4C-2), reminders (4C-3) follow. The per-person email preference is built (4C-4): approvers get the approval email unless they switch it off under their notification settings (the portal list is unaffected).
 - **Not chasing yet.** Approvers who never answer are not chased before phase 3. When mail and
   Teams exist, asking an approver and chasing them go by **email and Teams**, like the other
   notifications; approvals will want a reminder schedule alongside the auto-close timers.

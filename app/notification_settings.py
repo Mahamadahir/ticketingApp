@@ -4,9 +4,9 @@ The event types and the channels they can use are listed here, with the default 
 person's choices are stored only where they differ from the default (NotificationPreference), so
 changing a default here reaches everyone who never changed it.
 
-Only the in-app channel delivers today. Teams arrives with the worker (2C) and email with phase 3;
-the choices are recorded now so those channels read them from the start (is_enabled). Whatever
-sends a notification asks is_enabled for its event type and channel, never a setting of its own.
+The bell, Teams (once connected) and email deliver. Whatever sends a notification asks is_enabled
+for its event type and channel, never a setting of its own; the approval email and its reminders
+ask wants_approval_email.
 """
 
 from dataclasses import dataclass
@@ -24,6 +24,7 @@ EMAIL = "email"
 
 RAISED_FOR_YOU = "raised_for_you"
 FOLLOWER_UPDATE = "follower_update"
+APPROVAL_REQUEST = "approval_request"
 
 # The first half of the (two-number) advisory lock that serialises one person's saves; the second
 # is their user id. A different space from the worker's single-number lock.
@@ -33,7 +34,7 @@ SAVE_LOCK_SPACE = 726_002
 CHANNELS: dict[str, tuple[str, Optional[str]]] = {
     IN_APP: ("In the app (the bell)", None),
     TEAMS: ("Teams", "not connected yet"),
-    EMAIL: ("Email", "not connected yet"),
+    EMAIL: ("Email", None),
 }
 
 AGENT_ROLES = (UserRole.AGENT, UserRole.SUPER_ADMIN)
@@ -85,6 +86,12 @@ EVENT_TYPES: tuple[EventType, ...] = (
         "were not already sent it.",
         EVERYONE, (EMAIL,), (EMAIL,),
     ),
+    EventType(
+        APPROVAL_REQUEST, "A request is waiting for your approval",
+        "An email asking you to approve or decline a request (and any reminder about it). Switching it off "
+        "does not hide the request: it still shows under \"Waiting for your approval\" in the portal.",
+        EVERYONE, (EMAIL,), (EMAIL,),
+    ),
 )
 _BY_KIND = {event.kind: event for event in EVENT_TYPES}
 
@@ -95,6 +102,12 @@ def offers(kind: str, channel: str) -> bool:
     channel, which suits the bell but would put an unchosen @mention in a shared channel)."""
     event = _BY_KIND.get(kind)
     return event is not None and channel in event.channels
+
+
+def wants_approval_email(session: Session, user: User) -> bool:
+    """Whether this approver wants the email asking for their vote (on unless they switched it off).
+    The one question the approval email and its reminders (4C-3) ask; the portal list never does."""
+    return is_enabled(session, user, APPROVAL_REQUEST, EMAIL)
 
 
 def events_for(user: User) -> list[EventType]:

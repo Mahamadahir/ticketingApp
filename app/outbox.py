@@ -16,6 +16,7 @@ from sqlmodel import Session, select
 
 from app.config import settings
 from app.models import ApprovalVote, Message, OutboundEmail, Ticket, TicketApproval, User
+from app.notification_settings import wants_approval_email
 
 REPLY = "reply"  # an agent's email to the requester (counts as a first response)
 NOTICE = "notice"  # an automatic message to the requester (an approval decision, say)
@@ -61,8 +62,9 @@ def queue_raised_for(session: Session, ticket: Ticket) -> Optional[OutboundEmail
 
 
 def queue_approval(session: Session, vote: ApprovalVote, approver: User) -> Optional[OutboundEmail]:
-    """Queues the email asking one voter (one email per member). The link in it is made when it is sent."""
-    if not is_on():
+    """Queues the email asking one voter (one email per member). The link in it is made when it is sent.
+    Nothing is queued for someone who switched these emails off; the request still shows in their portal."""
+    if not is_on() or not wants_approval_email(session, approver):
         return None
     session.flush()
     approval = session.get(TicketApproval, vote.approval_id)
