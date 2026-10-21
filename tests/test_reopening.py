@@ -7,7 +7,7 @@ from sqlmodel import select
 
 from app import mail
 from app.inbound import REPLY_ADDED, TICKET_CREATED, ingest_mail
-from app.models import AuditLog, Message, RelatedTicket, Ticket, TicketEvent, TicketSource, TicketStatus, UserRole
+from app.models import AuditLog, Message, RelatedTicket, Ticket, TicketEvent, TicketSource, TicketStatus, User, UserRole
 from app.reopening import RECLOSE_REASONS, latest_follow_on, open_follow_on_ticket
 from app.resolution import resolve_ticket
 from tests.conftest import create_team, login_as, set_role
@@ -260,14 +260,14 @@ def test_the_chain_is_followed_to_the_newest_open_ticket(client, db_session):
     ticket, team, ann_id = assigned_ticket(client, db_session)
     first = finish(db_session, ticket, TicketStatus.CLOSED)
     second = open_follow_on_ticket(
-        db_session, first, subject="Again", requester_email="jo@example.com", source=TicketSource.PORTAL, actor_email=None
+        db_session, first, subject="Again", sender_email="jo@example.com", source=TicketSource.PORTAL, actor_email=None
     )
     db_session.commit()
     assert latest_follow_on(db_session, first).id == second.id
     assert latest_follow_on(db_session, second).id == second.id  # open: stays
     second.status = TicketStatus.CLOSED
     third = open_follow_on_ticket(
-        db_session, second, subject="Again", requester_email="jo@example.com", source=TicketSource.PORTAL, actor_email=None
+        db_session, second, subject="Again", sender_email="jo@example.com", source=TicketSource.PORTAL, actor_email=None
     )
     db_session.commit()
     assert latest_follow_on(db_session, first).id == third.id
@@ -278,7 +278,7 @@ def test_an_agent_sourced_follow_on_is_refused(client, db_session):
     closed = finish(db_session, ticket, TicketStatus.CLOSED)
     with pytest.raises(ValueError):
         open_follow_on_ticket(
-            db_session, closed, subject="x", requester_email="jo@example.com", source=TicketSource.AGENT, actor_email=None
+            db_session, closed, subject="x", sender_email="jo@example.com", source=TicketSource.AGENT, actor_email=None
         )
 
 
@@ -418,3 +418,88 @@ def test_a_reply_on_a_resolved_original_reopens_the_family(client, db_session):
 
     assert fresh(db_session, original).status != TicketStatus.RESOLVED
     assert all(fresh(db_session, p).status != TicketStatus.RESOLVED for p in parts)
+
+
+# ---- Found in code review -------------------------------------------------------------------------
+
+
+def test_a_second_portal_reply_on_the_closed_ticket_joins_the_request_the_first_one_opened(client, db_session):
+    ticket, team, ann_id = assigned_ticket(client, db_session)
+    ticket = finish(db_session, ticket, TicketStatus.CLOSED)
+
+    comment_as(client, "jo@example.com", ticket, "Same problem again")
+    comment_as(client, "jo@example.com", ticket, "And again")
+
+    new = db_session.exec(select(Ticket).where(Ticket.id != ticket.id)).one()  # one new ticket, not two
+    bodies = [m.body for m in db_session.exec(select(Message).where(Message.ticket_id == new.id).order_by(Message.id)).all()]
+    assert bodies == ["Same problem again", "And again"]
+    assert len(db_session.exec(select(RelatedTicket)).all()) == 1
+
+
+def test_a_followers_reply_after_closure_follows_the_new_ticket_and_the_requester_stays_the_requester(client, db_session):
+    from app.followers import add_follower, followers_of
+
+    ticket, team, ann_id = assigned_ticket(client, db_session)
+    add_follower(db_session, ticket, "pat@example.com", "jo@example.com")
+    ticket = finish(db_session, ticket, TicketStatus.CLOSED)
+
+    comment_as(client, "pat@example.com", ticket, "It is still broken for me too")
+
+    new = db_session.exec(select(Ticket).where(Ticket.id != ticket.id)).one()
+    assert new.requester_email == "jo@example.com"
+    assert [f.email for f in followers_of(db_session, new)] == ["pat@example.com"]
+
+
+def test_mail_from_someone_not_on_the_newest_ticket_gets_their_own_linked_ticket(db_session):
+    from tests.test_inbound_mail import open_ticket, triage_by_hand
+
+    old = open_ticket(db_session, cc=["pat@example.com"])
+    triage_by_hand(db_session, old)
+    old = finish(db_session, old, TicketStatus.CLOSED)
+    pats = ingest_mail(db_session, incoming("p1", sender="pat@example.com", subject="Re: Printer jam", conversation_id="conv-m1"))
+    db_session.commit()
+    assert pats.outcome == TICKET_CREATED and pats.ticket.requester_email == "jo@example.com"  # jo's conversation
+
+    # Eve is not on that ticket (nor a follower): a strong thread match opens her own, linked to the old one.
+    eves = ingest_mail(db_session, incoming("e1", sender="eve@example.com", subject="Re: Printer jam", conversation_id="conv-m1"))
+    db_session.commit()
+    assert eves.outcome == TICKET_CREATED and eves.ticket.id != pats.ticket.id
+    link = db_session.exec(select(RelatedTicket).where(RelatedTicket.ticket_id == eves.ticket.id)).one()
+    assert link.related_ticket_id == old.id
+
+
+def test_a_reply_that_reopens_a_family_tells_the_assignees_of_the_other_tickets(client, db_session):
+    original, parts = resolved_family(client, db_session)
+    ann = db_session.exec(select(User).where(User.email == "agent@example.com")).one()
+    for member in [original, *parts]:
+        member = db_session.get(Ticket, member.id)
+        member.assigned_agent_id = ann.id
+        db_session.add(member)
+    db_session.commit()
+    original = fresh(db_session, original)
+    client.post("/auth/logout")
+    login_as(client, original.requester_email)
+    assert client.post(f"/portal/{original.number}/comment", data={"body": "Not fixed"}).status_code == 200
+
+    kinds = sorted(n.kind for n in notifications_for(db_session, "agent@example.com"))
+    assert kinds.count("reopened") == len(parts)  # every part, but not the original replied on (told of the reply)
+    assert "replied" in kinds
+
+
+def test_the_status_buttons_do_not_reopen_a_resolved_original(client, db_session):
+    original, parts = resolved_family(client, db_session)
+
+    response = client.post(f"/tickets/{original.number}/status", data={"status": "with_supplier"})
+
+    assert response.status_code == 400 and "follows them" in response.text
+    assert fresh(db_session, original).status == TicketStatus.RESOLVED
+
+
+def test_reopen_from_a_stale_portal_page_shows_the_ticket_instead_of_an_error(client, db_session):
+    ticket, team, ann_id = assigned_ticket(client, db_session)  # open, not resolved
+    client.post("/auth/logout")
+    login_as(client, "jo@example.com")
+
+    response = client.post(f"/portal/{ticket.number}/reopen")
+
+    assert response.status_code == 200 and fresh(db_session, ticket).reopen_count == 0

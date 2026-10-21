@@ -420,7 +420,7 @@ File: `app/followers.py`
 - Classes: `InvalidEmail`, `NeverFollowListed`, `TooManyFollowers`
 - Functions: `add_follower`, `bare_address`, `cc_list`, `copyable_followers`, `followers_of`, `is_follower`, `normalise_email`, `remove_follower`, `uncopied_recipients`
 - Imports: `app.config`, `app.models`, `app.never_follow`, `app.ticket_service`
-- Imported by: `app.approval_groups`, `app.escalation`, `app.follower_updates`, `app.inbound`, `app.mail`, `app.messages`, `app.raising`, `app.routers.admin`, `app.routers.portal`, `app.routers.tickets`, `app.visibility`
+- Imported by: `app.approval_groups`, `app.escalation`, `app.follower_updates`, `app.inbound`, `app.mail`, `app.messages`, `app.raising`, `app.reopening`, `app.routers.admin`, `app.routers.portal`, `app.routers.tickets`, `app.visibility`
 - Tests: `test_bell_access.py`, `test_follower_updates.py`, `test_followers.py`, `test_inbound_mail.py`, `test_never_follow.py`, `test_reopening.py`, `test_reply_notification.py`
 
 ### `app.forms`
@@ -629,7 +629,7 @@ File: `app/reopening.py`
 
 - Classes: `ReopenError`
 - Functions: `check_can_reclose`, `check_can_reopen`, `latest_follow_on`, `open_follow_on_ticket`, `reclose_ticket`, `related_tickets`, `reopen_ticket`
-- Imports: `app.audit`, `app.messages`, `app.models`, `app.notifications`, `app.splitting`, `app.ticket_service`
+- Imports: `app.audit`, `app.followers`, `app.messages`, `app.models`, `app.notifications`, `app.splitting`, `app.ticket_service`
 - Imported by: `app.inbound`, `app.routers.portal`, `app.routers.tickets`, `app.splitting`
 - Tests: `test_reopening.py`
 

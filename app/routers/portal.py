@@ -44,7 +44,7 @@ from app.triage import TriageError
 from app.visibility import Access, access_context, ticket_access
 from app.messages import about_labels, record_inbound, requester_visible_messages
 from app.follower_updates import queue_follower_updates
-from app.reopening import ReopenError, open_follow_on_ticket, related_tickets, reopen_ticket
+from app.reopening import ReopenError, latest_follow_on, open_follow_on_ticket, related_tickets, reopen_ticket
 from app.splitting import apply_requester_reply
 from app.request_types import active_request_types, request_type_of
 from app.models import Category, RequestType, Ticket, TicketSource, TicketStatus, TicketType, User, UserRole
@@ -309,9 +309,16 @@ def add_comment(
     ticket = _get_commentable_ticket(session, number, user)
 
     if ticket.status == TicketStatus.CLOSED:
+        # Serialise two replies on the same closed ticket (a double click); if an earlier reply already
+        # opened a request, this one belongs on the newest in the chain (or, if that is closed too, after it).
+        session.refresh(ticket, with_for_update=True)
+        newest = latest_follow_on(session, ticket)
+        if newest.id != ticket.id and (_is_requester(newest, user) or is_follower_of(session, newest, user, include_internal=False)):
+            ticket = newest  # not someone else's request that the chain happens to end in
+    if ticket.status == TicketStatus.CLOSED:
         # A reply after closure opens a new request linked to this one, not a comment on a closed ticket.
         follow_on = open_follow_on_ticket(
-            session, ticket, subject=ticket.subject, requester_email=user.email, source=TicketSource.PORTAL,
+            session, ticket, subject=ticket.subject, sender_email=user.email, source=TicketSource.PORTAL,
             actor_email=user.email,
         )
         record_inbound(session, follow_on, sender=user.display_name, body=body, author_user_id=user.id)
@@ -344,9 +351,9 @@ def reopen_my_ticket(
     ticket = _get_own_ticket(session, number, user)
     try:
         reopen_ticket(session, ticket, user.email, "The requester reopened it from the portal")
-    except ReopenError as error:
-        session.rollback()
-        raise HTTPException(status_code=400, detail=str(error))
+    except ReopenError:
+        session.rollback()  # reopened or closed since the page was drawn: show them the ticket as it is now
+        return RedirectResponse(f"/portal/{ticket.number}", status_code=303)
     session.commit()
     return RedirectResponse(f"/portal/{ticket.number}", status_code=303)
 

@@ -669,6 +669,7 @@
         "app.mail",
         "app.messages",
         "app.raising",
+        "app.reopening",
         "app.routers.admin",
         "app.routers.portal",
         "app.routers.tickets",
@@ -1666,6 +1667,7 @@
       ],
       "imports": [
         "app.audit",
+        "app.followers",
         "app.messages",
         "app.models",
         "app.notifications",

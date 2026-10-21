@@ -37,6 +37,7 @@ from app.splitting import (
     SplitError,
     all_sub_tickets_finished,
     check_manual_status,
+    has_sub_tickets,
     split_ticket,
     sub_tickets_summary,
 )
@@ -602,7 +603,7 @@ def change_status(
     if status == TicketStatus.NEW:
         raise HTTPException(status_code=400, detail="A ticket only starts in New; it leaves New by being triaged")
 
-    if ticket.status == TicketStatus.RESOLVED and status not in FINISHED_STATUSES:
+    if ticket.status == TicketStatus.RESOLVED and status not in FINISHED_STATUSES and not has_sub_tickets(session, ticket):
         # Taking a resolved ticket back to an open status is a reopen: counted, recorded with a reason
         # and the assignee is told (app/reopening.py).
         try:
@@ -942,21 +943,18 @@ def remove_ticket_follower(
     return _render_ticket_detail(request, ticket, user, session)
 
 
-def _may(check, *args) -> bool:
+def _may(check, refusal, *args) -> bool:
+    """Whether a service's own check passes (it raises `refusal` when not), so the page and the action agree."""
     try:
         check(*args)
-    except ReopenError:
+    except refusal:
         return False
     return True
 
 
 def _may_resolve(session: Session, ticket: Ticket) -> bool:
-    """Whether to offer the Resolve form: the service's own rules (app/resolution.py), so the page and the action agree."""
-    try:
-        check_can_resolve(session, ticket)
-    except ResolveError:
-        return False
-    return True
+    """Whether to offer the Resolve form."""
+    return _may(check_can_resolve, ResolveError, session, ticket)
 
 
 def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session: Session) -> HTMLResponse:
@@ -1054,8 +1052,8 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             ],
             "resolved_by": session.get(User, ticket.resolved_by_id) if ticket.resolved_by_id else None,
             "can_resolve": can_work and _may_resolve(session, ticket),
-            "can_reopen": can_work and _may(check_can_reopen, ticket),
-            "can_reclose": can_work and _may(check_can_reclose, session, ticket),
+            "can_reopen": can_work and _may(check_can_reopen, ReopenError, ticket),
+            "can_reclose": can_work and _may(check_can_reclose, ReopenError, session, ticket),
             "reclose_reasons": RECLOSE_REASONS,
             "max_reason_length": MAX_REASON_LENGTH,
             # Tickets linked by a reply after closure, only those this viewer could open anyway.

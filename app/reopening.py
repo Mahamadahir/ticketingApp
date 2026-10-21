@@ -28,6 +28,7 @@ from typing import Optional
 from sqlmodel import Session, select
 
 from app.audit import log_action
+from app.followers import InvalidEmail, NeverFollowListed, TooManyFollowers, add_follower
 from app.messages import STATUS_CHOICES
 from app.models import FINISHED_STATUSES, RelatedTicket, Ticket, TicketSource, TicketStatus
 from app.notifications import notify_reopened, notify_reply
@@ -81,14 +82,15 @@ def check_can_reopen(ticket: Ticket) -> None:
 
 
 def _reopen_one(
-    session: Session, ticket: Ticket, actor_email: Optional[str], reason: str, target: TicketStatus, tell_assignee: bool
+    session: Session, ticket: Ticket, actor_email: Optional[str], reason: str, target: TicketStatus,
+    tell_assignee: bool, already_told: Optional[int],
 ) -> None:
     set_status(session, ticket, target, actor_email, detail="reopened")
     ticket.reopen_count += 1
     session.add(ticket)
     record_event(session, ticket, EVENT_REOPENED, actor_email, detail=reason)
     log_action(session, actor_email or "system", "ticket", ticket.id, AUDIT_REOPENED, reason[:200])
-    if tell_assignee:
+    if tell_assignee and ticket.id != already_told:
         notify_reopened(session, ticket, actor_email, reason)
 
 
@@ -100,11 +102,13 @@ def reopen_ticket(
     *,
     status: Optional[TicketStatus] = None,
     tell_assignee: bool = True,
+    already_told: Optional[int] = None,
 ) -> TicketStatus:
     """Reopens a Resolved ticket and returns the status it went to. `status` is the status an agent picked
     (In progress when someone is assigned and Open otherwise, if not given); it is not used for a split
-    original, whose status is derived from its parts. tell_assignee is False when the reopening is a reply
-    that already told them. Raises ReopenError before anything changes."""
+    original, whose status is derived from its parts. tell_assignee is False to tell nobody; already_told is
+    the id of a ticket whose assignee a reply has just been recorded on (they were told of the reply, so not
+    again), while the other tickets reopened with it are still announced. Raises ReopenError before anything changes."""
     # Imported here because app.splitting calls this module for a requester's reply.
     from app.splitting import derived_status, has_sub_tickets, lock_ticket
 
@@ -126,18 +130,18 @@ def reopen_ticket(
             select(Ticket).where(Ticket.split_from_id == ticket.id, Ticket.status == TicketStatus.RESOLVED).order_by(Ticket.id)
         ).all()
         for part in parts:
-            _reopen_one(session, part, actor_email, reason, _default_status(part), tell_assignee)
+            _reopen_one(session, part, actor_email, reason, _default_status(part), tell_assignee, already_told)
         target = derived_or_default(ticket)
-        _reopen_one(session, ticket, actor_email, reason, target, tell_assignee)
+        _reopen_one(session, ticket, actor_email, reason, target, tell_assignee, already_told)
         return target
 
     target = status or _default_status(ticket)
-    _reopen_one(session, ticket, actor_email, reason, target, tell_assignee)
+    _reopen_one(session, ticket, actor_email, reason, target, tell_assignee, already_told)
     if ticket.split_from_id is not None:
         original = session.get(Ticket, ticket.split_from_id)
         if original is not None and original.status == TicketStatus.RESOLVED:
             # A finished original does not follow its parts, so it is reopened with the part.
-            _reopen_one(session, original, actor_email, reason, derived_or_default(original), tell_assignee)
+            _reopen_one(session, original, actor_email, reason, derived_or_default(original), tell_assignee, already_told)
     return target
 
 
@@ -182,21 +186,31 @@ def open_follow_on_ticket(
     closed: Ticket,
     *,
     subject: str,
-    requester_email: str,
+    sender_email: str,
     source: TicketSource,
     actor_email: Optional[str],
 ) -> Ticket:
     """Opens the new ticket for a reply to a Closed one and links the two. Only the portal and mail paths
-    call this (source portal or email; an agent-raised ticket is app/raising.py's alone). The caller
-    records the message that started it."""
+    call this (source portal or email; an agent-raised ticket is app/raising.py's alone). The requester is
+    the closed ticket's, as the reply is part of their conversation; a follower (or a colleague in the
+    thread) who wrote it follows the new ticket instead of becoming its requester. The caller records the
+    message that started it."""
     if source == TicketSource.AGENT:
         raise ValueError("A follow-on ticket is raised by the requester, never by an agent")
-    new = create_ticket(session, subject=subject, requester_email=requester_email, source=source, actor_email=actor_email)
+    sender_email = sender_email.strip().lower()
+    new = create_ticket(
+        session, subject=subject, requester_email=closed.requester_email, source=source, actor_email=actor_email
+    )
+    if sender_email != new.requester_email:
+        try:
+            add_follower(session, new, sender_email, sender_email)
+        except (InvalidEmail, TooManyFollowers, NeverFollowListed):
+            pass
     session.add(RelatedTicket(ticket_id=new.id, related_ticket_id=closed.id))
     record_event(session, new, EVENT_FOLLOWS, actor_email, to_value=closed.tag, detail="Replied after the earlier ticket was closed")
     record_event(session, closed, EVENT_FOLLOWED_BY, actor_email, to_value=new.tag, detail="Replied after it was closed, so a new ticket was opened")
     log_action(session, actor_email or "system", "ticket", new.id, "follows_closed", closed.tag)
-    notify_reply(session, closed, requester_email)  # the old ticket's assignee hears of the reply, as for any reply
+    notify_reply(session, closed, sender_email)  # the old ticket's assignee hears of the reply, as for any reply
     return new
 
 

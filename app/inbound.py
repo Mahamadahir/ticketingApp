@@ -458,7 +458,9 @@ def ingest_mail(
     closed = None
     if ticket is not None:
         # A thread that already carried on in a ticket opened after closure goes on in that one.
-        ticket = latest_follow_on(session, ticket)
+        newer = latest_follow_on(session, ticket)
+        if newer.id != ticket.id and may_reply(session, newer, sender):
+            ticket = newer  # not when it is someone else's ticket: the sender then gets one of their own
         if ticket.status == TicketStatus.CLOSED and (may_reply(session, ticket, sender) or how in STRONG_MATCHES):
             # A reply after closure is not added to the closed ticket: it opens a new one, linked to it
             # (below). Nobody joins the closed ticket as a follower.
@@ -483,7 +485,7 @@ def ingest_mail(
 
     if closed is not None:
         new = open_follow_on_ticket(
-            session, closed, subject=_subject_of(mail), requester_email=sender, source=TicketSource.EMAIL,
+            session, closed, subject=_subject_of(mail), sender_email=sender, source=TicketSource.EMAIL,
             actor_email=None,
         )
     else:
@@ -510,7 +512,7 @@ def ingest_mail(
     _store_files(session, storage, new, message, files)
     # A receipt to a real person only: automatic mail, bounces, our own mail and floods were set
     # aside above, and a never-follow address (a list or shared mailbox) is not answered either.
-    if is_on() and not is_listed(session, sender):
+    if is_on() and not is_listed(session, sender) and sender == new.requester_email:
         queue_acknowledgement(session, new)
     return settle(TICKET_CREATED, new, message)
 
