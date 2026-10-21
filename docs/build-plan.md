@@ -50,7 +50,8 @@ The app is not live and has no users; open questions are design choices, not liv
 | Phase 2 | complete | |
 | With supplier status (waiting on an outside supplier or vendor; set by hand, SLA clock keeps running) | merged (#53) | `app/models.py`, migration `a9d3c6e1f275` |
 | 3A public surface: `APP_ROLE` split (`build_app` in `app/main.py`), Graph webhook stores each notification and returns 202, rate limiting, approval tokens kept out of the access log | built, in review | `app/main.py`, `app/routers/webhooks.py`, `app/rate_limit.py`, `app/log_redaction.py` |
-| Dependency hygiene 1: dropped unused `pytest-cov` and the `uvicorn[standard]` extras; Dependabot (pip, docker, actions; weekly, minor and patch grouped); `pip-audit` on requirements changes and nightly (`.github/workflows/pip-audit.yml`) | built, in review | `.github/dependabot.yml`, `.github/workflows/pip-audit.yml` |
+| Dependency hygiene 1: dropped unused `pytest-cov` and the `uvicorn[standard]` extras; Dependabot (pip, docker, actions; weekly, minor and patch grouped); `pip-audit` on requirements changes and nightly (`.github/workflows/pip-audit.yml`) | merged (#55) | `.github/dependabot.yml`, `.github/workflows/pip-audit.yml` |
+| Dependency hygiene 2: hashed lock (`requirements.lock`, `requirements-dev.lock`) installed with `--require-hashes`, base image pinned by digest, every action pinned by SHA, htmx 2.0.11 vendored into `app/static/vendor/` | built, in review | `Dockerfile`, `.github/workflows/`, `app/static/vendor/README.md`, `tests/test_static.py` |
 | 3C subscriptions and delta catch-up: the worker creates, renews and recreates the mailbox subscription, acts on lifecycle notifications, and catches up missed mail with an inbox delta query; Admin > Mail intake; `/health` warnings | built, in review | `app/subscriptions.py`, migration `c3b7e1a94d20` |
 | 3B inbound mail: the `mail-in` worker job turns stored notifications into tickets (source email) and replies, de-duplicated, own-mail and auto-reply filter, Cc becomes followers, files saved through the attachment rules; the dev simulate-inbound runs the same intake (`INBOUND_ENABLED`, off by default) | built, in review | `app/inbound.py`, `app/graph_client.py`, migration `e4b7c1a9d052` |
 | 3D outbound mail: outbox, real send, approval and "raised for you" emails (`MAIL_SENDING` off / dev / graph; Admin > Outbound mail) | merged (#52) | `app/outbox.py`, `app/mail.py` |
@@ -239,6 +240,7 @@ sleep, restart it and `docker start ticketingapp-db-1`.
 - 21 Oct 2026: a reply on a triaged ticket with no assignee notifies nobody. The first mail catch-up starts from now and back-fills nothing; the backfill-days setting applies only after a Graph 410 reset. So create the subscription first and send test mail only after the first catch-up run; mail from before that point is never ingested.
 - 21 Oct 2026: approvals will let an approver hand an approval to someone else when they are away, and let the requester withdraw a request while it waits (both to build with the approvals follow-up, phase 4). How handing over works is still open (Open questions).
 - 21 Oct 2026: the out-of-office "last looked up" column is planned now as a small PR, not left until the logs show a problem (see "Next up").
+- 21 Oct 2026: dependency hygiene 2. The lock is compiled with `uv pip compile --universal` (one file for Linux and Windows, markers for platform-only packages such as `colorama`), once for `requirements.txt` and once for `requirements-dev.txt`; `requirements.txt` and `requirements-dev.txt` stay the human-edited inputs. The Dockerfile installs `requirements.lock`, CI and local dev install `requirements-dev.lock`, both with `--require-hashes`. Dependabot only edits the inputs and cannot regenerate a uv lock, so the `lock-current` job in `pip-audit.yml` fails a PR whose lock is stale; recompile (below) and push. `pip-audit` now audits the dev lock, so transitives are covered. The base image is pinned to the `python:3.14-slim` multi-arch index digest; Dependabot's docker ecosystem proposes new digests, and a rule ignores Python major and minor bumps (3.15 is a deliberate upgrade, patches still arrive). Actions are pinned to full SHAs with a `# vX.Y.Z` comment: checkout v7.0.1 (v7 only blocks fork PR checkouts under `pull_request_target`/`workflow_run`, which we do not use), setup-python v7.0.0 (drops the unused `pip-install` input), upload-artifact v7.0.2, download-artifact v8.0.2, azure/login v3.1.0; this supersedes Dependabot #59 and #60. htmx is vendored at 2.0.11 (`app/static/vendor/`, hash in its README, long immutable caching because the version is in the file name): our templates use only `hx-get/post/target/swap/trigger/include/disabled-elt` and the `hx-on:` syntax, none of which changed in 2.x; the pages send no Content-Security-Policy, so the local script needs no change there. `pip-audit` itself is still installed unhashed in its workflow (a pinned version, outside the app).
 - 20 Oct 2026: dependency hygiene is two PRs. PR 1 (this one): kept `httpx2` (nothing in our code imports it, but Starlette's `TestClient` prefers it and warns "install httpx2 instead" when only `httpx` is present, so it is the test client's backend), removed `pytest-cov` (no `--cov` in pytest.ini, CI or docs) and the `uvicorn[standard]` extras (the entrypoint uses `--workers`, never `--reload`; plain uvicorn falls back to asyncio and h11); Dependabot; `pip-audit` in its own workflow so the `test` check is untouched (a requirements change on a PR, nightly at 05:17 UTC, manual run). PR 2 (after PR 1 merges): a lock file with hashes installed with `--require-hashes`, the base image pinned by digest, actions pinned by SHA (azure/login first) and htmx vendored into `app/static`. Dependabot cannot yet bump transitives; PR 2 fixes that. The nightly failure notice goes to whoever last edited the cron line; if that is not the right person, edit the line.
 - 20 Oct 2026: out of office is a label in the assignee pickers, never a block or a skip. Sometimes only one person can fix a
   problem, so they are assigned regardless of availability and deal with it when free. Do not turn it into a refusal or a filter.
@@ -314,6 +316,21 @@ sleep, restart it and `docker start ticketingapp-db-1`.
   from APScheduler, which is acceptable only while each job is safe to run late and twice. Build the
   table before the 18:00 MSP handoff (phase 5), which must not be missed.
 
+## Dependency lock
+
+Change a dependency by editing `requirements.txt` (runtime) or `requirements-dev.txt` (tests), then from the
+repo root with `uv` (`pip install uv==0.13.4`, in a venv outside the project is fine):
+
+```
+uv pip compile requirements.txt --universal --python-version 3.14 --generate-hashes -o requirements.lock
+uv pip compile requirements-dev.txt --universal --python-version 3.14 --generate-hashes -o requirements-dev.lock
+```
+
+Add `--upgrade` to move transitive packages forward (otherwise the existing lock is kept). Install with
+`pip install --require-hashes -r requirements-dev.lock`. Commit the inputs and both locks together. Refresh the
+base image digest by taking Dependabot's docker PR, or by hand with `docker buildx imagetools inspect python:3.14-slim`
+(use the top-level `Digest`, the index).
+
 ## Open questions
 
 - **Inbound mail (3B), to confirm.** (1) A person CC'd on a thread who then replies without being a follower becomes a new ticket, not a
@@ -359,6 +376,7 @@ sleep, restart it and `docker start ticketingapp-db-1`.
   download for files over 3 MB, Mimecast rewriting or stripping headers.
 
 The full list is "Azure-only verification" in `docs/plan.md`. Added by work so far:
+- Dependency hygiene 2: after merge, confirm Dependabot opens its next PRs as expected (inputs only, no Python 3.15 image PR, action bumps keep the SHA plus comment form, a digest PR for the base image) and that GitHub's Dependabot tab shows no config error. First staging image build: the `--require-hashes` install runs on the real runner (verified here in a local WSL Docker build only).
 - `FORWARDED_ALLOW_IPS` set to the Container Apps subnet, so the activity log records
   real client IPs and cannot be forged.
 - htmx behaviour and `datetime-local` inputs in a real browser (backdating, split, link,

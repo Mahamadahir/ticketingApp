@@ -9,6 +9,8 @@ on:
     paths:
       - "requirements.txt"
       - "requirements-dev.txt"
+      - "requirements.lock"
+      - "requirements-dev.lock"
       - ".github/workflows/pip-audit.yml"
   schedule:
     # Nightly: an advisory can appear against a pin that has not changed.
@@ -25,14 +27,35 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.14"
 
-      # requirements-dev.txt includes requirements.txt, so one run covers both.
-      - name: Audit requirements
+      # The dev lock holds everything the app needs plus the test tools, so one run
+      # covers both, transitive packages included.
+      - name: Audit the lock
         run: |
           pip install pip-audit==2.10.1
-          pip-audit --strict -r requirements-dev.txt
+          pip-audit --strict --require-hashes -r requirements-dev.lock
+
+  # A Dependabot bump to requirements.txt or requirements-dev.txt does not touch the
+  # lock. This fails until the lock is regenerated (docs/build-plan.md, "Dependency
+  # lock"), so the lock never drifts from the inputs.
+  lock-current:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+
+      - name: Recompile the lock and compare
+        run: |
+          pip install uv==0.13.4
+          uv pip compile requirements.txt --universal --python-version 3.14 --generate-hashes             --custom-compile-command "uv pip compile requirements.txt --universal --python-version 3.14 --generate-hashes -o requirements.lock"             -o requirements.lock
+          uv pip compile requirements-dev.txt --universal --python-version 3.14 --generate-hashes             --custom-compile-command "uv pip compile requirements-dev.txt --universal --python-version 3.14 --generate-hashes -o requirements-dev.lock"             -o requirements-dev.lock
+          git diff --exit-code -- requirements.lock requirements-dev.lock

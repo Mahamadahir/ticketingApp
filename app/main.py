@@ -28,6 +28,16 @@ async def lifespan(app: FastAPI):
     yield
 
 
+class AppStaticFiles(StaticFiles):
+    """Static files, with long caching for vendor/: those files carry their version in the name."""
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        if path.replace("\\", "/").startswith("vendor/") and response.status_code == 200:
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return response
+
+
 templates = Jinja2Templates(directory="app/templates")
 
 
@@ -114,7 +124,7 @@ def build_app(role: str) -> FastAPI:
             https_only=not settings.is_dev,
             same_site="lax",
         )
-    app.mount("/static", StaticFiles(directory="app/static"), name="static")
+    app.mount("/static", AppStaticFiles(directory="app/static"), name="static")
     for router in ROLE_ROUTERS[role]:
         if router is dev_tools.router and not settings.is_dev:
             continue  # the dev helper exists only in dev, not merely refuses outside it

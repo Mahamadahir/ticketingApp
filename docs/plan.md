@@ -191,6 +191,11 @@ least-privilege database role is a later hardening step.
 - Static Web Apps: the UI is server-rendered Jinja with htmx, not a SPA.
 - AKS: far more than this needs.
 
+**Supply chain.** Python dependencies are locked with hashes (`requirements.lock`, installed with
+`--require-hashes`), the base image is pinned by digest, GitHub Actions are pinned by commit SHA and htmx is
+served from `app/static/vendor/`, so nothing runs that was not reviewed. Dependabot and a nightly `pip-audit`
+keep them current (details: `docs/build-plan.md`, "Dependency lock").
+
 **Code changes the Azure plan needs:**
 
 - `APP_ROLE` (`web`, `public`, `worker`) selects which routers are mounted. **Built in 3A (20 Oct 2026):**
