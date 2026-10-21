@@ -1,3 +1,6 @@
 * text=auto
 *.sh text eol=lf
 Dockerfile text eol=lf
+app/static/vendor/*.js -text
+app/static/vendor/*.css -text
+app/static/vendor/*.map -text

@@ -1,5 +1,7 @@
 # Weekly update PRs, minor and patch bumps grouped per ecosystem so a week's
 # updates arrive as one PR. Major bumps stay separate PRs. CI gates every one.
+# GitHub Actions are pinned to commit SHAs with a version comment; Dependabot
+# updates both.
 version: 2
 updates:
   - package-ecosystem: pip
@@ -7,6 +9,10 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # Bumps the human-edited inputs (requirements.txt, requirements-dev.txt).
+    # Dependabot does not regenerate requirements.lock or requirements-dev.lock;
+    # the lock-current check in pip-audit.yml fails until they are recompiled
+    # (docs/build-plan.md, "Dependency lock").
     groups:
       python-minor-patch:
         update-types: [minor, patch]
@@ -16,6 +22,11 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 3
+    # The Python minor version (3.14 to 3.15) is a deliberate upgrade, not a weekly
+    # PR. Patch bumps and new digests of the pinned tag still arrive.
+    ignore:
+      - dependency-name: "python"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
     groups:
       docker-minor-patch:
         update-types: [minor, patch]

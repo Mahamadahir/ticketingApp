@@ -244,9 +244,13 @@ docker compose run --rm app alembic stamp a575769b8ea7
 ## Running tests
 
 ```bash
-pip install -r requirements-dev.txt
+pip install --require-hashes -r requirements-dev.lock
 pytest
 ```
+
+`requirements-dev.lock` pins every package with hashes and works on Windows and Linux;
+`requirements.txt` and `requirements-dev.txt` are the human-edited inputs (how to
+regenerate the lock: `docs/build-plan.md`, "Dependency lock").
 
 Needs Python 3.14 and the compose database running (`docker compose up -d db`).
 The tests run against Postgres 16, never SQLite: they create and wipe a separate
