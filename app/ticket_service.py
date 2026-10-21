@@ -40,6 +40,11 @@ class AwaitingApproval(Exception):
     approval itself (app/approvals.py) moves it on."""
 
 
+class ResolutionRequired(Exception):
+    """Raised when something sets Resolved by hand. A ticket is resolved only through
+    app/resolution.py, which takes the resolution notes."""
+
+
 class NotTriaged(Exception):
     """Raised when something that needs a triaged ticket is attempted on one that
     has not been triaged yet (emailing the requester, moving it between statuses)."""
@@ -134,14 +139,18 @@ def set_status(
     actor_email: Optional[str],
     detail: Optional[str] = None,
     by_approval: bool = False,
+    by_resolution: bool = False,
 ) -> bool:
     """Moves the ticket to a new status. Returns False, changing nothing,
-    when it is already there. A sub-ticket's change re-derives its original's status."""
+    when it is already there. A sub-ticket's change re-derives its original's status.
+    Resolved is refused unless by_resolution is set, which only app/resolution.py does."""
     previous = ticket.status
     if previous == new_status:
         return False
     if previous == TicketStatus.AWAITING_APPROVAL and not by_approval:
         raise AwaitingApproval()
+    if new_status == TicketStatus.RESOLVED and not by_resolution:
+        raise ResolutionRequired()
     if ticket.triaged_at is None and new_status != TicketStatus.NEW:
         # Leaving New is what triage does, and only triage.
         raise NotTriaged()
@@ -161,6 +170,11 @@ def set_status(
             ticket.resolved_at = now
     else:
         ticket.resolved_at = None
+    # closed_at is when it was closed; moving off Closed (a reopen) clears it.
+    if new_status == TicketStatus.CLOSED:
+        ticket.closed_at = now
+    elif previous == TicketStatus.CLOSED:
+        ticket.closed_at = None
     # Awaiting user stops the SLA clock and leaving it restarts it. Imported here
     # because app.sla builds on this module.
     from app.sla import on_status_change

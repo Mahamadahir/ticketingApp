@@ -15,6 +15,8 @@ HX = {"HX-Request": "true"}
 
 def raise_it(client, **fields):
     data = {"subject": "Printer on fire", "description": "It is smoking", **fields}
+    if "resolved_at" in fields:
+        data.setdefault("resolution_notes", "Fixed at the desk")
     return client.post("/portal/new", data=data, headers=HX)
 
 

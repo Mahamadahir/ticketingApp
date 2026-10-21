@@ -288,12 +288,12 @@ def test_refused_access_is_recorded_for_reads_and_for_writes(client, db_session)
     agent_in(client, db_session, mine)
 
     client.get(f"/tickets/{ticket.number}")
-    client.post(f"/tickets/{ticket.number}/status", data={"status": "resolved"})
+    client.post(f"/tickets/{ticket.number}/resolve", data={"resolution_notes": "Fixed it"})
 
     denied = rows(db_session, "access_denied")
     assert [(r.method, r.path, r.status_code) for r in denied] == [
         ("GET", "/tickets/{number}", 403),
-        ("POST", "/tickets/{number}/status", 403),
+        ("POST", "/tickets/{number}/resolve", 403),
     ]
     assert all(r.actor_email == "agent@example.com" for r in denied)
     assert rows(db_session, "request") == []  # a refused write is one row, not two

@@ -32,7 +32,10 @@ def other_ticket(client, db_session, desk, status=TicketStatus.RESOLVED):
     agent_id = login_as(client, "agent@example.com")
     set_role(db_session, agent_id, UserRole.AGENT, desk.id)
     client.post(f"/tickets/{ticket.number}/triage", data={"ticket_type": "incident", "impact": "low", "urgency": "low", "category_id": other.id})
-    client.post(f"/tickets/{ticket.number}/status", data={"status": status.value})
+    if status == TicketStatus.RESOLVED:
+        client.post(f"/tickets/{ticket.number}/resolve", data={"resolution_notes": "Fixed it"})
+    else:
+        client.post(f"/tickets/{ticket.number}/status", data={"status": status.value})
     client.post("/auth/logout")
     db_session.refresh(ticket)
     return ticket, other

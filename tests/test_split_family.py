@@ -18,7 +18,10 @@ RESOLVED, CLOSED = TicketStatus.RESOLVED, TicketStatus.CLOSED
 
 
 def set_to(client, ticket, status):
-    response = client.post(f"/tickets/{ticket.number}/status", data={"status": status.value})
+    if status == RESOLVED:
+        response = client.post(f"/tickets/{ticket.number}/resolve", data={"resolution_notes": "Fixed it"})
+    else:
+        response = client.post(f"/tickets/{ticket.number}/status", data={"status": status.value})
     assert response.status_code == 200, response.text
 
 
@@ -146,7 +149,7 @@ def test_an_original_with_parts_cannot_have_its_status_set_by_hand(client, db_se
     original, (a, b), _ = family(client, db_session)
 
     refused = client.post(f"/tickets/{original.number}/status", data={"status": "in_progress"})
-    early = client.post(f"/tickets/{original.number}/status", data={"status": "resolved"})
+    early = client.post(f"/tickets/{original.number}/resolve", data={"resolution_notes": "Fixed it"})
 
     assert refused.status_code == 400 and "follows them" in refused.text
     assert early.status_code == 400 and "2 still open" in early.text
