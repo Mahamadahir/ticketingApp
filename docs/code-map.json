@@ -49,6 +49,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/dddff5e5bec9_related_tickets_for_a_reply_after_.py",
+        "revision": "dddff5e5bec9"
+      },
+      {
         "file": "migrations/versions/c5d9e2f7a418_approval_groups.py",
         "revision": "c5d9e2f7a418"
       },
@@ -63,17 +67,13 @@
       {
         "file": "migrations/versions/158132f3603a_resolution_fields.py",
         "revision": "158132f3603a"
-      },
-      {
-        "file": "migrations/versions/7c76517851fa_never_follow_address.py",
-        "revision": "7c76517851fa"
       }
     ],
-    "count": 37,
+    "count": 38,
     "heads": [
       {
-        "file": "migrations/versions/c5d9e2f7a418_approval_groups.py",
-        "revision": "c5d9e2f7a418"
+        "file": "migrations/versions/dddff5e5bec9_related_tickets_for_a_reply_after_.py",
+        "revision": "dddff5e5bec9"
       }
     ]
   },
@@ -272,6 +272,7 @@
         "app.escalation",
         "app.inbound",
         "app.notification_settings",
+        "app.reopening",
         "app.resolution",
         "app.routers.admin",
         "app.routers.portal",
@@ -689,6 +690,7 @@
         "tests/test_followers.py",
         "tests/test_inbound_mail.py",
         "tests/test_never_follow.py",
+        "tests/test_reopening.py",
         "tests/test_reply_notification.py"
       ]
     },
@@ -805,6 +807,7 @@
         "app.never_follow",
         "app.outbox",
         "app.raising",
+        "app.reopening",
         "app.settings_store",
         "app.splitting",
         "app.storage",
@@ -819,7 +822,8 @@
         "tests/test_acknowledgement.py",
         "tests/test_follower_updates.py",
         "tests/test_inbound_mail.py",
-        "tests/test_never_follow.py"
+        "tests/test_never_follow.py",
+        "tests/test_reopening.py"
       ]
     },
     {
@@ -964,6 +968,7 @@
         "tests/test_email_templates.py",
         "tests/test_follower_updates.py",
         "tests/test_outbound_mail.py",
+        "tests/test_reopening.py",
         "tests/test_resolution.py"
       ]
     },
@@ -1049,6 +1054,7 @@
         "app.inbound",
         "app.mail",
         "app.raising",
+        "app.reopening",
         "app.resolution",
         "app.routers.approvals",
         "app.routers.portal",
@@ -1107,6 +1113,7 @@
         "NotificationPreference",
         "NumberCounter",
         "OutboundEmail",
+        "RelatedTicket",
         "RequestType",
         "ScheduledJob",
         "Setting",
@@ -1154,6 +1161,7 @@
         "app.outbox",
         "app.presence",
         "app.raising",
+        "app.reopening",
         "app.request_types",
         "app.resolution",
         "app.routers.admin",
@@ -1259,6 +1267,10 @@
           "table": "outboundemail"
         },
         {
+          "class": "RelatedTicket",
+          "table": "relatedticket"
+        },
+        {
           "class": "RequestType",
           "table": "requesttype"
         },
@@ -1345,6 +1357,7 @@
         "tests/test_presence.py",
         "tests/test_public_surface.py",
         "tests/test_raising.py",
+        "tests/test_reopening.py",
         "tests/test_reply_notification.py",
         "tests/test_request_types.py",
         "tests/test_resolution.py",
@@ -1448,6 +1461,7 @@
         "notify",
         "notify_assigned",
         "notify_mentions",
+        "notify_reopened",
         "notify_reply",
         "retire_read_for_teams",
         "visible_to"
@@ -1456,6 +1470,7 @@
         "app.escalation",
         "app.jobs",
         "app.messages",
+        "app.reopening",
         "app.routers.my_settings",
         "app.routers.notifications",
         "app.routers.tickets",
@@ -1631,6 +1646,42 @@
     },
     {
       "classes": [
+        "ReopenError"
+      ],
+      "file": "app/reopening.py",
+      "functions": [
+        "check_can_reclose",
+        "check_can_reopen",
+        "latest_follow_on",
+        "open_follow_on_ticket",
+        "reclose_ticket",
+        "related_tickets",
+        "reopen_ticket"
+      ],
+      "imported_by": [
+        "app.inbound",
+        "app.routers.portal",
+        "app.routers.tickets",
+        "app.splitting"
+      ],
+      "imports": [
+        "app.audit",
+        "app.messages",
+        "app.models",
+        "app.notifications",
+        "app.splitting",
+        "app.ticket_service"
+      ],
+      "module": "app.reopening",
+      "routes": [],
+      "summary": "Reopening, reclosing and replying after a ticket is finished (phase 4E-1). Nothing here commits.",
+      "tables": [],
+      "tests": [
+        "tests/test_reopening.py"
+      ]
+    },
+    {
+      "classes": [
         "RequestTypeError"
       ],
       "file": "app/request_types.py",
@@ -1691,6 +1742,7 @@
       "summary": "Resolving a ticket (phase 4D). The one place a ticket becomes Resolved.",
       "tables": [],
       "tests": [
+        "tests/test_reopening.py",
         "tests/test_resolution.py"
       ]
     },
@@ -2259,6 +2311,7 @@
         "new_ticket_form",
         "raise_new_ticket",
         "remove_ticket_follower",
+        "reopen_my_ticket",
         "view_my_ticket"
       ],
       "imported_by": [
@@ -2279,6 +2332,7 @@
         "app.models",
         "app.pagination",
         "app.raising",
+        "app.reopening",
         "app.request_types",
         "app.sla",
         "app.splitting",
@@ -2333,6 +2387,11 @@
           "handler": "remove_ticket_follower",
           "method": "POST",
           "path": "/portal/{number}/followers/{follower_id}/remove"
+        },
+        {
+          "handler": "reopen_my_ticket",
+          "method": "POST",
+          "path": "/portal/{number}/reopen"
         }
       ],
       "summary": "",
@@ -2359,7 +2418,9 @@
         "preview_email_user",
         "preview_resolve",
         "reassign",
+        "reclose",
         "remove_ticket_follower",
+        "reopen",
         "resolve",
         "split",
         "team_activity",
@@ -2390,6 +2451,7 @@
         "app.pagination",
         "app.presence",
         "app.raising",
+        "app.reopening",
         "app.request_types",
         "app.resolution",
         "app.search",
@@ -2497,6 +2559,16 @@
           "handler": "reassign",
           "method": "POST",
           "path": "/tickets/{number}/reassign"
+        },
+        {
+          "handler": "reclose",
+          "method": "POST",
+          "path": "/tickets/{number}/reclose"
+        },
+        {
+          "handler": "reopen",
+          "method": "POST",
+          "path": "/tickets/{number}/reopen"
         },
         {
           "handler": "resolve",
@@ -2738,6 +2810,7 @@
       "imported_by": [
         "app.inbound",
         "app.messages",
+        "app.reopening",
         "app.resolution",
         "app.routers.portal",
         "app.routers.tickets",
@@ -2746,6 +2819,7 @@
       "imports": [
         "app.messages",
         "app.models",
+        "app.reopening",
         "app.sla",
         "app.ticket_service",
         "app.triage"
@@ -2967,6 +3041,7 @@
         "app.linking",
         "app.messages",
         "app.raising",
+        "app.reopening",
         "app.resolution",
         "app.routers.admin",
         "app.routers.portal",
@@ -2991,6 +3066,7 @@
         "tests/test_category_admin.py",
         "tests/test_email_preview.py",
         "tests/test_portal.py",
+        "tests/test_reopening.py",
         "tests/test_reply_notification.py",
         "tests/test_resolution.py",
         "tests/test_split_family.py",
@@ -3440,6 +3516,7 @@
     "tests/test_presence.py",
     "tests/test_public_surface.py",
     "tests/test_raising.py",
+    "tests/test_reopening.py",
     "tests/test_reply_notification.py",
     "tests/test_request_types.py",
     "tests/test_resolution.py",

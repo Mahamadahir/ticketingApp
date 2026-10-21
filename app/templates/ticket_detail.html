@@ -168,6 +168,30 @@
     <div id="resolve-preview"></div>
   </details>
   {% endif %}
+  {% if can_reopen %}
+  <details>
+    <summary>Reopen</summary>
+    <form hx-post="/tickets/{{ ticket.number }}/reopen" hx-target="main" hx-swap="innerHTML">
+      <label>Why is it being reopened?
+        <textarea name="reason" rows="2" maxlength="{{ max_reason_length }}" required></textarea>
+      </label>
+      <button type="submit">Reopen ticket</button>
+    </form>
+  </details>
+  {% endif %}
+  {% if can_reclose %}
+  <details>
+    <summary>Reclose</summary>
+    <form hx-post="/tickets/{{ ticket.number }}/reclose" hx-target="main" hx-swap="innerHTML">
+      <label>Close it again because
+        <select name="reason" required>
+          {% for key, label in reclose_reasons.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+        </select>
+      </label>
+      <button type="submit">Reclose ticket</button>
+    </form>
+  </details>
+  {% endif %}
   {% if all_parts_done %}<p class="note"><b>All sub-tickets are done: resolve this ticket.</b></p>{% endif %}
   {% endif %}
 
@@ -287,6 +311,13 @@
 </ul>
 {% if more_linked_count %}<p class="note">Showing the first {{ linked|length }}; {{ more_linked_count }} more you can open are not listed.</p>{% endif %}
 {% if hidden_linked_count %}<p class="note">{{ hidden_linked_count }} more linked ticket{{ "s" if hidden_linked_count != 1 else "" }} you cannot open.</p>{% endif %}
+{% endif %}
+
+{% if related %}
+<h3>Related tickets</h3>
+<ul>
+  {% for t, which in related %}<li><a href="/tickets/{{ t.number }}">{{ t.reference }}</a> {{ t.subject }} <span class="status status-{{ t.status.value }}">{{ t.status.value.replace("_", " ") }}</span> <span class="note">({{ "this ticket follows on from it" if which == "earlier" else "opened after this one was closed" }})</span></li>{% endfor %}
+</ul>
 {% endif %}
 
 <h3>Sub-tickets</h3>

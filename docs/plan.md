@@ -490,8 +490,8 @@ without anyone remembering to set it by hand.
   is Awaiting user, it moves back to In progress automatically and the SLA clock
   resumes. This covers portal comments now and email replies once mail intake
   exists. A reply on a New ticket changes nothing; on a With supplier or With MSP ticket it changes
-  nothing (the agent decides, and the assigned agent is notified); on a Resolved or Closed ticket it is the reopen flow
-  in phase 4.
+  nothing (the agent decides, and the assigned agent is notified); on a Resolved ticket it reopens it and on a Closed ticket it opens a new, linked ticket
+  (*built, 4E-1:* `app/reopening.py`).
 - Both moves are ordinary status events in the timeline and the audit log, with
   the person who caused them.
 
@@ -693,7 +693,7 @@ internal note. One level only. Events `split` / `split_from`, and an audit entry
 `sync_original_status` in `app/splitting.py`) with a system event "from its sub-tickets"; a part's
 status change re-derives it under a row lock, and a split derives it once. Agents cannot set an
 original's status by hand: only Resolved or Closed, and only once every part is finished (so
-reopening a resolved original by hand is refused until the phase 4 reopen flow). Emailing from the
+reopening a resolved original works only through the reopen flow, which reopens its resolved parts: *built, 4E-1*). Emailing from the
 original does not move it to Awaiting user; emailing from a part moves that part. A requester reply
 on the original hands every open part back (Awaiting user to In progress) and moves it up the queue.
 The page says "All sub-tickets are done: resolve this ticket" and the original never resolves itself.
@@ -922,7 +922,8 @@ A template is plain text with `{placeholders}` from a fixed list per email; the 
 - Resolution notes required. The requester gets an email with the notes, a
   feedback link and a reopen link.
 - Resolved moves to Closed after **N days (TBC)**. A reply after closure
-  creates a new ticket linked to the old one.
+  creates a new ticket linked to the old one (a plain related-ticket link shown on both ticket pages,
+  not a parent and child; *built, 4E-1*).
 - A reply on a resolved ticket that is short and matches the ignore list
   ("thanks", "cheers") is added without reopening. Anything else reopens and
   notifies the agent. The reopen link always reopens.

@@ -118,7 +118,7 @@ def test_a_follower_replying_also_hands_it_back(client, db_session):
 
 @pytest.mark.parametrize(
     "status",
-    [TicketStatus.NEW, TicketStatus.OPEN, TicketStatus.IN_PROGRESS, TicketStatus.WITH_SUPPLIER, TicketStatus.WITH_MSP, TicketStatus.RESOLVED, TicketStatus.CLOSED],
+    [TicketStatus.NEW, TicketStatus.OPEN, TicketStatus.IN_PROGRESS, TicketStatus.WITH_SUPPLIER, TicketStatus.WITH_MSP, TicketStatus.CLOSED],  # Resolved reopens: tests/test_reopening.py
 )
 def test_a_reply_only_changes_a_ticket_that_is_awaiting_the_user(client, db_session, status):
     team = create_team(db_session, "Service Desk")

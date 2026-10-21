@@ -1,8 +1,8 @@
 """In-app notifications (phase 2A): the bell. Something happens that an agent should know about,
 a row is written for them, and the bell counts what they have not read.
 
-Three things notify: a ticket being assigned to you, an @mention in an internal note, and the
-requester (or a follower) replying on your ticket.
+Four things notify: a ticket being assigned to you, an @mention in an internal note, the
+requester (or a follower) replying on your ticket, and your ticket being reopened.
 Later phases add Teams (an unread notification is also sent to Teams after a delay, P1s and SLA
 breaches) and skipping agents who are out of office. Which events reach which channel is each
 person's choice (app/notification_settings.py); notify() honours the in-app one. Everything
@@ -28,6 +28,7 @@ from app.visibility import Access, access_context, ticket_access, visible_ticket
 ASSIGNED = "assigned"
 MENTIONED = "mentioned"
 REPLIED = "replied"
+REOPENED = "reopened"
 AGENT_ROLES = (UserRole.AGENT, UserRole.SUPER_ADMIN)
 
 # @alice or @alice@example.com: letters, digits, dots, dashes and underscores.
@@ -300,3 +301,16 @@ def drop_due_for_teams(session: Session, now: Optional[datetime] = None, limit: 
         notification.teams_handled_at = now
         session.add(notification)
     return len(rows)
+
+
+def notify_reopened(session: Session, ticket: Ticket, actor_email: Optional[str], reason: str) -> Optional[Notification]:
+    """Tells the assigned agent their resolved ticket was reopened (never the person who reopened it).
+    Nobody assigned tells nobody; nobody who cannot open the ticket is told about it. Does not commit."""
+    if ticket.assigned_agent_id is None:
+        return None
+    agent = session.get(User, ticket.assigned_agent_id)
+    if agent is None or not _can_open(session, agent, ticket):
+        return None
+    return notify(
+        session, agent, REOPENED, ticket, f"{ticket.tag} {ticket.subject} was reopened: {reason[:200]}", actor_email
+    )

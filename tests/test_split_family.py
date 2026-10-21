@@ -131,15 +131,15 @@ def test_when_every_part_is_done_the_original_says_to_resolve_it(client, db_sess
     assert status_of(db_session, original) == OPEN  # it does not resolve itself
 
 
-def test_a_finished_original_is_left_alone_when_a_part_changes(client, db_session):
+def test_reopening_a_part_of_a_finished_original_reopens_the_original_too(client, db_session):
     original, (a, b), _ = family(client, db_session)
     set_to(client, a, RESOLVED)
     set_to(client, b, RESOLVED)
     set_to(client, original, RESOLVED)
 
-    set_to(client, b, PROGRESS)  # a part is reopened
+    set_to(client, b, PROGRESS)  # a part is reopened (4E-1: through the reopen flow)
 
-    assert status_of(db_session, original) == RESOLVED
+    assert status_of(db_session, original) == PROGRESS  # a finished original cannot stay finished beside an open part
 
 
 # ---- Status cannot be set by hand ----------------------------------------------------------------

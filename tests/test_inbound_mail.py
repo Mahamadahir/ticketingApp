@@ -495,13 +495,13 @@ def test_replaying_the_same_mail_adds_nothing_more(db_session):
     assert len(events_of(db_session, ticket, "follower_added_from_mail")) == 1
 
 
-def test_an_unknown_sender_on_a_resolved_ticket_is_only_recorded(db_session):
+def test_an_unknown_sender_on_a_resolved_ticket_is_recorded_and_reopens_it(db_session):
     ticket = open_ticket(db_session, message_id="a")
     triage_by_hand(db_session, ticket, TicketStatus.RESOLVED)
     result = ingest_mail(db_session, mail("x1", sender="kim@example.com", conversation_id="conv-a"))
     db_session.commit()
     db_session.refresh(ticket)
-    assert result.outcome == REPLY_ADDED and ticket.status == TicketStatus.RESOLVED
+    assert result.outcome == REPLY_ADDED and ticket.status == TicketStatus.OPEN and ticket.reopen_count == 1  # 4E-1
     assert len(messages_of(db_session, ticket)) == 2 and len(followers_of(db_session, ticket)) == 1
 
 
@@ -587,8 +587,8 @@ def test_a_reply_hands_a_ticket_waiting_on_the_requester_back_to_us(db_session):
 
 @pytest.mark.parametrize(
     "status",
-    [TicketStatus.NEW, TicketStatus.IN_PROGRESS, TicketStatus.WITH_MSP, TicketStatus.WITH_SUPPLIER, TicketStatus.RESOLVED, TicketStatus.CLOSED],
-)
+    [TicketStatus.NEW, TicketStatus.IN_PROGRESS, TicketStatus.WITH_MSP, TicketStatus.WITH_SUPPLIER],
+)  # Resolved and Closed: tests/test_reopening.py
 def test_a_reply_changes_no_other_status_but_is_recorded(db_session, status):
     ticket = open_ticket(db_session)
     if status != TicketStatus.NEW:

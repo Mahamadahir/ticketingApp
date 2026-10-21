@@ -86,6 +86,20 @@ class TicketEscalator(SQLModel, table=True):
     user_id: int = Field(foreign_key="user.id", primary_key=True)
 
 
+class RelatedTicket(SQLModel, table=True):
+    """A link between a ticket and an earlier one it follows on from: a requester replied after the
+    earlier ticket was Closed, so a new ticket was opened (app/reopening.py). A plain link shown on both
+    ticket pages, not a parent and child (that is linked_parent_id). ticket_id is the newer ticket and
+    related_ticket_id the earlier; one row per pair."""
+
+    __table_args__ = (UniqueConstraint("ticket_id", "related_ticket_id", name="uq_relatedticket_pair"),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ticket_id: int = Field(foreign_key="ticket.id", index=True)
+    related_ticket_id: int = Field(foreign_key="ticket.id", index=True)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 class TeamMembership(SQLModel, table=True):
     """Which teams a user belongs to, and how. One row per user and team."""
 
