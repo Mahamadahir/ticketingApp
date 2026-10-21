@@ -4,3 +4,5 @@ Dockerfile text eol=lf
 app/static/vendor/*.js -text
 app/static/vendor/*.css -text
 app/static/vendor/*.map -text
+docs/code-map.* text eol=lf
+tools/code_map.py text eol=lf

@@ -59,6 +59,7 @@ The app is not live and has no users; open questions are design choices, not liv
 | 3D outbound mail: outbox, real send, approval and "raised for you" emails (`MAIL_SENDING` off / dev / graph; Admin > Outbound mail) | merged (#52) | `app/outbox.py`, `app/mail.py` |
 | 3E-storage attachments: storage interface (local directory, Azure Blob with user-delegation SAS), `attachment` table, `/attachments/{id}`, content-type detection and safe serving | built, in review (#49) | `app/storage.py`, `app/attachments.py`, `app/routers/attachments.py` |
 | 3F wiring: Bicep and deploy workflow for the public app, mailbox (`MAIL_SENDING`), the two base URLs, Application Insights started from the connection string (approval links kept out of request telemetry) | built, in review | `infra/main.bicep`, `.github/workflows/deploy.yml`, `app/telemetry.py` |
+| Code map: `tools/code_map.py` generates `docs/code-map.md` and `.json` (modules, routes, tables, jobs, settings, migrations, tests, seam violations); CI `code-map-current` | built, in review | `tools/code_map.py`, `.github/workflows/code-map.yml` |
 | Phases 4 to 9 | not started | `docs/plan.md`, "Build order" |
 
 Tests: 953 passing on Postgres 16.
@@ -176,6 +177,9 @@ with `createReply` (sendMail returns no id, so a sent message has none).
     harness reminder says.
 11. Flag Azure-only checks when you touch them and add them to the staging list below.
 12. Update this file and `docs/plan.md` in the PR.
+    Regenerate the code map (`python tools/code_map.py`) and commit it whenever modules, routes,
+    models, jobs, settings, migrations or tests change; CI (`code-map-current`) fails on a stale map.
+    Locate code with `docs/code-map.md` first, grep second; never hand-edit it.
 
 Several agents may work in this repo at once. They share one Postgres, and every test run
 drops and recreates all tables in its database, so two suites on the same database destroy each
