@@ -322,11 +322,11 @@ Change a dependency by editing `requirements.txt` (runtime) or `requirements-dev
 repo root with `uv` (`pip install uv==0.13.4`, in a venv outside the project is fine):
 
 ```
-uv pip compile requirements.txt --universal --python-version 3.14 --generate-hashes -o requirements.lock
-uv pip compile requirements-dev.txt --universal --python-version 3.14 --generate-hashes -o requirements-dev.lock
+bash .github/scripts/compile-lock.sh            # recompile both locks
+bash .github/scripts/compile-lock.sh --upgrade  # also move transitive packages forward
 ```
 
-Add `--upgrade` to move transitive packages forward (otherwise the existing lock is kept). Install with
+The existing lock is kept as the starting point unless you pass `--upgrade`. Install with
 `pip install --require-hashes -r requirements-dev.lock`. Commit the inputs and both locks together. Refresh the
 base image digest by taking Dependabot's docker PR, or by hand with `docker buildx imagetools inspect python:3.14-slim`
 (use the top-level `Digest`, the index).

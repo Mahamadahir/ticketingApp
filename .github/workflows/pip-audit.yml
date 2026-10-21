@@ -12,6 +12,7 @@ on:
       - "requirements.lock"
       - "requirements-dev.lock"
       - ".github/workflows/pip-audit.yml"
+      - ".github/scripts/compile-lock.sh"
   schedule:
     # Nightly: an advisory can appear against a pin that has not changed.
     # A failure sends the repository's failed-workflow email to whoever last
@@ -56,6 +57,5 @@ jobs:
       - name: Recompile the lock and compare
         run: |
           pip install uv==0.13.4
-          uv pip compile requirements.txt --universal --python-version 3.14 --generate-hashes             --custom-compile-command "uv pip compile requirements.txt --universal --python-version 3.14 --generate-hashes -o requirements.lock"             -o requirements.lock
-          uv pip compile requirements-dev.txt --universal --python-version 3.14 --generate-hashes             --custom-compile-command "uv pip compile requirements-dev.txt --universal --python-version 3.14 --generate-hashes -o requirements-dev.lock"             -o requirements-dev.lock
+          bash .github/scripts/compile-lock.sh
           git diff --exit-code -- requirements.lock requirements-dev.lock

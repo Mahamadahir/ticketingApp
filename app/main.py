@@ -33,7 +33,7 @@ class AppStaticFiles(StaticFiles):
 
     async def get_response(self, path, scope):
         response = await super().get_response(path, scope)
-        if path.replace("\\", "/").startswith("vendor/") and response.status_code == 200:
+        if path.replace("\\", "/").startswith("vendor/") and path.endswith(".js") and response.status_code == 200:
             response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
         return response
 
