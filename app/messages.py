@@ -24,6 +24,7 @@ from app.models import (
     MessageVisibility,
     Ticket,
     TicketEvent,
+    TicketStatus,
     User,
 )
 from app.notifications import notify_reply
@@ -102,10 +103,70 @@ class EmailPreview:
     subject: str
     about: Optional[str]
     body: str
+    status_after: Optional[TicketStatus] = None  # the status sending would set; None: left as it is
+
+
+# The statuses an agent may pick when emailing the requester or adding a note. New is left only by
+# triage, Awaiting approval only by the approvers, and Resolved and Closed only by the Resolve
+# action (app/resolution.py), so none of those is offered.
+STATUS_CHOICES = (
+    TicketStatus.OPEN,
+    TicketStatus.IN_PROGRESS,
+    TicketStatus.AWAITING_USER,
+    TicketStatus.WITH_SUPPLIER,
+    TicketStatus.WITH_MSP,
+)
+
+
+class BadStatusChoice(Exception):
+    """The status asked for cannot be set from an email or a note."""
+
+
+def status_choices(session: Session, ticket: Ticket) -> list[TicketStatus]:
+    """The statuses the Email user and Add note dropdowns offer for this ticket; empty means no
+    dropdown and the status is left alone: an untriaged ticket, one waiting for approval, a
+    finished one, or an original whose status follows its sub-tickets (app/splitting.py)."""
+    from app.splitting import has_sub_tickets
+
+    if not is_triaged(ticket) or ticket.status not in STATUS_CHOICES or has_sub_tickets(session, ticket):
+        return []
+    return list(STATUS_CHOICES)
+
+
+def default_status_after_email(ticket: Ticket) -> TicketStatus:
+    """Emailing the user normally means we are now waiting on them, so Open and In progress default
+    to Awaiting user. With supplier, With MSP and Awaiting user stay as they are."""
+    if ticket.status in (TicketStatus.OPEN, TicketStatus.IN_PROGRESS):
+        return TicketStatus.AWAITING_USER
+    return ticket.status
+
+
+def chosen_status(
+    session: Session, ticket: Ticket, requested: Optional[str], default: TicketStatus
+) -> Optional[TicketStatus]:
+    """The status an email or note should move the ticket to, or None to leave it. requested is the
+    dropdown's value ("" or None: not sent, so the default applies, which is how a request without the
+    dropdown still behaves). Anything not offered for this ticket is refused."""
+    choices = status_choices(session, ticket)
+    requested = (requested or "").strip()
+    if not requested:
+        target = default if choices else ticket.status
+    else:
+        try:
+            target = TicketStatus(requested)
+        except ValueError:
+            raise BadStatusChoice("That is not a status")
+        if target != ticket.status and target not in choices:
+            raise BadStatusChoice(f"The status cannot be set to {target.value.replace('_', ' ')} here")
+    return None if target == ticket.status else target
 
 
 def preview_email(
-    session: Session, ticket: Ticket, body: str, cc_emails: Optional[list[str]] = None
+    session: Session,
+    ticket: Ticket,
+    body: str,
+    cc_emails: Optional[list[str]] = None,
+    next_status: Optional[str] = None,
 ) -> EmailPreview:
     """Checks an email exactly as email_requester does and returns what it would send."""
     if not is_triaged(ticket):
@@ -113,12 +174,14 @@ def preview_email(
     if not body.strip():
         raise EmptyEmail()
     chosen = _copied_followers(session, ticket, cc_emails)
+    status_after = chosen_status(session, ticket, next_status, default_status_after_email(ticket))
     return EmailPreview(
         to=ticket.requester_email,
         cc=[f.email for f in chosen],
         subject=mail_subject(session, ticket),
         about=about_text(ticket) if in_a_split(session, ticket) else None,
         body=body,
+        status_after=status_after,
     )
 
 

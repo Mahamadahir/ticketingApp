@@ -1,0 +1,13 @@
+{# The next-status dropdown on Email user and Add note. Needs: message_statuses, blank_label, ticket.
+   The first option sends nothing, so the server applies its default at send time and a ticket that
+   changed since the page loaded is not overwritten by a stale choice. #}
+{% if message_statuses %}
+<label>Ticket status after this
+  <select name="next_status">
+    <option value="" selected>{{ blank_label }}</option>
+    {% for s in message_statuses %}
+    <option value="{{ s.value }}">{{ s.value.replace("_", " ") }}{{ " (current)" if s == ticket.status else "" }}</option>
+    {% endfor %}
+  </select>
+</label>
+{% endif %}

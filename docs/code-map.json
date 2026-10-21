@@ -932,6 +932,7 @@
     },
     {
       "classes": [
+        "BadStatusChoice",
         "EmailPreview",
         "EmptyEmail",
         "TimelineItem",
@@ -943,6 +944,8 @@
         "about_text",
         "add_note",
         "agent_timeline",
+        "chosen_status",
+        "default_status_after_email",
         "email_requester",
         "in_a_split",
         "is_triaged",
@@ -951,6 +954,7 @@
         "record_inbound",
         "record_notice",
         "requester_visible_messages",
+        "status_choices",
         "thread_subject"
       ],
       "imported_by": [
@@ -972,6 +976,7 @@
         "app.notifications",
         "app.outbox",
         "app.sla",
+        "app.splitting",
         "app.ticket_service",
         "app.visibility"
       ],
@@ -2593,6 +2598,7 @@
       ],
       "imported_by": [
         "app.inbound",
+        "app.messages",
         "app.resolution",
         "app.routers.portal",
         "app.routers.tickets",

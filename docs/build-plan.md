@@ -80,6 +80,7 @@ managed identity, Application Insights, the public app) live in the staging chec
 - Approval groups, withdrawing a request, and chasing approvers by email and Teams (decisions log, 21 and 22 Oct 2026).
 - The acknowledgement email, the never-follow list and the inbound limits as admin settings (the three small PRs below).
 - Out-of-office lookup bookkeeping: `User.last_presence_lookup_at` and `is_active` (built, 4B-4; see below).
+- Status dropdown on Email user and Add note: built (4B-5, `status_choices`, `chosen_status` and `default_status_after_email` in `app/messages.py`, the `next_status` form field in `app/routers/tickets.py`, `_next_status.html`; no migration).
 - Database-driven recurring jobs: built (4A, `app/scheduled_jobs.py`); see "How to add a recurring job" below. Moving the old APScheduler jobs onto it, and the 18:00 MSP handoff, are phase 5.
 
 **How to add a recurring job (4A).** Jobs that must not be missed (auto-close, chase, approval reminders, later the MSP
@@ -157,7 +158,7 @@ with `createReply` (sendMail returns no id, so a sent message has none).
   re-assign it to any team and then loses sight of it. Whether re-assign should be limited to
   teams the agent can see is undecided.
 
-**Small PRs from the decisions below (not started):** unassign tickets when an agent is removed from a team, category change after triage, per-user timezone display, and the status dropdown on Email user / Add note (agreed 14 Oct, replaces "emailing always moves to Awaiting user": the agent picks the status, default Awaiting user; the preview must show the chosen status; see "Status follows the conversation" in `docs/plan.md`). Today an email still always moves an Open or In progress ticket to Awaiting user.
+**Small PRs from the decisions below (not started):** unassign tickets when an agent is removed from a team, category change after triage and per-user timezone display. (The status dropdown on Email user / Add note is built, 4B-5; see the decisions log.)
 
 
 **Email preview for the other emails.** The step exists for agent replies (1G-ii). Resolution emails (phase 4), MSP forwards and bulk resolves (listing every linked ticket and recipient) must reuse it, and automatic emails need admin-managed templates previewed when edited. Per-person opt-out of the "raised for you" email joins the setting when user notification settings exist.
@@ -278,6 +279,8 @@ sleep, restart it and `docker start ticketingapp-db-1`.
   in the service functions commits; the route commits.
 
 ## Decisions log
+
+- 21 Oct 2026: **status dropdown on Email user and Add note (4B-5).** Both forms end with a "Ticket status after this" dropdown offering Open, In progress, Awaiting user, With supplier and With MSP. New (left only by triage), Awaiting approval (left only by the approvers), Resolved and Closed (the Resolve action) are never offered, and a request naming one is refused with a 400 before anything is sent or noted. The default for an email is Awaiting user on an Open or In progress ticket and the current status otherwise; for a note it is the current status, so a note alone never moves a ticket. The dropdown's first option sends nothing ("Default: awaiting user" / "No change (open)") and the server applies the default when the form arrives, so a page left open cannot overwrite a status that changed meanwhile (found in code review); a request with no `next_status` field behaves the same. No dropdown, and no status change, for an untriaged ticket, one waiting for approval, a Resolved or Closed ticket (reopening is its own flow, so a message cannot reopen) and a split original (its status follows its parts); a part is an ordinary ticket. A note that changes status needs work access, not just read access. The preview shows the chosen status and carries it to the send. The change goes through `set_status`, so it is the usual status event, audit entry and SLA pause/resume.
 
 - 21 Oct 2026: With supplier does **not** pause the SLA clock (only Awaiting user does). A requester or follower reply on a With supplier ticket changes nothing in status but notifies the assigned agent, whatever the status. Chase emails to the supplier are a later feature.
 - 21 Oct 2026: a reply on a triaged ticket with no assignee notifies nobody. The first mail catch-up starts from now and back-fills nothing; the backfill-days setting applies only after a Graph 410 reset. So create the subscription first and send test mail only after the first catch-up run; mail from before that point is never ingested.

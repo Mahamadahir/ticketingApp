@@ -6,7 +6,7 @@
   {% if preview.about %}<p class="note">{{ preview.about }} (this email is about one part of a split request)</p>{% endif %}
   <pre class="message-body">{{ preview.body }}</pre>
   <p class="note">
-    {% if status_after %}Sending moves this ticket to {{ status_after.value.replace("_", " ") }} and pauses its SLA clock.
+    {% if preview.status_after %}Sending moves this ticket to {{ preview.status_after.value.replace("_", " ") }}{% if preview.status_after.value == "awaiting_user" %} and pauses its SLA clock{% endif %}.
     {% else %}Sending leaves the ticket's status as it is.{% endif %}
     The email is recorded on the ticket and goes to the requester.
   </p>
@@ -17,6 +17,7 @@
     <input type="hidden" name="cc_form" value="1" />
     {% for address in ticked %}<input type="hidden" name="cc" value="{{ address }}" />{% endfor %}
     {% endif %}
+    {% if next_status %}<input type="hidden" name="next_status" value="{{ next_status }}" />{% endif %}
     <button type="submit">Send email</button>
     <button type="button" class="button-outline" hx-on:click="document.getElementById('email-preview').innerHTML = ''">Keep editing</button>
   </form>
