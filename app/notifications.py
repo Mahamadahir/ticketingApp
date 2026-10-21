@@ -1,7 +1,8 @@
 """In-app notifications (phase 2A): the bell. Something happens that an agent should know about,
 a row is written for them, and the bell counts what they have not read.
 
-For now two things notify: a ticket being assigned to you, and an @mention in an internal note.
+Three things notify: a ticket being assigned to you, an @mention in an internal note, and the
+requester (or a follower) replying on your ticket.
 Later phases add Teams (an unread notification is also sent to Teams after a delay, P1s and SLA
 breaches) and skipping agents who are out of office. Which events reach which channel is each
 person's choice (app/notification_settings.py); notify() honours the in-app one. Everything
@@ -19,13 +20,14 @@ from typing import Callable, Optional
 from sqlalchemy import and_, func, or_, update
 from sqlmodel import Session, select
 
-from app.models import Message, Notification, Ticket, User, UserRole
+from app.models import FINISHED_STATUSES, Message, Notification, Ticket, User, UserRole
 from app.notification_settings import IN_APP, TEAMS, is_enabled, offers
 from app.settings_store import TEAMS_UNREAD_MINUTES, get_int_setting
 from app.visibility import Access, access_context, ticket_access, visible_ticket_condition
 
 ASSIGNED = "assigned"
 MENTIONED = "mentioned"
+REPLIED = "replied"
 AGENT_ROLES = (UserRole.AGENT, UserRole.SUPER_ADMIN)
 
 # @alice or @alice@example.com: letters, digits, dots, dashes and underscores.
@@ -108,6 +110,36 @@ def notify_mentions(
         if made is not None:
             notifications.append(made)
     return notifications
+
+
+def notify_reply(session: Session, ticket: Ticket, replier_email: str) -> list[Notification]:
+    """Tells the assigned agent ("Ticket updated by <name>") that the requester (or a follower) replied, whatever the ticket's status:
+    a reply on a ticket with the MSP or a supplier moves nothing, so this is the only sign of it. A reply
+    on a split original also tells the assignees of its open parts, since each of them sees the reply.
+    Each agent once; never the replier; nobody who cannot open the ticket they are told about. A ticket
+    nobody is assigned to tells nobody (an open question in docs/build-plan.md). Does not commit."""
+    replier = session.exec(select(User).where(func.lower(User.email) == replier_email.lower())).first()
+    name = (replier.display_name or "").strip() if replier is not None else ""
+    name = name or replier_email  # a follower without an account, or no name: their email
+    targets = [ticket]
+    targets += session.exec(
+        select(Ticket).where(Ticket.split_from_id == ticket.id, Ticket.status.not_in(FINISHED_STATUSES)).order_by(Ticket.id)
+    ).all()
+    told: set[int] = set()
+    made: list[Notification] = []
+    for target in targets:
+        if target.assigned_agent_id is None or target.assigned_agent_id in told:
+            continue
+        agent = session.get(User, target.assigned_agent_id)
+        if agent is None or not _can_open(session, agent, target):
+            continue
+        notification = notify(
+            session, agent, REPLIED, target, f"{target.tag} {target.subject}: Ticket updated by {name}", replier_email
+        )
+        if notification is not None:
+            told.add(agent.id)
+            made.append(notification)
+    return made
 
 
 def visible_to(session: Session, user: User):

@@ -44,6 +44,7 @@ not exist (`infra/` compiles but has never run against a subscription).
 | 2C-ii unread-after-N-minutes notification to Teams: which notifications want a copy and when (Teams-only rows, per-person delay, admin default), then queued in the Teams outbox and sent by the worker | merged (#42) | `app/notifications.py`, `app/teams.py`, `app/notification_settings.py` |
 | 2D Teams channel webhook for new tickets: outbox, card, sender, worker job (Bicep wired) | merged (#40) | `app/teams.py` |
 | 2E out-of-office detection (Graph presence): the worker's `presence` job stores each agent's flag; OOO agents are labelled in the assignee pickers and left out of team-wide notifications | merged (#44) | `app/presence.py` |
+| Reply notification: the assigned agent is told when the requester or a follower replies, whatever the status | PR open | `app/notifications.py` (`notify_reply`), `app/messages.py` |
 | Phase 2 | complete | |
 | With supplier status (waiting on an outside supplier or vendor; set by hand, SLA clock keeps running) | merged (#53) | `app/models.py`, migration `a9d3c6e1f275` |
 | 3A public surface: `APP_ROLE` split (`build_app` in `app/main.py`), Graph webhook stores each notification and returns 202, rate limiting, approval tokens kept out of the access log | built, in review | `app/main.py`, `app/routers/webhooks.py`, `app/rate_limit.py`, `app/log_redaction.py` |
@@ -55,7 +56,7 @@ not exist (`infra/` compiles but has never run against a subscription).
 | 3F wiring: Bicep and deploy workflow for the public app, mailbox, storage, Application Insights | not started | |
 | Phases 4 to 9 | not started | `docs/plan.md`, "Build order" |
 
-Tests: 934 passing on Postgres 16.
+Tests: 953 passing on Postgres 16.
 
 ## Next up
 
@@ -260,6 +261,8 @@ sleep, restart it and `docker start ticketingapp-db-1`.
   and comments, never ticket events, so an escalated ticket nobody wrote on sends just
   the original request. Teams also get an admin toggle for the automatic 18:00 handoff
   (`docs/plan.md`, "MSP").
+- 20 Oct: a reply from the requester or a follower notifies the ticket's assignee only, as "Ticket updated by <display name>"
+  (their email when they have no name). Decided: when there is no assignee, no one is notified (not the team).
 - 14 Oct: added phase 10 (security hardening and go-live gate) to `docs/plan.md`, and agreed that
   background work is driven by the database (rows with leases and retries) rather than in-memory
   timers. Where that stands (20 Oct): sending is built that way (the `TeamsPost` and `OutboundEmail`

@@ -457,7 +457,7 @@ without anyone remembering to set it by hand.
   is Awaiting user, it moves back to In progress automatically and the SLA clock
   resumes. This covers portal comments now and email replies once mail intake
   exists. A reply on a New ticket changes nothing; on a With supplier or With MSP ticket it changes
-  nothing (the agent decides); on a Resolved or Closed ticket it is the reopen flow
+  nothing (the agent decides, and the assigned agent is notified); on a Resolved or Closed ticket it is the reopen flow
   in phase 4.
 - Both moves are ordinary status events in the timeline and the audit log, with
   the person who caused them.
@@ -933,6 +933,16 @@ Automatic emails use admin-managed templates, previewed when edited.
   mail sends only if it asks again at send time and still gets "yes" (the event is history for the agent and can be stale: the switch or the person's choice may change before the email goes). Saving the settings page takes a per-person lock, so a double click or two
   open tabs queue up instead of both inserting the same row. Preferences stored for an event a role
   does not have are harmless: only agents are ever notified, and the choice returns with the role.
+- A reply notifies the assigned agent, whatever the ticket's status.
+  *Built (20 Oct 2026):* event type `replied` ("A ticket assigned to you is updated by the requester"; bell and Teams,
+  both on by default; Teams label "Ticket updated"; bell text "#42 Printer jam: Ticket updated by Jo Bloggs", the replier's display name, else their email). When the requester or a follower replies, the ticket's assignee is told in every status,
+  including Awaiting user, With MSP, Resolved and Closed, where the reply moves nothing and this is the
+  only sign of it. It is raised in `record_inbound` (`app/messages.py`) only when the caller passes
+  `reply_by`, so the message a ticket is created with (portal raise, raise on behalf, simulate-inbound)
+  tells nobody. A reply on a split original also tells the assignees of its open parts, each person once.
+  Never the person who replied; only agents who can open the ticket; the per-person channel settings
+  apply. A New ticket has no assignee, so nobody is told. A triaged ticket nobody owns also tells
+  nobody (decided: no one is notified when there is no assignee).
 - A notification still unread after N minutes (user setting, default 5) is
   also sent to Teams.
   *Built in 2C-ii (20 Oct 2026):* a notification is written whenever

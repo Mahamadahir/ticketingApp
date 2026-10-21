@@ -300,7 +300,7 @@ def add_comment(
 ):
     ticket = _get_commentable_ticket(session, number, user)
 
-    record_inbound(session, ticket, sender=user.display_name, body=body, author_user_id=user.id)
+    record_inbound(session, ticket, sender=user.display_name, body=body, author_user_id=user.id, reply_by=user.email)
     log_action(session, user.email, "ticket", ticket.id, "commented", body[:200])
     # A reply from the requester or a follower hands the ticket back to us: it leaves
     # Awaiting user, which resumes the SLA clock. Any other status is left alone (a

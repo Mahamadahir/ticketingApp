@@ -150,7 +150,7 @@ def queue_notification(session: Session, notification: Notification) -> TeamsPos
     return post
 
 
-KIND_LABELS = {"assigned": "Assigned to you", "mentioned": "You were mentioned"}
+KIND_LABELS = {"assigned": "Assigned to you", "mentioned": "You were mentioned", "replied": "Ticket updated"}
 
 
 def mention_name(user: User) -> str:
