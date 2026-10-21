@@ -13,6 +13,8 @@ Read in this order: `CLAUDE.md` (rules), this file, then the sections of
 Nothing is deployed. Everything is built and tested locally; Azure resources do
 not exist (`infra/` compiles but has never run against a subscription).
 
+The app is not live and has no users; open questions are design choices, not live risks.
+
 | Item | State | Where |
 |---|---|---|
 | Phase 0 (security, Alembic, health, lockout, pagination) | merged | |
@@ -65,6 +67,8 @@ handling, the auto-reply filter, attachments in Blob Storage, and the `public` a
 order"). Phase 3 also carries the approval emails with the link from `app/approval_links.py`, and the email channel for the
 notification settings that 2B stores and nothing yet sends. The Graph client in `app/graph_client.py` still has `send_mail`,
 `create_subscription` and `get_message` stubbed; the presence calls are the first real ones.
+
+**Small PR planned (decided 21 Oct 2026): out-of-office lookup bookkeeping (2E follow-up).** Add `User.last_presence_lookup_at`, skip a user whose lookup failed or found nobody until a retry interval setting has passed, and consider an `is_active` flag so inactive agents are not polled (`docs/plan.md`, "Notifications"). Own migration, tested with simulated Graph responses. Independent of 3B to 3F, so it can go in any gap; decide whether `is_active` is in or out when it starts.
 
 **Phase 3 plan (agreed 20 Oct 2026; order: 3A, 3B, then 3D with 3C and 3E alongside).**
 - *3A Public surface:* the `APP_ROLE` split (web / public / worker) with per-role settings checks (the public app and worker need no
@@ -231,6 +235,10 @@ sleep, restart it and `docker start ticketingapp-db-1`.
 
 ## Decisions log
 
+- 21 Oct 2026: With supplier does **not** pause the SLA clock (only Awaiting user does). A requester or follower reply on a With supplier ticket changes nothing in status but notifies the assigned agent, whatever the status. Chase emails to the supplier are a later feature.
+- 21 Oct 2026: a reply on a triaged ticket with no assignee notifies nobody. The first mail catch-up starts from now and back-fills nothing; the backfill-days setting applies only after a Graph 410 reset. So create the subscription first and send test mail only after the first catch-up run; mail from before that point is never ingested.
+- 21 Oct 2026: approvals will let an approver hand an approval to someone else when they are away, and let the requester withdraw a request while it waits (both to build with the approvals follow-up, phase 4). How handing over works is still open (Open questions).
+- 21 Oct 2026: the out-of-office "last looked up" column is planned now as a small PR, not left until the logs show a problem (see "Next up").
 - 20 Oct 2026: dependency hygiene is two PRs. PR 1 (this one): kept `httpx2` (nothing in our code imports it, but Starlette's `TestClient` prefers it and warns "install httpx2 instead" when only `httpx` is present, so it is the test client's backend), removed `pytest-cov` (no `--cov` in pytest.ini, CI or docs) and the `uvicorn[standard]` extras (the entrypoint uses `--workers`, never `--reload`; plain uvicorn falls back to asyncio and h11); Dependabot; `pip-audit` in its own workflow so the `test` check is untouched (a requirements change on a PR, nightly at 05:17 UTC, manual run). PR 2 (after PR 1 merges): a lock file with hashes installed with `--require-hashes`, the base image pinned by digest, actions pinned by SHA (azure/login first) and htmx vendored into `app/static`. Dependabot cannot yet bump transitives; PR 2 fixes that. The nightly failure notice goes to whoever last edited the cron line; if that is not the right person, edit the line.
 - 20 Oct 2026: out of office is a label in the assignee pickers, never a block or a skip. Sometimes only one person can fix a
   problem, so they are assigned regardless of availability and deal with it when free. Do not turn it into a refusal or a filter.
@@ -313,20 +321,20 @@ sleep, restart it and `docker start ticketingapp-db-1`.
   (2) Exchange may give two separate mails with the same subject the same `conversationId`; a new mail from the requester could then join
   an old (even closed) ticket until phase 4's "reply after closure makes a new ticket". (3) Nothing yet acknowledges a new ticket ("your ticket
   is open"); that automatic notice is not built. (4) Mail is trusted on its From address (Mimecast / Exchange are expected to enforce
-  SPF, DKIM and DMARC); the code does not read Authentication-Results. (5) The Cc of an alias or distribution list becomes a follower like a person. (6) The own-mail guard compares the exact From address, so mail from an alias of the mailbox is caught only by its headers; list the mailbox's aliases if there are any.
-- **With supplier: should it pause the SLA clock?** Built with the clock running (only Awaiting user pauses it today), so time spent
-  waiting on a supplier counts against the target. Pausing would be one line in `app/sla.py` `on_status_change`, but it would make a
-  ticket look healthy while it waits on someone we do not control. Also decide whether a requester reply on a With supplier ticket
-  should stay a no-op (built: it changes nothing, like With MSP) and whether chase emails to the supplier are wanted later.
-- **Out-of-office lookups (2E).** A directory lookup that fails or finds nobody is retried on every 15-minute run, and inactive agents are
-  polled (there is no active flag). A "last looked up" column to stop the retries is worth doing if the logs show repeated failed
-  lookups. One failing batch (only above 650 agents) rolls back the whole run; the three-hour stale cutoff makes that safe.
+  SPF, DKIM and DMARC); the code does not read Authentication-Results. (5) The Cc of an alias or distribution list becomes a follower like a person. (6) The own-mail guard compares the exact From address, so mail from an alias of the mailbox is caught only by its headers; the aliases are listed when the mailbox is created (staging checklist, "Mailbox setup").
+- **Out-of-office lookups (2E).** One failing batch (only above 650 agents) rolls back the whole run; the three-hour stale cutoff makes that safe. The retry and inactive-agent items are planned (see "Next up").
 - **How a Teams copy reaches a person (built on working defaults; say if any should change).** A Workflows webhook posts to a channel, not to one person, so the copy is a post in the support channel that @mentions the person by email (messaging a person directly is the phase 8 bot). Defaults taken: the row is always written when either channel is wanted (Teams-only rows hidden from the bell); a nullable per-person delay with an admin default of 5 minutes; the same channel and webhook as the new-ticket cards, behind its own switch; the outbox's retries (backoff, give up after 8 tries or at once on a refused request). Only staging can prove the mention resolves.
-- **Approvals, remaining.** Approval emails and chasing (email and Teams) wait for phase 3. Not decided: whether an approver may delegate (someone on leave), and whether a request should be able to be withdrawn by its requester while it waits. Today an absent approver is handled by a super admin waiving the approval.
+- **Approvals, remaining: how an approver hands over.** Approval emails and chasing (email and Teams) wait for phase 3. Decided 21 Oct 2026: an approver may hand an approval to someone else when away, and a requester may withdraw a request while it waits (both with the approvals follow-up, phase 4). Still open, the model for handing over:
+  (a) The approver, or a super admin, re-assigns that one approval to another eligible approver for that request. It is audited.
+      No standing delegate accounts. Recommended.
+  (b) Each approver names a standing delegate with a date range, and approvals in that range go to the delegate.
+      More to build and more to get wrong (stale ranges, who sees what). Until then a super admin waiving the approval covers an absent approver.
 - **MSP escalation (assumption to confirm).** Until the MSP handoff is built (phase 5) a
   category whose target is the MSP cannot be escalated.
 
 ## Staging checklist (Azure-only, cannot be proved locally)
+
+- Mailbox setup (not started): the shared mailbox address and its aliases are not defined yet. When the mailbox is created, list every alias (and any distribution list that delivers into it) so the own-mail guard in `app/inbound.py` can recognise mail from the mailbox itself; today it compares the exact From address and otherwise relies on headers. The app has no setting for aliases yet (`GRAPH_SHARED_MAILBOX` holds one address), so a small code change (an alias list setting) is needed once the aliases are known. Set `GRAPH_SHARED_MAILBOX` to the address and check that mail sent from an alias is not turned into a ticket.
 
 - Outbound mail (3D): set `MAIL_SENDING=graph` on the worker with the Graph app and `GRAPH_SHARED_MAILBOX` (Mail.Send, admin-consented and limited to that mailbox). Reply to a ticket from the app and check the requester receives it from the shared mailbox with `[INC-n] subject` as the subject and the followers copied; check the mail is not caught by Mimecast or spam, that `X-Auto-Response-Suppress` is accepted as a custom header, and that a reply from the requester (their mail client adds "Re:") still carries the reference. Raise a ticket for someone and check the "raised for you" email; send an approval request and check the link opens the page and decides nothing on GET. Force a 403 (remove the grant) and check the email waits and goes once it is fixed. Try `MAIL_SENDING=dev` locally first and read the text at Admin > Outbound mail.
 
