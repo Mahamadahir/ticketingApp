@@ -30,6 +30,7 @@ MENTIONED = "mentioned"
 REPLIED = "replied"
 REOPENED = "reopened"
 APPROVAL_WITHDRAWN = "approval_withdrawn"
+APPROVAL_OVERDUE = "approval_overdue"
 AGENT_ROLES = (UserRole.AGENT, UserRole.SUPER_ADMIN)
 
 # @alice or @alice@example.com: letters, digits, dots, dashes and underscores.
@@ -325,4 +326,15 @@ def notify_approval_withdrawn(session: Session, ticket: Ticket, approver: User, 
     return notify(
         session, approver, APPROVAL_WITHDRAWN, ticket,
         f"{ticket.tag} {ticket.subject} was withdrawn by the requester, so it no longer needs your approval", actor_email,
+    )
+
+
+def notify_approval_overdue(session: Session, ticket: Ticket, super_admin: User, days: int, unanswered: int) -> Optional[Notification]:
+    """Tells a super admin a request has waited too long for approval (app/approval_reminders.py), so they can
+    chase the approvers or waive it. Only if they can open the ticket. Does not commit."""
+    if not _can_open(session, super_admin, ticket):
+        return None
+    return notify(
+        session, super_admin, APPROVAL_OVERDUE, ticket,
+        f"{ticket.tag} {ticket.subject} has waited {days} days for approval ({unanswered} had not answered)", None,
     )

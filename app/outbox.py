@@ -22,6 +22,7 @@ REPLY = "reply"  # an agent's email to the requester (counts as a first response
 NOTICE = "notice"  # an automatic message to the requester (an approval decision, say)
 RAISED_FOR = "raised_for_you"  # "an agent raised a ticket for you"
 APPROVAL = "approval"  # asks an approver to approve or decline
+APPROVAL_REMINDER = "approval_reminder"  # chases an approver who has not answered
 APPROVAL_WITHDRAWN = "approval_withdrawn"  # tells an approver the requester withdrew the request
 ACKNOWLEDGEMENT = "acknowledgement"  # "your issue has been logged", once, for a ticket that arrived by email
 FOLLOWER_UPDATE = "follower_update"  # an inbound update passed to someone who was not on the mail it came in
@@ -65,13 +66,26 @@ def queue_raised_for(session: Session, ticket: Ticket) -> Optional[OutboundEmail
 def queue_approval(session: Session, vote: ApprovalVote, approver: User) -> Optional[OutboundEmail]:
     """Queues the email asking one voter (one email per member). The link in it is made when it is sent.
     Nothing is queued for someone who switched these emails off; the request still shows in their portal."""
+    return _queue_to_approver(session, APPROVAL, vote, approver)
+
+
+def _queue_to_approver(session: Session, kind: str, vote: ApprovalVote, approver: User) -> Optional[OutboundEmail]:
+    """The one rule for an email that asks an approver (the request or a reminder): mail on, and the person
+    wants approval emails. Nothing else decides who is asked."""
     if not is_on() or not wants_approval_email(session, approver):
         return None
     session.flush()
     approval = session.get(TicketApproval, vote.approval_id)
-    row = OutboundEmail(kind=APPROVAL, ticket_id=approval.ticket_id, vote_id=vote.id, to_address=approver.email)
+    row = OutboundEmail(kind=kind, ticket_id=approval.ticket_id, vote_id=vote.id, to_address=approver.email)
     session.add(row)
     return row
+
+
+def queue_approval_reminder(session: Session, vote: ApprovalVote, approver: User) -> Optional[OutboundEmail]:
+    """Queues a reminder to one voter who has not answered (app/approval_reminders.py decides when). None
+    when mail is off or the person switched approval emails off; the caller then does not count a reminder.
+    Whether it is still wanted is asked again when it is sent."""
+    return _queue_to_approver(session, APPROVAL_REMINDER, vote, approver)
 
 
 def queue_approval_withdrawn(session: Session, vote: ApprovalVote, approver: User) -> Optional[OutboundEmail]:

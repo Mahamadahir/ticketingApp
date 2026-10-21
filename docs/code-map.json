@@ -49,6 +49,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/962d0f5d6bed_approval_reminders.py",
+        "revision": "962d0f5d6bed"
+      },
+      {
         "file": "migrations/versions/dddff5e5bec9_related_tickets_for_a_reply_after_.py",
         "revision": "dddff5e5bec9"
       },
@@ -63,17 +67,13 @@
       {
         "file": "migrations/versions/a3483204f1e2_presence_retry_bookkeeping_and_is_active.py",
         "revision": "a3483204f1e2"
-      },
-      {
-        "file": "migrations/versions/158132f3603a_resolution_fields.py",
-        "revision": "158132f3603a"
       }
     ],
-    "count": 38,
+    "count": 39,
     "heads": [
       {
-        "file": "migrations/versions/dddff5e5bec9_related_tickets_for_a_reply_after_.py",
-        "revision": "dddff5e5bec9"
+        "file": "migrations/versions/962d0f5d6bed_approval_reminders.py",
+        "revision": "962d0f5d6bed"
       }
     ]
   },
@@ -133,6 +133,7 @@
         "types_using"
       ],
       "imported_by": [
+        "app.approval_reminders",
         "app.approvals",
         "app.mail",
         "app.request_types",
@@ -148,6 +149,7 @@
       "tables": [],
       "tests": [
         "tests/test_approval_groups.py",
+        "tests/test_approval_reminders.py",
         "tests/test_approvals.py",
         "tests/test_outbound_mail.py",
         "tests/test_request_types.py"
@@ -174,6 +176,33 @@
       "tests": [
         "tests/test_approvals.py",
         "tests/test_outbound_mail.py"
+      ]
+    },
+    {
+      "classes": [],
+      "file": "app/approval_reminders.py",
+      "functions": [
+        "send_approval_reminders"
+      ],
+      "imported_by": [
+        "app.scheduled_jobs"
+      ],
+      "imports": [
+        "app.approval_groups",
+        "app.approvals",
+        "app.audit",
+        "app.models",
+        "app.notifications",
+        "app.outbox",
+        "app.settings_store",
+        "app.teams"
+      ],
+      "module": "app.approval_reminders",
+      "routes": [],
+      "summary": "Approval reminders (phase 4C-3): chase approvers who have not answered. A recurring job on the",
+      "tables": [],
+      "tests": [
+        "tests/test_approval_reminders.py"
       ]
     },
     {
@@ -204,6 +233,7 @@
         "withdraw"
       ],
       "imported_by": [
+        "app.approval_reminders",
         "app.mail",
         "app.request_types",
         "app.routers.approvals",
@@ -226,6 +256,7 @@
       "summary": "Approvals (phase 1H, groups in 4C-1): a ticket that needs sign-off before the work goes ahead.",
       "tables": [],
       "tests": [
+        "tests/test_approval_reminders.py",
         "tests/test_approvals.py",
         "tests/test_email_templates.py",
         "tests/test_outbound_mail.py",
@@ -271,6 +302,7 @@
         "log_action"
       ],
       "imported_by": [
+        "app.approval_reminders",
         "app.approvals",
         "app.escalation",
         "app.inbound",
@@ -486,6 +518,7 @@
       "tests": [
         "tests/test_acknowledgement.py",
         "tests/test_activity_log.py",
+        "tests/test_approval_reminders.py",
         "tests/test_attachments.py",
         "tests/test_follower_updates.py",
         "tests/test_inbound_mail.py",
@@ -536,6 +569,7 @@
         "tests/conftest.py",
         "tests/test_access_context.py",
         "tests/test_approval_groups.py",
+        "tests/test_approval_reminders.py",
         "tests/test_approvals.py",
         "tests/test_auth.py",
         "tests/test_category_admin.py",
@@ -931,6 +965,7 @@
         "automatic_cap",
         "build_acknowledgement_mail",
         "build_approval_mail",
+        "build_approval_reminder_mail",
         "build_approval_withdrawn_mail",
         "build_follower_update_mail",
         "build_message_mail",
@@ -972,6 +1007,7 @@
       "tables": [],
       "tests": [
         "tests/test_acknowledgement.py",
+        "tests/test_approval_reminders.py",
         "tests/test_email_templates.py",
         "tests/test_follower_updates.py",
         "tests/test_outbound_mail.py",
@@ -1146,6 +1182,7 @@
       "imported_by": [
         "app.activity",
         "app.approval_groups",
+        "app.approval_reminders",
         "app.approvals",
         "app.attachments",
         "app.audit",
@@ -1334,6 +1371,7 @@
         "tests/test_activity_log.py",
         "tests/test_admin.py",
         "tests/test_approval_groups.py",
+        "tests/test_approval_reminders.py",
         "tests/test_approvals.py",
         "tests/test_attachments.py",
         "tests/test_auth.py",
@@ -1470,6 +1508,7 @@
         "mark_read",
         "mentioned_in",
         "notify",
+        "notify_approval_overdue",
         "notify_approval_withdrawn",
         "notify_assigned",
         "notify_mentions",
@@ -1479,6 +1518,7 @@
         "visible_to"
       ],
       "imported_by": [
+        "app.approval_reminders",
         "app.approvals",
         "app.escalation",
         "app.jobs",
@@ -1513,12 +1553,14 @@
         "is_on",
         "queue_acknowledgement",
         "queue_approval",
+        "queue_approval_reminder",
         "queue_approval_withdrawn",
         "queue_follower_update",
         "queue_message",
         "queue_raised_for"
       ],
       "imported_by": [
+        "app.approval_reminders",
         "app.approvals",
         "app.follower_updates",
         "app.inbound",
@@ -1537,6 +1579,7 @@
       "tables": [],
       "tests": [
         "tests/test_acknowledgement.py",
+        "tests/test_approval_reminders.py",
         "tests/test_email_templates.py",
         "tests/test_follower_updates.py",
         "tests/test_outbound_mail.py",
@@ -2679,6 +2722,7 @@
         "app.worker"
       ],
       "imports": [
+        "app.approval_reminders",
         "app.audit",
         "app.database",
         "app.models",
@@ -2689,6 +2733,7 @@
       "summary": "Recurring jobs driven by the database (phase 4A): the `scheduled_job` table.",
       "tables": [],
       "tests": [
+        "tests/test_approval_reminders.py",
         "tests/test_scheduled_jobs.py"
       ]
     },
@@ -2728,6 +2773,7 @@
         "sla_key"
       ],
       "imported_by": [
+        "app.approval_reminders",
         "app.categories",
         "app.inbound",
         "app.mail",
@@ -2750,6 +2796,7 @@
       "tables": [],
       "tests": [
         "tests/test_acknowledgement.py",
+        "tests/test_approval_reminders.py",
         "tests/test_approvals.py",
         "tests/test_category_admin.py",
         "tests/test_follower_updates.py",
@@ -2971,6 +3018,7 @@
         "queue_notification"
       ],
       "imported_by": [
+        "app.approval_reminders",
         "app.inbound",
         "app.jobs",
         "app.mail",
@@ -3506,6 +3554,7 @@
     "tests/test_admin.py",
     "tests/test_approval_groups.py",
     "tests/test_approval_groups_migration.py",
+    "tests/test_approval_reminders.py",
     "tests/test_approvals.py",
     "tests/test_attachments.py",
     "tests/test_auth.py",

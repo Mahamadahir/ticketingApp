@@ -38,6 +38,11 @@ JOB_LATE_MINUTES = "scheduled_job_late_minutes"
 PRESENCE_RETRY_MINUTES = "presence_retry_minutes"
 APPROVAL_DEFAULT_PASS_PERCENT = "approval_default_pass_percent"
 APPROVAL_DEFAULT_FAIL_PERCENT = "approval_default_fail_percent"
+APPROVAL_REMINDERS_ENABLED = "approval_reminders_enabled"
+APPROVAL_REMIND_AFTER_DAYS = "approval_remind_after_days"
+APPROVAL_REMIND_EVERY_DAYS = "approval_remind_every_days"
+APPROVAL_MAX_REMINDERS = "approval_max_reminders"
+APPROVAL_ESCALATE_AFTER_DAYS = "approval_escalate_after_days"
 
 # PLACEHOLDER SLA targets, in minutes on a 24/7 clock, until the real ones are agreed
 # (TBC in docs/plan.md). They are settings, changed under Admin > Settings; a blank
@@ -247,6 +252,48 @@ REGISTRY: dict[str, SettingDef] = {
         kind="vote_percent",
         description="Pre-filled on the New request type form; each type keeps its own number. Placeholder.",
         default="50",
+    ),
+    APPROVAL_REMINDERS_ENABLED: SettingDef(
+        key=APPROVAL_REMINDERS_ENABLED,
+        label="Approval reminders: send them",
+        kind="flag",
+        description=(
+            "On: an approver who has not answered a request is emailed a reminder (and, if the request goes "
+            "unanswered for long enough, the super admins are told). Off until staging, like the other "
+            "automations; switch it on once mail is proved there."
+        ),
+        default="off",
+    ),
+    APPROVAL_REMIND_AFTER_DAYS: SettingDef(
+        key=APPROVAL_REMIND_AFTER_DAYS,
+        label="Approval reminders: first reminder after (days)",
+        kind="count",
+        description="An approver who has not answered is first reminded this many days after the request was sent to them. Placeholder.",
+        default="2",
+    ),
+    APPROVAL_REMIND_EVERY_DAYS: SettingDef(
+        key=APPROVAL_REMIND_EVERY_DAYS,
+        label="Approval reminders: repeat every (days)",
+        kind="count",
+        description="After the first reminder, an approver who still has not answered is reminded again this many days after the last one. Placeholder.",
+        default="2",
+    ),
+    APPROVAL_MAX_REMINDERS: SettingDef(
+        key=APPROVAL_MAX_REMINDERS,
+        label="Approval reminders: most reminders to one approver",
+        kind="count",
+        description="Each approver is reminded at most this many times about one request, then left alone. Placeholder.",
+        default="3",
+    ),
+    APPROVAL_ESCALATE_AFTER_DAYS: SettingDef(
+        key=APPROVAL_ESCALATE_AFTER_DAYS,
+        label="Approval reminders: tell the super admins after (days)",
+        kind="count",
+        description=(
+            "A request still waiting this many days after it was sent is brought to the super admins' attention "
+            "in the bell, once. They can then waive it or chase the approvers. Placeholder."
+        ),
+        default="7",
     ),
     SLA_AT_RISK_PERCENT: SettingDef(
         key=SLA_AT_RISK_PERCENT,
