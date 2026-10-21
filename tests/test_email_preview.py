@@ -203,3 +203,48 @@ def test_the_tell_the_requester_setting_defaults_on_and_is_changed_in_settings(c
     assert "Tell the requester when an agent raises" in client.get("/admin/settings").text
     entry = db_session.exec(select(AuditLog).where(AuditLog.entity_type == "setting")).all()[-1]
     assert key in entry.detail and "'off'" in entry.detail
+
+
+# ---- The chosen status (4B-5) ---------------------------------------------------------------------
+
+
+def test_the_preview_shows_the_chosen_status_and_carries_it_to_the_send(client, db_session):
+    ticket = ticket_for_email(client, db_session)
+
+    page = preview(client, ticket, next_status="with_supplier").text
+
+    assert "Sending moves this ticket to with supplier." in page
+    assert "pauses its SLA clock" not in page
+    assert 'name="next_status" value="with_supplier"' in page
+
+
+def test_the_preview_says_when_the_status_is_left_as_it_is(client, db_session):
+    ticket = ticket_for_email(client, db_session)
+
+    page = preview(client, ticket, next_status="open").text
+
+    assert "leaves the ticket's status as it is" in page
+
+
+def test_the_preview_refuses_a_status_the_send_would_refuse(client, db_session):
+    ticket = ticket_for_email(client, db_session)
+
+    assert preview(client, ticket, next_status="resolved").status_code == 400
+    assert preview(client, ticket, next_status="closed").status_code == 400
+
+
+def test_preview_email_returns_the_status_after(client, db_session):
+    ticket = ticket_for_email(client, db_session)
+
+    assert preview_email(db_session, ticket, "Hi").status_after == TicketStatus.AWAITING_USER
+    assert preview_email(db_session, ticket, "Hi", next_status="in_progress").status_after == TicketStatus.IN_PROGRESS
+    assert preview_email(db_session, ticket, "Hi", next_status="open").status_after is None
+
+
+def test_the_page_offers_the_dropdown_in_the_form_that_is_previewed(client, db_session):
+    ticket = ticket_for_email(client, db_session)
+
+    page = client.get(f"/tickets/{ticket.number}").text
+
+    assert page.count('<select name="next_status">') == 2  # Email user and Add note
+    assert "Ticket status after this" in page

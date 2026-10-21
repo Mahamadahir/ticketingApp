@@ -477,9 +477,11 @@ without anyone remembering to set it by hand.
   moves unless the agent picks something), and Resolved or Closed are not offered here:
   resolving is the resolve action (built, 4D: notes required, the resolution email is the admin template "resolution" with the preview step, `app/resolution.py`). The Status buttons no longer offer Resolved and stay for changes made without
   a message. For a split original the dropdown is not shown, since its status is derived; an
-  email from a part sets that part's status. *Code to change:* today the email always sets
-  Awaiting user (`app/routers/tickets.py`, `app/messages.py`), and the preview step (1G-ii)
-  should show the chosen status.
+  email from a part sets that part's status. The dropdown is also not shown (and no status
+  change is accepted) on an untriaged ticket, one Awaiting approval, or a Resolved or Closed one,
+  so a message never reopens a ticket. *Built (4B-5):* `app/messages.py` decides the offered
+  statuses and defaults, the route applies the choice through `set_status`, and the preview step
+  (1G-ii) shows the chosen status.
 - **The user replies.** When the requester, or a follower, replies while the ticket
   is Awaiting user, it moves back to In progress automatically and the SLA clock
   resumes. This covers portal comments now and email replies once mail intake
