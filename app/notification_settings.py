@@ -4,9 +4,9 @@ The event types and the channels they can use are listed here, with the default 
 person's choices are stored only where they differ from the default (NotificationPreference), so
 changing a default here reaches everyone who never changed it.
 
-Only the in-app channel delivers today. Teams arrives with the worker (2C) and email with phase 3;
-the choices are recorded now so those channels read them from the start (is_enabled). Whatever
-sends a notification asks is_enabled for its event type and channel, never a setting of its own.
+The bell, Teams (once connected) and email deliver. Whatever sends a notification asks is_enabled
+for its event type and channel, never a setting of its own; the approval email and its reminders
+ask wants_approval_email.
 """
 
 from dataclasses import dataclass
