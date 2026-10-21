@@ -398,7 +398,7 @@
     <p class="note">Unticking someone only leaves them off this email. Remove them under Followers to stop copying them on future ones.</p>
   </fieldset>
   {% endif %}
-  {% with selected = email_default_status %}{% include "_next_status.html" %}{% endwith %}
+  {% with blank_label = "Default: " ~ email_default_status.value.replace("_", " ") %}{% include "_next_status.html" %}{% endwith %}
   <button type="submit">Preview email</button>
 </form>
 <div id="email-preview"></div>
@@ -409,7 +409,7 @@
 {% if can_note %}
 <form hx-post="/tickets/{{ ticket.number }}/note" hx-target="main" hx-swap="innerHTML">
   <textarea name="body" rows="3" maxlength="{{ max_message_length }}" placeholder="Internal note (agents only, does not triage the ticket)..." required></textarea>
-  {% with selected = ticket.status %}{% include "_next_status.html" %}{% endwith %}
+  {% with blank_label = "No change (" ~ ticket.status.value.replace("_", " ") ~ ")" %}{% include "_next_status.html" %}{% endwith %}
   <button type="submit" class="button-outline">Add note</button>
 </form>
 {% endif %}

@@ -521,10 +521,6 @@ def email_user(
     ticket = _get_ticket(session, number, user)
 
     try:
-        new_status = chosen_status(session, ticket, next_status, default_status_after_email(ticket))
-    except BadStatusChoice as error:
-        raise HTTPException(status_code=400, detail=str(error))
-    try:
         email_requester(session, ticket, user, body, cc_emails=cc if cc_form else None)
     except NotTriaged:
         raise HTTPException(status_code=400, detail="Triage the ticket before emailing the requester")
@@ -532,6 +528,13 @@ def email_user(
         raise HTTPException(status_code=400, detail="Write the email first")
     except UnknownRecipient as error:
         raise HTTPException(status_code=400, detail=f"Not a follower of this ticket: {error}")
+
+    # Checked after the message, like the preview, so both give the same error for the same input;
+    # a refusal here leaves nothing behind, since the request is not committed.
+    try:
+        new_status = chosen_status(session, ticket, next_status, default_status_after_email(ticket))
+    except BadStatusChoice as error:
+        raise HTTPException(status_code=400, detail=str(error))
 
     _set_status_from_message(session, ticket, user, new_status)
     log_action(session, user.email, "ticket", ticket.id, "emailed_requester", body[:200])

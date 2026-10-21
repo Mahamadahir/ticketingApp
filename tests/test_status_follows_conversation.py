@@ -171,7 +171,7 @@ def select_options(page):
 
     out = []
     for block in re.findall(r'<select name="next_status">(.*?)</select>', page, re.S):
-        values = re.findall(r'<option value="([a-z_]+)" (selected)?', block)
+        values = re.findall(r'<option value="([a-z_]*)"( selected)?', block)
         out.append(([v for v, _ in values], [v for v, chosen in values if chosen]))
     return out
 
@@ -183,9 +183,12 @@ def test_both_forms_offer_the_same_five_statuses_and_never_resolved_or_closed(cl
 
     email_box, note_box = select_options(client.get(f"/tickets/{ticket.number}").text)
 
-    assert email_box[0] == OFFERED and note_box[0] == OFFERED
-    assert email_box[1] == ["awaiting_user"]  # an email defaults to waiting on the user
-    assert note_box[1] == ["in_progress"]  # a note defaults to leaving the status alone
+    # The first option sends nothing: the server applies the default when the form arrives, so a stale
+    # page cannot overwrite a status that changed in between.
+    assert email_box[0] == [""] + OFFERED and note_box[0] == [""] + OFFERED
+    assert email_box[1] == [""] and note_box[1] == [""]
+    page = client.get(f"/tickets/{ticket.number}").text
+    assert "Default: awaiting user" in page and "No change (in progress)" in page
 
 
 @pytest.mark.parametrize("chosen", OFFERED)
@@ -217,9 +220,10 @@ def test_emailing_a_ticket_with_the_supplier_defaults_to_leaving_it_there(client
     ticket = make_ticket(db_session, team.id, TicketStatus.WITH_SUPPLIER)
     agent_for(client, db_session, team)
 
-    email_box, _ = select_options(client.get(f"/tickets/{ticket.number}").text)
-
-    assert email_box[1] == ["with_supplier"]
+    page = client.get(f"/tickets/{ticket.number}").text
+    assert "Default: with supplier" in page
+    client.post(f"/tickets/{ticket.number}/email", data={"body": "Update"})
+    assert status_of(db_session, ticket) == TicketStatus.WITH_SUPPLIER
 
 
 @pytest.mark.parametrize("bad", ["resolved", "closed", "new", "awaiting_approval", "nonsense"])
@@ -327,3 +331,36 @@ def test_an_untriaged_ticket_offers_no_dropdown_and_a_note_cannot_move_it(client
     assert client.post(f"/tickets/{ticket.number}/note", data={"body": "n", "next_status": "in_progress"}).status_code == 400
     assert client.post(f"/tickets/{ticket.number}/note", data={"body": "n"}).status_code == 200
     assert status_of(db_session, ticket) == TicketStatus.OPEN
+
+
+def test_a_plain_note_does_not_overwrite_a_status_that_changed_since_the_page_loaded(client, db_session):
+    team = create_team(db_session, "Service Desk")
+    ticket = make_ticket(db_session, team.id, TicketStatus.AWAITING_USER)
+    agent_for(client, db_session, team)
+    _, note_box = select_options(client.get(f"/tickets/{ticket.number}").text)
+    assert note_box[1] == [""]  # what the untouched dropdown posts
+    client.post("/auth/logout")
+    login_as(client, "me@example.com")
+    client.post(f"/portal/{ticket.number}/comment", data={"body": "Floor 2"})  # hands it back: In progress
+    client.post("/auth/logout")
+    login_as(client, "agent@example.com")
+
+    client.post(f"/tickets/{ticket.number}/note", data={"body": "FYI", "next_status": ""})
+
+    assert status_of(db_session, ticket) == TicketStatus.IN_PROGRESS
+
+
+def test_send_and_preview_give_the_same_error_for_an_untriaged_ticket_with_a_bad_status(client, db_session):
+    team = create_team(db_session, "Service Desk")
+    ticket = make_ticket(db_session, team.id)
+    ticket.triaged_at = None
+    db_session.add(ticket)
+    db_session.commit()
+    agent_for(client, db_session, team)
+
+    data = {"body": "Hello", "next_status": "resolved"}
+    send = client.post(f"/tickets/{ticket.number}/email", data=data)
+    preview = client.post(f"/tickets/{ticket.number}/email/preview", data=data)
+
+    assert send.status_code == preview.status_code == 400
+    assert "Triage the ticket" in send.text and "Triage the ticket" in preview.text
