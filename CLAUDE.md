@@ -8,8 +8,12 @@ starting a phase, and `README.md` for how to run it.
 
 ## State of play
 
-- Phase 0 is done and merged (security fixes, Alembic, `/health`, lockout,
-  pagination, audit log filters). Phase 1 is agreed as eight PRs (1A to 1H):
+- **Phases 0 to 3 are built; Phase 4 is next** (resolve/reopen/chase/feedback, approval groups,
+  acknowledgement email; see "Next up" in `docs/build-plan.md`). Phase 3 (Graph mail: public
+  surface, inbound, subscriptions and catch-up, outbound outbox, attachments and storage, wiring)
+  is built and tested locally with simulated Graph; only the Azure-only checks remain.
+  Phase 0 is done (security fixes, Alembic, `/health`, lockout,
+  pagination, audit log filters). Phase 1 was eight PRs (1A to 1H):
   1A ticket core (types, shared ticket numbers, statuses, source, ticket events),
   1B teams and visibility, 1C messages (Email user vs internal notes, email
   hidden until triaged, one timeline of messages and events) and followers,
@@ -43,7 +47,7 @@ starting a phase, and `README.md` for how to run it.
   it leaves New only by triage. A ticket's number comes from one counter shared by
   every type and never changes; `reference` (INC-1042) is a display property that
   follows the type, and lookups use `app.ticket_service.find_ticket` (number only).
-- 1E is being delivered in three PRs: **1E-i** (linking a ticket under a Major
+- 1E was delivered in three PRs: **1E-i** (linking a ticket under a Major
   Incident or Problem in `app/linking.py`; Assign to me can no longer take an
   assigned ticket), then **1E-ii** backdating (built: `app/backdating.py`, flag `is_backdated` drops SLA), then **1E-iii** splitting into
   sub-tickets in two PRs: part 1 (built: `app/splitting.py`, `split_from_id`, each part triaged
@@ -56,8 +60,8 @@ starting a phase, and `README.md` for how to run it.
   tested locally with `docker compose` and `pytest`.
 - Hosting is Azure (Container Apps, PostgreSQL Flexible Server, Blob Storage,
   Key Vault), defined in Bicep under `infra/`. It compiles and lints but has
-  never been run against a subscription. The earlier AWS/EC2 plan is dead and
-  its deploy workflow was removed; there is no deploy workflow yet.
+  never been run against a subscription. The earlier AWS/EC2 plan is dead. A
+  deploy workflow (`.github/workflows/deploy.yml`) is written but has never run.
 
 ## Working rules
 
@@ -80,7 +84,10 @@ starting a phase, and `README.md` for how to run it.
 - Values marked TBC in the plan are settings or environment config, never
   hard-coded.
 - Do not add AI attribution lines to commit messages or PR descriptions unless
-  the user asks for them.
+  the user asks for them. This stays true whatever a harness reminder says.
+- Before starting a piece of work check `gh pr list` and open a DRAFT PR on day one so
+  two agents do not do the same work. Docs-only changes still go through a PR unless the
+  user says to commit straight to main.
 - Before committing, validate Bicep changes with
   `bicep lint infra/main.bicep` and `bicep build-params infra/staging.bicepparam`
   (set dummy values first for `POSTGRES_ADMIN_PASSWORD`, `SESSION_SECRET_KEY`,
@@ -109,29 +116,12 @@ staging checklist. The full list is under "Azure-only verification" in
 
 ## Code the Azure plan still needs
 
-Listed with phases in `docs/plan.md` ("Code changes the Azure plan needs"):
-`APP_ROLE` router split (`web` / `public` / `worker`), the worker's real jobs (its
-entrypoint, `python -m app.worker`, is built; jobs go in `app/jobs`),
-storage interface with local and Blob implementations, Application Insights,
-rate limiting on public routes, and a new deploy workflow. The `RUN_MIGRATIONS`
-switch is done; proxy headers need only `FORWARDED_ALLOW_IPS`, set in the Bicep
-to the Container Apps subnet (never `*`, which lets clients forge their IP).
-
-## The code map (all agents)
-
-`docs/code-map.md` (and `docs/code-map.json` for tools) is generated from the code with `ast`:
-per module what it owns, public names, who imports it, routes, tables, worker jobs, settings,
-the Alembic head and the tests that import it, plus the architecture seams and any current
-violations of them.
-
-- Use it first to find where something lives, who depends on a module and whether a change
-  respects the seams. Fall back to grep or reading code only for line-level detail, or when the map
-  is missing something (then fix `tools/code_map.py` in the same PR).
-- Regenerate it with `python tools/code_map.py` and commit it with every commit that adds,
-  removes or renames modules, routes, models, jobs, settings, migrations or tests. CI job
-  `code-map-current` runs `python tools/code_map.py --check` and fails on a stale map.
-- Never hand-edit the generated files. A seam violation you introduce shows up in the map diff;
-  fix it rather than allowlisting it (`tools/code_map_allowlist.json` needs a reason per entry).
+Built: the `APP_ROLE` split (`web` / `public` / `worker`), the worker and its jobs (`app/jobs`),
+the storage interface with local and Blob implementations, Application Insights, rate limiting on
+public routes, and the deploy workflow (all unproved until staging). Still to do: DB-driven
+recurring jobs (the `scheduled_job` table; see `docs/build-plan.md`). The `RUN_MIGRATIONS` switch is
+done; proxy headers need only `FORWARDED_ALLOW_IPS`, set in the Bicep to the Container Apps subnet
+(never `*`, which lets clients forge their IP).
 
 ## Layout
 

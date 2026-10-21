@@ -68,21 +68,26 @@ those. Do not record test counts or merge status here.
 
 ## Next up
 
-**Phase 3 (Graph mail) is next:** intake, threaded replies, `uniqueBody`, delta catch-up, subscription renewal and lifecycle
-handling, the auto-reply filter, attachments in Blob Storage, and the `public` app mode for the webhook (`docs/plan.md`, "Build
-order"). Phase 3 also carries the approval emails with the link from `app/approval_links.py`, and the email channel for the
-notification settings that 2B stores and nothing yet sends. The Graph client in `app/graph_client.py` still has `send_mail`,
-`create_subscription` and `get_message` stubbed; the presence calls are the first real ones.
+**Phase 3 (Graph mail) is built.** What remains is Azure-only: the staging checks (Graph webhooks and lifecycle, real send, Blob and
+managed identity, Application Insights, the public app) live in the staging checklist below and wait for a subscription.
+
+**Phase 4 is next** (`docs/plan.md`, "Build order"). Already recorded for it:
+- The resolve action with its resolution email, the reopen flow (including a reply after closure making a new ticket), chasing
+  awaiting-user tickets, and requester feedback.
+- Approval groups, withdrawing a request, and chasing approvers by email and Teams (decisions log, 21 and 22 Oct 2026).
+- The acknowledgement email, the never-follow list and the inbound limits as admin settings (the three small PRs below).
+- Out-of-office lookup bookkeeping: `User.last_presence_lookup_at` and `is_active` (small PR below).
+- Database-driven recurring jobs (the `scheduled_job` table; see the 14 Oct decision).
 
 **Small PR planned (decided 21 Oct 2026): out-of-office lookup bookkeeping (2E follow-up).** Add `User.last_presence_lookup_at`, skip a user whose lookup failed or found nobody until a retry interval setting has passed, and consider an `is_active` flag so inactive agents are not polled (`docs/plan.md`, "Notifications"). Own migration, tested with simulated Graph responses. Independent of 3B to 3F, so it can go in any gap; decide whether `is_active` is in or out when it starts. The same `is_active` flag is the one the nightly Entra check sets for leavers (phase 6, see "Accounts" in `docs/plan.md`), so build it once.
 
 **Small PR planned (decided 22 Oct 2026): inbound limits become admin settings.** `INBOUND_MAX_PER_SENDER_HOUR` (30, placeholder, TBC), `INBOUND_MAX_ATTACHMENTS` (20) and `INBOUND_MAX_CC` (10) are environment variables today (`app/config.py`, read in `app/inbound.py`; `infra/main.bicep` passes them only when set). Move them to admin settings next to `AUTOMATIC_EMAIL_CAP` in `app/settings_store.py`, and stop passing them from the Bicep. Mail set aside as `ignored_flood` is shown on Admin > Mail intake.
 
-**Small PR planned (decided 22 Oct 2026): acknowledgement email.** An automatic "we have your request" notice for emailed tickets (`docs/plan.md`, "Acknowledgement and queue"). A PR of its own, after outbound mail.
+**Small PR planned (decided 22 Oct 2026): acknowledgement email.** An automatic "we have your request" notice for emailed tickets (`docs/plan.md`, "Acknowledgement and queue"). A PR of its own, in Phase 4.
 
 **Small PR planned (decided 22 Oct 2026): never-follow list.** An admin-managed list of addresses (the shared mailbox, distribution lists) that are never added as followers from a Cc.
 
-**Phase 3 plan (agreed 20 Oct 2026; order: 3A, 3B, then 3D with 3C and 3E alongside).**
+**Phase 3 plan (agreed 20 Oct 2026; all of 3A to 3F are built, kept here for the design notes).**
 - *3A Public surface:* the `APP_ROLE` split (web / public / worker) with per-role settings checks (the public app and worker need no
   session or SSO secrets; see the `INTERNAL_SESSION_SECRET_KEY` note in `infra/README.md`). `/webhooks/graph/notifications` and the
   approval-link route move to public. The webhook stores each notification in a table and returns 202 inside 3 seconds
@@ -366,7 +371,7 @@ base image digest by taking Dependabot's docker PR, or by hand with `docker buil
   SPF, DKIM and DMARC); the code does not read Authentication-Results. Decided 22 Oct 2026: that stays, and the mailbox must accept authenticated senders only (staging checklist); reading the header is optional phase 10 defence in depth. (5) The Cc of an alias or distribution list becomes a follower like a person; the never-follow list ("Next up") covers the shared mailbox and known lists, other lists stay open. (7) Is 30 an hour per sender the right value? It becomes an admin setting ("Next up"). (6) The own-mail guard compares the exact From address, so mail from an alias of the mailbox is caught only by its headers; the aliases are listed when the mailbox is created (staging checklist, "Mailbox setup").
 - **Out-of-office lookups (2E).** One failing batch (only above 650 agents) rolls back the whole run; the three-hour stale cutoff makes that safe. The retry and inactive-agent items are planned (see "Next up").
 - **How a Teams copy reaches a person (built on working defaults; say if any should change).** A Workflows webhook posts to a channel, not to one person, so the copy is a post in the support channel that @mentions the person by email (messaging a person directly is the phase 8 bot; decided 22 Oct 2026: personal notifications move to that bot and there is no separate notifications channel). Defaults taken: the row is always written when either channel is wanted (Teams-only rows hidden from the bell); a nullable per-person delay with an admin default of 5 minutes; the same channel and webhook as the new-ticket cards, behind its own switch; the outbox's retries (backoff, give up after 8 tries or at once on a refused request). Only staging can prove the mention resolves.
-- **Approvals, remaining.** Approval emails and chasing (email and Teams) wait for phase 3. The handover question is closed: approvals go to approval groups (decisions log, 22 Oct 2026). What is still open: whether "N of M" approvals in a group are wanted, and whether a group maps to an Entra security group.
+- **Approvals, remaining.** The approval emails are built (3D); chasing approvers (email and Teams) waits for phase 4. The handover question is closed: approvals go to approval groups (decisions log, 22 Oct 2026). What is still open: whether "N of M" approvals in a group are wanted, and whether a group maps to an Entra security group.
 - **MSP escalation (decided 22 Oct 2026).** Until the MSP handoff is built (phase 5) a
   category whose target is the MSP cannot be escalated. Testing will use nuisance tickets with the MSP. Not a risk.
 
