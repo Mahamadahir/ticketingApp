@@ -19,9 +19,14 @@ Rules that live here and nowhere else:
   side (the per-ticket cap, never mailing the mailbox itself) is in app/mail.py. A sender who produces
   more than INBOUND_MAX_PER_SENDER_HOUR tickets and replies in an hour is set aside as a probable loop.
 - Which ticket a mail belongs to: the Graph conversation of an earlier mail, then the Message-ID the
-  mail replies to, then the [INC-1042] reference in the subject. Only the requester or a follower may add
-  to a ticket: the reference is printed on every email, so anyone who saw one could otherwise write on
-  that ticket. Anyone else's mail opens a ticket of its own (with an event saying why).
+  mail replies to, then the [INC-1042] reference in the subject. The requester and followers may always
+  add to a ticket. Someone else may only when the match is a STRONG one (the Graph conversation or the
+  Message-ID answered, which prove the mail is part of the real thread, for example a colleague copied
+  midway who replies-all): the mail is then added to the ticket under their address and they become a
+  follower (an event says so). A match on the subject reference alone is not proof, since the reference
+  is printed on every email and anyone who saw one could otherwise write on that ticket and become a
+  follower: that sender's mail opens a ticket of its own (with an event saying why). If the ticket
+  already has its full number of external followers, the stranger is not added and gets a ticket too.
 - A reply is recorded through `record_inbound`, so what the requester may see stays in app/messages.py,
   and its status effect is the portal's (`apply_requester_reply`). A reply on a Resolved or Closed
   ticket is only recorded here; reopening is phase 4. Who can see the ticket is app/visibility.py's
@@ -81,6 +86,8 @@ HANDLED = (TICKET_CREATED, REPLY_ADDED)
 
 EVENT_ATTACHMENT_SKIPPED = "attachment_skipped"
 EVENT_REFERENCE_NOT_USED = "mail_reference_not_used"
+EVENT_FOLLOWER_FROM_MAIL = "follower_added_from_mail"
+STRONG_MATCHES = ("conversation", "in-reply-to")  # the thread itself, not just a reference in the subject
 
 BATCH = 25
 NO_SUBJECT = "(no subject)"
@@ -302,6 +309,25 @@ def may_reply(session: Session, ticket: Ticket, sender: str) -> bool:
     return sender == ticket.requester_email.lower() or is_follower(session, ticket, sender, include_internal=False)
 
 
+def _join_thread(session: Session, ticket: Ticket, sender: str) -> bool:
+    """A person midway through the ticket's real thread writes to it: make them a follower so their mail
+    can be recorded as a reply. False (nothing changed) for the shared mailbox, an existing follower
+    (an agent copied as an internal follower answers from the ticket page) or a full follower list."""
+    if sender == settings.graph_shared_mailbox.strip().lower():
+        return False
+    try:
+        follower = add_follower(session, ticket, sender, sender)
+    except (InvalidEmail, TooManyFollowers):
+        return False
+    if follower is None:
+        return False
+    record_event(
+        session, ticket, EVENT_FOLLOWER_FROM_MAIL, sender, to_value=sender,
+        detail="Replied in the mail thread without being on the ticket, so now follows it",
+    )
+    return True
+
+
 def _subject_of(mail: IncomingMail) -> str:
     subject = " ".join(mail.subject.split())
     return subject[:MAX_SUBJECT_LENGTH] if subject else NO_SUBJECT
@@ -409,7 +435,11 @@ def ingest_mail(
     author_id = account.id if account is not None else None
 
     ticket, how = find_ticket_for(session, mail)
-    if ticket is not None and may_reply(session, ticket, sender):
+    allowed = ticket is not None and may_reply(session, ticket, sender)
+    joined = False
+    if ticket is not None and not allowed and how in STRONG_MATCHES:
+        allowed = joined = _join_thread(session, ticket, sender)
+    if ticket is not None and allowed:
         message = _record_reply(session, ticket, sender, body, author_id)
         message.graph_message_id = mail.graph_message_id
         session.flush()

@@ -408,23 +408,117 @@ def test_a_reply_is_matched_by_the_message_it_answers(db_session):
     assert result.outcome == REPLY_ADDED and result.ticket.id == ticket.id
 
 
-def test_anyone_else_naming_a_ticket_gets_a_ticket_of_their_own(db_session):
-    # The reference is printed on every email, so it must not let a stranger write on the ticket.
+def test_anyone_else_naming_only_the_reference_gets_a_ticket_of_their_own(db_session):
+    # The reference is printed on every email, and is no proof of being in the thread: a subject-only match
+    # from an unknown sender must not let them write on the ticket or become a follower.
     ticket = open_ticket(db_session)
     result = ingest_mail(db_session, mail("x1", sender="stranger@evil.example", subject=f"[{ticket.reference}] Printer jam"))
     db_session.commit()
 
     assert result.outcome == TICKET_CREATED and result.ticket.id != ticket.id
     assert len(messages_of(db_session, ticket)) == 1  # nothing added to the real one
+    assert followers_of(db_session, ticket) == []
     [event] = events_of(db_session, result.ticket, "mail_reference_not_used")
     assert event.to_value == ticket.tag
     assert result.ticket.requester_email == "stranger@evil.example"
 
 
-def test_a_stranger_in_the_requesters_thread_is_also_kept_out(db_session):
+def followers_of(db_session, ticket):
+    db_session.expire_all()
+    return db_session.exec(select(TicketFollower).where(TicketFollower.ticket_id == ticket.id)).all()
+
+
+def test_someone_midway_through_the_thread_is_added_as_a_follower_and_their_mail_is_a_reply(db_session):
+    ticket = open_ticket(db_session, message_id="a", cc=["pat@example.com"])
+    result = ingest_mail(db_session, mail("x1", sender="Kim@Example.com", conversation_id="conv-a", subject="Re: Printer jam", body="Same here"))
+    db_session.commit()
+
+    assert result.outcome == REPLY_ADDED and result.ticket.id == ticket.id
+    assert len(tickets(db_session)) == 1
+    assert result.message.sender == "kim@example.com"
+    assert sorted(f.email for f in followers_of(db_session, ticket)) == ["kim@example.com", "pat@example.com"]
+    [event] = events_of(db_session, ticket, "follower_added_from_mail")
+    assert event.to_value == "kim@example.com"
+    kinds = {i.message.body: i.sender_kind for i in agent_timeline(db_session, ticket) if i.message is not None}
+    assert kinds == {"It is stuck": "requester", "Same here": "follower"}
+    assert [m.body for m in requester_visible_messages(db_session, ticket)] == ["It is stuck", "Same here"]
+
+
+def test_the_message_it_answers_is_also_proof_of_the_thread(db_session):
     ticket = open_ticket(db_session, message_id="a")
-    result = ingest_mail(db_session, mail("x1", sender="stranger@evil.example", conversation_id="conv-a"))
+    graph = FakeGraph()
+    graph.add("r1", sender="kim@example.com", subject="Different", conversationId="other",
+              internetMessageHeaders=headers(In_Reply_To="<a@mail.example.com>"))
+    result = process_message(db_session, "r1", graph)
+    assert result.outcome == REPLY_ADDED and result.ticket.id == ticket.id
+    assert [f.email for f in followers_of(db_session, ticket)] == ["kim@example.com"]
+
+
+def test_a_colleagues_reply_all_resumes_a_waiting_ticket_and_tells_the_assignee_once(client, db_session):
+    from app.models import Notification
+    from tests.test_reply_notification import assigned_ticket
+
+    ticket, team, ann_id = assigned_ticket(client, db_session, TicketStatus.AWAITING_USER)
+    db_session.add(InboundMail(graph_message_id="g0", internet_message_id="g0@x", conversation_id="conv-t", ticket_id=ticket.id, outcome=REPLY_ADDED))
+    db_session.commit()
+
+    result = ingest_mail(db_session, mail("x1", sender="kim@example.com", conversation_id="conv-t", subject="Re: it"))
+    db_session.commit()
+    ingest_mail(db_session, mail("x1", sender="kim@example.com", conversation_id="conv-t", subject="Re: it"))  # replay
+    db_session.commit()
+
+    db_session.expire_all()
+    assert result.outcome == REPLY_ADDED
+    assert db_session.get(Ticket, ticket.id).status == TicketStatus.IN_PROGRESS
+    [told] = db_session.exec(select(Notification)).all()
+    assert (told.kind, told.actor_email) == ("replied", "kim@example.com")
+    assert told.text == f"{ticket.tag} Printer jam: Ticket updated by kim@example.com"
+    assert len(followers_of(db_session, ticket)) == 1 and len(messages_of(db_session, ticket)) == 1
+
+
+def test_replaying_the_same_mail_adds_nothing_more(db_session):
+    ticket = open_ticket(db_session, message_id="a")
+    assert ingest_mail(db_session, mail("x1", sender="kim@example.com", conversation_id="conv-a")).outcome == REPLY_ADDED
+    db_session.commit()
+    assert ingest_mail(db_session, mail("x1", sender="kim@example.com", conversation_id="conv-a")).outcome == DUPLICATE
+    db_session.commit()
+    assert len(messages_of(db_session, ticket)) == 2 and len(followers_of(db_session, ticket)) == 1
+    assert len(events_of(db_session, ticket, "follower_added_from_mail")) == 1
+
+
+def test_an_unknown_sender_on_a_resolved_ticket_is_only_recorded(db_session):
+    ticket = open_ticket(db_session, message_id="a")
+    triage_by_hand(db_session, ticket, TicketStatus.RESOLVED)
+    result = ingest_mail(db_session, mail("x1", sender="kim@example.com", conversation_id="conv-a"))
+    db_session.commit()
+    db_session.refresh(ticket)
+    assert result.outcome == REPLY_ADDED and ticket.status == TicketStatus.RESOLVED
+    assert len(messages_of(db_session, ticket)) == 2 and len(followers_of(db_session, ticket)) == 1
+
+
+def test_the_shared_mailbox_the_requester_and_a_repeat_sender_are_never_added_as_followers(db_session):
+    ticket = open_ticket(db_session, message_id="a")
+    ingest_mail(db_session, mail("x1", sender="Jo@Example.com", conversation_id="conv-a"))  # the requester
+    ingest_mail(db_session, mail("x2", sender="kim@example.com", conversation_id="conv-a"))
+    ingest_mail(db_session, mail("x3", sender="KIM@example.com", conversation_id="conv-a"))  # already following
+    db_session.commit()
+    assert [f.email for f in followers_of(db_session, ticket)] == ["kim@example.com"]
+    assert len(messages_of(db_session, ticket)) == 4
+    # The mailbox's own mail is dropped before it gets this far, and the guard holds even if it were not.
+    assert inbound._join_thread(db_session, ticket, MAILBOX) is False
+    assert [f.email for f in followers_of(db_session, ticket)] == ["kim@example.com"]
+
+
+def test_when_the_follower_list_is_full_a_stranger_in_the_thread_gets_a_ticket_of_their_own(db_session, monkeypatch):
+    from app import followers
+
+    monkeypatch.setattr(followers, "MAX_EXTERNAL_FOLLOWERS", 1)
+    ticket = open_ticket(db_session, message_id="a", cc=["pat@example.com"])
+    result = ingest_mail(db_session, mail("x1", sender="kim@example.com", conversation_id="conv-a"))
+    db_session.commit()
     assert result.outcome == TICKET_CREATED and result.ticket.id != ticket.id
+    assert [f.email for f in followers_of(db_session, ticket)] == ["pat@example.com"]
+    assert len(messages_of(db_session, ticket)) == 1
 
 
 def test_an_agent_who_is_only_an_internal_follower_cannot_reply_by_mail(db_session):
@@ -439,6 +533,9 @@ def test_an_agent_who_is_only_an_internal_follower_cannot_reply_by_mail(db_sessi
     db_session.commit()
     result = ingest_mail(db_session, mail("x1", sender="agent@corp.example", subject=f"[{ticket.reference}] x"))
     assert result.outcome == TICKET_CREATED  # agents answer from the ticket page
+    # Not even in the thread: an internal follower is already on the list, so there is nobody to add.
+    result = ingest_mail(db_session, mail("x2", sender="agent@corp.example", conversation_id="conv-m1"))
+    assert result.outcome == TICKET_CREATED
 
 
 def test_a_follower_replying_is_recorded_under_their_address_and_shown_as_a_follower(db_session):
@@ -825,7 +922,8 @@ def test_the_dev_helper_applies_the_same_filters(client, db_session):
     assert body == {"outcome": IGNORED_OWN} and tickets(db_session) == []
 
 
-def test_a_strangers_mail_in_a_thread_does_not_take_the_thread_over(db_session):
+def test_a_stranger_joining_a_thread_does_not_take_the_thread_over(db_session):
+    # The thread stays with the first mail's ticket, so a stranger who joins it changes nothing about it.
     ticket = open_ticket(db_session, message_id="a")
     ingest_mail(db_session, mail("x1", sender="stranger@evil.example", conversation_id="conv-a"))
     db_session.commit()
