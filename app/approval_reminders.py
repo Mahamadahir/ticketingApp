@@ -30,9 +30,10 @@ from sqlmodel import Session, select
 from app.approval_groups import is_member
 from app.approvals import PENDING, voters_yet_to_vote
 from app.audit import log_action
-from app.models import ApprovalVote, Ticket, TicketApproval, TicketStatus, User, UserRole
+from app.models import ApprovalVote, OutboundEmail, Ticket, TicketApproval, TicketStatus, User, UserRole
 from app.notifications import notify_approval_overdue
-from app.outbox import is_on, queue_approval_reminder
+from app.outbox import APPROVAL, APPROVAL_REMINDER, is_on, queue_approval_reminder
+from app.teams import MAX_ATTEMPTS
 from app.settings_store import (
     APPROVAL_ESCALATE_AFTER_DAYS,
     APPROVAL_MAX_REMINDERS,
@@ -72,21 +73,28 @@ def send_approval_reminders(session: Session, now: Optional[datetime] = None) ->
     ).all()
     for approval_id in approval_ids:
         approval = session.get(TicketApproval, approval_id)
-        ticket = session.get(Ticket, approval.ticket_id)
-        # Lock like decide() and withdraw() (ticket, then approval) and look again: a vote, withdrawal or waiver
-        # that landed since the list was read must stop the reminder.
-        session.refresh(ticket, with_for_update=True)
-        session.refresh(approval, with_for_update=True)
-        if approval.status != PENDING or ticket.status != TicketStatus.AWAITING_APPROVAL:
+        # Locks like decide() and withdraw() (ticket, then approval), but never waits for one: a ticket someone
+        # is working on right now is left to the next run, so the job cannot hold up an agent or deadlock with
+        # a link or split. The status is read again under the lock: a vote, withdrawal or waiver that landed
+        # since the list was read must stop the reminder.
+        ticket = session.exec(
+            select(Ticket).where(Ticket.id == approval.ticket_id).with_for_update(skip_locked=True).execution_options(populate_existing=True)
+        ).first()
+        if ticket is None:
             continue
-        for vote, _ in voters_yet_to_vote(session, approval):
-            session.refresh(vote)
-        waiting = voters_yet_to_vote(session, approval)
+        approval = session.exec(
+            select(TicketApproval).where(TicketApproval.id == approval_id).with_for_update(skip_locked=True).execution_options(populate_existing=True)
+        ).first()
+        if approval is None or approval.status != PENDING or ticket.status != TicketStatus.AWAITING_APPROVAL:
+            continue
+        # Someone who has left (inactive) or was taken out of the group can no longer answer, so is not chased or counted.
+        waiting = [
+            (vote, voter) for vote, voter in voters_yet_to_vote(session, approval)
+            if voter.is_active and is_member(session, approval.group_id, voter.id)
+        ]
         if is_on():
             for vote, voter in waiting:
-                if not _due(vote, now, after, every, maximum) or not is_member(session, approval.group_id, voter.id):
-                    continue
-                if queue_approval_reminder(session, vote, voter) is not None:
+                if _due(vote, now, after, every, maximum) and not _still_queued(session, vote) and queue_approval_reminder(session, vote, voter) is not None:
                     vote.reminder_count += 1
                     vote.last_reminded_at = now
                     session.add(vote)
@@ -94,11 +102,27 @@ def send_approval_reminders(session: Session, now: Optional[datetime] = None) ->
             _escalate(session, ticket, approval, now, len(waiting))
 
 
+def _still_queued(session: Session, vote: ApprovalVote) -> bool:
+    """An approval email or reminder to this voter is still waiting to go (mail is down, held by the cap, or
+    PUBLIC_BASE_URL is unset). Another one would only pile up behind it and use the allowance for nothing."""
+    return session.exec(
+        select(OutboundEmail.id).where(
+            OutboundEmail.vote_id == vote.id,
+            OutboundEmail.kind.in_((APPROVAL, APPROVAL_REMINDER)),
+            OutboundEmail.sent_at.is_(None),
+            OutboundEmail.attempts < MAX_ATTEMPTS,
+        ).limit(1)
+    ).first() is not None
+
+
 def _escalate(session: Session, ticket: Ticket, approval: TicketApproval, now: datetime, unanswered: int) -> None:
-    approval.escalated_at = now
-    session.add(approval)
+    """Tells the super admins once. Only counts as done if someone was told, so with no super admin yet it is
+    tried again on the next run."""
     days = (now - approval.created_at).days
     admins = session.exec(select(User).where(User.role == UserRole.SUPER_ADMIN, User.is_active)).all()
-    for admin in admins:
-        notify_approval_overdue(session, ticket, admin, days, unanswered)
+    told = [admin for admin in admins if notify_approval_overdue(session, ticket, admin, days, unanswered) is not None]
+    if not told:
+        return
+    approval.escalated_at = now
+    session.add(approval)
     log_action(session, AUDIT_ACTOR, "ticket", ticket.id, "approval_overdue", f"{unanswered} had not answered after {days} days")

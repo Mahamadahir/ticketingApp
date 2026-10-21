@@ -194,7 +194,8 @@
         "app.models",
         "app.notifications",
         "app.outbox",
-        "app.settings_store"
+        "app.settings_store",
+        "app.teams"
       ],
       "module": "app.approval_reminders",
       "routes": [],
@@ -3017,6 +3018,7 @@
         "queue_notification"
       ],
       "imported_by": [
+        "app.approval_reminders",
         "app.inbound",
         "app.jobs",
         "app.mail",

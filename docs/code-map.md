@@ -283,7 +283,7 @@ File: `app/approval_links.py`
 Approval reminders (phase 4C-3): chase approvers who have not answered. A recurring job on the  
 File: `app/approval_reminders.py`
 - Functions: `send_approval_reminders`
-- Imports: `app.approval_groups`, `app.approvals`, `app.audit`, `app.models`, `app.notifications`, `app.outbox`, `app.settings_store`
+- Imports: `app.approval_groups`, `app.approvals`, `app.audit`, `app.models`, `app.notifications`, `app.outbox`, `app.settings_store`, `app.teams`
 - Imported by: `app.scheduled_jobs`
 - Tests: `test_approval_reminders.py`
 
@@ -877,7 +877,7 @@ File: `app/teams.py`
 - Classes: `Unsendable`
 - Functions: `deliver_pending`, `describe_failure`, `give_up`, `is_permanent`, `mention_name`, `message`, `new_ticket_card`, `new_ticket_post`, `notification_card`, `notification_post`, `plain`, `post_card`, `queue_new_ticket`, `queue_notification`
 - Imports: `app.config`, `app.models`, `app.visibility`
-- Imported by: `app.inbound`, `app.jobs`, `app.mail`, `app.routers.admin`, `app.ticket_service`
+- Imported by: `app.approval_reminders`, `app.inbound`, `app.jobs`, `app.mail`, `app.routers.admin`, `app.ticket_service`
 - Tests: `test_inbound_mail.py`, `test_outbound_mail.py`, `test_teams.py`, `test_teams_copy_sending.py`, `test_wiring_3f.py`, `test_withdraw.py`
 
 ### `app.telemetry`

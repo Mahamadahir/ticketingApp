@@ -237,8 +237,9 @@ def build_approval_mail(session: Session, row: OutboundEmail, template: str = "a
         # Their words, not IT's: said so, set apart and cut, since they sit beside a genuine link.
         "request_block": REQUEST_BLOCK.format(words=quoted(first.body)) if first else "",
         "link_days": str(days),
-        "days_waiting": str(max(0, (datetime.now(timezone.utc) - vote.created_at).days)),
     }
+    if template == "approval_reminder":
+        values["days_waiting"] = str(max(0, (datetime.now(timezone.utc) - vote.created_at).days))
     subject, text = current_text(session, template)
     # The row keeps the text with the link left out; the link is never stored.
     return Mail(

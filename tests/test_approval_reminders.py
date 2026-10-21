@@ -38,10 +38,13 @@ def configure(db_session, enabled=True, after=2, every=2, maximum=3, escalate=7)
     db_session.commit()
 
 
-def run(db_session, days=0.0, hours=0.0):
-    """One run of the job, as if it were this long after the request was made."""
+def run(db_session, days=0.0, hours=0.0, delivered=True):
+    """One run of the job, as if it were this long after the request was made. By default the mail job then
+    sends what was queued (delivered=False leaves it waiting)."""
     send_approval_reminders(db_session, datetime.now(timezone.utc) + timedelta(days=days, hours=hours))
     db_session.commit()
+    if delivered:
+        mark_sent(db_session, outbox.APPROVAL_REMINDER)
 
 
 def reminders(db_session):
@@ -52,9 +55,19 @@ def to_addresses(db_session):
     return sorted(r.to_address for r in reminders(db_session))
 
 
+def mark_sent(db_session, *kinds):
+    """As the mail job does once the emails have gone."""
+    for row in rows(db_session, *kinds):
+        row.sent_at = datetime.now(timezone.utc)
+        db_session.add(row)
+    db_session.commit()
+
+
 def waiting_request(client, db_session, names=("a", "b", "c"), pass_percent=100, fail_percent=2):
+    """A request waiting on these approvers, whose approval emails have gone."""
     emails = many(client, db_session, names)
     ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, pass_percent, fail_percent))
+    mark_sent(db_session, outbox.APPROVAL)
     return emails, ticket
 
 
@@ -279,3 +292,61 @@ def test_the_scheduler_runs_it_without_committing_inside_the_job(client, db_sess
     assert run_due_jobs([job], "w1") == ["approval-reminders"]
     assert len(reminders(db_session)) == 1
     assert run_due_jobs([job], "w1") == []
+
+
+def test_nothing_piles_up_behind_an_email_that_has_not_gone(client, db_session, dev_mail):
+    waiting_request(client, db_session, ("a",))
+    configure(db_session, after=1, every=1, maximum=5)
+    run(db_session, days=1.1, delivered=False)
+    run(db_session, days=2.2, delivered=False)  # the first reminder is still queued
+    assert len(reminders(db_session)) == 1
+    assert vote_of(db_session, "a@example.com").reminder_count == 1
+    mark_sent(db_session, outbox.APPROVAL_REMINDER)
+    run(db_session, days=3.3)
+    assert len(reminders(db_session)) == 2
+
+
+def test_no_reminder_while_the_approval_email_itself_is_still_waiting(client, db_session, dev_mail):
+    emails = many(client, db_session, ("a",))
+    raised_and_triaged(client, db_session, request_type(db_session, emails))  # the approval email is not sent
+    configure(db_session)
+    run(db_session, days=30)
+    assert reminders(db_session) == []
+
+
+def test_a_deactivated_approver_is_not_chased_or_counted(client, db_session, dev_mail):
+    waiting_request(client, db_session, ("a", "b"))
+    client.post("/auth/logout")
+    set_role(db_session, login_as(client, "admin@example.com"), UserRole.SUPER_ADMIN)
+    leaver = db_session.exec(select(User).where(User.email == "a@example.com")).one()
+    leaver.is_active = False
+    db_session.add(leaver)
+    db_session.commit()
+    configure(db_session, escalate=1)
+    run(db_session, days=3)
+    assert to_addresses(db_session) == ["b@example.com"]
+    [told] = db_session.exec(select(Notification).where(Notification.kind == "approval_overdue")).all()
+    assert "1 had not answered" in told.text
+
+
+def test_escalation_is_not_used_up_when_there_was_nobody_to_tell(client, db_session, dev_mail):
+    waiting_request(client, db_session, ("a",))
+    configure(db_session, escalate=1)
+    run(db_session, days=3)
+    assert db_session.exec(select(TicketApproval)).one().escalated_at is None
+    client.post("/auth/logout")
+    set_role(db_session, login_as(client, "admin@example.com"), UserRole.SUPER_ADMIN)
+    run(db_session, days=3)
+    assert len(db_session.exec(select(Notification).where(Notification.kind == "approval_overdue")).all()) == 1
+
+
+def test_a_ticket_someone_is_working_on_is_left_to_the_next_run_without_waiting(client, db_session, dev_mail):
+    emails, ticket = waiting_request(client, db_session, ("a",))
+    configure(db_session)
+    with Session(engine) as other:  # another transaction holding the ticket, as an agent's edit would
+        other.exec(select(Ticket).where(Ticket.id == ticket.id).with_for_update()).one()
+        run(db_session, days=3)  # would hang if it waited
+        assert reminders(db_session) == []
+        other.rollback()
+    run(db_session, days=3)
+    assert len(reminders(db_session)) == 1
