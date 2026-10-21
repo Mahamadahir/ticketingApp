@@ -18,7 +18,7 @@ from app.config import settings
 log = logging.getLogger(__name__)
 
 # Regular expressions, matched anywhere in the request address, that request telemetry skips.
-EXCLUDED_URLS = ("/approvals/",)
+EXCLUDED_URLS = ("/approvals/", "/feedback/", "/reopen/")
 
 _EXCLUSION_VARIABLES = ("OTEL_PYTHON_EXCLUDED_URLS", "OTEL_PYTHON_FASTAPI_EXCLUDED_URLS")
 

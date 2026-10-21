@@ -1,6 +1,6 @@
 """Keeps credentials that travel in an address out of the logs (phase 3A).
 
-The emailed approval link carries its token in the path (/approvals/<token>), and the token is
+The emailed approval, feedback and reopen links carry their token in the path (/approvals/<token>, /feedback/<token>, /reopen/<token>), and the token is
 what proves who is answering. uvicorn's access log writes the path of every request, so without
 this a working link would sit in the container logs. The filter rewrites the token to {token}
 before the record is written. Azure's own ingress logs and Application Insights record the path
@@ -10,7 +10,7 @@ too; those are checked on staging (docs/build-plan.md).
 import logging
 import re
 
-_TOKEN_IN_PATH = re.compile(r"(/approvals/)[^/?#\s\"']+")
+_TOKEN_IN_PATH = re.compile(r"(/(?:approvals|feedback|reopen)/)[^/?#\s\"']+")
 
 
 def _redacted(value):

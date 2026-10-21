@@ -68,4 +68,5 @@ def rate_limited(limiter: RateLimiter) -> Callable[[Request], None]:
 
 # The buckets the public routes count against (limits are settings, read on each request).
 APPROVALS = RateLimiter(lambda: settings.rate_limit_approvals_per_minute)
+ACTION_LINKS = RateLimiter(lambda: settings.rate_limit_action_links_per_minute)
 WEBHOOK = RateLimiter(lambda: settings.rate_limit_webhook_per_minute)

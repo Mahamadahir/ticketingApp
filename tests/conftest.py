@@ -71,6 +71,7 @@ def fresh_rate_limits():
     from app import rate_limit
 
     rate_limit.APPROVALS.reset()
+    rate_limit.ACTION_LINKS.reset()
     rate_limit.WEBHOOK.reset()
     yield
 

@@ -17,7 +17,7 @@ from app.config import settings, unsafe_setting_errors
 from app.log_redaction import redact_approval_tokens
 from app.telemetry import start_telemetry
 from app.models import User, UserRole
-from app.routers import admin, approvals, attachments, auth, dev_tools, health, my_settings, notifications, portal, tickets, webhooks
+from app.routers import action_links, admin, approvals, attachments, auth, dev_tools, health, my_settings, notifications, portal, tickets, webhooks
 
 
 @asynccontextmanager
@@ -85,7 +85,7 @@ def root(user: User = Depends(get_current_user)):
 # Microsoft and people off the VPN must reach (the Graph webhook, the emailed approval link) and
 # /health; nothing that needs a signed-in agent. "all" is every route in one process, for local
 # development and tests (it is refused outside dev, see unsafe_setting_errors).
-PUBLIC_ROUTERS = [health.router, webhooks.router, approvals.router]
+PUBLIC_ROUTERS = [health.router, webhooks.router, approvals.router, action_links.router]
 WEB_ROUTERS = [
     health.router, auth.router, tickets.router, tickets.reference_router, portal.router,
     notifications.router, my_settings.router, admin.router, dev_tools.router,
@@ -94,7 +94,7 @@ WEB_ROUTERS = [
 ROLE_ROUTERS = {
     "web": WEB_ROUTERS,
     "public": PUBLIC_ROUTERS,
-    "all": WEB_ROUTERS + [webhooks.router, approvals.router],
+    "all": WEB_ROUTERS + [webhooks.router, approvals.router, action_links.router],
     "worker": [health.router],  # the worker runs python -m app.worker and serves nothing
 }
 

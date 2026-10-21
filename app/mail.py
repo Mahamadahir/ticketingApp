@@ -25,6 +25,7 @@ import httpx
 from sqlalchemy import or_
 from sqlmodel import Session, func, select
 
+from app.action_links import put_links_in
 from app.approval_links import make_token
 from app.approvals import PENDING, WITHDRAWN
 from app.config import settings
@@ -133,13 +134,14 @@ def build_message_mail(session: Session, row: OutboundEmail) -> Mail:
     if message.id not in {m.id for m in requester_visible_messages(session, ticket)}:
         raise Unsendable("The requester may not see this message")
     _guard_recipient(row)
-    body = _with_about(session, ticket, message.body)
+    record = _with_about(session, ticket, message.body)
     return Mail(
         to=row.to_address,
         cc=[a.strip() for a in (message.cc or "").split(",") if a.strip()],
         subject=mail_subject(session, ticket),
-        body=body,
-        record=body,
+        # The resolution email's feedback and reopen links are made now and never kept: the row keeps the markers.
+        body=put_links_in(session, ticket, record),
+        record=record,
         automatic=row.kind == NOTICE,
         reference=ticket.reference,
     )

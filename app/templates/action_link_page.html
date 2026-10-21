@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}{% if kind == "feedback" %}Feedback{% else %}Reopen{% endif %}{% endblock %}
+{% block content %}
+{% if state == "invalid" %}
+<h2>This link is not valid</h2>
+<p>It may have been damaged. If you need more help, reply to the email you received.</p>
+{% else %}
+<h2>{{ ticket.reference }} {{ ticket.subject }}</h2>
+{% if message %}<p class="note">{{ message }}</p>{% endif %}
+{% if state == "used" %}
+<p>This link has already been used.</p>
+{% elif state == "expired" %}
+<p>This link has expired. If you still need help, reply to the email you received.</p>
+{% elif state == "done" %}
+{% if kind == "reopen" %}<p>Your ticket has been reopened. We will be in touch.</p>{% endif %}
+{% elif kind == "feedback" %}
+<form method="post" action="/feedback/{{ token }}">
+  <p>How well was your request handled?</p>
+  <fieldset>
+    {% for n in range(1, 6) %}
+    <label><input type="radio" name="rating" value="{{ n }}" required> {{ n }}{% if n == 1 %} (poor){% elif n == 5 %} (excellent){% endif %}</label>
+    {% endfor %}
+  </fieldset>
+  <label>Comment (optional)
+    <textarea name="comment" rows="3" maxlength="{{ max_comment_length }}"></textarea>
+  </label>
+  <button type="submit">Send feedback</button>
+</form>
+{% elif state == "closed" %}
+<p>This ticket has been closed, so it cannot be reopened from here. Reply to the email you received and we will open a new ticket linked to this one.</p>
+{% elif state == "not_resolved" %}
+<p>This ticket is not resolved, so there is nothing to reopen. Reply to the email you received if you need to add something.</p>
+{% else %}
+<form method="post" action="/reopen/{{ token }}">
+  <p>The ticket is marked as resolved. Reopen it if the problem is not fixed.</p>
+  <button type="submit">Reopen this ticket</button>
+</form>
+{% endif %}
+{% endif %}
+{% endblock %}

@@ -22,6 +22,7 @@ from typing import Optional
 
 from sqlmodel import Session
 
+from app.action_links import FEEDBACK_MARKER, REOPEN_MARKER
 from app.audit import log_action
 from app.email_templates import render_template, ticket_values
 from app.forms import MAX_MESSAGE_LENGTH
@@ -62,7 +63,11 @@ def check_can_resolve(session: Session, ticket: Ticket) -> None:
 
 def resolution_email_body(session: Session, ticket: Ticket, notes: str) -> str:
     """The text of the resolution email: the admin template with the notes put in."""
-    return render_template(session, "resolution", {**ticket_values(ticket), "resolution_notes": notes}).body
+    # The links are put in as the email is built (app/action_links.py), so the stored text holds markers.
+    return render_template(session, "resolution", {
+        **ticket_values(ticket), "resolution_notes": notes,
+        "feedback_link": FEEDBACK_MARKER, "reopen_link": REOPEN_MARKER,
+    }).body
 
 
 def auto_resolution_note(session: Session, ticket: Ticket, days: int) -> str:

@@ -83,6 +83,7 @@ class Settings(BaseSettings):
     # gets a high limit because Microsoft sends from few addresses and a refused notification is lost
     # until the catch-up sync finds the mail.
     rate_limit_approvals_per_minute: int = 30
+    rate_limit_action_links_per_minute: int = 30
     rate_limit_webhook_per_minute: int = 600
     # Attachments (phase 3E, app/storage.py). STORAGE_BACKEND is "local" (a directory, for development
     # and tests) or "blob" (Azure Blob Storage through the app's managed identity: no account keys).
