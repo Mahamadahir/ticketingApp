@@ -113,12 +113,15 @@ def add_member(session: Session, group: ApprovalGroup, email: str) -> User:
 def remove_member(session: Session, group: ApprovalGroup, user_id: int) -> User:
     """Takes someone out. They stay a voter on approvals already asked (the number of voters is fixed
     then) but can no longer answer them; a super admin can waive a request that can never be decided."""
-    row = session.exec(
-        select(ApprovalGroupMember).where(
-            ApprovalGroupMember.group_id == group.id, ApprovalGroupMember.user_id == user_id
-        )
-    ).first()
     user = session.get(User, user_id)
+    row = None
+    if user is not None:
+        session.exec(select(ApprovalGroup.id).where(ApprovalGroup.id == group.id).with_for_update()).first()
+        row = session.exec(
+            select(ApprovalGroupMember).where(
+                ApprovalGroupMember.group_id == group.id, ApprovalGroupMember.user_id == user_id
+            )
+        ).first()
     if row is None or user is None:
         raise ApprovalGroupError("That person is not in this group")
     in_use = group_is_used_by_active_type(session, group.id)

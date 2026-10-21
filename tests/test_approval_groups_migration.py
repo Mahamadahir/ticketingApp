@@ -168,3 +168,27 @@ def test_an_empty_database_migrates_both_ways(scratch):
     alembic("upgrade", "head")
     alembic("check")
     assert alembic("heads").stdout.count("(head)") == 1
+
+
+def test_approvals_of_a_ticket_retyped_away_from_its_request_type_are_kept(scratch):
+    alembic, connect = scratch
+    alembic("upgrade", BEFORE)
+    with connect() as connection, connection.cursor() as cursor:
+        cursor.execute("""
+INSERT INTO "user" (id, email, display_name, role, created_at) OVERRIDING SYSTEM VALUE VALUES
+ (1,'a@x.com','A','END_USER',now()),(2,'b@x.com','B','END_USER',now());
+INSERT INTO ticket (id, number, subject, type, source, status, requester_email, request_type_id, approvals_required, declines_required,
+  needs_category_review, is_escalated, reported_at, created_at, updated_at) VALUES
+ (5,105,'retyped','INCIDENT','PORTAL','OPEN','req@x.com',NULL,1,1,false,false,now(),now(),now());
+INSERT INTO ticketapproval (id, ticket_id, approver_id, decision, comment, created_at, decided_at) VALUES
+ (12,5,1,'approved','fine',now(),now()),(13,5,2,'not_needed','',now(),now());
+""")
+
+    alembic("upgrade", AFTER)
+
+    assert rows(connect, "SELECT v.id, v.voter_id, v.decision, v.comment, a.voters FROM approvalvote v "
+                         "JOIN ticketapproval a ON a.id = v.approval_id ORDER BY v.id") == [
+        (12, 1, "approved", "fine", 2), (13, 2, "not_needed", "", 2),
+    ]
+    assert rows(connect, "SELECT count(*) FROM approvalvote") == [(2,)]
+    assert rows(connect, "SELECT count(*) FROM approvalgroupmember") == [(2,)]

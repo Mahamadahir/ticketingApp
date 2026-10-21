@@ -1056,6 +1056,9 @@ def save_setting(
             raise HTTPException(status_code=400, detail="Enter a whole number from 1 to 1000")
     if definition.kind == "flag" and value not in ("on", "off"):
         raise HTTPException(status_code=400, detail="Choose on or off")
+    if definition.kind == "vote_percent":
+        if not (value.isascii() and value.isdigit()) or not 1 <= int(value) <= 100:
+            raise HTTPException(status_code=400, detail="Enter a whole number from 1 to 100")
     if definition.kind == "percent":
         if not (value.isascii() and value.isdigit()) or not 1 <= int(value) <= 99:
             raise HTTPException(status_code=400, detail="Enter a whole number from 1 to 99")

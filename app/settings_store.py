@@ -15,7 +15,7 @@ from app.models import Setting
 class SettingDef:
     key: str
     label: str
-    kind: str  # "team": a team id, empty for none; "minutes": a whole number; "percent": 1 to 99; "flag": on or off; "count": a whole number, 1 to 1000
+    kind: str  # "team": a team id, empty for none; "minutes": a whole number; "percent": 1 to 99; "vote_percent": 1 to 100; "flag": on or off; "count": a whole number, 1 to 1000
     description: str
     default: str = ""
 
@@ -234,7 +234,7 @@ REGISTRY: dict[str, SettingDef] = {
     APPROVAL_DEFAULT_PASS_PERCENT: SettingDef(
         key=APPROVAL_DEFAULT_PASS_PERCENT,
         label="New request types: share of the group that must approve (percent)",
-        kind="percent",
+        kind="vote_percent",
         description=(
             "Pre-filled on the New request type form; each type keeps its own number. Placeholder (a simple "
             "majority). The pass and fail percentages of a type must add up to more than 100."
@@ -244,7 +244,7 @@ REGISTRY: dict[str, SettingDef] = {
     APPROVAL_DEFAULT_FAIL_PERCENT: SettingDef(
         key=APPROVAL_DEFAULT_FAIL_PERCENT,
         label="New request types: share of the group that must decline (percent)",
-        kind="percent",
+        kind="vote_percent",
         description="Pre-filled on the New request type form; each type keeps its own number. Placeholder.",
         default="50",
     ),

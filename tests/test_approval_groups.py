@@ -148,3 +148,37 @@ def test_a_name_clash_that_slips_past_the_check_is_a_friendly_error(client, db_s
 def test_the_admin_tab_is_there(client, db_session):
     admin(client, db_session)
     assert 'href="/admin/approval-groups"' in client.get("/admin/request-types").text
+
+
+def test_two_admins_removing_the_last_two_members_at_once_cannot_empty_a_live_group(client, db_session):
+    """The guard counts members under a lock on the group, so the second remover sees the first's removal."""
+    import threading
+
+    from sqlmodel import Session
+
+    from app.database import engine
+
+    kind = make(db_session, "Access", members=("boss@example.com", "lead@example.com"))
+    group_id = kind.approval_group_id
+    ids = [u.id for u in members_of(db_session, group_id)]
+    outcomes = []
+
+    def remove(user_id):
+        with Session(engine) as session:
+            try:
+                remove_member(session, session.get(ApprovalGroup, group_id), user_id)
+                session.commit()
+                outcomes.append("removed")
+            except ApprovalGroupError:
+                session.rollback()
+                outcomes.append("refused")
+
+    threads = [threading.Thread(target=remove, args=(i,)) for i in ids]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=30)
+
+    db_session.expire_all()
+    assert sorted(outcomes) == ["refused", "removed"]
+    assert len(members_of(db_session, group_id)) == 1

@@ -14,7 +14,7 @@ from sqlmodel import Session, select
 
 from app.approval_groups import members_of
 from app.approvals import PercentError, check_percentages
-from app.models import ApprovalGroup, RequestType, User
+from app.models import ApprovalGroup, RequestType
 
 MAX_NAME_LENGTH = 100
 MAX_DESCRIPTION_LENGTH = 1000
@@ -53,11 +53,6 @@ def _checked(session: Session, group_id: Optional[int], pass_percent: int, fail_
         raise RequestTypeError(
             "An active request type needs an approval group with at least one member (switch it off to save it without one)"
         )
-
-
-def approvers_of(session: Session, request_type: RequestType) -> list[User]:
-    """The members of the type's group today."""
-    return members_of(session, request_type.approval_group_id)
 
 
 def _flush(session: Session) -> None:

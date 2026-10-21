@@ -33,6 +33,7 @@ from app.followers import is_follower
 from app.graph_client import graph_client
 from app.messages import about_text, in_a_split, is_triaged, mail_subject, requester_visible_messages
 from app.never_follow import is_listed
+from app.approval_groups import is_member
 from app.notification_settings import EMAIL, FOLLOWER_UPDATE as FOLLOWER_UPDATE_EVENT, is_enabled
 from app.models import (
     Message,
@@ -217,6 +218,8 @@ def build_approval_mail(session: Session, row: OutboundEmail) -> Mail:
         raise Unsendable("Approval not found")
     if vote.decision != PENDING or approval.status != PENDING or ticket.status != TicketStatus.AWAITING_APPROVAL:
         raise Unsendable("The request no longer needs this approval")
+    if not is_member(session, approval.group_id, vote.voter_id):
+        raise Unsendable("The person is no longer in the approval group")
     approver = session.get(User, vote.voter_id)
     if approver is None:
         raise Unsendable("Approver not found")

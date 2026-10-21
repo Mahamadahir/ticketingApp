@@ -261,8 +261,8 @@ File: `app/approval_groups.py`
 - Classes: `ApprovalGroupError`
 - Functions: `add_member`, `all_groups`, `create_group`, `group_is_used_by_active_type`, `is_member`, `members_of`, `remove_member`, `rename_group`, `types_using`
 - Imports: `app.followers`, `app.models`
-- Imported by: `app.approvals`, `app.request_types`, `app.routers.admin`
-- Tests: `test_approval_groups.py`, `test_approvals.py`, `test_request_types.py`
+- Imported by: `app.approvals`, `app.mail`, `app.request_types`, `app.routers.admin`
+- Tests: `test_approval_groups.py`, `test_approvals.py`, `test_outbound_mail.py`, `test_request_types.py`
 
 ### `app.approval_links`
 
@@ -282,7 +282,7 @@ File: `app/approvals.py`
 - Functions: `check_percentages`, `count_pending_for`, `current_approval`, `decide`, `describe_rule`, `eligible_voters`, `needs_approval`, `outcome`, `pending_for`, `record_decision`, `start_approvals`, `status_after_triage`, `tally`, `vote_for`, `voters_yet_to_vote`, `votes_needed`, `votes_of`, `waive`
 - Imports: `app.approval_groups`, `app.audit`, `app.email_templates`, `app.messages`, `app.models`, `app.outbox`, `app.ticket_service`
 - Imported by: `app.mail`, `app.request_types`, `app.routers.approvals`, `app.routers.portal`, `app.routers.tickets`, `app.triage`
-- Tests: `test_approvals.py`, `test_email_templates.py`
+- Tests: `test_approvals.py`, `test_email_templates.py`, `test_outbound_mail.py`
 
 ### `app.attachments`
 
@@ -375,7 +375,7 @@ File: `app/database.py`
 - Functions: `get_session`
 - Imports: `app.config`
 - Imported by: `app.activity`, `app.auth`, `app.routers.admin`, `app.routers.approvals`, `app.routers.attachments`, `app.routers.auth`, `app.routers.dev_tools`, `app.routers.health`, `app.routers.my_settings`, `app.routers.notifications`, `app.routers.portal`, `app.routers.tickets`, `app.routers.webhooks`, `app.scheduled_jobs`, `app.worker`
-- Tests: `conftest.py`, `test_access_context.py`, `test_approvals.py`, `test_auth.py`, `test_category_admin.py`, `test_followers.py`, `test_hardening.py`, `test_health.py`, `test_inbound_mail.py`, `test_linking.py`, `test_mail_subscriptions.py`, `test_notification_followup.py`, `test_outbound_mail.py`, `test_scheduled_jobs.py`, `test_split_family.py`, `test_splitting.py`, `test_teams_copy.py`, `test_teams_copy_sending.py`, `test_ticket_core.py`, `test_worker.py`
+- Tests: `conftest.py`, `test_access_context.py`, `test_approval_groups.py`, `test_approvals.py`, `test_auth.py`, `test_category_admin.py`, `test_followers.py`, `test_hardening.py`, `test_health.py`, `test_inbound_mail.py`, `test_linking.py`, `test_mail_subscriptions.py`, `test_notification_followup.py`, `test_outbound_mail.py`, `test_scheduled_jobs.py`, `test_split_family.py`, `test_splitting.py`, `test_teams_copy.py`, `test_teams_copy_sending.py`, `test_ticket_core.py`, `test_worker.py`
 
 ### `app.email_templates`
 
@@ -498,7 +498,7 @@ File: `app/mail.py`
 
 - Classes: `Mail`, `NotReady`
 - Functions: `automatic_cap`, `build_acknowledgement_mail`, `build_approval_mail`, `build_follower_update_mail`, `build_message_mail`, `build_raised_for_mail`, `cap_release`, `deliver_mail`, `describe_failure`, `give_up`, `is_permanent`, `own_first_message`, `quoted`, `record_only`, `send_through_graph`
-- Imports: `app.approval_links`, `app.approvals`, `app.config`, `app.email_templates`, `app.followers`, `app.graph_client`, `app.messages`, `app.models`, `app.never_follow`, `app.notification_settings`, `app.outbox`, `app.raising`, `app.settings_store`, `app.teams`
+- Imports: `app.approval_groups`, `app.approval_links`, `app.approvals`, `app.config`, `app.email_templates`, `app.followers`, `app.graph_client`, `app.messages`, `app.models`, `app.never_follow`, `app.notification_settings`, `app.outbox`, `app.raising`, `app.settings_store`, `app.teams`
 - Imported by: `app.inbound`, `app.jobs`
 - Tests: `test_acknowledgement.py`, `test_email_templates.py`, `test_follower_updates.py`, `test_outbound_mail.py`, `test_resolution.py`
 
@@ -624,7 +624,7 @@ The request catalogue (phase 1H): the kinds of service request people can raise,
 File: `app/request_types.py`
 
 - Classes: `RequestTypeError`
-- Functions: `active_request_types`, `all_request_types`, `approvers_of`, `create_request_type`, `request_type_of`, `update_request_type`
+- Functions: `active_request_types`, `all_request_types`, `create_request_type`, `request_type_of`, `update_request_type`
 - Imports: `app.approval_groups`, `app.approvals`, `app.models`
 - Imported by: `app.routers.admin`, `app.routers.portal`, `app.routers.tickets`
 - Tests: `test_approvals.py`, `test_request_types.py`

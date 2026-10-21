@@ -134,6 +134,7 @@
       ],
       "imported_by": [
         "app.approvals",
+        "app.mail",
         "app.request_types",
         "app.routers.admin"
       ],
@@ -148,6 +149,7 @@
       "tests": [
         "tests/test_approval_groups.py",
         "tests/test_approvals.py",
+        "tests/test_outbound_mail.py",
         "tests/test_request_types.py"
       ]
     },
@@ -223,7 +225,8 @@
       "tables": [],
       "tests": [
         "tests/test_approvals.py",
-        "tests/test_email_templates.py"
+        "tests/test_email_templates.py",
+        "tests/test_outbound_mail.py"
       ]
     },
     {
@@ -528,6 +531,7 @@
       "tests": [
         "tests/conftest.py",
         "tests/test_access_context.py",
+        "tests/test_approval_groups.py",
         "tests/test_approvals.py",
         "tests/test_auth.py",
         "tests/test_category_admin.py",
@@ -935,6 +939,7 @@
         "app.jobs"
       ],
       "imports": [
+        "app.approval_groups",
         "app.approval_links",
         "app.approvals",
         "app.config",
@@ -1632,7 +1637,6 @@
       "functions": [
         "active_request_types",
         "all_request_types",
-        "approvers_of",
         "create_request_type",
         "request_type_of",
         "update_request_type"

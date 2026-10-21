@@ -801,7 +801,7 @@ def test_the_default_percentages_are_settings(client, db_session):
     )
 
     for key in (APPROVAL_DEFAULT_PASS_PERCENT, APPROVAL_DEFAULT_FAIL_PERCENT):
-        assert REGISTRY[key].kind == "percent"
+        assert REGISTRY[key].kind == "vote_percent"
     assert (get_setting(db_session, APPROVAL_DEFAULT_PASS_PERCENT), get_setting(db_session, APPROVAL_DEFAULT_FAIL_PERCENT)) == ("51", "50")
     check_percentages(int(REGISTRY[APPROVAL_DEFAULT_PASS_PERCENT].default), int(REGISTRY[APPROVAL_DEFAULT_FAIL_PERCENT].default))
 

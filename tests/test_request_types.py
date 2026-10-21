@@ -1,7 +1,7 @@
 import pytest
 from sqlmodel import select
 
-from app.approval_groups import add_member, create_group
+from app.approval_groups import add_member, create_group, members_of
 from app.models import (
     ApprovalGroup,
     ApprovalGroupMember,
@@ -13,7 +13,7 @@ from app.models import (
     User,
     UserRole,
 )
-from app.request_types import RequestTypeError, approvers_of, create_request_type, update_request_type
+from app.request_types import RequestTypeError, create_request_type, update_request_type
 from tests.conftest import login_as, set_role
 from tests.test_raising import desk, raise_it
 
@@ -75,7 +75,7 @@ def test_an_admin_creates_edits_and_switches_one_off_with_audit(client, db_sessi
     [request_type] = db_session.exec(select(RequestType)).all()
     assert (request_type.name, request_type.description, request_type.is_active) == ("New starter", "A new colleague", True)
     assert (request_type.approval_group_id, request_type.pass_percent, request_type.fail_percent) == (first.id, 51, 50)
-    assert [u.email for u in approvers_of(db_session, request_type)] == ["boss@example.com"]
+    assert [u.email for u in members_of(db_session, request_type.approval_group_id)] == ["boss@example.com"]
 
     client.post(
         f"/admin/request-types/{request_type.id}",

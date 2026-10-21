@@ -183,7 +183,17 @@ def upgrade() -> None:
             sa.text("SELECT approval_group_id FROM requesttype WHERE id = :t"), {"t": type_id}
         ).scalar_one_or_none()
         if group_id is None:
-            continue
+            # The ticket was retyped away from its request type after approvals began: keep what the
+            # approvers said, under a group made from the people who were asked.
+            group_id = bind.execute(
+                sa.text("INSERT INTO approvalgroup (name, created_at) VALUES (:n, now()) RETURNING id"),
+                {"n": f"Approvers asked on ticket {ticket_id} (request type since removed)"},
+            ).scalar_one()
+            for row in rows:
+                bind.execute(
+                    sa.text("INSERT INTO approvalgroupmember (group_id, user_id) VALUES (:g, :u)"),
+                    {"g": group_id, "u": row[2]},
+                )
         voters = len(rows)
         approved = sum(1 for r in rows if r[3] == 'approved')
         declined = sum(1 for r in rows if r[3] == 'declined')

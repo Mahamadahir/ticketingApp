@@ -19,6 +19,7 @@ from app.models import (
     OutboundEmail,
     Setting,
     Ticket,
+    ApprovalGroup,
     ApprovalVote,
     TicketStatus,
     User,
@@ -567,3 +568,20 @@ def test_the_sending_mode_must_be_a_known_one_and_dev_mode_stays_out_of_producti
     assert unsafe_setting_errors(Settings(env="dev", mail_sending="dev")) == []
     production = unsafe_setting_errors(Settings(env="production", mail_sending="dev", session_secret_key="x" * 40, graph_webhook_client_state="y" * 30))
     assert any("only works in the dev environment" in e for e in production)
+
+
+def test_an_approval_email_is_dropped_if_the_person_left_the_group_before_it_went(client, db_session, dev_mail):
+    from app.approval_groups import remove_member
+    from app.approvals import current_approval
+
+    for address in ("boss@example.com", "lead@example.com"):
+        person(client, db_session, address)
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, ["boss@example.com", "lead@example.com"]))
+    leaver = next(r for r in rows(db_session, outbox.APPROVAL) if r.to_address == "boss@example.com")
+    vote = db_session.get(ApprovalVote, leaver.vote_id)
+    group = db_session.get(ApprovalGroup, current_approval(db_session, ticket).group_id)
+    remove_member(db_session, group, vote.voter_id)
+    db_session.commit()
+
+    with pytest.raises(Unsendable, match="no longer in the approval group"):
+        mail.build_approval_mail(db_session, leaver)
