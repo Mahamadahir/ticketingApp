@@ -358,7 +358,7 @@ Admin-managed wording for the emails the app sends by itself (phase 4T).
 File: `app/email_templates.py`
 
 - Classes: `Rendered`, `TemplateDef`, `TemplateError`
-- Functions: `current_text`, `definition`, `is_customised`, `render_preview`, `render_template`, `render_text`, `reset_template`, `save_template`, `validate`
+- Functions: `current_text`, `definition`, `is_customised`, `render_preview`, `render_template`, `render_text`, `reset_template`, `save_template`, `ticket_values`, `validate`
 - Imports: `app.models`
 - Imported by: `app.approvals`, `app.mail`, `app.routers.admin`
 - Tests: `test_email_templates.py`

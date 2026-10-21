@@ -182,6 +182,31 @@ def test_the_preview_shows_sample_data_or_the_problem_and_saves_nothing(client, 
     assert db_session.exec(select(EmailTemplate)).all() == [] and audit(db_session) == []
 
 
+def test_a_browser_posted_text_with_crlf_equals_the_default_and_renders_with_lf(client, db_session):
+    admin(client, db_session)
+    default = et.definition("approval_waived").body_default
+    assert save(client, "approval_waived", default.replace("\n", "\r\n")).status_code == 303
+    assert db_session.exec(select(EmailTemplate)).all() == [] and audit(db_session) == []
+    cleaned = et.validate(et.definition("raised_for"), None, "A\r\n\r\n{request_text}\r\n\r\nB")[1]
+    assert "\r" not in cleaned and et.render_text(cleaned, {"request_text": ""}) == "A\n\nB"
+
+
+def test_the_approval_subject_must_keep_the_reference_and_the_link_check_ignores_case():
+    defn = et.definition("approval_request")
+    with pytest.raises(et.TemplateError, match=r"subject must include \{reference\}"):
+        et.validate(defn, "Please approve: {subject}", "{link}")
+    with pytest.raises(et.TemplateError, match="cannot be written"):
+        et.validate(defn, "[{reference}]", "{link} https://x.example/Approvals/abc")
+
+
+def test_a_refused_save_shows_the_page_again_with_the_reason_and_what_was_typed(client, db_session):
+    admin(client, db_session)
+    response = save(client, "approval_waived", "My careful wording with {oops}")
+    assert response.status_code == 400
+    assert "Not saved" in response.text and "My careful wording with {oops}" in response.text
+    assert db_session.exec(select(EmailTemplate)).all() == []
+
+
 def test_the_audit_log_page_filters_on_templates(client, db_session):
     admin(client, db_session)
     save(client, "approval_waived", "Going ahead.")
@@ -235,12 +260,12 @@ def test_an_edited_approval_template_changes_the_email_but_the_link_is_still_mad
     admin(client, db_session)
     person(client, db_session, "boss@example.com")
     ticket = raised_and_triaged(client, db_session, request_type(db_session, ["boss@example.com"]))
-    assert save(client, "approval_request", "Please decide on {reference} here: {link}", subject="Decide {ticket_number}").status_code == 303
+    assert save(client, "approval_request", "Please decide on {reference} here: {link}", subject="[{reference}] Decide {ticket_number}").status_code == 303
     [row] = rows(db_session, outbox.APPROVAL)
 
     built = mail.build_approval_mail(db_session, row)
 
-    assert built.subject == f"Decide {ticket.number}"
+    assert built.subject == f"[{ticket.reference}] Decide {ticket.number}"
     assert built.body.startswith(f"Please decide on {ticket.reference} here: https://tickets.example.org/approvals/")
     assert built.record == f"Please decide on {ticket.reference} here: [answer link left out]"
     stored = db_session.get(EmailTemplate, "approval_request")

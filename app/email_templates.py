@@ -26,7 +26,7 @@ from typing import Optional
 
 from sqlmodel import Session
 
-from app.models import EmailTemplate
+from app.models import EmailTemplate, Ticket
 
 log = logging.getLogger("app.email_templates")
 
@@ -58,6 +58,7 @@ class TemplateDef:
     subject_default: Optional[str] = None
     subject_placeholders: dict[str, str] = field(default_factory=dict)
     required: tuple[str, ...] = ()  # body placeholders that must appear
+    subject_required: tuple[str, ...] = ()  # subject placeholders that must appear
 
     @property
     def subject_editable(self) -> bool:
@@ -110,6 +111,7 @@ REGISTRY: dict[str, TemplateDef] = {
                 "link_days": "how many days the link works",
             },
             required=("link",),
+            subject_required=("reference",),  # the [INC-n] that lets a reply find its ticket
             sample={
                 **_COMMON_SAMPLE,
                 "requester_email": "sam@example.com",
@@ -160,15 +162,25 @@ def _check_text(text: str, allowed: dict[str, str], what: str) -> None:
         raise TemplateError(f"The {what} uses {listed}, which this email cannot fill in")
 
 
+def _lines(text: Optional[str]) -> str:
+    """Browsers post text areas with CRLF line ends; the defaults and the stored text use LF."""
+    return (text or "").replace("\r\n", "\n").replace("\r", "\n")
+
+
+def ticket_values(ticket: Ticket) -> dict[str, str]:
+    """The values of the placeholders every template shares (_COMMON). Callers add their own."""
+    return {"reference": ticket.reference, "ticket_number": str(ticket.number), "subject": ticket.subject}
+
+
 def validate(defn: TemplateDef, subject: Optional[str], body: str) -> tuple[Optional[str], str]:
     """The cleaned subject (None when the template has none of its own) and body, or TemplateError."""
-    body = (body or "").strip()
+    body = _lines(body).strip()
     if not body:
         raise TemplateError("The email needs some text")
     if len(body) > MAX_BODY_LENGTH:
         raise TemplateError(f"The text can be at most {MAX_BODY_LENGTH} characters")
     _check_text(body, defn.body_placeholders, "text")
-    if "/approvals/" in body:
+    if "/approvals/" in body.lower():
         raise TemplateError("Approval links cannot be written into a template; use {link}, which is made when the email is sent")
     for name in defn.required:
         if "{" + name + "}" not in body:
@@ -181,6 +193,9 @@ def validate(defn: TemplateDef, subject: Optional[str], body: str) -> tuple[Opti
     if len(subject) > MAX_SUBJECT_LENGTH:
         raise TemplateError(f"The subject can be at most {MAX_SUBJECT_LENGTH} characters")
     _check_text(subject, defn.subject_placeholders, "subject")
+    for name in defn.subject_required:
+        if "{" + name + "}" not in subject:
+            raise TemplateError("The subject must include {" + name + "}")
     return subject, body
 
 
@@ -245,7 +260,7 @@ def save_template(session: Session, key: str, subject: Optional[str], body: str,
             session.delete(row)
         return None
     if row is None:
-        row = EmailTemplate(key=key, subject=subject or "", body=body, updated_by=editor_email)
+        row = EmailTemplate(key=key, subject="", body="", updated_by=editor_email)
     row.subject, row.body, row.updated_by = subject or "", body, editor_email
     row.updated_at = datetime.now(timezone.utc)
     session.add(row)

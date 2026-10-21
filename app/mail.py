@@ -28,7 +28,7 @@ from sqlmodel import Session, select
 from app.approval_links import make_token
 from app.approvals import PENDING
 from app.config import settings
-from app.email_templates import LINK_LEFT_OUT, REQUEST_BLOCK, render_template
+from app.email_templates import LINK_LEFT_OUT, REQUEST_BLOCK, current_text, render_template, render_text, ticket_values
 from app.graph_client import graph_client
 from app.messages import about_text, in_a_split, is_triaged, mail_subject, requester_visible_messages
 from app.models import (
@@ -96,11 +96,6 @@ def _with_about(session: Session, ticket: Ticket, body: str) -> str:
     return f"{about_text(ticket)}\n\n{body}" if in_a_split(session, ticket) else body
 
 
-def _ticket_values(ticket: Ticket) -> dict[str, str]:
-    """The placeholders every template shares."""
-    return {"reference": ticket.reference, "ticket_number": str(ticket.number), "subject": ticket.subject}
-
-
 def own_first_message(session: Session, ticket: Ticket) -> Optional[Message]:
     """The requester's first message on this ticket itself (not the shared conversation of a split
     request, whose earliest message belongs to the original)."""
@@ -153,7 +148,7 @@ def build_raised_for_mail(session: Session, row: OutboundEmail) -> Mail:
     creator = session.get(User, ticket.created_by_id) if ticket.created_by_id else None
     first = own_first_message(session, ticket)
     rendered = render_template(session, "raised_for", {
-        **_ticket_values(ticket),
+        **ticket_values(ticket),
         "raised_by": creator.display_name if creator else "IT Support",
         "request_text": first.body if first else "",
     })
@@ -180,18 +175,18 @@ def build_approval_mail(session: Session, row: OutboundEmail) -> Mail:
     days = round((get_int_setting(session, APPROVAL_LINK_MINUTES) or 20160) / 1440)
     first = own_first_message(session, ticket)
     values = {
-        **_ticket_values(ticket),
+        **ticket_values(ticket),
         "requester_email": ticket.requester_email,
         # Their words, not IT's: said so, set apart and cut, since they sit beside a genuine link.
         "request_block": REQUEST_BLOCK.format(words=quoted(first.body)) if first else "",
         "link_days": str(days),
     }
-    rendered = render_template(session, "approval_request", {**values, "link": link})
+    subject, text = current_text(session, "approval_request")
     # The row keeps the text with the link left out; the link is never stored.
-    record = render_template(session, "approval_request", {**values, "link": LINK_LEFT_OUT})
     return Mail(
-        to=row.to_address, cc=[], subject=rendered.subject or f"[{ticket.reference}] {ticket.subject}",
-        body=rendered.body, record=record.body, automatic=True, reference=ticket.reference,
+        to=row.to_address, cc=[], subject=render_text(subject, values),
+        body=render_text(text, {**values, "link": link}), record=render_text(text, {**values, "link": LINK_LEFT_OUT}),
+        automatic=True, reference=ticket.reference,
     )
 
 

@@ -510,6 +510,7 @@
         "render_text",
         "reset_template",
         "save_template",
+        "ticket_values",
         "validate"
       ],
       "imported_by": [

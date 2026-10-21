@@ -20,6 +20,7 @@
   <fieldset>
     <legend>{{ r.defn.label }}{% if r.customised %} (changed from the default){% endif %}</legend>
     <p class="note">{{ r.defn.description }}</p>
+    {% if r.error %}<p class="error" role="alert">Not saved: {{ r.error }}</p>{% endif %}
     {% if r.defn.subject_editable %}
     <label>Subject <input type="text" name="subject" value="{{ r.subject }}" maxlength="{{ max_subject_length }}" required /></label>
     {% else %}
@@ -37,7 +38,7 @@
     </details>
     <button type="submit">Save</button>
     {% if r.customised %}<button type="submit" formaction="/admin/email-templates/{{ r.defn.key }}/reset" formnovalidate>Reset to default</button>{% endif %}
-    <div id="preview-{{ r.defn.key }}" aria-live="polite">{% with preview=r.preview, error=none %}{% include "_email_template_preview.html" %}{% endwith %}</div>
+    <div id="preview-{{ r.defn.key }}" aria-live="polite">{% with preview=r.preview, error=r.error %}{% include "_email_template_preview.html" %}{% endwith %}</div>
   </fieldset>
 </form>
 {% endfor %}

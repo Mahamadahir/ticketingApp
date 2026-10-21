@@ -28,7 +28,7 @@ from sqlalchemy import func
 from sqlmodel import Session, select
 
 from app.audit import log_action
-from app.email_templates import render_template
+from app.email_templates import render_template, ticket_values
 from app.messages import record_notice
 from app.outbox import queue_approval
 from app.models import (
@@ -177,8 +177,7 @@ def count_pending_for(session: Session, user: User) -> int:
 
 def _notice(session: Session, ticket: Ticket, key: str, **extra: str) -> str:
     """The wording of an automatic notice, from the admin-managed template (app/email_templates.py)."""
-    values = {"reference": ticket.reference, "ticket_number": str(ticket.number), "subject": ticket.subject, **extra}
-    return render_template(session, key, values).body
+    return render_template(session, key, {**ticket_values(ticket), **extra}).body
 
 
 def _settle(session: Session, ticket: Ticket, result: str, approvals: list[TicketApproval], who: User) -> None:
