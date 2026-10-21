@@ -1,6 +1,7 @@
 """4C-2: the requester withdraws a request that is waiting for approval."""
 import threading
 import time
+from datetime import datetime, timezone
 
 import pytest
 from sqlmodel import Session, select
@@ -24,6 +25,14 @@ def withdraw_as(client, ticket, email="jo@example.com"):
 def fresh(db_session, ticket):
     db_session.expire_all()
     return db_session.get(Ticket, ticket.id)
+
+
+def mark_approval_emails_sent(db_session):
+    """As the mail job does once the approval emails have gone."""
+    for row in rows(db_session, outbox.APPROVAL):
+        row.sent_at = datetime.now(timezone.utc)
+        db_session.add(row)
+    db_session.commit()
 
 
 def vote_id_of(db_session, email):
@@ -160,6 +169,7 @@ def test_unanswered_approvers_are_emailed_per_preference_and_answered_ones_are_n
     emails = many(client, db_session, ("a", "b", "c"))
     ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 100, 2))
     opt_out_of_approval_emails(db_session, "c@example.com")
+    mark_approval_emails_sent(db_session)
     answer(client, ticket, "a@example.com", "approved")
     withdraw_as(client, ticket)
 
@@ -170,6 +180,13 @@ def test_unanswered_approvers_are_emailed_per_preference_and_answered_ones_are_n
     assert "jo@example.com has withdrawn" in built.body and "http" not in built.body
 
 
+def test_an_approver_whose_approval_email_never_went_is_not_told_of_a_withdrawal(client, db_session, dev_mail):
+    emails = many(client, db_session, ("a",))
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails))
+    withdraw_as(client, ticket)  # the approval email is still waiting in the queue
+    assert rows(db_session, outbox.APPROVAL_WITHDRAWN) == []
+
+
 def test_the_withdrawn_email_asks_again_when_it_goes(client, db_session, dev_mail):
     emails = many(client, db_session, ("a",))
     ticket = raised_and_triaged(client, db_session, request_type(db_session, emails))
@@ -177,6 +194,7 @@ def test_the_withdrawn_email_asks_again_when_it_goes(client, db_session, dev_mai
     not_yet = type(asked)(kind=outbox.APPROVAL_WITHDRAWN, ticket_id=ticket.id, vote_id=asked.vote_id, to_address="a@example.com")
     with pytest.raises(Unsendable, match="was not withdrawn"):
         mail.build_approval_withdrawn_mail(db_session, not_yet)
+    mark_approval_emails_sent(db_session)
     withdraw_as(client, ticket)
     [row] = rows(db_session, outbox.APPROVAL_WITHDRAWN)
     opt_out_of_approval_emails(db_session, "a@example.com")
@@ -202,6 +220,16 @@ def test_an_agent_approver_who_can_open_the_ticket_gets_a_bell(client, db_sessio
     told = db_session.exec(select(Notification).where(Notification.kind == "approval_withdrawn")).all()
     assert [n.user_id for n in told] == [approver.id]
     assert "withdrawn" in told[0].text and told[0].ticket_id == ticket.id
+
+
+def test_an_agent_who_switched_approval_notifications_off_gets_no_bell(client, db_session):
+    person(client, db_session, "approver@example.com")
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, ["approver@example.com"]))
+    approver = db_session.exec(select(User).where(User.email == "approver@example.com")).one()
+    set_role(db_session, approver.id, UserRole.AGENT, db_session.exec(select(Team)).first().id)
+    opt_out_of_approval_emails(db_session, "approver@example.com")
+    withdraw_as(client, ticket)
+    assert db_session.exec(select(Notification).where(Notification.kind == "approval_withdrawn")).all() == []
 
 
 def test_an_end_user_approver_has_no_bell(client, db_session):
@@ -270,6 +298,23 @@ def test_a_final_vote_landing_first_makes_the_withdrawal_refuse(client, db_sessi
     assert "no longer waiting" in result["w"]
     assert status(db_session, ticket) == TicketStatus.OPEN
     assert current_approval(db_session, ticket).status == APPROVED
+
+
+def test_a_vote_decided_since_the_session_loaded_it_is_not_overwritten(client, db_session):
+    emails = many(client, db_session, ("a", "b"))
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 100, 2))
+    session = Session(engine)
+    loaded = session.get(Ticket, ticket.id)
+    approval = current_approval(session, loaded)
+    from app.approvals import votes_of
+
+    held = votes_of(session, approval)  # this session now holds both votes as pending
+    answer(client, ticket, "a@example.com", "approved")  # committed by another session meanwhile
+    assert [vote.decision for vote, _ in held] == [PENDING, PENDING]  # and has not noticed
+    withdraw(session, loaded, "jo@example.com")
+    session.commit()
+    session.close()
+    assert approvals(db_session, ticket)["a@example.com"] == APPROVED
 
 
 def test_a_withdrawn_approval_frees_the_one_pending_slot(client, db_session):

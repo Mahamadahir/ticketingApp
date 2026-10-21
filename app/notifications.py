@@ -21,7 +21,7 @@ from sqlalchemy import and_, func, or_, update
 from sqlmodel import Session, select
 
 from app.models import FINISHED_STATUSES, Message, Notification, Ticket, User, UserRole
-from app.notification_settings import IN_APP, TEAMS, is_enabled, offers
+from app.notification_settings import IN_APP, TEAMS, is_enabled, offers, wants_approval_email
 from app.settings_store import TEAMS_UNREAD_MINUTES, get_int_setting
 from app.visibility import Access, access_context, ticket_access, visible_ticket_condition
 
@@ -320,8 +320,8 @@ def notify_reopened(session: Session, ticket: Ticket, actor_email: Optional[str]
 def notify_approval_withdrawn(session: Session, ticket: Ticket, approver: User, actor_email: Optional[str]) -> Optional[Notification]:
     """Tells an agent who was asked to approve that the requester withdrew the request. Only an agent has a
     bell, and only one who can open the ticket is told what it is. Does not commit."""
-    if not _can_open(session, approver, ticket):
-        return None
+    if not _can_open(session, approver, ticket) or not wants_approval_email(session, approver):
+        return None  # the bell has no setting of its own: switching off approval notifications covers it
     return notify(
         session, approver, APPROVAL_WITHDRAWN, ticket,
         f"{ticket.tag} {ticket.subject} was withdrawn by the requester, so it no longer needs your approval", actor_email,

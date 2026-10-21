@@ -76,10 +76,17 @@ def queue_approval(session: Session, vote: ApprovalVote, approver: User) -> Opti
 
 def queue_approval_withdrawn(session: Session, vote: ApprovalVote, approver: User) -> Optional[OutboundEmail]:
     """Queues "the request you were asked to approve was withdrawn" for one voter who had not answered.
-    Follows the same preference as the approval request itself (wants_approval_email)."""
+    Only for a voter whose approval email was sent, and it follows the same preference as that email (wants_approval_email)."""
     if not is_on() or not wants_approval_email(session, approver):
         return None
     session.flush()
+    asked = session.exec(
+        select(OutboundEmail.id).where(
+            OutboundEmail.kind == APPROVAL, OutboundEmail.vote_id == vote.id, OutboundEmail.sent_at.is_not(None)
+        ).limit(1)
+    ).first()
+    if asked is None:
+        return None  # the approval email never went out (the one still queued is dropped), so there is nothing to take back
     approval = session.get(TicketApproval, vote.approval_id)
     row = OutboundEmail(kind=APPROVAL_WITHDRAWN, ticket_id=approval.ticket_id, vote_id=vote.id, to_address=approver.email)
     session.add(row)

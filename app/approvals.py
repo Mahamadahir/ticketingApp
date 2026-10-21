@@ -357,11 +357,13 @@ def withdraw(session: Session, ticket: Ticket, requester_email: str) -> None:
     if ticket.requester_email.lower() != (requester_email or "").lower():
         raise ApprovalError("Only the person who made the request can withdraw it")
     approval = current_approval(session, ticket)
+    if approval is not None:
+        session.refresh(approval, with_for_update=True)
     if ticket.status != TicketStatus.AWAITING_APPROVAL or approval is None or approval.status != PENDING:
         raise ApprovalError("This request is no longer waiting for approval, so it cannot be withdrawn")
-    session.refresh(approval, with_for_update=True)
-    if approval.status != PENDING:
-        raise ApprovalError("This request is no longer waiting for approval, so it cannot be withdrawn")
+    # Re-read the votes under the lock: one decided since this session loaded them must not be overwritten.
+    for vote, _ in votes_of(session, approval):
+        session.refresh(vote)
     unanswered = voters_yet_to_vote(session, approval)
     approval.status, approval.settled_at = WITHDRAWN, datetime.now(timezone.utc)
     session.add(approval)
