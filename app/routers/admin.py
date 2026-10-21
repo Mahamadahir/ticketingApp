@@ -81,8 +81,8 @@ from app.models import (
     UserRole,
 )
 from app.pagination import paginate
-from app.scheduled_jobs import status_line
-from app.settings_store import REGISTRY, get_setting, set_setting
+from app.scheduled_jobs import SCHEDULED_JOBS, status_line, timing
+from app.settings_store import JOB_LATE_MINUTES, REGISTRY, get_setting, set_setting
 from app.subscriptions import health_warnings, mail_folder, subscription_resource
 from app.teams import MAX_ATTEMPTS
 from app.ticket_service import EVENT_CATEGORY_REVIEWED, get_by_number, record_event
@@ -1029,5 +1029,5 @@ def view_scheduled_jobs(
     return templates.TemplateResponse(
         request,
         "admin_scheduled_jobs.html",
-        {"rows": rows, "status": status_line(rows, now), "now": now, "user": user},
+        {"rows": rows, "status": status_line(rows, now, timing(session, JOB_LATE_MINUTES), {job.name for job in SCHEDULED_JOBS}), "now": now, "user": user},
     )

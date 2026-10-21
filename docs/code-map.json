@@ -2285,11 +2285,13 @@
       "functions": [
         "claim_next_due",
         "ensure_rows",
+        "next_slot",
         "registry_errors",
         "run_claimed",
         "run_due_jobs",
         "scheduled_jobs_tick",
         "status_line",
+        "timing",
         "utcnow",
         "worker_id"
       ],
@@ -2371,6 +2373,7 @@
         "tests/test_mail_subscriptions.py",
         "tests/test_notification_followup.py",
         "tests/test_outbound_mail.py",
+        "tests/test_scheduled_jobs.py",
         "tests/test_sla.py",
         "tests/test_teams_copy.py",
         "tests/test_triage.py"

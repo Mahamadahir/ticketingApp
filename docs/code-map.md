@@ -711,7 +711,7 @@ Recurring jobs driven by the database (phase 4A): the `scheduled_job` table.
 File: `app/scheduled_jobs.py`
 
 - Classes: `ScheduledJobDef`
-- Functions: `claim_next_due`, `ensure_rows`, `registry_errors`, `run_claimed`, `run_due_jobs`, `scheduled_jobs_tick`, `status_line`, `utcnow`, `worker_id`
+- Functions: `claim_next_due`, `ensure_rows`, `next_slot`, `registry_errors`, `run_claimed`, `run_due_jobs`, `scheduled_jobs_tick`, `status_line`, `timing`, `utcnow`, `worker_id`
 - Imports: `app.audit`, `app.database`, `app.models`, `app.settings_store`
 - Imported by: `app.jobs`, `app.routers.admin`, `app.worker`
 - Tests: `test_scheduled_jobs.py`
@@ -734,7 +734,7 @@ File: `app/settings_store.py`
 - Functions: `get_flag`, `get_int_setting`, `get_setting`, `set_setting`, `sla_key`
 - Imports: `app.models`
 - Imported by: `app.categories`, `app.mail`, `app.notifications`, `app.raising`, `app.routers.admin`, `app.routers.approvals`, `app.scheduled_jobs`, `app.sla`, `app.subscriptions`, `app.ticket_service`
-- Tests: `test_approvals.py`, `test_category_admin.py`, `test_mail_subscriptions.py`, `test_notification_followup.py`, `test_outbound_mail.py`, `test_sla.py`, `test_teams_copy.py`, `test_triage.py`
+- Tests: `test_approvals.py`, `test_category_admin.py`, `test_mail_subscriptions.py`, `test_notification_followup.py`, `test_outbound_mail.py`, `test_scheduled_jobs.py`, `test_sla.py`, `test_teams_copy.py`, `test_triage.py`
 
 ### `app.sla`
 

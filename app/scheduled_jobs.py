@@ -39,7 +39,7 @@ from sqlmodel import Session, select
 from app.audit import log_action
 from app.database import engine
 from app.models import ScheduledJob
-from app.settings_store import JOB_LATE_MINUTES, JOB_LEASE_MINUTES, JOB_RETRY_MINUTES, get_int_setting
+from app.settings_store import JOB_LATE_MINUTES, JOB_LEASE_MINUTES, JOB_RETRY_MINUTES, REGISTRY, get_int_setting
 
 log = logging.getLogger("app.worker")
 
@@ -77,8 +77,11 @@ def registry_errors(jobs: Sequence[ScheduledJobDef]) -> list[str]:
     return errors
 
 
-def _minutes(session: Session, key: str) -> timedelta:
-    return timedelta(minutes=get_int_setting(session, key) or 1)
+def timing(session: Session, key: str) -> timedelta:
+    """A timing setting in minutes. A blank or invalid value (the settings page allows blank) falls back
+    to the setting's default rather than to something tiny."""
+    minutes = get_int_setting(session, key)
+    return timedelta(minutes=minutes if minutes else int(REGISTRY[key].default))
 
 
 def ensure_rows(session: Session, jobs: Sequence[ScheduledJobDef], now: datetime) -> None:
@@ -108,23 +111,36 @@ def claim_next_due(session: Session, jobs: Sequence[ScheduledJobDef], owner: str
     ).first()
     if row is None:
         return None
-    notes = []
     if row.lease_owner is not None:
-        notes.append(f"the previous run by {row.lease_owner} never finished (lease expired)")
+        # The previous run never reported back: its worker died (or overran the lease). Count it as a failure.
         row.last_error = "The previous run never finished (the worker stopped mid-run?)"
         row.last_error_at = now
-    if now - row.next_run_at > _minutes(session, JOB_LATE_MINUTES):
-        notes.append(f"due {row.next_run_at:%Y-%m-%d %H:%M} UTC, started {now:%Y-%m-%d %H:%M} UTC")
-    if notes:
-        log_action(session, AUDIT_ACTOR, AUDIT_ENTITY, 0, f"Job {row.name} ran late", "; ".join(notes))
+        row.failures_in_a_row += 1
+        log_action(
+            session, AUDIT_ACTOR, AUDIT_ENTITY, 0, f"Job {row.name} recovered after its lease expired",
+            f"the run started by {row.lease_owner} at {row.last_started_at:%Y-%m-%d %H:%M} UTC never finished",
+        )
+    if now - row.next_run_at > timing(session, JOB_LATE_MINUTES):
+        log_action(
+            session, AUDIT_ACTOR, AUDIT_ENTITY, 0, f"Job {row.name} ran late",
+            f"due {row.next_run_at:%Y-%m-%d %H:%M} UTC, started {now:%Y-%m-%d %H:%M} UTC",
+        )
     row.lease_owner = owner
-    row.lease_expires_at = now + _minutes(session, JOB_LEASE_MINUTES)
+    row.lease_expires_at = now + timing(session, JOB_LEASE_MINUTES)
     row.last_started_at = now
     session.add(row)
     return row
 
 
-def _finish(job: ScheduledJobDef, owner: str, started: datetime, error: Optional[str], clock: Callable[[], datetime]) -> None:
+def next_slot(due: datetime, started: datetime, every: timedelta) -> datetime:
+    """The first slot after `started` on the grid of `every` that begins at `due`. A job is not run
+    again for slots it missed, and a daily job stays at its time of day instead of drifting."""
+    return due + every * ((started - due) // every + 1)
+
+
+def _finish(
+    job: ScheduledJobDef, owner: str, started: datetime, due: datetime, error: Optional[str], clock: Callable[[], datetime]
+) -> None:
     """Records the outcome and releases the lease, but only if this worker still holds it (after a
     lease expiry another worker may have taken the job over, and its record wins)."""
     with Session(engine) as session:
@@ -140,18 +156,20 @@ def _finish(job: ScheduledJobDef, owner: str, started: datetime, error: Optional
         if error is None:
             row.last_success_at = now
             row.failures_in_a_row = 0
-            row.next_run_at = started + timedelta(seconds=job.every_seconds)
+            row.next_run_at = next_slot(due, started, timedelta(seconds=job.every_seconds))
         else:
             row.last_error = error[:MAX_ERROR_LENGTH]
             row.last_error_at = now
             row.failures_in_a_row += 1
-            retry = min(_minutes(session, JOB_RETRY_MINUTES), timedelta(seconds=job.every_seconds))
+            retry = min(timing(session, JOB_RETRY_MINUTES), timedelta(seconds=job.every_seconds))
             row.next_run_at = now + retry
         session.add(row)
         session.commit()
 
 
-def run_claimed(job: ScheduledJobDef, owner: str, started: datetime, clock: Callable[[], datetime]) -> bool:
+def run_claimed(
+    job: ScheduledJobDef, owner: str, started: datetime, due: datetime, clock: Callable[[], datetime]
+) -> bool:
     """Runs a job that was claimed, in its own session, and records the outcome. Never raises."""
     began = time.monotonic()
     error: Optional[str] = None
@@ -164,7 +182,11 @@ def run_claimed(job: ScheduledJobDef, owner: str, started: datetime, clock: Call
         error = f"{type(exc).__name__}: {exc}"
     else:
         log.info("heartbeat job=%s status=ok duration_ms=%d", job.name, (time.monotonic() - began) * 1000)
-    _finish(job, owner, started, error, clock)
+    try:
+        _finish(job, owner, started, due, error, clock)
+    except Exception:
+        # The work is done but not recorded; the lease expires and the job is recovered then.
+        log.exception("job=%s outcome could not be recorded", job.name)
     return error is None
 
 
@@ -185,13 +207,13 @@ def run_due_jobs(
     for _ in range(len(jobs)):
         with Session(engine) as session:
             now = clock()
-            row = claim_next_due(session, jobs, owner, now)
+            row = claim_next_due(session, [job for job in jobs if job.name not in ran], owner, now)
             if row is None:
                 break
-            name = row.name
+            name, due = row.name, row.next_run_at
             session.commit()  # the lease is now visible to every other worker
-        run_claimed(by_name[name], owner, now, clock)
-        ran.append(name)
+        ran.append(name)  # never twice in one tick, even if it is due again at once
+        run_claimed(by_name[name], owner, now, due, clock)
     return ran
 
 
@@ -201,17 +223,27 @@ def scheduled_jobs_tick(session: Session) -> None:
     run_due_jobs()
 
 
-def status_line(rows: Sequence[ScheduledJob], now: datetime) -> str:
-    """One line for the admin page: whether the recurring jobs are healthy."""
+def status_line(rows: Sequence[ScheduledJob], now: datetime, late: timedelta, registered: Optional[set[str]] = None) -> str:
+    """One line for the admin page: whether the recurring jobs are healthy. A job is overdue when it is
+    more than `late` past its due time and nothing holds it (the worker is down or stuck). Rows for jobs
+    no longer in `registered` are ignored."""
+    if registered is not None:
+        rows = [row for row in rows if row.name in registered]
     if not rows:
         return "No recurring jobs have run yet."
     failing = [row.name for row in rows if row.failures_in_a_row]
     stuck = [row.name for row in rows if row.lease_expires_at is not None and row.lease_expires_at <= now]
-    if not failing and not stuck:
+    overdue = [
+        row.name for row in rows
+        if row.lease_owner is None and now - row.next_run_at > late and row.name not in failing
+    ]
+    if not failing and not stuck and not overdue:
         return f"All {len(rows)} recurring job(s) are healthy."
     parts = []
     if failing:
         parts.append(f"failing: {', '.join(sorted(failing))}")
     if stuck:
         parts.append(f"did not finish: {', '.join(sorted(stuck))}")
+    if overdue:
+        parts.append(f"overdue (is the worker running?): {', '.join(sorted(overdue))}")
     return "Problems with recurring jobs, " + "; ".join(parts) + "."

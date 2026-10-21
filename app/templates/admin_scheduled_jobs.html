@@ -26,7 +26,7 @@
       <td>{{ row.last_success_at.strftime("%Y-%m-%d %H:%M") if row.last_success_at else "never" }}</td>
       <td>{% if row.lease_owner %}{{ row.lease_owner }} until {{ row.lease_expires_at.strftime("%H:%M") }}{% else %}nobody{% endif %}</td>
       <td>{{ row.failures_in_a_row }}</td>
-      <td>{% if row.last_error %}{{ row.last_error }} ({{ row.last_error_at.strftime("%Y-%m-%d %H:%M") }}){% else %}none{% endif %}</td>
+      <td>{% if row.last_error %}{{ row.last_error }} ({{ row.last_error_at.strftime("%Y-%m-%d %H:%M") }}{% if row.last_success_at and row.last_success_at > row.last_error_at %}, since worked{% endif %}){% else %}none{% endif %}</td>
     </tr>
     {% endfor %}
   </tbody>
