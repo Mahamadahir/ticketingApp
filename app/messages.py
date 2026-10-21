@@ -161,7 +161,9 @@ def record_notice(session: Session, ticket: Ticket, body: str, copy_followers: b
     email, so it does not count as a first response. It is queued as an email too. Followers are
     copied only when copy_followers is set (an automatic resolution does), by the same rule as an
     agent's email."""
-    cc = ", ".join(f.email for f in _copied_followers(session, ticket, None)) or None if copy_followers else None
+    cc = None
+    if copy_followers:
+        cc = ", ".join(f.email for f in _copied_followers(session, ticket, None)) or None
     message = _record(
         session, ticket, sender="IT Support (automatic)", body=body,
         direction=MessageDirection.OUTBOUND, visibility=MessageVisibility.PUBLIC, cc=cc,

@@ -63,7 +63,7 @@ from app.sla import (
     set_impact_urgency,
     sla_view,
 )
-from app.resolution import ResolveError, preview_resolution, resolve_ticket
+from app.resolution import ResolveError, check_can_resolve, preview_resolution, resolve_ticket
 from app.ticket_service import AwaitingApproval, EVENT_ASSIGNED, NotTriaged, ResolutionRequired, find_ticket, get_by_number, record_event, set_status
 from app.triage import TriageError, reassign_ticket, triage_ticket
 from app.visibility import (
@@ -854,6 +854,15 @@ def remove_ticket_follower(
     return _render_ticket_detail(request, ticket, user, session)
 
 
+def _may_resolve(session: Session, ticket: Ticket) -> bool:
+    """Whether to offer the Resolve form: the service's own rules (app/resolution.py), so the page and the action agree."""
+    try:
+        check_can_resolve(session, ticket)
+    except ResolveError:
+        return False
+    return True
+
+
 def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session: Session) -> HTMLResponse:
     ticket_approvals = approvals_of(session, ticket)
     team = session.get(Team, ticket.team_id) if ticket.team_id else None
@@ -937,10 +946,13 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             "can_note": may_add_note(user, ticket, levels),
             # New is left only by triage, so it is not offered as a status to set.
             # Resolved is not a status to set: the Resolve action takes the notes.
-            "statuses": [s for s in TicketStatus if s not in (TicketStatus.NEW, TicketStatus.AWAITING_APPROVAL, TicketStatus.RESOLVED)],
+            "statuses": [
+                s for s in TicketStatus
+                if s not in (TicketStatus.NEW, TicketStatus.AWAITING_APPROVAL)
+                and (s != TicketStatus.RESOLVED or ticket.status == TicketStatus.RESOLVED)
+            ],
             "resolved_by": session.get(User, ticket.resolved_by_id) if ticket.resolved_by_id else None,
-            "can_resolve": can_work and ticket.triaged_at is not None and ticket.status not in FINISHED_STATUSES
-            and ticket.status != TicketStatus.AWAITING_APPROVAL,
+            "can_resolve": can_work and _may_resolve(session, ticket),
             "can_triage": can_triage,
             "can_self_assign": can_self_assign,
             "ticket_types": list(TicketType),

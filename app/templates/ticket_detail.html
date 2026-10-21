@@ -138,7 +138,8 @@
   {% if ticket.triaged_at and ticket.status.value != "awaiting_approval" %}
   <form hx-post="/tickets/{{ ticket.number }}/status" hx-target="main" hx-swap="innerHTML">
     {% for s in statuses %}
-    <button type="submit" name="status" value="{{ s.value }}" class="{{ 'button-active' if ticket.status == s else 'button-outline' }}">{{ s.value.replace("_", " ") }}</button>
+    {% if s.value == "resolved" %}<button type="button" disabled class="button-active">resolved</button>{% else %}
+    <button type="submit" name="status" value="{{ s.value }}" class="{{ 'button-active' if ticket.status == s else 'button-outline' }}">{{ s.value.replace("_", " ") }}</button>{% endif %}
     {% endfor %}
   </form>
   {% if status_follows_parts %}<p class="note">This ticket has sub-tickets, so its status follows them. You can resolve or close it once they are all finished.</p>{% endif %}

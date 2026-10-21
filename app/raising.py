@@ -136,6 +136,8 @@ def raise_ticket(
         raise RaiseError("Classify the ticket (choose a category) to assign it")
     if resolved_at is not None and category is None:
         raise RaiseError("Classify the ticket (choose a category) before saying when it was resolved")
+    if resolved_at is None and (resolution_notes or "").strip():
+        raise RaiseError("Resolution notes are only for a ticket logged as already resolved: enter the Resolved time too")
     if resolved_at is not None:
         try:
             resolution_notes = clean_notes(resolution_notes)

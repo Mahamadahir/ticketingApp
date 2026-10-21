@@ -346,3 +346,67 @@ def test_a_bad_copy_address_raises_before_the_helper_changes_anything(client, db
     with pytest.raises(UnknownRecipient):
         resolve_ticket(db_session, ticket, agent, "Done", cc_emails=["stranger@example.com"])
     assert ticket.status == TicketStatus.OPEN and ticket.resolution_notes is None
+
+
+def test_a_second_resolve_of_a_stale_copy_is_refused_and_changes_nothing(client, db_session, dev_mail):
+    ticket = fresh(db_session, ticket_for_email(client, db_session))
+    agent = db_session.exec(select(User).where(User.email == "agent@example.com")).one()
+    stale = db_session.get(Ticket, ticket.id)  # loaded as Open
+    assert resolve(client, ticket, "First agent's notes").status_code == 200
+    assert stale.status == TicketStatus.OPEN  # this session has not seen the change
+    emails_before = len(db_session.exec(select(OutboundEmail)).all())
+
+    # The helper re-reads the row under a lock, so it sees the first agent's resolve.
+    with pytest.raises(ResolveError, match="already resolved"):
+        resolve_ticket(db_session, stale, agent, "Second agent's notes")
+
+    db_session.rollback()
+    assert fresh(db_session, ticket).resolution_notes == "First agent's notes"
+    assert len(db_session.exec(select(OutboundEmail)).all()) == emails_before
+    assert len(db_session.exec(select(AuditLog).where(AuditLog.action == "resolved")).all()) == 1
+
+
+def test_reopening_clears_the_resolution_so_a_later_close_does_not_show_it(client, db_session):
+    ticket = ticket_for_email(client, db_session)
+    resolve(client, ticket, "Old notes")
+
+    client.post(f"/tickets/{ticket.number}/status", data={"status": "in_progress"})
+    reopened = fresh(db_session, ticket)
+    assert (reopened.resolution_notes, reopened.resolved_by_id, reopened.resolved_at) == (None, None, None)
+
+    client.post(f"/tickets/{ticket.number}/status", data={"status": "closed"})
+    assert "<h3>Resolution</h3>" not in client.get(f"/tickets/{ticket.number}").text
+
+
+def test_the_page_offers_resolve_only_when_resolving_would_work(client, db_session):
+    original = ticket_for_email(client, db_session, "Two things")
+    assert "Preview resolution" in client.get(f"/tickets/{original.number}").text
+    split(client, original, ("Keyboard", ""), ("Office", ""))
+    assert "Preview resolution" not in client.get(f"/tickets/{original.number}").text  # parts still open
+
+    first, second = subs_of(db_session, original)
+    resolve(client, first)
+    resolve(client, second)
+    assert "Preview resolution" in client.get(f"/tickets/{original.number}").text
+
+
+def test_a_resolved_ticket_shows_resolved_as_its_current_status_without_a_way_to_set_it(client, db_session):
+    ticket = ticket_for_email(client, db_session)
+    resolve(client, ticket)
+
+    page = client.get(f"/tickets/{ticket.number}").text
+
+    assert '<button type="button" disabled class="button-active">resolved</button>' in page
+    assert 'name="status" value="resolved"' not in page and "Preview resolution" not in page
+
+
+def test_notes_without_a_resolved_time_are_refused_not_dropped(client, db_session):
+    team, category, _ = desk(client, db_session)
+
+    response = raise_it(
+        client, for_email="walkin@example.com", category_id=category.id, impact="low", urgency="low",
+        resolution_notes="Fixed it",
+    )
+
+    assert response.status_code == 400 and "Resolved time" in response.text
+    assert db_session.exec(select(Ticket)).all() == []

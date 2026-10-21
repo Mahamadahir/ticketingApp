@@ -170,6 +170,10 @@ def set_status(
             ticket.resolved_at = now
     else:
         ticket.resolved_at = None
+        # A reopened ticket has no resolution until it is resolved again (the timeline, the audit
+        # entry and the resolution email keep what was said).
+        ticket.resolution_notes = None
+        ticket.resolved_by_id = None
     # closed_at is when it was closed; moving off Closed (a reopen) clears it.
     if new_status == TicketStatus.CLOSED:
         ticket.closed_at = now

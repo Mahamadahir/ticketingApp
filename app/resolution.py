@@ -27,7 +27,7 @@ from app.email_templates import render_template, ticket_values
 from app.forms import MAX_MESSAGE_LENGTH
 from app.messages import EmailPreview, email_requester, is_triaged, preview_email, record_notice
 from app.models import FINISHED_STATUSES, Ticket, TicketStatus, User
-from app.splitting import SplitError, check_manual_status
+from app.splitting import SplitError, check_manual_status, lock_ticket
 from app.ticket_service import set_status
 
 AUDIT_RESOLVED = "resolved"
@@ -97,6 +97,12 @@ def resolve_ticket(
     actor is the agent, or None for an automatic resolve. cc_emails is the addresses to copy
     (None: every follower, the same rule as an agent's email). detail is added to the status event."""
     notes = clean_notes(notes)
+    # Two agents (or a double submit) resolving at once: the second waits here, re-reads the ticket as
+    # the first left it and is refused as already resolved, so there is one email and one set of notes.
+    if ticket.split_from_id is not None:
+        lock_ticket(session, ticket.split_from_id)  # the original first, like everything in a family
+    session.flush()
+    session.refresh(ticket, with_for_update=True)
     check_can_resolve(session, ticket)
     body = resolution_email_body(session, ticket, notes) if send_email else None
     if body is not None:
