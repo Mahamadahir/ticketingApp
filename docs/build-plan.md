@@ -39,6 +39,7 @@ The app is not live and has no users; open questions are design choices, not liv
 | Team activity feed (agents see all activity in their teams) | merged (#30) | `app/team_activity.py` |
 | 1H-i request catalogue: request types with approvers, chosen on the raise form | merged (#34) | `app/request_types.py` |
 | 1H-ii approvals: Awaiting approval status, thresholds, approvers decide in the portal or from an emailed link | merged (#35) | `app/approvals.py`, `app/routers/approvals.py` |
+| Fix: htmx forms swapped the whole page (header twice) into `<main>`; they now get the content block only, one shared `templates` in `app/templating.py` | in review | `app/templating.py`, `app/templates/base.html` |
 | Phase 1 | complete | |
 | 2A in-app notifications (the bell): assignment and @mentions | merged (#36) | `app/notifications.py` |
 | 2B notification settings (channels per event type per person) | merged (#38) | `app/notification_settings.py`, `app/routers/my_settings.py` |

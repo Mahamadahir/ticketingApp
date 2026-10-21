@@ -75,6 +75,23 @@ def fresh_rate_limits():
     yield
 
 
+@pytest.fixture(autouse=True)
+def no_layout_for_htmx(monkeypatch):
+    """Generic guard: an htmx form swaps the response into <main>, so a page rendered for an htmx
+    request must never carry the layout (header, nav, scripts). Fails any test that triggers it."""
+    from starlette.templating import Jinja2Templates
+
+    real = Jinja2Templates.TemplateResponse
+
+    def checked(self, request, name, *args, **kwargs):
+        response = real(self, request, name, *args, **kwargs)
+        if request.headers.get("HX-Request") == "true" and (b"<html" in response.body or b"<nav>" in response.body):
+            raise AssertionError(f"{name} rendered the full page layout for an htmx request")
+        return response
+
+    monkeypatch.setattr(Jinja2Templates, "TemplateResponse", checked)
+
+
 @pytest.fixture
 def db_session():
     with Session(engine) as session:

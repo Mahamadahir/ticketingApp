@@ -3,7 +3,7 @@ import secrets
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
+from app.templating import templates
 from sqlmodel import Session
 
 from app.activity import (
@@ -26,7 +26,6 @@ logger = logging.getLogger(__name__)
 NOT_WORTH_A_ROW = {"unknown_account", "account_locked"}
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-templates = Jinja2Templates(directory="app/templates")
 
 
 @router.get("/login", response_class=HTMLResponse)

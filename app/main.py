@@ -6,7 +6,7 @@ from fastapi.exception_handlers import http_exception_handler, request_validatio
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
+from app.templating import templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -36,9 +36,6 @@ class AppStaticFiles(StaticFiles):
         if path.replace("\\", "/").startswith("vendor/") and path.endswith(".js") and response.status_code == 200:
             response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
         return response
-
-
-templates = Jinja2Templates(directory="app/templates")
 
 
 def _is_htmx(request: Request) -> bool:

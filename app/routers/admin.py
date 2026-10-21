@@ -3,7 +3,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
+from app.templating import templates
 from sqlalchemy import or_
 from sqlmodel import Session, func, select
 
@@ -74,7 +74,6 @@ from app.teams import MAX_ATTEMPTS
 from app.ticket_service import EVENT_CATEGORY_REVIEWED, get_by_number, record_event
 
 router = APIRouter(prefix="/admin", tags=["admin"])
-templates = Jinja2Templates(directory="app/templates")
 
 require_super_admin = require_roles(UserRole.SUPER_ADMIN)
 

@@ -1,3 +1,4 @@
+{% if htmx_partial %}{% block content %}{% endblock %}{% else %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -27,7 +28,7 @@
   </header>
   <div id="flash" role="alert"></div>
   <main>
-    {% block content %}{% endblock %}
+    {{ self.content() }}
   </main>
   <script>
     // Forms swap <main> with htmx. Clear any earlier message when one is sent, and
@@ -55,3 +56,4 @@
   </script>
 </body>
 </html>
+{% endif %}

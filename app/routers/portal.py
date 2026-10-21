@@ -2,7 +2,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
+from app.templating import templates
 from sqlmodel import Session, select
 
 from app.audit import log_action
@@ -51,7 +51,6 @@ from app.ticket_service import get_by_number
 from app.pagination import paginate
 
 router = APIRouter(prefix="/portal", tags=["portal"])
-templates = Jinja2Templates(directory="app/templates")
 templates.env.globals["max_message_length"] = MAX_MESSAGE_LENGTH
 
 
