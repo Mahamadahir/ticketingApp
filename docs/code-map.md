@@ -52,6 +52,7 @@ any change that adds, removes or renames modules, routes, models, jobs, settings
 | GET | `/admin/request-types` | `list_request_types` | `app.routers.admin` |
 | POST | `/admin/request-types` | `add_request_type` | `app.routers.admin` |
 | POST | `/admin/request-types/{type_id}` | `edit_request_type` | `app.routers.admin` |
+| GET | `/admin/scheduled-jobs` | `view_scheduled_jobs` | `app.routers.admin` |
 | GET | `/admin/settings` | `view_settings` | `app.routers.admin` |
 | POST | `/admin/settings` | `save_setting` | `app.routers.admin` |
 | GET | `/admin/teams` | `list_teams` | `app.routers.admin` |
@@ -135,6 +136,7 @@ any change that adds, removes or renames modules, routes, models, jobs, settings
 | `outboundemail` | `OutboundEmail` | `app.models` |
 | `requesttype` | `RequestType` | `app.models` |
 | `requesttypeapprover` | `RequestTypeApprover` | `app.models` |
+| `scheduledjob` | `ScheduledJob` | `app.models` |
 | `setting` | `Setting` | `app.models` |
 | `team` | `Team` | `app.models` |
 | `teammembership` | `TeamMembership` | `app.models` |
@@ -156,6 +158,7 @@ any change that adds, removes or renames modules, routes, models, jobs, settings
 | `mail-in` | `MAIL_IN_EVERY_SECONDS` | `mail_in` |
 | `mail-out` | `MAIL_OUT_EVERY_SECONDS` | `mail_out` |
 | `presence` | `CHECK_EVERY_SECONDS` | `presence` |
+| `scheduled-jobs` | `TICK_EVERY_SECONDS` | `scheduled_jobs_tick` |
 | `teams-copies` | `TEAMS_POSTS_EVERY_SECONDS` | `teams_copies` |
 | `teams-posts` | `TEAMS_POSTS_EVERY_SECONDS` | `teams_posts` |
 
@@ -205,15 +208,15 @@ any change that adds, removes or renames modules, routes, models, jobs, settings
 
 ## Migrations
 
-31 revisions. Head: `a3f6d0b8c471`.
+32 revisions. Head: `b4e7a0d3c158`.
 
 Chain tail (newest first):
 
+- `b4e7a0d3c158` migrations/versions/b4e7a0d3c158_scheduled_job.py
 - `a3f6d0b8c471` migrations/versions/a3f6d0b8c471_email_templates.py
 - `e4b7c1a9d052` migrations/versions/e4b7c1a9d052_inbound_mail_handled_mail_record_.py
 - `c3b7e1a94d20` migrations/versions/c3b7e1a94d20_graph_subscription_and_mail_sync_state.py
 - `d8a3c6f1b247` migrations/versions/d8a3c6f1b247_attachments.py
-- `d5a8b1c4e630` migrations/versions/d5a8b1c4e630_graph_notification.py
 
 ## Modules
 
@@ -276,7 +279,7 @@ File: `app/attachments.py`
 File: `app/audit.py`
 - Functions: `log_action`
 - Imports: `app.models`
-- Imported by: `app.approvals`, `app.escalation`, `app.inbound`, `app.notification_settings`, `app.routers.admin`, `app.routers.portal`, `app.routers.tickets`
+- Imported by: `app.approvals`, `app.escalation`, `app.inbound`, `app.notification_settings`, `app.routers.admin`, `app.routers.portal`, `app.routers.tickets`, `app.scheduled_jobs`
 - Tests: none
 
 ### `app.auth`
@@ -349,8 +352,8 @@ File: `app/config.py`
 File: `app/database.py`
 - Functions: `get_session`
 - Imports: `app.config`
-- Imported by: `app.activity`, `app.auth`, `app.routers.admin`, `app.routers.approvals`, `app.routers.attachments`, `app.routers.auth`, `app.routers.dev_tools`, `app.routers.health`, `app.routers.my_settings`, `app.routers.notifications`, `app.routers.portal`, `app.routers.tickets`, `app.routers.webhooks`, `app.worker`
-- Tests: `conftest.py`, `test_access_context.py`, `test_auth.py`, `test_category_admin.py`, `test_followers.py`, `test_hardening.py`, `test_health.py`, `test_inbound_mail.py`, `test_linking.py`, `test_mail_subscriptions.py`, `test_notification_followup.py`, `test_outbound_mail.py`, `test_split_family.py`, `test_splitting.py`, `test_teams_copy.py`, `test_teams_copy_sending.py`, `test_ticket_core.py`, `test_worker.py`
+- Imported by: `app.activity`, `app.auth`, `app.routers.admin`, `app.routers.approvals`, `app.routers.attachments`, `app.routers.auth`, `app.routers.dev_tools`, `app.routers.health`, `app.routers.my_settings`, `app.routers.notifications`, `app.routers.portal`, `app.routers.tickets`, `app.routers.webhooks`, `app.scheduled_jobs`, `app.worker`
+- Tests: `conftest.py`, `test_access_context.py`, `test_auth.py`, `test_category_admin.py`, `test_followers.py`, `test_hardening.py`, `test_health.py`, `test_inbound_mail.py`, `test_linking.py`, `test_mail_subscriptions.py`, `test_notification_followup.py`, `test_outbound_mail.py`, `test_scheduled_jobs.py`, `test_split_family.py`, `test_splitting.py`, `test_teams_copy.py`, `test_teams_copy_sending.py`, `test_ticket_core.py`, `test_worker.py`
 
 ### `app.email_templates`
 
@@ -431,9 +434,9 @@ File: `app/jobs/__init__.py`
 
 - Classes: `Job`
 - Functions: `graph_subscription`, `heartbeat`, `mail_catch_up`, `mail_in`, `mail_out`, `presence`, `teams_copies`, `teams_posts`
-- Imports: `app.config`, `app.inbound`, `app.mail`, `app.notifications`, `app.presence`, `app.subscriptions`, `app.teams`
+- Imports: `app.config`, `app.inbound`, `app.mail`, `app.notifications`, `app.presence`, `app.scheduled_jobs`, `app.subscriptions`, `app.teams`
 - Imported by: `app.worker`
-- Tests: `test_inbound_mail.py`, `test_mail_subscriptions.py`, `test_outbound_mail.py`, `test_presence.py`, `test_teams.py`, `test_teams_copy_sending.py`, `test_worker.py`
+- Tests: `test_inbound_mail.py`, `test_mail_subscriptions.py`, `test_outbound_mail.py`, `test_presence.py`, `test_scheduled_jobs.py`, `test_teams.py`, `test_teams_copy_sending.py`, `test_worker.py`
 
 ### `app.linking`
 
@@ -495,12 +498,12 @@ File: `app/messages.py`
 (no docstring)  
 File: `app/models.py`
 
-- Classes: `ActivityLog`, `Attachment`, `AuditLog`, `CannedResponse`, `Category`, `EmailTemplate`, `GraphNotification`, `GraphSubscription`, `InboundMail`, `MailSyncState`, `MembershipLevel`, `Message`, `MessageDirection`, `MessageVisibility`, `Notification`, `NotificationPreference`, `NumberCounter`, `OutboundEmail`, `RequestType`, `RequestTypeApprover`, `Setting`, `Team`, `TeamMembership`, `TeamsPost`, `Ticket`, `TicketApproval`, `TicketEscalator`, `TicketEvent`, `TicketFollower`, `TicketSource`, `TicketStatus`, `TicketType`, `User`, `UserRole`
+- Classes: `ActivityLog`, `Attachment`, `AuditLog`, `CannedResponse`, `Category`, `EmailTemplate`, `GraphNotification`, `GraphSubscription`, `InboundMail`, `MailSyncState`, `MembershipLevel`, `Message`, `MessageDirection`, `MessageVisibility`, `Notification`, `NotificationPreference`, `NumberCounter`, `OutboundEmail`, `RequestType`, `RequestTypeApprover`, `ScheduledJob`, `Setting`, `Team`, `TeamMembership`, `TeamsPost`, `Ticket`, `TicketApproval`, `TicketEscalator`, `TicketEvent`, `TicketFollower`, `TicketSource`, `TicketStatus`, `TicketType`, `User`, `UserRole`
 - Functions: `allocate_number`
-- Tables: `activitylog`, `attachment`, `auditlog`, `cannedresponse`, `category`, `emailtemplate`, `graphnotification`, `graphsubscription`, `inboundmail`, `mailsyncstate`, `message`, `notification`, `notificationpreference`, `numbercounter`, `outboundemail`, `requesttype`, `requesttypeapprover`, `setting`, `team`, `teammembership`, `teamspost`, `ticket`, `ticketapproval`, `ticketescalator`, `ticketevent`, `ticketfollower`, `user`
+- Tables: `activitylog`, `attachment`, `auditlog`, `cannedresponse`, `category`, `emailtemplate`, `graphnotification`, `graphsubscription`, `inboundmail`, `mailsyncstate`, `message`, `notification`, `notificationpreference`, `numbercounter`, `outboundemail`, `requesttype`, `requesttypeapprover`, `scheduledjob`, `setting`, `team`, `teammembership`, `teamspost`, `ticket`, `ticketapproval`, `ticketescalator`, `ticketevent`, `ticketfollower`, `user`
 - Imports: none
-- Imported by: `app.activity`, `app.approvals`, `app.attachments`, `app.audit`, `app.auth`, `app.backdating`, `app.canned`, `app.categories`, `app.email_templates`, `app.escalation`, `app.followers`, `app.identity`, `app.inbound`, `app.linking`, `app.mail`, `app.main`, `app.messages`, `app.notification_settings`, `app.notifications`, `app.outbox`, `app.presence`, `app.raising`, `app.request_types`, `app.routers.admin`, `app.routers.approvals`, `app.routers.attachments`, `app.routers.auth`, `app.routers.my_settings`, `app.routers.notifications`, `app.routers.portal`, `app.routers.tickets`, `app.routers.webhooks`, `app.search`, `app.settings_store`, `app.sla`, `app.splitting`, `app.subscriptions`, `app.team_activity`, `app.teams`, `app.ticket_service`, `app.triage`, `app.visibility`
-- Tests: `conftest.py`, `test_access_context.py`, `test_activity_log.py`, `test_admin.py`, `test_approvals.py`, `test_attachments.py`, `test_auth.py`, `test_backdating.py`, `test_bell_access.py`, `test_canned.py`, `test_category_admin.py`, `test_email_preview.py`, `test_email_templates.py`, `test_escalation.py`, `test_escalation_tidy.py`, `test_followers.py`, `test_hardening.py`, `test_htmx_errors.py`, `test_htmx_partials.py`, `test_inbound_mail.py`, `test_linking.py`, `test_login_lockout.py`, `test_mail_subscriptions.py`, `test_messages.py`, `test_notification_followup.py`, `test_notification_settings.py`, `test_notifications.py`, `test_outbound_mail.py`, `test_pagination_and_limits.py`, `test_portal.py`, `test_presence.py`, `test_public_surface.py`, `test_raising.py`, `test_reply_notification.py`, `test_request_types.py`, `test_search.py`, `test_sla.py`, `test_split_family.py`, `test_splitting.py`, `test_status_follows_conversation.py`, `test_team_activity.py`, `test_teams.py`, `test_teams_copy.py`, `test_teams_copy_sending.py`, `test_ticket_core.py`, `test_ticket_urls.py`, `test_tickets_rbac.py`, `test_triage.py`, `test_visibility.py`, `test_wiring_3f.py`, `test_with_supplier.py`, `test_worker.py`
+- Imported by: `app.activity`, `app.approvals`, `app.attachments`, `app.audit`, `app.auth`, `app.backdating`, `app.canned`, `app.categories`, `app.email_templates`, `app.escalation`, `app.followers`, `app.identity`, `app.inbound`, `app.linking`, `app.mail`, `app.main`, `app.messages`, `app.notification_settings`, `app.notifications`, `app.outbox`, `app.presence`, `app.raising`, `app.request_types`, `app.routers.admin`, `app.routers.approvals`, `app.routers.attachments`, `app.routers.auth`, `app.routers.my_settings`, `app.routers.notifications`, `app.routers.portal`, `app.routers.tickets`, `app.routers.webhooks`, `app.scheduled_jobs`, `app.search`, `app.settings_store`, `app.sla`, `app.splitting`, `app.subscriptions`, `app.team_activity`, `app.teams`, `app.ticket_service`, `app.triage`, `app.visibility`
+- Tests: `conftest.py`, `test_access_context.py`, `test_activity_log.py`, `test_admin.py`, `test_approvals.py`, `test_attachments.py`, `test_auth.py`, `test_backdating.py`, `test_bell_access.py`, `test_canned.py`, `test_category_admin.py`, `test_email_preview.py`, `test_email_templates.py`, `test_escalation.py`, `test_escalation_tidy.py`, `test_followers.py`, `test_hardening.py`, `test_htmx_errors.py`, `test_htmx_partials.py`, `test_inbound_mail.py`, `test_linking.py`, `test_login_lockout.py`, `test_mail_subscriptions.py`, `test_messages.py`, `test_notification_followup.py`, `test_notification_settings.py`, `test_notifications.py`, `test_outbound_mail.py`, `test_pagination_and_limits.py`, `test_portal.py`, `test_presence.py`, `test_public_surface.py`, `test_raising.py`, `test_reply_notification.py`, `test_request_types.py`, `test_scheduled_jobs.py`, `test_search.py`, `test_sla.py`, `test_split_family.py`, `test_splitting.py`, `test_status_follows_conversation.py`, `test_team_activity.py`, `test_teams.py`, `test_teams_copy.py`, `test_teams_copy_sending.py`, `test_ticket_core.py`, `test_ticket_urls.py`, `test_tickets_rbac.py`, `test_triage.py`, `test_visibility.py`, `test_wiring_3f.py`, `test_with_supplier.py`, `test_worker.py`
 
 ### `app.notification_settings`
 
@@ -596,9 +599,9 @@ File: `app/routers/__init__.py`
 
 (no docstring)  
 File: `app/routers/admin.py`
-- Functions: `add_canned`, `add_category`, `add_request_type`, `category_review`, `create_local_user`, `create_team`, `edit_canned`, `edit_request_type`, `list_canned`, `list_categories`, `list_email_templates`, `list_request_types`, `list_teams`, `list_users`, `preview_email_template`, `remove_membership`, `reset_email_template`, `review_category`, `save_email_template`, `save_setting`, `set_membership`, `unlock_user`, `update_category`, `update_user`, `view_activity_log`, `view_audit_log`, `view_mail_intake`, `view_outbound_mail`, `view_settings`
-- Routes: GET `/admin/activity-log`, GET `/admin/audit-log`, GET `/admin/canned`, POST `/admin/canned`, POST `/admin/canned/{canned_id}`, GET `/admin/categories`, POST `/admin/categories`, POST `/admin/categories/{category_id}`, GET `/admin/category-review`, POST `/admin/category-review/{number}`, GET `/admin/email-templates`, POST `/admin/email-templates/{key}`, POST `/admin/email-templates/{key}/preview`, POST `/admin/email-templates/{key}/reset`, GET `/admin/mail-intake`, GET `/admin/outbound-mail`, GET `/admin/request-types`, POST `/admin/request-types`, POST `/admin/request-types/{type_id}`, GET `/admin/settings`, POST `/admin/settings`, GET `/admin/teams`, POST `/admin/teams`, GET `/admin/users`, POST `/admin/users`, POST `/admin/users/{user_id}`, POST `/admin/users/{user_id}/memberships`, POST `/admin/users/{user_id}/memberships/{team_id}/remove`, POST `/admin/users/{user_id}/unlock`
-- Imports: `app.activity`, `app.audit`, `app.auth`, `app.canned`, `app.categories`, `app.config`, `app.database`, `app.email_templates`, `app.forms`, `app.models`, `app.pagination`, `app.request_types`, `app.settings_store`, `app.subscriptions`, `app.teams`, `app.templating`, `app.ticket_service`
+- Functions: `add_canned`, `add_category`, `add_request_type`, `category_review`, `create_local_user`, `create_team`, `edit_canned`, `edit_request_type`, `list_canned`, `list_categories`, `list_email_templates`, `list_request_types`, `list_teams`, `list_users`, `preview_email_template`, `remove_membership`, `reset_email_template`, `review_category`, `save_email_template`, `save_setting`, `set_membership`, `unlock_user`, `update_category`, `update_user`, `view_activity_log`, `view_audit_log`, `view_mail_intake`, `view_outbound_mail`, `view_scheduled_jobs`, `view_settings`
+- Routes: GET `/admin/activity-log`, GET `/admin/audit-log`, GET `/admin/canned`, POST `/admin/canned`, POST `/admin/canned/{canned_id}`, GET `/admin/categories`, POST `/admin/categories`, POST `/admin/categories/{category_id}`, GET `/admin/category-review`, POST `/admin/category-review/{number}`, GET `/admin/email-templates`, POST `/admin/email-templates/{key}`, POST `/admin/email-templates/{key}/preview`, POST `/admin/email-templates/{key}/reset`, GET `/admin/mail-intake`, GET `/admin/outbound-mail`, GET `/admin/request-types`, POST `/admin/request-types`, POST `/admin/request-types/{type_id}`, GET `/admin/scheduled-jobs`, GET `/admin/settings`, POST `/admin/settings`, GET `/admin/teams`, POST `/admin/teams`, GET `/admin/users`, POST `/admin/users`, POST `/admin/users/{user_id}`, POST `/admin/users/{user_id}/memberships`, POST `/admin/users/{user_id}/memberships/{team_id}/remove`, POST `/admin/users/{user_id}/unlock`
+- Imports: `app.activity`, `app.audit`, `app.auth`, `app.canned`, `app.categories`, `app.config`, `app.database`, `app.email_templates`, `app.forms`, `app.models`, `app.pagination`, `app.request_types`, `app.scheduled_jobs`, `app.settings_store`, `app.subscriptions`, `app.teams`, `app.templating`, `app.ticket_service`
 - Imported by: `app.main`
 - Tests: none
 
@@ -702,6 +705,17 @@ File: `app/routers/webhooks.py`
 - Imported by: `app.main`
 - Tests: none
 
+### `app.scheduled_jobs`
+
+Recurring jobs driven by the database (phase 4A): the `scheduled_job` table.  
+File: `app/scheduled_jobs.py`
+
+- Classes: `ScheduledJobDef`
+- Functions: `claim_next_due`, `ensure_rows`, `next_slot`, `registry_errors`, `run_claimed`, `run_due_jobs`, `scheduled_jobs_tick`, `status_line`, `timing`, `utcnow`, `worker_id`
+- Imports: `app.audit`, `app.database`, `app.models`, `app.settings_store`
+- Imported by: `app.jobs`, `app.routers.admin`, `app.worker`
+- Tests: `test_scheduled_jobs.py`
+
 ### `app.search`
 
 Searching tickets from the agent list (phase 1F).  
@@ -719,8 +733,8 @@ File: `app/settings_store.py`
 - Classes: `SettingDef`
 - Functions: `get_flag`, `get_int_setting`, `get_setting`, `set_setting`, `sla_key`
 - Imports: `app.models`
-- Imported by: `app.categories`, `app.mail`, `app.notifications`, `app.raising`, `app.routers.admin`, `app.routers.approvals`, `app.sla`, `app.subscriptions`, `app.ticket_service`
-- Tests: `test_approvals.py`, `test_category_admin.py`, `test_mail_subscriptions.py`, `test_notification_followup.py`, `test_outbound_mail.py`, `test_sla.py`, `test_teams_copy.py`, `test_triage.py`
+- Imported by: `app.categories`, `app.mail`, `app.notifications`, `app.raising`, `app.routers.admin`, `app.routers.approvals`, `app.scheduled_jobs`, `app.sla`, `app.subscriptions`, `app.ticket_service`
+- Tests: `test_approvals.py`, `test_category_admin.py`, `test_mail_subscriptions.py`, `test_notification_followup.py`, `test_outbound_mail.py`, `test_scheduled_jobs.py`, `test_sla.py`, `test_teams_copy.py`, `test_triage.py`
 
 ### `app.sla`
 
@@ -846,6 +860,6 @@ File: `app/worker.py`
 
 - Classes: `WorkerState`
 - Functions: `acquire_single_instance_lock`, `build_scheduler`, `install_signal_handlers`, `job_errors`, `lock_is_held`, `main`, `make_lock_watchdog`, `release_lock`, `run_job`
-- Imports: `app.config`, `app.database`, `app.jobs`, `app.telemetry`
+- Imports: `app.config`, `app.database`, `app.jobs`, `app.scheduled_jobs`, `app.telemetry`
 - Imported by: none
 - Tests: `test_worker.py`

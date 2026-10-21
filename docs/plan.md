@@ -42,10 +42,11 @@ failure, so nothing may depend on a timer that lived only in the process.
 - *Where this stands (20 Oct 2026).* One-off work is built this way: the Teams and email outboxes
   (`TeamsPost`, `OutboundEmail`) are rows the worker claims with `FOR UPDATE SKIP LOCKED` and retries
   with backoff, and the Graph webhook (3A) will only insert a row and return 202. The recurring-jobs
-  table is not built: the worker (`app/worker.py`) runs its jobs from APScheduler on a fixed interval
-  and a single-instance lock, and `presence` and `mail-out` are such jobs. That is acceptable while every
-  job is safe to run late and twice; build the `scheduled_job` table and its late-run rule before the
-  18:00 MSP handoff (phase 5), which must not be missed.
+  table is built (phase 4A, `app/scheduled_jobs.py`): one worker tick a minute claims due rows with
+  leases, runs each late job once (an audit line says it was late) and records failures. Only the new phase 4 jobs
+  use it; the worker's existing jobs (`presence`, `mail-out`, ...) still run from APScheduler on a fixed interval and a
+  single-instance lock, which is acceptable while each is safe to run late and twice. Moving them over, and the
+  18:00 MSP handoff (which must not be missed), are phase 5.
 
 **Attachments.** Private Azure Blob Storage container. Files are served
 through short-lived user-delegation SAS links after a ticket visibility check

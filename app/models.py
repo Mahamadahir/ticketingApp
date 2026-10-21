@@ -466,6 +466,24 @@ class OutboundEmail(SQLModel, table=True):
     body: Optional[str] = Field(default=None)
 
 
+class ScheduledJob(SQLModel, table=True):
+    """One recurring job driven by the database (app/scheduled_jobs.py): when it is next due, when it
+    last worked, who holds it right now, and why it last failed. One row per registered job, created by
+    the worker's tick. A job that is overdue runs once, not once per missed slot."""
+
+    name: str = Field(primary_key=True)
+    next_run_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), index=True)
+    last_started_at: Optional[datetime] = Field(default=None)
+    last_success_at: Optional[datetime] = Field(default=None)
+    # The lease: set when a worker claims the job, cleared when it finishes. A lease that has expired
+    # (the worker crashed mid-run) no longer blocks the job.
+    lease_owner: Optional[str] = Field(default=None)
+    lease_expires_at: Optional[datetime] = Field(default=None)
+    last_error: Optional[str] = Field(default=None)
+    last_error_at: Optional[datetime] = Field(default=None)
+    failures_in_a_row: int = Field(default=0, sa_column_kwargs={"server_default": "0"})
+
+
 class GraphNotification(SQLModel, table=True):
     """A change notification Microsoft Graph sent to the webhook (phase 3A). The webhook only checks
     the clientState and stores one row per notification, then answers 202 within Graph's three

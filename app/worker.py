@@ -37,6 +37,7 @@ from app.config import settings, unsafe_setting_errors
 from app.telemetry import start_telemetry
 from app.database import engine
 from app.jobs import JOBS, Job
+from app.scheduled_jobs import SCHEDULED_JOBS, registry_errors
 
 log = logging.getLogger("app.worker")
 
@@ -180,7 +181,7 @@ def main() -> int:
     if errors:
         return 2
 
-    errors = job_errors(JOBS)
+    errors = job_errors(JOBS) + registry_errors(SCHEDULED_JOBS)
     for error in errors:
         log.error("Refusing to start: %s", error)
     if errors:
