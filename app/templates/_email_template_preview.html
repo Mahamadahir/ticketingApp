@@ -1,0 +1,7 @@
+{% if error %}
+<p class="error" role="alert">{{ error }}</p>
+{% else %}
+<p class="note">Preview with sample data:</p>
+<p><b>Subject:</b> {{ preview.subject if preview.subject is not none else "(the ticket's own subject line)" }}</p>
+<pre class="message-body">{{ preview.body }}</pre>
+{% endif %}

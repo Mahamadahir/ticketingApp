@@ -28,6 +28,7 @@ from sqlmodel import Session, select
 from app.approval_links import make_token
 from app.approvals import PENDING
 from app.config import settings
+from app.email_templates import LINK_LEFT_OUT, REQUEST_BLOCK, current_text, render_template, render_text, ticket_values
 from app.graph_client import graph_client
 from app.messages import about_text, in_a_split, is_triaged, mail_subject, requester_visible_messages
 from app.models import (
@@ -146,20 +147,14 @@ def build_raised_for_mail(session: Session, row: OutboundEmail) -> Mail:
     _guard_recipient(row)
     creator = session.get(User, ticket.created_by_id) if ticket.created_by_id else None
     first = own_first_message(session, ticket)
-    who = creator.display_name if creator else "IT Support"
-    lines = [
-        f"{who} has raised a ticket for you with IT Support.",
-        "",
-        f"Reference: {ticket.reference}",
-        f"Subject: {ticket.subject}",
-    ]
-    if first:
-        lines += ["", first.body]
-    lines += ["", "Reply to this email to add anything else. Please keep the reference in the subject."]
-    body = "\n".join(lines)
+    rendered = render_template(session, "raised_for", {
+        **ticket_values(ticket),
+        "raised_by": creator.display_name if creator else "IT Support",
+        "request_text": first.body if first else "",
+    })
     return Mail(
-        to=row.to_address, cc=[], subject=mail_subject(session, ticket), body=body, record=body,
-        automatic=True, reference=ticket.reference,
+        to=row.to_address, cc=[], subject=rendered.subject or mail_subject(session, ticket),
+        body=rendered.body, record=rendered.body, automatic=True, reference=ticket.reference,
     )
 
 
@@ -179,21 +174,19 @@ def build_approval_mail(session: Session, row: OutboundEmail) -> Mail:
     link = f"{settings.public_base_url.rstrip('/')}/approvals/{make_token(approval.id)}"
     days = round((get_int_setting(session, APPROVAL_LINK_MINUTES) or 20160) / 1440)
     first = own_first_message(session, ticket)
-    head = [
-        f"{ticket.requester_email} has asked for something that needs your approval.",
-        "",
-        f"Reference: {ticket.reference}",
-        f"Subject: {ticket.subject}",
-    ]
-    if first:
+    values = {
+        **ticket_values(ticket),
+        "requester_email": ticket.requester_email,
         # Their words, not IT's: said so, set apart and cut, since they sit beside a genuine link.
-        head += ["", "What they wrote (the requester's own words, not from IT):", "---", quoted(first.body), "---"]
-    tail = ["", "Open the link to approve or decline. Opening it decides nothing."]
-    body = "\n".join(head + ["", link] + tail + [f"The link works for {days} days."])
-    record = "\n".join(head + ["", "[answer link left out]"] + tail + [f"The link works for {days} days."])
+        "request_block": REQUEST_BLOCK.format(words=quoted(first.body)) if first else "",
+        "link_days": str(days),
+    }
+    subject, text = current_text(session, "approval_request")
+    # The row keeps the text with the link left out; the link is never stored.
     return Mail(
-        to=row.to_address, cc=[], subject=f"[{ticket.reference}] Approval needed: {ticket.subject}",
-        body=body, record=record, automatic=True, reference=ticket.reference,
+        to=row.to_address, cc=[], subject=render_text(subject, values),
+        body=render_text(text, {**values, "link": link}), record=render_text(text, {**values, "link": LINK_LEFT_OUT}),
+        automatic=True, reference=ticket.reference,
     )
 
 

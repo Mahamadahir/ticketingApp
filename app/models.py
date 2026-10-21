@@ -318,6 +318,18 @@ class CannedResponse(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class EmailTemplate(SQLModel, table=True):
+    """An admin's wording for one automatic email. A row exists only for a template an admin has
+    changed; no row means the default in app/email_templates.py (which also holds the list of keys
+    and their placeholders). Resetting deletes the row."""
+
+    key: str = Field(primary_key=True)
+    subject: str = Field(default="")  # empty for a template whose subject is the ticket's own
+    body: str
+    updated_by: str  # the admin's email
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 class RequestType(SQLModel, table=True):
     """A thing people can ask IT for ("New starter", "Software install"), each with the
     people who approve it. Managed by admins in app/request_types.py. Switching one off hides

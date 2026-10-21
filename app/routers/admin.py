@@ -47,6 +47,18 @@ from app.canned import (
     update_canned,
 )
 from app.config import settings
+from app.email_templates import (
+    MAX_BODY_LENGTH as MAX_EMAIL_BODY_LENGTH,
+    MAX_SUBJECT_LENGTH as MAX_EMAIL_SUBJECT_LENGTH,
+    REGISTRY as EMAIL_TEMPLATES,
+    TemplateError,
+    current_text,
+    definition as email_template_def,
+    is_customised,
+    render_preview,
+    reset_template,
+    save_template,
+)
 from app.database import get_session
 from app.forms import MAX_MESSAGE_LENGTH, optional_int
 from app.models import (
@@ -297,7 +309,7 @@ def create_team(
     return RedirectResponse("/admin/teams", status_code=303)
 
 
-AUDIT_ENTITY_TYPES = ["ticket", "user", "team", "category", "setting"]
+AUDIT_ENTITY_TYPES = ["ticket", "user", "team", "category", "setting", "email_template"]
 
 
 @router.get("/audit-log", response_class=HTMLResponse)
@@ -528,6 +540,105 @@ def edit_canned(
         )
     session.commit()
     return RedirectResponse("/admin/canned", status_code=303)
+
+
+MAX_FORM_TEXT = 50000  # a generous cap on posted template text; the real limits are in app/email_templates.py
+
+
+# ---- Email templates (4T) --------------------------------------------------------------
+
+
+def _email_templates_page(
+    request: Request, user: User, session: Session, error: Optional[str] = None,
+    draft_key: Optional[str] = None, draft_subject: str = "", draft_body: str = "",
+):
+    """The list page. After a refused save the admin's own text is shown again in that template's
+    form, with the reason, so nothing typed is lost."""
+    rows = []
+    for defn in EMAIL_TEMPLATES.values():
+        subject, body = current_text(session, defn.key)
+        subject = subject or ""
+        if defn.key == draft_key:
+            subject, body = draft_subject, draft_body
+        try:
+            preview, problem = render_preview(defn, subject, body), None
+        except TemplateError as exc:
+            preview, problem = None, str(exc)
+        rows.append({
+            "defn": defn, "subject": subject, "body": body, "customised": is_customised(session, defn.key),
+            "preview": preview, "error": problem if defn.key == draft_key else None,
+        })
+    return templates.TemplateResponse(
+        request,
+        "admin_email_templates.html",
+        {"rows": rows, "max_subject_length": MAX_EMAIL_SUBJECT_LENGTH, "max_body_length": MAX_EMAIL_BODY_LENGTH, "user": user},
+        status_code=400 if error or draft_key else 200,
+    )
+
+
+@router.get("/email-templates", response_class=HTMLResponse)
+def list_email_templates(
+    request: Request,
+    user: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    return _email_templates_page(request, user, session)
+
+
+@router.post("/email-templates/{key}/preview", response_class=HTMLResponse)
+def preview_email_template(
+    request: Request,
+    key: str,
+    subject: str = Form("", max_length=MAX_FORM_TEXT),
+    body: str = Form("", max_length=MAX_FORM_TEXT),
+    user: User = Depends(require_super_admin),
+):
+    """The wording rendered with sample data, as the admin types. Saves nothing."""
+    try:
+        defn = email_template_def(key)
+        preview, error = render_preview(defn, subject, body), None
+    except TemplateError as problem:
+        preview, error = None, str(problem)
+    return templates.TemplateResponse(request, "_email_template_preview.html", {"preview": preview, "error": error})
+
+
+@router.post("/email-templates/{key}")
+def save_email_template(
+    request: Request,
+    key: str,
+    subject: str = Form("", max_length=MAX_FORM_TEXT),
+    body: str = Form(..., max_length=MAX_FORM_TEXT),
+    admin: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    if key not in EMAIL_TEMPLATES:
+        raise HTTPException(status_code=404, detail="Email template not found")
+    before = current_text(session, key)
+    try:
+        save_template(session, key, subject, body, admin.email)
+    except TemplateError as error:
+        session.rollback()
+        return _email_templates_page(request, admin, session, str(error), key, subject, body)
+    after = current_text(session, key)
+    if after != before:
+        changed = [name for name, a, b in (("subject", before[0], after[0]), ("text", before[1], after[1])) if a != b]
+        log_action(session, admin.email, "email_template", 0, "edited", f"{key}: {' and '.join(changed)} changed")
+    session.commit()
+    return RedirectResponse("/admin/email-templates", status_code=303)
+
+
+@router.post("/email-templates/{key}/reset")
+def reset_email_template(
+    key: str,
+    admin: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    if key not in EMAIL_TEMPLATES:
+        raise HTTPException(status_code=404, detail="Email template not found")
+    if reset_template(session, key):
+        log_action(session, admin.email, "email_template", 0, "reset", f"{key}: back to the default")
+    session.commit()
+    return RedirectResponse("/admin/email-templates", status_code=303)
 
 
 # ---- Request types (Service Requests) --------------------------------------------

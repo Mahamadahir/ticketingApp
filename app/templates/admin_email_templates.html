@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Admin: Email templates{% endblock %}
+{% block content %}
+{% set active = "/admin/email-templates" %}
+{% include "_admin_tabs.html" %}
+
+<h2>Email templates</h2>
+<p class="note">
+  The wording of the emails the app sends by itself. Write <code>{placeholder}</code> where a value
+  belongs; each email lists the ones it can fill in, and anything else is refused when you save.
+  The preview below each one uses sample data and updates as you type. Personal answer links are
+  never written here: <code>{link}</code> is replaced by a link made when the email is sent.
+  A template you have not changed follows the built-in wording.
+</p>
+
+{% for r in rows %}
+<form method="post" action="/admin/email-templates/{{ r.defn.key }}" id="tpl-{{ r.defn.key }}"
+      hx-post="/admin/email-templates/{{ r.defn.key }}/preview" hx-trigger="input changed delay:400ms"
+      hx-target="#preview-{{ r.defn.key }}" hx-swap="innerHTML">
+  <fieldset>
+    <legend>{{ r.defn.label }}{% if r.customised %} (changed from the default){% endif %}</legend>
+    <p class="note">{{ r.defn.description }}</p>
+    {% if r.error %}<p class="error" role="alert">Not saved: {{ r.error }}</p>{% endif %}
+    {% if r.defn.subject_editable %}
+    <label>Subject <input type="text" name="subject" value="{{ r.subject }}" maxlength="{{ max_subject_length }}" required /></label>
+    {% else %}
+    <p class="note">The subject is the ticket's own, so replies find their way back to it.</p>
+    {% endif %}
+    <label>Text <textarea name="body" rows="8" maxlength="{{ max_body_length }}" required>{{ r.body }}</textarea></label>
+    <details>
+      <summary>Placeholders</summary>
+      <ul>
+        {% for name, meaning in r.defn.body_placeholders.items() %}<li><code>{{ "{" ~ name ~ "}" }}</code>: {{ meaning }}</li>{% endfor %}
+      </ul>
+      {% if r.defn.subject_editable %}
+      <p class="note">In the subject: {% for name in r.defn.subject_placeholders %}<code>{{ "{" ~ name ~ "}" }}</code>{{ ", " if not loop.last else "" }}{% endfor %}.</p>
+      {% endif %}
+    </details>
+    <button type="submit">Save</button>
+    {% if r.customised %}<button type="submit" formaction="/admin/email-templates/{{ r.defn.key }}/reset" formnovalidate>Reset to default</button>{% endif %}
+    <div id="preview-{{ r.defn.key }}" aria-live="polite">{% with preview=r.preview, error=r.error %}{% include "_email_template_preview.html" %}{% endwith %}</div>
+  </fieldset>
+</form>
+{% endfor %}
+{% endblock %}
