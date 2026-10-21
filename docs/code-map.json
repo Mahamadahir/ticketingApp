@@ -49,6 +49,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/cee91863c890_thanks_rules.py",
+        "revision": "cee91863c890"
+      },
+      {
         "file": "migrations/versions/962d0f5d6bed_approval_reminders.py",
         "revision": "962d0f5d6bed"
       },
@@ -63,17 +67,13 @@
       {
         "file": "migrations/versions/b4c6d8e0f2a6_follower_updates.py",
         "revision": "b4c6d8e0f2a6"
-      },
-      {
-        "file": "migrations/versions/a3483204f1e2_presence_retry_bookkeeping_and_is_active.py",
-        "revision": "a3483204f1e2"
       }
     ],
-    "count": 39,
+    "count": 40,
     "heads": [
       {
-        "file": "migrations/versions/962d0f5d6bed_approval_reminders.py",
-        "revision": "962d0f5d6bed"
+        "file": "migrations/versions/cee91863c890_thanks_rules.py",
+        "revision": "cee91863c890"
       }
     ]
   },
@@ -863,7 +863,8 @@
         "tests/test_follower_updates.py",
         "tests/test_inbound_mail.py",
         "tests/test_never_follow.py",
-        "tests/test_reopening.py"
+        "tests/test_reopening.py",
+        "tests/test_thanks_rules.py"
       ]
     },
     {
@@ -1164,6 +1165,8 @@
         "Team",
         "TeamMembership",
         "TeamsPost",
+        "ThanksCandidate",
+        "ThanksRule",
         "Ticket",
         "TicketApproval",
         "TicketEscalator",
@@ -1226,6 +1229,7 @@
         "app.subscriptions",
         "app.team_activity",
         "app.teams",
+        "app.thanks_rules",
         "app.ticket_service",
         "app.triage",
         "app.visibility"
@@ -1340,6 +1344,14 @@
           "table": "teamspost"
         },
         {
+          "class": "ThanksCandidate",
+          "table": "thankscandidate"
+        },
+        {
+          "class": "ThanksRule",
+          "table": "thanksrule"
+        },
+        {
           "class": "Ticket",
           "table": "ticket"
         },
@@ -1417,6 +1429,7 @@
         "tests/test_teams.py",
         "tests/test_teams_copy.py",
         "tests/test_teams_copy_sending.py",
+        "tests/test_thanks_rules.py",
         "tests/test_ticket_core.py",
         "tests/test_ticket_urls.py",
         "tests/test_tickets_rbac.py",
@@ -1730,6 +1743,7 @@
         "app.models",
         "app.notifications",
         "app.splitting",
+        "app.thanks_rules",
         "app.ticket_service"
       ],
       "module": "app.reopening",
@@ -1737,7 +1751,8 @@
       "summary": "Reopening, reclosing and replying after a ticket is finished (phase 4E-1). Nothing here commits.",
       "tables": [],
       "tests": [
-        "tests/test_reopening.py"
+        "tests/test_reopening.py",
+        "tests/test_thanks_rules.py"
       ]
     },
     {
@@ -1828,11 +1843,14 @@
         "add_category",
         "add_never_follow",
         "add_request_type",
+        "add_thanks_rule_route",
         "category_review",
         "create_local_user",
         "create_team",
+        "dismiss_thanks_candidate",
         "edit_canned",
         "edit_request_type",
+        "edit_thanks_rule",
         "list_approval_groups",
         "list_canned",
         "list_categories",
@@ -1840,6 +1858,7 @@
         "list_never_follow",
         "list_request_types",
         "list_teams",
+        "list_thanks_rules",
         "list_users",
         "preview_email_template",
         "remove_approval_group_member",
@@ -1852,6 +1871,8 @@
         "save_setting",
         "set_membership",
         "set_user_active",
+        "thanks_candidate_to_rule",
+        "toggle_thanks_rule",
         "unlock_user",
         "update_category",
         "update_user",
@@ -1887,6 +1908,7 @@
         "app.subscriptions",
         "app.teams",
         "app.templating",
+        "app.thanks_rules",
         "app.ticket_service"
       ],
       "module": "app.routers.admin",
@@ -2050,6 +2072,36 @@
           "handler": "create_team",
           "method": "POST",
           "path": "/admin/teams"
+        },
+        {
+          "handler": "list_thanks_rules",
+          "method": "GET",
+          "path": "/admin/thanks-rules"
+        },
+        {
+          "handler": "add_thanks_rule_route",
+          "method": "POST",
+          "path": "/admin/thanks-rules"
+        },
+        {
+          "handler": "dismiss_thanks_candidate",
+          "method": "POST",
+          "path": "/admin/thanks-rules/candidates/{candidate_id}/dismiss"
+        },
+        {
+          "handler": "thanks_candidate_to_rule",
+          "method": "POST",
+          "path": "/admin/thanks-rules/candidates/{candidate_id}/rule"
+        },
+        {
+          "handler": "edit_thanks_rule",
+          "method": "POST",
+          "path": "/admin/thanks-rules/{rule_id}"
+        },
+        {
+          "handler": "toggle_thanks_rule",
+          "method": "POST",
+          "path": "/admin/thanks-rules/{rule_id}/{action}"
         },
         {
           "handler": "list_users",
@@ -2891,6 +2943,7 @@
         "app.models",
         "app.reopening",
         "app.sla",
+        "app.thanks_rules",
         "app.ticket_service",
         "app.triage"
       ],
@@ -3092,6 +3145,44 @@
     },
     {
       "classes": [
+        "ThanksRuleError"
+      ],
+      "file": "app/thanks_rules.py",
+      "functions": [
+        "add_rule",
+        "all_rules",
+        "candidate_to_rule",
+        "clean_rule",
+        "describe",
+        "dismiss_candidate",
+        "enabled_rules",
+        "is_thanks_reply",
+        "normalise_pattern",
+        "normalise_text",
+        "pending_candidates",
+        "record_candidate",
+        "rule_matches",
+        "set_rule_enabled",
+        "update_rule"
+      ],
+      "imported_by": [
+        "app.reopening",
+        "app.routers.admin",
+        "app.splitting"
+      ],
+      "imports": [
+        "app.models"
+      ],
+      "module": "app.thanks_rules",
+      "routes": [],
+      "summary": "Thank-you rules and their review queue (phase 4E-2). Nothing here commits.",
+      "tables": [],
+      "tests": [
+        "tests/test_thanks_rules.py"
+      ]
+    },
+    {
+      "classes": [
         "AwaitingApproval",
         "NotTriaged",
         "ResolutionRequired"
@@ -3143,6 +3234,7 @@
         "tests/test_resolution.py",
         "tests/test_split_family.py",
         "tests/test_teams.py",
+        "tests/test_thanks_rules.py",
         "tests/test_ticket_core.py",
         "tests/test_triage.py"
       ]
@@ -3324,6 +3416,12 @@
         "detail": "select() on Message",
         "file": "app/team_activity.py",
         "in": "feed_query",
+        "rule": "messages-via-messages-module"
+      },
+      {
+        "detail": "select() on Message",
+        "file": "app/thanks_rules.py",
+        "in": "_reply_that_reopened",
         "rule": "messages-via-messages-module"
       }
     ]
@@ -3606,6 +3704,7 @@
     "tests/test_teams.py",
     "tests/test_teams_copy.py",
     "tests/test_teams_copy_sending.py",
+    "tests/test_thanks_rules.py",
     "tests/test_ticket_core.py",
     "tests/test_ticket_urls.py",
     "tests/test_tickets_rbac.py",

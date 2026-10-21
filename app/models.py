@@ -365,6 +365,37 @@ class NeverFollowAddress(SQLModel, table=True):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class ThanksRule(SQLModel, table=True):
+    """An admin-managed rule for a thank-you reply (app/thanks_rules.py): a reply on a Resolved ticket whose
+    new text matches an enabled rule is recorded and does not reopen the ticket. match_type is equals,
+    starts_with, contains or ends_with; pattern is stored normalised (lower case, no punctuation or emoji)
+    and may use * as a wildcard; max_length is the longest normalised reply it applies to."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    match_type: str
+    pattern: str
+    max_length: int
+    enabled: bool = Field(default=True)
+    created_by: str  # the admin's email, or "system" for a seeded rule
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class ThanksCandidate(SQLModel, table=True):
+    """A reply an agent reclosed as "user said thanks", waiting for an admin to make it a rule or dismiss
+    it (app/thanks_rules.py). One row per distinct normalised text; occurrences counts how often it came
+    up while pending. status is pending, dismissed or rule."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    normalised_text: str = Field(unique=True, index=True)
+    sample_text: str  # the reply as written, cut short
+    first_ticket_id: Optional[int] = Field(default=None, foreign_key="ticket.id")
+    occurrences: int = Field(default=1)
+    status: str = Field(default="pending", index=True)
+    decided_by: Optional[str] = Field(default=None)
+    decided_at: Optional[datetime] = Field(default=None)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 class ApprovalGroup(SQLModel, table=True):
     """A named set of people who vote on requests (app/approval_groups.py). A request type points at
     one. Members need an account (they sign in once) and need not be agents: approvers are often

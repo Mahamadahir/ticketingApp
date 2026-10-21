@@ -334,7 +334,7 @@ def add_comment(
     message = record_inbound(session, ticket, sender=user.display_name, body=body, author_user_id=user.id, reply_by=user.email)
     log_action(session, user.email, "ticket", ticket.id, "commented", body[:200])
     queue_follower_updates(session, ticket, message, user.email)  # nobody was sent a portal comment
-    moved = apply_requester_reply(session, ticket, user.email)
+    moved = apply_requester_reply(session, ticket, user.email, text=body)
     if moved:
         log_action(session, user.email, "ticket", ticket.id, "status_changed", f"{moved[0]} -> {moved[1]}")
     session.commit()

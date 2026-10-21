@@ -71,6 +71,20 @@ from app.email_templates import (
 from app.database import get_session
 from app.forms import MAX_MESSAGE_LENGTH, optional_int
 from app.followers import InvalidEmail, normalise_email
+from app.thanks_rules import (
+    MATCH_TYPES as THANKS_MATCH_TYPES,
+    MAX_PATTERN_LENGTH as THANKS_MAX_PATTERN,
+    MAX_RULE_LENGTH as THANKS_MAX_LENGTH,
+    ThanksRuleError,
+    add_rule as add_thanks_rule,
+    all_rules as all_thanks_rules,
+    candidate_to_rule,
+    describe as describe_thanks_rule,
+    dismiss_candidate,
+    pending_candidates,
+    set_rule_enabled as set_thanks_rule_enabled,
+    update_rule as update_thanks_rule,
+)
 from app.never_follow import MAX_REASON_LENGTH, NeverFollowError, add_listed, all_listed, remove_listed
 from app.models import (
     FINISHED_STATUSES,
@@ -630,6 +644,114 @@ def remove_never_follow(
     log_action(session, admin.email, "never_follow", row_id, "removed", email)
     session.commit()
     return RedirectResponse("/admin/never-follow", status_code=303)
+
+
+# ---- Thank-you rules and review queue (4E-2) ---------------------------------------------
+
+
+@router.get("/thanks-rules", response_class=HTMLResponse)
+def list_thanks_rules(
+    request: Request,
+    user: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    return templates.TemplateResponse(
+        request, "admin_thanks_rules.html",
+        {
+            "rules": all_thanks_rules(session), "candidates": pending_candidates(session),
+            "match_types": THANKS_MATCH_TYPES, "max_pattern": THANKS_MAX_PATTERN, "max_length": THANKS_MAX_LENGTH,
+            "user": user,
+        },
+    )
+
+
+@router.post("/thanks-rules")
+def add_thanks_rule_route(
+    match_type: str = Form(..., max_length=20),
+    pattern: str = Form(..., max_length=1000),
+    max_length: str = Form(..., max_length=10),
+    admin: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    try:
+        rule = add_thanks_rule(session, match_type, pattern, max_length, admin.email)
+    except ThanksRuleError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    log_action(session, admin.email, "thanks_rule", rule.id, "added", describe_thanks_rule(rule))
+    session.commit()
+    return RedirectResponse("/admin/thanks-rules", status_code=303)
+
+
+@router.post("/thanks-rules/candidates/{candidate_id}/rule")
+def thanks_candidate_to_rule(
+    candidate_id: int,
+    match_type: str = Form(..., max_length=20),
+    pattern: str = Form(..., max_length=1000),
+    max_length: str = Form(..., max_length=10),
+    admin: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    try:
+        made = candidate_to_rule(session, candidate_id, match_type, pattern, max_length, admin.email)
+    except ThanksRuleError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    if made is None:
+        raise HTTPException(status_code=404, detail="That reply is not waiting for review")
+    _, rule = made
+    log_action(session, admin.email, "thanks_rule", rule.id, "added_from_review", describe_thanks_rule(rule))
+    session.commit()
+    return RedirectResponse("/admin/thanks-rules", status_code=303)
+
+
+@router.post("/thanks-rules/candidates/{candidate_id}/dismiss")
+def dismiss_thanks_candidate(
+    candidate_id: int,
+    admin: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    row = dismiss_candidate(session, candidate_id, admin.email)
+    if row is None:
+        raise HTTPException(status_code=404, detail="That reply is not waiting for review")
+    log_action(session, admin.email, "thanks_candidate", row.id, "dismissed", row.normalised_text[:200])
+    session.commit()
+    return RedirectResponse("/admin/thanks-rules", status_code=303)
+
+
+@router.post("/thanks-rules/{rule_id}")
+def edit_thanks_rule(
+    rule_id: int,
+    match_type: str = Form(..., max_length=20),
+    pattern: str = Form(..., max_length=1000),
+    max_length: str = Form(..., max_length=10),
+    admin: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    try:
+        rule = update_thanks_rule(session, rule_id, match_type, pattern, max_length)
+    except ThanksRuleError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    if rule is None:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    log_action(session, admin.email, "thanks_rule", rule.id, "edited", describe_thanks_rule(rule))
+    session.commit()
+    return RedirectResponse("/admin/thanks-rules", status_code=303)
+
+
+@router.post("/thanks-rules/{rule_id}/{action}")
+def toggle_thanks_rule(
+    rule_id: int,
+    action: str,
+    admin: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    if action not in ("enable", "disable"):
+        raise HTTPException(status_code=404, detail="Not found")
+    rule = set_thanks_rule_enabled(session, rule_id, action == "enable")
+    if rule is None:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    log_action(session, admin.email, "thanks_rule", rule.id, action + "d", describe_thanks_rule(rule))
+    session.commit()
+    return RedirectResponse("/admin/thanks-rules", status_code=303)
 
 
 MAX_FORM_TEXT = 50000  # a generous cap on posted template text; the real limits are in app/email_templates.py
