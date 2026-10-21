@@ -1,0 +1,2946 @@
+{
+  "jobs": [
+    {
+      "every": "SUBSCRIPTION_EVERY_SECONDS",
+      "function": "graph_subscription",
+      "name": "graph-subscription"
+    },
+    {
+      "every": "settings.worker_heartbeat_seconds",
+      "function": "heartbeat",
+      "name": "heartbeat"
+    },
+    {
+      "every": "CATCH_UP_EVERY_SECONDS",
+      "function": "mail_catch_up",
+      "name": "mail-catch-up"
+    },
+    {
+      "every": "MAIL_IN_EVERY_SECONDS",
+      "function": "mail_in",
+      "name": "mail-in"
+    },
+    {
+      "every": "MAIL_OUT_EVERY_SECONDS",
+      "function": "mail_out",
+      "name": "mail-out"
+    },
+    {
+      "every": "CHECK_EVERY_SECONDS",
+      "function": "presence",
+      "name": "presence"
+    },
+    {
+      "every": "TEAMS_POSTS_EVERY_SECONDS",
+      "function": "teams_copies",
+      "name": "teams-copies"
+    },
+    {
+      "every": "TEAMS_POSTS_EVERY_SECONDS",
+      "function": "teams_posts",
+      "name": "teams-posts"
+    }
+  ],
+  "migrations": {
+    "chain_tail": [
+      {
+        "file": "migrations/versions/e4b7c1a9d052_inbound_mail_handled_mail_record_.py",
+        "revision": "e4b7c1a9d052"
+      },
+      {
+        "file": "migrations/versions/c3b7e1a94d20_graph_subscription_and_mail_sync_state.py",
+        "revision": "c3b7e1a94d20"
+      },
+      {
+        "file": "migrations/versions/d8a3c6f1b247_attachments.py",
+        "revision": "d8a3c6f1b247"
+      },
+      {
+        "file": "migrations/versions/d5a8b1c4e630_graph_notification.py",
+        "revision": "d5a8b1c4e630"
+      },
+      {
+        "file": "migrations/versions/a9d3c6e1f275_with_supplier_status.py",
+        "revision": "a9d3c6e1f275"
+      }
+    ],
+    "count": 30,
+    "heads": [
+      {
+        "file": "migrations/versions/e4b7c1a9d052_inbound_mail_handled_mail_record_.py",
+        "revision": "e4b7c1a9d052"
+      }
+    ]
+  },
+  "modules": [
+    {
+      "classes": [],
+      "file": "app/__init__.py",
+      "functions": [],
+      "imported_by": [],
+      "imports": [],
+      "module": "app",
+      "routes": [],
+      "summary": "",
+      "tables": [],
+      "tests": []
+    },
+    {
+      "classes": [
+        "ActivityMiddleware"
+      ],
+      "file": "app/activity.py",
+      "functions": [
+        "client_ip",
+        "record_activity"
+      ],
+      "imported_by": [
+        "app.main",
+        "app.routers.admin",
+        "app.routers.auth"
+      ],
+      "imports": [
+        "app.database",
+        "app.models"
+      ],
+      "module": "app.activity",
+      "routes": [],
+      "summary": "Security and request activity: who did what, from where, and what happened.",
+      "tables": [],
+      "tests": [
+        "tests/test_activity_log.py"
+      ]
+    },
+    {
+      "classes": [],
+      "file": "app/approval_links.py",
+      "functions": [
+        "make_token",
+        "read_token"
+      ],
+      "imported_by": [
+        "app.mail",
+        "app.routers.approvals"
+      ],
+      "imports": [
+        "app.config"
+      ],
+      "module": "app.approval_links",
+      "routes": [],
+      "summary": "Emailed approve/decline links (phase 1H).",
+      "tables": [],
+      "tests": [
+        "tests/test_approvals.py",
+        "tests/test_outbound_mail.py"
+      ]
+    },
+    {
+      "classes": [
+        "ApprovalError",
+        "Tally"
+      ],
+      "file": "app/approvals.py",
+      "functions": [
+        "approval_for",
+        "approvals_of",
+        "count_pending_for",
+        "decide",
+        "describe_rule",
+        "eligible_approvers",
+        "needs_approval",
+        "outcome",
+        "pending_for",
+        "record_decision",
+        "start_approvals",
+        "status_after_triage",
+        "tally",
+        "waive"
+      ],
+      "imported_by": [
+        "app.mail",
+        "app.routers.approvals",
+        "app.routers.portal",
+        "app.routers.tickets",
+        "app.triage"
+      ],
+      "imports": [
+        "app.audit",
+        "app.messages",
+        "app.models",
+        "app.outbox",
+        "app.request_types",
+        "app.ticket_service"
+      ],
+      "module": "app.approvals",
+      "routes": [],
+      "summary": "Approvals (phase 1H): a ticket that needs sign-off before the work goes ahead.",
+      "tables": [],
+      "tests": [
+        "tests/test_approvals.py"
+      ]
+    },
+    {
+      "classes": [
+        "AttachmentRejected"
+      ],
+      "file": "app/attachments.py",
+      "functions": [
+        "attachments_of",
+        "blob_key",
+        "clean_filename",
+        "detect_content_type",
+        "is_inline_type",
+        "serving_headers",
+        "store_attachment"
+      ],
+      "imported_by": [
+        "app.inbound",
+        "app.routers.attachments"
+      ],
+      "imports": [
+        "app.config",
+        "app.models",
+        "app.storage"
+      ],
+      "module": "app.attachments",
+      "routes": [],
+      "summary": "Attachments: the one place a file is checked and stored (docs/plan.md, \"Storage decisions\").",
+      "tables": [],
+      "tests": [
+        "tests/test_attachments.py",
+        "tests/test_inbound_mail.py"
+      ]
+    },
+    {
+      "classes": [],
+      "file": "app/audit.py",
+      "functions": [
+        "log_action"
+      ],
+      "imported_by": [
+        "app.approvals",
+        "app.escalation",
+        "app.inbound",
+        "app.notification_settings",
+        "app.routers.admin",
+        "app.routers.portal",
+        "app.routers.tickets"
+      ],
+      "imports": [
+        "app.models"
+      ],
+      "module": "app.audit",
+      "routes": [],
+      "summary": "",
+      "tables": [],
+      "tests": []
+    },
+    {
+      "classes": [
+        "LoginResult",
+        "NotAuthenticated"
+      ],
+      "file": "app/auth.py",
+      "functions": [
+        "acquire_token_by_auth_code",
+        "attempt_local_login",
+        "build_auth_url",
+        "get_current_user",
+        "get_or_create_user",
+        "hash_password",
+        "require_roles"
+      ],
+      "imported_by": [
+        "app.main",
+        "app.routers.admin",
+        "app.routers.attachments",
+        "app.routers.auth",
+        "app.routers.my_settings",
+        "app.routers.notifications",
+        "app.routers.portal",
+        "app.routers.tickets"
+      ],
+      "imports": [
+        "app.config",
+        "app.database",
+        "app.models"
+      ],
+      "module": "app.auth",
+      "routes": [],
+      "summary": "",
+      "tables": [],
+      "tests": [
+        "tests/test_activity_log.py",
+        "tests/test_auth.py",
+        "tests/test_hardening.py",
+        "tests/test_login_lockout.py",
+        "tests/test_visibility.py"
+      ]
+    },
+    {
+      "classes": [
+        "BackdateError"
+      ],
+      "file": "app/backdating.py",
+      "functions": [
+        "backdate_ticket",
+        "may_backdate",
+        "parse_moment"
+      ],
+      "imported_by": [
+        "app.raising",
+        "app.routers.portal",
+        "app.routers.tickets"
+      ],
+      "imports": [
+        "app.models",
+        "app.sla",
+        "app.ticket_service"
+      ],
+      "module": "app.backdating",
+      "routes": [],
+      "summary": "Logging tickets and fixes after the fact. Nothing here commits.",
+      "tables": [],
+      "tests": [
+        "tests/test_backdating.py"
+      ]
+    },
+    {
+      "classes": [
+        "CannedError"
+      ],
+      "file": "app/canned.py",
+      "functions": [
+        "active_canned",
+        "all_canned",
+        "create_canned",
+        "fill",
+        "update_canned"
+      ],
+      "imported_by": [
+        "app.routers.admin",
+        "app.routers.tickets"
+      ],
+      "imports": [
+        "app.forms",
+        "app.models"
+      ],
+      "module": "app.canned",
+      "routes": [],
+      "summary": "Canned responses (phase 1F-ii): ready-made replies admins manage and agents drop",
+      "tables": [],
+      "tests": [
+        "tests/test_canned.py"
+      ]
+    },
+    {
+      "classes": [
+        "CategoryError"
+      ],
+      "file": "app/categories.py",
+      "functions": [
+        "create_category",
+        "ensure_other",
+        "escalation_team_id_for",
+        "get_other",
+        "is_selectable",
+        "parse_escalation",
+        "path_of",
+        "selectable",
+        "team_id_for"
+      ],
+      "imported_by": [
+        "app.escalation",
+        "app.routers.admin",
+        "app.routers.portal",
+        "app.routers.tickets",
+        "app.triage"
+      ],
+      "imports": [
+        "app.models",
+        "app.settings_store"
+      ],
+      "module": "app.categories",
+      "routes": [],
+      "summary": "Ticket categories: a main category (owned by a team) with optional",
+      "tables": [],
+      "tests": [
+        "tests/test_category_admin.py",
+        "tests/test_escalation.py",
+        "tests/test_escalation_tidy.py"
+      ]
+    },
+    {
+      "classes": [],
+      "file": "app/check_settings.py",
+      "functions": [
+        "main"
+      ],
+      "imported_by": [],
+      "imports": [
+        "app.config"
+      ],
+      "module": "app.check_settings",
+      "routes": [],
+      "summary": "Exits non-zero when the environment is unsafe to run in.",
+      "tables": [],
+      "tests": [
+        "tests/test_security.py"
+      ]
+    },
+    {
+      "classes": [
+        "Settings"
+      ],
+      "file": "app/config.py",
+      "functions": [
+        "mail_sync_errors",
+        "unsafe_setting_errors"
+      ],
+      "imported_by": [
+        "app.approval_links",
+        "app.attachments",
+        "app.auth",
+        "app.check_settings",
+        "app.database",
+        "app.graph_client",
+        "app.inbound",
+        "app.jobs",
+        "app.mail",
+        "app.main",
+        "app.outbox",
+        "app.rate_limit",
+        "app.routers.admin",
+        "app.routers.auth",
+        "app.routers.dev_tools",
+        "app.routers.my_settings",
+        "app.routers.webhooks",
+        "app.storage",
+        "app.subscriptions",
+        "app.teams",
+        "app.worker"
+      ],
+      "imports": [],
+      "module": "app.config",
+      "routes": [],
+      "summary": "",
+      "tables": [],
+      "tests": [
+        "tests/test_activity_log.py",
+        "tests/test_attachments.py",
+        "tests/test_inbound_mail.py",
+        "tests/test_mail_subscriptions.py",
+        "tests/test_outbound_mail.py",
+        "tests/test_presence.py",
+        "tests/test_public_surface.py",
+        "tests/test_security.py",
+        "tests/test_teams.py",
+        "tests/test_teams_copy_sending.py",
+        "tests/test_visibility.py",
+        "tests/test_worker.py"
+      ]
+    },
+    {
+      "classes": [],
+      "file": "app/database.py",
+      "functions": [
+        "get_session"
+      ],
+      "imported_by": [
+        "app.activity",
+        "app.auth",
+        "app.routers.admin",
+        "app.routers.approvals",
+        "app.routers.attachments",
+        "app.routers.auth",
+        "app.routers.dev_tools",
+        "app.routers.health",
+        "app.routers.my_settings",
+        "app.routers.notifications",
+        "app.routers.portal",
+        "app.routers.tickets",
+        "app.routers.webhooks",
+        "app.worker"
+      ],
+      "imports": [
+        "app.config"
+      ],
+      "module": "app.database",
+      "routes": [],
+      "summary": "",
+      "tables": [],
+      "tests": [
+        "tests/conftest.py",
+        "tests/test_access_context.py",
+        "tests/test_auth.py",
+        "tests/test_category_admin.py",
+        "tests/test_followers.py",
+        "tests/test_hardening.py",
+        "tests/test_health.py",
+        "tests/test_inbound_mail.py",
+        "tests/test_linking.py",
+        "tests/test_mail_subscriptions.py",
+        "tests/test_notification_followup.py",
+        "tests/test_outbound_mail.py",
+        "tests/test_split_family.py",
+        "tests/test_splitting.py",
+        "tests/test_teams_copy.py",
+        "tests/test_teams_copy_sending.py",
+        "tests/test_ticket_core.py",
+        "tests/test_worker.py"
+      ]
+    },
+    {
+      "classes": [
+        "EscalationError"
+      ],
+      "file": "app/escalation.py",
+      "functions": [
+        "escalate_ticket",
+        "escalation_target",
+        "escalators_of"
+      ],
+      "imported_by": [
+        "app.routers.tickets"
+      ],
+      "imports": [
+        "app.audit",
+        "app.categories",
+        "app.followers",
+        "app.messages",
+        "app.models",
+        "app.notifications",
+        "app.triage"
+      ],
+      "module": "app.escalation",
+      "routes": [],
+      "summary": "Escalation: sending a triaged ticket to the escalation target of its category.",
+      "tables": [],
+      "tests": []
+    },
+    {
+      "classes": [
+        "InvalidEmail",
+        "TooManyFollowers"
+      ],
+      "file": "app/followers.py",
+      "functions": [
+        "add_follower",
+        "cc_list",
+        "followers_of",
+        "is_follower",
+        "normalise_email",
+        "remove_follower",
+        "tickets_followed_by"
+      ],
+      "imported_by": [
+        "app.escalation",
+        "app.inbound",
+        "app.messages",
+        "app.raising",
+        "app.request_types",
+        "app.routers.portal",
+        "app.routers.tickets",
+        "app.visibility"
+      ],
+      "imports": [
+        "app.models",
+        "app.ticket_service"
+      ],
+      "module": "app.followers",
+      "routes": [],
+      "summary": "Followers: people copied on a ticket's public emails.",
+      "tables": [],
+      "tests": [
+        "tests/test_followers.py",
+        "tests/test_inbound_mail.py",
+        "tests/test_reply_notification.py"
+      ]
+    },
+    {
+      "classes": [],
+      "file": "app/forms.py",
+      "functions": [
+        "optional_int"
+      ],
+      "imported_by": [
+        "app.canned",
+        "app.inbound",
+        "app.routers.admin",
+        "app.routers.portal",
+        "app.routers.tickets"
+      ],
+      "imports": [],
+      "module": "app.forms",
+      "routes": [],
+      "summary": "",
+      "tables": [],
+      "tests": [
+        "tests/test_canned.py",
+        "tests/test_pagination_and_limits.py"
+      ]
+    },
+    {
+      "classes": [
+        "GraphClient"
+      ],
+      "file": "app/graph_client.py",
+      "functions": [],
+      "imported_by": [
+        "app.inbound",
+        "app.mail",
+        "app.presence",
+        "app.subscriptions"
+      ],
+      "imports": [
+        "app.config"
+      ],
+      "module": "app.graph_client",
+      "routes": [],
+      "summary": "Microsoft Graph client for the shared IT support mailbox.",
+      "tables": [],
+      "tests": [
+        "tests/test_inbound_mail.py",
+        "tests/test_mail_subscriptions.py",
+        "tests/test_outbound_mail.py",
+        "tests/test_presence.py"
+      ]
+    },
+    {
+      "classes": [
+        "Handled",
+        "IncomingAttachment",
+        "IncomingMail",
+        "MailSource"
+      ],
+      "file": "app/inbound.py",
+      "functions": [
+        "automatic_reason",
+        "find_ticket_for",
+        "ingest_mail",
+        "load_attachments",
+        "may_reply",
+        "parse_graph_message",
+        "process_message",
+        "process_notifications",
+        "referenced_ticket"
+      ],
+      "imported_by": [
+        "app.jobs",
+        "app.routers.dev_tools"
+      ],
+      "imports": [
+        "app.attachments",
+        "app.audit",
+        "app.config",
+        "app.followers",
+        "app.forms",
+        "app.graph_client",
+        "app.mail",
+        "app.messages",
+        "app.models",
+        "app.raising",
+        "app.splitting",
+        "app.storage",
+        "app.teams",
+        "app.ticket_service"
+      ],
+      "module": "app.inbound",
+      "routes": [],
+      "summary": "Inbound mail (phase 3B): turning a mail in the shared mailbox into a ticket or a reply.",
+      "tables": [],
+      "tests": [
+        "tests/test_inbound_mail.py"
+      ]
+    },
+    {
+      "classes": [
+        "Job"
+      ],
+      "file": "app/jobs/__init__.py",
+      "functions": [
+        "graph_subscription",
+        "heartbeat",
+        "mail_catch_up",
+        "mail_in",
+        "mail_out",
+        "presence",
+        "teams_copies",
+        "teams_posts"
+      ],
+      "imported_by": [
+        "app.worker"
+      ],
+      "imports": [
+        "app.config",
+        "app.inbound",
+        "app.mail",
+        "app.notifications",
+        "app.presence",
+        "app.subscriptions",
+        "app.teams"
+      ],
+      "module": "app.jobs",
+      "routes": [],
+      "summary": "The jobs the background worker runs (phase 2C).",
+      "tables": [],
+      "tests": [
+        "tests/test_inbound_mail.py",
+        "tests/test_mail_subscriptions.py",
+        "tests/test_outbound_mail.py",
+        "tests/test_presence.py",
+        "tests/test_teams.py",
+        "tests/test_teams_copy_sending.py",
+        "tests/test_worker.py"
+      ]
+    },
+    {
+      "classes": [
+        "LinkError"
+      ],
+      "file": "app/linking.py",
+      "functions": [
+        "has_linked_tickets",
+        "link_ticket",
+        "linked_summary",
+        "unlink_ticket"
+      ],
+      "imported_by": [
+        "app.routers.tickets"
+      ],
+      "imports": [
+        "app.models",
+        "app.ticket_service"
+      ],
+      "module": "app.linking",
+      "routes": [],
+      "summary": "Linking tickets to a parent Major Incident or Problem. Nothing here commits.",
+      "tables": [],
+      "tests": [
+        "tests/test_linking.py"
+      ]
+    },
+    {
+      "classes": [
+        "ApprovalTokenFilter"
+      ],
+      "file": "app/log_redaction.py",
+      "functions": [
+        "redact_approval_tokens"
+      ],
+      "imported_by": [
+        "app.main"
+      ],
+      "imports": [],
+      "module": "app.log_redaction",
+      "routes": [],
+      "summary": "Keeps credentials that travel in an address out of the logs (phase 3A).",
+      "tables": [],
+      "tests": [
+        "tests/test_public_surface.py"
+      ]
+    },
+    {
+      "classes": [
+        "Mail",
+        "NotReady"
+      ],
+      "file": "app/mail.py",
+      "functions": [
+        "automatic_cap",
+        "build_approval_mail",
+        "build_message_mail",
+        "build_raised_for_mail",
+        "cap_release",
+        "deliver_mail",
+        "describe_failure",
+        "give_up",
+        "is_permanent",
+        "own_first_message",
+        "quoted",
+        "record_only",
+        "send_through_graph"
+      ],
+      "imported_by": [
+        "app.inbound",
+        "app.jobs"
+      ],
+      "imports": [
+        "app.approval_links",
+        "app.approvals",
+        "app.config",
+        "app.graph_client",
+        "app.messages",
+        "app.models",
+        "app.outbox",
+        "app.raising",
+        "app.settings_store",
+        "app.teams"
+      ],
+      "module": "app.mail",
+      "routes": [],
+      "summary": "Building and sending the emails that app/outbox.py queued (phase 3D).",
+      "tables": [],
+      "tests": [
+        "tests/test_outbound_mail.py"
+      ]
+    },
+    {
+      "classes": [],
+      "file": "app/main.py",
+      "functions": [
+        "build_app",
+        "handle_http_exception",
+        "handle_no_ticket_access",
+        "handle_not_authenticated",
+        "handle_validation_error",
+        "lifespan",
+        "root"
+      ],
+      "imported_by": [],
+      "imports": [
+        "app.activity",
+        "app.auth",
+        "app.config",
+        "app.log_redaction",
+        "app.models",
+        "app.routers.admin",
+        "app.routers.approvals",
+        "app.routers.attachments",
+        "app.routers.auth",
+        "app.routers.dev_tools",
+        "app.routers.health",
+        "app.routers.my_settings",
+        "app.routers.notifications",
+        "app.routers.portal",
+        "app.routers.tickets",
+        "app.routers.webhooks",
+        "app.visibility"
+      ],
+      "module": "app.main",
+      "routes": [],
+      "summary": "",
+      "tables": [],
+      "tests": [
+        "tests/conftest.py",
+        "tests/test_attachments.py",
+        "tests/test_health.py",
+        "tests/test_htmx_errors.py",
+        "tests/test_public_surface.py",
+        "tests/test_triage.py"
+      ]
+    },
+    {
+      "classes": [
+        "EmailPreview",
+        "EmptyEmail",
+        "TimelineItem",
+        "UnknownRecipient"
+      ],
+      "file": "app/messages.py",
+      "functions": [
+        "about_labels",
+        "about_text",
+        "add_note",
+        "agent_timeline",
+        "email_requester",
+        "in_a_split",
+        "is_triaged",
+        "mail_subject",
+        "preview_email",
+        "record_inbound",
+        "record_notice",
+        "requester_visible_messages",
+        "thread_subject"
+      ],
+      "imported_by": [
+        "app.approvals",
+        "app.escalation",
+        "app.inbound",
+        "app.mail",
+        "app.raising",
+        "app.routers.approvals",
+        "app.routers.portal",
+        "app.routers.tickets",
+        "app.splitting",
+        "app.visibility"
+      ],
+      "imports": [
+        "app.followers",
+        "app.models",
+        "app.notifications",
+        "app.outbox",
+        "app.sla",
+        "app.ticket_service",
+        "app.visibility"
+      ],
+      "module": "app.messages",
+      "routes": [],
+      "summary": "Everything about the messages on a ticket: emailing the requester, internal",
+      "tables": [],
+      "tests": [
+        "tests/test_email_preview.py",
+        "tests/test_escalation_tidy.py",
+        "tests/test_inbound_mail.py",
+        "tests/test_messages.py",
+        "tests/test_outbound_mail.py",
+        "tests/test_reply_notification.py",
+        "tests/test_split_family.py"
+      ]
+    },
+    {
+      "classes": [
+        "ActivityLog",
+        "Attachment",
+        "AuditLog",
+        "CannedResponse",
+        "Category",
+        "GraphNotification",
+        "GraphSubscription",
+        "InboundMail",
+        "MailSyncState",
+        "MembershipLevel",
+        "Message",
+        "MessageDirection",
+        "MessageVisibility",
+        "Notification",
+        "NotificationPreference",
+        "NumberCounter",
+        "OutboundEmail",
+        "RequestType",
+        "RequestTypeApprover",
+        "Setting",
+        "Team",
+        "TeamMembership",
+        "TeamsPost",
+        "Ticket",
+        "TicketApproval",
+        "TicketEscalator",
+        "TicketEvent",
+        "TicketFollower",
+        "TicketSource",
+        "TicketStatus",
+        "TicketType",
+        "User",
+        "UserRole"
+      ],
+      "file": "app/models.py",
+      "functions": [
+        "allocate_number"
+      ],
+      "imported_by": [
+        "app.activity",
+        "app.approvals",
+        "app.attachments",
+        "app.audit",
+        "app.auth",
+        "app.backdating",
+        "app.canned",
+        "app.categories",
+        "app.escalation",
+        "app.followers",
+        "app.inbound",
+        "app.linking",
+        "app.mail",
+        "app.main",
+        "app.messages",
+        "app.notification_settings",
+        "app.notifications",
+        "app.outbox",
+        "app.presence",
+        "app.raising",
+        "app.request_types",
+        "app.routers.admin",
+        "app.routers.approvals",
+        "app.routers.attachments",
+        "app.routers.auth",
+        "app.routers.my_settings",
+        "app.routers.notifications",
+        "app.routers.portal",
+        "app.routers.tickets",
+        "app.routers.webhooks",
+        "app.search",
+        "app.settings_store",
+        "app.sla",
+        "app.splitting",
+        "app.subscriptions",
+        "app.team_activity",
+        "app.teams",
+        "app.ticket_service",
+        "app.triage",
+        "app.visibility"
+      ],
+      "imports": [],
+      "module": "app.models",
+      "routes": [],
+      "summary": "",
+      "tables": [
+        {
+          "class": "ActivityLog",
+          "table": "activitylog"
+        },
+        {
+          "class": "Attachment",
+          "table": "attachment"
+        },
+        {
+          "class": "AuditLog",
+          "table": "auditlog"
+        },
+        {
+          "class": "CannedResponse",
+          "table": "cannedresponse"
+        },
+        {
+          "class": "Category",
+          "table": "category"
+        },
+        {
+          "class": "GraphNotification",
+          "table": "graphnotification"
+        },
+        {
+          "class": "GraphSubscription",
+          "table": "graphsubscription"
+        },
+        {
+          "class": "InboundMail",
+          "table": "inboundmail"
+        },
+        {
+          "class": "MailSyncState",
+          "table": "mailsyncstate"
+        },
+        {
+          "class": "Message",
+          "table": "message"
+        },
+        {
+          "class": "Notification",
+          "table": "notification"
+        },
+        {
+          "class": "NotificationPreference",
+          "table": "notificationpreference"
+        },
+        {
+          "class": "NumberCounter",
+          "table": "numbercounter"
+        },
+        {
+          "class": "OutboundEmail",
+          "table": "outboundemail"
+        },
+        {
+          "class": "RequestType",
+          "table": "requesttype"
+        },
+        {
+          "class": "RequestTypeApprover",
+          "table": "requesttypeapprover"
+        },
+        {
+          "class": "Setting",
+          "table": "setting"
+        },
+        {
+          "class": "Team",
+          "table": "team"
+        },
+        {
+          "class": "TeamMembership",
+          "table": "teammembership"
+        },
+        {
+          "class": "TeamsPost",
+          "table": "teamspost"
+        },
+        {
+          "class": "Ticket",
+          "table": "ticket"
+        },
+        {
+          "class": "TicketApproval",
+          "table": "ticketapproval"
+        },
+        {
+          "class": "TicketEscalator",
+          "table": "ticketescalator"
+        },
+        {
+          "class": "TicketEvent",
+          "table": "ticketevent"
+        },
+        {
+          "class": "TicketFollower",
+          "table": "ticketfollower"
+        },
+        {
+          "class": "User",
+          "table": "user"
+        }
+      ],
+      "tests": [
+        "tests/conftest.py",
+        "tests/test_access_context.py",
+        "tests/test_activity_log.py",
+        "tests/test_admin.py",
+        "tests/test_approvals.py",
+        "tests/test_attachments.py",
+        "tests/test_auth.py",
+        "tests/test_backdating.py",
+        "tests/test_canned.py",
+        "tests/test_category_admin.py",
+        "tests/test_email_preview.py",
+        "tests/test_escalation.py",
+        "tests/test_escalation_tidy.py",
+        "tests/test_followers.py",
+        "tests/test_hardening.py",
+        "tests/test_htmx_errors.py",
+        "tests/test_inbound_mail.py",
+        "tests/test_linking.py",
+        "tests/test_login_lockout.py",
+        "tests/test_mail_subscriptions.py",
+        "tests/test_messages.py",
+        "tests/test_notification_followup.py",
+        "tests/test_notification_settings.py",
+        "tests/test_notifications.py",
+        "tests/test_outbound_mail.py",
+        "tests/test_pagination_and_limits.py",
+        "tests/test_portal.py",
+        "tests/test_presence.py",
+        "tests/test_public_surface.py",
+        "tests/test_raising.py",
+        "tests/test_reply_notification.py",
+        "tests/test_request_types.py",
+        "tests/test_search.py",
+        "tests/test_sla.py",
+        "tests/test_split_family.py",
+        "tests/test_splitting.py",
+        "tests/test_status_follows_conversation.py",
+        "tests/test_team_activity.py",
+        "tests/test_teams.py",
+        "tests/test_teams_copy.py",
+        "tests/test_teams_copy_sending.py",
+        "tests/test_ticket_core.py",
+        "tests/test_ticket_urls.py",
+        "tests/test_tickets_rbac.py",
+        "tests/test_triage.py",
+        "tests/test_visibility.py",
+        "tests/test_with_supplier.py",
+        "tests/test_worker.py"
+      ]
+    },
+    {
+      "classes": [
+        "EventType",
+        "InvalidDelay"
+      ],
+      "file": "app/notification_settings.py",
+      "functions": [
+        "choices_for",
+        "events_for",
+        "is_enabled",
+        "offers",
+        "parse_teams_delay",
+        "save_choices",
+        "save_teams_delay"
+      ],
+      "imported_by": [
+        "app.notifications",
+        "app.raising",
+        "app.routers.my_settings"
+      ],
+      "imports": [
+        "app.audit",
+        "app.models"
+      ],
+      "module": "app.notification_settings",
+      "routes": [],
+      "summary": "Notification settings (phase 2B): which channels each person wants for each kind of event.",
+      "tables": [],
+      "tests": [
+        "tests/test_notification_followup.py",
+        "tests/test_notification_settings.py",
+        "tests/test_teams_copy.py"
+      ]
+    },
+    {
+      "classes": [],
+      "file": "app/notifications.py",
+      "functions": [
+        "count_unread",
+        "default_teams_delay",
+        "drop_due_for_teams",
+        "due_for_teams",
+        "hand_to_teams",
+        "mark_all_read",
+        "mark_read",
+        "mentioned_in",
+        "notify",
+        "notify_assigned",
+        "notify_mentions",
+        "notify_reply",
+        "retire_read_for_teams",
+        "visible_to"
+      ],
+      "imported_by": [
+        "app.escalation",
+        "app.jobs",
+        "app.messages",
+        "app.routers.my_settings",
+        "app.routers.notifications",
+        "app.routers.tickets",
+        "app.triage"
+      ],
+      "imports": [
+        "app.models",
+        "app.notification_settings",
+        "app.settings_store",
+        "app.visibility"
+      ],
+      "module": "app.notifications",
+      "routes": [],
+      "summary": "In-app notifications (phase 2A): the bell. Something happens that an agent should know about,",
+      "tables": [],
+      "tests": [
+        "tests/test_notifications.py",
+        "tests/test_teams_copy.py",
+        "tests/test_teams_copy_sending.py"
+      ]
+    },
+    {
+      "classes": [],
+      "file": "app/outbox.py",
+      "functions": [
+        "is_on",
+        "queue_approval",
+        "queue_message",
+        "queue_raised_for"
+      ],
+      "imported_by": [
+        "app.approvals",
+        "app.mail",
+        "app.messages",
+        "app.raising"
+      ],
+      "imports": [
+        "app.config",
+        "app.models"
+      ],
+      "module": "app.outbox",
+      "routes": [],
+      "summary": "Queuing email out of the shared mailbox (phase 3D). Nothing here commits, and nothing here sends:",
+      "tables": [],
+      "tests": [
+        "tests/test_outbound_mail.py"
+      ]
+    },
+    {
+      "classes": [
+        "Page"
+      ],
+      "file": "app/pagination.py",
+      "functions": [
+        "paginate"
+      ],
+      "imported_by": [
+        "app.routers.admin",
+        "app.routers.notifications",
+        "app.routers.portal",
+        "app.routers.tickets"
+      ],
+      "imports": [],
+      "module": "app.pagination",
+      "routes": [],
+      "summary": "",
+      "tables": [],
+      "tests": [
+        "tests/test_hardening.py",
+        "tests/test_pagination_and_limits.py",
+        "tests/test_sla.py"
+      ]
+    },
+    {
+      "classes": [],
+      "file": "app/presence.py",
+      "functions": [
+        "agent_label",
+        "is_out_of_office",
+        "notifiable_members",
+        "refresh_presence"
+      ],
+      "imported_by": [
+        "app.jobs",
+        "app.routers.tickets"
+      ],
+      "imports": [
+        "app.graph_client",
+        "app.models"
+      ],
+      "module": "app.presence",
+      "routes": [],
+      "summary": "Out-of-office detection (phase 2E).",
+      "tables": [],
+      "tests": [
+        "tests/test_presence.py"
+      ]
+    },
+    {
+      "classes": [
+        "RaiseError"
+      ],
+      "file": "app/raising.py",
+      "functions": [
+        "is_agent",
+        "raise_ticket",
+        "should_tell_requester",
+        "source_label",
+        "tell_requester_decision"
+      ],
+      "imported_by": [
+        "app.inbound",
+        "app.mail",
+        "app.routers.portal",
+        "app.routers.tickets"
+      ],
+      "imports": [
+        "app.backdating",
+        "app.followers",
+        "app.messages",
+        "app.models",
+        "app.notification_settings",
+        "app.outbox",
+        "app.settings_store",
+        "app.sla",
+        "app.ticket_service",
+        "app.triage"
+      ],
+      "module": "app.raising",
+      "routes": [],
+      "summary": "Raising a ticket by hand (phase 1G).",
+      "tables": [],
+      "tests": [
+        "tests/test_email_preview.py",
+        "tests/test_notification_settings.py"
+      ]
+    },
+    {
+      "classes": [
+        "RateLimiter"
+      ],
+      "file": "app/rate_limit.py",
+      "functions": [
+        "rate_limited"
+      ],
+      "imported_by": [
+        "app.routers.approvals",
+        "app.routers.webhooks"
+      ],
+      "imports": [
+        "app.config"
+      ],
+      "module": "app.rate_limit",
+      "routes": [],
+      "summary": "Rate limiting for the routes open to the internet (phase 3A).",
+      "tables": [],
+      "tests": [
+        "tests/conftest.py",
+        "tests/test_public_surface.py"
+      ]
+    },
+    {
+      "classes": [
+        "RequestTypeError"
+      ],
+      "file": "app/request_types.py",
+      "functions": [
+        "active_request_types",
+        "all_request_types",
+        "approvers_of",
+        "create_request_type",
+        "parse_approvers",
+        "request_type_of",
+        "update_request_type"
+      ],
+      "imported_by": [
+        "app.approvals",
+        "app.routers.admin",
+        "app.routers.portal",
+        "app.routers.tickets"
+      ],
+      "imports": [
+        "app.followers",
+        "app.models"
+      ],
+      "module": "app.request_types",
+      "routes": [],
+      "summary": "The request catalogue (phase 1H): the kinds of service request people can raise, and who",
+      "tables": [],
+      "tests": [
+        "tests/test_approvals.py",
+        "tests/test_request_types.py"
+      ]
+    },
+    {
+      "classes": [],
+      "file": "app/routers/__init__.py",
+      "functions": [],
+      "imported_by": [],
+      "imports": [],
+      "module": "app.routers",
+      "routes": [],
+      "summary": "",
+      "tables": [],
+      "tests": []
+    },
+    {
+      "classes": [],
+      "file": "app/routers/admin.py",
+      "functions": [
+        "add_canned",
+        "add_category",
+        "add_request_type",
+        "category_review",
+        "create_local_user",
+        "create_team",
+        "edit_canned",
+        "edit_request_type",
+        "list_canned",
+        "list_categories",
+        "list_request_types",
+        "list_teams",
+        "list_users",
+        "remove_membership",
+        "review_category",
+        "save_setting",
+        "set_membership",
+        "unlock_user",
+        "update_category",
+        "update_user",
+        "view_activity_log",
+        "view_audit_log",
+        "view_mail_intake",
+        "view_outbound_mail",
+        "view_settings"
+      ],
+      "imported_by": [
+        "app.main"
+      ],
+      "imports": [
+        "app.activity",
+        "app.audit",
+        "app.auth",
+        "app.canned",
+        "app.categories",
+        "app.config",
+        "app.database",
+        "app.forms",
+        "app.models",
+        "app.pagination",
+        "app.request_types",
+        "app.settings_store",
+        "app.subscriptions",
+        "app.teams",
+        "app.ticket_service"
+      ],
+      "module": "app.routers.admin",
+      "routes": [
+        {
+          "handler": "view_activity_log",
+          "method": "GET",
+          "path": "/admin/activity-log"
+        },
+        {
+          "handler": "view_audit_log",
+          "method": "GET",
+          "path": "/admin/audit-log"
+        },
+        {
+          "handler": "list_canned",
+          "method": "GET",
+          "path": "/admin/canned"
+        },
+        {
+          "handler": "add_canned",
+          "method": "POST",
+          "path": "/admin/canned"
+        },
+        {
+          "handler": "edit_canned",
+          "method": "POST",
+          "path": "/admin/canned/{canned_id}"
+        },
+        {
+          "handler": "list_categories",
+          "method": "GET",
+          "path": "/admin/categories"
+        },
+        {
+          "handler": "add_category",
+          "method": "POST",
+          "path": "/admin/categories"
+        },
+        {
+          "handler": "update_category",
+          "method": "POST",
+          "path": "/admin/categories/{category_id}"
+        },
+        {
+          "handler": "category_review",
+          "method": "GET",
+          "path": "/admin/category-review"
+        },
+        {
+          "handler": "review_category",
+          "method": "POST",
+          "path": "/admin/category-review/{number}"
+        },
+        {
+          "handler": "view_mail_intake",
+          "method": "GET",
+          "path": "/admin/mail-intake"
+        },
+        {
+          "handler": "view_outbound_mail",
+          "method": "GET",
+          "path": "/admin/outbound-mail"
+        },
+        {
+          "handler": "list_request_types",
+          "method": "GET",
+          "path": "/admin/request-types"
+        },
+        {
+          "handler": "add_request_type",
+          "method": "POST",
+          "path": "/admin/request-types"
+        },
+        {
+          "handler": "edit_request_type",
+          "method": "POST",
+          "path": "/admin/request-types/{type_id}"
+        },
+        {
+          "handler": "view_settings",
+          "method": "GET",
+          "path": "/admin/settings"
+        },
+        {
+          "handler": "save_setting",
+          "method": "POST",
+          "path": "/admin/settings"
+        },
+        {
+          "handler": "list_teams",
+          "method": "GET",
+          "path": "/admin/teams"
+        },
+        {
+          "handler": "create_team",
+          "method": "POST",
+          "path": "/admin/teams"
+        },
+        {
+          "handler": "list_users",
+          "method": "GET",
+          "path": "/admin/users"
+        },
+        {
+          "handler": "create_local_user",
+          "method": "POST",
+          "path": "/admin/users"
+        },
+        {
+          "handler": "update_user",
+          "method": "POST",
+          "path": "/admin/users/{user_id}"
+        },
+        {
+          "handler": "set_membership",
+          "method": "POST",
+          "path": "/admin/users/{user_id}/memberships"
+        },
+        {
+          "handler": "remove_membership",
+          "method": "POST",
+          "path": "/admin/users/{user_id}/memberships/{team_id}/remove"
+        },
+        {
+          "handler": "unlock_user",
+          "method": "POST",
+          "path": "/admin/users/{user_id}/unlock"
+        }
+      ],
+      "summary": "",
+      "tables": [],
+      "tests": []
+    },
+    {
+      "classes": [],
+      "file": "app/routers/approvals.py",
+      "functions": [
+        "answer",
+        "show"
+      ],
+      "imported_by": [
+        "app.main"
+      ],
+      "imports": [
+        "app.approval_links",
+        "app.approvals",
+        "app.database",
+        "app.messages",
+        "app.models",
+        "app.rate_limit",
+        "app.settings_store"
+      ],
+      "module": "app.routers.approvals",
+      "routes": [
+        {
+          "handler": "show",
+          "method": "GET",
+          "path": "/approvals/{token}"
+        },
+        {
+          "handler": "answer",
+          "method": "POST",
+          "path": "/approvals/{token}"
+        }
+      ],
+      "summary": "The emailed approve/decline link (phase 1H). No sign-in: the signed link says who is answering.",
+      "tables": [],
+      "tests": []
+    },
+    {
+      "classes": [],
+      "file": "app/routers/attachments.py",
+      "functions": [
+        "download"
+      ],
+      "imported_by": [
+        "app.main"
+      ],
+      "imports": [
+        "app.attachments",
+        "app.auth",
+        "app.database",
+        "app.models",
+        "app.storage",
+        "app.visibility"
+      ],
+      "module": "app.routers.attachments",
+      "routes": [
+        {
+          "handler": "download",
+          "method": "GET",
+          "path": "/attachments/{attachment_id}"
+        }
+      ],
+      "summary": "",
+      "tables": [],
+      "tests": []
+    },
+    {
+      "classes": [],
+      "file": "app/routers/auth.py",
+      "functions": [
+        "callback",
+        "dev_login_form",
+        "dev_login_submit",
+        "local_login",
+        "login_page",
+        "logout",
+        "sso_start"
+      ],
+      "imported_by": [
+        "app.main"
+      ],
+      "imports": [
+        "app.activity",
+        "app.auth",
+        "app.config",
+        "app.database",
+        "app.models"
+      ],
+      "module": "app.routers.auth",
+      "routes": [
+        {
+          "handler": "callback",
+          "method": "GET",
+          "path": "/auth/callback"
+        },
+        {
+          "handler": "dev_login_form",
+          "method": "GET",
+          "path": "/auth/dev-login"
+        },
+        {
+          "handler": "dev_login_submit",
+          "method": "POST",
+          "path": "/auth/dev-login"
+        },
+        {
+          "handler": "local_login",
+          "method": "POST",
+          "path": "/auth/local-login"
+        },
+        {
+          "handler": "login_page",
+          "method": "GET",
+          "path": "/auth/login"
+        },
+        {
+          "handler": "logout",
+          "method": "POST",
+          "path": "/auth/logout"
+        },
+        {
+          "handler": "sso_start",
+          "method": "GET",
+          "path": "/auth/sso/start"
+        }
+      ],
+      "summary": "",
+      "tables": [],
+      "tests": [
+        "tests/test_activity_log.py",
+        "tests/test_visibility.py"
+      ]
+    },
+    {
+      "classes": [],
+      "file": "app/routers/dev_tools.py",
+      "functions": [
+        "simulate_inbound_email"
+      ],
+      "imported_by": [
+        "app.main"
+      ],
+      "imports": [
+        "app.config",
+        "app.database",
+        "app.inbound"
+      ],
+      "module": "app.routers.dev_tools",
+      "routes": [
+        {
+          "handler": "simulate_inbound_email",
+          "method": "POST",
+          "path": "/webhooks/dev/simulate-inbound"
+        }
+      ],
+      "summary": "Development helpers, served by the web app (never the public one) and refused outside dev.",
+      "tables": [],
+      "tests": []
+    },
+    {
+      "classes": [],
+      "file": "app/routers/health.py",
+      "functions": [
+        "health"
+      ],
+      "imported_by": [
+        "app.main"
+      ],
+      "imports": [
+        "app.database",
+        "app.subscriptions"
+      ],
+      "module": "app.routers.health",
+      "routes": [
+        {
+          "handler": "health",
+          "method": "GET",
+          "path": "/health"
+        }
+      ],
+      "summary": "",
+      "tables": [],
+      "tests": []
+    },
+    {
+      "classes": [],
+      "file": "app/routers/my_settings.py",
+      "functions": [
+        "notification_settings",
+        "save_notification_settings"
+      ],
+      "imported_by": [
+        "app.main"
+      ],
+      "imports": [
+        "app.auth",
+        "app.config",
+        "app.database",
+        "app.models",
+        "app.notification_settings",
+        "app.notifications"
+      ],
+      "module": "app.routers.my_settings",
+      "routes": [
+        {
+          "handler": "notification_settings",
+          "method": "GET",
+          "path": "/settings/notifications"
+        },
+        {
+          "handler": "save_notification_settings",
+          "method": "POST",
+          "path": "/settings/notifications"
+        }
+      ],
+      "summary": "A person's own settings (phase 2B): which channels they want for which events. Anyone signed in,",
+      "tables": [],
+      "tests": []
+    },
+    {
+      "classes": [],
+      "file": "app/routers/notifications.py",
+      "functions": [
+        "list_notifications",
+        "open_notification",
+        "read_all",
+        "unread_count"
+      ],
+      "imported_by": [
+        "app.main"
+      ],
+      "imports": [
+        "app.auth",
+        "app.database",
+        "app.models",
+        "app.notifications",
+        "app.pagination"
+      ],
+      "module": "app.routers.notifications",
+      "routes": [
+        {
+          "handler": "list_notifications",
+          "method": "GET",
+          "path": "/notifications"
+        },
+        {
+          "handler": "unread_count",
+          "method": "GET",
+          "path": "/notifications/count"
+        },
+        {
+          "handler": "read_all",
+          "method": "POST",
+          "path": "/notifications/read-all"
+        },
+        {
+          "handler": "open_notification",
+          "method": "POST",
+          "path": "/notifications/{notification_id}/open"
+        }
+      ],
+      "summary": "The bell: an agent's notifications (phase 2A). Own notifications only.",
+      "tables": [],
+      "tests": []
+    },
+    {
+      "classes": [],
+      "file": "app/routers/portal.py",
+      "functions": [
+        "add_comment",
+        "add_ticket_follower",
+        "decide_approval",
+        "list_my_tickets",
+        "my_approvals",
+        "new_ticket_form",
+        "raise_new_ticket",
+        "remove_ticket_follower",
+        "view_my_ticket"
+      ],
+      "imported_by": [
+        "app.main"
+      ],
+      "imports": [
+        "app.approvals",
+        "app.audit",
+        "app.auth",
+        "app.backdating",
+        "app.categories",
+        "app.database",
+        "app.followers",
+        "app.forms",
+        "app.messages",
+        "app.models",
+        "app.pagination",
+        "app.raising",
+        "app.request_types",
+        "app.sla",
+        "app.splitting",
+        "app.ticket_service",
+        "app.triage",
+        "app.visibility"
+      ],
+      "module": "app.routers.portal",
+      "routes": [
+        {
+          "handler": "list_my_tickets",
+          "method": "GET",
+          "path": "/portal"
+        },
+        {
+          "handler": "my_approvals",
+          "method": "GET",
+          "path": "/portal/approvals"
+        },
+        {
+          "handler": "new_ticket_form",
+          "method": "GET",
+          "path": "/portal/new"
+        },
+        {
+          "handler": "raise_new_ticket",
+          "method": "POST",
+          "path": "/portal/new"
+        },
+        {
+          "handler": "view_my_ticket",
+          "method": "GET",
+          "path": "/portal/{number}"
+        },
+        {
+          "handler": "decide_approval",
+          "method": "POST",
+          "path": "/portal/{number}/approval"
+        },
+        {
+          "handler": "add_comment",
+          "method": "POST",
+          "path": "/portal/{number}/comment"
+        },
+        {
+          "handler": "add_ticket_follower",
+          "method": "POST",
+          "path": "/portal/{number}/followers"
+        },
+        {
+          "handler": "remove_ticket_follower",
+          "method": "POST",
+          "path": "/portal/{number}/followers/{follower_id}/remove"
+        }
+      ],
+      "summary": "",
+      "tables": [],
+      "tests": []
+    },
+    {
+      "classes": [],
+      "file": "app/routers/tickets.py",
+      "functions": [
+        "add_ticket_follower",
+        "add_ticket_note",
+        "agent_options_for_category",
+        "agent_options_for_team",
+        "assign_ticket",
+        "backdate",
+        "change_priority",
+        "change_status",
+        "email_user",
+        "escalate_ticket",
+        "fill_from_canned",
+        "link",
+        "list_tickets",
+        "preview_email_user",
+        "reassign",
+        "remove_ticket_follower",
+        "split",
+        "team_activity",
+        "triage",
+        "unlink",
+        "view_ticket",
+        "view_ticket_by_number",
+        "waive_approval"
+      ],
+      "imported_by": [
+        "app.main"
+      ],
+      "imports": [
+        "app.approvals",
+        "app.audit",
+        "app.auth",
+        "app.backdating",
+        "app.canned",
+        "app.categories",
+        "app.database",
+        "app.escalation",
+        "app.followers",
+        "app.forms",
+        "app.linking",
+        "app.messages",
+        "app.models",
+        "app.notifications",
+        "app.pagination",
+        "app.presence",
+        "app.raising",
+        "app.request_types",
+        "app.search",
+        "app.sla",
+        "app.splitting",
+        "app.team_activity",
+        "app.ticket_service",
+        "app.triage",
+        "app.visibility"
+      ],
+      "module": "app.routers.tickets",
+      "routes": [
+        {
+          "handler": "view_ticket_by_number",
+          "method": "GET",
+          "path": "/t/{number}"
+        },
+        {
+          "handler": "list_tickets",
+          "method": "GET",
+          "path": "/tickets"
+        },
+        {
+          "handler": "team_activity",
+          "method": "GET",
+          "path": "/tickets/activity"
+        },
+        {
+          "handler": "agent_options_for_category",
+          "method": "GET",
+          "path": "/tickets/agents-for-category"
+        },
+        {
+          "handler": "agent_options_for_team",
+          "method": "GET",
+          "path": "/tickets/agents-for-team"
+        },
+        {
+          "handler": "view_ticket",
+          "method": "GET",
+          "path": "/tickets/{number}"
+        },
+        {
+          "handler": "waive_approval",
+          "method": "POST",
+          "path": "/tickets/{number}/approval/waive"
+        },
+        {
+          "handler": "assign_ticket",
+          "method": "POST",
+          "path": "/tickets/{number}/assign"
+        },
+        {
+          "handler": "backdate",
+          "method": "POST",
+          "path": "/tickets/{number}/backdate"
+        },
+        {
+          "handler": "fill_from_canned",
+          "method": "GET",
+          "path": "/tickets/{number}/canned"
+        },
+        {
+          "handler": "email_user",
+          "method": "POST",
+          "path": "/tickets/{number}/email"
+        },
+        {
+          "handler": "preview_email_user",
+          "method": "POST",
+          "path": "/tickets/{number}/email/preview"
+        },
+        {
+          "handler": "escalate_ticket",
+          "method": "POST",
+          "path": "/tickets/{number}/escalate"
+        },
+        {
+          "handler": "add_ticket_follower",
+          "method": "POST",
+          "path": "/tickets/{number}/followers"
+        },
+        {
+          "handler": "remove_ticket_follower",
+          "method": "POST",
+          "path": "/tickets/{number}/followers/{follower_id}/remove"
+        },
+        {
+          "handler": "link",
+          "method": "POST",
+          "path": "/tickets/{number}/link"
+        },
+        {
+          "handler": "add_ticket_note",
+          "method": "POST",
+          "path": "/tickets/{number}/note"
+        },
+        {
+          "handler": "change_priority",
+          "method": "POST",
+          "path": "/tickets/{number}/priority"
+        },
+        {
+          "handler": "reassign",
+          "method": "POST",
+          "path": "/tickets/{number}/reassign"
+        },
+        {
+          "handler": "split",
+          "method": "POST",
+          "path": "/tickets/{number}/split"
+        },
+        {
+          "handler": "change_status",
+          "method": "POST",
+          "path": "/tickets/{number}/status"
+        },
+        {
+          "handler": "triage",
+          "method": "POST",
+          "path": "/tickets/{number}/triage"
+        },
+        {
+          "handler": "unlink",
+          "method": "POST",
+          "path": "/tickets/{number}/unlink"
+        }
+      ],
+      "summary": "",
+      "tables": [],
+      "tests": []
+    },
+    {
+      "classes": [],
+      "file": "app/routers/webhooks.py",
+      "functions": [
+        "graph_notifications"
+      ],
+      "imported_by": [
+        "app.main"
+      ],
+      "imports": [
+        "app.config",
+        "app.database",
+        "app.models",
+        "app.rate_limit"
+      ],
+      "module": "app.routers.webhooks",
+      "routes": [
+        {
+          "handler": "graph_notifications",
+          "method": "POST",
+          "path": "/webhooks/graph/notifications"
+        }
+      ],
+      "summary": "The Microsoft Graph webhook (phase 3A). Internet-facing: it is served by the public app.",
+      "tables": [],
+      "tests": []
+    },
+    {
+      "classes": [],
+      "file": "app/search.py",
+      "functions": [
+        "normalise",
+        "search_condition"
+      ],
+      "imported_by": [
+        "app.routers.tickets"
+      ],
+      "imports": [
+        "app.models",
+        "app.ticket_service"
+      ],
+      "module": "app.search",
+      "routes": [],
+      "summary": "Searching tickets from the agent list (phase 1F).",
+      "tables": [],
+      "tests": [
+        "tests/test_search.py"
+      ]
+    },
+    {
+      "classes": [
+        "SettingDef"
+      ],
+      "file": "app/settings_store.py",
+      "functions": [
+        "get_flag",
+        "get_int_setting",
+        "get_setting",
+        "set_setting",
+        "sla_key"
+      ],
+      "imported_by": [
+        "app.categories",
+        "app.mail",
+        "app.notifications",
+        "app.raising",
+        "app.routers.admin",
+        "app.routers.approvals",
+        "app.sla",
+        "app.subscriptions",
+        "app.ticket_service"
+      ],
+      "imports": [
+        "app.models"
+      ],
+      "module": "app.settings_store",
+      "routes": [],
+      "summary": "Admin-editable settings. Values are stored as text in the setting table; this",
+      "tables": [],
+      "tests": [
+        "tests/test_approvals.py",
+        "tests/test_category_admin.py",
+        "tests/test_mail_subscriptions.py",
+        "tests/test_notification_followup.py",
+        "tests/test_outbound_mail.py",
+        "tests/test_sla.py",
+        "tests/test_teams_copy.py",
+        "tests/test_triage.py"
+      ]
+    },
+    {
+      "classes": [
+        "Level",
+        "Priority",
+        "SlaView"
+      ],
+      "file": "app/sla.py",
+      "functions": [
+        "apply_impact_urgency",
+        "at_risk_percent",
+        "describe_priority",
+        "note_first_response",
+        "on_status_change",
+        "priority_for",
+        "queue_order",
+        "recalculate_deadlines",
+        "set_impact_urgency",
+        "sla_view",
+        "target_minutes"
+      ],
+      "imported_by": [
+        "app.backdating",
+        "app.messages",
+        "app.raising",
+        "app.routers.portal",
+        "app.routers.tickets",
+        "app.splitting",
+        "app.ticket_service",
+        "app.triage"
+      ],
+      "imports": [
+        "app.models",
+        "app.settings_store",
+        "app.ticket_service"
+      ],
+      "module": "app.sla",
+      "routes": [],
+      "summary": "Priority and the SLA clock. Nothing here commits.",
+      "tables": [],
+      "tests": [
+        "tests/test_backdating.py",
+        "tests/test_sla.py",
+        "tests/test_with_supplier.py"
+      ]
+    },
+    {
+      "classes": [
+        "SplitError"
+      ],
+      "file": "app/splitting.py",
+      "functions": [
+        "all_sub_tickets_finished",
+        "apply_requester_reply",
+        "check_manual_status",
+        "derived_status",
+        "has_sub_tickets",
+        "lock_ticket",
+        "refresh_open_sub_tickets",
+        "split_ticket",
+        "sub_ticket_count",
+        "sub_tickets_summary",
+        "sync_original_status",
+        "unfinished_sub_ticket_count"
+      ],
+      "imported_by": [
+        "app.inbound",
+        "app.routers.portal",
+        "app.routers.tickets",
+        "app.ticket_service"
+      ],
+      "imports": [
+        "app.messages",
+        "app.models",
+        "app.sla",
+        "app.ticket_service",
+        "app.triage"
+      ],
+      "module": "app.splitting",
+      "routes": [],
+      "summary": "Splitting one request into sub-tickets. Nothing here commits.",
+      "tables": [],
+      "tests": [
+        "tests/test_split_family.py",
+        "tests/test_splitting.py",
+        "tests/test_with_supplier.py"
+      ]
+    },
+    {
+      "classes": [
+        "BlobStorage",
+        "InvalidKey",
+        "LocalStorage",
+        "Storage"
+      ],
+      "file": "app/storage.py",
+      "functions": [
+        "content_disposition",
+        "get_storage"
+      ],
+      "imported_by": [
+        "app.attachments",
+        "app.inbound",
+        "app.routers.attachments"
+      ],
+      "imports": [
+        "app.config"
+      ],
+      "module": "app.storage",
+      "routes": [],
+      "summary": "Where attachment bytes live (docs/plan.md, \"Storage decisions\").",
+      "tables": [],
+      "tests": [
+        "tests/test_attachments.py",
+        "tests/test_inbound_mail.py",
+        "tests/test_storage.py"
+      ]
+    },
+    {
+      "classes": [
+        "MailIntake",
+        "Outcome",
+        "SubscriptionError"
+      ],
+      "file": "app/subscriptions.py",
+      "functions": [
+        "catch_up",
+        "client_state_fingerprint",
+        "describe_failure",
+        "health_warnings",
+        "keep_subscription_alive",
+        "lifetime_minutes",
+        "mail_folder",
+        "parse_graph_time",
+        "record_for_processing",
+        "renew_margin_minutes",
+        "subscription_resource"
+      ],
+      "imported_by": [
+        "app.jobs",
+        "app.routers.admin",
+        "app.routers.health"
+      ],
+      "imports": [
+        "app.config",
+        "app.graph_client",
+        "app.models",
+        "app.settings_store"
+      ],
+      "module": "app.subscriptions",
+      "routes": [],
+      "summary": "Keeping mail flowing from the shared mailbox (phase 3C).",
+      "tables": [],
+      "tests": [
+        "tests/test_mail_subscriptions.py"
+      ]
+    },
+    {
+      "classes": [
+        "Kind"
+      ],
+      "file": "app/team_activity.py",
+      "functions": [
+        "describe",
+        "feed_query"
+      ],
+      "imported_by": [
+        "app.routers.tickets"
+      ],
+      "imports": [
+        "app.models"
+      ],
+      "module": "app.team_activity",
+      "routes": [],
+      "summary": "The team activity feed: everything that happened on the tickets an agent can open,",
+      "tables": [],
+      "tests": [
+        "tests/test_team_activity.py"
+      ]
+    },
+    {
+      "classes": [
+        "Unsendable"
+      ],
+      "file": "app/teams.py",
+      "functions": [
+        "deliver_pending",
+        "describe_failure",
+        "give_up",
+        "is_permanent",
+        "mention_name",
+        "message",
+        "new_ticket_card",
+        "new_ticket_post",
+        "notification_card",
+        "notification_post",
+        "plain",
+        "post_card",
+        "queue_new_ticket",
+        "queue_notification"
+      ],
+      "imported_by": [
+        "app.inbound",
+        "app.jobs",
+        "app.mail",
+        "app.routers.admin",
+        "app.ticket_service"
+      ],
+      "imports": [
+        "app.config",
+        "app.models"
+      ],
+      "module": "app.teams",
+      "routes": [],
+      "summary": "Teams channel posts (phase 2D): a card in the support channel for each new ticket.",
+      "tables": [],
+      "tests": [
+        "tests/test_inbound_mail.py",
+        "tests/test_outbound_mail.py",
+        "tests/test_teams.py",
+        "tests/test_teams_copy_sending.py"
+      ]
+    },
+    {
+      "classes": [
+        "AwaitingApproval",
+        "NotTriaged"
+      ],
+      "file": "app/ticket_service.py",
+      "functions": [
+        "create_ticket",
+        "find_ticket",
+        "get_by_number",
+        "parse_ticket_number",
+        "record_event",
+        "set_status"
+      ],
+      "imported_by": [
+        "app.approvals",
+        "app.backdating",
+        "app.followers",
+        "app.inbound",
+        "app.linking",
+        "app.messages",
+        "app.raising",
+        "app.routers.admin",
+        "app.routers.portal",
+        "app.routers.tickets",
+        "app.search",
+        "app.sla",
+        "app.splitting",
+        "app.triage"
+      ],
+      "imports": [
+        "app.models",
+        "app.settings_store",
+        "app.sla",
+        "app.splitting",
+        "app.teams"
+      ],
+      "module": "app.ticket_service",
+      "routes": [],
+      "summary": "Changes to tickets that more than one route makes. Nothing here commits:",
+      "tables": [],
+      "tests": [
+        "tests/test_category_admin.py",
+        "tests/test_email_preview.py",
+        "tests/test_reply_notification.py",
+        "tests/test_split_family.py",
+        "tests/test_teams.py",
+        "tests/test_ticket_core.py",
+        "tests/test_triage.py"
+      ]
+    },
+    {
+      "classes": [
+        "TriageError"
+      ],
+      "file": "app/triage.py",
+      "functions": [
+        "change_type",
+        "move_ticket",
+        "reassign_ticket",
+        "triage_ticket"
+      ],
+      "imported_by": [
+        "app.escalation",
+        "app.raising",
+        "app.routers.portal",
+        "app.routers.tickets",
+        "app.splitting"
+      ],
+      "imports": [
+        "app.approvals",
+        "app.categories",
+        "app.models",
+        "app.notifications",
+        "app.sla",
+        "app.ticket_service",
+        "app.visibility"
+      ],
+      "module": "app.triage",
+      "routes": [],
+      "summary": "Triage and re-assignment. Neither commits: the caller does, so the change, its",
+      "tables": [],
+      "tests": [
+        "tests/test_escalation_tidy.py"
+      ]
+    },
+    {
+      "classes": [
+        "Access",
+        "AccessContext",
+        "NoTicketAccess"
+      ],
+      "file": "app/visibility.py",
+      "functions": [
+        "access_context",
+        "assignable_agents",
+        "is_untriaged",
+        "may_add_note",
+        "may_self_assign",
+        "may_triage",
+        "may_view_attachment",
+        "require_access",
+        "team_members",
+        "ticket_access",
+        "visible_ticket_condition"
+      ],
+      "imported_by": [
+        "app.main",
+        "app.messages",
+        "app.notifications",
+        "app.routers.attachments",
+        "app.routers.portal",
+        "app.routers.tickets",
+        "app.triage"
+      ],
+      "imports": [
+        "app.followers",
+        "app.messages",
+        "app.models"
+      ],
+      "module": "app.visibility",
+      "routes": [],
+      "summary": "Who can see and work which tickets. Every route that reads or changes a",
+      "tables": [],
+      "tests": [
+        "tests/test_access_context.py",
+        "tests/test_escalation.py",
+        "tests/test_messages.py",
+        "tests/test_visibility.py"
+      ]
+    },
+    {
+      "classes": [
+        "WorkerState"
+      ],
+      "file": "app/worker.py",
+      "functions": [
+        "acquire_single_instance_lock",
+        "build_scheduler",
+        "install_signal_handlers",
+        "job_errors",
+        "lock_is_held",
+        "main",
+        "make_lock_watchdog",
+        "release_lock",
+        "run_job"
+      ],
+      "imported_by": [],
+      "imports": [
+        "app.config",
+        "app.database",
+        "app.jobs"
+      ],
+      "module": "app.worker",
+      "routes": [],
+      "summary": "The background worker (phase 2C): `python -m app.worker`.",
+      "tables": [],
+      "tests": [
+        "tests/test_worker.py"
+      ]
+    }
+  ],
+  "seams": {
+    "rules": {
+      "access-in-visibility": "Who can see or work a ticket is decided only in app/visibility.py. Routes do not query Ticket, TeamMembership or TicketEscalator themselves unless the same function applies an app.visibility helper.",
+      "agent-tickets-only-raising": "Only app/raising.py creates source=agent tickets (backdating relies on it).",
+      "messages-via-messages-module": "What the requester may see, and whether a ticket can be emailed, is decided only in app/messages.py. Nothing else reads Ticket.messages or runs select() on Message.",
+      "models-is-a-leaf": "app/models.py imports no other app module except app.config.",
+      "routers-only-from-main": "Only app/main.py includes routers. Other modules do not import app.routers.*.",
+      "tickets-via-ticket-service": "Tickets are created and change status through app/ticket_service.py (numbers come from the models hook). Nothing else sets Ticket(...) directly outside the allowed modules."
+    },
+    "violations": [
+      {
+        "allowed": "Admin pages are behind require_super_admin (super admins see every ticket): team ticket counts, the category review queue and ticket lookups for the outbound mail table.",
+        "detail": "select(Ticket) in a route",
+        "file": "app/routers/admin.py",
+        "in": "_review_queue",
+        "rule": "access-in-visibility"
+      },
+      {
+        "allowed": "Admin pages are behind require_super_admin and count or list memberships for the admin tables; there is no per-agent access decision to make.",
+        "detail": "select(TeamMembership) in a route",
+        "file": "app/routers/admin.py",
+        "in": "list_teams",
+        "rule": "access-in-visibility"
+      },
+      {
+        "allowed": "Admin pages are behind require_super_admin (super admins see every ticket): team ticket counts, the category review queue and ticket lookups for the outbound mail table.",
+        "detail": "select(Ticket) in a route",
+        "file": "app/routers/admin.py",
+        "in": "list_teams",
+        "rule": "access-in-visibility"
+      },
+      {
+        "allowed": "Admin pages are behind require_super_admin and count or list memberships for the admin tables; there is no per-agent access decision to make.",
+        "detail": "select(TeamMembership) in a route",
+        "file": "app/routers/admin.py",
+        "in": "list_users",
+        "rule": "access-in-visibility"
+      },
+      {
+        "allowed": "Admin pages are behind require_super_admin (super admins see every ticket): team ticket counts, the category review queue and ticket lookups for the outbound mail table.",
+        "detail": "select(Ticket) in a route",
+        "file": "app/routers/admin.py",
+        "in": "view_outbound_mail",
+        "rule": "access-in-visibility"
+      },
+      {
+        "detail": "select(Ticket) in a route",
+        "file": "app/routers/notifications.py",
+        "in": "list_notifications",
+        "rule": "access-in-visibility"
+      },
+      {
+        "allowed": "My tickets in the portal is the requester's own tickets (requester_email equals the signed-in user); agent access rules do not apply to it.",
+        "detail": "select(Ticket) in a route",
+        "file": "app/routers/portal.py",
+        "in": "list_my_tickets",
+        "rule": "access-in-visibility"
+      },
+      {
+        "allowed": "own_first_message reads only the requester's PUBLIC inbound message, to quote the original in outbound mail; it never returns notes.",
+        "detail": "select() on Message",
+        "file": "app/mail.py",
+        "in": "own_first_message",
+        "rule": "messages-via-messages-module"
+      },
+      {
+        "allowed": "Agent search matches message bodies inside a condition that visibility.visible_ticket_condition already narrowed; the requester never sees search.",
+        "detail": "select() on Message",
+        "file": "app/search.py",
+        "in": "search_condition",
+        "rule": "messages-via-messages-module"
+      },
+      {
+        "allowed": "The agent team activity feed lists messages (including notes) of tickets the agent can open, filtered by visible_ticket_condition; the requester never sees it.",
+        "detail": "select() on Message",
+        "file": "app/team_activity.py",
+        "in": "feed_query",
+        "rule": "messages-via-messages-module"
+      }
+    ]
+  },
+  "settings": [
+    {
+      "default": "'all'",
+      "env": "APP_ROLE",
+      "name": "app_role",
+      "type": "str"
+    },
+    {
+      "default": "5 * 1024",
+      "env": "ATTACHMENT_INLINE_MIN_BYTES",
+      "name": "attachment_inline_min_bytes",
+      "type": "int"
+    },
+    {
+      "default": "90",
+      "env": "ATTACHMENT_LINK_SECONDS",
+      "name": "attachment_link_seconds",
+      "type": "int"
+    },
+    {
+      "default": "10 * 1024 * 1024",
+      "env": "ATTACHMENT_MAX_BYTES",
+      "name": "attachment_max_bytes",
+      "type": "int"
+    },
+    {
+      "default": "'postgresql+psycopg2://ticketing:ticketing@db:5432/ticketing'",
+      "env": "DATABASE_URL",
+      "name": "database_url",
+      "type": "str"
+    },
+    {
+      "default": "'production'",
+      "env": "ENV",
+      "name": "env",
+      "type": "str"
+    },
+    {
+      "default": "''",
+      "env": "GRAPH_CLIENT_ID",
+      "name": "graph_client_id",
+      "type": "str"
+    },
+    {
+      "default": "(secret)",
+      "env": "GRAPH_CLIENT_SECRET",
+      "name": "graph_client_secret",
+      "type": "str"
+    },
+    {
+      "default": "''",
+      "env": "GRAPH_NOTIFICATION_URL",
+      "name": "graph_notification_url",
+      "type": "str"
+    },
+    {
+      "default": "''",
+      "env": "GRAPH_SHARED_MAILBOX",
+      "name": "graph_shared_mailbox",
+      "type": "str"
+    },
+    {
+      "default": "False",
+      "env": "GRAPH_SUBSCRIPTION_ENABLED",
+      "name": "graph_subscription_enabled",
+      "type": "bool"
+    },
+    {
+      "default": "''",
+      "env": "GRAPH_TENANT_ID",
+      "name": "graph_tenant_id",
+      "type": "str"
+    },
+    {
+      "default": "'change-me'",
+      "env": "GRAPH_WEBHOOK_CLIENT_STATE",
+      "name": "graph_webhook_client_state",
+      "type": "str"
+    },
+    {
+      "default": "False",
+      "env": "INBOUND_ENABLED",
+      "name": "inbound_enabled",
+      "type": "bool"
+    },
+    {
+      "default": "20",
+      "env": "INBOUND_MAX_ATTACHMENTS",
+      "name": "inbound_max_attachments",
+      "type": "int"
+    },
+    {
+      "default": "10",
+      "env": "INBOUND_MAX_CC",
+      "name": "inbound_max_cc",
+      "type": "int"
+    },
+    {
+      "default": "30",
+      "env": "INBOUND_MAX_PER_SENDER_HOUR",
+      "name": "inbound_max_per_sender_hour",
+      "type": "int"
+    },
+    {
+      "default": "False",
+      "env": "MAIL_CATCH_UP_ENABLED",
+      "name": "mail_catch_up_enabled",
+      "type": "bool"
+    },
+    {
+      "default": "'off'",
+      "env": "MAIL_SENDING",
+      "name": "mail_sending",
+      "type": "str"
+    },
+    {
+      "default": "False",
+      "env": "PRESENCE_ENABLED",
+      "name": "presence_enabled",
+      "type": "bool"
+    },
+    {
+      "default": "''",
+      "env": "PUBLIC_BASE_URL",
+      "name": "public_base_url",
+      "type": "str"
+    },
+    {
+      "default": "30",
+      "env": "RATE_LIMIT_APPROVALS_PER_MINUTE",
+      "name": "rate_limit_approvals_per_minute",
+      "type": "int"
+    },
+    {
+      "default": "600",
+      "env": "RATE_LIMIT_WEBHOOK_PER_MINUTE",
+      "name": "rate_limit_webhook_per_minute",
+      "type": "int"
+    },
+    {
+      "default": "(secret)",
+      "env": "SESSION_SECRET_KEY",
+      "name": "session_secret_key",
+      "type": "str"
+    },
+    {
+      "default": "''",
+      "env": "SSO_CLIENT_ID",
+      "name": "sso_client_id",
+      "type": "str"
+    },
+    {
+      "default": "(secret)",
+      "env": "SSO_CLIENT_SECRET",
+      "name": "sso_client_secret",
+      "type": "str"
+    },
+    {
+      "default": "'http://localhost:8000/auth/callback'",
+      "env": "SSO_REDIRECT_URI",
+      "name": "sso_redirect_uri",
+      "type": "str"
+    },
+    {
+      "default": "''",
+      "env": "SSO_TENANT_ID",
+      "name": "sso_tenant_id",
+      "type": "str"
+    },
+    {
+      "default": "''",
+      "env": "STORAGE_ACCOUNT_NAME",
+      "name": "storage_account_name",
+      "type": "str"
+    },
+    {
+      "default": "''",
+      "env": "STORAGE_BACKEND",
+      "name": "storage_backend",
+      "type": "str"
+    },
+    {
+      "default": "'attachments'",
+      "env": "STORAGE_CONTAINER",
+      "name": "storage_container",
+      "type": "str"
+    },
+    {
+      "default": "'data/attachments'",
+      "env": "STORAGE_LOCAL_PATH",
+      "name": "storage_local_path",
+      "type": "str"
+    },
+    {
+      "default": "''",
+      "env": "SUPER_ADMIN_EMAILS",
+      "name": "super_admin_emails",
+      "type": "str"
+    },
+    {
+      "default": "False",
+      "env": "TEAMS_NEW_TICKET_ENABLED",
+      "name": "teams_new_ticket_enabled",
+      "type": "bool"
+    },
+    {
+      "default": "''",
+      "env": "TEAMS_NEW_TICKET_WEBHOOK_URL",
+      "name": "teams_new_ticket_webhook_url",
+      "type": "str"
+    },
+    {
+      "default": "False",
+      "env": "TEAMS_NOTIFICATIONS_ENABLED",
+      "name": "teams_notifications_enabled",
+      "type": "bool"
+    },
+    {
+      "default": "60",
+      "env": "WORKER_HEARTBEAT_SECONDS",
+      "name": "worker_heartbeat_seconds",
+      "type": "int"
+    }
+  ],
+  "tests": [
+    "tests/conftest.py",
+    "tests/test_access_context.py",
+    "tests/test_activity_log.py",
+    "tests/test_admin.py",
+    "tests/test_approvals.py",
+    "tests/test_attachments.py",
+    "tests/test_auth.py",
+    "tests/test_backdating.py",
+    "tests/test_canned.py",
+    "tests/test_category_admin.py",
+    "tests/test_code_map.py",
+    "tests/test_email_preview.py",
+    "tests/test_escalation.py",
+    "tests/test_escalation_tidy.py",
+    "tests/test_followers.py",
+    "tests/test_hardening.py",
+    "tests/test_health.py",
+    "tests/test_htmx_errors.py",
+    "tests/test_inbound_mail.py",
+    "tests/test_linking.py",
+    "tests/test_login_lockout.py",
+    "tests/test_mail_subscriptions.py",
+    "tests/test_messages.py",
+    "tests/test_migrations_env.py",
+    "tests/test_notification_followup.py",
+    "tests/test_notification_settings.py",
+    "tests/test_notifications.py",
+    "tests/test_outbound_mail.py",
+    "tests/test_pagination_and_limits.py",
+    "tests/test_portal.py",
+    "tests/test_presence.py",
+    "tests/test_public_surface.py",
+    "tests/test_raising.py",
+    "tests/test_reply_notification.py",
+    "tests/test_request_types.py",
+    "tests/test_search.py",
+    "tests/test_security.py",
+    "tests/test_sla.py",
+    "tests/test_split_family.py",
+    "tests/test_splitting.py",
+    "tests/test_status_follows_conversation.py",
+    "tests/test_storage.py",
+    "tests/test_team_activity.py",
+    "tests/test_teams.py",
+    "tests/test_teams_copy.py",
+    "tests/test_teams_copy_sending.py",
+    "tests/test_ticket_core.py",
+    "tests/test_ticket_urls.py",
+    "tests/test_tickets_rbac.py",
+    "tests/test_triage.py",
+    "tests/test_visibility.py",
+    "tests/test_with_supplier.py",
+    "tests/test_worker.py"
+  ]
+}

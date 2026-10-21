@@ -1,0 +1,23 @@
+name: Code map
+
+# Runs on every pull request, docs-only ones included: the map itself lives in docs/. Needs no
+# database and no dependencies (tools/code_map.py uses only the standard library).
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  code-map-current:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+
+      - name: Code map is current
+        run: python tools/code_map.py --check

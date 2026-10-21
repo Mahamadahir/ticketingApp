@@ -117,7 +117,23 @@ rate limiting on public routes, and a new deploy workflow. The `RUN_MIGRATIONS`
 switch is done; proxy headers need only `FORWARDED_ALLOW_IPS`, set in the Bicep
 to the Container Apps subnet (never `*`, which lets clients forge their IP).
 
+## The code map (all agents)
+
+`docs/code-map.md` (and `docs/code-map.json` for tools) is generated from the code with `ast`:
+per module what it owns, public names, who imports it, routes, tables, worker jobs, settings,
+the Alembic head and the tests that import it, plus the architecture seams and any current
+violations of them.
+
+- Use it first to find where something lives, who depends on a module and whether a change
+  respects the seams. Fall back to grep or reading code only for line-level detail, or when the map
+  is missing something (then fix `tools/code_map.py` in the same PR).
+- Regenerate it with `python tools/code_map.py` and commit it with every commit that adds,
+  removes or renames modules, routes, models, jobs, settings, migrations or tests. CI job
+  `code-map-current` runs `python tools/code_map.py --check` and fails on a stale map.
+- Never hand-edit the generated files. A seam violation you introduce shows up in the map diff;
+  fix it rather than allowlisting it (`tools/code_map_allowlist.json` needs a reason per entry).
+
 ## Layout
 
 `app/` application code, `migrations/` Alembic, `tests/` pytest, `docs/plan.md`
-the plan, `infra/` Bicep (see `infra/README.md`), `.github/workflows/` CI.
+the plan, `docs/code-map.md` the generated code map (start here to locate code), `infra/` Bicep (see `infra/README.md`), `.github/workflows/` CI.
