@@ -25,6 +25,9 @@ TELL_REQUESTER_RAISED_FOR = "tell_requester_when_raised_for_them"
 APPROVAL_LINK_MINUTES = "approval_link_minutes"
 TEAMS_UNREAD_MINUTES = "teams_unread_minutes"
 AUTOMATIC_EMAIL_CAP = "automatic_email_cap_per_ticket"
+INBOUND_MAX_PER_SENDER_HOUR = "inbound_max_per_sender_hour"
+INBOUND_MAX_ATTACHMENTS = "inbound_max_attachments"
+INBOUND_MAX_CC = "inbound_max_cc"
 SLA_AT_RISK_PERCENT = "sla_at_risk_percent"
 GRAPH_SUBSCRIPTION_MINUTES = "graph_subscription_minutes"
 GRAPH_RENEW_MARGIN_MINUTES = "graph_renew_margin_minutes"
@@ -126,6 +129,34 @@ REGISTRY: dict[str, SettingDef] = {
         ),
         default="10",
     ),
+    INBOUND_MAX_PER_SENDER_HOUR: SettingDef(
+        key=INBOUND_MAX_PER_SENDER_HOUR,
+        label="Inbound mail: most tickets and replies from one sender in an hour",
+        kind="count",
+        description=(
+            "Stops a mail loop: once one sender has made this many tickets and replies in the last hour, "
+            "their further mail is set aside (shown under Mail intake) and makes nothing. Placeholder "
+            "value until the real limit is agreed; set it high rather than off."
+        ),
+        default="30",
+    ),
+    INBOUND_MAX_ATTACHMENTS: SettingDef(
+        key=INBOUND_MAX_ATTACHMENTS,
+        label="Inbound mail: most attachments kept from one email",
+        kind="count",
+        description="Files beyond this many on one email are not kept; the ticket notes which were skipped. Placeholder.",
+        default="20",
+    ),
+    INBOUND_MAX_CC: SettingDef(
+        key=INBOUND_MAX_CC,
+        label="Inbound mail: most Cc addresses made followers from one email",
+        kind="count",
+        description=(
+            "When an email opens a ticket, the first this many addresses on its Cc line become followers "
+            "(the follower list has its own overall cap as well). Placeholder."
+        ),
+        default="10",
+    ),
     GRAPH_SUBSCRIPTION_MINUTES: SettingDef(
         key=GRAPH_SUBSCRIPTION_MINUTES,
         label="Mail subscription lifetime when created or renewed (minutes)",
@@ -213,6 +244,12 @@ def get_int_setting(session: Session, key: str) -> Optional[int]:
     # ASCII digits only: str.isdigit() also accepts characters like a superscript
     # two, which int() then refuses.
     return int(value) if value.isascii() and value.isdigit() else None
+
+
+def count_setting(session: Session, key: str) -> int:
+    """A count setting as a number, falling back to its default if the stored value is not one."""
+    value = get_int_setting(session, key)
+    return value if value is not None else int(REGISTRY[key].default)
 
 
 def set_setting(session: Session, key: str, value: str) -> None:

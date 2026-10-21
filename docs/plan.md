@@ -871,9 +871,10 @@ A template is plain text with `{placeholders}` from a fixed list per email; the 
   DKIM and DMARC. The shared mailbox must accept mail only from authenticated senders (internal only, Exchange
   `RequireSenderAuthenticationEnabled`); this is on the staging checklist. Reading Authentication-Results is not planned now
   (optional defence in depth in phase 10).
-- **Inbound limits are admin settings** (decided 22 Oct 2026, a small PR). `INBOUND_MAX_PER_SENDER_HOUR` (30, placeholder, TBC),
-  `INBOUND_MAX_ATTACHMENTS` (20) and `INBOUND_MAX_CC` (10) are environment variables today and move to admin settings next to the
-  automatic email cap; the Bicep then stops passing them. Mail set aside as `ignored_flood` is shown on Admin > Mail intake.
+- **Inbound limits are admin settings** (decided 22 Oct 2026, built as 4B-1). The per-sender hourly limit (30, placeholder, TBC),
+  attachments kept per mail (20) and Cc followers made per mail (10) sit next to the automatic email cap under Admin > Settings; the
+  Bicep no longer passes them. Mail set aside as `ignored_flood` is shown on Admin > Mail intake. They are counts of 1 to 1000
+  (no "off" for the per-sender limit).
 - **Acknowledgement and queue** (decided direction, 22 Oct 2026). A ticket that arrives by email gets an automatic "we have your
   request" notice with the reference, the priority and the target response time. It carries no queue position: positions mislead
   because a higher priority jumps the queue. It is a deliberate exception to "requester email is hidden until triaged" (the notice

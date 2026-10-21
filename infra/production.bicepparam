@@ -25,9 +25,6 @@ param publicAppBaseUrl = readEnvironmentVariable('PUBLIC_BASE_URL', '')
 param graphSubscriptionEnabled = toLower(trim(readEnvironmentVariable('GRAPH_SUBSCRIPTION_ENABLED', 'false'))) == 'true'
 param mailCatchUpEnabled = toLower(trim(readEnvironmentVariable('MAIL_CATCH_UP_ENABLED', 'false'))) == 'true'
 param inboundEnabled = toLower(trim(readEnvironmentVariable('INBOUND_ENABLED', 'false'))) == 'true'
-param inboundMaxAttachments = empty(trim(readEnvironmentVariable('INBOUND_MAX_ATTACHMENTS', ''))) ? -1 : int(trim(readEnvironmentVariable('INBOUND_MAX_ATTACHMENTS', '')))
-param inboundMaxPerSenderHour = empty(trim(readEnvironmentVariable('INBOUND_MAX_PER_SENDER_HOUR', ''))) ? -1 : int(trim(readEnvironmentVariable('INBOUND_MAX_PER_SENDER_HOUR', '')))
-param inboundMaxCc = empty(trim(readEnvironmentVariable('INBOUND_MAX_CC', ''))) ? -1 : int(trim(readEnvironmentVariable('INBOUND_MAX_CC', '')))
 var mailSendingRaw = toLower(trim(readEnvironmentVariable('MAIL_SENDING', '')))
 param mailSending = empty(mailSendingRaw) ? 'off' : (mailSendingRaw == 'graph' ? 'graph' : 'off')
 

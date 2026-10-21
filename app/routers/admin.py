@@ -69,6 +69,7 @@ from app.models import (
     Category,
     GraphNotification,
     GraphSubscription,
+    InboundMail,
     MailSyncState,
     OutboundEmail,
     RequestType,
@@ -83,6 +84,7 @@ from app.models import (
 from app.pagination import paginate
 from app.scheduled_jobs import SCHEDULED_JOBS, status_line, timing
 from app.settings_store import JOB_LATE_MINUTES, REGISTRY, get_setting, set_setting
+from app.inbound import IGNORED_FLOOD
 from app.subscriptions import health_warnings, mail_folder, subscription_resource
 from app.teams import MAX_ATTEMPTS
 from app.ticket_service import EVENT_CATEGORY_REVIEWED, get_by_number, record_event
@@ -1003,11 +1005,24 @@ def view_mail_intake(
             GraphNotification.processed_at.is_(None), GraphNotification.lifecycle_event.is_(None)
         )
     ).one()
+    flood_since = now - timedelta(hours=24)
+    flood_day = session.exec(
+        select(func.count()).select_from(InboundMail).where(
+            InboundMail.outcome == IGNORED_FLOOD, InboundMail.created_at >= flood_since
+        )
+    ).one()
+    flood_total = session.exec(
+        select(func.count()).select_from(InboundMail).where(InboundMail.outcome == IGNORED_FLOOD)
+    ).one()
+    flood_recent = session.exec(
+        select(InboundMail).where(InboundMail.outcome == IGNORED_FLOOD).order_by(InboundMail.created_at.desc()).limit(10)
+    ).all()
     return templates.TemplateResponse(
         request,
         "admin_mail_intake.html",
         {
             "subscription": subscription, "sync": sync, "waiting": waiting, "oldest": oldest, "now": now,
+            "flood_day": flood_day, "flood_total": flood_total, "flood_recent": flood_recent,
             "warnings": health_warnings(session, now),
             "user": user,
         },
