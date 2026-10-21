@@ -63,6 +63,7 @@ any change that adds, removes or renames modules, routes, models, jobs, settings
 | GET | `/admin/users` | `list_users` | `app.routers.admin` |
 | POST | `/admin/users` | `create_local_user` | `app.routers.admin` |
 | POST | `/admin/users/{user_id}` | `update_user` | `app.routers.admin` |
+| POST | `/admin/users/{user_id}/active` | `set_user_active` | `app.routers.admin` |
 | POST | `/admin/users/{user_id}/memberships` | `set_membership` | `app.routers.admin` |
 | POST | `/admin/users/{user_id}/memberships/{team_id}/remove` | `remove_membership` | `app.routers.admin` |
 | POST | `/admin/users/{user_id}/unlock` | `unlock_user` | `app.routers.admin` |
@@ -211,15 +212,15 @@ any change that adds, removes or renames modules, routes, models, jobs, settings
 
 ## Migrations
 
-34 revisions. Head: `158132f3603a`.
+35 revisions. Head: `a3483204f1e2`.
 
 Chain tail (newest first):
 
+- `a3483204f1e2` migrations/versions/a3483204f1e2_presence_retry_bookkeeping_and_is_active.py
 - `158132f3603a` migrations/versions/158132f3603a_resolution_fields.py
 - `7c76517851fa` migrations/versions/7c76517851fa_never_follow_address.py
 - `b4e7a0d3c158` migrations/versions/b4e7a0d3c158_scheduled_job.py
 - `a3f6d0b8c471` migrations/versions/a3f6d0b8c471_email_templates.py
-- `e4b7c1a9d052` migrations/versions/e4b7c1a9d052_inbound_mail_handled_mail_record_.py
 
 ## Modules
 
@@ -564,7 +565,7 @@ File: `app/pagination.py`
 Out-of-office detection (phase 2E).  
 File: `app/presence.py`
 - Functions: `agent_label`, `is_out_of_office`, `notifiable_members`, `refresh_presence`
-- Imports: `app.graph_client`, `app.models`
+- Imports: `app.graph_client`, `app.models`, `app.settings_store`
 - Imported by: `app.jobs`, `app.routers.tickets`, `app.templating`
 - Tests: `test_presence.py`
 
@@ -624,8 +625,8 @@ File: `app/routers/__init__.py`
 
 (no docstring)  
 File: `app/routers/admin.py`
-- Functions: `add_canned`, `add_category`, `add_never_follow`, `add_request_type`, `category_review`, `create_local_user`, `create_team`, `edit_canned`, `edit_request_type`, `list_canned`, `list_categories`, `list_email_templates`, `list_never_follow`, `list_request_types`, `list_teams`, `list_users`, `preview_email_template`, `remove_membership`, `remove_never_follow`, `reset_email_template`, `review_category`, `save_email_template`, `save_setting`, `set_membership`, `unlock_user`, `update_category`, `update_user`, `view_activity_log`, `view_audit_log`, `view_mail_intake`, `view_outbound_mail`, `view_scheduled_jobs`, `view_settings`
-- Routes: GET `/admin/activity-log`, GET `/admin/audit-log`, GET `/admin/canned`, POST `/admin/canned`, POST `/admin/canned/{canned_id}`, GET `/admin/categories`, POST `/admin/categories`, POST `/admin/categories/{category_id}`, GET `/admin/category-review`, POST `/admin/category-review/{number}`, GET `/admin/email-templates`, POST `/admin/email-templates/{key}`, POST `/admin/email-templates/{key}/preview`, POST `/admin/email-templates/{key}/reset`, GET `/admin/mail-intake`, GET `/admin/never-follow`, POST `/admin/never-follow`, POST `/admin/never-follow/{row_id}/remove`, GET `/admin/outbound-mail`, GET `/admin/request-types`, POST `/admin/request-types`, POST `/admin/request-types/{type_id}`, GET `/admin/scheduled-jobs`, GET `/admin/settings`, POST `/admin/settings`, GET `/admin/teams`, POST `/admin/teams`, GET `/admin/users`, POST `/admin/users`, POST `/admin/users/{user_id}`, POST `/admin/users/{user_id}/memberships`, POST `/admin/users/{user_id}/memberships/{team_id}/remove`, POST `/admin/users/{user_id}/unlock`
+- Functions: `add_canned`, `add_category`, `add_never_follow`, `add_request_type`, `category_review`, `create_local_user`, `create_team`, `edit_canned`, `edit_request_type`, `list_canned`, `list_categories`, `list_email_templates`, `list_never_follow`, `list_request_types`, `list_teams`, `list_users`, `preview_email_template`, `remove_membership`, `remove_never_follow`, `reset_email_template`, `review_category`, `save_email_template`, `save_setting`, `set_membership`, `set_user_active`, `unlock_user`, `update_category`, `update_user`, `view_activity_log`, `view_audit_log`, `view_mail_intake`, `view_outbound_mail`, `view_scheduled_jobs`, `view_settings`
+- Routes: GET `/admin/activity-log`, GET `/admin/audit-log`, GET `/admin/canned`, POST `/admin/canned`, POST `/admin/canned/{canned_id}`, GET `/admin/categories`, POST `/admin/categories`, POST `/admin/categories/{category_id}`, GET `/admin/category-review`, POST `/admin/category-review/{number}`, GET `/admin/email-templates`, POST `/admin/email-templates/{key}`, POST `/admin/email-templates/{key}/preview`, POST `/admin/email-templates/{key}/reset`, GET `/admin/mail-intake`, GET `/admin/never-follow`, POST `/admin/never-follow`, POST `/admin/never-follow/{row_id}/remove`, GET `/admin/outbound-mail`, GET `/admin/request-types`, POST `/admin/request-types`, POST `/admin/request-types/{type_id}`, GET `/admin/scheduled-jobs`, GET `/admin/settings`, POST `/admin/settings`, GET `/admin/teams`, POST `/admin/teams`, GET `/admin/users`, POST `/admin/users`, POST `/admin/users/{user_id}`, POST `/admin/users/{user_id}/active`, POST `/admin/users/{user_id}/memberships`, POST `/admin/users/{user_id}/memberships/{team_id}/remove`, POST `/admin/users/{user_id}/unlock`
 - Imports: `app.activity`, `app.audit`, `app.auth`, `app.canned`, `app.categories`, `app.config`, `app.database`, `app.email_templates`, `app.followers`, `app.forms`, `app.inbound`, `app.models`, `app.never_follow`, `app.pagination`, `app.request_types`, `app.scheduled_jobs`, `app.settings_store`, `app.subscriptions`, `app.teams`, `app.templating`, `app.ticket_service`
 - Imported by: `app.main`
 - Tests: none
@@ -758,8 +759,8 @@ File: `app/settings_store.py`
 - Classes: `SettingDef`
 - Functions: `count_setting`, `get_flag`, `get_int_setting`, `get_setting`, `set_setting`, `sla_key`
 - Imports: `app.models`
-- Imported by: `app.categories`, `app.inbound`, `app.mail`, `app.notifications`, `app.raising`, `app.routers.admin`, `app.routers.approvals`, `app.scheduled_jobs`, `app.sla`, `app.subscriptions`, `app.ticket_service`
-- Tests: `test_acknowledgement.py`, `test_approvals.py`, `test_category_admin.py`, `test_inbound_mail.py`, `test_mail_subscriptions.py`, `test_notification_followup.py`, `test_outbound_mail.py`, `test_scheduled_jobs.py`, `test_sla.py`, `test_teams_copy.py`, `test_triage.py`
+- Imported by: `app.categories`, `app.inbound`, `app.mail`, `app.notifications`, `app.presence`, `app.raising`, `app.routers.admin`, `app.routers.approvals`, `app.scheduled_jobs`, `app.sla`, `app.subscriptions`, `app.ticket_service`
+- Tests: `test_acknowledgement.py`, `test_approvals.py`, `test_category_admin.py`, `test_inbound_mail.py`, `test_mail_subscriptions.py`, `test_notification_followup.py`, `test_outbound_mail.py`, `test_presence.py`, `test_scheduled_jobs.py`, `test_sla.py`, `test_teams_copy.py`, `test_triage.py`
 
 ### `app.sla`
 

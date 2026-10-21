@@ -16,6 +16,7 @@
       <th>Name</th>
       <th>Role</th>
       <th>Teams</th>
+      <th>Active</th>
       <th>Local account</th>
     </tr>
   </thead>
@@ -57,6 +58,13 @@
             {% endfor %}
           </select>
           <button type="submit">Add or change</button>
+        </form>
+      </td>
+      <td>
+        <form method="post" action="/admin/users/{{ u.id }}/active">
+          {{ "yes" if u.is_active else "no" }}
+          <input type="hidden" name="is_active" value="{{ 'false' if u.is_active else 'true' }}" />
+          <button type="submit">{{ "Deactivate" if u.is_active else "Activate" }}</button>
         </form>
       </td>
       <td>

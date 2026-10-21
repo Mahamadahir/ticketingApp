@@ -1070,7 +1070,7 @@ A template is plain text with `{placeholders}` from a fixed list per email; the 
   GRAPH_* credentials) looks each agent up in the directory once by email (cached as `User.entra_object_id`; an agent Graph
   does not know is never marked), then reads everyone's presence in batches of 650 and stores `out_of_office` and when it was
   read. Readers use `is_out_of_office`, which ignores a reading older than three hours, so a stopped job or an outage never
-  leaves anyone out of office for good. What it changes: an out-of-office agent is labelled "(out of office)" in the assign,
+  leaves anyone out of office for good. *Built in 4B-4:* a person Graph does not know, or who gets no reading, is left alone until the `presence_retry_minutes` setting has passed (`User.last_presence_lookup_at`), and `User.is_active = false` stops polling them (the rest of `is_active` is phase 6). What it changes: an out-of-office agent is labelled "(out of office)" in the assign,
   re-assign and triage pickers (always selectable), and `notifiable_members`
   drops them from any message to a whole team. Nothing sends to a whole team yet (the team an escalation lands in and the agent
   a team change unassigns are still not notified), so that helper is the hook for those. A notification meant for one person

@@ -204,6 +204,25 @@ def remove_membership(
     return RedirectResponse("/admin/users", status_code=303)
 
 
+@router.post("/users/{user_id}/active")
+def set_user_active(
+    user_id: int,
+    is_active: bool = Form(...),
+    admin: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    """Phase 4: an inactive person is no longer polled for out-of-office. Nothing else changes yet."""
+    target = session.get(User, user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    if target.is_active != is_active:
+        log_action(session, admin.email, "user", target.id, "activated" if is_active else "deactivated", "")
+        target.is_active = is_active
+        session.add(target)
+        session.commit()
+    return RedirectResponse("/admin/users", status_code=303)
+
+
 @router.post("/users/{user_id}/unlock")
 def unlock_user(
     user_id: int,
