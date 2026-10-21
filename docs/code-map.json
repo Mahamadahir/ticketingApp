@@ -418,6 +418,7 @@
         "app.storage",
         "app.subscriptions",
         "app.teams",
+        "app.telemetry",
         "app.worker"
       ],
       "imports": [],
@@ -437,6 +438,7 @@
         "tests/test_teams.py",
         "tests/test_teams_copy_sending.py",
         "tests/test_visibility.py",
+        "tests/test_wiring_3f.py",
         "tests/test_worker.py"
       ]
     },
@@ -552,6 +554,7 @@
       "summary": "Followers: people copied on a ticket's public emails.",
       "tables": [],
       "tests": [
+        "tests/test_bell_access.py",
         "tests/test_followers.py",
         "tests/test_inbound_mail.py",
         "tests/test_reply_notification.py"
@@ -568,7 +571,8 @@
         "app.inbound",
         "app.routers.admin",
         "app.routers.portal",
-        "app.routers.tickets"
+        "app.routers.tickets",
+        "app.templating"
       ],
       "imports": [],
       "module": "app.forms",
@@ -786,7 +790,9 @@
       ]
     },
     {
-      "classes": [],
+      "classes": [
+        "AppStaticFiles"
+      ],
       "file": "app/main.py",
       "functions": [
         "build_app",
@@ -815,6 +821,8 @@
         "app.routers.portal",
         "app.routers.tickets",
         "app.routers.webhooks",
+        "app.telemetry",
+        "app.templating",
         "app.visibility"
       ],
       "module": "app.main",
@@ -1089,6 +1097,7 @@
         "tests/test_attachments.py",
         "tests/test_auth.py",
         "tests/test_backdating.py",
+        "tests/test_bell_access.py",
         "tests/test_canned.py",
         "tests/test_category_admin.py",
         "tests/test_email_preview.py",
@@ -1097,6 +1106,7 @@
         "tests/test_followers.py",
         "tests/test_hardening.py",
         "tests/test_htmx_errors.py",
+        "tests/test_htmx_partials.py",
         "tests/test_inbound_mail.py",
         "tests/test_linking.py",
         "tests/test_login_lockout.py",
@@ -1127,6 +1137,7 @@
         "tests/test_tickets_rbac.py",
         "tests/test_triage.py",
         "tests/test_visibility.py",
+        "tests/test_wiring_3f.py",
         "tests/test_with_supplier.py",
         "tests/test_worker.py"
       ]
@@ -1169,6 +1180,7 @@
       "classes": [],
       "file": "app/notifications.py",
       "functions": [
+        "bell_tickets",
         "count_unread",
         "default_teams_delay",
         "drop_due_for_teams",
@@ -1204,6 +1216,7 @@
       "summary": "In-app notifications (phase 2A): the bell. Something happens that an agent should know about,",
       "tables": [],
       "tests": [
+        "tests/test_bell_access.py",
         "tests/test_notifications.py",
         "tests/test_teams_copy.py",
         "tests/test_teams_copy_sending.py"
@@ -1272,7 +1285,8 @@
       ],
       "imported_by": [
         "app.jobs",
-        "app.routers.tickets"
+        "app.routers.tickets",
+        "app.templating"
       ],
       "imports": [
         "app.graph_client",
@@ -1442,6 +1456,7 @@
         "app.settings_store",
         "app.subscriptions",
         "app.teams",
+        "app.templating",
         "app.ticket_service"
       ],
       "module": "app.routers.admin",
@@ -1593,7 +1608,8 @@
         "app.messages",
         "app.models",
         "app.rate_limit",
-        "app.settings_store"
+        "app.settings_store",
+        "app.templating"
       ],
       "module": "app.routers.approvals",
       "routes": [
@@ -1661,7 +1677,8 @@
         "app.auth",
         "app.config",
         "app.database",
-        "app.models"
+        "app.models",
+        "app.templating"
       ],
       "module": "app.routers.auth",
       "routes": [
@@ -1775,7 +1792,8 @@
         "app.database",
         "app.models",
         "app.notification_settings",
-        "app.notifications"
+        "app.notifications",
+        "app.templating"
       ],
       "module": "app.routers.my_settings",
       "routes": [
@@ -1811,7 +1829,8 @@
         "app.database",
         "app.models",
         "app.notifications",
-        "app.pagination"
+        "app.pagination",
+        "app.templating"
       ],
       "module": "app.routers.notifications",
       "routes": [
@@ -1873,6 +1892,7 @@
         "app.request_types",
         "app.sla",
         "app.splitting",
+        "app.templating",
         "app.ticket_service",
         "app.triage",
         "app.visibility"
@@ -1983,6 +2003,7 @@
         "app.sla",
         "app.splitting",
         "app.team_activity",
+        "app.templating",
         "app.ticket_service",
         "app.triage",
         "app.visibility"
@@ -2408,7 +2429,8 @@
       ],
       "imports": [
         "app.config",
-        "app.models"
+        "app.models",
+        "app.visibility"
       ],
       "module": "app.teams",
       "routes": [],
@@ -2418,8 +2440,56 @@
         "tests/test_inbound_mail.py",
         "tests/test_outbound_mail.py",
         "tests/test_teams.py",
-        "tests/test_teams_copy_sending.py"
+        "tests/test_teams_copy_sending.py",
+        "tests/test_wiring_3f.py"
       ]
+    },
+    {
+      "classes": [],
+      "file": "app/telemetry.py",
+      "functions": [
+        "start_telemetry"
+      ],
+      "imported_by": [
+        "app.main",
+        "app.worker"
+      ],
+      "imports": [
+        "app.config"
+      ],
+      "module": "app.telemetry",
+      "routes": [],
+      "summary": "Application Insights, switched on by APPLICATIONINSIGHTS_CONNECTION_STRING (the Bicep sets it).",
+      "tables": [],
+      "tests": [
+        "tests/test_wiring_3f.py"
+      ]
+    },
+    {
+      "classes": [],
+      "file": "app/templating.py",
+      "functions": [
+        "is_htmx"
+      ],
+      "imported_by": [
+        "app.main",
+        "app.routers.admin",
+        "app.routers.approvals",
+        "app.routers.auth",
+        "app.routers.my_settings",
+        "app.routers.notifications",
+        "app.routers.portal",
+        "app.routers.tickets"
+      ],
+      "imports": [
+        "app.forms",
+        "app.presence"
+      ],
+      "module": "app.templating",
+      "routes": [],
+      "summary": "The one place the Jinja2 environment is built, so every router renders the same way.",
+      "tables": [],
+      "tests": []
     },
     {
       "classes": [
@@ -2534,6 +2604,7 @@
         "app.routers.attachments",
         "app.routers.portal",
         "app.routers.tickets",
+        "app.teams",
         "app.triage"
       ],
       "imports": [
@@ -2572,7 +2643,8 @@
       "imports": [
         "app.config",
         "app.database",
-        "app.jobs"
+        "app.jobs",
+        "app.telemetry"
       ],
       "module": "app.worker",
       "routes": [],
@@ -2628,12 +2700,6 @@
         "rule": "access-in-visibility"
       },
       {
-        "detail": "select(Ticket) in a route",
-        "file": "app/routers/notifications.py",
-        "in": "list_notifications",
-        "rule": "access-in-visibility"
-      },
-      {
         "allowed": "My tickets in the portal is the requester's own tickets (requester_email equals the signed-in user); agent access rules do not apply to it.",
         "detail": "select(Ticket) in a route",
         "file": "app/routers/portal.py",
@@ -2668,6 +2734,12 @@
       "default": "'all'",
       "env": "APP_ROLE",
       "name": "app_role",
+      "type": "str"
+    },
+    {
+      "default": "''",
+      "env": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+      "name": "applicationinsights_connection_string",
       "type": "str"
     },
     {
@@ -2881,6 +2953,12 @@
       "type": "bool"
     },
     {
+      "default": "''",
+      "env": "WEB_BASE_URL",
+      "name": "web_base_url",
+      "type": "str"
+    },
+    {
       "default": "60",
       "env": "WORKER_HEARTBEAT_SECONDS",
       "name": "worker_heartbeat_seconds",
@@ -2896,6 +2974,7 @@
     "tests/test_attachments.py",
     "tests/test_auth.py",
     "tests/test_backdating.py",
+    "tests/test_bell_access.py",
     "tests/test_canned.py",
     "tests/test_category_admin.py",
     "tests/test_code_map.py",
@@ -2906,6 +2985,7 @@
     "tests/test_hardening.py",
     "tests/test_health.py",
     "tests/test_htmx_errors.py",
+    "tests/test_htmx_partials.py",
     "tests/test_inbound_mail.py",
     "tests/test_linking.py",
     "tests/test_login_lockout.py",
@@ -2928,6 +3008,7 @@
     "tests/test_sla.py",
     "tests/test_split_family.py",
     "tests/test_splitting.py",
+    "tests/test_static.py",
     "tests/test_status_follows_conversation.py",
     "tests/test_storage.py",
     "tests/test_team_activity.py",
@@ -2939,6 +3020,7 @@
     "tests/test_tickets_rbac.py",
     "tests/test_triage.py",
     "tests/test_visibility.py",
+    "tests/test_wiring_3f.py",
     "tests/test_with_supplier.py",
     "tests/test_worker.py"
   ]
