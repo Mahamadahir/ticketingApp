@@ -96,6 +96,7 @@ def test_every_portal_path_goes_through_the_requester_emails_helper(client, db_s
     monkeypatch.setattr(identity, "requester_emails", lambda user: {"me@example.com", "me@othercompany.com"})
     listing = client.get("/portal").text
     assert "Under first address" in listing and "Under second address" in listing
+    assert "(following)" not in listing  # both are the person's own under the patched helper
     r = client.get(f"/portal/{second.number}")
     assert r.status_code == 200
     assert client.post(f"/portal/{second.number}/comment", data={"body": "via second"}).status_code == 200

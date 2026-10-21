@@ -152,23 +152,6 @@ def cc_list(session: Session, ticket: Ticket) -> list[str]:
     return [f.email for f in followers_of(session, ticket) if f.email != requester]
 
 
-def tickets_followed_by(session: Session, email: str) -> list[Ticket]:
-    """Tickets this address follows, for the portal's Following list: never one
-    they raised themselves. Internal followers are included, so an agent who
-    becomes an internal follower does not lose a ticket they were already
-    following; they only ever see its public messages here."""
-    email = email.lower()
-    return list(
-        session.exec(
-            select(Ticket)
-            .join(TicketFollower, TicketFollower.ticket_id == Ticket.id)
-            .where(TicketFollower.email == email, func.lower(Ticket.requester_email) != email)
-            .order_by(Ticket.updated_at.desc())
-            .limit(100)
-        ).all()
-    )
-
-
 def is_follower(session: Session, ticket: Ticket, email: str, *, include_internal: bool = True) -> bool:
     conditions = [TicketFollower.ticket_id == ticket.id, TicketFollower.email == email.lower()]
     if not include_internal:

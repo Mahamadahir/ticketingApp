@@ -46,7 +46,8 @@ from app.splitting import apply_requester_reply
 from app.request_types import active_request_types, request_type_of
 from app.models import Category, RequestType, Ticket, TicketSource, TicketStatus, TicketType, User, UserRole
 from app.ticket_service import get_by_number
-from app.identity import is_follower_of, is_requester, my_tickets_query, requester_emails
+from app import identity
+from app.identity import is_follower_of, is_requester, my_tickets_query
 from app.pagination import paginate
 
 router = APIRouter(prefix="/portal", tags=["portal"])
@@ -164,7 +165,7 @@ def list_my_tickets(
     return templates.TemplateResponse(
         request,
         "portal_tickets_list.html",
-        {"page": tickets_page, "my_emails": requester_emails(user), "waiting_on_me": count_pending_for(session, user), "user": user},
+        {"page": tickets_page, "my_emails": identity.requester_emails(user), "waiting_on_me": count_pending_for(session, user), "user": user},
     )
 
 

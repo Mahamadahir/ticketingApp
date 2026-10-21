@@ -23,7 +23,7 @@ def is_requester(ticket: Ticket, user: User) -> bool:
 
 
 def is_follower_of(session: Session, ticket: Ticket, user: User, *, include_internal: bool = True) -> bool:
-    conditions = [TicketFollower.ticket_id == ticket.id, TicketFollower.email.in_(requester_emails(user))]
+    conditions = [TicketFollower.ticket_id == ticket.id, func.lower(TicketFollower.email).in_(requester_emails(user))]
     if not include_internal:
         conditions.append(TicketFollower.is_internal.is_(False))
     return session.exec(select(TicketFollower.id).where(*conditions)).first() is not None
@@ -33,8 +33,8 @@ def my_tickets_query(user: User):
     """Tickets the person raised, then tickets they follow, the ones they raised first.
     What they may read of each is decided on the ticket page, through app/messages.py."""
     emails = requester_emails(user)
-    own = func.lower(Ticket.requester_email).in_(emails)
-    followed = Ticket.id.in_(select(TicketFollower.ticket_id).where(TicketFollower.email.in_(emails)))
+    own = func.lower(func.trim(Ticket.requester_email)).in_(emails)
+    followed = Ticket.id.in_(select(TicketFollower.ticket_id).where(func.lower(TicketFollower.email).in_(emails)))
     return (
         select(Ticket)
         .where(own | followed)
