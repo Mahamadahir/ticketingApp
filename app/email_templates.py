@@ -92,6 +92,18 @@ REGISTRY: dict[str, TemplateDef] = {
             sample={**_COMMON_SAMPLE, "raised_by": "Alex Agent", "request_text": "The printer shows a paper jam error."},
         ),
         TemplateDef(
+            key="acknowledgement",
+            label="Acknowledgement",
+            description=(
+                "Sent once to the person who emails IT, when their email opens a ticket. It is only a receipt: "
+                "keep it free of ticket content, a queue position or a promised time (an emailed ticket has no "
+                "priority until it is triaged). It goes out under the ticket's own subject."
+            ),
+            body_default="Your issue has been logged as {reference} with IT. You will be updated once the ticket is taken.",
+            body_placeholders={"reference": _COMMON["reference"], "ticket_number": _COMMON["ticket_number"]},
+            sample={"reference": "INC-1042", "ticket_number": "1042"},
+        ),
+        TemplateDef(
             key="resolution",
             label="Resolution email",
             description=(

@@ -41,7 +41,7 @@ from app.models import (
     TicketStatus,
     User,
 )
-from app.outbox import APPROVAL, AUTOMATIC_TO_REQUESTER, NOTICE, RAISED_FOR, REPLY
+from app.outbox import ACKNOWLEDGEMENT, APPROVAL, AUTOMATIC_TO_REQUESTER, NOTICE, RAISED_FOR, REPLY
 from app.raising import should_tell_requester
 from app.settings_store import APPROVAL_LINK_MINUTES, AUTOMATIC_EMAIL_CAP, get_int_setting
 from app.teams import MAX_ATTEMPTS, MAX_BACKOFF_MINUTES, Unsendable
@@ -158,6 +158,22 @@ def build_raised_for_mail(session: Session, row: OutboundEmail) -> Mail:
     )
 
 
+def build_acknowledgement_mail(session: Session, row: OutboundEmail) -> Mail:
+    """The receipt for an emailed ticket. Unlike every other mail to a requester it does not wait for
+    triage: it says only that the request was logged, so it shows nothing hidden. It uses the ticket's
+    own subject so a reply finds the ticket, and quotes nothing."""
+    ticket = _ticket_of(session, row)
+    if ticket.status in (TicketStatus.RESOLVED, TicketStatus.CLOSED):
+        # Held by the cap or retried for days, it could arrive after the answer; "will be updated" would be wrong.
+        raise Unsendable("The ticket is already resolved or closed")
+    _guard_recipient(row)
+    rendered = render_template(session, "acknowledgement", ticket_values(ticket))
+    return Mail(
+        to=row.to_address, cc=[], subject=mail_subject(session, ticket),
+        body=rendered.body, record=rendered.body, automatic=True, reference=ticket.reference,
+    )
+
+
 def build_approval_mail(session: Session, row: OutboundEmail) -> Mail:
     ticket = _ticket_of(session, row)
     approval = session.get(TicketApproval, row.approval_id) if row.approval_id else None
@@ -197,6 +213,7 @@ BUILDERS: dict[str, Callable[[Session, OutboundEmail], Mail]] = {
     NOTICE: build_message_mail,
     RAISED_FOR: build_raised_for_mail,
     APPROVAL: build_approval_mail,
+    ACKNOWLEDGEMENT: build_acknowledgement_mail,
 }
 
 

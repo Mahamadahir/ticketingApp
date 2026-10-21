@@ -467,7 +467,7 @@ class OutboundEmail(SQLModel, table=True):
     __table_args__ = (Index("ix_outboundemail_unsent", "id", postgresql_where=text("sent_at IS NULL")),)
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    kind: str  # reply, notice, raised_for_you, approval
+    kind: str  # reply, notice, raised_for_you, approval, acknowledgement
     ticket_id: int = Field(foreign_key="ticket.id", index=True)
     # For a reply or notice: the message it carries. Unique, so one message can never be emailed twice.
     message_id: Optional[int] = Field(default=None, foreign_key="message.id", unique=True)

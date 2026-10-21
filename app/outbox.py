@@ -11,7 +11,7 @@ does that), so messages.py can call it without a cycle.
 
 from typing import Optional
 
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.config import settings
 from app.models import Message, OutboundEmail, Ticket, TicketApproval, User
@@ -20,10 +20,11 @@ REPLY = "reply"  # an agent's email to the requester (counts as a first response
 NOTICE = "notice"  # an automatic message to the requester (an approval decision, say)
 RAISED_FOR = "raised_for_you"  # "an agent raised a ticket for you"
 APPROVAL = "approval"  # asks an approver to approve or decline
+ACKNOWLEDGEMENT = "acknowledgement"  # "your issue has been logged", once, for a ticket that arrived by email
 
 # Kinds that go to the requester without an agent having just written them. These are what the
 # per-ticket cap counts; an agent's own reply never is.
-AUTOMATIC_TO_REQUESTER = (NOTICE, RAISED_FOR)
+AUTOMATIC_TO_REQUESTER = (NOTICE, RAISED_FOR, ACKNOWLEDGEMENT)
 
 
 def is_on() -> bool:
@@ -65,5 +66,23 @@ def queue_approval(session: Session, approval: TicketApproval, approver: User) -
     row = OutboundEmail(
         kind=APPROVAL, ticket_id=approval.ticket_id, approval_id=approval.id, to_address=approver.email
     )
+    session.add(row)
+    return row
+
+
+def queue_acknowledgement(session: Session, ticket: Ticket) -> Optional[OutboundEmail]:
+    """Queues the one "your issue has been logged" receipt for a ticket opened by someone's email.
+    A deliberate exception to "no email until triaged": it carries no ticket content (see
+    mail.build_acknowledgement_mail). The caller decides the mail came from a real person
+    (inbound.py does, after its loop guards); this only makes sure a ticket is told once."""
+    if not is_on():
+        return None
+    session.flush()
+    already = session.exec(
+        select(OutboundEmail.id).where(OutboundEmail.ticket_id == ticket.id, OutboundEmail.kind == ACKNOWLEDGEMENT)
+    ).first()
+    if already is not None:
+        return None
+    row = OutboundEmail(kind=ACKNOWLEDGEMENT, ticket_id=ticket.id, to_address=ticket.requester_email)
     session.add(row)
     return row
