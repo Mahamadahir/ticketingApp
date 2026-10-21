@@ -927,12 +927,14 @@ A template is plain text with `{placeholders}` from a fixed list per email; the 
 - Resolved moves to Closed after **N days (TBC)**. A reply after closure
   creates a new ticket linked to the old one (a plain related-ticket link shown on both ticket pages,
   not a parent and child; *built, 4E-1*).
-- A reply on a resolved ticket that is short and matches the ignore list
-  ("thanks", "cheers") is added without reopening. Anything else reopens and
+- A reply on a resolved ticket whose new text matches an enabled admin rule
+  ("thanks", "cheers"; equals / starts with / contains / ends with, `*` wildcard, a
+  maximum length per rule, no regular expressions) and has no attachment is added without
+  reopening (*built, 4E-2:* `app/thanks_rules.py`; mail and portal comments alike). Anything else reopens and
   notifies the agent. The reopen link always reopens.
 - Agents reclose with a reason: user said thanks, duplicate, new issue
   raised separately, reopened in error. "User said thanks" sends the reply
-  text to an admin review list to add to the ignore list or dismiss.
+  text to an admin review list to add to the ignore list or dismiss. (*built, 4E-2:* Admin > Thanks rules.)
 - Chase: Awaiting user with no reply for **X days** sends "Is this still an
   issue?"; **Y days** more auto-resolves. X and Y are admin settings.
 - Feedback: signed single-use link, 1â€“5 rating and comment, attributed to
