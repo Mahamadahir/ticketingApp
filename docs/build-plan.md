@@ -81,6 +81,7 @@ managed identity, Application Insights, the public app) live in the staging chec
 - The acknowledgement email, the never-follow list and the inbound limits as admin settings (the three small PRs below).
 - Out-of-office lookup bookkeeping: `User.last_presence_lookup_at` and `is_active` (built, 4B-4; see below).
 - Status dropdown on Email user and Add note: built (4B-5, `status_choices`, `chosen_status` and `default_status_after_email` in `app/messages.py`, the `next_status` form field in `app/routers/tickets.py`, `_next_status.html`; no migration).
+- Followers not copied on an emailed update are told (4B-6): in progress.
 - Database-driven recurring jobs: built (4A, `app/scheduled_jobs.py`); see "How to add a recurring job" below. Moving the old APScheduler jobs onto it, and the 18:00 MSP handoff, are phase 5.
 
 **How to add a recurring job (4A).** Jobs that must not be missed (auto-close, chase, approval reminders, later the MSP
