@@ -156,10 +156,6 @@ class Ticket(SQLModel, table=True):
     # (app/request_types.py). Null for everything else, including a service request an agent
     # retyped at triage.
     request_type_id: Optional[int] = Field(default=None, foreign_key="requesttype.id", index=True)
-    # The approval rule this ticket is held to, copied from its request type when approvals
-    # start so that editing the request type later does not change a request already waiting.
-    approvals_required: Optional[int] = Field(default=None)
-    declines_required: Optional[int] = Field(default=None)
     graph_conversation_id: Optional[str] = Field(default=None, index=True)
 
     # When the problem was reported and when it was fixed, as entered. They
@@ -355,42 +351,71 @@ class NeverFollowAddress(SQLModel, table=True):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class ApprovalGroup(SQLModel, table=True):
+    """A named set of people who vote on requests (app/approval_groups.py). A request type points at
+    one. Members need an account (they sign in once) and need not be agents: approvers are often
+    managers. Groups are never deleted, so an approval keeps the group it was asked of."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(unique=True, index=True)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class ApprovalGroupMember(SQLModel, table=True):
+    __table_args__ = (UniqueConstraint("group_id", "user_id", name="uq_approvalgroupmember"),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    group_id: int = Field(foreign_key="approvalgroup.id", index=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+
+
 class RequestType(SQLModel, table=True):
     """A thing people can ask IT for ("New starter", "Software install"), each with the
-    people who approve it. Managed by admins in app/request_types.py. Switching one off hides
+    group that approves it. Managed by admins in app/request_types.py. Switching one off hides
     it from the request form; it is never deleted, so tickets keep their request type."""
 
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(unique=True, index=True)
     description: str = Field(default="")
     is_active: bool = Field(default=True)
-    # How many approvers must approve before the work goes ahead, and how many must decline
-    # before the request is closed. Both default to one: any single approver decides.
-    approvals_required: int = Field(default=1)
-    declines_required: int = Field(default=1)
+    approval_group_id: Optional[int] = Field(default=None, foreign_key="approvalgroup.id", index=True)
+    # Share of the voters that must approve for the request to pass, and that must decline for
+    # it to fail (app/approvals.py). pass + fail must be more than 100, so a complete vote
+    # always has an outcome.
+    pass_percent: int = Field(default=51)
+    fail_percent: int = Field(default=50)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
-class RequestTypeApprover(SQLModel, table=True):
-    """Someone who approves requests of a type. They need an account (they sign in once),
-    and need not be an agent: approvers are often managers."""
-
-    __table_args__ = (UniqueConstraint("request_type_id", "user_id", name="uq_requesttypeapprover"),)
-
-    id: Optional[int] = Field(default=None, primary_key=True)
-    request_type_id: int = Field(foreign_key="requesttype.id", index=True)
-    user_id: int = Field(foreign_key="user.id", index=True)
-
-
 class TicketApproval(SQLModel, table=True):
-    """One approver's say on one ticket (app/approvals.py). pending until they decide; not_needed
-    once the ticket's outcome was settled without them."""
+    """The approval asked of a ticket (app/approvals.py): at most one pending at a time. The group,
+    the two percentages and the number of voters are copied when it starts, so editing the request
+    type or the group later cannot change a request already waiting."""
 
-    __table_args__ = (UniqueConstraint("ticket_id", "approver_id", name="uq_ticketapproval"),)
+    __table_args__ = (
+        Index("uq_ticketapproval_one_pending", "ticket_id", unique=True, postgresql_where=text("status = 'pending'")),
+    )
 
     id: Optional[int] = Field(default=None, primary_key=True)
     ticket_id: int = Field(foreign_key="ticket.id", index=True)
-    approver_id: int = Field(foreign_key="user.id", index=True)
+    group_id: int = Field(foreign_key="approvalgroup.id", index=True)
+    pass_percent: int
+    fail_percent: int
+    voters: int  # fixed when the approval starts
+    status: str = Field(default="pending")  # pending, approved, declined, waived
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    settled_at: Optional[datetime] = Field(default=None)
+
+
+class ApprovalVote(SQLModel, table=True):
+    """One voter's say on an approval, created for every voter when it starts. pending until they
+    decide; not_needed once the outcome was settled without them."""
+
+    __table_args__ = (UniqueConstraint("approval_id", "voter_id", name="uq_approvalvote"),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    approval_id: int = Field(foreign_key="ticketapproval.id", index=True)
+    voter_id: int = Field(foreign_key="user.id", index=True)
     decision: str = Field(default="pending")  # pending, approved, declined, not_needed
     comment: str = Field(default="")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -481,8 +506,8 @@ class OutboundEmail(SQLModel, table=True):
     ticket_id: int = Field(foreign_key="ticket.id", index=True)
     # For a reply or notice: the message it carries. Unique, so one message can never be emailed twice.
     message_id: Optional[int] = Field(default=None, foreign_key="message.id", unique=True)
-    # For an approval email: the approval it asks about. The link is made when the email is sent.
-    approval_id: Optional[int] = Field(default=None, foreign_key="ticketapproval.id", index=True)
+    # For an approval email: the vote it asks for. The link is made when the email is sent.
+    vote_id: Optional[int] = Field(default=None, foreign_key="approvalvote.id", index=True)
     # For a follower update: the inbound message being passed on. Not unique by itself (one message is
     # passed to several people); the pair with to_address is.
     about_message_id: Optional[int] = Field(default=None, foreign_key="message.id", index=True)

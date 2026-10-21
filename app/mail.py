@@ -33,6 +33,7 @@ from app.followers import is_follower
 from app.graph_client import graph_client
 from app.messages import about_text, in_a_split, is_triaged, mail_subject, requester_visible_messages
 from app.never_follow import is_listed
+from app.approval_groups import is_member
 from app.notification_settings import EMAIL, FOLLOWER_UPDATE as FOLLOWER_UPDATE_EVENT, is_enabled
 from app.models import (
     Message,
@@ -40,6 +41,7 @@ from app.models import (
     MessageVisibility,
     OutboundEmail,
     Ticket,
+    ApprovalVote,
     TicketApproval,
     TicketStatus,
     User,
@@ -210,18 +212,21 @@ def build_follower_update_mail(session: Session, row: OutboundEmail) -> Mail:
 
 def build_approval_mail(session: Session, row: OutboundEmail) -> Mail:
     ticket = _ticket_of(session, row)
-    approval = session.get(TicketApproval, row.approval_id) if row.approval_id else None
-    if approval is None:
+    vote = session.get(ApprovalVote, row.vote_id) if row.vote_id else None
+    approval = session.get(TicketApproval, vote.approval_id) if vote is not None else None
+    if vote is None or approval is None:
         raise Unsendable("Approval not found")
-    if approval.decision != PENDING or ticket.status != TicketStatus.AWAITING_APPROVAL:
+    if vote.decision != PENDING or approval.status != PENDING or ticket.status != TicketStatus.AWAITING_APPROVAL:
         raise Unsendable("The request no longer needs this approval")
-    approver = session.get(User, approval.approver_id)
+    if not is_member(session, approval.group_id, vote.voter_id):
+        raise Unsendable("The person is no longer in the approval group")
+    approver = session.get(User, vote.voter_id)
     if approver is None:
         raise Unsendable("Approver not found")
     _guard_recipient(row)
     if not settings.public_base_url:
         raise NotReady("PUBLIC_BASE_URL is not set, so the email has no link to answer from")
-    link = f"{settings.public_base_url.rstrip('/')}/approvals/{make_token(approval.id)}"
+    link = f"{settings.public_base_url.rstrip('/')}/approvals/{make_token(vote.id)}"
     days = round((get_int_setting(session, APPROVAL_LINK_MINUTES) or 20160) / 1440)
     first = own_first_message(session, ticket)
     values = {

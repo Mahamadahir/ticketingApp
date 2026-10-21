@@ -7,26 +7,29 @@
 <h2>Request types</h2>
 <p class="note">
   The things people can ask IT for, listed on the request form (New starter, Software install ...).
-  Each can have approvers: people with an account (they sign in once first; they need not be agents,
-  managers are typical) who will approve the request before the work goes ahead. Up to {{ max_approvers }}.
-  "Approvals needed" is how many of them must approve (1: any one approver is enough); "declines" is how many
-  must decline to close the request. If so many decline that the approvals can no longer be reached, it closes too.
-  The request waits in Awaiting approval, starting when an agent triages it.
-  Switching a type off hides it from the form; tickets already raised keep it.
+  Each points at an approval group (Admin &gt; Approval groups) whose members vote on the request before the work goes ahead.
+  "Percent to pass" is the share of the voters that must approve; "percent to fail" is the share that must decline to close the
+  request. If both are reached together the decline wins. The two must add up to more than 100, so a complete vote always has an
+  outcome (for example 51 and 50: a simple majority; 100 and 1: everyone must approve and any decline closes it).
+  The voters are the group's members when an agent triages the request, minus the requester.
+  An available type needs a group with at least one member. Switching a type off hides it from the form; tickets already raised keep it.
 </p>
 
-{% for t, approver_emails in types %}
+{% for t in types %}
 <form method="post" action="/admin/request-types/{{ t.id }}">
   <fieldset>
     <label>Name <input type="text" name="name" value="{{ t.name }}" maxlength="{{ max_name_length }}" required /></label>
     <label>Description (shown on the form)
       <textarea name="description" rows="2" maxlength="{{ max_description_length }}">{{ t.description }}</textarea>
     </label>
-    <label>Approvers (email addresses, separated by commas)
-      <input type="text" name="approvers" value="{{ approver_emails }}" />
+    <label>Approval group
+      <select name="approval_group_id">
+        <option value="">(none)</option>
+        {% for g in groups %}<option value="{{ g.id }}" {{ "selected" if g.id == t.approval_group_id else "" }}>{{ g.name }}</option>{% endfor %}
+      </select>
     </label>
-    <label>Approvals needed <input type="number" name="approvals_required" value="{{ t.approvals_required }}" min="1" max="100" /></label>
-    <label>Declines that close the request <input type="number" name="declines_required" value="{{ t.declines_required }}" min="1" max="100" /></label>
+    <label>Percent to pass <input type="number" name="pass_percent" value="{{ t.pass_percent }}" min="1" max="100" required /></label>
+    <label>Percent to fail <input type="number" name="fail_percent" value="{{ t.fail_percent }}" min="1" max="100" required /></label>
     <label><input type="checkbox" name="is_active" {{ "checked" if t.is_active else "" }} /> Available on the request form</label>
     <button type="submit">Save</button>
   </fieldset>
@@ -41,9 +44,15 @@
   <label>Description (shown on the form)
     <textarea name="description" rows="2" maxlength="{{ max_description_length }}"></textarea>
   </label>
-  <label>Approvers (email addresses, separated by commas) <input type="text" name="approvers" /></label>
-  <label>Approvals needed <input type="number" name="approvals_required" value="1" min="1" max="100" /></label>
-  <label>Declines that close the request <input type="number" name="declines_required" value="1" min="1" max="100" /></label>
+  <label>Approval group
+    <select name="approval_group_id">
+      <option value="">(none)</option>
+      {% for g in groups %}<option value="{{ g.id }}">{{ g.name }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Percent to pass <input type="number" name="pass_percent" value="{{ default_pass }}" min="1" max="100" required /></label>
+  <label>Percent to fail <input type="number" name="fail_percent" value="{{ default_fail }}" min="1" max="100" required /></label>
+  <label><input type="checkbox" name="is_active" checked /> Available on the request form</label>
   <button type="submit">Create</button>
 </form>
 {% endblock %}

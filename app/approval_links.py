@@ -5,7 +5,7 @@ nothing. Deciding is a separate POST from that page. A link on its own must neve
 because mail scanners and link previewers fetch every URL in a message before the person
 sees it, and a GET that approved would approve for them.
 
-The token names one approval and is signed and time-limited, so it needs no storage and the
+The token names one voter's vote (one link per group member) and is signed and time-limited, so it needs no storage and the
 email (phase 3) can mint a fresh one at any time. Possession of the link is what proves who
 is answering, as with the reopen and feedback links; the portal is the signed-in way to do
 the same.
@@ -24,12 +24,12 @@ def _serializer() -> URLSafeTimedSerializer:
     return URLSafeTimedSerializer(settings.session_secret_key, salt=_SALT)
 
 
-def make_token(approval_id: int) -> str:
-    return _serializer().dumps(approval_id)
+def make_token(vote_id: int) -> str:
+    return _serializer().dumps(vote_id)
 
 
 def read_token(token: str, max_age_minutes: int) -> Optional[int]:
-    """The approval id in a token, or None when it is forged, damaged or older than max_age."""
+    """The vote id in a token, or None when it is forged, damaged or older than max_age."""
     try:
         value = _serializer().loads(token, max_age=max_age_minutes * 60)
     except BadSignature:  # includes SignatureExpired

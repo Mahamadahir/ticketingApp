@@ -21,11 +21,11 @@ from app.approvals import (
     MAX_COMMENT_LENGTH,
     PENDING,
     ApprovalError,
-    approval_for,
-    approvals_of,
+    current_approval,
     count_pending_for,
     describe_rule,
     pending_for,
+    vote_for,
     record_decision,
 )
 from app.backdating import FORMAT as MOMENT_FORMAT, BackdateError, parse_moment
@@ -116,14 +116,15 @@ def _my_pending_approval(session: Session, ticket: Ticket, user: User):
     """This user's unanswered approval of the ticket, while it is still waiting."""
     if ticket.status != TicketStatus.AWAITING_APPROVAL:
         return None
-    approval = approval_for(session, ticket, user)
-    return approval if approval is not None and approval.decision == PENDING else None
+    vote = vote_for(session, ticket, user)
+    return vote if vote is not None and vote.decision == PENDING else None
 
 
 def _approval_rule(session: Session, ticket: Ticket):
     if ticket.status != TicketStatus.AWAITING_APPROVAL:
         return None
-    return describe_rule(ticket, len(approvals_of(session, ticket)))
+    approval = current_approval(session, ticket)
+    return describe_rule(approval) if approval is not None else None
 
 
 def _render_ticket(request: Request, ticket: Ticket, user: User, session: Session) -> HTMLResponse:
@@ -138,7 +139,7 @@ def _render_ticket(request: Request, ticket: Ticket, user: User, session: Sessio
             "source_label": source_label(session, ticket),
             "request_info": request_type_of(session, ticket),
             "my_approval": _my_pending_approval(session, ticket, user),
-            "is_approver": approval_for(session, ticket, user) is not None,
+            "is_approver": vote_for(session, ticket, user) is not None,
             "approval_rule": _approval_rule(session, ticket),
             # Only the requester sees who else is copied; a follower must not learn
             # the other followers' addresses, and internal followers are never shown.
@@ -267,11 +268,11 @@ def decide_approval(
 ):
     """An approver approves or declines a request waiting for them."""
     ticket = get_by_number(session, number)
-    approval = approval_for(session, ticket, user) if ticket is not None else None
-    if approval is None:
+    vote = vote_for(session, ticket, user) if ticket is not None else None
+    if vote is None:
         raise HTTPException(status_code=404, detail="Ticket not found")
     try:
-        record_decision(session, approval, decision, comment)
+        record_decision(session, vote, decision, comment)
     except ApprovalError as error:
         session.rollback()
         raise HTTPException(status_code=400, detail=str(error))

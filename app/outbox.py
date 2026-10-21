@@ -15,7 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from app.config import settings
-from app.models import Message, OutboundEmail, Ticket, TicketApproval, User
+from app.models import ApprovalVote, Message, OutboundEmail, Ticket, TicketApproval, User
 
 REPLY = "reply"  # an agent's email to the requester (counts as a first response)
 NOTICE = "notice"  # an automatic message to the requester (an approval decision, say)
@@ -60,14 +60,13 @@ def queue_raised_for(session: Session, ticket: Ticket) -> Optional[OutboundEmail
     return row
 
 
-def queue_approval(session: Session, approval: TicketApproval, approver: User) -> Optional[OutboundEmail]:
-    """Queues the email asking one approver. The link in it is made when it is sent."""
+def queue_approval(session: Session, vote: ApprovalVote, approver: User) -> Optional[OutboundEmail]:
+    """Queues the email asking one voter (one email per member). The link in it is made when it is sent."""
     if not is_on():
         return None
     session.flush()
-    row = OutboundEmail(
-        kind=APPROVAL, ticket_id=approval.ticket_id, approval_id=approval.id, to_address=approver.email
-    )
+    approval = session.get(TicketApproval, vote.approval_id)
+    row = OutboundEmail(kind=APPROVAL, ticket_id=approval.ticket_id, vote_id=vote.id, to_address=approver.email)
     session.add(row)
     return row
 

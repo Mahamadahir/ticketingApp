@@ -11,7 +11,7 @@
   From: {{ ticket.requester_email }}
   &middot; Type: {{ ticket.type.value.replace("_", " ") }}
   &middot; Source: {{ source_label }}
-  {% if request_info %}&middot; Request: {{ request_info[0].name }}{% if request_info[1] %} (approvers: {% for a in request_info[1] %}{{ a.display_name or a.email }}{{ ", " if not loop.last else "" }}{% endfor %}){% endif %}{% endif %}
+  {% if request_info %}&middot; Request: {{ request_info[0].name }}{% if request_info[1] %} (approval group: {{ request_info[1].name }}){% endif %}{% endif %}
   &middot; Category: {{ category_path or "Not triaged" }}
   &middot; Priority: {{ ticket.priority.upper() if ticket.priority else "Not set" }}
   &middot; Reported: {{ ticket.reported_at.strftime("%Y-%m-%d %H:%M") }} UTC{% if ticket.is_backdated %} <span class="badge">backdated</span>{% endif %}
@@ -27,9 +27,9 @@
 {% endif %}
 {% if approvals %}
 <details {{ "open" if ticket.status.value == "awaiting_approval" else "" }}>
-  <summary>Approvals ({{ approval_rule }})</summary>
+  <summary>Approvals: {{ approval_status }} ({{ approval_rule }})</summary>
   <table>
-    <thead><tr><th>Approver</th><th>Answer</th><th>Comment</th><th>When (UTC)</th></tr></thead>
+    <thead><tr><th>Voter</th><th>Answer</th><th>Comment</th><th>When (UTC)</th></tr></thead>
     <tbody>
       {% for approval, approver in approvals %}
       <tr>
@@ -43,7 +43,7 @@
   </table>
   {% if can_waive %}
   <form hx-post="/tickets/{{ ticket.number }}/approval/waive" hx-target="main" hx-swap="innerHTML">
-    <p class="note">Super admin: let this request through without waiting for the remaining approvers.</p>
+    <p class="note">Super admin: let this request through without waiting for the remaining voters.</p>
     <button type="submit" class="button-outline">Waive approval</button>
   </form>
   {% endif %}
