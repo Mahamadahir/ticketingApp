@@ -31,7 +31,6 @@ Rules that live here and nowhere else:
   that is refused, too large or beyond the limit leaves an event on the ticket, never an error.
 """
 
-import inspect
 import logging
 import re
 import unicodedata
@@ -315,15 +314,8 @@ def _body_of(mail: IncomingMail) -> str:
     return body if len(body) <= MAX_MESSAGE_LENGTH else body[: MAX_MESSAGE_LENGTH - len(CUT)].rstrip() + CUT
 
 
-# The reply notification (PR "requester-reply-notification") adds a reply_by argument to record_inbound.
-# Until that is merged the argument does not exist, so it is passed only when it does. Remove this shim
-# and pass reply_by=sender directly once both are on main.
-_HAS_REPLY_BY = "reply_by" in inspect.signature(record_inbound).parameters
-
-
 def _record_reply(session: Session, ticket: Ticket, sender: str, body: str, author_id: Optional[int]) -> Message:
-    extra = {"reply_by": sender} if _HAS_REPLY_BY else {}
-    return record_inbound(session, ticket, sender=sender, body=body, author_user_id=author_id, **extra)
+    return record_inbound(session, ticket, sender=sender, body=body, author_user_id=author_id, reply_by=sender)
 
 
 def _store_files(

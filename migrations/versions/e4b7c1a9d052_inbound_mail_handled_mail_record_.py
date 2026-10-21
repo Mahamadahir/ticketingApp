@@ -1,7 +1,7 @@
 """inbound mail: handled-mail record, notification retries
 
 Revision ID: e4b7c1a9d052
-Revises: d8a3c6f1b247
+Revises: c3b7e1a94d20
 Create Date: 2026-10-20 17:25:28.945575
 
 """
@@ -14,7 +14,7 @@ import sqlmodel
 
 # revision identifiers, used by Alembic.
 revision: str = 'e4b7c1a9d052'
-down_revision: Union[str, Sequence[str], None] = 'd8a3c6f1b247'
+down_revision: Union[str, Sequence[str], None] = 'c3b7e1a94d20'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

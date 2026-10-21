@@ -519,8 +519,8 @@ def test_a_reply_on_a_split_request_refreshes_every_open_part(client, db_session
     assert {db_session.get(Ticket, t.id).status for t in (first, second)} == {TicketStatus.IN_PROGRESS}
 
 
-def test_the_reply_notification_is_asked_for_with_the_senders_address_when_it_exists(db_session, monkeypatch):
-    # record_inbound gains reply_by in the reply-notification change; this is the call it will receive.
+def test_the_reply_notification_is_asked_for_with_the_senders_address(db_session, monkeypatch):
+    # A reply on an existing ticket passes reply_by so the assignee is notified; a new ticket does not.
     seen = {}
 
     def spy(session, ticket, *, sender, body, author_user_id=None, reply_by=None):
@@ -529,7 +529,6 @@ def test_the_reply_notification_is_asked_for_with_the_senders_address_when_it_ex
 
     ticket = open_ticket(db_session)
     monkeypatch.setattr(inbound, "record_inbound", spy)
-    monkeypatch.setattr(inbound, "_HAS_REPLY_BY", True)
     ingest_mail(db_session, mail("r1", subject=f"[{ticket.reference}] x"))
     assert seen == {"sender": "jo@example.com", "reply_by": "jo@example.com"}
 

@@ -100,9 +100,6 @@ the new `attempts` / `next_attempt_at` columns and give up (marked done with the
 recovers a given-up mail. `Message.graph_message_id` now holds the Graph id of each received mail, so a later change can reply to it
 with `createReply` (sendMail returns no id, so a sent message has none).
 
-**Reply notification shim.** `record_inbound(..., reply_by=)` arrives with PR #54. Until it merges, `app/inbound.py` passes `reply_by=<sender>`
-only if the argument exists (`_HAS_REPLY_BY`); once #54 is on main delete the shim and pass it directly.
-
 **Deferred from the escalation work (documented, not built).**
 - *MSP handoff (phase 5):* Send to MSP / escalate to the MSP, the "thread only has emails
   and comments, or original request only" choice and its preview, the per-team toggle for
