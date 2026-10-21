@@ -80,7 +80,7 @@ managed identity, Application Insights, the public app) live in the staging chec
 **Phase 4 is next** (`docs/plan.md`, "Build order"). Already recorded for it:
 - The resolve action with its resolution email, the reopen flow (including a reply after closure making a new ticket), chasing
   awaiting-user tickets, and requester feedback.
-- Withdrawing a request (4C-2), chasing approvers by email and Teams (4C-3). Approval groups (4C-1) and the approval-email preference (4C-4) are built; the helpers they use are `approvals.voters_yet_to_vote`, `approvals.current_approval` and `approvals.votes_of`.
+- Withdrawing a request (4C-2, in progress), chasing approvers by email and Teams (4C-3). Approval groups (4C-1) and the approval-email preference (4C-4) are built; the helpers they use are `approvals.voters_yet_to_vote`, `approvals.current_approval` and `approvals.votes_of`.
 - The acknowledgement email, the never-follow list and the inbound limits as admin settings (the three small PRs below).
 - Out-of-office lookup bookkeeping: `User.last_presence_lookup_at` and `is_active` (built, 4B-4; see below).
 - Status dropdown on Email user and Add note: built (4B-5, `status_choices`, `chosen_status` and `default_status_after_email` in `app/messages.py`, the `next_status` form field in `app/routers/tickets.py`, `_next_status.html`; no migration).
