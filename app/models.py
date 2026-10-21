@@ -115,6 +115,12 @@ class User(SQLModel, table=True):
     entra_object_id: Optional[str] = Field(default=None, unique=True, index=True)
     out_of_office: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
     out_of_office_checked_at: Optional[datetime] = Field(default=None)
+    # When the presence job last failed to read this person (no directory match, or Graph returned no
+    # reading); cleared by the next good reading. The job skips them until the retry setting has passed.
+    last_presence_lookup_at: Optional[datetime] = Field(default=None)
+    # Phase 4: only stops presence polling. Hiding from pickers, refusing sign-in and the nightly Entra
+    # check that sets this for leavers are phase 6.
+    is_active: bool = Field(default=True, sa_column_kwargs={"server_default": "true"})
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

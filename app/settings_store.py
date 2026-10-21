@@ -35,6 +35,7 @@ MAIL_BACKFILL_DAYS = "mail_backfill_days"
 JOB_LEASE_MINUTES = "scheduled_job_lease_minutes"
 JOB_RETRY_MINUTES = "scheduled_job_retry_minutes"
 JOB_LATE_MINUTES = "scheduled_job_late_minutes"
+PRESENCE_RETRY_MINUTES = "presence_retry_minutes"
 
 # PLACEHOLDER SLA targets, in minutes on a 24/7 clock, until the real ones are agreed
 # (TBC in docs/plan.md). They are settings, changed under Admin > Settings; a blank
@@ -217,6 +218,16 @@ REGISTRY: dict[str, SettingDef] = {
             "runs once, and the audit log records that it was late."
         ),
         default="3",
+    ),
+    PRESENCE_RETRY_MINUTES: SettingDef(
+        key=PRESENCE_RETRY_MINUTES,
+        label="Out-of-office lookups: wait before retrying a person who could not be read (minutes)",
+        kind="minutes",
+        description=(
+            "When Graph does not know a person or gives no reading for them, the presence job leaves them "
+            "alone for this long before asking again. Placeholder (1440 is a day)."
+        ),
+        default="1440",
     ),
     SLA_AT_RISK_PERCENT: SettingDef(
         key=SLA_AT_RISK_PERCENT,

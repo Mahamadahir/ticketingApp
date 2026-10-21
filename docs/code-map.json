@@ -49,6 +49,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/a3483204f1e2_presence_retry_bookkeeping_and_is_active.py",
+        "revision": "a3483204f1e2"
+      },
+      {
         "file": "migrations/versions/158132f3603a_resolution_fields.py",
         "revision": "158132f3603a"
       },
@@ -63,17 +67,13 @@
       {
         "file": "migrations/versions/a3f6d0b8c471_email_templates.py",
         "revision": "a3f6d0b8c471"
-      },
-      {
-        "file": "migrations/versions/e4b7c1a9d052_inbound_mail_handled_mail_record_.py",
-        "revision": "e4b7c1a9d052"
       }
     ],
-    "count": 34,
+    "count": 35,
     "heads": [
       {
-        "file": "migrations/versions/158132f3603a_resolution_fields.py",
-        "revision": "158132f3603a"
+        "file": "migrations/versions/a3483204f1e2_presence_retry_bookkeeping_and_is_active.py",
+        "revision": "a3483204f1e2"
       }
     ]
   },
@@ -1442,7 +1442,8 @@
       ],
       "imports": [
         "app.graph_client",
-        "app.models"
+        "app.models",
+        "app.settings_store"
       ],
       "module": "app.presence",
       "routes": [],
@@ -1623,6 +1624,7 @@
         "save_email_template",
         "save_setting",
         "set_membership",
+        "set_user_active",
         "unlock_user",
         "update_category",
         "update_user",
@@ -1810,6 +1812,11 @@
           "handler": "update_user",
           "method": "POST",
           "path": "/admin/users/{user_id}"
+        },
+        {
+          "handler": "set_user_active",
+          "method": "POST",
+          "path": "/admin/users/{user_id}/active"
         },
         {
           "handler": "set_membership",
@@ -2488,6 +2495,7 @@
         "app.inbound",
         "app.mail",
         "app.notifications",
+        "app.presence",
         "app.raising",
         "app.routers.admin",
         "app.routers.approvals",
@@ -2511,6 +2519,7 @@
         "tests/test_mail_subscriptions.py",
         "tests/test_notification_followup.py",
         "tests/test_outbound_mail.py",
+        "tests/test_presence.py",
         "tests/test_scheduled_jobs.py",
         "tests/test_sla.py",
         "tests/test_teams_copy.py",

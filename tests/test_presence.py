@@ -318,3 +318,122 @@ def test_the_flag_defaults_to_off_for_everyone(client, db_session):
     db_session.refresh(person)
     assert person.out_of_office is False and person.out_of_office_checked_at is None
     assert presence_module.is_out_of_office(person) is False
+
+
+# ---- Retry bookkeeping and is_active (4B-4) ----------------------------------------------------------------
+
+
+def test_an_agent_graph_does_not_know_is_not_asked_again_until_the_retry_interval_passes(client, db_session):
+    an_agent(db_session, "ghost@example.com", "Gus Ghost")
+    graph = FakeGraph({})
+
+    refresh(db_session, graph)
+    refresh(db_session, graph, now=NOW + timedelta(hours=1))
+    assert graph.lookups == ["ghost@example.com"]
+
+    refresh(db_session, graph, now=NOW + timedelta(days=1, minutes=1))
+    assert graph.lookups == ["ghost@example.com"] * 2
+
+
+def test_a_directory_error_counts_as_a_failed_lookup(client, db_session):
+    an_agent(db_session, "oops@example.com", "Oli Oops")
+    calls = []
+
+    def broken(email):
+        calls.append(email)
+        raise RuntimeError("boom")
+
+    for minutes in (0, 30):
+        refresh_presence(db_session, broken, FakeGraph({}).presences, now=NOW + timedelta(minutes=minutes))
+        db_session.commit()
+    assert calls == ["oops@example.com"]
+
+
+def test_the_retry_interval_is_a_setting(client, db_session):
+    from app.settings_store import PRESENCE_RETRY_MINUTES, set_setting
+
+    an_agent(db_session, "ghost@example.com", "Gus Ghost")
+    set_setting(db_session, PRESENCE_RETRY_MINUTES, "10")
+    db_session.commit()
+    graph = FakeGraph({})
+
+    refresh(db_session, graph)
+    refresh(db_session, graph, now=NOW + timedelta(minutes=11))
+
+    assert len(graph.lookups) == 2
+
+
+def test_an_agent_with_no_presence_reading_waits_and_a_later_reading_clears_the_wait(client, db_session):
+    agent = an_agent(db_session, "ann@example.com", "Ann")
+
+    class Silent(FakeGraph):
+        def presences(self, ids):
+            self.asked.append(list(ids))
+            return []
+
+    silent = Silent({"ann@example.com": "oid-ann"})
+    refresh(db_session, silent)
+    assert db_session.get(User, agent.id).last_presence_lookup_at is not None
+    refresh(db_session, silent, now=NOW + timedelta(minutes=15))
+    assert len(silent.asked) == 1  # still waiting
+
+    graph = FakeGraph({"ann@example.com": "oid-ann"}, away={"oid-ann"})
+    refresh(db_session, graph, now=NOW + timedelta(days=2))
+    after = db_session.get(User, agent.id)
+    assert after.last_presence_lookup_at is None and is_out_of_office(after, NOW + timedelta(days=2))
+
+
+def test_inactive_agents_are_never_polled_and_nothing_else_about_them_changes(client, db_session):
+    gone = an_agent(db_session, "gone@example.com", "Gina Gone")
+    an_agent(db_session, "here@example.com", "Hal Here")
+    gone.is_active = False
+    db_session.add(gone)
+    db_session.commit()
+    graph = FakeGraph({"gone@example.com": "oid-gone", "here@example.com": "oid-here"})
+
+    assert refresh(db_session, graph) == 1
+
+    assert graph.lookups == ["here@example.com"]
+    assert graph.asked == [["oid-here"]]
+    assert db_session.get(User, gone.id).role == UserRole.AGENT  # phase 4: polling is the only effect
+
+
+def test_an_agent_reactivated_is_polled_again(client, db_session):
+    agent = an_agent(db_session, "ann@example.com", "Ann")
+    agent.is_active = False
+    db_session.add(agent)
+    db_session.commit()
+    graph = FakeGraph({"ann@example.com": "oid-ann"}, away={"oid-ann"})
+    refresh(db_session, graph)
+    assert graph.lookups == []
+
+    agent.is_active = True
+    db_session.add(agent)
+    db_session.commit()
+    refresh(db_session, graph)
+    assert is_out_of_office(db_session.get(User, agent.id), NOW)
+
+
+def test_an_admin_can_deactivate_and_reactivate_a_user_and_it_is_audited(client, db_session):
+    from app.models import AuditLog
+
+    agent = an_agent(db_session, "ann@example.com", "Ann")
+    login_as(client, "admin@example.com")
+    assert "Deactivate" in client.get("/admin/users").text
+
+    client.post(f"/admin/users/{agent.id}/active", data={"is_active": "false"}, follow_redirects=False)
+    db_session.expire_all()
+    assert db_session.get(User, agent.id).is_active is False
+    assert "Activate" in client.get("/admin/users").text
+
+    client.post(f"/admin/users/{agent.id}/active", data={"is_active": "true"}, follow_redirects=False)
+    db_session.expire_all()
+    assert db_session.get(User, agent.id).is_active is True
+    actions = [e.action for e in db_session.exec(select(AuditLog).where(AuditLog.entity_id == agent.id))]
+    assert actions == ["deactivated", "activated"]
+
+
+def test_only_a_super_admin_can_change_is_active(client, db_session):
+    agent = an_agent(db_session, "ann@example.com", "Ann")
+    login_as(client, "ann@example.com")
+    assert client.post(f"/admin/users/{agent.id}/active", data={"is_active": "false"}).status_code == 403

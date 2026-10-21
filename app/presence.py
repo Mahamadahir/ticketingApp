@@ -19,6 +19,7 @@ from typing import Callable, Optional
 from sqlmodel import Session, select
 
 from app.models import User, UserRole
+from app.settings_store import PRESENCE_RETRY_MINUTES, count_setting
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,15 @@ def agent_label(user: User, now: Optional[datetime] = None) -> str:
     return f"{user.display_name} (out of office)" if is_out_of_office(user, now) else user.display_name
 
 
+def _waiting_to_retry(user: User, now: datetime, retry_after: timedelta) -> bool:
+    failed = user.last_presence_lookup_at
+    if failed is None:
+        return False
+    if failed.tzinfo is None:
+        failed = failed.replace(tzinfo=timezone.utc)
+    return now - failed < retry_after
+
+
 def refresh_presence(
     session: Session,
     object_id_for: Optional[Callable[[str], Optional[str]]] = None,
@@ -57,15 +67,25 @@ def refresh_presence(
     object_id_for = object_id_for or graph_client.object_id_for
     presences = presences or graph_client.presences
     now = now or datetime.now(timezone.utc)
-    agents = session.exec(
-        select(User).where(User.role.in_((UserRole.AGENT, UserRole.SUPER_ADMIN))).order_by(User.id)
-    ).all()
+    retry_after = timedelta(minutes=count_setting(session, PRESENCE_RETRY_MINUTES))
+    # Inactive people are never polled; someone whose last lookup failed waits out the retry interval.
+    agents = [
+        agent
+        for agent in session.exec(
+            select(User)
+            .where(User.role.in_((UserRole.AGENT, UserRole.SUPER_ADMIN)), User.is_active)
+            .order_by(User.id)
+        ).all()
+        if not _waiting_to_retry(agent, now, retry_after)
+    ]
     for agent in agents:
         if agent.entra_object_id is None:
             try:
                 agent.entra_object_id = object_id_for(agent.email)
             except Exception as error:
                 logger.warning("presence: could not look up an agent in the directory (%s)", type(error).__name__)
+            if agent.entra_object_id is None:
+                agent.last_presence_lookup_at = now
             session.add(agent)
     known = {agent.entra_object_id.lower(): agent for agent in agents if agent.entra_object_id}
     if not known:
@@ -79,9 +99,12 @@ def refresh_presence(
         read.add(agent.id)
         agent.out_of_office = bool((reading.get("outOfOfficeSettings") or {}).get("isOutOfOffice"))
         agent.out_of_office_checked_at = now
+        agent.last_presence_lookup_at = None
         session.add(agent)
     for agent in known.values():
-        if agent.id not in read and agent.out_of_office:
-            agent.out_of_office = False  # Graph no longer reports them: do not keep the old reading alive
+        if agent.id not in read:
+            agent.last_presence_lookup_at = now
+            if agent.out_of_office:
+                agent.out_of_office = False  # Graph no longer reports them: do not keep the old reading alive
             session.add(agent)
     return len(readings)
