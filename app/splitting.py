@@ -144,16 +144,27 @@ def refresh_open_sub_tickets(session: Session, original: Ticket, actor_email: st
             set_status(session, part, TicketStatus.IN_PROGRESS, actor_email, detail="requester replied")
 
 
-def apply_requester_reply(session: Session, ticket: Ticket, actor_email: str) -> Optional[tuple[str, str]]:
+def apply_requester_reply(
+    session: Session, ticket: Ticket, actor_email: str, text: Optional[str] = None, has_attachment: bool = False
+) -> Optional[tuple[str, str]]:
     """What a reply from the requester or a follower does to the ticket, whether it came from the portal
     or from mail. It hands the ticket back to us: one waiting on the requester (Awaiting user) goes back to
     In progress, which resumes its SLA clock. A reply on a Resolved ticket reopens it (app/reopening.py; the
     assigned agent was already told of the reply). Any other status is left alone. A split original's
     status follows its parts, so it is never set here: each open part is refreshed and the original
     re-derived. Returns (from, to) status values when a status moved, for the caller's audit entry, else None.
+    `text` is the reply's new text only (mail: uniqueBody; portal: the comment) and `has_attachment` whether it
+    came with a file: a reply on a Resolved ticket whose text matches an enabled thank-you rule
+    (app/thanks_rules.py) and has no attachment is recorded and leaves the ticket Resolved. This is the one
+    place that decides, for mail and portal alike; a caller that passes no text always reopens.
     (A reply on a Closed ticket never gets here: it opens a new ticket, app/reopening.py.)"""
     if ticket.status == TicketStatus.RESOLVED and ticket.triaged_at is not None:
         from app.reopening import ReopenError, reopen_ticket  # here because app.reopening builds on this module
+        from app.thanks_rules import EVENT_THANKS_IGNORED, is_thanks_reply
+
+        if is_thanks_reply(session, text, has_attachment):
+            record_event(session, ticket, EVENT_THANKS_IGNORED, actor_email, detail=(text or "").strip()[:200])
+            return None  # a thank-you: recorded by the caller, not a reason to reopen
 
         try:
             # The assignee of this ticket was just told of the reply; the family reopened with it is told now.

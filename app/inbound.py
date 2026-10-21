@@ -360,6 +360,14 @@ def _body_of(mail: IncomingMail) -> str:
     return body if len(body) <= MAX_MESSAGE_LENGTH else body[: MAX_MESSAGE_LENGTH - len(CUT)].rstrip() + CUT
 
 
+def _has_real_attachment(mail: IncomingMail, files: list[IncomingAttachment]) -> bool:
+    """Whether the mail carries a file someone attached. A picture embedded in the body (a signature logo)
+    does not count once the attachments have been read; until then Graph's hasAttachments flag decides."""
+    if files:
+        return any(not item.inline for item in files)
+    return mail.has_attachments
+
+
 def _record_reply(session: Session, ticket: Ticket, sender: str, body: str, author_id: Optional[int]) -> Message:
     return record_inbound(session, ticket, sender=sender, body=body, author_user_id=author_id, reply_by=sender)
 
@@ -473,7 +481,9 @@ def ingest_mail(
         message = _record_reply(session, ticket, sender, body, author_id)
         message.graph_message_id = mail.graph_message_id
         session.flush()
-        moved = apply_requester_reply(session, ticket, sender)
+        moved = apply_requester_reply(
+            session, ticket, sender, text=mail.body, has_attachment=_has_real_attachment(mail, files)
+        )
         log_action(session, sender, "ticket", ticket.id, "replied_by_email", f"matched by {how}")
         if moved:
             log_action(session, sender, "ticket", ticket.id, "status_changed", f"{moved[0]} -> {moved[1]}")

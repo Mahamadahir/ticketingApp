@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Admin: Thanks rules{% endblock %}
+{% block content %}
+{% set active = "/admin/thanks-rules" %}
+{% include "_admin_tabs.html" %}
+
+<h2>Thanks rules</h2>
+<p class="note">
+  A reply on a resolved ticket normally reopens it. If the new text of the reply (not the quoted
+  thread) matches an enabled rule below and the reply has no attachment, it is recorded and the ticket
+  stays resolved. Anything else reopens. Replies are compared in lower case with punctuation and emoji
+  removed, so "Thanks!! :)" is "thanks", and the maximum length counts those remaining characters.
+  A pattern may use <code>*</code> as a wildcard (for example <code>thanks for*resolving</code>).
+  Regular expressions are not supported. Rules apply to portal comments as well as email.
+</p>
+
+<h3>Rules</h3>
+{% if rules %}
+<table>
+  <thead><tr><th>Match</th><th>Pattern</th><th>Max length</th><th>Enabled</th><th>Added by</th><th></th><th></th></tr></thead>
+  <tbody>
+  {% for r in rules %}
+  <tr>
+    <td>
+      <select name="match_type" form="rule-{{ r.id }}">
+        {% for key, label in match_types.items() %}<option value="{{ key }}" {{ "selected" if key == r.match_type }}>{{ label }}</option>{% endfor %}
+      </select>
+    </td>
+    <td><input type="text" name="pattern" form="rule-{{ r.id }}" value="{{ r.pattern }}" maxlength="{{ max_pattern }}" required /></td>
+    <td><input type="number" name="max_length" form="rule-{{ r.id }}" value="{{ r.max_length }}" min="1" max="{{ max_length }}" required /></td>
+    <td>{{ "yes" if r.enabled else "no" }}</td>
+    <td>{{ r.created_by }}</td>
+    <td>
+      <form id="rule-{{ r.id }}" method="post" action="/admin/thanks-rules/{{ r.id }}"><button type="submit">Save</button></form>
+    </td>
+    <td>
+      <form method="post" action="/admin/thanks-rules/{{ r.id }}/{{ 'disable' if r.enabled else 'enable' }}">
+        <button type="submit">{{ "Disable" if r.enabled else "Enable" }}</button>
+      </form>
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No rules: every reply on a resolved ticket reopens it.</p>
+{% endif %}
+
+<h3>Add a rule</h3>
+<form method="post" action="/admin/thanks-rules">
+  <label>Match
+    <select name="match_type">{% for key, label in match_types.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select>
+  </label>
+  <label>Pattern <input type="text" name="pattern" maxlength="{{ max_pattern }}" required /></label>
+  <label>Maximum length <input type="number" name="max_length" value="20" min="1" max="{{ max_length }}" required /></label>
+  <button type="submit">Add</button>
+</form>
+
+<h3>Review queue</h3>
+<p class="note">
+  Replies an agent reclosed as "User said thanks" that no rule covered. Make one a rule (edit it first
+  if you like) or dismiss it; a dismissed reply is not queued again.
+</p>
+{% if candidates %}
+<table>
+  <thead><tr><th>Reply</th><th>Seen</th><th>Make a rule</th><th></th></tr></thead>
+  <tbody>
+  {% for c in candidates %}
+  <tr>
+    <td>{{ c.sample_text }}</td>
+    <td>{{ c.occurrences }}</td>
+    <td>
+      <select name="match_type" form="candidate-{{ c.id }}">{% for key, label in match_types.items() %}<option value="{{ key }}" {{ "selected" if key == "equals" }}>{{ label }}</option>{% endfor %}</select>
+      <input type="text" name="pattern" form="candidate-{{ c.id }}" value="{{ c.normalised_text }}" maxlength="{{ max_pattern }}" required />
+      <input type="number" name="max_length" form="candidate-{{ c.id }}" value="{{ c.normalised_text|length }}" min="1" max="{{ max_length }}" required />
+      <form id="candidate-{{ c.id }}" method="post" action="/admin/thanks-rules/candidates/{{ c.id }}/rule" style="display:inline"><button type="submit">Make rule</button></form>
+    </td>
+    <td><form method="post" action="/admin/thanks-rules/candidates/{{ c.id }}/dismiss"><button type="submit">Dismiss</button></form></td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>Nothing to review.</p>
+{% endif %}
+{% endblock %}

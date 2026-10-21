@@ -16,7 +16,7 @@ What happens to a finished ticket:
   (`latest_follow_on`), so each further reply does not open yet another ticket.
 - Reclose: an agent closes a reopened ticket again with a reason (`reclose_ticket`): the user only
   said thanks, a duplicate, the new issue was raised separately, or it was reopened in error. 4E-2
-  adds the thank-you review list for the first of these.
+  queues the reply for the admin's thank-you review list (app/thanks_rules.py) for the first of these.
 
 A split original follows its parts (app/splitting.py): reopening a resolved original reopens each of its
 Resolved parts, and reopening a Resolved part also reopens a Resolved original, whose status is then
@@ -32,6 +32,7 @@ from app.followers import InvalidEmail, NeverFollowListed, TooManyFollowers, add
 from app.messages import STATUS_CHOICES
 from app.models import FINISHED_STATUSES, RelatedTicket, Ticket, TicketSource, TicketStatus
 from app.notifications import notify_reopened, notify_reply
+from app.thanks_rules import record_candidate
 from app.ticket_service import create_ticket, record_event, set_status
 
 EVENT_REOPENED = "reopened"  # detail: the reason
@@ -176,6 +177,8 @@ def reclose_ticket(session: Session, ticket: Ticket, actor_email: str, reason_ke
     set_status(session, ticket, TicketStatus.CLOSED, actor_email, detail=f"reclosed: {label}")
     record_event(session, ticket, EVENT_RECLOSED, actor_email, to_value=reason_key, detail=label)
     log_action(session, actor_email, "ticket", ticket.id, AUDIT_RECLOSED, label)
+    if reason_key == "said_thanks":
+        record_candidate(session, ticket)  # the reply goes to the admin's review queue (app/thanks_rules.py)
 
 
 # ---- A reply after closure --------------------------------------------------------------------------
