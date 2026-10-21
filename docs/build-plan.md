@@ -68,6 +68,7 @@ those. Do not record test counts or merge status here.
 | 4A recurring jobs table: `scheduled_job` rows with `next_run_at` and a lease, one `scheduled-jobs` worker tick a minute that claims due jobs with `FOR UPDATE SKIP LOCKED`, runs each once (late runs write an audit line, no catch-up), records failures and retries, and takes over a crashed run when its lease expires; Admin > Recurring jobs status line; the registry is empty until 4C-3 and 4H add jobs | built | `app/scheduled_jobs.py`, `ScheduledJob`, migration `b4e7a0d3c158` |
 | 4D resolve action: notes required, `resolved_by_id` / `closed_at` / `reopen_count` fields, resolution email from the admin template with the preview step, `set_status` refuses a bare Resolved, split original rule, backdated raise uses the same helper | built | `app/resolution.py`, migration `158132f3603a` |
 | 4C-1 approval groups: a request type points at a group, a super admin sets the pass and fail vote percentages; one approval per ticket, one vote per member, one emailed link per member; Admin > Approval groups; data migration from the old approvers | built | `app/approval_groups.py`, `app/approvals.py`, `app/request_types.py`, migration `c5d9e2f7a418` |
+| 4E-1 reopen, reclose and reply after closure | in progress | `app/reopening.py` |
 | Phases 4 to 9 | not started | `docs/plan.md`, "Build order" |
 
 ## Next up
