@@ -433,8 +433,8 @@ waiting on an outside supplier or vendor we raised it with; not the MSP, which h
 and its own phase 5 handoff), With MSP, Resolved, Closed. Reopening is a recorded event, not a status.
 With supplier is set by hand (the Status buttons, or the Status dropdown once it exists) and is
 an open status: it is not finished, nobody's access changes, and the SLA clock keeps running
-(only Awaiting user pauses it; whether With supplier should too is an open question in
-`docs/build-plan.md`). Emailing the requester leaves it as it is, like With MSP.
+(only Awaiting user pauses it; decided 21 Oct 2026 that With supplier does not pause it either,
+see the build plan's decisions log). Emailing the requester leaves it as it is, like With MSP.
 
 **Status follows the conversation** (agreed 12 Oct 2026). The SLA clock pauses in
 Awaiting user and chase emails are sent from it, so the status must be right
