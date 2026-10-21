@@ -56,6 +56,8 @@ from app.forms import MAX_MESSAGE_LENGTH
 from app.graph_client import graph_client
 from app.mail import describe_failure
 from app.messages import record_inbound
+from app.never_follow import is_listed
+from app.outbox import queue_acknowledgement
 from app.models import (
     TICKET_TYPE_PREFIXES,
     GraphNotification,
@@ -471,6 +473,10 @@ def ingest_mail(
         except TooManyFollowers:
             break
     _store_files(session, storage, new, message, files)
+    # A receipt to a real person only: automatic mail, bounces, our own mail and floods were set
+    # aside above, and a never-follow address (a list or shared mailbox) is not answered either.
+    if not is_listed(session, sender):
+        queue_acknowledgement(session, new)
     return settle(TICKET_CREATED, new, message)
 
 
