@@ -65,6 +65,7 @@ those. Do not record test counts or merge status here.
 | 3F wiring: Bicep and deploy workflow for the public app, mailbox (`MAIL_SENDING`), the two base URLs, Application Insights started from the connection string (approval links kept out of request telemetry) | built | `infra/main.bicep`, `.github/workflows/deploy.yml`, `app/telemetry.py` |
 | Code map: `tools/code_map.py` generates `docs/code-map.md` and `.json` (modules, routes, tables, jobs, settings, migrations, tests, seam violations); CI `code-map-current` | built | `tools/code_map.py`, `.github/workflows/code-map.yml` |
 | 4T admin-managed email templates: a registry of keys (placeholders, default subject and body), safe `{placeholder}` rendering, Admin > Email templates with live preview, reset and audit; the raised-for-you, approval request and approval notices use it | built | `app/email_templates.py`, `EmailTemplate`, migration `a3f6d0b8c471` |
+| 4A recurring jobs table (`scheduled_job`): in progress | in progress | `app/scheduled_jobs.py` |
 | Phases 4 to 9 | not started | `docs/plan.md`, "Build order" |
 
 ## Next up
