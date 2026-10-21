@@ -51,7 +51,7 @@ from app.attachments import AttachmentRejected, clean_filename, store_attachment
 from app.audit import log_action
 from app.config import settings
 from app.settings_store import INBOUND_MAX_ATTACHMENTS, INBOUND_MAX_CC, INBOUND_MAX_PER_SENDER_HOUR, count_setting
-from app.followers import InvalidEmail, TooManyFollowers, add_follower, is_follower, normalise_email
+from app.followers import InvalidEmail, NeverFollowListed, TooManyFollowers, add_follower, is_follower, normalise_email
 from app.forms import MAX_MESSAGE_LENGTH
 from app.graph_client import graph_client
 from app.mail import describe_failure
@@ -319,7 +319,7 @@ def _join_thread(session: Session, ticket: Ticket, sender: str) -> bool:
         return False
     try:
         follower = add_follower(session, ticket, sender, sender)
-    except (InvalidEmail, TooManyFollowers):
+    except (InvalidEmail, TooManyFollowers, NeverFollowListed):
         return False
     if follower is None:
         return False
@@ -466,7 +466,7 @@ def ingest_mail(
             continue
         try:
             add_follower(session, new, address, sender)
-        except InvalidEmail:
+        except (InvalidEmail, NeverFollowListed):
             continue
         except TooManyFollowers:
             break

@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Admin: Never-follow list{% endblock %}
+{% block content %}
+{% set active = "/admin/never-follow" %}
+{% include "_admin_tabs.html" %}
+
+<h2>Never-follow list</h2>
+<p class="note">
+  Addresses that must never be copied on a ticket: the shared mailbox and its aliases, and
+  distribution lists. A Cc of a listed address on inbound mail is skipped, and nobody can add one
+  as a follower by hand. Addresses are matched exactly (upper or lower case makes no difference);
+  a whole domain cannot be listed. Removing an address allows it again, and followers already on
+  tickets are left as they are.
+</p>
+
+{% if rows %}
+<table>
+  <thead><tr><th>Address</th><th>Reason</th><th>Added by</th><th>Added</th><th></th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+  <tr>
+    <td>{{ r.email }}</td><td>{{ r.reason }}</td><td>{{ r.added_by }}</td><td>{{ r.created_at.strftime("%Y-%m-%d") }}</td>
+    <td><form method="post" action="/admin/never-follow/{{ r.id }}/remove"><button type="submit">Remove</button></form></td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No addresses yet.</p>
+{% endif %}
+
+<h3>Add an address</h3>
+<form method="post" action="/admin/never-follow">
+  <label>Email address <input type="email" name="email" maxlength="254" required /></label>
+  <label>Reason <input type="text" name="reason" maxlength="{{ max_reason_length }}" /></label>
+  <button type="submit">Add</button>
+</form>
+{% endblock %}

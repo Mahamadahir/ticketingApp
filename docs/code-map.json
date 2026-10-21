@@ -49,6 +49,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/7c76517851fa_never_follow_address.py",
+        "revision": "7c76517851fa"
+      },
+      {
         "file": "migrations/versions/b4e7a0d3c158_scheduled_job.py",
         "revision": "b4e7a0d3c158"
       },
@@ -63,17 +67,13 @@
       {
         "file": "migrations/versions/c3b7e1a94d20_graph_subscription_and_mail_sync_state.py",
         "revision": "c3b7e1a94d20"
-      },
-      {
-        "file": "migrations/versions/d8a3c6f1b247_attachments.py",
-        "revision": "d8a3c6f1b247"
       }
     ],
-    "count": 32,
+    "count": 33,
     "heads": [
       {
-        "file": "migrations/versions/b4e7a0d3c158_scheduled_job.py",
-        "revision": "b4e7a0d3c158"
+        "file": "migrations/versions/7c76517851fa_never_follow_address.py",
+        "revision": "7c76517851fa"
       }
     ]
   },
@@ -568,6 +568,7 @@
     {
       "classes": [
         "InvalidEmail",
+        "NeverFollowListed",
         "TooManyFollowers"
       ],
       "file": "app/followers.py",
@@ -585,12 +586,14 @@
         "app.messages",
         "app.raising",
         "app.request_types",
+        "app.routers.admin",
         "app.routers.portal",
         "app.routers.tickets",
         "app.visibility"
       ],
       "imports": [
         "app.models",
+        "app.never_follow",
         "app.ticket_service"
       ],
       "module": "app.followers",
@@ -601,6 +604,7 @@
         "tests/test_bell_access.py",
         "tests/test_followers.py",
         "tests/test_inbound_mail.py",
+        "tests/test_never_follow.py",
         "tests/test_reply_notification.py"
       ]
     },
@@ -723,7 +727,8 @@
       "summary": "Inbound mail (phase 3B): turning a mail in the shared mailbox into a ticket or a reply.",
       "tables": [],
       "tests": [
-        "tests/test_inbound_mail.py"
+        "tests/test_inbound_mail.py",
+        "tests/test_never_follow.py"
       ]
     },
     {
@@ -985,6 +990,7 @@
         "Message",
         "MessageDirection",
         "MessageVisibility",
+        "NeverFollowAddress",
         "Notification",
         "NotificationPreference",
         "NumberCounter",
@@ -1029,6 +1035,7 @@
         "app.mail",
         "app.main",
         "app.messages",
+        "app.never_follow",
         "app.notification_settings",
         "app.notifications",
         "app.outbox",
@@ -1104,6 +1111,10 @@
         {
           "class": "Message",
           "table": "message"
+        },
+        {
+          "class": "NeverFollowAddress",
+          "table": "neverfollowaddress"
         },
         {
           "class": "Notification",
@@ -1199,6 +1210,7 @@
         "tests/test_login_lockout.py",
         "tests/test_mail_subscriptions.py",
         "tests/test_messages.py",
+        "tests/test_never_follow.py",
         "tests/test_notification_followup.py",
         "tests/test_notification_settings.py",
         "tests/test_notifications.py",
@@ -1228,6 +1240,33 @@
         "tests/test_wiring_3f.py",
         "tests/test_with_supplier.py",
         "tests/test_worker.py"
+      ]
+    },
+    {
+      "classes": [
+        "NeverFollowError"
+      ],
+      "file": "app/never_follow.py",
+      "functions": [
+        "add_listed",
+        "all_listed",
+        "is_listed",
+        "listed_among",
+        "remove_listed"
+      ],
+      "imported_by": [
+        "app.followers",
+        "app.routers.admin"
+      ],
+      "imports": [
+        "app.models"
+      ],
+      "module": "app.never_follow",
+      "routes": [],
+      "summary": "The never-follow list: addresses that must never become followers (4B-2).",
+      "tables": [],
+      "tests": [
+        "tests/test_never_follow.py"
       ]
     },
     {
@@ -1503,6 +1542,7 @@
       "functions": [
         "add_canned",
         "add_category",
+        "add_never_follow",
         "add_request_type",
         "category_review",
         "create_local_user",
@@ -1512,11 +1552,13 @@
         "list_canned",
         "list_categories",
         "list_email_templates",
+        "list_never_follow",
         "list_request_types",
         "list_teams",
         "list_users",
         "preview_email_template",
         "remove_membership",
+        "remove_never_follow",
         "reset_email_template",
         "review_category",
         "save_email_template",
@@ -1544,9 +1586,11 @@
         "app.config",
         "app.database",
         "app.email_templates",
+        "app.followers",
         "app.forms",
         "app.inbound",
         "app.models",
+        "app.never_follow",
         "app.pagination",
         "app.request_types",
         "app.scheduled_jobs",
@@ -1632,6 +1676,21 @@
           "handler": "view_mail_intake",
           "method": "GET",
           "path": "/admin/mail-intake"
+        },
+        {
+          "handler": "list_never_follow",
+          "method": "GET",
+          "path": "/admin/never-follow"
+        },
+        {
+          "handler": "add_never_follow",
+          "method": "POST",
+          "path": "/admin/never-follow"
+        },
+        {
+          "handler": "remove_never_follow",
+          "method": "POST",
+          "path": "/admin/never-follow/{row_id}/remove"
         },
         {
           "handler": "view_outbound_mail",
@@ -3135,6 +3194,7 @@
     "tests/test_mail_subscriptions.py",
     "tests/test_messages.py",
     "tests/test_migrations_env.py",
+    "tests/test_never_follow.py",
     "tests/test_notification_followup.py",
     "tests/test_notification_settings.py",
     "tests/test_notifications.py",

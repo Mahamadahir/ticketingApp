@@ -15,6 +15,7 @@ from app.forms import MAX_MESSAGE_LENGTH, optional_int
 from app.followers import (
     MAX_EXTERNAL_FOLLOWERS,
     InvalidEmail,
+    NeverFollowListed,
     TooManyFollowers,
     add_follower,
     followers_of,
@@ -759,6 +760,8 @@ def add_ticket_follower(
         follower = add_follower(session, ticket, email, user.email)
     except InvalidEmail:
         raise HTTPException(status_code=400, detail="That is not a valid email address")
+    except NeverFollowListed as listed:
+        raise HTTPException(status_code=400, detail=listed.message())
     except TooManyFollowers:
         raise HTTPException(status_code=400, detail=f"A ticket can have at most {MAX_EXTERNAL_FOLLOWERS} followers")
 

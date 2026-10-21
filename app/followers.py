@@ -18,6 +18,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, func, select
 
 from app.models import Ticket, TicketFollower, User
+from app.never_follow import is_listed, listed_among
 from app.ticket_service import record_event
 
 MAX_EXTERNAL_FOLLOWERS = 20
@@ -38,6 +39,17 @@ class InvalidEmail(ValueError):
 
 class TooManyFollowers(ValueError):
     pass
+
+
+class NeverFollowListed(ValueError):
+    """The address is on the admin's never-follow list (a shared mailbox or distribution list)."""
+
+    def __init__(self, email: str):
+        super().__init__(email)
+        self.email = email
+
+    def message(self) -> str:
+        return f"{self.email} is on the never-follow list (a shared mailbox or distribution list), so it cannot be copied on tickets"
 
 
 def normalise_email(raw: str) -> str:
@@ -76,8 +88,8 @@ def add_follower(
 ) -> Optional[TicketFollower]:
     """Adds a follower and records the event. Returns None when there is nothing
     to add (already following, or the address is the requester's, who is already
-    a recipient). Pass internal_user to add an agent as an internal follower, who is then
-    always copied (no access comes with it); that is allowed even when the agent is
+    a recipient). Raises NeverFollowListed for a new follower on the never-follow list. Pass
+    internal_user to add an agent as an internal follower, who is then always copied (no access comes with it); that is allowed even when the agent is
     the ticket's requester. Safe to call twice at once. Does not commit."""
     # An agent's own account address is trusted as it is: re-checking it with the
     # rules for typed-in addresses could make a valid account unable to escalate.
@@ -99,6 +111,10 @@ def add_follower(
             )
             return existing
         return None
+
+    # Not checked for internal_user: an agent's account address must never block escalating.
+    if internal_user is None and is_listed(session, email):
+        raise NeverFollowListed(email)
 
     if internal_user is None:
         external_count = session.exec(
@@ -147,9 +163,11 @@ def remove_follower(session: Session, ticket: Ticket, follower_id: int, removed_
 def cc_list(session: Session, ticket: Ticket) -> list[str]:
     """Who is copied on an outgoing email: every follower except the requester,
     who is the recipient (an agent who raised the ticket can be an internal
-    follower and must not be copied on their own email)."""
+    follower and must not be copied on their own email) and any never-follow address."""
     requester = ticket.requester_email.lower()
-    return [f.email for f in followers_of(session, ticket) if f.email != requester]
+    # An address listed after it became a follower stays on the ticket but is never copied.
+    blocked = listed_among(session, [f.email for f in followers_of(session, ticket)])
+    return [f.email for f in followers_of(session, ticket) if f.email != requester and f.email not in blocked]
 
 
 def is_follower(session: Session, ticket: Ticket, email: str, *, include_internal: bool = True) -> bool:
