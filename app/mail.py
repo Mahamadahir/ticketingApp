@@ -163,6 +163,9 @@ def build_acknowledgement_mail(session: Session, row: OutboundEmail) -> Mail:
     triage: it says only that the request was logged, so it shows nothing hidden. It uses the ticket's
     own subject so a reply finds the ticket, and quotes nothing."""
     ticket = _ticket_of(session, row)
+    if ticket.status in (TicketStatus.RESOLVED, TicketStatus.CLOSED):
+        # Held by the cap or retried for days, it could arrive after the answer; "will be updated" would be wrong.
+        raise Unsendable("The ticket is already resolved or closed")
     _guard_recipient(row)
     rendered = render_template(session, "acknowledgement", ticket_values(ticket))
     return Mail(

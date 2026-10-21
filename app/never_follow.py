@@ -4,7 +4,8 @@ An admin keeps the shared mailbox and its aliases and any distribution lists her
 blocks a Cc on inbound mail and an agent or requester adding the address by hand (both go
 through app/followers.add_follower, which is the only place that enforces it). Addresses are
 stored lower case and matched exactly, never by domain. An agent's own account address is not
-checked, so escalating is never blocked.
+checked, so escalating is never blocked. A listed address that emails IT also gets no
+acknowledgement email (a list or shared mailbox would only answer it back; app/inbound.py).
 """
 
 from typing import Optional

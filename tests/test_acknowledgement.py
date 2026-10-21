@@ -10,7 +10,7 @@ from app import email_templates as et
 from app import mail, outbox
 from app.config import settings
 from app.inbound import IGNORED_AUTOMATIC, IGNORED_FLOOD, IGNORED_OWN, REPLY_ADDED, TICKET_CREATED, ingest_mail
-from app.models import NeverFollowAddress, OutboundEmail
+from app.models import NeverFollowAddress, OutboundEmail, Ticket, TicketStatus
 from app.settings_store import AUTOMATIC_EMAIL_CAP, INBOUND_MAX_PER_SENDER_HOUR, set_setting
 from tests.test_inbound_mail import MAILBOX, tickets
 from tests.test_inbound_mail import mail as incoming
@@ -122,3 +122,13 @@ def test_the_receipt_is_never_sent_to_the_shared_mailbox_itself(db_session, dev_
     db_session.commit()
     assert mail.deliver_mail(db_session) == (0, 1)
     assert "loop" in acks(db_session)[0].last_error
+
+
+def test_a_receipt_that_waited_until_the_ticket_was_resolved_is_not_sent(db_session, dev_mail):
+    ingest_mail(db_session, incoming("m1"))
+    db_session.commit()
+    [ticket] = tickets(db_session)
+    db_session.get(Ticket, ticket.id).status = TicketStatus.RESOLVED
+    db_session.commit()
+    assert mail.deliver_mail(db_session) == (0, 1)
+    assert "resolved or closed" in acks(db_session)[0].last_error
