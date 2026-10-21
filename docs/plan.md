@@ -239,7 +239,9 @@ least-privilege database role is a later hardening step.
   place a file is checked and stored (size limit, blocked program types, type detected from the
   bytes, tiny inline pictures skipped, dedupe by content hash); `/attachments/{id}` asks only
   `visibility.may_view_attachment`. No upload form yet and mail ingestion joins in 3B.
-- Application Insights via the `azure-monitor-opentelemetry` package.
+- Application Insights via the `azure-monitor-opentelemetry` package. **Built (3F):** `app/telemetry.py` starts it when
+  `APPLICATIONINSIGHTS_CONNECTION_STRING` is set (web, public and worker), and `/approvals/` requests are excluded from request
+  telemetry because the emailed link carries a credential in its path.
 - App-level rate limiting on the public routes. Built in 3A (see above).
 - Deploy workflow (the old SSH-to-EC2 one was removed): **drafted, never run**
   (`.github/workflows/deploy.yml`, helper scripts in `.github/scripts/`): OIDC login,

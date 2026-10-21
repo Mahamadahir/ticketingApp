@@ -6,14 +6,28 @@ param environmentName = 'staging'
 // deploy workflow sets IMAGE to deploy the apps.
 param image = readEnvironmentVariable('IMAGE', '')
 
-// Turn on as the app grows the matching mode (see docs/plan.md).
-param deployPublicApp = false
-param deployWorker = false
+// The public app (webhook and approval links) and the worker (Teams, presence, mail) both exist now.
+// Staging runs them by default; DEPLOY_PUBLIC_APP and DEPLOY_WORKER say true or false.
+var deployPublicAppRaw = toLower(trim(readEnvironmentVariable('DEPLOY_PUBLIC_APP', '')))
+param deployPublicApp = empty(deployPublicAppRaw) ? true : deployPublicAppRaw == 'true'
+var deployWorkerRaw = toLower(trim(readEnvironmentVariable('DEPLOY_WORKER', '')))
+param deployWorker = empty(deployWorkerRaw) ? true : deployWorkerRaw == 'true'
 
 // Office and VPN ranges, comma separated, e.g. WEB_ALLOWED_CIDRS=203.0.113.0/24,198.51.100.7/32.
 // Required. Use 0.0.0.0/0 only as a deliberate choice for a throwaway test.
 param webAllowedCidrs = filter(map(split(readEnvironmentVariable('WEB_ALLOWED_CIDRS'), ','), cidr => trim(cidr)), cidr => !empty(cidr))
-param publicBaseUrl = ''
+// Empty: the generated Azure addresses. Set when a custom domain is in place (infra/README.md).
+param webAppBaseUrl = readEnvironmentVariable('WEB_BASE_URL', '')
+param publicAppBaseUrl = readEnvironmentVariable('PUBLIC_BASE_URL', '')
+// Phase 3B/3C worker switches, off unless set to 'true'. Limits left unset keep the app defaults.
+param graphSubscriptionEnabled = toLower(trim(readEnvironmentVariable('GRAPH_SUBSCRIPTION_ENABLED', 'false'))) == 'true'
+param mailCatchUpEnabled = toLower(trim(readEnvironmentVariable('MAIL_CATCH_UP_ENABLED', 'false'))) == 'true'
+param inboundEnabled = toLower(trim(readEnvironmentVariable('INBOUND_ENABLED', 'false'))) == 'true'
+param inboundMaxAttachments = empty(trim(readEnvironmentVariable('INBOUND_MAX_ATTACHMENTS', ''))) ? -1 : int(trim(readEnvironmentVariable('INBOUND_MAX_ATTACHMENTS', '')))
+param inboundMaxPerSenderHour = empty(trim(readEnvironmentVariable('INBOUND_MAX_PER_SENDER_HOUR', ''))) ? -1 : int(trim(readEnvironmentVariable('INBOUND_MAX_PER_SENDER_HOUR', '')))
+param inboundMaxCc = empty(trim(readEnvironmentVariable('INBOUND_MAX_CC', ''))) ? -1 : int(trim(readEnvironmentVariable('INBOUND_MAX_CC', '')))
+var mailSendingRaw = toLower(trim(readEnvironmentVariable('MAIL_SENDING', '')))
+param mailSending = empty(mailSendingRaw) ? 'off' : (mailSendingRaw == 'graph' ? 'graph' : 'off')
 
 param alertEmail = readEnvironmentVariable('ALERT_EMAIL')
 

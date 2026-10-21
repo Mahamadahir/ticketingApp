@@ -68,8 +68,15 @@ class Settings(BaseSettings):
     # the worker records them as sent without contacting Graph (dev only; see /admin/outbound-mail).
     # "graph": the worker sends them through Graph, so it needs the GRAPH_* values and the mailbox.
     mail_sending: str = "off"
-    # Where the app is reached, so a Teams card can link to the ticket. Blank: no link on the card.
+    # Where the public app is reached (the emailed approval link is built on it). Blank: no link, so
+    # the approval email waits.
     public_base_url: str = ""
+    # Where the web app (the agent console) is reached, for the "Open ticket" link on a Teams card.
+    # Blank: falls back to PUBLIC_BASE_URL, which suits one address serving both (development).
+    # In Azure the two apps have different addresses, so set both.
+    web_base_url: str = ""
+    # Application Insights (the Bicep sets it from the monitoring module). Blank: no telemetry.
+    applicationinsights_connection_string: str = ""
 
     # Rate limits on the public routes, per caller address per minute, per replica (app/rate_limit.py).
     # The approval link is a credential in an address, so guessing it is slowed down; the Graph webhook
@@ -117,6 +124,10 @@ class Settings(BaseSettings):
     @property
     def graph_configured(self) -> bool:
         return bool(self.graph_tenant_id and self.graph_client_id and self.graph_client_secret)
+
+    @property
+    def ticket_link_base(self) -> str:
+        return self.web_base_url or self.public_base_url
 
     @property
     def storage_kind(self) -> str:

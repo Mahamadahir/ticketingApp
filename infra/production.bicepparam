@@ -6,17 +6,30 @@ param environmentName = 'production'
 // deploy workflow sets IMAGE to deploy the apps.
 param image = readEnvironmentVariable('IMAGE', '')
 
-// Off until the app has the APP_ROLE=public mode (phase 3) and the worker entrypoint
-// (phase 2). Turned on earlier they would serve the whole agent console on an open
-// address and crash-loop respectively.
-param deployPublicApp = false
-param deployWorker = false
+// The public app (webhook and approval links) and the worker (Teams, presence, mail) both exist
+// now. Production leaves them off until staging has proved them; say DEPLOY_PUBLIC_APP=true and
+// DEPLOY_WORKER=true to turn them on.
+var deployPublicAppRaw = toLower(trim(readEnvironmentVariable('DEPLOY_PUBLIC_APP', '')))
+param deployPublicApp = empty(deployPublicAppRaw) ? false : deployPublicAppRaw == 'true'
+var deployWorkerRaw = toLower(trim(readEnvironmentVariable('DEPLOY_WORKER', '')))
+param deployWorker = empty(deployWorkerRaw) ? false : deployWorkerRaw == 'true'
 
 // Office and VPN ranges, comma separated, e.g. WEB_ALLOWED_CIDRS=203.0.113.0/24.
 // Required: the deploy fails without it, so production is never opened by omission.
 param webAllowedCidrs = filter(map(split(readEnvironmentVariable('WEB_ALLOWED_CIDRS'), ','), cidr => trim(cidr)), cidr => !empty(cidr))
-// The internal domain, once DNS and a certificate exist, e.g. https://tickets.example.org
-param publicBaseUrl = ''
+// The internal domain of the web app, once DNS and a certificate exist, e.g. https://tickets.example.org,
+// and the public app's address for the emailed links. Empty: the generated Azure addresses.
+param webAppBaseUrl = readEnvironmentVariable('WEB_BASE_URL', '')
+param publicAppBaseUrl = readEnvironmentVariable('PUBLIC_BASE_URL', '')
+// Phase 3B/3C worker switches, off unless set to 'true'. Limits left unset keep the app defaults.
+param graphSubscriptionEnabled = toLower(trim(readEnvironmentVariable('GRAPH_SUBSCRIPTION_ENABLED', 'false'))) == 'true'
+param mailCatchUpEnabled = toLower(trim(readEnvironmentVariable('MAIL_CATCH_UP_ENABLED', 'false'))) == 'true'
+param inboundEnabled = toLower(trim(readEnvironmentVariable('INBOUND_ENABLED', 'false'))) == 'true'
+param inboundMaxAttachments = empty(trim(readEnvironmentVariable('INBOUND_MAX_ATTACHMENTS', ''))) ? -1 : int(trim(readEnvironmentVariable('INBOUND_MAX_ATTACHMENTS', '')))
+param inboundMaxPerSenderHour = empty(trim(readEnvironmentVariable('INBOUND_MAX_PER_SENDER_HOUR', ''))) ? -1 : int(trim(readEnvironmentVariable('INBOUND_MAX_PER_SENDER_HOUR', '')))
+param inboundMaxCc = empty(trim(readEnvironmentVariable('INBOUND_MAX_CC', ''))) ? -1 : int(trim(readEnvironmentVariable('INBOUND_MAX_CC', '')))
+var mailSendingRaw = toLower(trim(readEnvironmentVariable('MAIL_SENDING', '')))
+param mailSending = empty(mailSendingRaw) ? 'off' : (mailSendingRaw == 'graph' ? 'graph' : 'off')
 
 param alertEmail = readEnvironmentVariable('ALERT_EMAIL')
 

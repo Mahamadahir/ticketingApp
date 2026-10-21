@@ -99,8 +99,8 @@ def new_ticket_card(ticket: Ticket) -> dict:
         "version": "1.4",
         "body": body,
     }
-    if settings.public_base_url:
-        link = f"{settings.public_base_url.rstrip('/')}/tickets/{ticket.number}"
+    if settings.ticket_link_base:
+        link = f"{settings.ticket_link_base.rstrip('/')}/tickets/{ticket.number}"
         card["actions"] = [{"type": "Action.OpenUrl", "title": "Open ticket", "url": link}]
     return message(card)
 
@@ -188,8 +188,8 @@ def notification_card(notification: Notification, person: User, ticket: Optional
             ]
         },
     }
-    if ticket is not None and settings.public_base_url:
-        link = f"{settings.public_base_url.rstrip('/')}/tickets/{ticket.number}"
+    if ticket is not None and settings.ticket_link_base:
+        link = f"{settings.ticket_link_base.rstrip('/')}/tickets/{ticket.number}"
         card["actions"] = [{"type": "Action.OpenUrl", "title": "Open ticket", "url": link}]
     return message(card)
 
