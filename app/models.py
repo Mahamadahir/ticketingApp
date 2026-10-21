@@ -419,6 +419,8 @@ class TicketApproval(SQLModel, table=True):
     status: str = Field(default="pending")  # pending, approved, declined, waived, withdrawn
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     settled_at: Optional[datetime] = Field(default=None)
+    # Set once when the super admins were told this approval has waited too long (app/approval_reminders.py).
+    escalated_at: Optional[datetime] = Field(default=None)
 
 
 class ApprovalVote(SQLModel, table=True):
@@ -434,6 +436,10 @@ class ApprovalVote(SQLModel, table=True):
     comment: str = Field(default="")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     decided_at: Optional[datetime] = Field(default=None)
+    # Reminders queued to this voter and when the last one was (app/approval_reminders.py): what makes the
+    # reminder job safe to run late or twice.
+    reminder_count: int = Field(default=0, sa_column_kwargs={"server_default": "0"})
+    last_reminded_at: Optional[datetime] = Field(default=None)
 
 
 class Notification(SQLModel, table=True):
@@ -516,7 +522,7 @@ class OutboundEmail(SQLModel, table=True):
     )
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    kind: str  # reply, notice, raised_for_you, approval, approval_withdrawn, acknowledgement, follower_update
+    kind: str  # reply, notice, raised_for_you, approval, approval_reminder, approval_withdrawn, acknowledgement, follower_update
     ticket_id: int = Field(foreign_key="ticket.id", index=True)
     # For a reply or notice: the message it carries. Unique, so one message can never be emailed twice.
     message_id: Optional[int] = Field(default=None, foreign_key="message.id", unique=True)
