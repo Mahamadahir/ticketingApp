@@ -1,0 +1,10 @@
+{# The next-status dropdown on Email user and Add note. Needs: message_statuses, selected (a TicketStatus), ticket. #}
+{% if message_statuses %}
+<label>Ticket status after this
+  <select name="next_status">
+    {% for s in message_statuses %}
+    <option value="{{ s.value }}" {{ "selected" if s == selected else "" }}>{{ s.value.replace("_", " ") }}{{ " (current)" if s == ticket.status else "" }}</option>
+    {% endfor %}
+  </select>
+</label>
+{% endif %}

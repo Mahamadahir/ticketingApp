@@ -36,19 +36,22 @@ from app.splitting import (
     SplitError,
     all_sub_tickets_finished,
     check_manual_status,
-    has_sub_tickets,
     split_ticket,
     sub_tickets_summary,
 )
 from app.linking import PARENT_TYPES, LinkError, link_ticket, linked_summary, unlink_ticket
 from app.messages import (
+    BadStatusChoice,
     EmptyEmail,
     UnknownRecipient,
     add_note,
     agent_timeline,
     email_requester,
+    chosen_status,
+    default_status_after_email,
     is_triaged,
     preview_email,
+    status_choices,
 )
 from app.models import FINISHED_STATUSES, CannedResponse, Category, Team, Ticket, TicketSource, TicketStatus, TicketType, User, UserRole
 from app.pagination import paginate
@@ -86,8 +89,6 @@ reference_router = APIRouter(tags=["tickets"])
 
 AGENT_ROLES = (UserRole.SUPER_ADMIN, UserRole.AGENT)
 
-# Statuses in which the ball is with us; emailing the user passes it to them.
-WAITING_ON_US = (TicketStatus.OPEN, TicketStatus.IN_PROGRESS)
 
 
 def _list_link(q: str, source: str = ""):
@@ -444,15 +445,23 @@ def fill_from_canned(
     return templates.TemplateResponse(request, "_email_body.html", {"body": body})
 
 
-def _status_after_email(session: Session, ticket: Ticket) -> Optional[TicketStatus]:
-    """Emailing the user always means we are now waiting on them, so the ticket moves to
-    Awaiting user by itself (the agent is not asked, and cannot opt out). That pauses the SLA
-    clock and starts the chase timer. A ticket With supplier or With MSP is waiting on someone else, and a
-    Resolved or Closed one is finished, so those stay as they are. An original's status
-    follows its sub-tickets instead; emailing from a part moves that part. None: no change."""
-    if ticket.status in WAITING_ON_US and not has_sub_tickets(session, ticket):
-        return TicketStatus.AWAITING_USER
-    return None
+def _set_status_from_message(
+    session: Session, ticket: Ticket, user: User, new_status: Optional[TicketStatus]
+) -> None:
+    """Applies the status the agent picked on the Email user or Add note form (None: no change).
+    set_status still has the last word (an untriaged or waiting-for-approval ticket is refused)."""
+    if new_status is None:
+        return
+    previous_status = ticket.status
+    try:
+        changed = set_status(session, ticket, new_status, user.email)
+    except (NotTriaged, AwaitingApproval, ResolutionRequired):
+        raise HTTPException(status_code=400, detail="That status cannot be set here")
+    if changed:
+        log_action(
+            session, user.email, "ticket", ticket.id, "status_changed",
+            f"{previous_status.value} -> {new_status.value}",
+        )
 
 
 @router.post("/{number}/email/preview", response_class=HTMLResponse)
@@ -462,6 +471,7 @@ def preview_email_user(
     body: str = Form(..., max_length=MAX_MESSAGE_LENGTH),
     cc_form: Optional[str] = Form(None),
     cc: list[str] = Form(default=[]),
+    next_status: Optional[str] = Form(None),
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
@@ -470,13 +480,15 @@ def preview_email_user(
     The checks are the send's own, so what is previewed is what would go."""
     ticket = _get_ticket(session, number, user)
     try:
-        preview = preview_email(session, ticket, body, cc_emails=cc if cc_form else None)
+        preview = preview_email(session, ticket, body, cc_emails=cc if cc_form else None, next_status=next_status)
     except NotTriaged:
         raise HTTPException(status_code=400, detail="Triage the ticket before emailing the requester")
     except EmptyEmail:
         raise HTTPException(status_code=400, detail="Write the email first")
     except UnknownRecipient as error:
         raise HTTPException(status_code=400, detail=f"Not a follower of this ticket: {error}")
+    except BadStatusChoice as error:
+        raise HTTPException(status_code=400, detail=str(error))
     return templates.TemplateResponse(
         request,
         "_email_preview.html",
@@ -485,7 +497,7 @@ def preview_email_user(
             "preview": preview,
             "cc_form": bool(cc_form),
             "ticked": cc,
-            "status_after": _status_after_email(session, ticket),
+            "next_status": next_status,
         },
     )
 
@@ -497,15 +509,21 @@ def email_user(
     body: str = Form(..., max_length=MAX_MESSAGE_LENGTH),
     cc_form: Optional[str] = Form(None),
     cc: list[str] = Form(default=[]),
+    next_status: Optional[str] = Form(None),
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
     """Send the requester a message, copying the followers the agent left ticked.
     Not available until the ticket is triaged. "cc_form" is sent by the page's form
     so that ticking nobody means copying nobody; a request without it copies every
-    follower."""
+    follower. "next_status" is the status the agent picked in the form (Awaiting user unless they
+    chose otherwise); a request without it gets the same default."""
     ticket = _get_ticket(session, number, user)
 
+    try:
+        new_status = chosen_status(session, ticket, next_status, default_status_after_email(ticket))
+    except BadStatusChoice as error:
+        raise HTTPException(status_code=400, detail=str(error))
     try:
         email_requester(session, ticket, user, body, cc_emails=cc if cc_form else None)
     except NotTriaged:
@@ -515,14 +533,7 @@ def email_user(
     except UnknownRecipient as error:
         raise HTTPException(status_code=400, detail=f"Not a follower of this ticket: {error}")
 
-    new_status = _status_after_email(session, ticket)
-    if new_status is not None:
-        previous_status = ticket.status
-        set_status(session, ticket, new_status, user.email)
-        log_action(
-            session, user.email, "ticket", ticket.id, "status_changed",
-            f"{previous_status.value} -> {new_status.value}",
-        )
+    _set_status_from_message(session, ticket, user, new_status)
     log_action(session, user.email, "ticket", ticket.id, "emailed_requester", body[:200])
     session.commit()
     session.refresh(ticket)
@@ -538,17 +549,27 @@ def add_ticket_note(
     number: int,
     request: Request,
     body: str = Form(..., max_length=MAX_MESSAGE_LENGTH),
+    next_status: Optional[str] = Form(None),
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
     """An internal note, visible to agents only. Allowed at any stage, including
-    on an untriaged ticket the agent has not claimed, and never triages it."""
+    on an untriaged ticket the agent has not claimed, and never triages it. The agent may also pick
+    the ticket's next status; left alone, a note never changes it."""
     ticket = _get_ticket(session, number, user, Access.READ)
-    if not may_add_note(user, ticket, access_context(session, user)):
+    levels = access_context(session, user)
+    if not may_add_note(user, ticket, levels):
         raise NoTicketAccess()
+    try:
+        new_status = chosen_status(session, ticket, next_status, ticket.status)
+    except BadStatusChoice as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    if new_status is not None:
+        require_access(user, ticket, levels, Access.WORK)  # changing status needs more than reading
 
     note = add_note(session, ticket, user, body)
     log_action(session, user.email, "ticket", ticket.id, "note_added", body[:200])
+    _set_status_from_message(session, ticket, user, new_status)
     notify_mentions(session, ticket, note, user)
     session.commit()
     session.refresh(ticket)
@@ -944,6 +965,10 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             "canned": active_canned(session) if can_work and is_triaged(ticket) else [],
             "can_edit_followers": can_work,
             "can_note": may_add_note(user, ticket, levels),
+            # The next-status dropdown on Email user and Add note (empty: not shown). Only for
+            # someone who can work the ticket, since a status change needs that.
+            "message_statuses": status_choices(session, ticket) if can_work else [],
+            "email_default_status": default_status_after_email(ticket),
             # New is left only by triage, so it is not offered as a status to set.
             # Resolved is not a status to set: the Resolve action takes the notes.
             "statuses": [
