@@ -340,6 +340,25 @@ App:
 ticket matching. One user can be an agent and a requester: agents use the
 portal for their own tickets.
 
+**Accounts** (decided 22 Oct 2026). A requester needs no account to email or use Teams. An account is created the first time
+someone signs in to the portal, from the Entra claims (name, email, object id), and refreshed at each sign-in. There is no bulk
+sync and no auto-delete of end-user accounts: Entra disabling a person already stops sign-in, and audit and activity rows
+reference users. "My requests" matches tickets by lower-cased email through one helper (`requester_emails` in
+`app/identity.py`) and also lists tickets the person follows. For agents, a nightly Entra `accountEnabled` check sets an `is_active`
+flag (the same flag as the out-of-office item under Notifications, and the leaver step of the session work in "Security
+hardening phase"); it is built in phase 6, alongside matching users on the Entra object id. An admin-managed **never-follow
+list** (the shared mailbox, distribution lists) keeps those addresses from being added as followers from a Cc.
+
+**Linked identities** (decided 22 Oct 2026; phase 6; manual, super admin only). One person can have two Entra accounts on the
+same tenant (for example upn@companyA.com and upn@companyB.com). A super admin links a secondary account to a primary person:
+- Nothing is deleted. The secondary address becomes an alias, so `requester_emails` returns both and My requests, requester
+  checks, followers and approvals treat the two as one person.
+- Signing in as either account resolves to the primary person's account and role.
+- Audit and activity rows keep the original user ids.
+- Ticket assignments on the secondary should move to the primary (open point).
+- The link page shows both accounts' roles and team memberships before the super admin confirms.
+- Linking and unlinking are audited, and a link can be undone (unlink). Never automatic.
+
 **Roles.** `super_admin`, `agent`, `end_user`. Moving role assignment to
 Entra app roles (the `roles` claim) comes later; assigning whole groups to an
 app role needs Entra ID P1.
@@ -734,7 +753,7 @@ admin portal.
 *Built in 1H-i (14 Oct 2026; the plan said no more than the line above, so these are working
 defaults to confirm):* a **request catalogue**. Admin > Request types (super admin) lists the
 things people can ask for ("New starter", "Software install"): a name, a short description
-shown on the form, up to 10 approvers (people with an account, who need not be agents), and an
+shown on the form, up to 10 approvers (people with an account, who need not be agents; to become an approval group, see below), and an
 on/off switch (off hides it from the form; tickets keep it). The raise form (`/portal/new`) asks
 "What do you need?" with those types plus "Something is not working"; choosing a type makes the
 ticket a Service Request (`SR-`) and records `request_type_id` and a `request_type` event. Agents
@@ -768,10 +787,16 @@ requester sees the request name only. Sub-tickets from a split do not inherit th
   days). The email that carries it comes with phase 3; the link, its page and the token are built.
   It is internet-facing, so it belongs with the public routers when `APP_ROLE` splits them.
 - **A super admin can waive** a pending approval (an approver has left); agents cannot.
-- **Handing over and withdrawing (decided 21 Oct 2026, to build with the approvals follow-up, phase 4).** An approver can hand an
-  approval to someone else when they are away, and a requester can withdraw a request while it waits. How handing over works is
-  still open: (a) the approver or a super admin re-assigns that one approval to another eligible approver for that request, audited,
-  no standing delegate accounts (recommended), or (b) standing delegate accounts per approver with a date range.
+- **Approval groups and withdrawing (decided 21 and 22 Oct 2026, to build with the approvals follow-up, phase 4).** Approvals go to
+  **approval groups**. A request type points at one group, and any member of the group can approve (the first decision wins; "N of M"
+  is a later option). Admins manage groups in a group-management section. Handing over for leave or a leaver is adding or removing a
+  person in the group, so there is no per-approval re-assignment and no standing delegate accounts. A group may later map to an Entra
+  security group. A requester can withdraw a request while it waits. *What changes:* today `RequestTypeApprover` names up to 10
+  users per request type and `TicketApproval` holds one row per named approver, with the two counts copied onto the ticket. The
+  follow-up adds an approval group table with members, points `RequestType` at a group, and records one pending approval per ticket
+  that any member can decide (who decided is kept); the approvals-needed and declines-needed counts stay for the "N of M" option. It
+  needs a migration that turns each request type's current approvers into a group, and the Admin > Request types page picks a group
+  instead of users.
 - **Not chasing yet.** Approvers who never answer are not chased before phase 3. When mail and
   Teams exist, asking an approver and chasing them go by **email and Teams**, like the other
   notifications; approvals will want a reminder schedule alongside the auto-close timers.
@@ -840,6 +865,19 @@ Automatic emails use admin-managed templates, previewed when edited.
 - Replies read with `$select=uniqueBody` to get only the new text.
 - Auto-replies filtered on the `Auto-Submitted` header.
 - Per-ticket cap on automatic emails to stop mail loops.
+- **Mailbox trust** (decided 22 Oct 2026). Mail is trusted on its From address; we rely on Exchange and Mimecast to enforce SPF,
+  DKIM and DMARC. The shared mailbox must accept mail only from authenticated senders (internal only, Exchange
+  `RequireSenderAuthenticationEnabled`); this is on the staging checklist. Reading Authentication-Results is not planned now
+  (optional defence in depth in phase 10).
+- **Inbound limits are admin settings** (decided 22 Oct 2026, a small PR). `INBOUND_MAX_PER_SENDER_HOUR` (30, placeholder, TBC),
+  `INBOUND_MAX_ATTACHMENTS` (20) and `INBOUND_MAX_CC` (10) are environment variables today and move to admin settings next to the
+  automatic email cap; the Bicep then stops passing them. Mail set aside as `ignored_flood` is shown on Admin > Mail intake.
+- **Acknowledgement and queue** (decided direction, 22 Oct 2026). A ticket that arrives by email gets an automatic "we have your
+  request" notice with the reference, the priority and the target response time. It carries no queue position: positions mislead
+  because a higher priority jumps the queue. It is a deliberate exception to "requester email is hidden until triaged" (the notice
+  has no ticket content), it counts toward the per-ticket cap on automatic emails, and it is a small PR of its own. *Open idea:* an
+  indication of how busy the team is. The agent-side priority queue (P1 to P4, SLA deadline) is unchanged. *Planned, not built, design
+  to be agreed:* service requests get an optional **"Required by"** date on the request form, feeding queue order and the SLA target.
 - *Outbound mail, built in 3D (20 Oct 2026):* `app/outbox.py` queues an `OutboundEmail` row in the same
   transaction as what it is about (an agent reply, an automatic notice, an approval request, "a ticket
   was raised for you"); the worker's `mail-out` job (every 30 s, `app/mail.py`) builds each email when
@@ -895,6 +933,7 @@ Automatic emails use admin-managed templates, previewed when edited.
 ## MSP
 
 - Single MSP, address **TBC**.
+- Escalating to the MSP stays blocked until this handoff is built in phase 5 (decided 22 Oct 2026); testing will use nuisance tickets with the MSP. Not a risk.
 - "Send to MSP" button on any ticket. It is the same action as escalating to the MSP
   and the button may carry either label.
 - The agent chooses what goes: the **thread** (the default), or **only the original
@@ -1005,7 +1044,8 @@ Automatic emails use admin-managed templates, previewed when edited.
   anything that could close the tag. The settings page stops saying Teams is "not connected yet" once the
   switch is on.
 - Teams is used for assignments, mentions, P1s and SLA breaches. New tickets
-  post to a Teams channel through a Teams Workflows webhook.
+  post to a Teams channel through a Teams Workflows webhook (decided 22 Oct 2026: keep that for the new-ticket channel; personal
+  notifications move to the phase 8 bot, and there is no separate notifications channel).
   *Built in 2D (19 Oct 2026):* `app/teams.py`. Creating a ticket (`create_ticket`) writes a `TeamsPost` row in the
   ticket's own transaction when `TEAMS_NEW_TICKET_ENABLED` is on, so a ticket is never announced and rolled back or
   created and forgotten, and a Teams outage never slows the request. The worker calls `deliver_pending`, which sends
@@ -1036,13 +1076,13 @@ Automatic emails use admin-managed templates, previewed when edited.
   (assigned, mentioned) still reaches them. Tested with simulated Graph responses; real Graph is a staging check.
   *Planned (decided 21 Oct 2026, a small PR):* add `User.last_presence_lookup_at`. A user whose directory lookup failed or found nobody
   is skipped until a retry interval setting (TBC) has passed, instead of being retried every 15 minutes. Also consider an `is_active`
-  flag on users so inactive agents are not polled at all.
+  flag on users so inactive agents are not polled at all. That flag is shared with the nightly Entra `accountEnabled` check for leavers (phase 6; see Identity and access).
 
 ## Admin portal
 
 Users, teams and memberships, categories, SLA targets per priority, business
 hours and bank holidays, settings (chase X and Y, auto-close N, automatic
-email cap, ignore phrases, Teams delay default), Service Request approvers,
+email cap, ignore phrases, Teams delay default), Service Request approval groups,
 email templates, canned responses, unlocking locked local accounts, outage mode, the audit log (paginated,
 filterable by actor and by subject user), category and ignore-phrase review
 queues, all feedback, and reports.
@@ -1064,9 +1104,9 @@ for all of them.
 | 1 | Ticket model: types, references, statuses, source, categories, impact Ã— urgency, SLA targets and clock, priority queue, message visibility, followers, linking, team memberships and visibility, reassignment, escalation changes, backdating, `ticket_event`, search, portal new request form, canned responses, preview step, Service Requests and approvers, sign-in follow-ups (unlock button, clear Entra sign-in state, logout as POST) |
 | 2 | Worker, in-app notifications, @mentions, notification settings, Teams channel webhook for new tickets, out-of-office detection |
 | 3 | Graph mail: intake, threaded replies, `uniqueBody`, delta catch-up, subscription renewal and lifecycle handling, auto-reply filter, attachments in Blob Storage, `public` app mode for the webhook |
-| 4 | Resolution, reopen and reclose flow, ignore list and review, chase emails, auto-close, feedback, bulk resolve |
+| 4 | Approval groups (see Service Requests), resolution, reopen and reclose flow, ignore list and review, chase emails, auto-close, feedback, bulk resolve |
 | 5 | MSP handoff, hold, 18:00 job, MSP mail handling and forwarding |
-| 6 | Break-glass accounts, TOTP, outage mode, Entra app roles, match users on Entra object id |
+| 6 | Break-glass accounts, TOTP, outage mode, Entra app roles, match users on Entra object id, nightly Entra `accountEnabled` check (`is_active`), linked identities |
 | 7 | Reporting and CSV export, subject access export, anonymisation |
 | 8 | Teams bot: direct messages to agents and ticket intake from Teams |
 | 9 | Google Stitch redesign once the UI is feature-complete, to WCAG 2.2 AA |
@@ -1110,6 +1150,8 @@ here; this list is what the go-live review checks.
    `X-Auto-Response-Suppress`, `X-Autoreply`, bounce (NDR) messages and `mailer-daemon`
    senders, and ignore mail from our own mailbox. Set `Auto-Submitted: auto-generated` and
    `X-Auto-Response-Suppress: All` on everything the system sends.
+   Optional defence in depth (not planned now, 22 Oct 2026): read Authentication-Results on inbound mail; the
+   shared mailbox itself accepts authenticated senders only (see Mail).
 7. **Secrets that live in settings.** Teams Workflows webhook URLs let anyone post to the
    channel, so keep them in Key Vault (or encrypted), never in a plain settings row or logs.
 8. **Anonymisation and erasure are complete.** Besides name, email and attachments: message
