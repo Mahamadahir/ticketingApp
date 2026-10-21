@@ -31,8 +31,16 @@ def is_listed(session: Session, email: str) -> bool:
     ).first() is not None
 
 
+def listed_among(session: Session, emails: list[str]) -> set[str]:
+    """Which of these (lower-case) addresses are on the list, in one query."""
+    if not emails:
+        return set()
+    return set(session.exec(select(NeverFollowAddress.email).where(NeverFollowAddress.email.in_(emails))).all())
+
+
 def add_listed(session: Session, email: str, reason: str, added_by: str) -> NeverFollowAddress:
     """Adds a normalised address. Does not commit. Raises NeverFollowError for a repeat or a long reason."""
+    email = email.strip().lower()
     reason = (reason or "").strip()
     if len(reason) > MAX_REASON_LENGTH:
         raise NeverFollowError(f"The reason can be at most {MAX_REASON_LENGTH} characters")

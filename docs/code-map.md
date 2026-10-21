@@ -512,7 +512,7 @@ The never-follow list: addresses that must never become followers (4B-2).
 File: `app/never_follow.py`
 
 - Classes: `NeverFollowError`
-- Functions: `add_listed`, `all_listed`, `is_listed`, `remove_listed`
+- Functions: `add_listed`, `all_listed`, `is_listed`, `listed_among`, `remove_listed`
 - Imports: `app.models`
 - Imported by: `app.followers`, `app.routers.admin`
 - Tests: `test_never_follow.py`

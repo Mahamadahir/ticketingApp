@@ -38,8 +38,6 @@ from app.request_types import (
     create_request_type,
     update_request_type,
 )
-from app.followers import InvalidEmail, normalise_email
-from app.never_follow import MAX_REASON_LENGTH, NeverFollowError, add_listed, all_listed, remove_listed
 from app.canned import (
     MAX_TITLE_LENGTH,
     PLACEHOLDERS,
@@ -63,6 +61,8 @@ from app.email_templates import (
 )
 from app.database import get_session
 from app.forms import MAX_MESSAGE_LENGTH, optional_int
+from app.followers import InvalidEmail, normalise_email
+from app.never_follow import MAX_REASON_LENGTH, NeverFollowError, add_listed, all_listed, remove_listed
 from app.models import (
     FINISHED_STATUSES,
     ActivityLog,

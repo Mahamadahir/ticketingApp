@@ -155,3 +155,23 @@ def test_only_a_super_admin_manages_the_list(client, db_session):
     assert client.get("/admin/never-follow").status_code == 403
     assert client.post("/admin/never-follow", data={"email": LISTED}).status_code == 403
     assert db_session.exec(select(NeverFollowAddress)).all() == []
+
+
+def test_an_address_listed_after_it_followed_stays_but_is_not_copied(db_session):
+    from app.followers import cc_list
+
+    ticket = make_ticket(db_session)
+    add_follower(db_session, ticket, LISTED, "agent@example.com")
+    add_follower(db_session, ticket, "pat@example.com", "agent@example.com")
+    db_session.commit()
+    add_listed(db_session, LISTED, "", "admin@example.com")
+    db_session.commit()
+    assert cc_list(db_session, ticket) == ["pat@example.com"]
+    assert emails(db_session, ticket) == [LISTED, "pat@example.com"]
+    # Adding it again is a quiet no-op, not an error: it is already following.
+    assert add_follower(db_session, ticket, LISTED, "agent@example.com") is None
+
+
+def test_add_listed_normalises_the_address(db_session):
+    row = add_listed(db_session, " All-Staff@Corp.Example ", "", "admin@example.com")
+    assert row.email == LISTED
