@@ -36,6 +36,8 @@ JOB_LEASE_MINUTES = "scheduled_job_lease_minutes"
 JOB_RETRY_MINUTES = "scheduled_job_retry_minutes"
 JOB_LATE_MINUTES = "scheduled_job_late_minutes"
 PRESENCE_RETRY_MINUTES = "presence_retry_minutes"
+APPROVAL_DEFAULT_PASS_PERCENT = "approval_default_pass_percent"
+APPROVAL_DEFAULT_FAIL_PERCENT = "approval_default_fail_percent"
 
 # PLACEHOLDER SLA targets, in minutes on a 24/7 clock, until the real ones are agreed
 # (TBC in docs/plan.md). They are settings, changed under Admin > Settings; a blank
@@ -228,6 +230,23 @@ REGISTRY: dict[str, SettingDef] = {
             "alone for this long before asking again. Placeholder (1440 is a day)."
         ),
         default="1440",
+    ),
+    APPROVAL_DEFAULT_PASS_PERCENT: SettingDef(
+        key=APPROVAL_DEFAULT_PASS_PERCENT,
+        label="New request types: share of the group that must approve (percent)",
+        kind="percent",
+        description=(
+            "Pre-filled on the New request type form; each type keeps its own number. Placeholder (a simple "
+            "majority). The pass and fail percentages of a type must add up to more than 100."
+        ),
+        default="51",
+    ),
+    APPROVAL_DEFAULT_FAIL_PERCENT: SettingDef(
+        key=APPROVAL_DEFAULT_FAIL_PERCENT,
+        label="New request types: share of the group that must decline (percent)",
+        kind="percent",
+        description="Pre-filled on the New request type form; each type keeps its own number. Placeholder.",
+        default="50",
     ),
     SLA_AT_RISK_PERCENT: SettingDef(
         key=SLA_AT_RISK_PERCENT,

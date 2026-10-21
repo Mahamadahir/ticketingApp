@@ -760,7 +760,7 @@ admin portal.
 *Built in 1H-i (14 Oct 2026; the plan said no more than the line above, so these are working
 defaults to confirm):* a **request catalogue**. Admin > Request types (super admin) lists the
 things people can ask for ("New starter", "Software install"): a name, a short description
-shown on the form, up to 10 approvers (people with an account, who need not be agents; to become an approval group, see below), and an
+shown on the form, an approval group (see below; before 4C-1 it was up to 10 named approvers) and an
 on/off switch (off hides it from the form; tickets keep it). The raise form (`/portal/new`) asks
 "What do you need?" with those types plus "Something is not working"; choosing a type makes the
 ticket a Service Request (`SR-`) and records `request_type_id` and a `request_type` event. Agents
@@ -772,12 +772,9 @@ requester sees the request name only. Sub-tickets from a split do not inherit th
   the server refuses with a clear message), cannot be split, and cannot be logged as already
   resolved. The SLA clock keeps running. Agents can still triage, assign, write notes and email.
 - **A reusable rule** (`app/approvals.py`, written so another kind of ticket, such as change
-  control, can use it): two numbers per request type, *approvals needed* and *declines needed*,
-  both defaulting to one (any single approver decides), copied onto the ticket when approvals
-  start so later edits do not change a request already waiting. Approved when the approvals reach
-  the first number; declined when the declines reach the second, or when so many have declined that
-  the approvals can no longer be reached. Whichever happens first settles it and everyone still
-  pending is marked "not needed". Approved: the ticket goes to Open and the requester gets an
+  control, can use it): since 4C-1 two vote percentages per request type (see "Approval groups" below), copied onto the
+  approval when it starts so later edits do not change a request already waiting. Whichever outcome is reached first settles it
+  and everyone still pending is marked "not needed". Approved: the ticket goes to Open and the requester gets an
   automatic message. Declined: it is Closed with the approvers' reasons in the message to the requester.
 - **It starts at triage**, once the real type and team are known: a catalogue request with
   approvers waits for them instead of opening; an agent who retypes it to an incident ends the
@@ -794,16 +791,17 @@ requester sees the request name only. Sub-tickets from a split do not inherit th
   days). The email that carries it comes with phase 3; the link, its page and the token are built.
   It is internet-facing, so it belongs with the public routers when `APP_ROLE` splits them.
 - **A super admin can waive** a pending approval (an approver has left); agents cannot.
-- **Approval groups and withdrawing (decided 21 and 22 Oct 2026, to build with the approvals follow-up, phase 4).** Approvals go to
-  **approval groups**. A request type points at one group, and any member of the group can approve (the first decision wins; "N of M"
-  is a later option). Admins manage groups in a group-management section. Handing over for leave or a leaver is adding or removing a
-  person in the group, so there is no per-approval re-assignment and no standing delegate accounts. A group may later map to an Entra
-  security group. A requester can withdraw a request while it waits. *What changes:* today `RequestTypeApprover` names up to 10
-  users per request type and `TicketApproval` holds one row per named approver, with the two counts copied onto the ticket. The
-  follow-up adds an approval group table with members, points `RequestType` at a group, and records one pending approval per ticket
-  that any member can decide (who decided is kept); the approvals-needed and declines-needed counts stay for the "N of M" option. It
-  needs a migration that turns each request type's current approvers into a group, and the Admin > Request types page picks a group
-  instead of users.
+- **Approval groups (decided 21 and 22 Oct 2026; built in 4C-1).** Approvals go to **approval groups** (Admin > Approval groups:
+  create, rename, add and remove members by email, all audited). A request type points at one group and carries two percentages a
+  super admin sets: **pass %** and **fail %**. The voters are the group's members when the approval starts, minus the requester, and
+  their number is fixed then. Approved when approve votes / voters >= pass %; declined when decline votes / voters >= fail %; a
+  decline wins if both are reached together. Both percentages are 1 to 100 and must add up to more than 100 (checked on save); because
+  that alone does not make every complete vote decisive, a request where everyone has answered and neither share was reached is
+  declined. An active request type needs a group with a member. There is one pending approval per ticket and one vote per member;
+  each member gets their own emailed link (GET shows, POST decides). Handing over for leave or a leaver is adding or removing a
+  person in the group, so there is no per-approval re-assignment and no standing delegate accounts (someone removed mid-request still
+  counts as a voter but can no longer answer; a super admin can waive). A group may later map to an Entra security group. Withdrawing
+  a request while it waits (4C-2), reminders (4C-3) and the per-person email preference (4C-4) follow.
 - **Not chasing yet.** Approvers who never answer are not chased before phase 3. When mail and
   Teams exist, asking an approver and chasing them go by **email and Teams**, like the other
   notifications; approvals will want a reminder schedule alongside the auto-close timers.

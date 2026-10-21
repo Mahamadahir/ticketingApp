@@ -49,6 +49,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/c5d9e2f7a418_approval_groups.py",
+        "revision": "c5d9e2f7a418"
+      },
+      {
         "file": "migrations/versions/b4c6d8e0f2a6_follower_updates.py",
         "revision": "b4c6d8e0f2a6"
       },
@@ -63,17 +67,13 @@
       {
         "file": "migrations/versions/7c76517851fa_never_follow_address.py",
         "revision": "7c76517851fa"
-      },
-      {
-        "file": "migrations/versions/b4e7a0d3c158_scheduled_job.py",
-        "revision": "b4e7a0d3c158"
       }
     ],
-    "count": 36,
+    "count": 37,
     "heads": [
       {
-        "file": "migrations/versions/b4c6d8e0f2a6_follower_updates.py",
-        "revision": "b4c6d8e0f2a6"
+        "file": "migrations/versions/c5d9e2f7a418_approval_groups.py",
+        "revision": "c5d9e2f7a418"
       }
     ]
   },
@@ -117,6 +117,41 @@
       ]
     },
     {
+      "classes": [
+        "ApprovalGroupError"
+      ],
+      "file": "app/approval_groups.py",
+      "functions": [
+        "add_member",
+        "all_groups",
+        "create_group",
+        "group_is_used_by_active_type",
+        "is_member",
+        "members_of",
+        "remove_member",
+        "rename_group",
+        "types_using"
+      ],
+      "imported_by": [
+        "app.approvals",
+        "app.request_types",
+        "app.routers.admin"
+      ],
+      "imports": [
+        "app.followers",
+        "app.models"
+      ],
+      "module": "app.approval_groups",
+      "routes": [],
+      "summary": "Approval groups (phase 4C-1): named sets of people who vote on requests.",
+      "tables": [],
+      "tests": [
+        "tests/test_approval_groups.py",
+        "tests/test_approvals.py",
+        "tests/test_request_types.py"
+      ]
+    },
+    {
       "classes": [],
       "file": "app/approval_links.py",
       "functions": [
@@ -142,16 +177,16 @@
     {
       "classes": [
         "ApprovalError",
-        "Tally"
+        "PercentError"
       ],
       "file": "app/approvals.py",
       "functions": [
-        "approval_for",
-        "approvals_of",
+        "check_percentages",
         "count_pending_for",
+        "current_approval",
         "decide",
         "describe_rule",
-        "eligible_approvers",
+        "eligible_voters",
         "needs_approval",
         "outcome",
         "pending_for",
@@ -159,27 +194,32 @@
         "start_approvals",
         "status_after_triage",
         "tally",
+        "vote_for",
+        "voters_yet_to_vote",
+        "votes_needed",
+        "votes_of",
         "waive"
       ],
       "imported_by": [
         "app.mail",
+        "app.request_types",
         "app.routers.approvals",
         "app.routers.portal",
         "app.routers.tickets",
         "app.triage"
       ],
       "imports": [
+        "app.approval_groups",
         "app.audit",
         "app.email_templates",
         "app.messages",
         "app.models",
         "app.outbox",
-        "app.request_types",
         "app.ticket_service"
       ],
       "module": "app.approvals",
       "routes": [],
-      "summary": "Approvals (phase 1H): a ticket that needs sign-off before the work goes ahead.",
+      "summary": "Approvals (phase 1H, groups in 4C-1): a ticket that needs sign-off before the work goes ahead.",
       "tables": [],
       "tests": [
         "tests/test_approvals.py",
@@ -488,6 +528,7 @@
       "tests": [
         "tests/conftest.py",
         "tests/test_access_context.py",
+        "tests/test_approvals.py",
         "tests/test_auth.py",
         "tests/test_category_admin.py",
         "tests/test_followers.py",
@@ -616,13 +657,13 @@
         "uncopied_recipients"
       ],
       "imported_by": [
+        "app.approval_groups",
         "app.escalation",
         "app.follower_updates",
         "app.inbound",
         "app.mail",
         "app.messages",
         "app.raising",
-        "app.request_types",
         "app.routers.admin",
         "app.routers.portal",
         "app.routers.tickets",
@@ -1040,6 +1081,9 @@
     {
       "classes": [
         "ActivityLog",
+        "ApprovalGroup",
+        "ApprovalGroupMember",
+        "ApprovalVote",
         "Attachment",
         "AuditLog",
         "CannedResponse",
@@ -1059,7 +1103,6 @@
         "NumberCounter",
         "OutboundEmail",
         "RequestType",
-        "RequestTypeApprover",
         "ScheduledJob",
         "Setting",
         "Team",
@@ -1082,6 +1125,7 @@
       ],
       "imported_by": [
         "app.activity",
+        "app.approval_groups",
         "app.approvals",
         "app.attachments",
         "app.audit",
@@ -1136,6 +1180,18 @@
         {
           "class": "ActivityLog",
           "table": "activitylog"
+        },
+        {
+          "class": "ApprovalGroup",
+          "table": "approvalgroup"
+        },
+        {
+          "class": "ApprovalGroupMember",
+          "table": "approvalgroupmember"
+        },
+        {
+          "class": "ApprovalVote",
+          "table": "approvalvote"
         },
         {
           "class": "Attachment",
@@ -1202,10 +1258,6 @@
           "table": "requesttype"
         },
         {
-          "class": "RequestTypeApprover",
-          "table": "requesttypeapprover"
-        },
-        {
           "class": "ScheduledJob",
           "table": "scheduledjob"
         },
@@ -1256,6 +1308,7 @@
         "tests/test_acknowledgement.py",
         "tests/test_activity_log.py",
         "tests/test_admin.py",
+        "tests/test_approval_groups.py",
         "tests/test_approvals.py",
         "tests/test_attachments.py",
         "tests/test_auth.py",
@@ -1581,18 +1634,17 @@
         "all_request_types",
         "approvers_of",
         "create_request_type",
-        "parse_approvers",
         "request_type_of",
         "update_request_type"
       ],
       "imported_by": [
-        "app.approvals",
         "app.routers.admin",
         "app.routers.portal",
         "app.routers.tickets"
       ],
       "imports": [
-        "app.followers",
+        "app.approval_groups",
+        "app.approvals",
         "app.models"
       ],
       "module": "app.request_types",
@@ -1654,6 +1706,8 @@
       "classes": [],
       "file": "app/routers/admin.py",
       "functions": [
+        "add_approval_group",
+        "add_approval_group_member",
         "add_canned",
         "add_category",
         "add_never_follow",
@@ -1663,6 +1717,7 @@
         "create_team",
         "edit_canned",
         "edit_request_type",
+        "list_approval_groups",
         "list_canned",
         "list_categories",
         "list_email_templates",
@@ -1671,8 +1726,10 @@
         "list_teams",
         "list_users",
         "preview_email_template",
+        "remove_approval_group_member",
         "remove_membership",
         "remove_never_follow",
+        "rename_approval_group",
         "reset_email_template",
         "review_category",
         "save_email_template",
@@ -1694,6 +1751,7 @@
       ],
       "imports": [
         "app.activity",
+        "app.approval_groups",
         "app.audit",
         "app.auth",
         "app.canned",
@@ -1721,6 +1779,31 @@
           "handler": "view_activity_log",
           "method": "GET",
           "path": "/admin/activity-log"
+        },
+        {
+          "handler": "list_approval_groups",
+          "method": "GET",
+          "path": "/admin/approval-groups"
+        },
+        {
+          "handler": "add_approval_group",
+          "method": "POST",
+          "path": "/admin/approval-groups"
+        },
+        {
+          "handler": "add_approval_group_member",
+          "method": "POST",
+          "path": "/admin/approval-groups/{group_id}/members"
+        },
+        {
+          "handler": "remove_approval_group_member",
+          "method": "POST",
+          "path": "/admin/approval-groups/{group_id}/members/{user_id}/remove"
+        },
+        {
+          "handler": "rename_approval_group",
+          "method": "POST",
+          "path": "/admin/approval-groups/{group_id}/rename"
         },
         {
           "handler": "view_audit_log",
@@ -2576,6 +2659,7 @@
         "tests/test_notification_followup.py",
         "tests/test_outbound_mail.py",
         "tests/test_presence.py",
+        "tests/test_request_types.py",
         "tests/test_scheduled_jobs.py",
         "tests/test_sla.py",
         "tests/test_teams_copy.py",
@@ -3316,6 +3400,8 @@
     "tests/test_acknowledgement.py",
     "tests/test_activity_log.py",
     "tests/test_admin.py",
+    "tests/test_approval_groups.py",
+    "tests/test_approval_groups_migration.py",
     "tests/test_approvals.py",
     "tests/test_attachments.py",
     "tests/test_auth.py",

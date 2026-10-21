@@ -28,7 +28,7 @@ from app.escalation import EscalationError, escalate_ticket as escalate, escalat
 from app.raising import source_label
 from app.request_types import request_type_of
 from app.canned import active_canned, fill as fill_canned
-from app.approvals import ApprovalError, approvals_of, describe_rule, waive
+from app.approvals import ApprovalError, current_approval, describe_rule, votes_of, waive
 from app.notifications import notify_assigned, notify_mentions
 from app.presence import agent_label
 from app.search import normalise, search_condition
@@ -889,7 +889,8 @@ def _may_resolve(session: Session, ticket: Ticket) -> bool:
 
 
 def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session: Session) -> HTMLResponse:
-    ticket_approvals = approvals_of(session, ticket)
+    ticket_approval = current_approval(session, ticket)
+    ticket_votes = votes_of(session, ticket_approval)
     team = session.get(Team, ticket.team_id) if ticket.team_id else None
     assigned_agent = session.get(User, ticket.assigned_agent_id) if ticket.assigned_agent_id else None
     levels = access_context(session, user)
@@ -998,8 +999,9 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             "can_backdate": may_backdate(ticket),
             "source_label": source_label(session, ticket),
             "request_info": request_type_of(session, ticket),
-            "approvals": ticket_approvals,
-            "approval_rule": describe_rule(ticket, len(ticket_approvals)) if ticket.approvals_required else None,
+            "approvals": ticket_votes,
+            "approval_rule": describe_rule(ticket_approval) if ticket_approval else None,
+            "approval_status": ticket_approval.status if ticket_approval else None,
             "can_waive": user.role == UserRole.SUPER_ADMIN and ticket.status == TicketStatus.AWAITING_APPROVAL,
             "can_set_priority": can_work and ticket.triaged_at is not None and ticket.status not in FINISHED_STATUSES,
             "category_options": options,

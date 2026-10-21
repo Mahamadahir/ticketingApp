@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Admin: Approval groups{% endblock %}
+{% block content %}
+{% set active = "/admin/approval-groups" %}
+{% include "_admin_tabs.html" %}
+
+<h2>Approval groups</h2>
+<p class="note">
+  A group is the set of people who vote on a kind of request. A request type (Admin &gt; Request types) points at one
+  group. Members need an account (they sign in once first); they need not be agents, managers are typical.
+  When a request is triaged, the members at that moment become its voters and the number is fixed: adding or
+  removing people later does not change a request already waiting, although someone removed can no longer answer it.
+  A super admin can waive a request that can then never be decided.
+</p>
+
+{% for g, members, types in groups %}
+<fieldset>
+  <legend>{{ g.name }}</legend>
+  <form method="post" action="/admin/approval-groups/{{ g.id }}/rename">
+    <label>Name <input type="text" name="name" value="{{ g.name }}" maxlength="{{ max_name_length }}" required /></label>
+    <button type="submit">Rename</button>
+  </form>
+  <p>Used by: {% for t in types %}{{ t.name }}{% if not t.is_active %} (off){% endif %}{{ ", " if not loop.last else "" }}{% else %}no request type{% endfor %}</p>
+  <p>Members ({{ members|length }}):</p>
+  <ul>
+    {% for m in members %}
+    <li>
+      {{ m.display_name or m.email }} ({{ m.email }})
+      <form method="post" action="/admin/approval-groups/{{ g.id }}/members/{{ m.id }}/remove" style="display:inline">
+        <button type="submit" class="button-outline">Remove</button>
+      </form>
+    </li>
+    {% else %}
+    <li>No members yet.</li>
+    {% endfor %}
+  </ul>
+  <form method="post" action="/admin/approval-groups/{{ g.id }}/members">
+    <label>Add a member (email address) <input type="email" name="email" required /></label>
+    <button type="submit">Add</button>
+  </form>
+</fieldset>
+{% else %}
+<p>No approval groups yet.</p>
+{% endfor %}
+
+<h3>New approval group</h3>
+<form method="post" action="/admin/approval-groups">
+  <label>Name <input type="text" name="name" maxlength="{{ max_name_length }}" required /></label>
+  <button type="submit">Create</button>
+</form>
+{% endblock %}

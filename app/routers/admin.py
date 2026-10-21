@@ -28,13 +28,22 @@ from app.categories import (
     path_of,
     selectable,
 )
+from app.approval_groups import (
+    MAX_NAME_LENGTH as MAX_GROUP_NAME_LENGTH,
+    ApprovalGroupError,
+    add_member as add_group_member,
+    all_groups,
+    create_group,
+    members_of,
+    remove_member as remove_group_member,
+    rename_group,
+    types_using,
+)
 from app.request_types import (
-    MAX_APPROVERS,
     MAX_DESCRIPTION_LENGTH as MAX_REQUEST_DESCRIPTION_LENGTH,
     MAX_NAME_LENGTH as MAX_REQUEST_NAME_LENGTH,
     RequestTypeError,
     all_request_types,
-    approvers_of,
     create_request_type,
     update_request_type,
 )
@@ -66,6 +75,7 @@ from app.never_follow import MAX_REASON_LENGTH, NeverFollowError, add_listed, al
 from app.models import (
     FINISHED_STATUSES,
     ActivityLog,
+    ApprovalGroup,
     AuditLog,
     CannedResponse,
     Category,
@@ -85,7 +95,14 @@ from app.models import (
 )
 from app.pagination import paginate
 from app.scheduled_jobs import SCHEDULED_JOBS, status_line, timing
-from app.settings_store import JOB_LATE_MINUTES, REGISTRY, get_setting, set_setting
+from app.settings_store import (
+    APPROVAL_DEFAULT_FAIL_PERCENT,
+    APPROVAL_DEFAULT_PASS_PERCENT,
+    JOB_LATE_MINUTES,
+    REGISTRY,
+    get_setting,
+    set_setting,
+)
 from app.inbound import IGNORED_FLOOD
 from app.subscriptions import health_warnings, mail_folder, subscription_resource
 from app.teams import MAX_ATTEMPTS
@@ -714,7 +731,113 @@ def reset_email_template(
     return RedirectResponse("/admin/email-templates", status_code=303)
 
 
+# ---- Approval groups --------------------------------------------------------------
+
+
+@router.get("/approval-groups", response_class=HTMLResponse)
+def list_approval_groups(
+    request: Request,
+    user: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    return templates.TemplateResponse(
+        request,
+        "admin_approval_groups.html",
+        {
+            "groups": [(g, members_of(session, g.id), types_using(session, g.id)) for g in all_groups(session)],
+            "max_name_length": MAX_GROUP_NAME_LENGTH,
+            "user": user,
+        },
+    )
+
+
+@router.post("/approval-groups")
+def add_approval_group(
+    name: str = Form(..., max_length=500),
+    admin: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    try:
+        group = create_group(session, name)
+    except ApprovalGroupError as error:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(error))
+    log_action(session, admin.email, "approval_group", group.id, "created", group.name)
+    session.commit()
+    return RedirectResponse("/admin/approval-groups", status_code=303)
+
+
+@router.post("/approval-groups/{group_id}/rename")
+def rename_approval_group(
+    group_id: int,
+    name: str = Form(..., max_length=500),
+    admin: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    group = session.get(ApprovalGroup, group_id)
+    if group is None:
+        raise HTTPException(status_code=404, detail="Approval group not found")
+    before = group.name
+    try:
+        rename_group(session, group, name)
+    except ApprovalGroupError as error:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(error))
+    if before != group.name:
+        log_action(session, admin.email, "approval_group", group.id, "renamed", f"{before!r} -> {group.name!r}")
+    session.commit()
+    return RedirectResponse("/admin/approval-groups", status_code=303)
+
+
+@router.post("/approval-groups/{group_id}/members")
+def add_approval_group_member(
+    group_id: int,
+    email: str = Form(..., max_length=254),
+    admin: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    group = session.get(ApprovalGroup, group_id)
+    if group is None:
+        raise HTTPException(status_code=404, detail="Approval group not found")
+    try:
+        member = add_group_member(session, group, email)
+    except ApprovalGroupError as error:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(error))
+    log_action(session, admin.email, "approval_group", group.id, "member_added", member.email)
+    session.commit()
+    return RedirectResponse("/admin/approval-groups", status_code=303)
+
+
+@router.post("/approval-groups/{group_id}/members/{user_id}/remove")
+def remove_approval_group_member(
+    group_id: int,
+    user_id: int,
+    admin: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    group = session.get(ApprovalGroup, group_id)
+    if group is None:
+        raise HTTPException(status_code=404, detail="Approval group not found")
+    try:
+        member = remove_group_member(session, group, user_id)
+    except ApprovalGroupError as error:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(error))
+    log_action(session, admin.email, "approval_group", group.id, "member_removed", member.email)
+    session.commit()
+    return RedirectResponse("/admin/approval-groups", status_code=303)
+
+
 # ---- Request types (Service Requests) --------------------------------------------
+
+
+def _type_snapshot(session: Session, request_type: RequestType) -> tuple:
+    group = session.get(ApprovalGroup, request_type.approval_group_id) if request_type.approval_group_id else None
+    return (
+        request_type.name, request_type.description, group.name if group else "(none)",
+        (request_type.pass_percent, request_type.fail_percent),
+    )
 
 
 @router.get("/request-types", response_class=HTMLResponse)
@@ -723,15 +846,16 @@ def list_request_types(
     user: User = Depends(require_super_admin),
     session: Session = Depends(get_session),
 ):
-    types = all_request_types(session)
     return templates.TemplateResponse(
         request,
         "admin_request_types.html",
         {
-            "types": [(t, ", ".join(a.email for a in approvers_of(session, t))) for t in types],
+            "types": all_request_types(session),
+            "groups": all_groups(session),
+            "default_pass": get_setting(session, APPROVAL_DEFAULT_PASS_PERCENT),
+            "default_fail": get_setting(session, APPROVAL_DEFAULT_FAIL_PERCENT),
             "max_name_length": MAX_REQUEST_NAME_LENGTH,
             "max_description_length": MAX_REQUEST_DESCRIPTION_LENGTH,
-            "max_approvers": MAX_APPROVERS,
             "user": user,
         },
     )
@@ -741,14 +865,17 @@ def list_request_types(
 def add_request_type(
     name: str = Form(..., max_length=500),
     description: str = Form("", max_length=5000),
-    approvers: str = Form("", max_length=5000),
-    approvals_required: int = Form(1, ge=1, le=100),
-    declines_required: int = Form(1, ge=1, le=100),
+    approval_group_id: Optional[str] = Form(None),
+    pass_percent: int = Form(..., ge=1, le=100),
+    fail_percent: int = Form(..., ge=1, le=100),
+    is_active: Optional[str] = Form(None),
     admin: User = Depends(require_super_admin),
     session: Session = Depends(get_session),
 ):
     try:
-        request_type = create_request_type(session, name, description, approvers, approvals_required, declines_required)
+        request_type = create_request_type(
+            session, name, description, optional_int(approval_group_id), pass_percent, fail_percent, is_active == "on",
+        )
     except RequestTypeError as error:
         session.rollback()
         raise HTTPException(status_code=400, detail=str(error))
@@ -762,9 +889,9 @@ def edit_request_type(
     type_id: int,
     name: str = Form(..., max_length=500),
     description: str = Form("", max_length=5000),
-    approvers: str = Form("", max_length=5000),
-    approvals_required: int = Form(1, ge=1, le=100),
-    declines_required: int = Form(1, ge=1, le=100),
+    approval_group_id: Optional[str] = Form(None),
+    pass_percent: int = Form(..., ge=1, le=100),
+    fail_percent: int = Form(..., ge=1, le=100),
     is_active: Optional[str] = Form(None),
     admin: User = Depends(require_super_admin),
     session: Session = Depends(get_session),
@@ -772,24 +899,18 @@ def edit_request_type(
     request_type = session.get(RequestType, type_id)
     if request_type is None:
         raise HTTPException(status_code=404, detail="Request type not found")
-    before = (
-        request_type.name, request_type.description, sorted(a.email for a in approvers_of(session, request_type)),
-        (request_type.approvals_required, request_type.declines_required),
-    )
+    before = _type_snapshot(session, request_type)
     was_active = request_type.is_active
     try:
         update_request_type(
-            session, request_type, name, description, approvers, is_active == "on",
-            approvals_required, declines_required,
+            session, request_type, name, description, optional_int(approval_group_id),
+            pass_percent, fail_percent, is_active == "on",
         )
     except RequestTypeError as error:
         session.rollback()
         raise HTTPException(status_code=400, detail=str(error))
     session.flush()
-    after = (
-        request_type.name, request_type.description, sorted(a.email for a in approvers_of(session, request_type)),
-        (request_type.approvals_required, request_type.declines_required),
-    )
+    after = _type_snapshot(session, request_type)
     if before != after:
         changes = []
         if before[0] != after[0]:
@@ -797,9 +918,9 @@ def edit_request_type(
         if before[1] != after[1]:
             changes.append("description changed")
         if before[2] != after[2]:
-            changes.append(f"approvers {before[2]} -> {after[2]}")
+            changes.append(f"approval group {before[2]} -> {after[2]}")
         if before[3] != after[3]:
-            changes.append(f"needs {before[3][0]} approvals / {before[3][1]} declines -> {after[3][0]} / {after[3][1]}")
+            changes.append(f"pass/fail {before[3][0]}%/{before[3][1]}% -> {after[3][0]}%/{after[3][1]}%")
         log_action(session, admin.email, "request_type", request_type.id, "edited", "; ".join(changes))
     if request_type.is_active != was_active:
         log_action(

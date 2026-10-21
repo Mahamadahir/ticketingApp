@@ -19,7 +19,7 @@ from app.models import (
     OutboundEmail,
     Setting,
     Ticket,
-    TicketApproval,
+    ApprovalVote,
     TicketStatus,
     User,
     UserRole,
@@ -128,7 +128,7 @@ def test_each_approver_gets_one_email(client, db_session, dev_mail):
     sent_to = sorted(r.to_address for r in rows(db_session, outbox.APPROVAL))
 
     assert sent_to == ["boss@example.com", "lead@example.com"]
-    assert all(r.ticket_id == ticket.id and r.approval_id for r in rows(db_session, outbox.APPROVAL))
+    assert all(r.ticket_id == ticket.id and r.vote_id for r in rows(db_session, outbox.APPROVAL))
 
 
 # ---- What an email says ---------------------------------------------------------------------------
@@ -217,7 +217,7 @@ def test_an_approval_email_carries_a_working_link_and_keeps_none_on_the_row(clie
     built = mail.build_approval_mail(db_session, row)
 
     link = next(line for line in built.body.splitlines() if line.startswith("https://tickets.example.org/approvals/"))
-    approval = db_session.get(TicketApproval, row.approval_id)
+    approval = db_session.get(ApprovalVote, row.vote_id)
     assert approval_links.read_token(link.rsplit("/", 1)[1], 60) == approval.id
     assert built.subject == f"[{ticket.reference}] Approval needed: {ticket.subject}"
     assert link not in built.record and "link left out" in built.record
@@ -227,7 +227,7 @@ def test_an_approval_email_is_dropped_once_the_approval_is_decided(client, db_se
     person(client, db_session, "boss@example.com")
     raised_and_triaged(client, db_session, request_type(db_session, ["boss@example.com"]))
     [row] = rows(db_session, outbox.APPROVAL)
-    approval = db_session.get(TicketApproval, row.approval_id)
+    approval = db_session.get(ApprovalVote, row.vote_id)
     approval.decision = "approved"
     db_session.add(approval)
     db_session.commit()

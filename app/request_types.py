@@ -1,8 +1,9 @@
 """The request catalogue (phase 1H): the kinds of service request people can raise, and who
 approves each. Admins manage it; the request form lists the active types.
 
-Approvers are configured here and shown on the ticket. Asking them to approve, and holding
-the work until they have, is the next step (1H-ii).
+A type points at one approval group (app/approval_groups.py) and carries the two percentages that
+settle a request (app/approvals.py): how much of the group must approve for it to pass, and how much
+must decline for it to fail. An active type must have a group with at least one member.
 """
 
 from typing import Optional
@@ -11,12 +12,12 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from app.followers import InvalidEmail, normalise_email
-from app.models import RequestType, RequestTypeApprover, User
+from app.approval_groups import members_of
+from app.approvals import PercentError, check_percentages
+from app.models import ApprovalGroup, RequestType, User
 
 MAX_NAME_LENGTH = 100
 MAX_DESCRIPTION_LENGTH = 1000
-MAX_APPROVERS = 10
 
 
 class RequestTypeError(ValueError):
@@ -41,52 +42,22 @@ def _name_taken(session: Session, name: str, except_id: Optional[int]) -> bool:
     return session.exec(query).first() is not None
 
 
-def parse_approvers(session: Session, text: str) -> list[User]:
-    """The accounts named by a list of email addresses (commas, semicolons or new lines).
-    Every address must belong to an account, so a typo cannot silently leave a request
-    without its approver; someone who has never signed in has no account yet."""
-    emails = []
-    for part in (text or "").replace(";", ",").replace("\n", ",").split(","):
-        if not part.strip():
-            continue
-        try:
-            email = normalise_email(part)
-        except InvalidEmail:
-            raise RequestTypeError(f"{part.strip()} is not a valid email address")
-        if email not in emails:
-            emails.append(email)
-    if len(emails) > MAX_APPROVERS:
-        raise RequestTypeError(f"A request type can have at most {MAX_APPROVERS} approvers")
-    users = []
-    for email in emails:
-        user = session.exec(select(User).where(User.email == email)).first()
-        if user is None:
-            raise RequestTypeError(f"{email} has no account yet: they need to sign in once first")
-        users.append(user)
-    return users
+def _checked(session: Session, group_id: Optional[int], pass_percent: int, fail_percent: int, is_active: bool) -> None:
+    if group_id is not None and session.get(ApprovalGroup, group_id) is None:
+        raise RequestTypeError("That approval group does not exist")
+    try:
+        check_percentages(pass_percent, fail_percent)
+    except PercentError as error:
+        raise RequestTypeError(str(error))
+    if is_active and not members_of(session, group_id):
+        raise RequestTypeError(
+            "An active request type needs an approval group with at least one member (switch it off to save it without one)"
+        )
 
 
 def approvers_of(session: Session, request_type: RequestType) -> list[User]:
-    rows = session.exec(
-        select(User)
-        .join(RequestTypeApprover, RequestTypeApprover.user_id == User.id)
-        .where(RequestTypeApprover.request_type_id == request_type.id)
-        .order_by(User.email)
-    ).all()
-    return list(rows)
-
-
-def _set_approvers(session: Session, request_type: RequestType, users: list[User]) -> None:
-    wanted = {u.id for u in users}
-    existing = session.exec(
-        select(RequestTypeApprover).where(RequestTypeApprover.request_type_id == request_type.id)
-    ).all()
-    for row in existing:
-        if row.user_id not in wanted:
-            session.delete(row)
-    have = {row.user_id for row in existing}
-    for user_id in wanted - have:
-        session.add(RequestTypeApprover(request_type_id=request_type.id, user_id=user_id))
+    """The members of the type's group today."""
+    return members_of(session, request_type.approval_group_id)
 
 
 def _flush(session: Session) -> None:
@@ -99,60 +70,48 @@ def _flush(session: Session) -> None:
         raise RequestTypeError("There is already a request type with that name")
 
 
-def _thresholds(approvals_required: int, declines_required: int, approvers: int) -> tuple[int, int]:
-    """How many must approve and how many must decline. With approvers, neither can be more
-    than there are (that rule could never be met); with none they are kept at one."""
-    for value in (approvals_required, declines_required):
-        if value < 1:
-            raise RequestTypeError("The numbers of approvals and declines needed must be at least 1")
-        if approvers and value > approvers:
-            raise RequestTypeError(f"That needs {value} approvers but only {approvers} are named")
-    return approvals_required, declines_required
-
-
 def create_request_type(
-    session: Session, name: str, description: str, approvers_text: str,
-    approvals_required: int = 1, declines_required: int = 1,
+    session: Session, name: str, description: str, group_id: Optional[int],
+    pass_percent: int, fail_percent: int, is_active: bool = True,
 ) -> RequestType:
     name, description = _clean(name, description)
     if _name_taken(session, name, None):
         raise RequestTypeError("There is already a request type with that name")
-    users = parse_approvers(session, approvers_text)
-    approvals_required, declines_required = _thresholds(approvals_required, declines_required, len(users))
+    _checked(session, group_id, pass_percent, fail_percent, is_active)
     request_type = RequestType(
-        name=name, description=description,
-        approvals_required=approvals_required, declines_required=declines_required,
+        name=name, description=description, is_active=is_active, approval_group_id=group_id,
+        pass_percent=pass_percent, fail_percent=fail_percent,
     )
     session.add(request_type)
-    _flush(session)
-    _set_approvers(session, request_type, users)
     _flush(session)
     return request_type
 
 
 def update_request_type(
-    session: Session, request_type: RequestType, name: str, description: str, approvers_text: str,
-    is_active: bool, approvals_required: int = 1, declines_required: int = 1,
+    session: Session, request_type: RequestType, name: str, description: str, group_id: Optional[int],
+    pass_percent: int, fail_percent: int, is_active: bool,
 ) -> RequestType:
     name, description = _clean(name, description)
     if _name_taken(session, name, request_type.id):
         raise RequestTypeError("There is already a request type with that name")
-    users = parse_approvers(session, approvers_text)
-    approvals_required, declines_required = _thresholds(approvals_required, declines_required, len(users))
+    _checked(session, group_id, pass_percent, fail_percent, is_active)
     request_type.name, request_type.description, request_type.is_active = name, description, is_active
-    request_type.approvals_required, request_type.declines_required = approvals_required, declines_required
+    request_type.approval_group_id = group_id
+    request_type.pass_percent, request_type.fail_percent = pass_percent, fail_percent
     session.add(request_type)
-    _set_approvers(session, request_type, users)
     _flush(session)
     return request_type
 
 
-def request_type_of(session: Session, ticket) -> Optional[tuple[RequestType, list[User]]]:
-    """The request type a ticket was raised as, with its approvers, or None."""
+def request_type_of(session: Session, ticket) -> Optional[tuple[RequestType, Optional[ApprovalGroup]]]:
+    """The request type a ticket was raised as, with its approval group, or None."""
     if ticket.request_type_id is None:
         return None
     request_type = session.get(RequestType, ticket.request_type_id)
-    return (request_type, approvers_of(session, request_type)) if request_type is not None else None
+    if request_type is None:
+        return None
+    group = session.get(ApprovalGroup, request_type.approval_group_id) if request_type.approval_group_id else None
+    return request_type, group
 
 
 def all_request_types(session: Session) -> list[RequestType]:
