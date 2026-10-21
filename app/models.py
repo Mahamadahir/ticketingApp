@@ -161,6 +161,13 @@ class Ticket(SQLModel, table=True):
     # max) lets an agent enter earlier dates.
     reported_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     resolved_at: Optional[datetime] = Field(default=None)
+    # Set by the resolve action (app/resolution.py): what was done, who resolved it (null for an
+    # automatic resolve) and how many times it has been reopened. closed_at is when it was
+    # closed (set by set_status whenever the status becomes Closed).
+    resolution_notes: Optional[str] = Field(default=None)
+    resolved_by_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    closed_at: Optional[datetime] = Field(default=None)
+    reopen_count: int = Field(default=0, sa_column_kwargs={"server_default": "0"})
     # Set (and never cleared) once an agent enters earlier dates than the real ones,
     # so the ticket is logged after the fact. Such tickets count towards volume but are
     # left out of SLA figures; created_at still holds when it was really entered.

@@ -49,6 +49,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/158132f3603a_resolution_fields.py",
+        "revision": "158132f3603a"
+      },
+      {
         "file": "migrations/versions/7c76517851fa_never_follow_address.py",
         "revision": "7c76517851fa"
       },
@@ -63,17 +67,13 @@
       {
         "file": "migrations/versions/e4b7c1a9d052_inbound_mail_handled_mail_record_.py",
         "revision": "e4b7c1a9d052"
-      },
-      {
-        "file": "migrations/versions/c3b7e1a94d20_graph_subscription_and_mail_sync_state.py",
-        "revision": "c3b7e1a94d20"
       }
     ],
-    "count": 33,
+    "count": 34,
     "heads": [
       {
-        "file": "migrations/versions/7c76517851fa_never_follow_address.py",
-        "revision": "7c76517851fa"
+        "file": "migrations/versions/158132f3603a_resolution_fields.py",
+        "revision": "158132f3603a"
       }
     ]
   },
@@ -229,6 +229,7 @@
         "app.escalation",
         "app.inbound",
         "app.notification_settings",
+        "app.resolution",
         "app.routers.admin",
         "app.routers.portal",
         "app.routers.tickets",
@@ -442,6 +443,7 @@
         "tests/test_outbound_mail.py",
         "tests/test_presence.py",
         "tests/test_public_surface.py",
+        "tests/test_resolution.py",
         "tests/test_security.py",
         "tests/test_teams.py",
         "tests/test_teams_copy_sending.py",
@@ -524,6 +526,7 @@
       "imported_by": [
         "app.approvals",
         "app.mail",
+        "app.resolution",
         "app.routers.admin"
       ],
       "imports": [
@@ -534,7 +537,8 @@
       "summary": "Admin-managed wording for the emails the app sends by itself (phase 4T).",
       "tables": [],
       "tests": [
-        "tests/test_email_templates.py"
+        "tests/test_email_templates.py",
+        "tests/test_resolution.py"
       ]
     },
     {
@@ -617,6 +621,7 @@
       "imported_by": [
         "app.canned",
         "app.inbound",
+        "app.resolution",
         "app.routers.admin",
         "app.routers.portal",
         "app.routers.tickets",
@@ -629,7 +634,8 @@
       "tables": [],
       "tests": [
         "tests/test_canned.py",
-        "tests/test_pagination_and_limits.py"
+        "tests/test_pagination_and_limits.py",
+        "tests/test_resolution.py"
       ]
     },
     {
@@ -864,7 +870,8 @@
       "tables": [],
       "tests": [
         "tests/test_email_templates.py",
-        "tests/test_outbound_mail.py"
+        "tests/test_outbound_mail.py",
+        "tests/test_resolution.py"
       ]
     },
     {
@@ -945,6 +952,7 @@
         "app.inbound",
         "app.mail",
         "app.raising",
+        "app.resolution",
         "app.routers.approvals",
         "app.routers.portal",
         "app.routers.tickets",
@@ -971,6 +979,7 @@
         "tests/test_messages.py",
         "tests/test_outbound_mail.py",
         "tests/test_reply_notification.py",
+        "tests/test_resolution.py",
         "tests/test_split_family.py"
       ]
     },
@@ -1042,6 +1051,7 @@
         "app.presence",
         "app.raising",
         "app.request_types",
+        "app.resolution",
         "app.routers.admin",
         "app.routers.approvals",
         "app.routers.attachments",
@@ -1222,6 +1232,7 @@
         "tests/test_raising.py",
         "tests/test_reply_notification.py",
         "tests/test_request_types.py",
+        "tests/test_resolution.py",
         "tests/test_scheduled_jobs.py",
         "tests/test_search.py",
         "tests/test_sla.py",
@@ -1374,7 +1385,8 @@
       "tables": [],
       "tests": [
         "tests/test_email_templates.py",
-        "tests/test_outbound_mail.py"
+        "tests/test_outbound_mail.py",
+        "tests/test_resolution.py"
       ]
     },
     {
@@ -1453,6 +1465,7 @@
         "app.models",
         "app.notification_settings",
         "app.outbox",
+        "app.resolution",
         "app.settings_store",
         "app.sla",
         "app.ticket_service",
@@ -1522,6 +1535,40 @@
       "tests": [
         "tests/test_approvals.py",
         "tests/test_request_types.py"
+      ]
+    },
+    {
+      "classes": [
+        "ResolveError"
+      ],
+      "file": "app/resolution.py",
+      "functions": [
+        "auto_resolution_note",
+        "check_can_resolve",
+        "clean_notes",
+        "preview_resolution",
+        "resolution_email_body",
+        "resolve_ticket"
+      ],
+      "imported_by": [
+        "app.raising",
+        "app.routers.tickets"
+      ],
+      "imports": [
+        "app.audit",
+        "app.email_templates",
+        "app.forms",
+        "app.messages",
+        "app.models",
+        "app.splitting",
+        "app.ticket_service"
+      ],
+      "module": "app.resolution",
+      "routes": [],
+      "summary": "Resolving a ticket (phase 4D). The one place a ticket becomes Resolved.",
+      "tables": [],
+      "tests": [
+        "tests/test_resolution.py"
       ]
     },
     {
@@ -2149,8 +2196,10 @@
         "link",
         "list_tickets",
         "preview_email_user",
+        "preview_resolve",
         "reassign",
         "remove_ticket_follower",
+        "resolve",
         "split",
         "team_activity",
         "triage",
@@ -2181,6 +2230,7 @@
         "app.presence",
         "app.raising",
         "app.request_types",
+        "app.resolution",
         "app.search",
         "app.sla",
         "app.splitting",
@@ -2286,6 +2336,16 @@
           "handler": "reassign",
           "method": "POST",
           "path": "/tickets/{number}/reassign"
+        },
+        {
+          "handler": "resolve",
+          "method": "POST",
+          "path": "/tickets/{number}/resolve"
+        },
+        {
+          "handler": "preview_resolve",
+          "method": "POST",
+          "path": "/tickets/{number}/resolve/preview"
         },
         {
           "handler": "split",
@@ -2485,6 +2545,7 @@
       "tables": [],
       "tests": [
         "tests/test_backdating.py",
+        "tests/test_resolution.py",
         "tests/test_sla.py",
         "tests/test_with_supplier.py"
       ]
@@ -2510,6 +2571,7 @@
       ],
       "imported_by": [
         "app.inbound",
+        "app.resolution",
         "app.routers.portal",
         "app.routers.tickets",
         "app.ticket_service"
@@ -2718,7 +2780,8 @@
     {
       "classes": [
         "AwaitingApproval",
-        "NotTriaged"
+        "NotTriaged",
+        "ResolutionRequired"
       ],
       "file": "app/ticket_service.py",
       "functions": [
@@ -2737,6 +2800,7 @@
         "app.linking",
         "app.messages",
         "app.raising",
+        "app.resolution",
         "app.routers.admin",
         "app.routers.portal",
         "app.routers.tickets",
@@ -2761,6 +2825,7 @@
         "tests/test_email_preview.py",
         "tests/test_portal.py",
         "tests/test_reply_notification.py",
+        "tests/test_resolution.py",
         "tests/test_split_family.py",
         "tests/test_teams.py",
         "tests/test_ticket_core.py",
@@ -3206,6 +3271,7 @@
     "tests/test_raising.py",
     "tests/test_reply_notification.py",
     "tests/test_request_types.py",
+    "tests/test_resolution.py",
     "tests/test_scheduled_jobs.py",
     "tests/test_search.py",
     "tests/test_security.py",

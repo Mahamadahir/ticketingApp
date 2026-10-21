@@ -63,7 +63,8 @@ from app.sla import (
     set_impact_urgency,
     sla_view,
 )
-from app.ticket_service import AwaitingApproval, EVENT_ASSIGNED, NotTriaged, find_ticket, get_by_number, record_event, set_status
+from app.resolution import ResolveError, check_can_resolve, preview_resolution, resolve_ticket
+from app.ticket_service import AwaitingApproval, EVENT_ASSIGNED, NotTriaged, ResolutionRequired, find_ticket, get_by_number, record_event, set_status
 from app.triage import TriageError, reassign_ticket, triage_ticket
 from app.visibility import (
     Access,
@@ -577,11 +578,71 @@ def change_status(
         raise HTTPException(status_code=400, detail="Triage the ticket before changing its status")
     except AwaitingApproval:
         raise HTTPException(status_code=400, detail="This request is waiting for its approvers; its status changes when they decide")
+    except ResolutionRequired:
+        raise HTTPException(status_code=400, detail="Use the Resolve action to resolve a ticket: it needs resolution notes")
     if changed:
         log_action(session, user.email, "ticket", ticket.id, "status_changed", f"{previous_status.value} -> {status.value}")
     session.commit()
     session.refresh(ticket)
 
+    return _render_ticket_detail(request, ticket, user, session)
+
+
+@router.post("/{number}/resolve/preview", response_class=HTMLResponse)
+def preview_resolve(
+    number: int,
+    request: Request,
+    resolution_notes: str = Form("", max_length=MAX_MESSAGE_LENGTH + 1000),
+    cc_form: Optional[str] = Form(None),
+    cc: list[str] = Form(default=[]),
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """The "are you sure?" step before resolving: the notes, the resolution email (who gets it, who
+    is copied, the subject and the text) and what resolving does. Records and sends nothing."""
+    ticket = _get_ticket(session, number, user)
+    try:
+        preview = preview_resolution(session, ticket, resolution_notes, cc_emails=cc if cc_form else None)
+    except ResolveError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    except UnknownRecipient as error:
+        raise HTTPException(status_code=400, detail=f"Not a follower of this ticket: {error}")
+    return templates.TemplateResponse(
+        request,
+        "_resolve_preview.html",
+        {
+            "ticket": ticket,
+            "preview": preview,
+            "notes": resolution_notes.strip(),
+            "cc_form": bool(cc_form),
+            "ticked": cc,
+        },
+    )
+
+
+@router.post("/{number}/resolve", response_class=HTMLResponse)
+def resolve(
+    number: int,
+    request: Request,
+    resolution_notes: str = Form("", max_length=MAX_MESSAGE_LENGTH + 1000),
+    cc_form: Optional[str] = Form(None),
+    cc: list[str] = Form(default=[]),
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """Resolve the ticket with notes (required). Emails the requester, copying the followers the
+    agent left ticked, through app/resolution.py."""
+    ticket = _get_ticket(session, number, user)
+    try:
+        resolve_ticket(session, ticket, user, resolution_notes, cc_emails=cc if cc_form else None)
+    except ResolveError as error:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(error))
+    except UnknownRecipient as error:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=f"Not a follower of this ticket: {error}")
+    session.commit()
+    session.refresh(ticket)
     return _render_ticket_detail(request, ticket, user, session)
 
 
@@ -793,6 +854,15 @@ def remove_ticket_follower(
     return _render_ticket_detail(request, ticket, user, session)
 
 
+def _may_resolve(session: Session, ticket: Ticket) -> bool:
+    """Whether to offer the Resolve form: the service's own rules (app/resolution.py), so the page and the action agree."""
+    try:
+        check_can_resolve(session, ticket)
+    except ResolveError:
+        return False
+    return True
+
+
 def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session: Session) -> HTMLResponse:
     ticket_approvals = approvals_of(session, ticket)
     team = session.get(Team, ticket.team_id) if ticket.team_id else None
@@ -875,7 +945,14 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             "can_edit_followers": can_work,
             "can_note": may_add_note(user, ticket, levels),
             # New is left only by triage, so it is not offered as a status to set.
-            "statuses": [s for s in TicketStatus if s not in (TicketStatus.NEW, TicketStatus.AWAITING_APPROVAL)],
+            # Resolved is not a status to set: the Resolve action takes the notes.
+            "statuses": [
+                s for s in TicketStatus
+                if s not in (TicketStatus.NEW, TicketStatus.AWAITING_APPROVAL)
+                and (s != TicketStatus.RESOLVED or ticket.status == TicketStatus.RESOLVED)
+            ],
+            "resolved_by": session.get(User, ticket.resolved_by_id) if ticket.resolved_by_id else None,
+            "can_resolve": can_work and _may_resolve(session, ticket),
             "can_triage": can_triage,
             "can_self_assign": can_self_assign,
             "ticket_types": list(TicketType),

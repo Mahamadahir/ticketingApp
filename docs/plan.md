@@ -475,7 +475,7 @@ without anyone remembering to set it by hand.
   when the message is saved, in one step, as an ordinary status event naming the agent. On a
   ticket With supplier, With MSP, Resolved or Closed the dropdown defaults to the current status (nothing
   moves unless the agent picks something), and Resolved or Closed are not offered here:
-  resolving is the resolve action in phase 4. The Status buttons stay for changes made without
+  resolving is the resolve action (built, 4D: notes required, the resolution email is the admin template "resolution" with the preview step, `app/resolution.py`). The Status buttons no longer offer Resolved and stay for changes made without
   a message. For a split original the dropdown is not shown, since its status is derived; an
   email from a part sets that part's status. *Code to change:* today the email always sets
   Awaiting user (`app/routers/tickets.py`, `app/messages.py`), and the preview step (1G-ii)

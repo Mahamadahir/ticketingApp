@@ -193,6 +193,7 @@ def raise_new_ticket(
     agent_id: Optional[str] = Form(None),
     reported_at: Optional[str] = Form(None, max_length=40),
     resolved_at: Optional[str] = Form(None, max_length=40),
+    resolution_notes: Optional[str] = Form(None, max_length=MAX_MESSAGE_LENGTH + 1000),
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
@@ -223,6 +224,7 @@ def raise_new_ticket(
             session, user, subject=subject, description=description, for_email=for_email,
             ticket_type=ticket_type, category=chosen_category, impact=level_impact, urgency=level_urgency,
             assignee=assignee, reported_at=moments[0], resolved_at=moments[1], request_type=chosen_request_type,
+            resolution_notes=resolution_notes,
         )
         log_action(session, user.email, "ticket", ticket.id, "raised", ticket.source.value)
         session.flush()

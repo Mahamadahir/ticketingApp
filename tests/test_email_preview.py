@@ -135,7 +135,7 @@ def test_the_preview_follows_ticket_access(client, db_session):
 
 def test_the_note_says_when_the_status_will_not_change(client, db_session):
     ticket = ticket_for_email(client, db_session)
-    client.post(f"/tickets/{ticket.number}/status", data={"status": "resolved"})
+    client.post(f"/tickets/{ticket.number}/resolve", data={"resolution_notes": "Fixed it"})
     assert "leaves the ticket's status as it is" in preview(client, ticket).text
 
 

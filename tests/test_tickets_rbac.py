@@ -135,14 +135,14 @@ def test_status_change_writes_audit(client, db_session):
     agent_id = login_as(client, "agent@example.com")
     set_role(db_session, agent_id, UserRole.AGENT, team.id)
 
-    client.post(f"/tickets/{ticket.number}/status", data={"status": "resolved"})
+    client.post(f"/tickets/{ticket.number}/status", data={"status": "closed"})
 
     db_session.refresh(ticket)
-    assert ticket.status == TicketStatus.RESOLVED
+    assert ticket.status == TicketStatus.CLOSED
 
     audit_entries = db_session.exec(select(AuditLog).where(AuditLog.action == "status_changed")).all()
     assert len(audit_entries) == 1
-    assert "resolved" in audit_entries[0].detail
+    assert "closed" in audit_entries[0].detail
 
 
 def test_email_sets_status_awaiting_user_and_is_audited(client, db_session):

@@ -33,7 +33,8 @@ from app.models import (
 from app.notification_settings import EMAIL, RAISED_FOR_YOU, is_enabled
 from app.settings_store import TELL_REQUESTER_RAISED_FOR, get_flag
 from app.sla import Level
-from app.ticket_service import EVENT_REQUEST_TYPE, AwaitingApproval, create_ticket, record_event, set_status
+from app.resolution import ResolveError, clean_notes, resolve_ticket
+from app.ticket_service import EVENT_REQUEST_TYPE, create_ticket, record_event
 from app.triage import triage_ticket
 
 AGENT_ROLES = (UserRole.AGENT, UserRole.SUPER_ADMIN)
@@ -90,6 +91,7 @@ def raise_ticket(
     reported_at: Optional[datetime] = None,
     resolved_at: Optional[datetime] = None,
     request_type: Optional[RequestType] = None,
+    resolution_notes: Optional[str] = None,
 ) -> Ticket:
     """Raises a ticket. With for_email an agent raises it on that person's behalf; without,
     the creator raises it for themselves. Only the agent mode can classify, assign or
@@ -134,6 +136,13 @@ def raise_ticket(
         raise RaiseError("Classify the ticket (choose a category) to assign it")
     if resolved_at is not None and category is None:
         raise RaiseError("Classify the ticket (choose a category) before saying when it was resolved")
+    if resolved_at is None and (resolution_notes or "").strip():
+        raise RaiseError("Resolution notes are only for a ticket logged as already resolved: enter the Resolved time too")
+    if resolved_at is not None:
+        try:
+            resolution_notes = clean_notes(resolution_notes)
+        except ResolveError as error:
+            raise RaiseError(str(error))
 
     ticket = create_ticket(
         session, subject=subject, requester_email=requester, source=source,
@@ -166,9 +175,12 @@ def raise_ticket(
         )
     if resolved_at is not None:
         try:
-            set_status(session, ticket, TicketStatus.RESOLVED, creator.email)
-        except AwaitingApproval:
-            raise RaiseError("A request that needs approval cannot be logged as already resolved")
+            # Logged after the fact: the same resolve as at the desk, but nobody is emailed.
+            resolve_ticket(session, ticket, creator, resolution_notes, send_email=False)
+        except ResolveError as error:
+            if ticket.status == TicketStatus.AWAITING_APPROVAL:
+                raise RaiseError("A request that needs approval cannot be logged as already resolved")
+            raise RaiseError(str(error))
     if reported_at is not None or resolved_at is not None:
         try:
             backdate_ticket(session, ticket, creator.email, reported_at=reported_at, resolved_at=resolved_at)

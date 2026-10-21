@@ -254,7 +254,7 @@ def test_a_parent_team_viewer_only_reads_the_sub_team(client, db_session):
     agent_in(client, db_session, viewer_of=[support])
     ticket = make_ticket(db_session, second.id)
     assert client.get(f"/tickets/{ticket.number}").status_code == 200
-    assert client.post(f"/tickets/{ticket.number}/status", data={"status": "resolved"}).status_code == 403
+    assert client.post(f"/tickets/{ticket.number}/resolve", data={"resolution_notes": "Fixed it"}).status_code == 403
 
 
 def test_first_line_escalates_to_second_line_and_keeps_the_ticket(client, db_session):

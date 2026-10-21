@@ -172,7 +172,7 @@ def test_an_untriaged_ticket_cannot_be_split(client, db_session):
 
 def test_a_finished_ticket_cannot_be_split(client, db_session):
     original, _ = world(client, db_session)
-    client.post(f"/tickets/{original.number}/status", data={"status": "resolved"})
+    client.post(f"/tickets/{original.number}/resolve", data={"resolution_notes": "Fixed it"})
     refused(client, db_session, original, [("One", ""), ("Two", "")], "cannot be split")
 
 

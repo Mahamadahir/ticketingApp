@@ -154,14 +154,14 @@ def test_reference_link_respects_team_visibility(client, db_session):
     assert client.get("/t/INC-999").status_code == 404
 
 
-def test_every_status_except_new_and_awaiting_approval_can_be_set(client, db_session):
+def test_every_status_except_new_approval_and_resolved_can_be_set(client, db_session):
     team = create_team(db_session, "Service Desk")
     ticket = make_ticket(db_session, team_id=team.id, triaged=True)
     login_agent(client, db_session, team)
 
     for status in TicketStatus:
-        if status in (TicketStatus.NEW, TicketStatus.AWAITING_APPROVAL):
-            continue  # New is left only by triage; Awaiting approval is entered by triage and left by the approvers
+        if status in (TicketStatus.NEW, TicketStatus.AWAITING_APPROVAL, TicketStatus.RESOLVED):
+            continue  # New is left only by triage; Awaiting approval by the approvers; Resolved by the Resolve action
         assert client.post(f"/tickets/{ticket.number}/status", data={"status": status.value}).status_code == 200
         db_session.refresh(ticket)
         assert ticket.status == status
@@ -188,7 +188,7 @@ def test_resolved_at_set_kept_on_close_and_cleared_on_reopen(client, db_session)
     ticket = make_ticket(db_session, team_id=team.id, triaged=True)
     login_agent(client, db_session, team)
 
-    client.post(f"/tickets/{ticket.number}/status", data={"status": "resolved"})
+    client.post(f"/tickets/{ticket.number}/resolve", data={"resolution_notes": "Fixed it"})
     db_session.refresh(ticket)
     resolved_at = ticket.resolved_at
     assert resolved_at is not None
@@ -277,7 +277,10 @@ def test_email_does_not_undo_a_deliberate_status(client, db_session):
 
     for status in (TicketStatus.AWAITING_USER, TicketStatus.WITH_MSP, TicketStatus.RESOLVED, TicketStatus.CLOSED):
         ticket = make_ticket(db_session, team_id=team.id, triaged=True)
-        client.post(f"/tickets/{ticket.number}/status", data={"status": status.value})
+        if status == TicketStatus.RESOLVED:
+            client.post(f"/tickets/{ticket.number}/resolve", data={"resolution_notes": "Fixed it"})
+        else:
+            client.post(f"/tickets/{ticket.number}/status", data={"status": status.value})
         db_session.refresh(ticket)
         resolved_at = ticket.resolved_at
 

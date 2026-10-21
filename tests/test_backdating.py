@@ -51,7 +51,7 @@ def post(client, ticket, **fields):
 
 
 def resolve(client, ticket):
-    assert client.post(f"/tickets/{ticket.number}/status", data={"status": "resolved"}).status_code == 200
+    assert client.post(f"/tickets/{ticket.number}/resolve", data={"resolution_notes": "Fixed it"}).status_code == 200
 
 
 # ---- The dates ------------------------------------------------------------------------------

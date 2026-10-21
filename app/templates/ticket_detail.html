@@ -138,10 +138,36 @@
   {% if ticket.triaged_at and ticket.status.value != "awaiting_approval" %}
   <form hx-post="/tickets/{{ ticket.number }}/status" hx-target="main" hx-swap="innerHTML">
     {% for s in statuses %}
-    <button type="submit" name="status" value="{{ s.value }}" class="{{ 'button-active' if ticket.status == s else 'button-outline' }}">{{ s.value.replace("_", " ") }}</button>
+    {% if s.value == "resolved" %}<button type="button" disabled class="button-active">resolved</button>{% else %}
+    <button type="submit" name="status" value="{{ s.value }}" class="{{ 'button-active' if ticket.status == s else 'button-outline' }}">{{ s.value.replace("_", " ") }}</button>{% endif %}
     {% endfor %}
   </form>
   {% if status_follows_parts %}<p class="note">This ticket has sub-tickets, so its status follows them. You can resolve or close it once they are all finished.</p>{% endif %}
+  {% if can_resolve %}
+  <details>
+    <summary>Resolve</summary>
+    <form hx-post="/tickets/{{ ticket.number }}/resolve/preview" hx-target="#resolve-preview" hx-swap="innerHTML"
+          hx-on:input="document.getElementById('resolve-preview').innerHTML = ''">
+      <label>Resolution notes (what was done to fix it; they go into the email to the requester)
+        <textarea name="resolution_notes" rows="4" maxlength="{{ max_message_length }}" required></textarea>
+      </label>
+      {% if cc_candidates %}
+      <fieldset>
+        <legend>Copy the resolution email to</legend>
+        <input type="hidden" name="cc_form" value="1" />
+        {% for f in cc_candidates %}
+        <label>
+          <input type="checkbox" name="cc" value="{{ f.email }}" checked {{ "disabled" if f.is_internal else "" }} />
+          {{ f.email }}{% if f.is_internal %} <i>(internal, always copied)</i>{% endif %}
+        </label>
+        {% endfor %}
+      </fieldset>
+      {% endif %}
+      <button type="submit">Preview resolution</button>
+    </form>
+    <div id="resolve-preview"></div>
+  </details>
+  {% endif %}
   {% if all_parts_done %}<p class="note"><b>All sub-tickets are done: resolve this ticket.</b></p>{% endif %}
   {% endif %}
 
@@ -229,6 +255,12 @@
   </details>
 </div>
 {% endif %}
+{% if ticket.resolution_notes and ticket.status.value in ("resolved", "closed") %}
+<h3>Resolution</h3>
+<p class="note">{% if resolved_by %}Resolved by {{ resolved_by.display_name or resolved_by.email }}{% else %}Resolved automatically{% endif %}{% if ticket.resolved_at %} on {{ ticket.resolved_at.strftime("%Y-%m-%d %H:%M") }} UTC{% endif %}{% if ticket.closed_at %}; closed {{ ticket.closed_at.strftime("%Y-%m-%d %H:%M") }} UTC{% endif %}.</p>
+<pre class="message-body">{{ ticket.resolution_notes }}</pre>
+{% endif %}
+
 <h3>Linked tickets</h3>
 {% if parent %}
 <div>Linked to <a href="/tickets/{{ parent.number }}">{{ parent.reference }}</a> {{ parent.subject }}

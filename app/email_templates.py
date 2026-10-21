@@ -92,6 +92,36 @@ REGISTRY: dict[str, TemplateDef] = {
             sample={**_COMMON_SAMPLE, "raised_by": "Alex Agent", "request_text": "The printer shows a paper jam error."},
         ),
         TemplateDef(
+            key="resolution",
+            label="Resolution email",
+            description=(
+                "Sent to the requester, copying the followers, when an agent resolves a ticket. It goes out under the "
+                "ticket's own subject, so a reply still finds the ticket."
+            ),
+            body_default=(
+                "Your ticket {reference} has been resolved.\n\n"
+                "What was done:\n{resolution_notes}\n\n"
+                "If this has not fixed the problem, reply to this email and tell us."
+            ),
+            body_placeholders={**_COMMON, "resolution_notes": "what the agent wrote when resolving the ticket"},
+            required=("resolution_notes",),
+            sample={**_COMMON_SAMPLE, "resolution_notes": "Cleared the paper jam and replaced the roller."},
+        ),
+        TemplateDef(
+            key="auto_resolve_note",
+            label="Automatic resolution note",
+            description=(
+                "The resolution notes written on a ticket that is resolved automatically (no agent resolved it). "
+                "They then go into the resolution email like an agent's notes."
+            ),
+            body_default=(
+                "No reply was received after {days} days, so this ticket has been resolved automatically. "
+                "If you still need help, reply to this email."
+            ),
+            body_placeholders={**_COMMON, "days": "how many days we waited for a reply"},
+            sample={**_COMMON_SAMPLE, "days": "3"},
+        ),
+        TemplateDef(
             key="approval_request",
             label="Approval request",
             description="Sent to each approver of a service request. The link is made when the email is sent.",

@@ -64,7 +64,7 @@ def test_no_access_to_a_ticket_is_a_message_for_htmx_and_the_page_otherwise(clie
     ticket = make_ticket(db_session, other.id)
     agent_for(client, db_session, mine)  # the ticket is Open in another team, so not theirs
 
-    ajax = client.post(f"/tickets/{ticket.number}/status", data={"status": "resolved"}, headers=HTMX)
+    ajax = client.post(f"/tickets/{ticket.number}/resolve", data={"resolution_notes": "Fixed it"}, headers=HTMX)
     assert ajax.status_code == 403 and ajax.headers["HX-Retarget"] == "#flash"
     assert "have access to do that" in ajax.text  # the apostrophe in "don't" is escaped
 
