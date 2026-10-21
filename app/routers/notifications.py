@@ -7,8 +7,8 @@ from sqlmodel import Session, select
 
 from app.auth import require_roles
 from app.database import get_session
-from app.models import Notification, Ticket, User, UserRole
-from app.notifications import AGENT_ROLES, count_unread, mark_all_read, mark_read, visible_to
+from app.models import Notification, User
+from app.notifications import AGENT_ROLES, bell_tickets, count_unread, mark_all_read, mark_read, visible_to
 from app.pagination import paginate
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
@@ -29,8 +29,7 @@ def list_notifications(
         .order_by(Notification.created_at.desc(), Notification.id.desc())
     )
     notifications = paginate(session, query, page, request.query_params)
-    ids = {n.ticket_id for n in notifications.items if n.ticket_id}
-    tickets = {t.id: t for t in session.exec(select(Ticket).where(Ticket.id.in_(ids))).all()} if ids else {}
+    tickets = bell_tickets(session, user, notifications.items)
     return templates.TemplateResponse(
         request,
         "notifications.html",
@@ -68,6 +67,6 @@ def open_notification(
     notification = mark_read(session, user, notification_id)
     if notification is None:
         raise HTTPException(status_code=404, detail="Notification not found")
-    ticket = session.get(Ticket, notification.ticket_id) if notification.ticket_id else None
+    ticket = bell_tickets(session, user, [notification]).get(notification.ticket_id)
     session.commit()
     return RedirectResponse(f"/tickets/{ticket.number}" if ticket else "/notifications", status_code=303)

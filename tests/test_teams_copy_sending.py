@@ -227,6 +227,30 @@ def test_a_post_whose_notification_has_gone_is_unsendable_not_retried(client, db
         teams.CARD_BUILDERS["notification"](db_session, post)
 
 
+def test_a_queued_copy_is_not_sent_once_the_person_can_no_longer_open_the_ticket(client, db_session, on):
+    from tests.test_notifications import agent_in_desk, back_to
+    from tests.test_raising import desk
+    from tests.test_team_activity import classified, ticket_named
+
+    team, category, _ = desk(client, db_session)
+    bob = agent_in_desk(client, db_session, "bob@example.com")
+    back_to(client)
+    classified(client, category, "Secret subject")
+    ticket = ticket_named(db_session, "Secret subject")
+    n = due_notification(db_session, bob, ticket_id=ticket.id)
+    post = teams.queue_notification(db_session, n)
+    db_session.commit()
+    assert teams.CARD_BUILDERS["notification"](db_session, post)
+
+    moved = db_session.get(Ticket, ticket.id)
+    moved.team_id = create_team(db_session, "Network").id
+    db_session.add(moved)
+    db_session.commit()
+
+    with pytest.raises(teams.Unsendable):
+        teams.CARD_BUILDERS["notification"](db_session, post)
+
+
 # ---- Through the shared sender ------------------------------------------------------------------------
 
 

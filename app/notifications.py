@@ -162,11 +162,28 @@ def count_unread(session: Session, user: User) -> int:
     ).one()
 
 
+def bell_tickets(session: Session, user: User, notifications) -> dict[int, Ticket]:
+    """The tickets of these notifications that the user can open, by id. The bell shows a ticket's
+    number or subject only from here, so one they cannot open never reaches a page, even if its
+    notification was read in a moment when they still could."""
+    ids = {n.ticket_id for n in notifications if n.ticket_id}
+    if not ids:
+        return {}
+    query = select(Ticket).where(Ticket.id.in_(ids))
+    visible = visible_ticket_condition(user, access_context(session, user))
+    if visible is not None:  # None: a super admin can open every ticket
+        query = query.where(visible)
+    return {t.id: t for t in session.exec(query).all()}
+
+
 def mark_read(session: Session, user: User, notification_id: int) -> Optional[Notification]:
-    """Marks one of the user's own notifications read. None when it is not theirs."""
-    notification = session.get(Notification, notification_id)
-    if notification is None or notification.user_id != user.id or not notification.bell:
-        return None  # not theirs, or Teams-only (never shown in the bell)
+    """Marks one of the user's own notifications read. None when it is not theirs, is Teams-only,
+    or is about a ticket they can no longer open (the same rows the bell shows, see visible_to)."""
+    notification = session.exec(
+        select(Notification).where(Notification.id == notification_id, visible_to(session, user))
+    ).first()
+    if notification is None:
+        return None
     if notification.read_at is None:
         notification.read_at = datetime.now(timezone.utc)
         session.add(notification)
@@ -174,10 +191,11 @@ def mark_read(session: Session, user: User, notification_id: int) -> Optional[No
 
 
 def mark_all_read(session: Session, user: User) -> int:
-    """Marks all of the user's unread notifications read in one statement. Returns how many."""
+    """Marks all of the user's unread notifications they can see read in one statement. Returns how many.
+    Hidden ones (ticket no longer openable) are left alone, so the count shown matches."""
     result = session.exec(
         update(Notification)
-        .where(Notification.user_id == user.id, Notification.read_at.is_(None))
+        .where(visible_to(session, user), Notification.read_at.is_(None))
         .values(read_at=datetime.now(timezone.utc))
     )
     return result.rowcount
