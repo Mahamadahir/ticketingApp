@@ -759,6 +759,10 @@ requester sees the request name only. Sub-tickets from a split do not inherit th
   days). The email that carries it comes with phase 3; the link, its page and the token are built.
   It is internet-facing, so it belongs with the public routers when `APP_ROLE` splits them.
 - **A super admin can waive** a pending approval (an approver has left); agents cannot.
+- **Handing over and withdrawing (decided 21 Oct 2026, to build with the approvals follow-up, phase 4).** An approver can hand an
+  approval to someone else when they are away, and a requester can withdraw a request while it waits. How handing over works is
+  still open: (a) the approver or a super admin re-assigns that one approval to another eligible approver for that request, audited,
+  no standing delegate accounts (recommended), or (b) standing delegate accounts per approver with a date range.
 - **Not chasing yet.** Approvers who never answer are not chased before phase 3. When mail and
   Teams exist, asking an approver and chasing them go by **email and Teams**, like the other
   notifications; approvals will want a reminder schedule alongside the auto-close timers.
@@ -805,7 +809,7 @@ Automatic emails use admin-managed templates, previewed when edited.
 
 ## Mail (Microsoft Graph)
 
-- Shared mailbox address **TBC**.
+- Shared mailbox address **TBC**, and so are its aliases. The mailbox is not being set up yet. When it is created, the own-mail guard needs the list of aliases (build plan, staging checklist, "Mailbox setup").
 - Webhook plus a delta catch-up poll every 5â€“10 minutes. The webhook stores
   the notification and returns `202` within 3 seconds; the worker fetches
   and processes the message. Graph retries for up to 4 hours, and drops
@@ -1015,6 +1019,9 @@ Automatic emails use admin-managed templates, previewed when edited.
   drops them from any message to a whole team. Nothing sends to a whole team yet (the team an escalation lands in and the agent
   a team change unassigns are still not notified), so that helper is the hook for those. A notification meant for one person
   (assigned, mentioned) still reaches them. Tested with simulated Graph responses; real Graph is a staging check.
+  *Planned (decided 21 Oct 2026, a small PR):* add `User.last_presence_lookup_at`. A user whose directory lookup failed or found nobody
+  is skipped until a retry interval setting (TBC) has passed, instead of being retried every 15 minutes. Also consider an `is_active`
+  flag on users so inactive agents are not polled at all.
 
 ## Admin portal
 
