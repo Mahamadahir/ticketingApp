@@ -14,7 +14,10 @@ Two jobs in the worker, both safe to run late, twice, or from two processes at o
 2. The catch-up (`catch_up`). A webhook can be missed (the public app was down, Microsoft gave up after
    its retries). A delta query on the inbox returns every message that arrived or changed since the
    last run; the `deltaLink` Graph hands back is stored in `MailSyncState` so the next run starts there.
-   The first run looks back MAIL_BACKFILL_DAYS. The ids it finds go to the *mail intake*.
+   The very first run does not look back: it asks Graph for the delta from "now" to its end to get a
+   deltaLink, hands nothing over and records that starting point in `MailSyncState`, so mail already in
+   the inbox is never imported. Only when Graph forgets the link (410) does a run restart from the
+   MAIL_BACKFILL_DAYS window. The ids it finds go to the *mail intake*.
 
 The seam with inbound mail (3B): `MailIntake` is any function `(session, message_ids, source) -> count of
 newly handed over`. The default, `record_for_processing`, writes a `GraphNotification` row (the same
@@ -319,7 +322,7 @@ def mail_folder() -> str:
 
 def catch_up(session: Session, graph=None, intake: Optional[MailIntake] = None, now: Optional[datetime] = None) -> int:
     """One catch-up run: asks Graph for the inbox messages that changed since the stored deltaLink
-    (or, the first time, in the last MAIL_BACKFILL_DAYS), hands their ids to the intake, and stores the
+    (the first time ever: from now, handing nothing over), hands their ids to the intake, and stores the
     new link. Returns how many ids were new. The stored link moves only together with the ids handed
     over, in one transaction (the worker's commit), so a failure re-reads rather than loses. Does not
     commit. A run that hits MAX_PAGES_PER_RUN stores where it got to and carries on next time."""
@@ -347,8 +350,11 @@ def catch_up(session: Session, graph=None, intake: Optional[MailIntake] = None, 
 
 
 def _sync_pages(session: Session, graph, intake: MailIntake, state: MailSyncState, now: datetime) -> int:
-    since = now - timedelta(days=_minutes_setting(session, MAIL_BACKFILL_DAYS))
     link = state.resume_link or state.delta_link
+    first_ever = link is None and state.starting_point_at is None
+    since = state.starting_point_at
+    if first_ever:
+        since = state.starting_point_at = now  # the starting point: existing mail is not imported
     handed = 0
     restarted = False
     for _ in range(MAX_PAGES_PER_RUN):
@@ -360,13 +366,15 @@ def _sync_pages(session: Session, graph, intake: MailIntake, state: MailSyncStat
             if error.response.status_code != 410 or link is None or restarted:
                 raise
             state.delta_link = state.resume_link = link = None
+            since = state.starting_point_at = now - timedelta(days=_minutes_setting(session, MAIL_BACKFILL_DAYS))
             restarted = True
             continue
         ids = [
             item["id"] for item in page.get("value", [])
             if isinstance(item, dict) and item.get("id") and "@removed" not in item
         ]
-        handed += intake(session, ids, "catch-up")
+        if not first_ever:
+            handed += intake(session, ids, "catch-up")
         next_link, delta_link = page.get("@odata.nextLink"), page.get("@odata.deltaLink")
         if next_link:
             state.resume_link = link = next_link

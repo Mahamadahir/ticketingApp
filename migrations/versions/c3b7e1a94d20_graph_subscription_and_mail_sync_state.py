@@ -41,6 +41,7 @@ def upgrade() -> None:
     sa.Column('folder', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('delta_link', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
     sa.Column('resume_link', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+    sa.Column('starting_point_at', sqlmodel.sql.sqltypes.UTCDateTime(), nullable=True),
     sa.Column('last_synced_at', sqlmodel.sql.sqltypes.UTCDateTime(), nullable=True),
     sa.Column('last_handed_over', sa.Integer(), server_default='0', nullable=False),
     sa.Column('last_error', sqlmodel.sql.sqltypes.AutoString(), nullable=True),

@@ -146,11 +146,12 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     MAIL_BACKFILL_DAYS: SettingDef(
         key=MAIL_BACKFILL_DAYS,
-        label="Mail catch-up: how many days back the first sync looks",
+        label="Mail catch-up: how many days back a restarted sync looks",
         kind="count",
         description=(
-            "The first catch-up sync (or one restarted after Microsoft discarded its place) collects mail "
-            "received in this many days. Later runs carry on from where the last one stopped, however long "
+            "Used only when Microsoft has discarded the catch-up's place and it must start again: it then "
+            "collects mail received in this many days. The very first run never looks back (mail already in "
+            "the inbox is not imported); later runs carry on from where the last one stopped, however long "
             "ago that was. Mail already collected is never collected twice."
         ),
         default="3",

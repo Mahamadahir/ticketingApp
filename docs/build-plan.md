@@ -130,8 +130,9 @@ notification settings that 2B stores and nothing yet sends. The Graph client in 
   (and the Graph message id) as the backstop, and the second row simply marked processed.
 - Switches (worker env, all off by default): `GRAPH_SUBSCRIPTION_ENABLED` + `GRAPH_NOTIFICATION_URL` (public https address of the
   webhook, also the lifecycle address), `MAIL_CATCH_UP_ENABLED` (polling only, needs no public URL). Settings: subscription lifetime
-  (10000 min, capped at 10070), renew margin (1440 min), backfill days (3). The first catch-up collects the last 3 days of the inbox,
-  including mail that is already read. `/health` stays 200 and adds `warnings` when the subscription is near expiry, expired, or a
+  (10000 min, capped at 10070), renew margin (1440 min), backfill days (3). The very first catch-up run does not look back: it takes the delta from now to its end,
+  stores the deltaLink and the starting point (`MailSyncState.starting_point_at`) and hands nothing over, so existing inbox mail is
+  never imported. Backfill days apply only to a restart after Graph answers 410. `/health` stays 200 and adds `warnings` when the subscription is near expiry, expired, or a
   check failed. 3F: pass the three env vars to the worker (Bicep not touched here).
 
 ## Working agreement for every PR

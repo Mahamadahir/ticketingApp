@@ -483,41 +483,53 @@ def notified(db_session):
     return db_session.exec(select(GraphNotification).order_by(GraphNotification.id)).all()
 
 
-def test_the_first_catch_up_looks_back_the_backfill_window_and_stores_the_delta_link(db_session, mail):
-    mail.pages = [page(["a", "b"], delta=GRAPH_URL + "?$deltatoken=1")]
+def baseline(db_session, mail, now=NOW):
+    """The very first run, which only takes the starting point. Later runs are the ones that hand mail over."""
+    mail.pages = [page([], delta="base")]
+    assert catch_up(db_session, mail, now=now) == 0
+    db_session.commit()
+    mail.delta_requests.clear()
+
+
+def test_the_first_catch_up_hands_over_nothing_and_stores_the_delta_link_and_starting_point(db_session, mail):
+    # Mail already in the inbox (Graph may list it) is not imported.
+    mail.pages = [page(["old1", "old2"], delta=GRAPH_URL + "?$deltatoken=1")]
 
     handed = catch_up(db_session, mail, now=NOW)
     db_session.commit()
 
-    assert handed == 2
-    assert mail.delta_requests == [(None, NOW - timedelta(days=3))]
+    assert handed == 0
+    assert mail.delta_requests == [(None, NOW)]  # from now, not a look-back
     state = sync_state(db_session)
     assert state.delta_link == GRAPH_URL + "?$deltatoken=1" and state.last_synced_at == NOW
-    assert [n.resource_id for n in notified(db_session)] == ["a", "b"]
-    assert notified(db_session)[0].resource == "users/support@example.org/messages/a"
+    assert state.starting_point_at == NOW and state.last_handed_over == 0
+    assert notified(db_session) == []
 
 
-def test_the_backfill_window_is_a_setting(db_session, mail):
+def test_the_first_run_ignores_the_backfill_window_setting(db_session, mail):
     set_minutes(db_session, MAIL_BACKFILL_DAYS, 10)
     mail.pages = [page([], delta="d")]
     catch_up(db_session, mail, now=NOW)
-    assert mail.delta_requests == [(None, NOW - timedelta(days=10))]
+    assert mail.delta_requests == [(None, NOW)]
 
 
-def test_later_runs_start_from_the_stored_delta_link(db_session, mail):
-    mail.pages = [page(["a"], delta=GRAPH_URL + "?$deltatoken=1")]
+def test_later_runs_hand_over_only_new_mail_from_the_stored_delta_link(db_session, mail):
+    mail.pages = [page(["old"], delta=GRAPH_URL + "?$deltatoken=1")]
     catch_up(db_session, mail, now=NOW)
     db_session.commit()
 
     mail.pages = [page(["b"], delta=GRAPH_URL + "?$deltatoken=2")]
-    catch_up(db_session, mail, now=NOW + timedelta(minutes=5))
+    assert catch_up(db_session, mail, now=NOW + timedelta(minutes=5)) == 1
     db_session.commit()
 
     assert mail.delta_requests[1] == (GRAPH_URL + "?$deltatoken=1", None)
     assert sync_state(db_session).delta_link == GRAPH_URL + "?$deltatoken=2"
+    assert [n.resource_id for n in notified(db_session)] == ["b"]
+    assert sync_state(db_session).starting_point_at == NOW  # the starting point is never moved by later runs
 
 
 def test_catching_up_twice_over_the_same_mail_hands_over_nothing_new(db_session, mail):
+    baseline(db_session, mail)
     mail.pages = [page(["a", "b"], delta="d1")]
     assert catch_up(db_session, mail, now=NOW) == 2
     db_session.commit()
@@ -528,6 +540,7 @@ def test_catching_up_twice_over_the_same_mail_hands_over_nothing_new(db_session,
 
 
 def test_mail_the_webhook_already_delivered_is_not_handed_over_again(db_session, mail):
+    baseline(db_session, mail)
     db_session.add(GraphNotification(change_type="created", resource_id="seen", processed_at=NOW))
     db_session.commit()
     mail.pages = [page(["seen", "new"], delta="d")]
@@ -537,17 +550,20 @@ def test_mail_the_webhook_already_delivered_is_not_handed_over_again(db_session,
 
 
 def test_a_repeated_id_in_one_run_is_handed_over_once(db_session, mail):
+    baseline(db_session, mail)
     mail.pages = [page(["a", "a"], next_link=GRAPH_URL + "?$skiptoken=1"), page(["a"], delta="d")]
     assert catch_up(db_session, mail, now=NOW) == 1
 
 
 def test_deleted_messages_are_not_handed_over(db_session, mail):
+    baseline(db_session, mail)
     mail.pages = [{"value": [{"id": "gone", "@removed": {"reason": "deleted"}}, {"id": "kept"}], "@odata.deltaLink": "d"}]
     catch_up(db_session, mail, now=NOW)
     assert [n.resource_id for n in notified(db_session)] == ["kept"]
 
 
 def test_every_page_is_followed_before_the_delta_link_is_stored(db_session, mail):
+    baseline(db_session, mail)
     mail.pages = [
         page(["a"], next_link=GRAPH_URL + "?$skiptoken=1"),
         page(["b"], next_link=GRAPH_URL + "?$skiptoken=2"),
@@ -555,7 +571,7 @@ def test_every_page_is_followed_before_the_delta_link_is_stored(db_session, mail
     ]
     assert catch_up(db_session, mail, now=NOW) == 3
     db_session.commit()
-    assert [r[0] for r in mail.delta_requests] == [None, GRAPH_URL + "?$skiptoken=1", GRAPH_URL + "?$skiptoken=2"]
+    assert [r[0] for r in mail.delta_requests] == ["base", GRAPH_URL + "?$skiptoken=1", GRAPH_URL + "?$skiptoken=2"]
     state = sync_state(db_session)
     assert state.delta_link == "final" and state.resume_link is None
 
@@ -577,8 +593,9 @@ def test_a_long_run_is_cut_short_and_resumes_where_it_stopped(db_session, mail):
 
 
 def test_a_failure_keeps_the_old_delta_link_and_the_ids_are_found_next_time(db_session, mail):
+    baseline(db_session, mail)
     mail.pages = [page(["a"], delta="d1")]
-    catch_up(db_session, mail, now=NOW)
+    assert catch_up(db_session, mail, now=NOW) == 1
     db_session.commit()
 
     mail.pages = [page(["b"], next_link=GRAPH_URL + "?$skiptoken=1")]
@@ -608,8 +625,9 @@ def test_a_failure_keeps_the_old_delta_link_and_the_ids_are_found_next_time(db_s
 
 def test_graph_forgetting_our_place_restarts_from_the_backfill_window(db_session, mail):
     mail.pages = [page(["a"], delta="stale-link")]
-    catch_up(db_session, mail, now=NOW)
+    catch_up(db_session, mail, now=NOW)  # the first run: takes the starting point, "a" is not imported
     db_session.commit()
+    assert notified(db_session) == []
 
     served = [http_error(410, "syncStateNotFound"), page(["a", "b"], delta="fresh")]
 
@@ -622,8 +640,9 @@ def test_graph_forgetting_our_place_restarts_from_the_backfill_window(db_session
 
     mail.inbox_delta_page = gone_then_fresh
     later = NOW + timedelta(days=30)
-    assert catch_up(db_session, mail, now=later) == 1  # "a" was collected before
+    assert catch_up(db_session, mail, now=later) == 2  # the restart looks back, so "a" is collected now
     db_session.commit()
+    assert sync_state(db_session).starting_point_at == later - timedelta(days=3)
     assert mail.delta_requests[-2:] == [("stale-link", None), (None, later - timedelta(days=3))]
     assert sync_state(db_session).delta_link == "fresh"
 
@@ -636,6 +655,7 @@ def test_a_page_with_no_links_is_an_error_not_a_silent_stop(db_session, mail):
 
 
 def test_a_replacement_intake_receives_the_ids_and_source(db_session, mail):
+    baseline(db_session, mail)
     calls = []
 
     def intake(session, ids, source):
@@ -687,6 +707,7 @@ def test_a_lifecycle_catch_up_request_runs_the_catch_up_too(db_session, mail, mo
     monkeypatch.setattr(subscriptions, "_graph", lambda graph=None: mail)
     graph_subscription(db_session)
     db_session.commit()
+    baseline(db_session, mail)
     mail.pages = [page(["lost"], delta="d")]
     lifecycle(db_session, "missed", row(db_session).subscription_id)
 

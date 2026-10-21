@@ -506,6 +506,10 @@ class MailSyncState(SQLModel, table=True):
     folder: str = Field(unique=True)  # e.g. users/<mailbox>/mailFolders/inbox
     delta_link: Optional[str] = Field(default=None)
     resume_link: Optional[str] = Field(default=None)
+    # Where this folder's mail starts counting: set to "now" by the very first run (which hands nothing
+    # over, so existing inbox mail is never imported), or to the start of the backfill window when
+    # Graph forgot our place. None means no run has started yet.
+    starting_point_at: Optional[datetime] = Field(default=None)
     last_synced_at: Optional[datetime] = Field(default=None)
     last_handed_over: int = Field(default=0, sa_column_kwargs={"server_default": "0"})  # new ids at the last run
     last_error: Optional[str] = Field(default=None)
