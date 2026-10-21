@@ -104,6 +104,26 @@ REGISTRY: dict[str, TemplateDef] = {
             sample={"reference": "INC-1042", "ticket_number": "1042"},
         ),
         TemplateDef(
+            key="follower_update",
+            label="Follower update",
+            description=(
+                "Sent to each follower (and the requester, when a follower wrote it) who was not already sent an update "
+                "that someone emailed or commented on a ticket. It goes out under the ticket's own subject, so a reply "
+                "still finds the ticket."
+            ),
+            body_default=(
+                "{sender} has added an update to {reference} ({subject}):\n\n{message_text}\n\n"
+                "You are receiving this because you follow this ticket. Reply to this email to add to it."
+            ),
+            body_placeholders={
+                **_COMMON,
+                "sender": "who wrote the update",
+                "message_text": "what they wrote",
+            },
+            required=("message_text",),
+            sample={**_COMMON_SAMPLE, "sender": "sam@example.com", "message_text": "It is still jamming after the restart."},
+        ),
+        TemplateDef(
             key="resolution",
             label="Resolution email",
             description=(

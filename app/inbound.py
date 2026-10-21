@@ -31,7 +31,8 @@ Rules that live here and nowhere else:
   and its status effect is the portal's (`apply_requester_reply`). A reply on a Resolved or Closed
   ticket is only recorded here; reopening is phase 4. Who can see the ticket is app/visibility.py's
   business, not this module's: it never decides access.
-- The people copied on the mail that opens a ticket become its followers (app/followers.py).
+- The people copied on the mail that opens a ticket become its followers (app/followers.py). A reply
+  is passed on to the followers who were not on its To or Cc (app/follower_updates.py).
 - Files go through `store_attachment` (app/attachments.py), the only place a file is checked. A file
   that is refused, too large or beyond the limit leaves an event on the ticket, never an error.
 """
@@ -51,7 +52,16 @@ from app.attachments import AttachmentRejected, clean_filename, store_attachment
 from app.audit import log_action
 from app.config import settings
 from app.settings_store import INBOUND_MAX_ATTACHMENTS, INBOUND_MAX_CC, INBOUND_MAX_PER_SENDER_HOUR, count_setting
-from app.followers import InvalidEmail, NeverFollowListed, TooManyFollowers, add_follower, is_follower, normalise_email
+from app.follower_updates import queue_follower_updates
+from app.followers import (
+    InvalidEmail,
+    NeverFollowListed,
+    TooManyFollowers,
+    add_follower,
+    bare_address,
+    is_follower,
+    normalise_email,
+)
 from app.forms import MAX_MESSAGE_LENGTH
 from app.graph_client import graph_client
 from app.mail import describe_failure
@@ -96,6 +106,7 @@ BATCH = 25
 NO_SUBJECT = "(no subject)"
 NO_TEXT = "(no message text)"
 CUT = "\n\n[cut short]"
+MAX_STORED_RECIPIENTS = 100  # of each of To and Cc kept on the record of a mail
 MAX_ID = 998  # a Message-ID header is at most a line long
 
 # Headers whose presence marks a machine-made mail. A value of "no" for Auto-Submitted means a person.
@@ -128,6 +139,7 @@ class IncomingMail:
     internet_message_id: Optional[str] = None  # normalised, see _message_id
     conversation_id: Optional[str] = None
     cc: list[str] = field(default_factory=list)
+    to: list[str] = field(default_factory=list)  # with cc: who the mail was sent to, so who already has it
     headers: dict[str, str] = field(default_factory=dict)  # names lower case
     in_reply_to: list[str] = field(default_factory=list)  # normalised Message-IDs, nearest first
     is_draft: bool = False
@@ -170,7 +182,7 @@ def _message_id(value) -> Optional[str]:
 
 def _address(entry) -> str:
     address = entry.get("emailAddress", {}).get("address") if isinstance(entry, dict) else None
-    return address.strip().lower() if isinstance(address, str) else ""
+    return bare_address(address) if isinstance(address, str) else ""  # never a display name, whatever Graph sent
 
 
 def parse_graph_message(raw: dict) -> IncomingMail:
@@ -196,6 +208,7 @@ def parse_graph_message(raw: dict) -> IncomingMail:
         internet_message_id=_message_id(raw.get("internetMessageId")),
         conversation_id=_text(raw.get("conversationId")) or None,
         cc=[a for a in (_address(e) for e in raw.get("ccRecipients") or []) if a],
+        to=[a for a in (_address(e) for e in raw.get("toRecipients") or []) if a],
         headers=headers,
         in_reply_to=[m for m in (_message_id(r) for r in references) if m],
         is_draft=bool(raw.get("isDraft")),
@@ -387,6 +400,8 @@ def _claim(session: Session, mail: IncomingMail) -> Optional[InboundMail]:
         internet_message_id=mail.internet_message_id,
         conversation_id=mail.conversation_id[:MAX_ID] if mail.conversation_id else None,
         sender=mail.sender[:254] or None,
+        to_addresses=", ".join(mail.to[:MAX_STORED_RECIPIENTS]) or None,
+        cc_addresses=", ".join(mail.cc[:MAX_STORED_RECIPIENTS]) or None,
         outcome="processing",
     )
     try:
@@ -450,6 +465,9 @@ def ingest_mail(
         if moved:
             log_action(session, sender, "ticket", ticket.id, "status_changed", f"{moved[0]} -> {moved[1]}")
         _store_files(session, storage, ticket, message, files)
+        # Whoever follows the ticket and was not on this mail hears of it (the sender and those on
+        # the mail already have it).
+        queue_follower_updates(session, ticket, message, sender, copied=mail.to + mail.cc)
         return settle(REPLY_ADDED, ticket, message)
 
     new = create_ticket(session, subject=_subject_of(mail), requester_email=sender, source=TicketSource.EMAIL)

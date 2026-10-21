@@ -53,7 +53,7 @@ def test_a_requester_sees_only_their_own_events_and_must_be_signed_in(client, db
 def test_saving_stores_only_what_differs_from_the_default_and_audits_it(client, db_session):
     desk(client, db_session)
     # Everything ticked but the bell for assignments, and Teams for mentions.
-    response = save(client, "assigned:teams", "mentioned:in_app", "replied:in_app", "replied:teams", "raised_for_you:email")
+    response = save(client, "assigned:teams", "mentioned:in_app", "replied:in_app", "replied:teams", "raised_for_you:email", "follower_update:email")
     assert response.status_code == 303
     assert preferences_of(db_session, "agent@example.com") == {
         ("assigned", IN_APP): False,
@@ -64,7 +64,7 @@ def test_saving_stores_only_what_differs_from_the_default_and_audits_it(client, 
     assert "assigned/in_app off" in entry.detail and "mentioned/teams off" in entry.detail
 
     # Ticking them again goes back to the default, and the rows go.
-    save(client, "assigned:in_app", "assigned:teams", "mentioned:in_app", "mentioned:teams", "replied:in_app", "replied:teams", "raised_for_you:email")
+    save(client, "assigned:in_app", "assigned:teams", "mentioned:in_app", "mentioned:teams", "replied:in_app", "replied:teams", "raised_for_you:email", "follower_update:email")
     assert preferences_of(db_session, "agent@example.com") == {}
 
 
@@ -78,11 +78,11 @@ def test_saving_the_same_thing_twice_changes_and_audits_nothing_the_second_time(
 
 def test_a_requester_cannot_set_an_agent_event_and_nobody_sets_someone_elses(client, db_session):
     login_as(client, "jane@example.com", "Jane")
-    save(client, "assigned:in_app", "mentioned:teams", "raised_for_you:in_app", "raised_for_you:email")
+    save(client, "assigned:in_app", "mentioned:teams", "raised_for_you:in_app", "raised_for_you:email", "follower_update:email")
     assert preferences_of(db_session, "jane@example.com") == {}  # nothing unknown stored; email is the default
 
     desk(client, db_session)
-    save(client, "mentioned:in_app", "mentioned:teams", "replied:in_app", "replied:teams", "raised_for_you:email")
+    save(client, "mentioned:in_app", "mentioned:teams", "replied:in_app", "replied:teams", "raised_for_you:email", "follower_update:email")
     assert preferences_of(db_session, "jane@example.com") == {}
     assert preferences_of(db_session, "agent@example.com") == {("assigned", IN_APP): False, ("assigned", TEAMS): False}
 
@@ -127,6 +127,6 @@ def test_a_person_can_opt_out_of_the_raised_for_you_email(client, db_session):
     assert should_tell_requester(db_session, "Nobody@example.com") is True  # no account: the global switch decides
     save(client)  # the email box unticked
     db_session.expire_all()
-    assert preferences_of(db_session, "jane@example.com") == {("raised_for_you", EMAIL): False}
+    assert preferences_of(db_session, "jane@example.com") == {("raised_for_you", EMAIL): False, ("follower_update", EMAIL): False}
     assert should_tell_requester(db_session, " JANE@example.com ") is False
     assert should_tell_requester(db_session) is True  # without an address, only the global switch

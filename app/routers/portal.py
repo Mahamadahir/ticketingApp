@@ -43,6 +43,7 @@ from app.sla import IMPACT_LABELS, URGENCY_LABELS, Level
 from app.triage import TriageError
 from app.visibility import Access, access_context, ticket_access
 from app.messages import about_labels, record_inbound, requester_visible_messages
+from app.follower_updates import queue_follower_updates
 from app.splitting import apply_requester_reply
 from app.request_types import active_request_types, request_type_of
 from app.models import Category, RequestType, Ticket, TicketSource, TicketStatus, TicketType, User, UserRole
@@ -299,8 +300,9 @@ def add_comment(
 ):
     ticket = _get_commentable_ticket(session, number, user)
 
-    record_inbound(session, ticket, sender=user.display_name, body=body, author_user_id=user.id, reply_by=user.email)
+    message = record_inbound(session, ticket, sender=user.display_name, body=body, author_user_id=user.id, reply_by=user.email)
     log_action(session, user.email, "ticket", ticket.id, "commented", body[:200])
+    queue_follower_updates(session, ticket, message, user.email)  # nobody was sent a portal comment
     moved = apply_requester_reply(session, ticket, user.email)
     if moved:
         log_action(session, user.email, "ticket", ticket.id, "status_changed", f"{moved[0]} -> {moved[1]}")

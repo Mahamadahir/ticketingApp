@@ -12,11 +12,13 @@ sender will use, and each outgoing message records it.
 """
 
 import re
-from typing import Optional
+from email.utils import parseaddr
+from typing import Iterable, Optional
 
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, func, select
 
+from app.config import settings
 from app.models import Ticket, TicketFollower, User
 from app.never_follow import is_listed, listed_among
 from app.ticket_service import record_event
@@ -160,14 +162,45 @@ def remove_follower(session: Session, ticket: Ticket, follower_id: int, removed_
     return email
 
 
-def cc_list(session: Session, ticket: Ticket) -> list[str]:
-    """Who is copied on an outgoing email: every follower except the requester,
-    who is the recipient (an agent who raised the ticket can be an internal
-    follower and must not be copied on their own email) and any never-follow address."""
+def copyable_followers(session: Session, ticket: Ticket) -> list[TicketFollower]:
+    """The followers an outgoing email may copy: everyone except the requester, who is the
+    recipient (an agent who raised the ticket can be an internal follower and must not be copied on
+    their own email), and any never-follow address. An address listed after it became a follower
+    stays on the ticket but is never copied. The one rule behind cc_list and the tick list of
+    app/messages.py."""
     requester = ticket.requester_email.lower()
-    # An address listed after it became a follower stays on the ticket but is never copied.
-    blocked = listed_among(session, [f.email for f in followers_of(session, ticket)])
-    return [f.email for f in followers_of(session, ticket) if f.email != requester and f.email not in blocked]
+    followers = followers_of(session, ticket)
+    blocked = listed_among(session, [f.email for f in followers])
+    return [f for f in followers if f.email != requester and f.email not in blocked]
+
+
+def cc_list(session: Session, ticket: Ticket) -> list[str]:
+    """Who is copied on an outgoing email (see copyable_followers)."""
+    return [f.email for f in copyable_followers(session, ticket)]
+
+
+def bare_address(raw: str) -> str:
+    """An address as compared: lower case, without a display name or angle brackets
+    ('Pat Smith <Pat@X.org>' and 'pat@x.org' are the same person)."""
+    raw = raw.strip()
+    if "<" in raw:
+        raw = parseaddr(raw)[1]
+    return raw.strip().lower()
+
+
+def uncopied_recipients(session: Session, ticket: Ticket, sender: str, copied: Iterable[str] = ()) -> list[str]:
+    """Who is to be told about an update the sender made to this ticket, because they were not already
+    sent it: the email followers (internal ones are agents, told in the app) and, when the sender is not
+    the requester, the requester. Never the sender, anyone in `copied` (the To and Cc of the mail, if it
+    was one), the shared mailbox or a never-follow address. In order, once each."""
+    sender = bare_address(sender)
+    skip = {sender, settings.graph_shared_mailbox.strip().lower()} | {bare_address(a) for a in copied}
+    requester = ticket.requester_email.lower()
+    candidates = [requester] if sender != requester else []
+    candidates += [f.email for f in followers_of(session, ticket) if not f.is_internal]
+    wanted = [a for a in dict.fromkeys(candidates) if a and a not in skip]
+    blocked = listed_among(session, wanted)
+    return [a for a in wanted if a not in blocked]
 
 
 def is_follower(session: Session, ticket: Ticket, email: str, *, include_internal: bool = True) -> bool:

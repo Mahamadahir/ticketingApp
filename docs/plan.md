@@ -482,6 +482,10 @@ without anyone remembering to set it by hand.
   so a message never reopens a ticket. *Built (4B-5):* `app/messages.py` decides the offered
   statuses and defaults, the route applies the choice through `set_status`, and the preview step
   (1G-ii) shows the chosen status.
+- **Followers hear of updates they were not sent.** When the requester or a follower updates a ticket by email or portal
+  comment, every other external follower (and the requester, when a follower wrote) who was not on that mail's To or Cc gets one
+  automatic email, admin template `follower_update`, requester-visible text only, subject to the automatic-email cap and each
+  person's email preference. *Built (4B-6):* `app/follower_updates.py`, `followers.uncopied_recipients`.
 - **The user replies.** When the requester, or a follower, replies while the ticket
   is Awaiting user, it moves back to In progress automatically and the SLA clock
   resumes. This covers portal comments now and email replies once mail intake
