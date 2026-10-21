@@ -11,7 +11,7 @@
 <div class="ticket-cards">
   {% for ticket in page.items %}
   <a class="ticket-card" href="/portal/{{ ticket.number }}">
-    <div class="ticket-card-subject">{{ ticket.reference }} {{ ticket.subject }}</div>
+    <div class="ticket-card-subject">{{ ticket.reference }} {{ ticket.subject }}{% if ticket.requester_email.strip().lower() not in my_emails %} <span class="note">(following)</span>{% endif %}</div>
     <span class="status status-{{ ticket.status.value }}">{{ ticket.status.value.replace("_", " ") }}</span>
     <div class="ticket-card-updated">Updated {{ ticket.updated_at.strftime("%Y-%m-%d %H:%M") }}</div>
   </a>
@@ -19,18 +19,6 @@
 </div>
 
 {% include "_pagination.html" %}
+<p class="note">Requests marked as following were raised by someone else who copied you in. You can read them and reply, but not manage them.</p>
 
-{% if following %}
-<h2>Following</h2>
-<p class="note">Requests raised by other people that you are copied on. You can read these but not reply.</p>
-<div class="ticket-cards">
-  {% for ticket in following %}
-  <a class="ticket-card" href="/portal/{{ ticket.number }}">
-    <div class="ticket-card-subject">{{ ticket.reference }} {{ ticket.subject }}</div>
-    <span class="status status-{{ ticket.status.value }}">{{ ticket.status.value.replace("_", " ") }}</span>
-    <div class="ticket-card-updated">Updated {{ ticket.updated_at.strftime("%Y-%m-%d %H:%M") }}</div>
-  </a>
-  {% endfor %}
-</div>
-{% endif %}
 {% endblock %}

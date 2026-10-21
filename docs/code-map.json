@@ -532,8 +532,7 @@
         "followers_of",
         "is_follower",
         "normalise_email",
-        "remove_follower",
-        "tickets_followed_by"
+        "remove_follower"
       ],
       "imported_by": [
         "app.escalation",
@@ -608,6 +607,29 @@
         "tests/test_mail_subscriptions.py",
         "tests/test_outbound_mail.py",
         "tests/test_presence.py"
+      ]
+    },
+    {
+      "classes": [],
+      "file": "app/identity.py",
+      "functions": [
+        "is_follower_of",
+        "is_requester",
+        "my_tickets_query",
+        "requester_emails"
+      ],
+      "imported_by": [
+        "app.routers.portal"
+      ],
+      "imports": [
+        "app.models"
+      ],
+      "module": "app.identity",
+      "routes": [],
+      "summary": "Which tickets a signed-in person counts as their own in the portal.",
+      "tables": [],
+      "tests": [
+        "tests/test_portal.py"
       ]
     },
     {
@@ -947,6 +969,7 @@
         "app.categories",
         "app.escalation",
         "app.followers",
+        "app.identity",
         "app.inbound",
         "app.linking",
         "app.mail",
@@ -1885,6 +1908,7 @@
         "app.database",
         "app.followers",
         "app.forms",
+        "app.identity",
         "app.messages",
         "app.models",
         "app.pagination",
@@ -2535,6 +2559,7 @@
       "tests": [
         "tests/test_category_admin.py",
         "tests/test_email_preview.py",
+        "tests/test_portal.py",
         "tests/test_reply_notification.py",
         "tests/test_split_family.py",
         "tests/test_teams.py",
@@ -2697,13 +2722,6 @@
         "detail": "select(Ticket) in a route",
         "file": "app/routers/admin.py",
         "in": "view_outbound_mail",
-        "rule": "access-in-visibility"
-      },
-      {
-        "allowed": "My tickets in the portal is the requester's own tickets (requester_email equals the signed-in user); agent access rules do not apply to it.",
-        "detail": "select(Ticket) in a route",
-        "file": "app/routers/portal.py",
-        "in": "list_my_tickets",
         "rule": "access-in-visibility"
       },
       {

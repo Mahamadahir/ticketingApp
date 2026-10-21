@@ -273,7 +273,7 @@ def test_a_follower_with_an_account_can_read_and_reply_but_not_manage_the_ticket
 
     login_as(client, "boss@example.org")
     listing = client.get("/portal").text
-    assert "Following" in listing and ticket.reference in listing
+    assert "(following)" in listing and ticket.reference in listing
 
     page = client.get(f"/portal/{ticket.number}")
     assert page.status_code == 200
@@ -311,14 +311,14 @@ def test_removing_a_follower_removes_their_portal_access(client, db_session):
 
     login_as(client, "boss@example.org")
     assert client.get(f"/portal/{ticket.number}").status_code == 404
-    assert "Following" not in client.get("/portal").text
+    assert "(following)" not in client.get("/portal").text
 
 
 def test_strangers_and_the_requesters_own_tickets_are_not_in_following(client, db_session):
     ticket = make_ticket(db_session, requester="me@example.com")
     login_as(client, "stranger@example.org")
     assert client.get(f"/portal/{ticket.number}").status_code == 404
-    assert "Following" not in client.get("/portal").text
+    assert "(following)" not in client.get("/portal").text
     client.post("/auth/logout")
 
     # A follower row for the requester's own address is never created, and if one
@@ -327,7 +327,7 @@ def test_strangers_and_the_requesters_own_tickets_are_not_in_following(client, d
     db_session.commit()
     login_as(client, "me@example.com")
     listing = client.get("/portal").text
-    assert "Following" not in listing and listing.count(ticket.reference) == 1
+    assert "(following)" not in listing and listing.count(ticket.reference) == 1
 
 
 def test_internal_followers_are_not_shown_to_the_requester(client, db_session):
@@ -377,7 +377,7 @@ def test_promoting_an_existing_follower_to_internal_is_recorded_and_keeps_portal
         select(TicketEvent).where(TicketEvent.event_type == "follower_added", TicketEvent.detail == "internal")
     ).all()
     assert len(promoted) == 1
-    assert ticket.reference in client.get("/portal").text  # still listed under Following
+    assert ticket.reference in client.get("/portal").text  # still listed as following
 
 
 def test_a_follower_cannot_see_who_else_is_copied(client, db_session):

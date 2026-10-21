@@ -112,7 +112,7 @@ def create_ticket(
         team_id = get_int_setting(session, DEFAULT_TRIAGE_TEAM)
     ticket = Ticket(
         subject=subject,
-        requester_email=requester_email,
+        requester_email=requester_email.strip().lower(),
         source=source,
         type=ticket_type,
         team_id=team_id,

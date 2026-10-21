@@ -14,9 +14,7 @@ from app.followers import (
     TooManyFollowers,
     add_follower,
     followers_of,
-    is_follower,
     remove_follower,
-    tickets_followed_by,
 )
 from app.approvals import (
     MAX_COMMENT_LENGTH,
@@ -48,13 +46,15 @@ from app.splitting import apply_requester_reply
 from app.request_types import active_request_types, request_type_of
 from app.models import Category, RequestType, Ticket, TicketSource, TicketStatus, TicketType, User, UserRole
 from app.ticket_service import get_by_number
+from app import identity
+from app.identity import is_follower_of, is_requester, my_tickets_query
 from app.pagination import paginate
 
 router = APIRouter(prefix="/portal", tags=["portal"])
 
 
 def _is_requester(ticket: Ticket, user: User) -> bool:
-    return ticket.requester_email.lower() == user.email.lower()
+    return is_requester(ticket, user)
 
 
 def _get_own_ticket(session: Session, number: int, user: User) -> Ticket:
@@ -70,7 +70,7 @@ def _get_commentable_ticket(session: Session, number: int, user: User) -> Ticket
     followers are agents and use the agent console, so they cannot comment here."""
     ticket = get_by_number(session, number)
     if ticket is None or not (
-        _is_requester(ticket, user) or is_follower(session, ticket, user.email, include_internal=False)
+        _is_requester(ticket, user) or is_follower_of(session, ticket, user, include_internal=False)
     ):
         raise HTTPException(status_code=404, detail="Ticket not found")
     return ticket
@@ -82,7 +82,7 @@ def _get_readable_ticket(session: Session, number: int, user: User) -> Ticket:
     ticket = get_by_number(session, number)
     if ticket is None or not (
         _is_requester(ticket, user)
-        or is_follower(session, ticket, user.email)
+        or is_follower_of(session, ticket, user)
         or _my_pending_approval(session, ticket, user) is not None
     ):
         raise HTTPException(status_code=404, detail="Ticket not found")
@@ -148,7 +148,7 @@ def _render_ticket(request: Request, ticket: Ticket, user: User, session: Sessio
             "is_requester": _is_requester(ticket, user),
             # The requester and ordinary followers can reply; an internal follower is an
             # agent and replies from the agent console.
-            "can_comment": _is_requester(ticket, user) or is_follower(session, ticket, user.email, include_internal=False),
+            "can_comment": _is_requester(ticket, user) or is_follower_of(session, ticket, user, include_internal=False),
             "user": user,
         },
     )
@@ -161,13 +161,11 @@ def list_my_tickets(
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    query = select(Ticket).where(Ticket.requester_email == user.email).order_by(Ticket.updated_at.desc())
-    tickets_page = paginate(session, query, page, request.query_params)
-    following = tickets_followed_by(session, user.email)
+    tickets_page = paginate(session, my_tickets_query(user), page, request.query_params)
     return templates.TemplateResponse(
         request,
         "portal_tickets_list.html",
-        {"page": tickets_page, "following": following, "waiting_on_me": count_pending_for(session, user), "user": user},
+        {"page": tickets_page, "my_emails": identity.requester_emails(user), "waiting_on_me": count_pending_for(session, user), "user": user},
     )
 
 
