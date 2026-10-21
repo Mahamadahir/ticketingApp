@@ -650,7 +650,7 @@ File: `app/reopening.py`
 - Functions: `check_can_reclose`, `check_can_reopen`, `latest_follow_on`, `open_follow_on_ticket`, `reclose_ticket`, `related_tickets`, `reopen_ticket`
 - Imports: `app.audit`, `app.followers`, `app.messages`, `app.models`, `app.notifications`, `app.splitting`, `app.thanks_rules`, `app.ticket_service`
 - Imported by: `app.inbound`, `app.routers.portal`, `app.routers.tickets`, `app.splitting`
-- Tests: `test_reopening.py`
+- Tests: `test_reopening.py`, `test_thanks_rules.py`
 
 ### `app.request_types`
 

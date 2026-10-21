@@ -1751,7 +1751,8 @@
       "summary": "Reopening, reclosing and replying after a ticket is finished (phase 4E-1). Nothing here commits.",
       "tables": [],
       "tests": [
-        "tests/test_reopening.py"
+        "tests/test_reopening.py",
+        "tests/test_thanks_rules.py"
       ]
     },
     {

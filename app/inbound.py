@@ -232,17 +232,17 @@ def load_attachments(session: Session, client: MailSource, graph_message_id: str
         name = clean_filename(_text(item.get("name")))
         inline = bool(item.get("isInline"))
         if index >= max_files:
-            found.append(IncomingAttachment(name, skipped=f"more than {max_files} files on one email"))
+            found.append(IncomingAttachment(name, skipped=f"more than {max_files} files on one email", inline=inline))
         elif item.get("@odata.type") != "#microsoft.graph.fileAttachment":
-            found.append(IncomingAttachment(name, skipped="not a file (an attached email or a link)"))
+            found.append(IncomingAttachment(name, skipped="not a file (an attached email or a link)", inline=inline))
         elif not isinstance(item.get("size"), int) or item["size"] > settings.attachment_max_bytes:
-            found.append(IncomingAttachment(name, skipped=f"larger than the {limit_mb} MB limit"))
+            found.append(IncomingAttachment(name, skipped=f"larger than the {limit_mb} MB limit", inline=inline))
         else:
             data = client.get_attachment_bytes(graph_message_id, str(item.get("id")))
             if data is None:
-                found.append(IncomingAttachment(name, skipped="no longer available"))
+                found.append(IncomingAttachment(name, skipped="no longer available", inline=inline))
             elif len(data) > settings.attachment_max_bytes:
-                found.append(IncomingAttachment(name, skipped=f"larger than the {limit_mb} MB limit"))
+                found.append(IncomingAttachment(name, skipped=f"larger than the {limit_mb} MB limit", inline=inline))
             else:
                 found.append(IncomingAttachment(name, data=data, inline=inline))
     return found

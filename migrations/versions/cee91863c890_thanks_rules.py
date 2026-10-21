@@ -62,11 +62,11 @@ def upgrade() -> None:
     op.bulk_insert(rules, [
         {'match_type': kind, 'pattern': pattern, 'max_length': length, 'enabled': True, 'created_by': 'system', 'created_at': now}
         for kind, pattern, length in [
-            ('starts_with', 'thanks', 20),
-            ('starts_with', 'thank you', 20),
-            ('starts_with', 'many thanks', 20),
-            ('starts_with', 'thanks for resolving', 40),
-            ('equals', 'cheers', 20),
+            ('starts_with', 'thanks', 14),
+            ('starts_with', 'thank you', 17),
+            ('starts_with', 'many thanks', 14),
+            ('starts_with', 'thanks for resolving', 30),
+            ('equals', 'cheers', 10),
         ]
     ])
 

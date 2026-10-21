@@ -24,6 +24,7 @@ import unicodedata
 from datetime import datetime, timezone
 from typing import Optional
 
+from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
@@ -36,7 +37,7 @@ MATCH_TYPES: dict[str, str] = {
     "ends_with": "Ends with",
 }
 
-MAX_PATTERN_LENGTH = 100  # as typed, wildcards included
+MAX_PATTERN_LENGTH = 200  # as typed, wildcards included (a queued reply can be MAX_RULE_LENGTH long)
 MAX_WILDCARDS = 5
 MAX_RULE_LENGTH = 200  # the largest "maximum length" a rule can have
 MAX_TEXT_SCAN = 1000  # a reply longer than this (as written) is never a thank-you, so it is not scanned
@@ -220,8 +221,8 @@ def record_candidate(session: Session, ticket: Ticket) -> Optional[ThanksCandida
     if message is None or len(message.body) > MAX_TEXT_SCAN:
         return None
     normalised = normalise_text(message.body)
-    if not normalised or len(normalised) > MAX_RULE_LENGTH:
-        return None
+    if not normalised or len(normalised) > MAX_RULE_LENGTH or is_thanks_reply(session, message.body):
+        return None  # (a reply a rule covers reopened only because of an attachment: not a new rule)
     existing = session.exec(select(ThanksCandidate).where(ThanksCandidate.normalised_text == normalised)).first()
     if existing is None:
         row = ThanksCandidate(
@@ -237,8 +238,10 @@ def record_candidate(session: Session, ticket: Ticket) -> Optional[ThanksCandida
             if existing is None:
                 return None
     if existing.status == CANDIDATE_PENDING:
-        existing.occurrences += 1
-        session.add(existing)
+        session.execute(  # in SQL, so two reclosures at once both count
+            update(ThanksCandidate).where(ThanksCandidate.id == existing.id).values(occurrences=ThanksCandidate.occurrences + 1)
+        )
+        session.refresh(existing)
         return existing
     return None
 

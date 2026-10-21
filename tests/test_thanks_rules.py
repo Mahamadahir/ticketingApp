@@ -100,7 +100,7 @@ def test_a_reply_that_is_too_long_to_be_thanks_is_not_even_scanned(db_session):
 def test_rules_are_validated():
     for bad in [("sounds_like", "thanks", 10), ("equals", "", 10), ("equals", "  ** ", 10), ("equals", "!!!", 10),
                 ("equals", "thanks", 0), ("equals", "thanks", 201), ("equals", "thanks", "many"),
-                ("equals", "a*b*c*d*e*f*g", 10), ("equals", "x" * 101, 10)]:
+                ("equals", "a*b*c*d*e*f*g", 10), ("equals", "x" * 201, 10)]:
         with pytest.raises(ThanksRuleError):
             clean_rule(*bad)
     assert clean_rule("equals", "  Thanks!!  For ** resolving  *", "30") == ("equals", "thanks for*resolving*", 30)
@@ -268,6 +268,22 @@ def reopened_by_reply_and_reclosed(client, db_session, text="Cheers mate!"):
     return ticket
 
 
+def reopened_by_reply_and_reclosed_with_attachment(client, db_session):
+    """A reply that a rule covers but that reopened the ticket (as if it had a file): reclosed as said thanks."""
+    ticket, team, ann_id = next_ticket(client, db_session)
+    ticket = finish(db_session, ticket)
+    from app.reopening import reopen_ticket
+
+    db_session.add(Message(ticket_id=ticket.id, sender="Jo", body="Thanks", direction="inbound"))
+    db_session.flush()
+    reopen_ticket(db_session, ticket, "jo@example.com", "The requester replied")
+    db_session.commit()
+    client.post("/auth/logout")
+    login_as(client, "agent@example.com")
+    assert reclose(client, ticket, "said_thanks").status_code == 200
+    return ticket
+
+
 def candidates(db_session):
     db_session.expire_all()
     return db_session.exec(select(ThanksCandidate).order_by(ThanksCandidate.id)).all()
@@ -408,3 +424,18 @@ def test_a_bad_rule_from_the_queue_leaves_the_candidate_pending(client, db_sessi
     db_session.rollback()
     assert [r.status for r in candidates(db_session)] == ["pending"]
     assert db_session.exec(select(ThanksRule)).all() == []
+
+
+def test_a_skipped_inline_logo_is_still_not_an_attachment(db_session):
+    from app.inbound import IncomingMail, _has_real_attachment
+
+    mail = IncomingMail(graph_message_id="x", sender="jo@example.com", has_attachments=True)
+    assert not _has_real_attachment(mail, [IncomingAttachment(filename="logo.png", skipped="no longer available", inline=True)])
+    assert _has_real_attachment(mail, [IncomingAttachment(filename="log.txt", skipped="larger than the 10 MB limit")])
+
+
+def test_a_text_a_rule_already_covers_is_not_queued(client, db_session):
+    add_rule(db_session, "equals", "thanks", 20, "admin@example.com")
+    db_session.commit()
+    ticket = reopened_by_reply_and_reclosed_with_attachment(client, db_session)
+    assert candidates(db_session) == []

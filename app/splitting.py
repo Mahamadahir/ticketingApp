@@ -160,7 +160,7 @@ def apply_requester_reply(
     (A reply on a Closed ticket never gets here: it opens a new ticket, app/reopening.py.)"""
     if ticket.status == TicketStatus.RESOLVED and ticket.triaged_at is not None:
         from app.reopening import ReopenError, reopen_ticket  # here because app.reopening builds on this module
-        from app.thanks_rules import EVENT_THANKS_IGNORED, is_thanks_reply
+        from app.thanks_rules import EVENT_REOPENED_BY_REPLY, EVENT_THANKS_IGNORED, is_thanks_reply
 
         if is_thanks_reply(session, text, has_attachment):
             record_event(session, ticket, EVENT_THANKS_IGNORED, actor_email, detail=(text or "").strip()[:200])
@@ -168,7 +168,7 @@ def apply_requester_reply(
 
         try:
             # The assignee of this ticket was just told of the reply; the family reopened with it is told now.
-            went_to = reopen_ticket(session, ticket, actor_email, "The requester replied", already_told=ticket.id)
+            went_to = reopen_ticket(session, ticket, actor_email, EVENT_REOPENED_BY_REPLY, already_told=ticket.id)
             return TicketStatus.RESOLVED.value, went_to.value
         except ReopenError:
             pass  # reopened by someone else a moment ago: carry on as for an open ticket
