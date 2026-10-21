@@ -81,8 +81,6 @@ from app.visibility import (
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 # Shareable links live outside /tickets: /t/1042 (the number; a prefix such as INC-1042 is accepted).
 reference_router = APIRouter(tags=["tickets"])
-templates.env.globals["max_message_length"] = MAX_MESSAGE_LENGTH
-templates.env.globals["agent_label"] = agent_label  # a name, plus "(out of office)" when they are
 
 AGENT_ROLES = (UserRole.SUPER_ADMIN, UserRole.AGENT)
 

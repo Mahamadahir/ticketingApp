@@ -51,7 +51,6 @@ from app.ticket_service import get_by_number
 from app.pagination import paginate
 
 router = APIRouter(prefix="/portal", tags=["portal"])
-templates.env.globals["max_message_length"] = MAX_MESSAGE_LENGTH
 
 
 def _is_requester(ticket: Ticket, user: User) -> bool:
