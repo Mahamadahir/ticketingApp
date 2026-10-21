@@ -922,7 +922,7 @@ def test_the_dev_helper_applies_the_same_filters(client, db_session):
     assert body == {"outcome": IGNORED_OWN} and tickets(db_session) == []
 
 
-def test_a_strangers_mail_in_a_thread_does_not_take_the_thread_over(db_session):
+def test_a_stranger_joining_a_thread_does_not_take_the_thread_over(db_session):
     # The thread stays with the first mail's ticket, so a stranger who joins it changes nothing about it.
     ticket = open_ticket(db_session, message_id="a")
     ingest_mail(db_session, mail("x1", sender="stranger@evil.example", conversation_id="conv-a"))

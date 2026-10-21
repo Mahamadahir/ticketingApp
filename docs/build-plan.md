@@ -332,7 +332,9 @@ sleep, restart it and `docker start ticketingapp-db-1`.
 - 20 Oct (3B): a mail is added to an existing ticket only if its sender is the requester or an external follower, however the ticket was
   found (conversation, the Message-ID it answers, then the `[INC-n]` reference in the subject). The reference is on every email, so
   anyone who saw one could otherwise write on that ticket; anyone else gets a ticket of their own with an event naming the one they cited.
-  **Narrowed 22 Oct 2026 (reply-all decision, below).**
+  On a new ticket only the Cc of the opening mail makes followers. A sender making more than `INBOUND_MAX_PER_SENDER_HOUR` (30, TBC) tickets
+  and replies in an hour is set aside as a probable loop. A reply on a Resolved or Closed ticket is only recorded (phase 4 does reopen).
+  **Narrowed 22 Oct 2026 (reply-all decision, next entry).**
 - 22 Oct (3B, reply-all): decided by the user: when someone midway through a thread (a colleague copied on it) replies-all or emails the IT
   mailbox, "the ticket should update and count as a response by the user who sent the email and make them a follower". Built as: a STRONG
   thread match (the Graph conversation, or the Message-ID the mail answers; both prove the mail is part of the real thread) from a sender who
@@ -342,9 +344,9 @@ sleep, restart it and `docker start ticketingapp-db-1`.
   `[INC-n]` reference alone is not thread proof, so an unknown sender there still gets a new ticket plus `mail_reference_not_used`; otherwise
   anyone who learns a reference could write into a ticket and become a follower. When the ticket already has 20 external followers the
   stranger is not added and also gets a ticket of their own. The shared mailbox, the requester and an agent already an internal follower are
-  never added (the last still gets a ticket of their own: agents answer from the ticket page). A follower sees only requester-visible messages.
-  Only the Cc of the mail that opens a ticket makes followers. A sender making more than `INBOUND_MAX_PER_SENDER_HOUR` (30, TBC) tickets
-  and replies in an hour is set aside as a probable loop. A reply on a Resolved or Closed ticket is only recorded (phase 4 does reopen).
+  never added (the last still gets a ticket of their own: agents answer from the ticket page). A follower sees only requester-visible messages. Known limits, accepted: the thread proof is only as strong as the headers (a sender who holds an earlier
+  mail's Message-ID can forge In-Reply-To; Exchange may share a `conversationId`, open question 2), and an alias or list of the mailbox is not recognised
+  as the mailbox (open question 6), so it can become a follower; a sender joining a Resolved or Closed ticket is still added as a follower.
 - 14 Oct: added phase 10 (security hardening and go-live gate) to `docs/plan.md`, and agreed that
   background work is driven by the database (rows with leases and retries) rather than in-memory
   timers. Where that stands (20 Oct): sending is built that way (the `TeamsPost` and `OutboundEmail`

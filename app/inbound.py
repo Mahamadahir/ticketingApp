@@ -435,17 +435,16 @@ def ingest_mail(
     author_id = account.id if account is not None else None
 
     ticket, how = find_ticket_for(session, mail)
+    allowed = ticket is not None and may_reply(session, ticket, sender)
     joined = False
-    if ticket is not None and how in STRONG_MATCHES and not may_reply(session, ticket, sender):
-        joined = _join_thread(session, ticket, sender)
-    if ticket is not None and (joined or may_reply(session, ticket, sender)):
+    if ticket is not None and not allowed and how in STRONG_MATCHES:
+        allowed = joined = _join_thread(session, ticket, sender)
+    if ticket is not None and allowed:
         message = _record_reply(session, ticket, sender, body, author_id)
         message.graph_message_id = mail.graph_message_id
         session.flush()
         moved = apply_requester_reply(session, ticket, sender)
         log_action(session, sender, "ticket", ticket.id, "replied_by_email", f"matched by {how}")
-        if joined:
-            log_action(session, sender, "ticket", ticket.id, "follower_added_from_mail", f"matched by {how}")
         if moved:
             log_action(session, sender, "ticket", ticket.id, "status_changed", f"{moved[0]} -> {moved[1]}")
         _store_files(session, storage, ticket, message, files)
