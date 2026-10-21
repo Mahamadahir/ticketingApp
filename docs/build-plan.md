@@ -59,7 +59,7 @@ those. Do not record test counts or merge status here.
 | Dependency hygiene 1: dropped unused `pytest-cov` and the `uvicorn[standard]` extras; Dependabot (pip, docker, actions; weekly, minor and patch grouped); `pip-audit` on requirements changes and nightly (`.github/workflows/pip-audit.yml`) | built (#55) | `.github/dependabot.yml`, `.github/workflows/pip-audit.yml` |
 | Dependency hygiene 2: hashed lock (`requirements.lock`, `requirements-dev.lock`) installed with `--require-hashes`, base image pinned by digest, every action pinned by SHA, htmx 2.0.11 vendored into `app/static/vendor/` | built | `Dockerfile`, `.github/workflows/`, `app/static/vendor/README.md`, `tests/test_static.py` |
 | 3C subscriptions and delta catch-up: the worker creates, renews and recreates the mailbox subscription, acts on lifecycle notifications, and catches up missed mail with an inbox delta query; Admin > Mail intake; `/health` warnings | built | `app/subscriptions.py`, migration `c3b7e1a94d20` |
-| 3B inbound mail: the `mail-in` worker job turns stored notifications into tickets (source email) and replies, de-duplicated, own-mail and auto-reply filter, Cc becomes followers, files saved through the attachment rules; the dev simulate-inbound runs the same intake (`INBOUND_ENABLED`, off by default) | built | `app/inbound.py`, `app/graph_client.py`, migration `e4b7c1a9d052` |
+| 3B inbound mail: the `mail-in` worker job turns stored notifications into tickets (source email) and replies, de-duplicated, own-mail and auto-reply filter, Cc becomes followers, a colleague replying inside the real thread joins as a follower, files saved through the attachment rules; the dev simulate-inbound runs the same intake (`INBOUND_ENABLED`, off by default) | built | `app/inbound.py`, `app/graph_client.py`, migration `e4b7c1a9d052` |
 | 3D outbound mail: outbox, real send, approval and "raised for you" emails (`MAIL_SENDING` off / dev / graph; Admin > Outbound mail) | built (#52) | `app/outbox.py`, `app/mail.py` |
 | 3E-storage attachments: storage interface (local directory, Azure Blob with user-delegation SAS), `attachment` table, `/attachments/{id}`, content-type detection and safe serving | built (#49) | `app/storage.py`, `app/attachments.py`, `app/routers/attachments.py` |
 | 3F wiring: Bicep and deploy workflow for the public app, mailbox (`MAIL_SENDING`), the two base URLs, Application Insights started from the connection string (approval links kept out of request telemetry) | built | `infra/main.bicep`, `.github/workflows/deploy.yml`, `app/telemetry.py` |
@@ -89,7 +89,7 @@ notification settings that 2B stores and nothing yet sends. The Graph client in 
   (`validationToken` echo, constant-time `clientState` check as today). Rate limiting on public routes. The approval link carries its token in the URL path, so the public app must also keep that path
   out of its own request logs (and, with 3F, out of Application Insights). Agent 2.
 - *3B Inbound mail:* a worker job fetches each stored message with `$select=uniqueBody` through `app/graph_client.py`. A reply is
-  added to the ticket (match Graph `conversationId`, then the reference in the subject); anything else is a new ticket in the shared
+  added to the ticket (match Graph `conversationId`, the Message-ID it answers, then the reference in the subject); anything else is a new ticket in the shared
   untriaged queue (source email). Unique constraint on `internetMessageId`. Auto-reply filter (`Auto-Submitted` and the usual headers).
   The dev simulate-inbound is rebuilt on the same path. Tested with a fake Graph client and simulated payloads. A reply on a
   resolved or closed ticket is only recorded here; reopen and ignore-list rules are Phase 4. Agent 2.
@@ -332,6 +332,17 @@ sleep, restart it and `docker start ticketingapp-db-1`.
 - 20 Oct (3B): a mail is added to an existing ticket only if its sender is the requester or an external follower, however the ticket was
   found (conversation, the Message-ID it answers, then the `[INC-n]` reference in the subject). The reference is on every email, so
   anyone who saw one could otherwise write on that ticket; anyone else gets a ticket of their own with an event naming the one they cited.
+  **Narrowed 22 Oct 2026 (reply-all decision, below).**
+- 22 Oct (3B, reply-all): decided by the user: when someone midway through a thread (a colleague copied on it) replies-all or emails the IT
+  mailbox, "the ticket should update and count as a response by the user who sent the email and make them a follower". Built as: a STRONG
+  thread match (the Graph conversation, or the Message-ID the mail answers; both prove the mail is part of the real thread) from a sender who
+  is not the requester or a follower adds the mail to that ticket under the sender's address, makes them an external follower
+  (`add_follower`; event `follower_added_from_mail`), and treats it as a follower reply (`apply_requester_reply`, assignee notified "Ticket
+  updated by <name>"; Resolved and Closed are only recorded). **Reading of the decision, for the user to overrule:** a match on the subject
+  `[INC-n]` reference alone is not thread proof, so an unknown sender there still gets a new ticket plus `mail_reference_not_used`; otherwise
+  anyone who learns a reference could write into a ticket and become a follower. When the ticket already has 20 external followers the
+  stranger is not added and also gets a ticket of their own. The shared mailbox, the requester and an agent already an internal follower are
+  never added (the last still gets a ticket of their own: agents answer from the ticket page). A follower sees only requester-visible messages.
   Only the Cc of the mail that opens a ticket makes followers. A sender making more than `INBOUND_MAX_PER_SENDER_HOUR` (30, TBC) tickets
   and replies in an hour is set aside as a probable loop. A reply on a Resolved or Closed ticket is only recorded (phase 4 does reopen).
 - 14 Oct: added phase 10 (security hardening and go-live gate) to `docs/plan.md`, and agreed that
@@ -359,9 +370,7 @@ base image digest by taking Dependabot's docker PR, or by hand with `docker buil
 
 ## Open questions
 
-- **Inbound mail (3B), to confirm.** (1) A person CC'd on a thread who then replies without being a follower becomes a new ticket, not a
-  follower of the old one; should a reply-all from an unknown address join as a follower when the thread (not just the reference) matches?
-  (2) Exchange may give two separate mails with the same subject the same `conversationId`; a new mail from the requester could then join
+- **Inbound mail (3B), to confirm.** (1) Decided 22 Oct 2026: a reply-all from an unknown address inside the thread joins as a follower (see decisions); only a subject-reference-only match keeps opening a new ticket. (2) Exchange may give two separate mails with the same subject the same `conversationId`; a new mail from the requester could then join
   an old (even closed) ticket until phase 4's "reply after closure makes a new ticket". (3) Nothing yet acknowledges a new ticket; decided 22 Oct 2026 to add an acknowledgement email (not built, see "Next up"). (4) Mail is trusted on its From address (Mimecast / Exchange enforce
   SPF, DKIM and DMARC); the code does not read Authentication-Results. Decided 22 Oct 2026: that stays, and the mailbox must accept authenticated senders only (staging checklist); reading the header is optional phase 10 defence in depth. (5) The Cc of an alias or distribution list becomes a follower like a person; the never-follow list ("Next up") covers the shared mailbox and known lists, other lists stay open. (7) Is 30 an hour per sender the right value? It becomes an admin setting ("Next up"). (6) The own-mail guard compares the exact From address, so mail from an alias of the mailbox is caught only by its headers; the aliases are listed when the mailbox is created (staging checklist, "Mailbox setup").
 - **Out-of-office lookups (2E).** One failing batch (only above 650 agents) rolls back the whole run; the three-hour stale cutoff makes that safe. The retry and inactive-agent items are planned (see "Next up").
@@ -391,8 +400,8 @@ base image digest by taking Dependabot's docker PR, or by hand with `docker buil
   `Prefer: outlook.body-content-type="text"` is honoured for HTML-only and Outlook mail; send an Outlook out-of-office reply, a bounce and a
   mailing-list mail and check each is ignored (`inboundmail.outcome`), and that mail from the mailbox itself is; check `internetMessageHeaders`
   really contains `Auto-Submitted` and `In-Reply-To` after Mimecast; attach a PDF, a picture, an `.exe`, a file over the limit and an attached
-  email and check each is stored or noted; kill the worker mid-run and check no ticket is doubled; check a stranger quoting a `[INC-n]`
-  reference gets a new ticket, not a message on the old one; check a `Mail.Read` 403 shows as `last_error` on the notification and retries.
+  email and check each is stored or noted; kill the worker mid-run and check no ticket is doubled; check a stranger quoting only a `[INC-n]`
+  reference gets a new ticket, not a message on the old one, while a colleague replying-all in the real thread is added as a follower; check a `Mail.Read` 403 shows as `last_error` on the notification and retries.
   Not proved locally: real Graph payload shapes (`from`, `uniqueBody`, header names and casing), `conversationId` behaviour, attachment
   download for files over 3 MB, Mimecast rewriting or stripping headers.
 

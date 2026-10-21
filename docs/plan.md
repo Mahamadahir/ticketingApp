@@ -902,8 +902,10 @@ Automatic emails use admin-managed templates, previewed when edited.
   and calls `process_message`, which the 3C catch-up also uses. Every handled mail is recorded in `InboundMail` (unique Graph id and
   Message-ID), so duplicates and re-deliveries do nothing. Our own mail, automatic replies (Auto-Submitted, X-Auto-Response-Suppress,
   Precedence, list and bounce headers), drafts and a sender flooding more than a set number an hour are ignored. A mail joins a ticket
-  by Graph conversation, then the Message-ID it answers, then the `[INC-1042]` reference, but only if the sender is the requester or a
-  follower; otherwise it opens its own ticket. A reply goes through `record_inbound` and the portal's status rule, so Awaiting user
+  by Graph conversation, then the Message-ID it answers, then the `[INC-1042]` reference. The requester and followers may always add. Someone
+  else midway through the real thread (a strong match: conversation or Message-ID, e.g. a colleague copied who replies-all) is added to the
+  ticket as a follower and counts as a follower reply (decided 22 Oct 2026); a match on the subject reference alone is no proof of being in
+  the thread, so that sender opens their own ticket (an event names the cited one), as does one when the follower list is full. A reply goes through `record_inbound` and the portal's status rule, so Awaiting user
   returns to In progress and a split original refreshes its parts. A new mail opens an untriaged `email` ticket and the Cc people
   become followers. Files go through `store_attachment` with the size limit and a per-mail count (settings); refused ones leave an event.
   `/webhooks/dev/simulate-inbound` runs the same intake. *Not proved locally (staging):* real Graph and Mimecast behaviour.
