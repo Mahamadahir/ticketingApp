@@ -26,7 +26,7 @@ from sqlalchemy import or_
 from sqlmodel import Session, func, select
 
 from app.approval_links import make_token
-from app.approvals import PENDING
+from app.approvals import PENDING, WITHDRAWN
 from app.config import settings
 from app.email_templates import LINK_LEFT_OUT, REQUEST_BLOCK, current_text, render_template, render_text, ticket_values
 from app.followers import is_follower
@@ -46,7 +46,7 @@ from app.models import (
     TicketStatus,
     User,
 )
-from app.outbox import ACKNOWLEDGEMENT, APPROVAL, AUTOMATIC_TO_REQUESTER, FOLLOWER_UPDATE, NOTICE, RAISED_FOR, REPLY
+from app.outbox import ACKNOWLEDGEMENT, APPROVAL, APPROVAL_WITHDRAWN, AUTOMATIC_TO_REQUESTER, FOLLOWER_UPDATE, NOTICE, RAISED_FOR, REPLY
 from app.raising import should_tell_requester
 from app.settings_store import APPROVAL_LINK_MINUTES, AUTOMATIC_EMAIL_CAP, get_int_setting
 from app.teams import MAX_ATTEMPTS, MAX_BACKOFF_MINUTES, Unsendable
@@ -247,6 +247,31 @@ def build_approval_mail(session: Session, row: OutboundEmail) -> Mail:
     )
 
 
+def build_approval_withdrawn_mail(session: Session, row: OutboundEmail) -> Mail:
+    """Tells an approver the request they were asked about was withdrawn. Asked again now: it is still
+    withdrawn and the person still wants approval emails."""
+    ticket = _ticket_of(session, row)
+    vote = session.get(ApprovalVote, row.vote_id) if row.vote_id else None
+    approval = session.get(TicketApproval, vote.approval_id) if vote is not None else None
+    if vote is None or approval is None:
+        raise Unsendable("Approval not found")
+    if approval.status != WITHDRAWN:
+        raise Unsendable("The request was not withdrawn")
+    approver = session.get(User, vote.voter_id)
+    if approver is None:
+        raise Unsendable("Approver not found")
+    if not wants_approval_email(session, approver):
+        raise Unsendable("The person turned approval emails off in their notification settings")
+    _guard_recipient(row)
+    values = {**ticket_values(ticket), "requester_email": ticket.requester_email}
+    subject, text = current_text(session, "approval_withdrawn")
+    body = render_text(text, values)
+    return Mail(
+        to=row.to_address, cc=[], subject=render_text(subject, values),
+        body=body, record=body, automatic=True, reference=ticket.reference,
+    )
+
+
 # One builder per kind: it turns the row into the email, or raises Unsendable (never) or NotReady
 # (not yet). A new kind of email is one builder and one entry here; the sending is shared.
 BUILDERS: dict[str, Callable[[Session, OutboundEmail], Mail]] = {
@@ -254,6 +279,7 @@ BUILDERS: dict[str, Callable[[Session, OutboundEmail], Mail]] = {
     NOTICE: build_message_mail,
     RAISED_FOR: build_raised_for_mail,
     APPROVAL: build_approval_mail,
+    APPROVAL_WITHDRAWN: build_approval_withdrawn_mail,
     ACKNOWLEDGEMENT: build_acknowledgement_mail,
     FOLLOWER_UPDATE: build_follower_update_mail,
 }

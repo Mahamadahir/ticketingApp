@@ -200,7 +200,8 @@
         "voters_yet_to_vote",
         "votes_needed",
         "votes_of",
-        "waive"
+        "waive",
+        "withdraw"
       ],
       "imported_by": [
         "app.mail",
@@ -216,6 +217,7 @@
         "app.email_templates",
         "app.messages",
         "app.models",
+        "app.notifications",
         "app.outbox",
         "app.ticket_service"
       ],
@@ -226,7 +228,8 @@
       "tests": [
         "tests/test_approvals.py",
         "tests/test_email_templates.py",
-        "tests/test_outbound_mail.py"
+        "tests/test_outbound_mail.py",
+        "tests/test_withdraw.py"
       ]
     },
     {
@@ -550,6 +553,7 @@
         "tests/test_teams_copy.py",
         "tests/test_teams_copy_sending.py",
         "tests/test_ticket_core.py",
+        "tests/test_withdraw.py",
         "tests/test_worker.py"
       ]
     },
@@ -692,7 +696,8 @@
         "tests/test_inbound_mail.py",
         "tests/test_never_follow.py",
         "tests/test_reopening.py",
-        "tests/test_reply_notification.py"
+        "tests/test_reply_notification.py",
+        "tests/test_withdraw.py"
       ]
     },
     {
@@ -926,6 +931,7 @@
         "automatic_cap",
         "build_acknowledgement_mail",
         "build_approval_mail",
+        "build_approval_withdrawn_mail",
         "build_follower_update_mail",
         "build_message_mail",
         "build_raised_for_mail",
@@ -970,7 +976,8 @@
         "tests/test_follower_updates.py",
         "tests/test_outbound_mail.py",
         "tests/test_reopening.py",
-        "tests/test_resolution.py"
+        "tests/test_resolution.py",
+        "tests/test_withdraw.py"
       ]
     },
     {
@@ -1379,6 +1386,7 @@
         "tests/test_visibility.py",
         "tests/test_wiring_3f.py",
         "tests/test_with_supplier.py",
+        "tests/test_withdraw.py",
         "tests/test_worker.py"
       ]
     },
@@ -1462,6 +1470,7 @@
         "mark_read",
         "mentioned_in",
         "notify",
+        "notify_approval_withdrawn",
         "notify_assigned",
         "notify_mentions",
         "notify_reopened",
@@ -1470,6 +1479,7 @@
         "visible_to"
       ],
       "imported_by": [
+        "app.approvals",
         "app.escalation",
         "app.jobs",
         "app.messages",
@@ -1503,6 +1513,7 @@
         "is_on",
         "queue_acknowledgement",
         "queue_approval",
+        "queue_approval_withdrawn",
         "queue_follower_update",
         "queue_message",
         "queue_raised_for"
@@ -1529,7 +1540,8 @@
         "tests/test_email_templates.py",
         "tests/test_follower_updates.py",
         "tests/test_outbound_mail.py",
-        "tests/test_resolution.py"
+        "tests/test_resolution.py",
+        "tests/test_withdraw.py"
       ]
     },
     {
@@ -2317,7 +2329,8 @@
         "raise_new_ticket",
         "remove_ticket_follower",
         "reopen_my_ticket",
-        "view_my_ticket"
+        "view_my_ticket",
+        "withdraw_my_request"
       ],
       "imported_by": [
         "app.main"
@@ -2397,6 +2410,11 @@
           "handler": "reopen_my_ticket",
           "method": "POST",
           "path": "/portal/{number}/reopen"
+        },
+        {
+          "handler": "withdraw_my_request",
+          "method": "POST",
+          "path": "/portal/{number}/withdraw"
         }
       ],
       "summary": "",
@@ -2973,7 +2991,8 @@
         "tests/test_outbound_mail.py",
         "tests/test_teams.py",
         "tests/test_teams_copy_sending.py",
-        "tests/test_wiring_3f.py"
+        "tests/test_wiring_3f.py",
+        "tests/test_withdraw.py"
       ]
     },
     {
@@ -3545,6 +3564,7 @@
     "tests/test_visibility.py",
     "tests/test_wiring_3f.py",
     "tests/test_with_supplier.py",
+    "tests/test_withdraw.py",
     "tests/test_worker.py"
   ]
 }

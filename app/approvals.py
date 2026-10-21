@@ -15,6 +15,10 @@ The rule, set per request type by a super admin and copied onto the approval whe
     was reached the request is declined: only a reached pass percentage approves.
 Whichever settles it first wins; voters who had not answered are marked not needed.
 
+The requester may withdraw while it waits (`withdraw`): the approval ends as "withdrawn", the ticket closes
+with the reason "withdrawn" and the voters who had not answered are told. A decision and a withdrawal lock the
+ticket and then the approval in the same order, so one racing the other gives exactly one outcome.
+
 Data: one TicketApproval per ask (at most one pending per ticket), one ApprovalVote per voter, made
 when it starts. Each voter gets one emailed link naming their vote (app/approval_links.py).
 
@@ -39,7 +43,8 @@ from app.approval_groups import is_member, members_of
 from app.audit import log_action
 from app.email_templates import render_template, ticket_values
 from app.messages import record_notice
-from app.outbox import queue_approval
+from app.notifications import notify_approval_withdrawn
+from app.outbox import queue_approval, queue_approval_withdrawn
 from app.models import (
     ApprovalGroupMember,
     ApprovalVote,
@@ -54,6 +59,7 @@ from app.ticket_service import (
     EVENT_APPROVAL_DECIDED,
     EVENT_APPROVAL_OUTCOME,
     EVENT_APPROVAL_REQUESTED,
+    EVENT_APPROVAL_WITHDRAWN,
     record_event,
     set_status,
 )
@@ -63,8 +69,11 @@ PENDING = "pending"
 APPROVED = "approved"
 DECLINED = "declined"
 NOT_NEEDED = "not_needed"
-# An approval's status: pending, then approved or declined, or waived by a super admin.
+# An approval's status: pending, then approved or declined, or waived by a super admin, or withdrawn
+# by the requester. A plain string column, so a new status needs no migration; the partial unique index
+# only looks at 'pending', so a withdrawn approval frees the ticket's one pending slot.
 WAIVED = "waived"
+WITHDRAWN = "withdrawn"
 MAX_COMMENT_LENGTH = 1000
 
 
@@ -293,6 +302,8 @@ def decide(session: Session, vote: ApprovalVote, decision: str, comment: str) ->
     session.refresh(ticket, with_for_update=True)
     session.refresh(approval, with_for_update=True)
     session.refresh(vote)
+    if approval.status == WITHDRAWN:
+        raise ApprovalError("This request was withdrawn by the requester, so it no longer needs an answer")
     if vote.decision == NOT_NEEDED:
         raise ApprovalError("This request was settled without your answer")
     if vote.decision != PENDING:
@@ -333,3 +344,33 @@ def waive(session: Session, ticket: Ticket, actor: User) -> None:
     record_event(session, ticket, EVENT_APPROVAL_OUTCOME, actor.email, to_value="waived")
     set_status(session, ticket, TicketStatus.OPEN, actor.email, detail="approval waived", by_approval=True)
     record_notice(session, ticket, _notice(session, ticket, "approval_waived"))
+
+
+def withdraw(session: Session, ticket: Ticket, requester_email: str) -> None:
+    """The requester takes back a request that is still waiting for approval: only the requester, only
+    while it waits, never after a decision. The approval ends as withdrawn, voters who had not answered
+    are marked not needed and told (bell and email, per their preference), and the ticket closes with the
+    reason "withdrawn". Locks like decide() (ticket, then approval) so it and a final vote cannot both win.
+    Raises ApprovalError, changing nothing. Does not commit."""
+    session.flush()
+    session.refresh(ticket, with_for_update=True)
+    if ticket.requester_email.lower() != (requester_email or "").lower():
+        raise ApprovalError("Only the person who made the request can withdraw it")
+    approval = current_approval(session, ticket)
+    if approval is not None:
+        session.refresh(approval, with_for_update=True)
+    if ticket.status != TicketStatus.AWAITING_APPROVAL or approval is None or approval.status != PENDING:
+        raise ApprovalError("This request is no longer waiting for approval, so it cannot be withdrawn")
+    # Re-read the votes under the lock: one decided since this session loaded them must not be overwritten.
+    for vote, _ in votes_of(session, approval):
+        session.refresh(vote)
+    unanswered = voters_yet_to_vote(session, approval)
+    approval.status, approval.settled_at = WITHDRAWN, datetime.now(timezone.utc)
+    session.add(approval)
+    _close_pending_votes(session, [vote for vote, _ in unanswered])
+    record_event(session, ticket, EVENT_APPROVAL_WITHDRAWN, requester_email, detail=f"{len(unanswered)} had not answered")
+    set_status(session, ticket, TicketStatus.CLOSED, requester_email, detail="withdrawn", by_approval=True)
+    log_action(session, requester_email, "ticket", ticket.id, "approval_withdrawn", ticket.tag)
+    for vote, voter in unanswered:
+        notify_approval_withdrawn(session, ticket, voter, requester_email)
+        queue_approval_withdrawn(session, vote, voter)
