@@ -157,6 +157,7 @@ def test_the_data_migrates_up_and_back_down(scratch):
     ]
     assert rows(connect, "SELECT count(*) FROM approvalvote") == [(11,)]
     assert rows(connect, "SELECT id, vote_id FROM outboundemail ORDER BY id") == [(1, 2), (2, 3)]
+    alembic("upgrade", "head")  # alembic check compares with the head, which later migrations move past AFTER
     alembic("check")
 
 
