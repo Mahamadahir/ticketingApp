@@ -28,12 +28,16 @@ def upgrade() -> None:
 def downgrade() -> None:
     # The SCHEDULED enum value stays: Postgres cannot drop a value from an enum, and an unused
     # value is harmless. Tickets still Scheduled move to In progress so the older code, which does
-    # not know the status, can still read them. A pause started by Scheduled is left to run out as
-    # it would for Awaiting user: the clock is resumed here so no ticket stays paused with no
-    # status that explains it.
+    # not know the status, can still read them. The pause Scheduled started is ended here, as moving
+    # out of Scheduled would: the time waited is added to sla_paused_seconds and to the stored
+    # deadlines (a Required by date does not move), so the ticket does not look overdue at once.
+    waited = "GREATEST(0, EXTRACT(EPOCH FROM (now() - sla_paused_at))::int)"
     op.execute(
-        "UPDATE ticket SET sla_paused_seconds = sla_paused_seconds + "
-        "GREATEST(0, EXTRACT(EPOCH FROM (now() - sla_paused_at))::int), sla_paused_at = NULL "
+        "UPDATE ticket SET "
+        f"first_response_due_at = first_response_due_at + make_interval(secs => {waited}), "
+        f"resolution_due_at = CASE WHEN required_by IS NULL THEN resolution_due_at + make_interval(secs => {waited}) "
+        "ELSE resolution_due_at END, "
+        f"sla_paused_seconds = sla_paused_seconds + {waited}, sla_paused_at = NULL "
         "WHERE status = 'SCHEDULED' AND sla_paused_at IS NOT NULL"
     )
     op.execute("UPDATE ticket SET status = 'IN_PROGRESS' WHERE status = 'SCHEDULED'")

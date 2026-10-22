@@ -3,7 +3,7 @@
 Impact (how many people) x urgency (how bad for them) gives a priority, P1 to P4.
 The priority picks two targets, first response and resolution, which are admin
 settings (app/settings_store.py), never constants. The clock is 24/7 and stops while
-the ticket is Awaiting user.
+the ticket is Awaiting user or Scheduled (a Required by date keeps running).
 
 Deadlines are stored on the ticket: created_at + target + time spent paused. They
 move only when the priority changes or a pause ends, so the queue can sort on them

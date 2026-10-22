@@ -1251,7 +1251,8 @@ The points below are **Proposed - needs owner confirmation** (each can change ch
    resume pushes its deadlines out by the time spent Scheduled. A ticket with a Required by date keeps running against
    that date, as SRP-1 already does for Awaiting user (a stated date is not pushed out). So the date, not the status, is what
    is measured, and a Scheduled ticket with no date does not breach while it waits. Moving between Awaiting user and Scheduled
-   stays paused.
+   stays paused. The first-response target of a dated ticket is not paused either (as for Awaiting user in SRP-1), so a dated
+   Scheduled ticket nobody has emailed can still show first response overdue.
 2. **Proposed - needs owner confirmation: entered by hand only,** from the Status buttons or the Email user / Add note status
    dropdown (4B-5), like With supplier. Nothing moves a ticket to Scheduled automatically when a date is set.
 3. **Proposed - needs owner confirmation: nothing happens automatically on the date.** No status move and no new job or

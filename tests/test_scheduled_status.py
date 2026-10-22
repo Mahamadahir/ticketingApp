@@ -150,3 +150,52 @@ def test_a_scheduled_ticket_with_a_required_by_date_keeps_running(db_session):
     assert sla_view(ticket, SLA_NOW, 25).state != "paused"
     ticket.first_responded_at = SLA_NOW
     assert sla_view(ticket, SLA_NOW + timedelta(days=10), 25).state == "breached"  # the date still counts
+
+
+def test_the_original_leaves_scheduled_when_every_part_is_finished(client, db_session):
+    original, parts, _ = family(client, db_session, parts=2)
+    set_to(client, parts[0], TicketStatus.RESOLVED)
+    set_to(client, parts[1], SCHEDULED)
+    db_session.expire_all()
+    assert db_session.get(type(original), original.id).sla_paused_at is not None
+    set_to(client, parts[1], TicketStatus.RESOLVED)
+    db_session.expire_all()
+    fresh = db_session.get(type(original), original.id)
+    assert fresh.status == TicketStatus.IN_PROGRESS and fresh.sla_paused_at is None
+
+
+def test_the_downgrade_ends_the_pause_and_moves_the_deadlines(db_session):
+    import importlib.util
+    from datetime import datetime, timezone
+    from pathlib import Path
+
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+    from app.models import Ticket
+
+    path = Path(__file__).resolve().parent.parent / "migrations" / "versions" / "c4e7a2b9d106_scheduled_status.py"
+    spec = importlib.util.spec_from_file_location("scheduled_migration", path)
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+
+    now = datetime.now(timezone.utc)
+    due = now + timedelta(days=1)
+    plain = Ticket(subject="a", requester_email="a@example.com", status=SCHEDULED, sla_paused_at=now - timedelta(days=10),
+                   first_response_due_at=due, resolution_due_at=due)
+    dated = Ticket(subject="b", requester_email="a@example.com", status=SCHEDULED, sla_paused_at=now - timedelta(days=10),
+                   first_response_due_at=due, resolution_due_at=due, required_by=due.date())
+    db_session.add(plain)
+    db_session.add(dated)
+    db_session.commit()
+    ids = (plain.id, dated.id)
+
+    connection = db_session.connection()
+    with Operations.context(MigrationContext.configure(connection)):
+        migration.downgrade()
+    db_session.expire_all()
+    plain, dated = (db_session.get(Ticket, i) for i in ids)
+    assert plain.status == dated.status == TicketStatus.IN_PROGRESS
+    assert plain.sla_paused_at is None and dated.sla_paused_at is None
+    assert 10 * 86400 <= plain.sla_paused_seconds < 10 * 86400 + 600
+    assert plain.resolution_due_at - due > timedelta(days=9)  # moved out by the wait
+    assert dated.resolution_due_at == due and dated.first_response_due_at - due > timedelta(days=9)
