@@ -47,9 +47,9 @@ from app.models import (
     TicketStatus,
     User,
 )
-from app.outbox import ACKNOWLEDGEMENT, APPROVAL, APPROVAL_REMINDER, APPROVAL_WITHDRAWN, AUTOMATIC_TO_REQUESTER, FOLLOWER_UPDATE, NOTICE, RAISED_FOR, REPLY
+from app.outbox import ACKNOWLEDGEMENT, APPROVAL, CHASE, APPROVAL_REMINDER, APPROVAL_WITHDRAWN, AUTOMATIC_TO_REQUESTER, FOLLOWER_UPDATE, NOTICE, RAISED_FOR, REPLY
 from app.raising import should_tell_requester
-from app.settings_store import APPROVAL_LINK_MINUTES, AUTOMATIC_EMAIL_CAP, get_int_setting
+from app.settings_store import APPROVAL_LINK_MINUTES, AUTOMATIC_EMAIL_CAP, CHASE_RESOLVE_AFTER_DAYS, REGISTRY, get_int_setting
 from app.teams import MAX_ATTEMPTS, MAX_BACKOFF_MINUTES, Unsendable
 
 log = logging.getLogger("app.mail")
@@ -181,6 +181,23 @@ def build_acknowledgement_mail(session: Session, row: OutboundEmail) -> Mail:
     )
 
 
+def build_chase_mail(session: Session, row: OutboundEmail) -> Mail:
+    """"Is this still an issue?" Asked again now: the ticket is still waiting on the requester (a reply, a status
+    change or a resolve since the chase was queued cancels it) and is triaged. Goes under the ticket's own subject."""
+    ticket = _ticket_of(session, row)
+    if ticket.status != TicketStatus.AWAITING_USER or ticket.chased_at is None:
+        raise Unsendable("The ticket is no longer waiting on the requester")
+    if not is_triaged(ticket):
+        raise NotReady("The ticket has not been triaged yet, so it cannot be emailed")
+    _guard_recipient(row)
+    days = get_int_setting(session, CHASE_RESOLVE_AFTER_DAYS) or int(REGISTRY[CHASE_RESOLVE_AFTER_DAYS].default)
+    body = _with_about(session, ticket, render_template(session, "chase", {**ticket_values(ticket), "days": str(days)}).body)
+    return Mail(
+        to=row.to_address, cc=[], subject=mail_subject(session, ticket),
+        body=body, record=body, automatic=True, reference=ticket.reference,
+    )
+
+
 def build_follower_update_mail(session: Session, row: OutboundEmail) -> Mail:
     """An update from the requester or a follower, passed to someone who was not on the mail. Asked
     again now: the ticket is triaged, the requester may see the message, the person still follows the
@@ -292,6 +309,7 @@ BUILDERS: dict[str, Callable[[Session, OutboundEmail], Mail]] = {
     APPROVAL_REMINDER: build_approval_reminder_mail,
     APPROVAL_WITHDRAWN: build_approval_withdrawn_mail,
     ACKNOWLEDGEMENT: build_acknowledgement_mail,
+    CHASE: build_chase_mail,
     FOLLOWER_UPDATE: build_follower_update_mail,
 }
 

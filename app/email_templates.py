@@ -152,6 +152,22 @@ REGISTRY: dict[str, TemplateDef] = {
             },
         ),
         TemplateDef(
+            key="chase",
+            label="Chase: is this still an issue?",
+            description=(
+                "Sent when a ticket has been waiting on the requester (Awaiting user) with no reply for the number "
+                "of days set under Settings. It goes out under the ticket's own subject, so a reply finds the ticket "
+                "and cancels the chase. If there is still no reply, the ticket is then resolved automatically."
+            ),
+            body_default=(
+                "We are waiting to hear back from you about {reference} ({subject}). Is this still an issue?\n\n"
+                "Reply to this email to let us know. If we do not hear from you in the next {days} days, "
+                "we will assume it is sorted and resolve the ticket (you can reopen it by replying)."
+            ),
+            body_placeholders={**_COMMON, "days": "how many days until the ticket is resolved automatically"},
+            sample={**_COMMON_SAMPLE, "days": "3"},
+        ),
+        TemplateDef(
             key="auto_resolve_note",
             label="Automatic resolution note",
             description=(
