@@ -457,7 +457,7 @@ integration later. Change control is later.
 **Statuses.** New (untriaged), Open, In progress, Awaiting user, Awaiting approval
 (a service request waiting for its approvers, 14 Oct 2026), With supplier (added 20 Oct 2026:
 waiting on an outside supplier or vendor we raised it with; not the MSP, which has With MSP
-and its own phase 5 handoff), With MSP, Resolved, Closed. Reopening is a recorded event, not a status.
+and its own phase 5 handoff), With MSP, Scheduled (added 22 Oct 2026, SRP-2: work planned for a later date, see "Scheduled status" below), Resolved, Closed. Reopening is a recorded event, not a status.
 With supplier is set by hand (the Status buttons, or the Status dropdown once it exists) and is
 an open status: it is not finished, nobody's access changes, and the SLA clock keeps running
 (only Awaiting user pauses it; decided 21 Oct 2026 that With supplier does not pause it either,
@@ -489,7 +489,7 @@ without anyone remembering to set it by hand.
 - **The user replies.** When the requester, or a follower, replies while the ticket
   is Awaiting user, it moves back to In progress automatically and the SLA clock
   resumes. This covers portal comments now and email replies once mail intake
-  exists. A reply on a New ticket changes nothing; on a With supplier or With MSP ticket it changes
+  exists. A reply on a New ticket changes nothing; on a With supplier, With MSP or Scheduled ticket it changes
   nothing (the agent decides, and the assigned agent is notified); on a Resolved ticket it reopens it and on a Closed ticket it opens a new, linked ticket
   (*built, 4E-1:* `app/reopening.py`).
 - Both moves are ordinary status events in the timeline and the audit log, with
@@ -1238,3 +1238,30 @@ Shared mailbox address, MSP address, database restore window (7 to 35
 days), upload size limit, SLA targets per priority, triage team, auto-close
 days, chase X and Y, automatic email cap per ticket, office and VPN IP
 ranges, internal domain name, alert recipients, Azure subscription.
+
+## Scheduled status (SRP-2, issue #93)
+
+A ticket status **Scheduled** for work planned for a later date, typically a service request with a Required by date.
+The issue's "Decided" bullets (the requester sets the date in the portal, past dates are refused unless backdating) are
+about the date and were built in SRP-1 (#92); Scheduled reuses that `Ticket.required_by` and adds no second date field.
+The points below are **Proposed - needs owner confirmation** (each can change cheaply):
+
+1. **Proposed - needs owner confirmation: the SLA clock pauses like Awaiting user, unless the ticket has a Required by date.**
+   Waiting for a planned date is not the agents' time running out, so a priority-target ticket stops the clock and a
+   resume pushes its deadlines out by the time spent Scheduled. A ticket with a Required by date keeps running against
+   that date, as SRP-1 already does for Awaiting user (a stated date is not pushed out). So the date, not the status, is what
+   is measured, and a Scheduled ticket with no date does not breach while it waits. Moving between Awaiting user and Scheduled
+   stays paused.
+2. **Proposed - needs owner confirmation: entered by hand only,** from the Status buttons or the Email user / Add note status
+   dropdown (4B-5), like With supplier. Nothing moves a ticket to Scheduled automatically when a date is set.
+3. **Proposed - needs owner confirmation: nothing happens automatically on the date.** No status move and no new job or
+   notification. This is the smaller safe option: auto-moving to In progress would change a status nobody asked to change, and
+   a reminder needs a new scheduled job, a setting and a staging check. The Required by date already ranks the ticket in the
+   queue from `required_by_lead_days` before the day and shows "required by DATE, overdue" after it. A reminder job can be
+   added later on the 4A table if wanted.
+4. **Proposed - needs owner confirmation: replies follow the With supplier pattern.** A requester or follower reply on a
+   Scheduled ticket changes no status and notifies the assigned agent. Emailing the requester also leaves it Scheduled.
+   It is not finished, access does not change, and it is never chased (only Awaiting user is, `app/auto_close_chase.py`).
+5. **Proposed - needs owner confirmation: wording** is the plain label "scheduled" in the dropdown, status buttons, queue and the
+   requester's portal. No email or Teams template has text of its own for it. A split original takes Scheduled from its parts by the
+   same rule as every status (all Scheduled, or the only unfinished part).
