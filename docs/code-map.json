@@ -49,6 +49,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/d546e15ede32_action_tokens_and_ticket_feedback.py",
+        "revision": "d546e15ede32"
+      },
+      {
         "file": "migrations/versions/cee91863c890_thanks_rules.py",
         "revision": "cee91863c890"
       },
@@ -63,17 +67,13 @@
       {
         "file": "migrations/versions/c5d9e2f7a418_approval_groups.py",
         "revision": "c5d9e2f7a418"
-      },
-      {
-        "file": "migrations/versions/b4c6d8e0f2a6_follower_updates.py",
-        "revision": "b4c6d8e0f2a6"
       }
     ],
-    "count": 40,
+    "count": 41,
     "heads": [
       {
-        "file": "migrations/versions/cee91863c890_thanks_rules.py",
-        "revision": "cee91863c890"
+        "file": "migrations/versions/d546e15ede32_action_tokens_and_ticket_feedback.py",
+        "revision": "d546e15ede32"
       }
     ]
   },
@@ -89,6 +89,41 @@
       "summary": "",
       "tables": [],
       "tests": []
+    },
+    {
+      "classes": [
+        "LinkError"
+      ],
+      "file": "app/action_links.py",
+      "functions": [
+        "can_reopen",
+        "claim",
+        "find",
+        "hash_token",
+        "is_expired",
+        "mint",
+        "put_links_in",
+        "reopen_from_link",
+        "submit_feedback"
+      ],
+      "imported_by": [
+        "app.mail",
+        "app.resolution",
+        "app.routers.action_links"
+      ],
+      "imports": [
+        "app.config",
+        "app.models",
+        "app.reopening",
+        "app.settings_store"
+      ],
+      "module": "app.action_links",
+      "routes": [],
+      "summary": "The feedback and reopen links in the resolution email (phase 4F).",
+      "tables": [],
+      "tests": [
+        "tests/test_action_links.py"
+      ]
     },
     {
       "classes": [
@@ -486,6 +521,7 @@
         "unsafe_setting_errors"
       ],
       "imported_by": [
+        "app.action_links",
         "app.approval_links",
         "app.attachments",
         "app.auth",
@@ -517,6 +553,7 @@
       "tables": [],
       "tests": [
         "tests/test_acknowledgement.py",
+        "tests/test_action_links.py",
         "tests/test_activity_log.py",
         "tests/test_approval_reminders.py",
         "tests/test_attachments.py",
@@ -544,6 +581,7 @@
       "imported_by": [
         "app.activity",
         "app.auth",
+        "app.routers.action_links",
         "app.routers.admin",
         "app.routers.approvals",
         "app.routers.attachments",
@@ -625,6 +663,7 @@
       "tables": [],
       "tests": [
         "tests/test_acknowledgement.py",
+        "tests/test_action_links.py",
         "tests/test_email_templates.py",
         "tests/test_follower_updates.py",
         "tests/test_resolution.py"
@@ -953,6 +992,7 @@
       "summary": "Keeps credentials that travel in an address out of the logs (phase 3A).",
       "tables": [],
       "tests": [
+        "tests/test_action_links.py",
         "tests/test_public_surface.py"
       ]
     },
@@ -986,6 +1026,7 @@
         "app.jobs"
       ],
       "imports": [
+        "app.action_links",
         "app.approval_groups",
         "app.approval_links",
         "app.approvals",
@@ -1008,6 +1049,7 @@
       "tables": [],
       "tests": [
         "tests/test_acknowledgement.py",
+        "tests/test_action_links.py",
         "tests/test_approval_reminders.py",
         "tests/test_email_templates.py",
         "tests/test_follower_updates.py",
@@ -1038,6 +1080,7 @@
         "app.config",
         "app.log_redaction",
         "app.models",
+        "app.routers.action_links",
         "app.routers.admin",
         "app.routers.approvals",
         "app.routers.attachments",
@@ -1059,6 +1102,7 @@
       "tables": [],
       "tests": [
         "tests/conftest.py",
+        "tests/test_action_links.py",
         "tests/test_attachments.py",
         "tests/test_health.py",
         "tests/test_htmx_errors.py",
@@ -1136,6 +1180,7 @@
     },
     {
       "classes": [
+        "ActionToken",
         "ActivityLog",
         "ApprovalGroup",
         "ApprovalGroupMember",
@@ -1171,6 +1216,7 @@
         "TicketApproval",
         "TicketEscalator",
         "TicketEvent",
+        "TicketFeedback",
         "TicketFollower",
         "TicketSource",
         "TicketStatus",
@@ -1183,6 +1229,7 @@
         "allocate_number"
       ],
       "imported_by": [
+        "app.action_links",
         "app.activity",
         "app.approval_groups",
         "app.approval_reminders",
@@ -1212,6 +1259,7 @@
         "app.reopening",
         "app.request_types",
         "app.resolution",
+        "app.routers.action_links",
         "app.routers.admin",
         "app.routers.approvals",
         "app.routers.attachments",
@@ -1239,6 +1287,10 @@
       "routes": [],
       "summary": "",
       "tables": [
+        {
+          "class": "ActionToken",
+          "table": "actiontoken"
+        },
         {
           "class": "ActivityLog",
           "table": "activitylog"
@@ -1368,6 +1420,10 @@
           "table": "ticketevent"
         },
         {
+          "class": "TicketFeedback",
+          "table": "ticketfeedback"
+        },
+        {
           "class": "TicketFollower",
           "table": "ticketfollower"
         },
@@ -1380,6 +1436,7 @@
         "tests/conftest.py",
         "tests/test_access_context.py",
         "tests/test_acknowledgement.py",
+        "tests/test_action_links.py",
         "tests/test_activity_log.py",
         "tests/test_admin.py",
         "tests/test_approval_groups.py",
@@ -1592,6 +1649,7 @@
       "tables": [],
       "tests": [
         "tests/test_acknowledgement.py",
+        "tests/test_action_links.py",
         "tests/test_approval_reminders.py",
         "tests/test_email_templates.py",
         "tests/test_follower_updates.py",
@@ -1701,6 +1759,7 @@
         "rate_limited"
       ],
       "imported_by": [
+        "app.routers.action_links",
         "app.routers.approvals",
         "app.routers.webhooks"
       ],
@@ -1731,6 +1790,7 @@
         "reopen_ticket"
       ],
       "imported_by": [
+        "app.action_links",
         "app.inbound",
         "app.routers.portal",
         "app.routers.tickets",
@@ -1804,6 +1864,7 @@
         "app.routers.tickets"
       ],
       "imports": [
+        "app.action_links",
         "app.audit",
         "app.email_templates",
         "app.forms",
@@ -1830,6 +1891,52 @@
       "module": "app.routers",
       "routes": [],
       "summary": "",
+      "tables": [],
+      "tests": []
+    },
+    {
+      "classes": [],
+      "file": "app/routers/action_links.py",
+      "functions": [
+        "give_feedback",
+        "reopen",
+        "show_feedback",
+        "show_reopen"
+      ],
+      "imported_by": [
+        "app.main"
+      ],
+      "imports": [
+        "app.action_links",
+        "app.database",
+        "app.models",
+        "app.rate_limit",
+        "app.templating"
+      ],
+      "module": "app.routers.action_links",
+      "routes": [
+        {
+          "handler": "show_feedback",
+          "method": "GET",
+          "path": "/feedback/{token}"
+        },
+        {
+          "handler": "give_feedback",
+          "method": "POST",
+          "path": "/feedback/{token}"
+        },
+        {
+          "handler": "show_reopen",
+          "method": "GET",
+          "path": "/reopen/{token}"
+        },
+        {
+          "handler": "reopen",
+          "method": "POST",
+          "path": "/reopen/{token}"
+        }
+      ],
+      "summary": "The emailed feedback and reopen links (phase 4F). No sign-in: the token in the link says what it may do.",
       "tables": [],
       "tests": []
     },
@@ -2825,6 +2932,7 @@
         "sla_key"
       ],
       "imported_by": [
+        "app.action_links",
         "app.approval_reminders",
         "app.categories",
         "app.inbound",
@@ -2848,6 +2956,7 @@
       "tables": [],
       "tests": [
         "tests/test_acknowledgement.py",
+        "tests/test_action_links.py",
         "tests/test_approval_reminders.py",
         "tests/test_approvals.py",
         "tests/test_category_admin.py",
@@ -3114,6 +3223,7 @@
       "summary": "Application Insights, switched on by APPLICATIONINSIGHTS_CONNECTION_STRING (the Bicep sets it).",
       "tables": [],
       "tests": [
+        "tests/test_action_links.py",
         "tests/test_wiring_3f.py"
       ]
     },
@@ -3125,6 +3235,7 @@
       ],
       "imported_by": [
         "app.main",
+        "app.routers.action_links",
         "app.routers.admin",
         "app.routers.approvals",
         "app.routers.auth",
@@ -3543,6 +3654,12 @@
     },
     {
       "default": "30",
+      "env": "RATE_LIMIT_ACTION_LINKS_PER_MINUTE",
+      "name": "rate_limit_action_links_per_minute",
+      "type": "int"
+    },
+    {
+      "default": "30",
       "env": "RATE_LIMIT_APPROVALS_PER_MINUTE",
       "name": "rate_limit_approvals_per_minute",
       "type": "int"
@@ -3648,6 +3765,7 @@
     "tests/conftest.py",
     "tests/test_access_context.py",
     "tests/test_acknowledgement.py",
+    "tests/test_action_links.py",
     "tests/test_activity_log.py",
     "tests/test_admin.py",
     "tests/test_approval_groups.py",

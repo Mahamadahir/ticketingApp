@@ -23,6 +23,8 @@ class SettingDef:
 DEFAULT_TRIAGE_TEAM = "default_triage_team_id"
 TELL_REQUESTER_RAISED_FOR = "tell_requester_when_raised_for_them"
 APPROVAL_LINK_MINUTES = "approval_link_minutes"
+FEEDBACK_LINK_MINUTES = "feedback_link_minutes"
+REOPEN_LINK_MINUTES = "reopen_link_minutes"
 TEAMS_UNREAD_MINUTES = "teams_unread_minutes"
 AUTOMATIC_EMAIL_CAP = "automatic_email_cap_per_ticket"
 INBOUND_MAX_PER_SENDER_HOUR = "inbound_max_per_sender_hour"
@@ -125,6 +127,27 @@ REGISTRY: dict[str, SettingDef] = {
             "the link stops working and they use the portal instead. 20160 is 14 days."
         ),
         default="20160",
+    ),
+    FEEDBACK_LINK_MINUTES: SettingDef(
+        key=FEEDBACK_LINK_MINUTES,
+        label="How long the emailed feedback link works (minutes)",
+        kind="minutes",
+        description=(
+            "The resolution email carries a link where the requester rates how the ticket was handled. "
+            "It works once, and stops working after this long. 43200 is 30 days. Placeholder value."
+        ),
+        default="43200",
+    ),
+    REOPEN_LINK_MINUTES: SettingDef(
+        key=REOPEN_LINK_MINUTES,
+        label="How long the emailed reopen link works (minutes)",
+        kind="minutes",
+        description=(
+            "The resolution email carries a link that reopens the ticket (after a confirming click). It works "
+            "once, and only while the ticket is still Resolved; after this long, or once the ticket is closed, "
+            "the page tells the requester to reply to the email instead. 43200 is 30 days. Placeholder value."
+        ),
+        default="43200",
     ),
     AUTOMATIC_EMAIL_CAP: SettingDef(
         key=AUTOMATIC_EMAIL_CAP,

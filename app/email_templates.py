@@ -133,11 +133,23 @@ REGISTRY: dict[str, TemplateDef] = {
             body_default=(
                 "Your ticket {reference} has been resolved.\n\n"
                 "What was done:\n{resolution_notes}\n\n"
-                "If this has not fixed the problem, reply to this email and tell us."
+                "If this has not fixed the problem, reply to this email and tell us, or reopen the ticket.\n"
+                "Reopen this ticket: {reopen_link}\n"
+                "Tell us how we did: {feedback_link}"
             ),
-            body_placeholders={**_COMMON, "resolution_notes": "what the agent wrote when resolving the ticket"},
+            body_placeholders={
+                **_COMMON,
+                "resolution_notes": "what the agent wrote when resolving the ticket",
+                "reopen_link": "a personal link that reopens the ticket (made when the email is sent; works once)",
+                "feedback_link": "a personal link to rate how the ticket was handled (made when the email is sent; works once)",
+            },
             required=("resolution_notes",),
-            sample={**_COMMON_SAMPLE, "resolution_notes": "Cleared the paper jam and replaced the roller."},
+            sample={
+                **_COMMON_SAMPLE,
+                "resolution_notes": "Cleared the paper jam and replaced the roller.",
+                "reopen_link": "https://tickets.example.org/reopen/(a personal link, made when sent)",
+                "feedback_link": "https://tickets.example.org/feedback/(a personal link, made when sent)",
+            },
         ),
         TemplateDef(
             key="auto_resolve_note",
@@ -293,6 +305,8 @@ def validate(defn: TemplateDef, subject: Optional[str], body: str) -> tuple[Opti
     _check_text(body, defn.body_placeholders, "text")
     if "/approvals/" in body.lower():
         raise TemplateError("Approval links cannot be written into a template; use {link}, which is made when the email is sent")
+    if "feedback_link" in defn.body_placeholders and ("/feedback/" in body.lower() or "/reopen/" in body.lower()):
+        raise TemplateError("Feedback and reopen links cannot be written into a template; use {feedback_link} and {reopen_link}, which are made when the email is sent")
     for name in defn.required:
         if "{" + name + "}" not in body:
             raise TemplateError("The text must include {" + name + "}")

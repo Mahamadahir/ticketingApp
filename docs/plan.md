@@ -931,13 +931,13 @@ A template is plain text with `{placeholders}` from a fixed list per email; the 
   ("thanks", "cheers"; equals / starts with / contains / ends with, `*` wildcard, a
   maximum length per rule, no regular expressions) and has no attachment is added without
   reopening (*built, 4E-2:* `app/thanks_rules.py`; mail and portal comments alike). Anything else reopens and
-  notifies the agent. The reopen link always reopens.
+  notifies the agent. The emailed reopen link (*built, 4F*) reopens a Resolved ticket after a confirming click; a Closed ticket is never reopened, so the page tells the requester to reply to the email, which opens a linked new ticket.
 - Agents reclose with a reason: user said thanks, duplicate, new issue
   raised separately, reopened in error. "User said thanks" sends the reply
   text to an admin review list to add to the ignore list or dismiss. (*built, 4E-2:* Admin > Thanks rules.)
 - Chase: Awaiting user with no reply for **X days** sends "Is this still an
   issue?"; **Y days** more auto-resolves. X and Y are admin settings.
-- Feedback: signed single-use link, 1â€“5 rating and comment, attributed to
+- Feedback (*built, 4F:* `app/action_links.py`): random single-use link (only its hash is stored, 30 days by default), 1â€“5 rating and comment, attributed to
   the resolving agent. Admins see all; agents see their own, comments
   included.
 

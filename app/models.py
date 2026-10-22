@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 
-from sqlalchemy import Index, UniqueConstraint, event, text, update
+from sqlalchemy import CheckConstraint, Index, UniqueConstraint, event, text, update
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -471,6 +471,38 @@ class ApprovalVote(SQLModel, table=True):
     # reminder job safe to run late or twice.
     reminder_count: int = Field(default=0, sa_column_kwargs={"server_default": "0"})
     last_reminded_at: Optional[datetime] = Field(default=None)
+
+
+class ActionToken(SQLModel, table=True):
+    """An emailed one-time link (phase 4F): the feedback or reopen link in the resolution email. Only the
+    hash of the token is stored, so the database cannot be used to build a working link; the link itself is
+    made when the email is sent and never kept (app/action_links.py)."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ticket_id: int = Field(foreign_key="ticket.id", index=True)
+    kind: str  # feedback, reopen
+    token_hash: str = Field(unique=True)
+    # Who resolved the ticket when the link was made: a rating is about that agent, even if the ticket is
+    # reopened and resolved by someone else before the link is used.
+    resolved_by_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    expires_at: datetime
+    used_at: Optional[datetime] = Field(default=None)
+
+
+class TicketFeedback(SQLModel, table=True):
+    """The requester's rating of how a ticket was handled, given once through the emailed link. Never
+    changed afterwards."""
+
+    __table_args__ = (CheckConstraint("rating BETWEEN 1 AND 5", name="ck_ticketfeedback_rating"),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ticket_id: int = Field(foreign_key="ticket.id", index=True)
+    token_id: int = Field(foreign_key="actiontoken.id", unique=True)
+    rating: int
+    comment: str = Field(default="")
+    resolved_by_id: Optional[int] = Field(default=None, foreign_key="user.id", index=True)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class Notification(SQLModel, table=True):

@@ -122,7 +122,7 @@ sends nothing; it only works in the dev environment and the template does not al
 
 **Application Insights.** Every app receives `APPLICATIONINSIGHTS_CONNECTION_STRING` and the app
 starts telemetry from it (`app/telemetry.py`; blank means off). The approval link carries a working
-credential in its path, so `/approvals/` requests are excluded from request telemetry; uvicorn's
+credential in its path, so `/approvals/`, `/feedback/` and `/reopen/` requests are excluded from request telemetry; uvicorn's
 own access log redacts the token (`app/log_redaction.py`). Ingress logs are Azure's own and still
 need checking on staging (docs/build-plan.md checklist).
 
