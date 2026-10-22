@@ -53,7 +53,7 @@ def test_emailing_the_user_puts_the_ticket_in_awaiting_user_with_no_choice(clien
     assert [a.detail for a in audit] == [f"{start.value} -> awaiting_user"]
 
 
-@pytest.mark.parametrize("status", [TicketStatus.WITH_SUPPLIER, TicketStatus.WITH_MSP, TicketStatus.RESOLVED, TicketStatus.CLOSED])
+@pytest.mark.parametrize("status", [TicketStatus.WITH_SUPPLIER, TicketStatus.WITH_MSP, TicketStatus.SCHEDULED, TicketStatus.RESOLVED, TicketStatus.CLOSED])
 def test_emailing_leaves_statuses_that_are_not_waiting_on_us_alone(client, db_session, status):
     team = create_team(db_session, "Service Desk")
     ticket = make_ticket(db_session, team.id, status)
@@ -118,7 +118,7 @@ def test_a_follower_replying_also_hands_it_back(client, db_session):
 
 @pytest.mark.parametrize(
     "status",
-    [TicketStatus.NEW, TicketStatus.OPEN, TicketStatus.IN_PROGRESS, TicketStatus.WITH_SUPPLIER, TicketStatus.WITH_MSP, TicketStatus.CLOSED],  # Resolved reopens: tests/test_reopening.py
+    [TicketStatus.NEW, TicketStatus.OPEN, TicketStatus.IN_PROGRESS, TicketStatus.WITH_SUPPLIER, TicketStatus.WITH_MSP, TicketStatus.SCHEDULED, TicketStatus.CLOSED],  # Resolved reopens: tests/test_reopening.py
 )
 def test_a_reply_only_changes_a_ticket_that_is_awaiting_the_user(client, db_session, status):
     team = create_team(db_session, "Service Desk")
@@ -162,7 +162,7 @@ def test_an_agent_can_still_set_the_status_by_hand(client, db_session):
 
 # ---- The agent's explicit choice (4B-5) -----------------------------------------------------------
 
-OFFERED = ["open", "in_progress", "awaiting_user", "with_supplier", "with_msp"]
+OFFERED = ["open", "in_progress", "awaiting_user", "with_supplier", "with_msp", "scheduled"]
 
 
 def select_options(page):
@@ -176,7 +176,7 @@ def select_options(page):
     return out
 
 
-def test_both_forms_offer_the_same_five_statuses_and_never_resolved_or_closed(client, db_session):
+def test_both_forms_offer_the_same_six_statuses_and_never_resolved_or_closed(client, db_session):
     team = create_team(db_session, "Service Desk")
     ticket = make_ticket(db_session, team.id, TicketStatus.IN_PROGRESS)
     agent_for(client, db_session, team)

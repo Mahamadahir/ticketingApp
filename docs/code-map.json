@@ -49,6 +49,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/c4e7a2b9d106_scheduled_status.py",
+        "revision": "c4e7a2b9d106"
+      },
+      {
         "file": "migrations/versions/8b3e5a1c9d27_required_by.py",
         "revision": "8b3e5a1c9d27"
       },
@@ -63,17 +67,13 @@
       {
         "file": "migrations/versions/cee91863c890_thanks_rules.py",
         "revision": "cee91863c890"
-      },
-      {
-        "file": "migrations/versions/962d0f5d6bed_approval_reminders.py",
-        "revision": "962d0f5d6bed"
       }
     ],
-    "count": 43,
+    "count": 44,
     "heads": [
       {
-        "file": "migrations/versions/8b3e5a1c9d27_required_by.py",
-        "revision": "8b3e5a1c9d27"
+        "file": "migrations/versions/c4e7a2b9d106_scheduled_status.py",
+        "revision": "c4e7a2b9d106"
       }
     ]
   },
@@ -1284,6 +1284,7 @@
         "tests/test_outbound_mail.py",
         "tests/test_reply_notification.py",
         "tests/test_resolution.py",
+        "tests/test_scheduled_status.py",
         "tests/test_split_family.py"
       ]
     },
@@ -1596,6 +1597,7 @@
         "tests/test_required_by.py",
         "tests/test_resolution.py",
         "tests/test_scheduled_jobs.py",
+        "tests/test_scheduled_status.py",
         "tests/test_search.py",
         "tests/test_sla.py",
         "tests/test_split_family.py",
@@ -3289,6 +3291,7 @@
         "tests/test_backdating.py",
         "tests/test_required_by.py",
         "tests/test_resolution.py",
+        "tests/test_scheduled_status.py",
         "tests/test_sla.py",
         "tests/test_with_supplier.py"
       ]
@@ -3339,6 +3342,7 @@
       "tables": [],
       "tests": [
         "tests/test_auto_close_chase.py",
+        "tests/test_scheduled_status.py",
         "tests/test_split_family.py",
         "tests/test_splitting.py",
         "tests/test_with_supplier.py"
@@ -4106,6 +4110,7 @@
     "tests/test_required_by.py",
     "tests/test_resolution.py",
     "tests/test_scheduled_jobs.py",
+    "tests/test_scheduled_status.py",
     "tests/test_search.py",
     "tests/test_security.py",
     "tests/test_sla.py",

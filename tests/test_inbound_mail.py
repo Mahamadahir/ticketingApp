@@ -587,7 +587,7 @@ def test_a_reply_hands_a_ticket_waiting_on_the_requester_back_to_us(db_session):
 
 @pytest.mark.parametrize(
     "status",
-    [TicketStatus.NEW, TicketStatus.IN_PROGRESS, TicketStatus.WITH_MSP, TicketStatus.WITH_SUPPLIER],
+    [TicketStatus.NEW, TicketStatus.IN_PROGRESS, TicketStatus.WITH_MSP, TicketStatus.WITH_SUPPLIER, TicketStatus.SCHEDULED],
 )  # Resolved and Closed: tests/test_reopening.py
 def test_a_reply_changes_no_other_status_but_is_recorded(db_session, status):
     ticket = open_ticket(db_session)
