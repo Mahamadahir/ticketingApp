@@ -14,7 +14,7 @@ cap). `chased_at` and `chase_count` on the ticket make this happen once per wait
 Anything that takes the ticket out of Awaiting user (a reply by mail or portal, the reopen link, an agent's status
 change) clears the chase in `set_status`, so a ticket that goes back to Awaiting user starts a fresh wait.
 
-- Only Awaiting user is chased, so With supplier and With MSP (and every other status) never are.
+- Only Awaiting user is chased, so With supplier, With MSP, Scheduled (and every other status) never are.
 - A split original is never chased: its status follows its parts, so each part is chased on its own. An
   original that has been Resolved for long enough is closed like any ticket.
 - If the chase email is held (the cap, mail down) the clock waits for it to go; if it is given up on, the ticket
