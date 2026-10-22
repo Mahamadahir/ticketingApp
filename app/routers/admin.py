@@ -107,6 +107,7 @@ from app.models import (
     User,
     UserRole,
 )
+from app.feedback import feedback_page
 from app.pagination import paginate
 from app.scheduled_jobs import SCHEDULED_JOBS, status_line, timing
 from app.settings_store import (
@@ -363,6 +364,29 @@ def create_team(
     log_action(session, admin.email, "team", team.id, "created", f"{name} (sub-team of {parent.name})" if parent else name)
     session.commit()
     return RedirectResponse("/admin/teams", status_code=303)
+
+
+@router.get("/feedback", response_class=HTMLResponse)
+def view_feedback(
+    request: Request,
+    agent: Optional[str] = None,
+    rating: Optional[str] = None,
+    page: int = 1,
+    user: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    agent_id, chosen_rating = optional_int(agent), optional_int(rating)
+    entries = feedback_page(session, user, page, request.query_params, agent_id=agent_id, rating=chosen_rating)
+    agents = session.exec(
+        select(User).where(User.role.in_((UserRole.AGENT, UserRole.SUPER_ADMIN))).order_by(User.email)
+    ).all()
+    wanted = {f.resolved_by_id for f, _ in entries.items if f.resolved_by_id}
+    names = {u.id: u for u in session.exec(select(User).where(User.id.in_(wanted))).all()} if wanted else {}
+    return templates.TemplateResponse(
+        request,
+        "admin_feedback.html",
+        {"page": entries, "agents": agents, "names": names, "agent": agent_id, "rating": chosen_rating, "user": user},
+    )
 
 
 AUDIT_ENTITY_TYPES = ["ticket", "user", "team", "category", "setting", "email_template"]

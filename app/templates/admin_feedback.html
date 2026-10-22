@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Admin: Feedback{% endblock %}
+{% block content %}
+{% set active = "/admin/feedback" %}
+{% include "_admin_tabs.html" %}
+
+<h2>Feedback</h2>
+<p class="note">Ratings and comments from requesters, kept with the agent who resolved the ticket. Comments are personal data.</p>
+
+<form class="filter-form" method="get" action="/admin/feedback">
+  <label>
+    Agent
+    <select name="agent">
+      <option value="">Any agent</option>
+      {% for a in agents %}
+      <option value="{{ a.id }}" {{ "selected" if agent == a.id else "" }}>{{ a.display_name or a.email }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    Rating
+    <select name="rating">
+      <option value="">Any</option>
+      {% for n in range(5, 0, -1) %}
+      <option value="{{ n }}" {{ "selected" if rating == n else "" }}>{{ n }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="submit">Filter</button>
+  <a href="/admin/feedback">Clear</a>
+</form>
+
+<table>
+  <thead>
+    <tr><th>Time</th><th>Ticket</th><th>Resolved by</th><th>Rating</th><th>Comment</th></tr>
+  </thead>
+  <tbody>
+    {% for f, t in page.items %}
+    <tr>
+      <td>{{ f.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
+      <td><a href="/tickets/{{ t.number }}">{{ t.reference }}</a> {{ t.subject }}</td>
+      <td>{% if f.resolved_by_id %}{% set a = names.get(f.resolved_by_id) %}{{ (a.display_name or a.email) if a else "Unknown" }}{% else %}Resolved automatically{% endif %}</td>
+      <td>{{ f.rating }} / 5</td>
+      <td>{{ f.comment }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5">No feedback yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% include "_pagination.html" %}
+{% endblock %}

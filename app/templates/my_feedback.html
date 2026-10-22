@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}My feedback{% endblock %}
+{% block content %}
+<h2>My feedback</h2>
+<p class="note">What requesters said about tickets you resolved. Only you (and admins) can see this.</p>
+
+<form class="filter-form" method="get" action="/my-feedback">
+  <label>
+    Rating
+    <select name="rating">
+      <option value="">Any</option>
+      {% for n in range(5, 0, -1) %}
+      <option value="{{ n }}" {{ "selected" if rating == n else "" }}>{{ n }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="submit">Filter</button>
+  <a href="/my-feedback">Clear</a>
+</form>
+
+<table>
+  <thead>
+    <tr><th>Time</th><th>Ticket</th><th>Rating</th><th>Comment</th></tr>
+  </thead>
+  <tbody>
+    {% for f, t in page.items %}
+    <tr>
+      <td>{{ f.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
+      <td><a href="/tickets/{{ t.number }}">{{ t.reference }}</a> {{ t.subject }}</td>
+      <td>{{ f.rating }} / 5</td>
+      <td>{{ f.comment }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4">No feedback yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% include "_pagination.html" %}
+{% endblock %}

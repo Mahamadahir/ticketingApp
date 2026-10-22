@@ -284,6 +284,13 @@
 <p class="note">{% if resolved_by %}Resolved by {{ resolved_by.display_name or resolved_by.email }}{% else %}Resolved automatically{% endif %}{% if ticket.resolved_at %} on {{ ticket.resolved_at.strftime("%Y-%m-%d %H:%M") }} UTC{% endif %}{% if ticket.closed_at %}; closed {{ ticket.closed_at.strftime("%Y-%m-%d %H:%M") }} UTC{% endif %}.</p>
 <pre class="message-body">{{ ticket.resolution_notes }}</pre>
 {% endif %}
+{% if feedback %}
+<h3>Requester feedback</h3>
+{% for f in feedback %}
+<p class="note">{{ f.rating }} out of 5, {{ f.created_at.strftime("%Y-%m-%d %H:%M") }} UTC</p>
+{% if f.comment %}<pre class="message-body">{{ f.comment }}</pre>{% endif %}
+{% endfor %}
+{% endif %}
 
 <h3>Linked tickets</h3>
 {% if parent %}
