@@ -790,7 +790,7 @@ Resolve several tickets with one note (phase 4I). The rules are in app/bulk_reso
 File: `app/routers/bulk_resolve.py`
 - Functions: `choose`, `confirm`, `preview`
 - Routes: GET `/bulk-resolve`, POST `/bulk-resolve`, POST `/bulk-resolve/preview`
-- Imports: `app.auth`, `app.bulk_resolve`, `app.database`, `app.forms`, `app.models`, `app.notifications`, `app.resolution`, `app.templating`, `app.ticket_service`, `app.visibility`
+- Imports: `app.auth`, `app.bulk_resolve`, `app.database`, `app.forms`, `app.models`, `app.notifications`, `app.resolution`, `app.settings_store`, `app.splitting`, `app.templating`, `app.ticket_service`, `app.visibility`
 - Imported by: `app.main`
 - Tests: none
 
@@ -902,7 +902,7 @@ File: `app/settings_store.py`
 - Classes: `SettingDef`
 - Functions: `count_setting`, `get_flag`, `get_int_setting`, `get_setting`, `set_setting`, `sla_key`
 - Imports: `app.models`
-- Imported by: `app.action_links`, `app.approval_reminders`, `app.auto_close_chase`, `app.bulk_resolve`, `app.categories`, `app.inbound`, `app.mail`, `app.notifications`, `app.presence`, `app.raising`, `app.routers.admin`, `app.routers.approvals`, `app.scheduled_jobs`, `app.sla`, `app.subscriptions`, `app.ticket_service`
+- Imported by: `app.action_links`, `app.approval_reminders`, `app.auto_close_chase`, `app.bulk_resolve`, `app.categories`, `app.inbound`, `app.mail`, `app.notifications`, `app.presence`, `app.raising`, `app.routers.admin`, `app.routers.approvals`, `app.routers.bulk_resolve`, `app.scheduled_jobs`, `app.sla`, `app.subscriptions`, `app.ticket_service`
 - Tests: `test_acknowledgement.py`, `test_action_links.py`, `test_approval_reminders.py`, `test_approvals.py`, `test_auto_close_chase.py`, `test_bulk_resolve.py`, `test_category_admin.py`, `test_follower_updates.py`, `test_inbound_mail.py`, `test_mail_subscriptions.py`, `test_notification_followup.py`, `test_outbound_mail.py`, `test_presence.py`, `test_request_types.py`, `test_scheduled_jobs.py`, `test_sla.py`, `test_teams_copy.py`, `test_triage.py`
 
 ### `app.sla`
@@ -924,7 +924,7 @@ File: `app/splitting.py`
 - Classes: `SplitError`
 - Functions: `all_sub_tickets_finished`, `apply_requester_reply`, `check_manual_status`, `derived_status`, `has_sub_tickets`, `lock_ticket`, `refresh_open_sub_tickets`, `split_ticket`, `sub_ticket_count`, `sub_tickets_summary`, `sync_original_status`, `unfinished_sub_ticket_count`
 - Imports: `app.messages`, `app.models`, `app.reopening`, `app.sla`, `app.thanks_rules`, `app.ticket_service`, `app.triage`
-- Imported by: `app.auto_close_chase`, `app.bulk_resolve`, `app.inbound`, `app.messages`, `app.reopening`, `app.resolution`, `app.routers.portal`, `app.routers.tickets`, `app.ticket_service`
+- Imported by: `app.auto_close_chase`, `app.bulk_resolve`, `app.inbound`, `app.messages`, `app.reopening`, `app.resolution`, `app.routers.bulk_resolve`, `app.routers.portal`, `app.routers.tickets`, `app.ticket_service`
 - Tests: `test_auto_close_chase.py`, `test_split_family.py`, `test_splitting.py`, `test_with_supplier.py`
 
 ### `app.storage`

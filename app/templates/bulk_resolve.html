@@ -3,6 +3,7 @@
 {% block content %}
 <h2>Resolve several tickets</h2>
 <p class="note">One resolution note goes to every ticket ticked below. Each requester gets their own resolution email for their own ticket. You see a single preview before anything is sent.</p>
+{% if omitted %}<p class="note">At most {{ limit }} tickets can be resolved at once, so {{ omitted }} more are not listed. Resolve these first, then come back for the rest.</p>{% endif %}
 <form hx-post="/bulk-resolve/preview" hx-target="main" hx-swap="innerHTML" hx-disabled-elt="find button[type=submit]">
   <table>
     <thead><tr><th></th><th>Ref</th><th>Subject</th><th>Requester</th><th>Status</th></tr></thead>

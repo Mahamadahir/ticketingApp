@@ -13,6 +13,8 @@ from app.forms import MAX_MESSAGE_LENGTH
 from app.models import User
 from app.notifications import AGENT_ROLES
 from app.resolution import ResolveError, check_can_resolve
+from app.settings_store import BULK_RESOLVE_MAX, count_setting
+from app.splitting import has_sub_tickets
 from app.templating import templates
 from app.ticket_service import get_by_number
 from app.visibility import Access, access_context, ticket_access
@@ -33,8 +35,10 @@ def choose(
     if parent is not None:
         numbers = linked_numbers(session, parent) + numbers
     levels = access_context(session, user)
+    limit = count_setting(session, BULK_RESOLVE_MAX)
+    numbers = list(dict.fromkeys(numbers))
     rows = []
-    for n in dict.fromkeys(numbers):
+    for n in numbers[:limit]:
         ticket = get_by_number(session, n)
         if ticket is None or ticket_access(user, ticket, levels) != Access.WORK:
             rows.append({"number": n, "ticket": None, "problem": NOT_WORKABLE})
@@ -43,9 +47,13 @@ def choose(
             check_can_resolve(session, ticket)
             problem = None
         except ResolveError as error:
-            problem = str(error)
+            # A split original is judged after its parts at the preview, so it is not marked here.
+            problem = None if has_sub_tickets(session, ticket) else str(error)
         rows.append({"number": n, "ticket": ticket, "problem": problem})
-    return templates.TemplateResponse(request, "bulk_resolve.html", {"rows": rows, "user": user})
+    return templates.TemplateResponse(
+        request, "bulk_resolve.html",
+        {"rows": rows, "omitted": max(0, len(numbers) - limit), "limit": limit, "user": user},
+    )
 
 
 @router.post("/preview", response_class=HTMLResponse)

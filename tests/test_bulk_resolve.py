@@ -216,3 +216,30 @@ def test_the_list_and_the_parent_page_offer_it(client, db_session):
     assert 'name="number"' in client.get("/tickets").text
     assert f"/bulk-resolve?parent={major.number}" in client.get(f"/tickets/{major.number}").text
     assert "/bulk-resolve?parent=" not in client.get(f"/tickets/{first.number}").text
+
+
+def test_the_preview_judges_a_split_original_after_its_parts_and_changes_nothing(client, db_session):
+    original, _ = triaged_ticket(client, db_session)
+    assert split(client, original, ("Part one", "a"), ("Part two", "b")).status_code == 200
+    one, two = subs_of(db_session, original)
+    original = fresh(db_session, original)
+
+    text = preview(client, [original, one, two]).text
+
+    assert "3 tickets will be resolved" in text and "will be skipped" not in text
+    assert all(fresh(db_session, t).status != TicketStatus.RESOLVED for t in (original, one, two))
+    assert db_session.exec(select(OutboundEmail).where(OutboundEmail.kind == outbox.REPLY)).all() == []
+    # The numbers the preview's confirm form posts resolve the lot.
+    assert all(f'name="number" value="{t.number}"' in text for t in (original, one, two))
+    assert "3 resolved, 0 skipped" in confirm(client, [original, one, two]).text
+    assert fresh(db_session, original).status == TicketStatus.RESOLVED
+
+
+def test_the_choose_page_lists_at_most_the_limit(client, db_session):
+    _, major, first, second = family(client, db_session)
+    set_setting(db_session, BULK_RESOLVE_MAX, "2")
+    db_session.commit()
+
+    page = client.get(f"/bulk-resolve?parent={major.number}").text
+
+    assert "1 more are not listed" in page and page.count('name="number"') == 2

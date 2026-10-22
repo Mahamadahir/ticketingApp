@@ -19,9 +19,9 @@ from typing import Optional
 
 from sqlmodel import Session, select
 
-from app.messages import EmailPreview, UnknownRecipient
+from app.messages import EmailPreview, UnknownRecipient, preview_email
 from app.models import Ticket, User
-from app.resolution import ResolveError, clean_notes, preview_resolution, resolve_ticket
+from app.resolution import ResolveError, clean_notes, resolution_email_body, resolve_ticket
 from app.settings_store import BULK_RESOLVE_MAX, count_setting
 from app.splitting import SplitError
 from app.ticket_service import get_by_number
@@ -103,27 +103,12 @@ def check_batch(session: Session, numbers: list[int], notes: str) -> str:
         raise BulkError(str(error))
 
 
-def preview_bulk(session: Session, user: User, levels: AccessContext, numbers: list[int], notes: str) -> BulkPlan:
-    """What resolving would do for each ticket: who is emailed, or why it is skipped. Records nothing."""
-    notes = check_batch(session, numbers, notes)
-    plan = BulkPlan()
-    for number, ticket in _load(session, user, levels, numbers):
-        item = BulkItem(number=number)
-        plan.items.append(item)
-        if ticket is None:
-            item.skipped = NOT_WORKABLE
-            continue
-        item.reference, item.subject = ticket.reference, ticket.subject
-        try:
-            item.preview = preview_resolution(session, ticket, notes)
-        except (ResolveError, UnknownRecipient) as error:
-            item.skipped = str(error)
-    return plan
 
 
-def resolve_bulk(session: Session, user: User, levels: AccessContext, numbers: list[int], notes: str) -> BulkPlan:
-    """Resolves every ticket that still can be, each in its own savepoint; the rest are reported with
-    their reason. The caller commits. Raises BulkError only for a bad batch or note."""
+def _run(session: Session, user: User, levels: AccessContext, numbers: list[int], notes: str, dry_run: bool) -> BulkPlan:
+    """Walks the batch in lock order, resolving each ticket in its own savepoint. A dry run does the
+    same work (so a split original whose parts are in the batch is judged after its parts, exactly as
+    the real run will) and rolls it all back at the end, keeping each ticket's email preview."""
     notes = check_batch(session, numbers, notes)
     plan = BulkPlan()
     for number, ticket in _load(session, user, levels, numbers):
@@ -135,12 +120,28 @@ def resolve_bulk(session: Session, user: User, levels: AccessContext, numbers: l
         item.reference, item.subject = ticket.reference, ticket.subject
         savepoint = session.begin_nested()
         try:
-            resolve_ticket(session, ticket, user, notes, detail=f"Resolved with {len(numbers)} tickets in one go"
-                           if len(numbers) > 1 else None)
+            resolve_ticket(session, ticket, user, notes, detail="Resolved in a bulk resolve")
+            if dry_run:
+                # The recipients of the email the real run queues (the ticket's status no longer matters to it).
+                item.preview = preview_email(session, ticket, resolution_email_body(session, ticket, notes))
         except (ResolveError, SplitError, UnknownRecipient) as error:
             savepoint.rollback()
             item.skipped = str(error)
         else:
             savepoint.commit()
-            item.resolved = True
+            item.resolved = not dry_run
+    if dry_run:
+        session.rollback()
     return plan
+
+
+def preview_bulk(session: Session, user: User, levels: AccessContext, numbers: list[int], notes: str) -> BulkPlan:
+    """What resolving would do for each ticket: who is emailed, or why it is skipped. Records nothing
+    (the work is done and rolled back)."""
+    return _run(session, user, levels, numbers, notes, dry_run=True)
+
+
+def resolve_bulk(session: Session, user: User, levels: AccessContext, numbers: list[int], notes: str) -> BulkPlan:
+    """Resolves every ticket that still can be, each in its own savepoint; the rest are reported with
+    their reason. The caller commits. Raises BulkError only for a bad batch or note."""
+    return _run(session, user, levels, numbers, notes, dry_run=False)
