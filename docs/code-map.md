@@ -90,6 +90,9 @@ any change that adds, removes or renames modules, routes, models, jobs, settings
 | GET | `/auth/login` | `login_page` | `app.routers.auth` |
 | POST | `/auth/logout` | `logout` | `app.routers.auth` |
 | GET | `/auth/sso/start` | `sso_start` | `app.routers.auth` |
+| GET | `/bulk-resolve` | `choose` | `app.routers.bulk_resolve` |
+| POST | `/bulk-resolve` | `confirm` | `app.routers.bulk_resolve` |
+| POST | `/bulk-resolve/preview` | `preview` | `app.routers.bulk_resolve` |
 | GET | `/feedback/{token}` | `show_feedback` | `app.routers.action_links` |
 | POST | `/feedback/{token}` | `give_feedback` | `app.routers.action_links` |
 | GET | `/health` | `health` | `app.routers.health` |
@@ -355,7 +358,7 @@ File: `app/auth.py`
 - Classes: `LoginResult`, `NotAuthenticated`
 - Functions: `acquire_token_by_auth_code`, `attempt_local_login`, `build_auth_url`, `get_current_user`, `get_or_create_user`, `hash_password`, `require_roles`
 - Imports: `app.config`, `app.database`, `app.models`
-- Imported by: `app.main`, `app.routers.admin`, `app.routers.attachments`, `app.routers.auth`, `app.routers.feedback`, `app.routers.my_settings`, `app.routers.notifications`, `app.routers.portal`, `app.routers.tickets`
+- Imported by: `app.main`, `app.routers.admin`, `app.routers.attachments`, `app.routers.auth`, `app.routers.bulk_resolve`, `app.routers.feedback`, `app.routers.my_settings`, `app.routers.notifications`, `app.routers.portal`, `app.routers.tickets`
 - Tests: `test_activity_log.py`, `test_auth.py`, `test_hardening.py`, `test_login_lockout.py`, `test_visibility.py`
 
 ### `app.auto_close_chase`
@@ -377,6 +380,17 @@ File: `app/backdating.py`
 - Imports: `app.models`, `app.sla`, `app.ticket_service`
 - Imported by: `app.raising`, `app.routers.portal`, `app.routers.tickets`
 - Tests: `test_backdating.py`
+
+### `app.bulk_resolve`
+
+Resolving several tickets at once with one note (phase 4I). Nothing here commits.  
+File: `app/bulk_resolve.py`
+
+- Classes: `BulkError`, `BulkItem`, `BulkPlan`
+- Functions: `check_batch`, `linked_numbers`, `preview_bulk`, `resolve_bulk`
+- Imports: `app.messages`, `app.models`, `app.resolution`, `app.settings_store`, `app.splitting`, `app.ticket_service`, `app.visibility`
+- Imported by: `app.routers.bulk_resolve`
+- Tests: `test_bulk_resolve.py`
 
 ### `app.canned`
 
@@ -418,7 +432,7 @@ File: `app/config.py`
 - Functions: `mail_sync_errors`, `unsafe_setting_errors`
 - Imports: none
 - Imported by: `app.action_links`, `app.approval_links`, `app.attachments`, `app.auth`, `app.check_settings`, `app.database`, `app.followers`, `app.graph_client`, `app.inbound`, `app.jobs`, `app.mail`, `app.main`, `app.outbox`, `app.rate_limit`, `app.routers.admin`, `app.routers.auth`, `app.routers.dev_tools`, `app.routers.my_settings`, `app.routers.webhooks`, `app.storage`, `app.subscriptions`, `app.teams`, `app.telemetry`, `app.worker`
-- Tests: `test_acknowledgement.py`, `test_action_links.py`, `test_activity_log.py`, `test_approval_reminders.py`, `test_attachments.py`, `test_auto_close_chase.py`, `test_follower_updates.py`, `test_inbound_mail.py`, `test_mail_subscriptions.py`, `test_outbound_mail.py`, `test_presence.py`, `test_public_surface.py`, `test_resolution.py`, `test_security.py`, `test_teams.py`, `test_teams_copy_sending.py`, `test_visibility.py`, `test_wiring_3f.py`, `test_worker.py`
+- Tests: `test_acknowledgement.py`, `test_action_links.py`, `test_activity_log.py`, `test_approval_reminders.py`, `test_attachments.py`, `test_auto_close_chase.py`, `test_bulk_resolve.py`, `test_follower_updates.py`, `test_inbound_mail.py`, `test_mail_subscriptions.py`, `test_outbound_mail.py`, `test_presence.py`, `test_public_surface.py`, `test_resolution.py`, `test_security.py`, `test_teams.py`, `test_teams_copy_sending.py`, `test_visibility.py`, `test_wiring_3f.py`, `test_worker.py`
 
 ### `app.database`
 
@@ -426,7 +440,7 @@ File: `app/config.py`
 File: `app/database.py`
 - Functions: `get_session`
 - Imports: `app.config`
-- Imported by: `app.activity`, `app.auth`, `app.routers.action_links`, `app.routers.admin`, `app.routers.approvals`, `app.routers.attachments`, `app.routers.auth`, `app.routers.dev_tools`, `app.routers.feedback`, `app.routers.health`, `app.routers.my_settings`, `app.routers.notifications`, `app.routers.portal`, `app.routers.tickets`, `app.routers.webhooks`, `app.scheduled_jobs`, `app.worker`
+- Imported by: `app.activity`, `app.auth`, `app.routers.action_links`, `app.routers.admin`, `app.routers.approvals`, `app.routers.attachments`, `app.routers.auth`, `app.routers.bulk_resolve`, `app.routers.dev_tools`, `app.routers.feedback`, `app.routers.health`, `app.routers.my_settings`, `app.routers.notifications`, `app.routers.portal`, `app.routers.tickets`, `app.routers.webhooks`, `app.scheduled_jobs`, `app.worker`
 - Tests: `conftest.py`, `test_access_context.py`, `test_approval_groups.py`, `test_approval_reminders.py`, `test_approvals.py`, `test_auth.py`, `test_auto_close_chase.py`, `test_category_admin.py`, `test_followers.py`, `test_hardening.py`, `test_health.py`, `test_inbound_mail.py`, `test_linking.py`, `test_mail_subscriptions.py`, `test_notification_followup.py`, `test_outbound_mail.py`, `test_scheduled_jobs.py`, `test_split_family.py`, `test_splitting.py`, `test_teams_copy.py`, `test_teams_copy_sending.py`, `test_ticket_core.py`, `test_withdraw.py`, `test_worker.py`
 
 ### `app.email_templates`
@@ -486,7 +500,7 @@ File: `app/followers.py`
 File: `app/forms.py`
 - Functions: `optional_int`
 - Imports: none
-- Imported by: `app.canned`, `app.inbound`, `app.resolution`, `app.routers.admin`, `app.routers.feedback`, `app.routers.portal`, `app.routers.tickets`, `app.templating`
+- Imported by: `app.canned`, `app.inbound`, `app.resolution`, `app.routers.admin`, `app.routers.bulk_resolve`, `app.routers.feedback`, `app.routers.portal`, `app.routers.tickets`, `app.templating`
 - Tests: `test_canned.py`, `test_pagination_and_limits.py`, `test_resolution.py`
 
 ### `app.graph_client`
@@ -570,7 +584,7 @@ File: `app/main.py`
 
 - Classes: `AppStaticFiles`
 - Functions: `build_app`, `handle_http_exception`, `handle_no_ticket_access`, `handle_not_authenticated`, `handle_validation_error`, `lifespan`, `root`
-- Imports: `app.activity`, `app.auth`, `app.config`, `app.log_redaction`, `app.models`, `app.routers.action_links`, `app.routers.admin`, `app.routers.approvals`, `app.routers.attachments`, `app.routers.auth`, `app.routers.dev_tools`, `app.routers.feedback`, `app.routers.health`, `app.routers.my_settings`, `app.routers.notifications`, `app.routers.portal`, `app.routers.tickets`, `app.routers.webhooks`, `app.telemetry`, `app.templating`, `app.visibility`
+- Imports: `app.activity`, `app.auth`, `app.config`, `app.log_redaction`, `app.models`, `app.routers.action_links`, `app.routers.admin`, `app.routers.approvals`, `app.routers.attachments`, `app.routers.auth`, `app.routers.bulk_resolve`, `app.routers.dev_tools`, `app.routers.feedback`, `app.routers.health`, `app.routers.my_settings`, `app.routers.notifications`, `app.routers.portal`, `app.routers.tickets`, `app.routers.webhooks`, `app.telemetry`, `app.templating`, `app.visibility`
 - Imported by: none
 - Tests: `conftest.py`, `test_action_links.py`, `test_attachments.py`, `test_health.py`, `test_htmx_errors.py`, `test_public_surface.py`, `test_triage.py`
 
@@ -582,7 +596,7 @@ File: `app/messages.py`
 - Classes: `BadStatusChoice`, `EmailPreview`, `EmptyEmail`, `TimelineItem`, `UnknownRecipient`
 - Functions: `about_labels`, `about_text`, `add_note`, `agent_timeline`, `chosen_status`, `default_status_after_email`, `email_requester`, `in_a_split`, `is_triaged`, `mail_subject`, `preview_email`, `record_inbound`, `record_notice`, `requester_visible_messages`, `status_choices`, `thread_subject`
 - Imports: `app.followers`, `app.models`, `app.notifications`, `app.outbox`, `app.sla`, `app.splitting`, `app.ticket_service`, `app.visibility`
-- Imported by: `app.approvals`, `app.escalation`, `app.inbound`, `app.mail`, `app.raising`, `app.reopening`, `app.resolution`, `app.routers.approvals`, `app.routers.portal`, `app.routers.tickets`, `app.splitting`, `app.visibility`
+- Imported by: `app.approvals`, `app.bulk_resolve`, `app.escalation`, `app.inbound`, `app.mail`, `app.raising`, `app.reopening`, `app.resolution`, `app.routers.approvals`, `app.routers.portal`, `app.routers.tickets`, `app.splitting`, `app.visibility`
 - Tests: `test_email_preview.py`, `test_escalation_tidy.py`, `test_follower_updates.py`, `test_inbound_mail.py`, `test_messages.py`, `test_never_follow.py`, `test_outbound_mail.py`, `test_reply_notification.py`, `test_resolution.py`, `test_split_family.py`
 
 ### `app.models`
@@ -594,8 +608,8 @@ File: `app/models.py`
 - Functions: `allocate_number`
 - Tables: `actiontoken`, `activitylog`, `approvalgroup`, `approvalgroupmember`, `approvalvote`, `attachment`, `auditlog`, `cannedresponse`, `category`, `emailtemplate`, `graphnotification`, `graphsubscription`, `inboundmail`, `mailsyncstate`, `message`, `neverfollowaddress`, `notification`, `notificationpreference`, `numbercounter`, `outboundemail`, `relatedticket`, `requesttype`, `scheduledjob`, `setting`, `team`, `teammembership`, `teamspost`, `thankscandidate`, `thanksrule`, `ticket`, `ticketapproval`, `ticketescalator`, `ticketevent`, `ticketfeedback`, `ticketfollower`, `user`
 - Imports: none
-- Imported by: `app.action_links`, `app.activity`, `app.approval_groups`, `app.approval_reminders`, `app.approvals`, `app.attachments`, `app.audit`, `app.auth`, `app.auto_close_chase`, `app.backdating`, `app.canned`, `app.categories`, `app.email_templates`, `app.escalation`, `app.feedback`, `app.follower_updates`, `app.followers`, `app.identity`, `app.inbound`, `app.linking`, `app.mail`, `app.main`, `app.messages`, `app.never_follow`, `app.notification_settings`, `app.notifications`, `app.outbox`, `app.presence`, `app.raising`, `app.reopening`, `app.request_types`, `app.resolution`, `app.routers.action_links`, `app.routers.admin`, `app.routers.approvals`, `app.routers.attachments`, `app.routers.auth`, `app.routers.feedback`, `app.routers.my_settings`, `app.routers.notifications`, `app.routers.portal`, `app.routers.tickets`, `app.routers.webhooks`, `app.scheduled_jobs`, `app.search`, `app.settings_store`, `app.sla`, `app.splitting`, `app.subscriptions`, `app.team_activity`, `app.teams`, `app.thanks_rules`, `app.ticket_service`, `app.triage`, `app.visibility`
-- Tests: `conftest.py`, `test_access_context.py`, `test_acknowledgement.py`, `test_action_links.py`, `test_activity_log.py`, `test_admin.py`, `test_approval_groups.py`, `test_approval_reminders.py`, `test_approvals.py`, `test_attachments.py`, `test_auth.py`, `test_auto_close_chase.py`, `test_backdating.py`, `test_bell_access.py`, `test_canned.py`, `test_category_admin.py`, `test_email_preview.py`, `test_email_templates.py`, `test_escalation.py`, `test_escalation_tidy.py`, `test_feedback_views.py`, `test_follower_updates.py`, `test_followers.py`, `test_hardening.py`, `test_htmx_errors.py`, `test_htmx_partials.py`, `test_inbound_mail.py`, `test_linking.py`, `test_login_lockout.py`, `test_mail_subscriptions.py`, `test_messages.py`, `test_never_follow.py`, `test_notification_followup.py`, `test_notification_settings.py`, `test_notifications.py`, `test_outbound_mail.py`, `test_pagination_and_limits.py`, `test_portal.py`, `test_presence.py`, `test_public_surface.py`, `test_raising.py`, `test_reopening.py`, `test_reply_notification.py`, `test_request_types.py`, `test_resolution.py`, `test_scheduled_jobs.py`, `test_search.py`, `test_sla.py`, `test_split_family.py`, `test_splitting.py`, `test_status_follows_conversation.py`, `test_team_activity.py`, `test_teams.py`, `test_teams_copy.py`, `test_teams_copy_sending.py`, `test_thanks_rules.py`, `test_ticket_core.py`, `test_ticket_urls.py`, `test_tickets_rbac.py`, `test_triage.py`, `test_visibility.py`, `test_wiring_3f.py`, `test_with_supplier.py`, `test_withdraw.py`, `test_worker.py`
+- Imported by: `app.action_links`, `app.activity`, `app.approval_groups`, `app.approval_reminders`, `app.approvals`, `app.attachments`, `app.audit`, `app.auth`, `app.auto_close_chase`, `app.backdating`, `app.bulk_resolve`, `app.canned`, `app.categories`, `app.email_templates`, `app.escalation`, `app.feedback`, `app.follower_updates`, `app.followers`, `app.identity`, `app.inbound`, `app.linking`, `app.mail`, `app.main`, `app.messages`, `app.never_follow`, `app.notification_settings`, `app.notifications`, `app.outbox`, `app.presence`, `app.raising`, `app.reopening`, `app.request_types`, `app.resolution`, `app.routers.action_links`, `app.routers.admin`, `app.routers.approvals`, `app.routers.attachments`, `app.routers.auth`, `app.routers.bulk_resolve`, `app.routers.feedback`, `app.routers.my_settings`, `app.routers.notifications`, `app.routers.portal`, `app.routers.tickets`, `app.routers.webhooks`, `app.scheduled_jobs`, `app.search`, `app.settings_store`, `app.sla`, `app.splitting`, `app.subscriptions`, `app.team_activity`, `app.teams`, `app.thanks_rules`, `app.ticket_service`, `app.triage`, `app.visibility`
+- Tests: `conftest.py`, `test_access_context.py`, `test_acknowledgement.py`, `test_action_links.py`, `test_activity_log.py`, `test_admin.py`, `test_approval_groups.py`, `test_approval_reminders.py`, `test_approvals.py`, `test_attachments.py`, `test_auth.py`, `test_auto_close_chase.py`, `test_backdating.py`, `test_bell_access.py`, `test_bulk_resolve.py`, `test_canned.py`, `test_category_admin.py`, `test_email_preview.py`, `test_email_templates.py`, `test_escalation.py`, `test_escalation_tidy.py`, `test_feedback_views.py`, `test_follower_updates.py`, `test_followers.py`, `test_hardening.py`, `test_htmx_errors.py`, `test_htmx_partials.py`, `test_inbound_mail.py`, `test_linking.py`, `test_login_lockout.py`, `test_mail_subscriptions.py`, `test_messages.py`, `test_never_follow.py`, `test_notification_followup.py`, `test_notification_settings.py`, `test_notifications.py`, `test_outbound_mail.py`, `test_pagination_and_limits.py`, `test_portal.py`, `test_presence.py`, `test_public_surface.py`, `test_raising.py`, `test_reopening.py`, `test_reply_notification.py`, `test_request_types.py`, `test_resolution.py`, `test_scheduled_jobs.py`, `test_search.py`, `test_sla.py`, `test_split_family.py`, `test_splitting.py`, `test_status_follows_conversation.py`, `test_team_activity.py`, `test_teams.py`, `test_teams_copy.py`, `test_teams_copy_sending.py`, `test_thanks_rules.py`, `test_ticket_core.py`, `test_ticket_urls.py`, `test_tickets_rbac.py`, `test_triage.py`, `test_visibility.py`, `test_wiring_3f.py`, `test_with_supplier.py`, `test_withdraw.py`, `test_worker.py`
 
 ### `app.never_follow`
 
@@ -625,7 +639,7 @@ In-app notifications (phase 2A): the bell. Something happens that an agent shoul
 File: `app/notifications.py`
 - Functions: `bell_tickets`, `count_unread`, `default_teams_delay`, `drop_due_for_teams`, `due_for_teams`, `hand_to_teams`, `mark_all_read`, `mark_read`, `mentioned_in`, `notify`, `notify_approval_overdue`, `notify_approval_withdrawn`, `notify_assigned`, `notify_mentions`, `notify_reopened`, `notify_reply`, `retire_read_for_teams`, `visible_to`
 - Imports: `app.models`, `app.notification_settings`, `app.settings_store`, `app.visibility`
-- Imported by: `app.approval_reminders`, `app.approvals`, `app.escalation`, `app.jobs`, `app.messages`, `app.reopening`, `app.routers.feedback`, `app.routers.my_settings`, `app.routers.notifications`, `app.routers.tickets`, `app.triage`
+- Imported by: `app.approval_reminders`, `app.approvals`, `app.escalation`, `app.jobs`, `app.messages`, `app.reopening`, `app.routers.bulk_resolve`, `app.routers.feedback`, `app.routers.my_settings`, `app.routers.notifications`, `app.routers.tickets`, `app.triage`
 - Tests: `test_bell_access.py`, `test_notifications.py`, `test_teams_copy.py`, `test_teams_copy_sending.py`
 
 ### `app.outbox`
@@ -635,7 +649,7 @@ File: `app/outbox.py`
 - Functions: `is_on`, `queue_acknowledgement`, `queue_approval`, `queue_approval_reminder`, `queue_approval_withdrawn`, `queue_chase`, `queue_follower_update`, `queue_message`, `queue_raised_for`
 - Imports: `app.config`, `app.models`, `app.notification_settings`
 - Imported by: `app.approval_reminders`, `app.approvals`, `app.auto_close_chase`, `app.follower_updates`, `app.inbound`, `app.mail`, `app.messages`, `app.raising`
-- Tests: `test_acknowledgement.py`, `test_action_links.py`, `test_approval_reminders.py`, `test_auto_close_chase.py`, `test_email_templates.py`, `test_follower_updates.py`, `test_outbound_mail.py`, `test_resolution.py`, `test_withdraw.py`
+- Tests: `test_acknowledgement.py`, `test_action_links.py`, `test_approval_reminders.py`, `test_auto_close_chase.py`, `test_bulk_resolve.py`, `test_email_templates.py`, `test_follower_updates.py`, `test_outbound_mail.py`, `test_resolution.py`, `test_withdraw.py`
 
 ### `app.pagination`
 
@@ -709,8 +723,8 @@ File: `app/resolution.py`
 - Classes: `ResolveError`
 - Functions: `auto_resolution_note`, `check_can_resolve`, `clean_notes`, `preview_resolution`, `resolution_email_body`, `resolve_ticket`
 - Imports: `app.action_links`, `app.audit`, `app.email_templates`, `app.forms`, `app.messages`, `app.models`, `app.splitting`, `app.ticket_service`
-- Imported by: `app.auto_close_chase`, `app.raising`, `app.routers.tickets`
-- Tests: `test_auto_close_chase.py`, `test_reopening.py`, `test_resolution.py`
+- Imported by: `app.auto_close_chase`, `app.bulk_resolve`, `app.raising`, `app.routers.bulk_resolve`, `app.routers.tickets`
+- Tests: `test_auto_close_chase.py`, `test_bulk_resolve.py`, `test_reopening.py`, `test_resolution.py`
 
 ### `app.routers`
 
@@ -769,6 +783,16 @@ File: `app/routers/auth.py`
 - Imports: `app.activity`, `app.auth`, `app.config`, `app.database`, `app.models`, `app.templating`
 - Imported by: `app.main`
 - Tests: `test_activity_log.py`, `test_visibility.py`
+
+### `app.routers.bulk_resolve`
+
+Resolve several tickets with one note (phase 4I). The rules are in app/bulk_resolve.py.  
+File: `app/routers/bulk_resolve.py`
+- Functions: `choose`, `confirm`, `preview`
+- Routes: GET `/bulk-resolve`, POST `/bulk-resolve`, POST `/bulk-resolve/preview`
+- Imports: `app.auth`, `app.bulk_resolve`, `app.database`, `app.forms`, `app.models`, `app.notifications`, `app.resolution`, `app.templating`, `app.ticket_service`, `app.visibility`
+- Imported by: `app.main`
+- Tests: none
 
 ### `app.routers.dev_tools`
 
@@ -878,8 +902,8 @@ File: `app/settings_store.py`
 - Classes: `SettingDef`
 - Functions: `count_setting`, `get_flag`, `get_int_setting`, `get_setting`, `set_setting`, `sla_key`
 - Imports: `app.models`
-- Imported by: `app.action_links`, `app.approval_reminders`, `app.auto_close_chase`, `app.categories`, `app.inbound`, `app.mail`, `app.notifications`, `app.presence`, `app.raising`, `app.routers.admin`, `app.routers.approvals`, `app.scheduled_jobs`, `app.sla`, `app.subscriptions`, `app.ticket_service`
-- Tests: `test_acknowledgement.py`, `test_action_links.py`, `test_approval_reminders.py`, `test_approvals.py`, `test_auto_close_chase.py`, `test_category_admin.py`, `test_follower_updates.py`, `test_inbound_mail.py`, `test_mail_subscriptions.py`, `test_notification_followup.py`, `test_outbound_mail.py`, `test_presence.py`, `test_request_types.py`, `test_scheduled_jobs.py`, `test_sla.py`, `test_teams_copy.py`, `test_triage.py`
+- Imported by: `app.action_links`, `app.approval_reminders`, `app.auto_close_chase`, `app.bulk_resolve`, `app.categories`, `app.inbound`, `app.mail`, `app.notifications`, `app.presence`, `app.raising`, `app.routers.admin`, `app.routers.approvals`, `app.scheduled_jobs`, `app.sla`, `app.subscriptions`, `app.ticket_service`
+- Tests: `test_acknowledgement.py`, `test_action_links.py`, `test_approval_reminders.py`, `test_approvals.py`, `test_auto_close_chase.py`, `test_bulk_resolve.py`, `test_category_admin.py`, `test_follower_updates.py`, `test_inbound_mail.py`, `test_mail_subscriptions.py`, `test_notification_followup.py`, `test_outbound_mail.py`, `test_presence.py`, `test_request_types.py`, `test_scheduled_jobs.py`, `test_sla.py`, `test_teams_copy.py`, `test_triage.py`
 
 ### `app.sla`
 
@@ -900,7 +924,7 @@ File: `app/splitting.py`
 - Classes: `SplitError`
 - Functions: `all_sub_tickets_finished`, `apply_requester_reply`, `check_manual_status`, `derived_status`, `has_sub_tickets`, `lock_ticket`, `refresh_open_sub_tickets`, `split_ticket`, `sub_ticket_count`, `sub_tickets_summary`, `sync_original_status`, `unfinished_sub_ticket_count`
 - Imports: `app.messages`, `app.models`, `app.reopening`, `app.sla`, `app.thanks_rules`, `app.ticket_service`, `app.triage`
-- Imported by: `app.auto_close_chase`, `app.inbound`, `app.messages`, `app.reopening`, `app.resolution`, `app.routers.portal`, `app.routers.tickets`, `app.ticket_service`
+- Imported by: `app.auto_close_chase`, `app.bulk_resolve`, `app.inbound`, `app.messages`, `app.reopening`, `app.resolution`, `app.routers.portal`, `app.routers.tickets`, `app.ticket_service`
 - Tests: `test_auto_close_chase.py`, `test_split_family.py`, `test_splitting.py`, `test_with_supplier.py`
 
 ### `app.storage`
@@ -962,7 +986,7 @@ The one place the Jinja2 environment is built, so every router renders the same 
 File: `app/templating.py`
 - Functions: `is_htmx`
 - Imports: `app.forms`, `app.presence`
-- Imported by: `app.main`, `app.routers.action_links`, `app.routers.admin`, `app.routers.approvals`, `app.routers.auth`, `app.routers.feedback`, `app.routers.my_settings`, `app.routers.notifications`, `app.routers.portal`, `app.routers.tickets`
+- Imported by: `app.main`, `app.routers.action_links`, `app.routers.admin`, `app.routers.approvals`, `app.routers.auth`, `app.routers.bulk_resolve`, `app.routers.feedback`, `app.routers.my_settings`, `app.routers.notifications`, `app.routers.portal`, `app.routers.tickets`
 - Tests: none
 
 ### `app.thanks_rules`
@@ -984,7 +1008,7 @@ File: `app/ticket_service.py`
 - Classes: `AwaitingApproval`, `NotTriaged`, `ResolutionRequired`
 - Functions: `create_ticket`, `find_ticket`, `get_by_number`, `parse_ticket_number`, `record_event`, `set_status`
 - Imports: `app.models`, `app.settings_store`, `app.sla`, `app.splitting`, `app.teams`
-- Imported by: `app.approvals`, `app.auto_close_chase`, `app.backdating`, `app.followers`, `app.inbound`, `app.linking`, `app.messages`, `app.raising`, `app.reopening`, `app.resolution`, `app.routers.admin`, `app.routers.portal`, `app.routers.tickets`, `app.search`, `app.sla`, `app.splitting`, `app.triage`
+- Imported by: `app.approvals`, `app.auto_close_chase`, `app.backdating`, `app.bulk_resolve`, `app.followers`, `app.inbound`, `app.linking`, `app.messages`, `app.raising`, `app.reopening`, `app.resolution`, `app.routers.admin`, `app.routers.bulk_resolve`, `app.routers.portal`, `app.routers.tickets`, `app.search`, `app.sla`, `app.splitting`, `app.triage`
 - Tests: `test_auto_close_chase.py`, `test_category_admin.py`, `test_email_preview.py`, `test_portal.py`, `test_reopening.py`, `test_reply_notification.py`, `test_resolution.py`, `test_split_family.py`, `test_teams.py`, `test_thanks_rules.py`, `test_ticket_core.py`, `test_triage.py`
 
 ### `app.triage`
@@ -1006,7 +1030,7 @@ File: `app/visibility.py`
 - Classes: `Access`, `AccessContext`, `NoTicketAccess`
 - Functions: `access_context`, `assignable_agents`, `feedback_condition`, `is_untriaged`, `may_add_note`, `may_self_assign`, `may_triage`, `may_view_attachment`, `require_access`, `team_members`, `ticket_access`, `visible_ticket_condition`
 - Imports: `app.followers`, `app.messages`, `app.models`
-- Imported by: `app.feedback`, `app.main`, `app.messages`, `app.notifications`, `app.routers.attachments`, `app.routers.portal`, `app.routers.tickets`, `app.teams`, `app.triage`
+- Imported by: `app.bulk_resolve`, `app.feedback`, `app.main`, `app.messages`, `app.notifications`, `app.routers.attachments`, `app.routers.bulk_resolve`, `app.routers.portal`, `app.routers.tickets`, `app.teams`, `app.triage`
 - Tests: `test_access_context.py`, `test_escalation.py`, `test_messages.py`, `test_visibility.py`
 
 ### `app.worker`
