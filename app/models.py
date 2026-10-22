@@ -184,6 +184,11 @@ class Ticket(SQLModel, table=True):
     resolved_by_id: Optional[int] = Field(default=None, foreign_key="user.id")
     closed_at: Optional[datetime] = Field(default=None)
     reopen_count: int = Field(default=0, sa_column_kwargs={"server_default": "0"})
+    # Chasing a quiet Awaiting user ticket (app/auto_close_chase.py): when the chase email was queued and
+    # how many have been (0 or 1 today). Cleared whenever the ticket leaves Awaiting user (a reply, the
+    # reopen link, an agent's change), which is what cancels a chase.
+    chased_at: Optional[datetime] = Field(default=None)
+    chase_count: int = Field(default=0, sa_column_kwargs={"server_default": "0"})
     # Set (and never cleared) once an agent enters earlier dates than the real ones,
     # so the ticket is logged after the fact. Such tickets count towards volume but are
     # left out of SLA figures; created_at still holds when it was really entered.
@@ -585,7 +590,7 @@ class OutboundEmail(SQLModel, table=True):
     )
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    kind: str  # reply, notice, raised_for_you, approval, approval_reminder, approval_withdrawn, acknowledgement, follower_update
+    kind: str  # reply, notice, raised_for_you, approval, approval_reminder, approval_withdrawn, acknowledgement, follower_update, chase
     ticket_id: int = Field(foreign_key="ticket.id", index=True)
     # For a reply or notice: the message it carries. Unique, so one message can never be emailed twice.
     message_id: Optional[int] = Field(default=None, foreign_key="message.id", unique=True)

@@ -25,11 +25,12 @@ APPROVAL = "approval"  # asks an approver to approve or decline
 APPROVAL_REMINDER = "approval_reminder"  # chases an approver who has not answered
 APPROVAL_WITHDRAWN = "approval_withdrawn"  # tells an approver the requester withdrew the request
 ACKNOWLEDGEMENT = "acknowledgement"  # "your issue has been logged", once, for a ticket that arrived by email
+CHASE = "chase"  # "is this still an issue?" to the requester of a ticket Awaiting user (app/auto_close_chase.py)
 FOLLOWER_UPDATE = "follower_update"  # an inbound update passed to someone who was not on the mail it came in
 
 # Kinds that go to the requester without an agent having just written them. These are what the
 # per-ticket cap counts; an agent's own reply never is.
-AUTOMATIC_TO_REQUESTER = (NOTICE, RAISED_FOR, ACKNOWLEDGEMENT)
+AUTOMATIC_TO_REQUESTER = (NOTICE, RAISED_FOR, ACKNOWLEDGEMENT, CHASE)
 
 
 def is_on() -> bool:
@@ -121,6 +122,17 @@ def queue_acknowledgement(session: Session, ticket: Ticket) -> Optional[Outbound
     if already is not None:
         return None
     row = OutboundEmail(kind=ACKNOWLEDGEMENT, ticket_id=ticket.id, to_address=ticket.requester_email)
+    session.add(row)
+    return row
+
+
+def queue_chase(session: Session, ticket: Ticket) -> Optional[OutboundEmail]:
+    """Queues the "is this still an issue?" email (app/auto_close_chase.py decides when and only once per
+    wait). Whether it is still wanted is asked again when it is sent (mail.build_chase_mail)."""
+    if not is_on():
+        return None
+    session.flush()
+    row = OutboundEmail(kind=CHASE, ticket_id=ticket.id, to_address=ticket.requester_email)
     session.add(row)
     return row
 

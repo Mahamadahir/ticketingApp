@@ -45,6 +45,11 @@ APPROVAL_REMIND_AFTER_DAYS = "approval_remind_after_days"
 APPROVAL_REMIND_EVERY_DAYS = "approval_remind_every_days"
 APPROVAL_MAX_REMINDERS = "approval_max_reminders"
 APPROVAL_ESCALATE_AFTER_DAYS = "approval_escalate_after_days"
+AUTO_CLOSE_ENABLED = "auto_close_enabled"
+AUTO_CLOSE_AFTER_DAYS = "auto_close_after_days"
+CHASE_ENABLED = "chase_enabled"
+CHASE_AFTER_DAYS = "chase_after_days"
+CHASE_RESOLVE_AFTER_DAYS = "chase_resolve_after_days"
 
 # PLACEHOLDER SLA targets, in minutes on a 24/7 clock, until the real ones are agreed
 # (TBC in docs/plan.md). They are settings, changed under Admin > Settings; a blank
@@ -154,7 +159,7 @@ REGISTRY: dict[str, SettingDef] = {
         label="Automatic emails to one ticket's requester, at most per day",
         kind="count",
         description=(
-            "Stops a mail loop: automatic emails (approval decisions, 'a ticket was raised for you') "
+            "Stops a mail loop: automatic emails (approval decisions, 'a ticket was raised for you', the receipt, the chase 'is this still an issue?') "
             "to the same ticket are held back once this many have gone in the last 24 hours. Agent "
             "replies are never counted. Placeholder value until the real limit is agreed."
         ),
@@ -317,6 +322,50 @@ REGISTRY: dict[str, SettingDef] = {
             "in the bell, once. They can then waive it or chase the approvers. Placeholder."
         ),
         default="7",
+    ),
+    AUTO_CLOSE_ENABLED: SettingDef(
+        key=AUTO_CLOSE_ENABLED,
+        label="Auto-close: close old resolved tickets",
+        kind="flag",
+        description=(
+            "On: a ticket that has stayed Resolved for the number of days below is closed automatically. "
+            "Off until staging, like the other automations."
+        ),
+        default="off",
+    ),
+    AUTO_CLOSE_AFTER_DAYS: SettingDef(
+        key=AUTO_CLOSE_AFTER_DAYS,
+        label="Auto-close: close a resolved ticket after (days)",
+        kind="count",
+        description="A ticket Resolved for this many days is closed. A reopen or a reply before then keeps it open. Placeholder.",
+        default="7",
+    ),
+    CHASE_ENABLED: SettingDef(
+        key=CHASE_ENABLED,
+        label="Chase: chase tickets waiting on the requester",
+        kind="flag",
+        description=(
+            "On: a ticket in Awaiting user with no reply is chased with an email, and resolved automatically "
+            "if there is still no reply. Never applies to tickets With supplier or With MSP. Off until staging."
+        ),
+        default="off",
+    ),
+    CHASE_AFTER_DAYS: SettingDef(
+        key=CHASE_AFTER_DAYS,
+        label="Chase: send the chase email after (days)",
+        kind="count",
+        description="A ticket in Awaiting user this long with no reply is emailed \"Is this still an issue?\". Placeholder.",
+        default="3",
+    ),
+    CHASE_RESOLVE_AFTER_DAYS: SettingDef(
+        key=CHASE_RESOLVE_AFTER_DAYS,
+        label="Chase: resolve automatically after the chase email (days)",
+        kind="count",
+        description=(
+            "A chased ticket still waiting this many days after the chase email was sent is resolved automatically "
+            "(the resolution email says to reply to reopen it). Placeholder."
+        ),
+        default="3",
     ),
     SLA_AT_RISK_PERCENT: SettingDef(
         key=SLA_AT_RISK_PERCENT,

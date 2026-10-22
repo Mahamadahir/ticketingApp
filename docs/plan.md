@@ -935,8 +935,12 @@ A template is plain text with `{placeholders}` from a fixed list per email; the 
 - Agents reclose with a reason: user said thanks, duplicate, new issue
   raised separately, reopened in error. "User said thanks" sends the reply
   text to an admin review list to add to the ignore list or dismiss. (*built, 4E-2:* Admin > Thanks rules.)
-- Chase: Awaiting user with no reply for **X days** sends "Is this still an
-  issue?"; **Y days** more auto-resolves. X and Y are admin settings.
+- Chase (*built, 4H:* `app/auto_close_chase.py`): Awaiting user with no reply for **X days** sends "Is this still an
+  issue?"; **Y days** after that email went, the ticket is auto-resolved (generic note, resolution email with the reopen link).
+  X and Y are admin settings, as is the on/off switch (off until staging). Only Awaiting user is chased (never With supplier or
+  With MSP); a split original is chased through its parts; a reply, the reopen link or any status change cancels it; the chase email
+  counts toward the automatic-email cap.
+- Auto-close (*built, 4H*): a ticket Resolved for **N days** (placeholder 7) is closed by the system (`auto_closed` event). Own switch, off until staging.
 - Feedback (*built, 4F:* `app/action_links.py`): random single-use link (only its hash is stored, 30 days by default), 1â€“5 rating and comment, attributed to
   the resolving agent. Admins see all; agents see their own, comments
   included.
