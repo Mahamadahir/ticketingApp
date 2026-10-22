@@ -108,4 +108,4 @@ def test_the_real_package_is_importable():
     from azure.monitor.opentelemetry import configure_azure_monitor
 
     assert callable(configure_azure_monitor)
-    assert telemetry.EXCLUDED_URLS == ("/approvals/",)
+    assert telemetry.EXCLUDED_URLS == ("/approvals/", "/feedback/", "/reopen/")
