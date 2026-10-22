@@ -49,6 +49,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/5d1f0c2b7a96_chase_fields.py",
+        "revision": "5d1f0c2b7a96"
+      },
+      {
         "file": "migrations/versions/d546e15ede32_action_tokens_and_ticket_feedback.py",
         "revision": "d546e15ede32"
       },
@@ -63,17 +67,13 @@
       {
         "file": "migrations/versions/dddff5e5bec9_related_tickets_for_a_reply_after_.py",
         "revision": "dddff5e5bec9"
-      },
-      {
-        "file": "migrations/versions/c5d9e2f7a418_approval_groups.py",
-        "revision": "c5d9e2f7a418"
       }
     ],
-    "count": 41,
+    "count": 42,
     "heads": [
       {
-        "file": "migrations/versions/d546e15ede32_action_tokens_and_ticket_feedback.py",
-        "revision": "d546e15ede32"
+        "file": "migrations/versions/5d1f0c2b7a96_chase_fields.py",
+        "revision": "5d1f0c2b7a96"
       }
     ]
   },
@@ -339,6 +339,7 @@
       "imported_by": [
         "app.approval_reminders",
         "app.approvals",
+        "app.auto_close_chase",
         "app.escalation",
         "app.inbound",
         "app.notification_settings",
@@ -399,6 +400,37 @@
         "tests/test_hardening.py",
         "tests/test_login_lockout.py",
         "tests/test_visibility.py"
+      ]
+    },
+    {
+      "classes": [],
+      "file": "app/auto_close_chase.py",
+      "functions": [
+        "close_resolved_tickets",
+        "resolve_unanswered",
+        "run_auto_close",
+        "run_chase",
+        "send_chases",
+        "waiting_since"
+      ],
+      "imported_by": [
+        "app.scheduled_jobs"
+      ],
+      "imports": [
+        "app.audit",
+        "app.models",
+        "app.outbox",
+        "app.resolution",
+        "app.settings_store",
+        "app.splitting",
+        "app.ticket_service"
+      ],
+      "module": "app.auto_close_chase",
+      "routes": [],
+      "summary": "Auto-close and chase (phase 4H): two recurring jobs on the database-driven scheduler",
+      "tables": [],
+      "tests": [
+        "tests/test_auto_close_chase.py"
       ]
     },
     {
@@ -558,6 +590,7 @@
         "tests/test_activity_log.py",
         "tests/test_approval_reminders.py",
         "tests/test_attachments.py",
+        "tests/test_auto_close_chase.py",
         "tests/test_follower_updates.py",
         "tests/test_inbound_mail.py",
         "tests/test_mail_subscriptions.py",
@@ -612,6 +645,7 @@
         "tests/test_approval_reminders.py",
         "tests/test_approvals.py",
         "tests/test_auth.py",
+        "tests/test_auto_close_chase.py",
         "tests/test_category_admin.py",
         "tests/test_followers.py",
         "tests/test_hardening.py",
@@ -666,6 +700,7 @@
       "tests": [
         "tests/test_acknowledgement.py",
         "tests/test_action_links.py",
+        "tests/test_auto_close_chase.py",
         "tests/test_email_templates.py",
         "tests/test_follower_updates.py",
         "tests/test_resolution.py"
@@ -1036,6 +1071,7 @@
         "build_approval_mail",
         "build_approval_reminder_mail",
         "build_approval_withdrawn_mail",
+        "build_chase_mail",
         "build_follower_update_mail",
         "build_message_mail",
         "build_raised_for_mail",
@@ -1079,6 +1115,7 @@
         "tests/test_acknowledgement.py",
         "tests/test_action_links.py",
         "tests/test_approval_reminders.py",
+        "tests/test_auto_close_chase.py",
         "tests/test_email_templates.py",
         "tests/test_follower_updates.py",
         "tests/test_outbound_mail.py",
@@ -1266,6 +1303,7 @@
         "app.attachments",
         "app.audit",
         "app.auth",
+        "app.auto_close_chase",
         "app.backdating",
         "app.canned",
         "app.categories",
@@ -1475,6 +1513,7 @@
         "tests/test_approvals.py",
         "tests/test_attachments.py",
         "tests/test_auth.py",
+        "tests/test_auto_close_chase.py",
         "tests/test_backdating.py",
         "tests/test_bell_access.py",
         "tests/test_canned.py",
@@ -1658,6 +1697,7 @@
         "queue_approval",
         "queue_approval_reminder",
         "queue_approval_withdrawn",
+        "queue_chase",
         "queue_follower_update",
         "queue_message",
         "queue_raised_for"
@@ -1665,6 +1705,7 @@
       "imported_by": [
         "app.approval_reminders",
         "app.approvals",
+        "app.auto_close_chase",
         "app.follower_updates",
         "app.inbound",
         "app.mail",
@@ -1684,6 +1725,7 @@
         "tests/test_acknowledgement.py",
         "tests/test_action_links.py",
         "tests/test_approval_reminders.py",
+        "tests/test_auto_close_chase.py",
         "tests/test_email_templates.py",
         "tests/test_follower_updates.py",
         "tests/test_outbound_mail.py",
@@ -1845,6 +1887,7 @@
       "summary": "Reopening, reclosing and replying after a ticket is finished (phase 4E-1). Nothing here commits.",
       "tables": [],
       "tests": [
+        "tests/test_auto_close_chase.py",
         "tests/test_reopening.py",
         "tests/test_thanks_rules.py"
       ]
@@ -1894,6 +1937,7 @@
         "resolve_ticket"
       ],
       "imported_by": [
+        "app.auto_close_chase",
         "app.raising",
         "app.routers.tickets"
       ],
@@ -1912,6 +1956,7 @@
       "summary": "Resolving a ticket (phase 4D). The one place a ticket becomes Resolved.",
       "tables": [],
       "tests": [
+        "tests/test_auto_close_chase.py",
         "tests/test_reopening.py",
         "tests/test_resolution.py"
       ]
@@ -2955,6 +3000,7 @@
       "imports": [
         "app.approval_reminders",
         "app.audit",
+        "app.auto_close_chase",
         "app.database",
         "app.models",
         "app.settings_store"
@@ -2965,6 +3011,7 @@
       "tables": [],
       "tests": [
         "tests/test_approval_reminders.py",
+        "tests/test_auto_close_chase.py",
         "tests/test_scheduled_jobs.py"
       ]
     },
@@ -3006,6 +3053,7 @@
       "imported_by": [
         "app.action_links",
         "app.approval_reminders",
+        "app.auto_close_chase",
         "app.categories",
         "app.inbound",
         "app.mail",
@@ -3031,6 +3079,7 @@
         "tests/test_action_links.py",
         "tests/test_approval_reminders.py",
         "tests/test_approvals.py",
+        "tests/test_auto_close_chase.py",
         "tests/test_category_admin.py",
         "tests/test_follower_updates.py",
         "tests/test_inbound_mail.py",
@@ -3111,6 +3160,7 @@
         "unfinished_sub_ticket_count"
       ],
       "imported_by": [
+        "app.auto_close_chase",
         "app.inbound",
         "app.messages",
         "app.reopening",
@@ -3133,6 +3183,7 @@
       "summary": "Splitting one request into sub-tickets. Nothing here commits.",
       "tables": [],
       "tests": [
+        "tests/test_auto_close_chase.py",
         "tests/test_split_family.py",
         "tests/test_splitting.py",
         "tests/test_with_supplier.py"
@@ -3269,6 +3320,7 @@
       "summary": "Teams channel posts (phase 2D): a card in the support channel for each new ticket.",
       "tables": [],
       "tests": [
+        "tests/test_auto_close_chase.py",
         "tests/test_inbound_mail.py",
         "tests/test_outbound_mail.py",
         "tests/test_teams.py",
@@ -3382,6 +3434,7 @@
       ],
       "imported_by": [
         "app.approvals",
+        "app.auto_close_chase",
         "app.backdating",
         "app.followers",
         "app.inbound",
@@ -3410,6 +3463,7 @@
       "summary": "Changes to tickets that more than one route makes. Nothing here commits:",
       "tables": [],
       "tests": [
+        "tests/test_auto_close_chase.py",
         "tests/test_category_admin.py",
         "tests/test_email_preview.py",
         "tests/test_portal.py",
@@ -3849,6 +3903,7 @@
     "tests/test_approvals.py",
     "tests/test_attachments.py",
     "tests/test_auth.py",
+    "tests/test_auto_close_chase.py",
     "tests/test_backdating.py",
     "tests/test_bell_access.py",
     "tests/test_canned.py",
