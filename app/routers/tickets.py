@@ -1106,7 +1106,8 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             "sla": sla_view(ticket, datetime.now(timezone.utc), at_risk_percent(session)),
             "moment_format": MOMENT_FORMAT,
             "can_backdate": may_backdate(ticket),
-            "can_set_required_by": offers_required_by(session, ticket) and may_set_required_by(user, ticket, levels),
+            "can_set_required_by": (offers_required_by(session, ticket) or ticket.required_by is not None)
+            and may_set_required_by(user, ticket, levels),
             "source_label": source_label(session, ticket),
             "request_info": request_type_of(session, ticket),
             "approvals": ticket_votes,

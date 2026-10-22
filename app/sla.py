@@ -174,7 +174,7 @@ def _span(delta: timedelta) -> str:
 def sla_view(ticket: Ticket, now: datetime, at_risk_percent: int) -> SlaView:
     """The SLA position of a ticket, for display. The next deadline is the first
     response until an agent has emailed, then the resolution."""
-    if not ticket.priority or ticket.is_backdated:
+    if (not ticket.priority and ticket.required_by is None) or ticket.is_backdated:
         return SlaView("none", "")
     if ticket.status in FINISHED_STATUSES:
         due = ticket.resolution_due_at
@@ -185,7 +185,7 @@ def sla_view(ticket: Ticket, now: datetime, at_risk_percent: int) -> SlaView:
         if ticket.required_by is not None:
             text += f" (required by {ticket.required_by.isoformat()})"
         return SlaView("breached" if late else "met", text, due, "required by" if ticket.required_by else None)
-    if ticket.sla_paused_at is not None:
+    if ticket.sla_paused_at is not None and ticket.required_by is None:  # a stated date keeps running
         return SlaView("paused", "paused (awaiting user)")
     if ticket.first_responded_at is None and ticket.first_response_due_at is not None:
         due, which = ticket.first_response_due_at, "first response"
@@ -221,8 +221,9 @@ def queue_order(required_by_lead_days: int):
         (Ticket.required_by.is_not(None), Ticket.resolution_due_at - timedelta(days=required_by_lead_days)),
         else_=Ticket.resolution_due_at,
     )
+    paused = and_(Ticket.sla_paused_at.is_not(None), Ticket.required_by.is_(None))  # a stated date keeps running
     next_due = case(
-        (Ticket.sla_paused_at.is_not(None), null()),
+        (paused, null()),
         (
             and_(
                 Ticket.first_responded_at.is_(None),
@@ -236,7 +237,7 @@ def queue_order(required_by_lead_days: int):
     group = case(
         (Ticket.triaged_at.is_(None), 0),
         (finished, 4),
-        (Ticket.sla_paused_at.is_not(None), 2),
+        (paused, 2),
         (next_due.is_(None), 3),
         else_=1,
     )

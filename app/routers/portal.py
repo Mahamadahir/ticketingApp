@@ -95,6 +95,7 @@ def _get_readable_ticket(session: Session, number: int, user: User) -> Ticket:
 
 
 def _render_new_form(request: Request, user: User, session: Session) -> HTMLResponse:
+    types = active_request_types(session)
     agent = is_agent(user)
     return templates.TemplateResponse(
         request,
@@ -110,8 +111,8 @@ def _render_new_form(request: Request, user: User, session: Session) -> HTMLResp
             "moment_format": MOMENT_FORMAT,
             "max_subject_length": MAX_SUBJECT_LENGTH,
             "tell_requester": should_tell_requester(session),
-            "request_types": active_request_types(session),
-            "required_by_names": [t.name for t in active_request_types(session) if t.offers_required_by],
+            "request_types": types,
+            "required_by_names": [t.name for t in types if t.offers_required_by],
         },
     )
 
@@ -153,7 +154,7 @@ def _render_ticket(request: Request, ticket: Ticket, user: User, session: Sessio
                 else []
             ),
             "is_requester": _is_requester(ticket, user),
-            "can_set_required_by": offers_required_by(session, ticket)
+            "can_set_required_by": (offers_required_by(session, ticket) or ticket.required_by is not None)
             and may_set_required_by(user, ticket, access_context(session, user)),
             "can_withdraw": _is_requester(ticket, user) and ticket.status == TicketStatus.AWAITING_APPROVAL,
             "can_reopen": _is_requester(ticket, user) and ticket.status == TicketStatus.RESOLVED,

@@ -1129,7 +1129,7 @@ The points below were settled in this note and are **Proposed - needs owner conf
    once and use it for both.
 3. **Proposed - needs owner confirmation: the first-response target is unchanged.** Required by replaces only the
    resolution target. A ticket with a date is not paused-extended: pausing in Awaiting user does not push a stated date
-   out (the requester named it), though the queue shows the ticket as paused like any other.
+   out (the requester named it), and the queue and ticket page keep it running (not shown as paused) while it waits on the user.
 4. **Proposed - needs owner confirmation: display is plain text.** The queue's SLA column and the ticket page say
    "required by 2026-10-30" instead of "resolution due in ...", with the live remaining time; the ticket page header also
    shows "Required by: 2026-10-30". The requester sees the date they asked for on their own ticket page.
@@ -1142,7 +1142,8 @@ The points below were settled in this note and are **Proposed - needs owner conf
    ticket whose request type offers the field can have one. Rule lives in `app/visibility.py` (`may_set_required_by`).
 7. **Backdating exception (decided).** A date before today (UTC) is refused, except when an agent is backdating:
    raising a ticket for someone with Reported/Resolved times, or on a ticket already flagged backdated.
-8. Switching a request type's field off does not remove dates already on tickets; it only stops new ones.
+8. A date cannot be changed on a resolved or closed request (it would rewrite the SLA record), and a date typed more than ten years ahead is refused. On a backdated ticket the date is recorded but drives nothing, because a backdated ticket has no SLA.
+9. Switching a request type's field off does not remove dates already on tickets; it only stops new ones.
 
 ## Build order
 

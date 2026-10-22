@@ -9,17 +9,17 @@ agent is backdating (a ticket raised for someone with earlier dates, app/backdat
 ticket event and an audit entry. See docs/plan.md, "Required by date on service requests".
 """
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from sqlmodel import Session
 
 from app.audit import log_action
-from app.models import RequestType, Ticket
+from app.models import FINISHED_STATUSES, RequestType, Ticket
 from app.sla import recalculate_deadlines
-from app.ticket_service import record_event
+from app.ticket_service import EVENT_REQUIRED_BY_CHANGED, record_event
 
-EVENT_REQUIRED_BY_CHANGED = "required_by_changed"
+MAX_DAYS_AHEAD = 3650  # a sanity bound on typing, not a business rule
 
 
 class RequiredByError(ValueError):
@@ -61,12 +61,16 @@ def set_required_by(
     is always allowed."""
     if value == ticket.required_by:
         return False
+    if ticket.status in FINISHED_STATUSES:
+        raise RequiredByError("The Required by date of a resolved or closed request cannot be changed")
     if value is not None:
         if not offers_required_by(session, ticket):
             raise RequiredByError("This kind of request does not take a Required by date")
         today = today or datetime.now(timezone.utc).date()
         if value < today and not backdating:
-            raise RequiredByError("The Required by date cannot be in the past")
+            raise RequiredByError("The Required by date cannot be in the past (dates are UTC)")
+        if value > today + timedelta(days=MAX_DAYS_AHEAD):
+            raise RequiredByError("That Required by date is too far ahead")
     before = ticket.required_by
     ticket.required_by = value
     recalculate_deadlines(session, ticket)

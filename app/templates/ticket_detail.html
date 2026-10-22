@@ -233,7 +233,7 @@
 
   {% if can_set_required_by %}
   <form hx-post="/tickets/{{ ticket.number }}/required-by" hx-target="main" hx-swap="innerHTML">
-    <label>Required by (replaces the SLA resolution target; blank to remove{{ "; a past date is allowed because this ticket is backdated" if ticket.is_backdated else "; not in the past" }})
+    <label>Required by ({{ "recorded only: a backdated ticket has no SLA, so a past date is allowed" if ticket.is_backdated else "replaces the SLA resolution target; not in the past, UTC" }}; blank to remove)
       <input type="date" name="required_by" value="{{ ticket.required_by.isoformat() if ticket.required_by else "" }}" /></label>
     <button type="submit">Save date</button>
   </form>

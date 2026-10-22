@@ -12,7 +12,7 @@
     </select>
   </label>
   {% if required_by_names %}
-  <label>Required by (optional; only for these kinds of request: {{ required_by_names|join(", ") }}; today or later)
+  <label>Required by (optional; only for these kinds of request: {{ required_by_names|join(", ") }}; today or later, UTC)
     <input type="date" name="required_by" />
   </label>
   {% endif %}

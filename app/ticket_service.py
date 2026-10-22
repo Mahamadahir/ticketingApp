@@ -33,6 +33,7 @@ EVENT_APPROVAL_REQUESTED = "approval_requested"  # to_value: who was asked, deta
 EVENT_APPROVAL_DECIDED = "approval_decided"  # actor: the approver, to_value: approved or declined
 EVENT_APPROVAL_OUTCOME = "approval_outcome"  # to_value: approved, declined or waived
 EVENT_APPROVAL_WITHDRAWN = "approval_withdrawn"  # the requester withdrew the request while it waited (detail: how many had not answered)
+EVENT_REQUIRED_BY_CHANGED = "required_by_changed"  # a service request's Required by date was set, changed or cleared
 EVENT_REQUEST_TYPE = "request_type"  # a service request raised from the catalogue: to_value is its name
 
 

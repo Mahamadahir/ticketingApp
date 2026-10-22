@@ -407,3 +407,63 @@ def test_the_lead_time_is_a_setting_with_a_placeholder():
     from app.settings_store import REGISTRY
 
     assert REGISTRY[REQUIRED_BY_LEAD_DAYS].default == "2"
+
+
+# ---- Review follow-ups -----------------------------------------------------------------------------
+
+
+def test_a_date_far_in_the_future_is_refused_not_a_server_error(client, db_session):
+    request_type = offering(db_session)
+    as_requester(client)
+
+    response = raise_it(client, request_type_id=request_type.id, required_by="9999-12-31")
+
+    assert response.status_code == 400 and "too far" in response.text
+
+
+def test_the_date_of_a_resolved_request_cannot_be_changed(client, db_session):
+    request_type = offering(db_session)
+    as_requester(client)
+    raise_it(client, request_type_id=request_type.id, required_by=day(5))
+    ticket = last_ticket(db_session)
+    ticket.triaged_at, ticket.status = NOW, TicketStatus.RESOLVED
+    db_session.add(ticket)
+    db_session.commit()
+    client.post("/auth/logout")
+    set_role(db_session, login_as(client, "boss@example.com"), UserRole.SUPER_ADMIN)
+
+    response = client.post(f"/tickets/{ticket.number}/required-by", data={"required_by": day(9)})
+
+    assert response.status_code == 403
+    db_session.refresh(ticket)
+    assert ticket.required_by == today() + timedelta(days=5)
+
+
+def test_an_untriaged_dated_request_shows_its_deadline_and_a_waiting_one_keeps_running():
+    ticket = Ticket(
+        subject="x", requester_email="a@example.com", status=TicketStatus.NEW, required_by=NOW.date() + timedelta(days=3),
+        resolution_due_at=required_by_deadline(NOW.date() + timedelta(days=3)), created_at=NOW,
+    )
+    assert sla_view(ticket, NOW, 25).state == "ok"  # no priority yet, still a deadline to show
+
+    ticket.priority, ticket.status, ticket.sla_paused_at = "p3", TicketStatus.AWAITING_USER, NOW
+    assert sla_view(ticket, NOW, 25).state == "ok"  # not "paused"
+    ticket.required_by = None
+    assert sla_view(ticket, NOW, 25).state == "paused"
+
+
+def test_a_date_can_be_cleared_after_the_type_stops_offering_it(client, db_session):
+    request_type = offering(db_session)
+    as_requester(client)
+    raise_it(client, request_type_id=request_type.id, required_by=day(5))
+    ticket = last_ticket(db_session)
+    request_type.offers_required_by = False
+    db_session.add(request_type)
+    db_session.commit()
+
+    assert "Save date" in client.get(f"/portal/{ticket.number}").text
+    client.post(f"/portal/{ticket.number}/required-by", data={"required_by": ""}, follow_redirects=False)
+
+    db_session.refresh(ticket)
+    assert ticket.required_by is None
+    assert client.post(f"/portal/{ticket.number}/required-by", data={"required_by": day(4)}, follow_redirects=False).status_code == 400
