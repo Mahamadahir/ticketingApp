@@ -28,6 +28,8 @@ from app.categories import CategoryError, create_category, path_of, selectable, 
 from app.escalation import EscalationError, escalate_ticket as escalate, escalation_target, escalators_of
 from app.raising import source_label
 from app.request_types import request_type_of
+from app.required_by import RequiredByError, offers_required_by, parse_required_by, set_required_by
+from app.settings_store import REQUIRED_BY_LEAD_DAYS, count_setting
 from app.canned import active_canned, fill as fill_canned
 from app.approvals import ApprovalError, current_approval, describe_rule, votes_of, waive
 from app.notifications import notify_assigned, notify_mentions
@@ -88,6 +90,7 @@ from app.visibility import (
     assignable_agents,
     may_add_note,
     may_self_assign,
+    may_set_required_by,
     may_triage,
     team_members,
     access_context,
@@ -127,7 +130,7 @@ def list_tickets(
     session: Session = Depends(get_session),
 ):
     # Untriaged first, then by time to breach, then priority (see sla.queue_order).
-    query = select(Ticket).order_by(*queue_order())
+    query = select(Ticket).order_by(*queue_order(count_setting(session, REQUIRED_BY_LEAD_DAYS)))
 
     # Search only narrows what the agent can already see, so visibility is applied first.
     visible = visible_ticket_condition(user, access_context(session, user))
@@ -365,6 +368,32 @@ def backdate(
             for what, before, after in changes
         )
         log_action(session, user.email, "ticket", ticket.id, "backdated", detail)
+        session.commit()
+        session.refresh(ticket)
+    return _render_ticket_detail(request, ticket, user, session)
+
+
+@router.post("/{number}/required-by", response_class=HTMLResponse)
+def change_required_by(
+    number: int,
+    request: Request,
+    required_by: Optional[str] = Form(None, max_length=20),
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """An agent sets, changes or clears a service request's Required by date. A past date is
+    only accepted on a ticket that has been backdated."""
+    ticket = _get_ticket(session, number, user, Access.READ)
+    if not may_set_required_by(user, ticket, access_context(session, user)):
+        raise HTTPException(status_code=403, detail="You cannot change the Required by date of this ticket")
+    try:
+        changed = set_required_by(
+            session, ticket, parse_required_by(required_by), user.email, backdating=ticket.is_backdated
+        )
+    except RequiredByError as error:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(error))
+    if changed:
         session.commit()
         session.refresh(ticket)
     return _render_ticket_detail(request, ticket, user, session)
@@ -1077,6 +1106,8 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             "sla": sla_view(ticket, datetime.now(timezone.utc), at_risk_percent(session)),
             "moment_format": MOMENT_FORMAT,
             "can_backdate": may_backdate(ticket),
+            "can_set_required_by": (offers_required_by(session, ticket) or ticket.required_by is not None)
+            and may_set_required_by(user, ticket, levels),
             "source_label": source_label(session, ticket),
             "request_info": request_type_of(session, ticket),
             "approvals": ticket_votes,

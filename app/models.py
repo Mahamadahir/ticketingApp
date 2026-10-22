@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from enum import Enum
 from typing import Optional
 
@@ -193,6 +193,9 @@ class Ticket(SQLModel, table=True):
     # so the ticket is logged after the fact. Such tickets count towards volume but are
     # left out of SLA figures; created_at still holds when it was really entered.
     is_backdated: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
+    # A service request's Required by date (app/required_by.py): when given, the end of that day
+    # replaces the SLA resolution target (app/sla.py). A calendar date, read as UTC.
+    required_by: Optional[date] = Field(default=None)
 
     # Set on a sub-ticket made by splitting another ticket (the original). One level only:
     # a sub-ticket is never split again. Separate from linked_parent_id, which is for
@@ -434,6 +437,8 @@ class RequestType(SQLModel, table=True):
     # always has an outcome.
     pass_percent: int = Field(default=51)
     fail_percent: int = Field(default=50)
+    # Whether the request form offers a Required by date for this kind of request (app/required_by.py).
+    offers_required_by: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

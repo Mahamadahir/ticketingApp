@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session as OrmSession
 from sqlmodel import Session, select
 
 from app.models import (
+    FINISHED_STATUSES,
     Attachment,
     MembershipLevel,
     Team,
@@ -170,6 +171,18 @@ def may_triage(user: User, ticket: Ticket, levels: AccessContext) -> bool:
     if user.role not in (UserRole.AGENT, UserRole.SUPER_ADMIN):
         return False
     return is_untriaged(ticket) and ticket_access(user, ticket, levels) >= Access.READ
+
+
+def may_set_required_by(user: User, ticket: Ticket, levels: AccessContext) -> bool:
+    """Who may set or change a service request's Required by date (app/required_by.py).
+    The requester, until the ticket is triaged; from then on only agents, and only those who
+    work the ticket (or can still triage it). A follower never can. Whether the request type
+    offers the field at all is checked where the date is set."""
+    if ticket.status in FINISHED_STATUSES:
+        return False
+    if is_untriaged(ticket) and ticket.requester_email.strip().lower() == user.email.strip().lower():
+        return True
+    return ticket_access(user, ticket, levels) == Access.WORK or may_triage(user, ticket, levels)
 
 
 def may_add_note(user: User, ticket: Ticket, levels: AccessContext) -> bool:

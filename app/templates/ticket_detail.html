@@ -14,6 +14,7 @@
   {% if request_info %}&middot; Request: {{ request_info[0].name }}{% if request_info[1] %} (approval group: {{ request_info[1].name }}){% endif %}{% endif %}
   &middot; Category: {{ category_path or "Not triaged" }}
   &middot; Priority: {{ ticket.priority.upper() if ticket.priority else "Not set" }}
+  {% if ticket.required_by %}&middot; Required by: {{ ticket.required_by.isoformat() }}{% endif %}
   &middot; Reported: {{ ticket.reported_at.strftime("%Y-%m-%d %H:%M") }} UTC{% if ticket.is_backdated %} <span class="badge">backdated</span>{% endif %}
   {% if ticket.resolved_at %}&middot; Resolved: {{ ticket.resolved_at.strftime("%Y-%m-%d %H:%M") }} UTC{% endif %}
   &middot; Team: {{ team.name if team else "Unassigned" }}
@@ -227,6 +228,14 @@
       </select>
     </label>
     <button type="submit">Set priority</button>
+  </form>
+  {% endif %}
+
+  {% if can_set_required_by %}
+  <form hx-post="/tickets/{{ ticket.number }}/required-by" hx-target="main" hx-swap="innerHTML">
+    <label>Required by ({{ "recorded only: a backdated ticket has no SLA, so a past date is allowed" if ticket.is_backdated else "replaces the SLA resolution target; not in the past, UTC" }}; blank to remove)
+      <input type="date" name="required_by" value="{{ ticket.required_by.isoformat() if ticket.required_by else "" }}" /></label>
+    <button type="submit">Save date</button>
   </form>
   {% endif %}
 

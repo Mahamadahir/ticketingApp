@@ -8,6 +8,13 @@
   &middot; <span class="note">{{ source_label }}</span>
   {% if request_info %}&middot; <span class="note">Request: {{ request_info[0].name }}</span>{% endif %}</p>
 
+{% if ticket.required_by %}<p class="note">Required by: {{ ticket.required_by.isoformat() }}</p>{% endif %}
+{% if can_set_required_by %}
+<form method="post" action="/portal/{{ ticket.number }}/required-by" class="inline-form">
+  <label>Required by (until an agent picks this up; blank to remove) <input type="date" name="required_by" value="{{ ticket.required_by.isoformat() if ticket.required_by else "" }}" /></label>
+  <button type="submit">Save date</button>
+</form>
+{% endif %}
 {% if can_reopen %}
 <form method="post" action="/portal/{{ ticket.number }}/reopen" class="inline-form">
   <button type="submit">Reopen this request</button>

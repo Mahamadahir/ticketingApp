@@ -11,6 +11,11 @@
       {% for t in request_types %}<option value="{{ t.id }}">{{ t.name }}{% if t.description %} - {{ t.description }}{% endif %}</option>{% endfor %}
     </select>
   </label>
+  {% if required_by_names %}
+  <label>Required by (optional; only for these kinds of request: {{ required_by_names|join(", ") }}; today or later, UTC)
+    <input type="date" name="required_by" />
+  </label>
+  {% endif %}
   <label>Subject <input type="text" name="subject" maxlength="{{ max_subject_length }}" required /></label>
   <label>Describe what you need, or what is wrong
     <textarea name="description" rows="6" maxlength="{{ max_message_length }}" required></textarea>

@@ -11,7 +11,7 @@ understand skips the triage queue, and can set when it was reported and, for a f
 in person, when it was resolved.
 """
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 
 from sqlmodel import Session, select
@@ -32,6 +32,7 @@ from app.models import (
 )
 from app.notification_settings import EMAIL, RAISED_FOR_YOU, is_enabled
 from app.settings_store import TELL_REQUESTER_RAISED_FOR, get_flag
+from app.required_by import RequiredByError, set_required_by
 from app.sla import Level
 from app.resolution import ResolveError, clean_notes, resolve_ticket
 from app.ticket_service import EVENT_REQUEST_TYPE, create_ticket, record_event
@@ -92,10 +93,13 @@ def raise_ticket(
     resolved_at: Optional[datetime] = None,
     request_type: Optional[RequestType] = None,
     resolution_notes: Optional[str] = None,
+    required_by: Optional[date] = None,
 ) -> Ticket:
     """Raises a ticket. With for_email an agent raises it on that person's behalf; without,
     the creator raises it for themselves. Only the agent mode can classify, assign or
-    backdate. Nothing is committed: the caller does that."""
+    backdate. A request whose type offers it can carry a Required by date, from either mode; a past
+    date is refused unless the agent is backdating (giving reported or resolved times).
+    Nothing is committed: the caller does that."""
     subject, description = (subject or "").strip(), (description or "").strip()
     if not subject:
         raise RaiseError("Enter a subject")
@@ -151,6 +155,14 @@ def raise_ticket(
     )
     if request_type is not None:
         record_event(session, ticket, EVENT_REQUEST_TYPE, creator.email, to_value=request_type.name)
+    if required_by is not None:
+        try:
+            set_required_by(
+                session, ticket, required_by, creator.email,
+                backdating=on_behalf and (reported_at is not None or resolved_at is not None),
+            )
+        except RequiredByError as error:
+            raise RaiseError(str(error))
     if on_behalf:
         # Settled now, while the requester is known, and kept on the ticket for phase 3's mail to read:
         # an agent can see on the ticket whether the person will hear about it, and why not.

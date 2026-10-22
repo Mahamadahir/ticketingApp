@@ -51,6 +51,7 @@ CHASE_ENABLED = "chase_enabled"
 CHASE_AFTER_DAYS = "chase_after_days"
 CHASE_RESOLVE_AFTER_DAYS = "chase_resolve_after_days"
 BULK_RESOLVE_MAX = "bulk_resolve_max_tickets"
+REQUIRED_BY_LEAD_DAYS = "required_by_lead_days"
 
 # PLACEHOLDER SLA targets, in minutes on a 24/7 clock, until the real ones are agreed
 # (TBC in docs/plan.md). They are settings, changed under Admin > Settings; a blank
@@ -367,6 +368,16 @@ REGISTRY: dict[str, SettingDef] = {
             "(the resolution email says to reply to reopen it). Placeholder."
         ),
         default="3",
+    ),
+    REQUIRED_BY_LEAD_DAYS: SettingDef(
+        key=REQUIRED_BY_LEAD_DAYS,
+        label="Required by: lead time in the queue (calendar days)",
+        kind="count",
+        description=(
+            "A request with a Required by date is ranked in the agents' queue as if it were due this many calendar "
+            "days before that date, so work that takes time rises early. Placeholder."
+        ),
+        default="2",
     ),
     BULK_RESOLVE_MAX: SettingDef(
         key=BULK_RESOLVE_MAX,

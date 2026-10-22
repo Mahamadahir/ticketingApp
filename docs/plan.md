@@ -1111,6 +1111,40 @@ satisfaction by agent, team and category; MSP handoffs split automatic and
 manual; Major Incident count and duration; incidents per Problem. CSV export
 for all of them.
 
+## Required by date on service requests (SRP-1, issue #92)
+
+Decided by the owner (issue #92): a **Required by** date, when given, replaces the SLA resolution target for that
+ticket; none given means the normal SLA applies. The requester sets it in the portal, otherwise an agent does. A past
+date is refused unless an agent is backdating the ticket. A per-request-type switch (`RequestType.offers_required_by`,
+off by default) decides whether the field is offered at all.
+
+The points below were settled in this note and are **Proposed - needs owner confirmation** (each can change cheaply):
+
+1. **Proposed - needs owner confirmation: the date is a calendar date, not a time.** The deadline is the end of that
+   day in UTC (the next midnight), so "required by 30 Oct" means any time on the 30th. Viewer timezones come later.
+2. **Proposed - needs owner confirmation: lead time is plain calendar days, an admin setting** (`required_by_lead_days`,
+   placeholder 2). The queue sorts a Required-by ticket by `deadline - lead time`, so work that needs a few days
+   starts to rise before the day itself. Plain days, not working days, because the app has no working-day calendar
+   yet (bank holidays, per-team hours); the SLA clock is already 24/7. If working days are wanted, build the calendar
+   once and use it for both.
+3. **Proposed - needs owner confirmation: the first-response target is unchanged.** Required by replaces only the
+   resolution target. A ticket with a date is not paused-extended: pausing in Awaiting user does not push a stated date
+   out (the requester named it), and the queue and ticket page keep it running (not shown as paused) while it waits on the user.
+4. **Proposed - needs owner confirmation: display is plain text.** The queue's SLA column and the ticket page say
+   "required by 2026-10-30" instead of "resolution due in ...", with the live remaining time; the ticket page header also
+   shows "Required by: 2026-10-30". The requester sees the date they asked for on their own ticket page.
+5. **Proposed - needs owner confirmation: SLA reporting.** A ticket with a Required by date is measured against that date
+   (met / breached uses it, since it is stored as the resolution deadline) and is marked "required by" so figures can
+   be split from priority-target tickets. A backdated ticket is still left out of SLA figures altogether.
+6. **Proposed - needs owner confirmation: changes are audited, and who may change it.** Every set, change or clear
+   writes a ticket event (`required_by_changed`, old and new) and an audit log entry. The requester can change it until the
+   ticket is triaged; from triage on only agents who work the ticket (or super admins) can. A follower cannot. Only a
+   ticket whose request type offers the field can have one. Rule lives in `app/visibility.py` (`may_set_required_by`).
+7. **Backdating exception (decided).** A date before today (UTC) is refused, except when an agent is backdating:
+   raising a ticket for someone with Reported/Resolved times, or on a ticket already flagged backdated.
+8. A date cannot be changed on a resolved or closed request (it would rewrite the SLA record), and a date typed more than ten years ahead is refused. On a backdated ticket the date is recorded but drives nothing, because a backdated ticket has no SLA.
+9. Switching a request type's field off does not remove dates already on tickets; it only stops new ones.
+
 ## Build order
 
 | Phase | Scope |

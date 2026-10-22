@@ -49,6 +49,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/8b3e5a1c9d27_required_by.py",
+        "revision": "8b3e5a1c9d27"
+      },
+      {
         "file": "migrations/versions/5d1f0c2b7a96_chase_fields.py",
         "revision": "5d1f0c2b7a96"
       },
@@ -63,17 +67,13 @@
       {
         "file": "migrations/versions/962d0f5d6bed_approval_reminders.py",
         "revision": "962d0f5d6bed"
-      },
-      {
-        "file": "migrations/versions/dddff5e5bec9_related_tickets_for_a_reply_after_.py",
-        "revision": "dddff5e5bec9"
       }
     ],
-    "count": 42,
+    "count": 43,
     "heads": [
       {
-        "file": "migrations/versions/5d1f0c2b7a96_chase_fields.py",
-        "revision": "5d1f0c2b7a96"
+        "file": "migrations/versions/8b3e5a1c9d27_required_by.py",
+        "revision": "8b3e5a1c9d27"
       }
     ]
   },
@@ -344,6 +344,7 @@
         "app.inbound",
         "app.notification_settings",
         "app.reopening",
+        "app.required_by",
         "app.resolution",
         "app.routers.admin",
         "app.routers.portal",
@@ -1369,6 +1370,7 @@
         "app.raising",
         "app.reopening",
         "app.request_types",
+        "app.required_by",
         "app.resolution",
         "app.routers.action_links",
         "app.routers.admin",
@@ -1591,6 +1593,7 @@
         "tests/test_reopening.py",
         "tests/test_reply_notification.py",
         "tests/test_request_types.py",
+        "tests/test_required_by.py",
         "tests/test_resolution.py",
         "tests/test_scheduled_jobs.py",
         "tests/test_search.py",
@@ -1858,6 +1861,7 @@
         "app.models",
         "app.notification_settings",
         "app.outbox",
+        "app.required_by",
         "app.resolution",
         "app.settings_store",
         "app.sla",
@@ -1968,6 +1972,35 @@
       "tests": [
         "tests/test_approvals.py",
         "tests/test_request_types.py"
+      ]
+    },
+    {
+      "classes": [
+        "RequiredByError"
+      ],
+      "file": "app/required_by.py",
+      "functions": [
+        "offers_required_by",
+        "parse_required_by",
+        "set_required_by"
+      ],
+      "imported_by": [
+        "app.raising",
+        "app.routers.portal",
+        "app.routers.tickets"
+      ],
+      "imports": [
+        "app.audit",
+        "app.models",
+        "app.sla",
+        "app.ticket_service"
+      ],
+      "module": "app.required_by",
+      "routes": [],
+      "summary": "The Required by date on a service request (SRP-1). Nothing here commits.",
+      "tables": [],
+      "tests": [
+        "tests/test_required_by.py"
       ]
     },
     {
@@ -2744,6 +2777,7 @@
         "raise_new_ticket",
         "remove_ticket_follower",
         "reopen_my_ticket",
+        "set_my_required_by",
         "view_my_ticket",
         "withdraw_my_request"
       ],
@@ -2767,6 +2801,7 @@
         "app.raising",
         "app.reopening",
         "app.request_types",
+        "app.required_by",
         "app.sla",
         "app.splitting",
         "app.templating",
@@ -2827,6 +2862,11 @@
           "path": "/portal/{number}/reopen"
         },
         {
+          "handler": "set_my_required_by",
+          "method": "POST",
+          "path": "/portal/{number}/required-by"
+        },
+        {
           "handler": "withdraw_my_request",
           "method": "POST",
           "path": "/portal/{number}/withdraw"
@@ -2847,6 +2887,7 @@
         "assign_ticket",
         "backdate",
         "change_priority",
+        "change_required_by",
         "change_status",
         "email_user",
         "escalate_ticket",
@@ -2892,8 +2933,10 @@
         "app.raising",
         "app.reopening",
         "app.request_types",
+        "app.required_by",
         "app.resolution",
         "app.search",
+        "app.settings_store",
         "app.sla",
         "app.splitting",
         "app.team_activity",
@@ -3008,6 +3051,11 @@
           "handler": "reopen",
           "method": "POST",
           "path": "/tickets/{number}/reopen"
+        },
+        {
+          "handler": "change_required_by",
+          "method": "POST",
+          "path": "/tickets/{number}/required-by"
         },
         {
           "handler": "resolve",
@@ -3161,6 +3209,7 @@
         "app.routers.admin",
         "app.routers.approvals",
         "app.routers.bulk_resolve",
+        "app.routers.tickets",
         "app.scheduled_jobs",
         "app.sla",
         "app.subscriptions",
@@ -3188,6 +3237,7 @@
         "tests/test_outbound_mail.py",
         "tests/test_presence.py",
         "tests/test_request_types.py",
+        "tests/test_required_by.py",
         "tests/test_scheduled_jobs.py",
         "tests/test_sla.py",
         "tests/test_teams_copy.py",
@@ -3210,6 +3260,7 @@
         "priority_for",
         "queue_order",
         "recalculate_deadlines",
+        "required_by_deadline",
         "set_impact_urgency",
         "sla_view",
         "target_minutes"
@@ -3218,6 +3269,7 @@
         "app.backdating",
         "app.messages",
         "app.raising",
+        "app.required_by",
         "app.routers.portal",
         "app.routers.tickets",
         "app.splitting",
@@ -3235,6 +3287,7 @@
       "tables": [],
       "tests": [
         "tests/test_backdating.py",
+        "tests/test_required_by.py",
         "tests/test_resolution.py",
         "tests/test_sla.py",
         "tests/test_with_supplier.py"
@@ -3547,6 +3600,7 @@
         "app.messages",
         "app.raising",
         "app.reopening",
+        "app.required_by",
         "app.resolution",
         "app.routers.admin",
         "app.routers.bulk_resolve",
@@ -3632,6 +3686,7 @@
         "is_untriaged",
         "may_add_note",
         "may_self_assign",
+        "may_set_required_by",
         "may_triage",
         "may_view_attachment",
         "require_access",
@@ -4048,6 +4103,7 @@
     "tests/test_reopening.py",
     "tests/test_reply_notification.py",
     "tests/test_request_types.py",
+    "tests/test_required_by.py",
     "tests/test_resolution.py",
     "tests/test_scheduled_jobs.py",
     "tests/test_search.py",

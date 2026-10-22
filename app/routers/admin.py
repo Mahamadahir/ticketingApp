@@ -980,7 +980,7 @@ def _type_snapshot(session: Session, request_type: RequestType) -> tuple:
     group = session.get(ApprovalGroup, request_type.approval_group_id) if request_type.approval_group_id else None
     return (
         request_type.name, request_type.description, group.name if group else "(none)",
-        (request_type.pass_percent, request_type.fail_percent),
+        (request_type.pass_percent, request_type.fail_percent), request_type.offers_required_by,
     )
 
 
@@ -1013,12 +1013,14 @@ def add_request_type(
     pass_percent: int = Form(..., ge=1, le=100),
     fail_percent: int = Form(..., ge=1, le=100),
     is_active: Optional[str] = Form(None),
+    offers_required_by: Optional[str] = Form(None),
     admin: User = Depends(require_super_admin),
     session: Session = Depends(get_session),
 ):
     try:
         request_type = create_request_type(
             session, name, description, optional_int(approval_group_id), pass_percent, fail_percent, is_active == "on",
+            offers_required_by == "on",
         )
     except RequestTypeError as error:
         session.rollback()
@@ -1037,6 +1039,7 @@ def edit_request_type(
     pass_percent: int = Form(..., ge=1, le=100),
     fail_percent: int = Form(..., ge=1, le=100),
     is_active: Optional[str] = Form(None),
+    offers_required_by: Optional[str] = Form(None),
     admin: User = Depends(require_super_admin),
     session: Session = Depends(get_session),
 ):
@@ -1048,7 +1051,7 @@ def edit_request_type(
     try:
         update_request_type(
             session, request_type, name, description, optional_int(approval_group_id),
-            pass_percent, fail_percent, is_active == "on",
+            pass_percent, fail_percent, is_active == "on", offers_required_by == "on",
         )
     except RequestTypeError as error:
         session.rollback()
@@ -1065,6 +1068,8 @@ def edit_request_type(
             changes.append(f"approval group {before[2]} -> {after[2]}")
         if before[3] != after[3]:
             changes.append(f"pass/fail {before[3][0]}%/{before[3][1]}% -> {after[3][0]}%/{after[3][1]}%")
+        if before[4] != after[4]:
+            changes.append(f"Required by date offered {before[4]} -> {after[4]}")
         log_action(session, admin.email, "request_type", request_type.id, "edited", "; ".join(changes))
     if request_type.is_active != was_active:
         log_action(

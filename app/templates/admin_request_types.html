@@ -12,6 +12,8 @@
   request. If both are reached together the decline wins. The two must add up to more than 100, so a complete vote always has an
   outcome (for example 51 and 50: a simple majority; 100 and 1: everyone must approve and any decline closes it).
   The voters are the group's members when an agent triages the request, minus the requester.
+  "Offer a Required by date" lets the person raising the request give a date; it then replaces the SLA resolution target
+  for that request and the queue ranks it from the lead time (Admin &gt; Settings) before that date.
   An available type needs a group with at least one member. Switching a type off hides it from the form; tickets already raised keep it.
 </p>
 
@@ -31,6 +33,7 @@
     <label>Percent to pass <input type="number" name="pass_percent" value="{{ t.pass_percent }}" min="1" max="100" required /></label>
     <label>Percent to fail <input type="number" name="fail_percent" value="{{ t.fail_percent }}" min="1" max="100" required /></label>
     <label><input type="checkbox" name="is_active" {{ "checked" if t.is_active else "" }} /> Available on the request form</label>
+    <label><input type="checkbox" name="offers_required_by" {{ "checked" if t.offers_required_by else "" }} /> Offer a Required by date</label>
     <button type="submit">Save</button>
   </fieldset>
 </form>
@@ -53,6 +56,7 @@
   <label>Percent to pass <input type="number" name="pass_percent" value="{{ default_pass }}" min="1" max="100" required /></label>
   <label>Percent to fail <input type="number" name="fail_percent" value="{{ default_fail }}" min="1" max="100" required /></label>
   <label><input type="checkbox" name="is_active" checked /> Available on the request form</label>
+  <label><input type="checkbox" name="offers_required_by" /> Offer a Required by date</label>
   <button type="submit">Create</button>
 </form>
 {% endblock %}
