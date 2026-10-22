@@ -11,6 +11,7 @@ from sqlmodel import Session, select
 from app.audit import log_action
 from app.auth import require_roles
 from app.database import get_session
+from app.feedback import feedback_for_ticket
 from app.forms import MAX_MESSAGE_LENGTH, optional_int
 from app.followers import (
     MAX_EXTERNAL_FOLLOWERS,
@@ -1050,6 +1051,7 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
                 if s not in (TicketStatus.NEW, TicketStatus.AWAITING_APPROVAL)
                 and (s != TicketStatus.RESOLVED or ticket.status == TicketStatus.RESOLVED)
             ],
+            "feedback": feedback_for_ticket(session, user, ticket),
             "resolved_by": session.get(User, ticket.resolved_by_id) if ticket.resolved_by_id else None,
             "can_resolve": can_work and _may_resolve(session, ticket),
             "can_reopen": can_work and _may(check_can_reopen, ReopenError, ticket),

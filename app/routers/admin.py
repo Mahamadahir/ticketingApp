@@ -69,6 +69,7 @@ from app.email_templates import (
     save_template,
 )
 from app.database import get_session
+from app.feedback import feedback_page, resolvers_with_feedback
 from app.forms import MAX_MESSAGE_LENGTH, optional_int
 from app.followers import InvalidEmail, normalise_email
 from app.thanks_rules import (
@@ -363,6 +364,27 @@ def create_team(
     log_action(session, admin.email, "team", team.id, "created", f"{name} (sub-team of {parent.name})" if parent else name)
     session.commit()
     return RedirectResponse("/admin/teams", status_code=303)
+
+
+@router.get("/feedback", response_class=HTMLResponse)
+def view_feedback(
+    request: Request,
+    agent: Optional[str] = None,
+    rating: Optional[str] = None,
+    page: int = 1,
+    user: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    agent_id, chosen_rating = optional_int(agent), optional_int(rating)
+    entries = feedback_page(session, user, page, request.query_params, agent_id=agent_id, rating=chosen_rating)
+    # Current agents plus anyone who has feedback (a resolver since demoted still has to be filterable).
+    agents = resolvers_with_feedback(session)
+    names = {u.id: u for u in agents}
+    return templates.TemplateResponse(
+        request,
+        "admin_feedback.html",
+        {"page": entries, "agents": agents, "names": names, "agent": agent_id, "rating": chosen_rating, "user": user},
+    )
 
 
 AUDIT_ENTITY_TYPES = ["ticket", "user", "team", "category", "setting", "email_template"]

@@ -1118,7 +1118,7 @@ for all of them.
 | 4 | Approval groups (see Service Requests), resolution, reopen and reclose flow, ignore list and review, chase emails, auto-close, feedback, bulk resolve |
 | 5 | MSP handoff, hold, 18:00 job, MSP mail handling and forwarding |
 | 6 | Break-glass accounts, TOTP, outage mode, Entra app roles, match users on Entra object id, nightly Entra `accountEnabled` check (`is_active`), linked identities |
-| 7 | Reporting and CSV export, subject access export, anonymisation |
+| 7 | Reporting and CSV export, subject access export, anonymisation (including requester feedback comments, which are personal data; feedback reports keep the rule that an agent sees only their own) |
 | 8 | Teams bot: direct messages to agents and ticket intake from Teams |
 | 9 | Google Stitch redesign once the UI is feature-complete, to WCAG 2.2 AA |
 | 10 | Security hardening and the go-live gate (see "Security hardening phase"). Nothing here is optional for production; small items are done earlier when their feature is built |

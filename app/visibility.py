@@ -17,7 +17,7 @@ ticket goes through here, so the rules live in one place.
 
 from enum import IntEnum
 
-from sqlalchemy import event, or_
+from sqlalchemy import event, or_, true
 from sqlalchemy.orm import Session as OrmSession
 from sqlmodel import Session, select
 
@@ -28,6 +28,7 @@ from app.models import (
     TeamMembership,
     Ticket,
     TicketEscalator,
+    TicketFeedback,
     User,
     UserRole,
 )
@@ -196,6 +197,15 @@ def visible_ticket_condition(user: User, levels: AccessContext):
         Ticket.triaged_at.is_(None),
         Ticket.id.in_(select(TicketEscalator.ticket_id).where(TicketEscalator.user_id == user.id)),
     )
+
+
+def feedback_condition(user: User):
+    """Which feedback rows a person may read: an admin all of it, an agent only the feedback given
+    about tickets they themselves resolved (`resolved_by_id`). Being able to open the ticket grants
+    nothing here, and feedback about an automatic resolve (no agent) is for admins only."""
+    if user.role == UserRole.SUPER_ADMIN:
+        return true()
+    return TicketFeedback.resolved_by_id == user.id
 
 
 def require_access(user: User, ticket: Ticket, levels: AccessContext, needed: Access) -> None:

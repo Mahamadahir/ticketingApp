@@ -378,6 +378,7 @@
         "app.routers.admin",
         "app.routers.attachments",
         "app.routers.auth",
+        "app.routers.feedback",
         "app.routers.my_settings",
         "app.routers.notifications",
         "app.routers.portal",
@@ -587,6 +588,7 @@
         "app.routers.attachments",
         "app.routers.auth",
         "app.routers.dev_tools",
+        "app.routers.feedback",
         "app.routers.health",
         "app.routers.my_settings",
         "app.routers.notifications",
@@ -699,6 +701,31 @@
     },
     {
       "classes": [],
+      "file": "app/feedback.py",
+      "functions": [
+        "feedback_for_ticket",
+        "feedback_page",
+        "feedback_query",
+        "resolvers_with_feedback"
+      ],
+      "imported_by": [
+        "app.routers.admin",
+        "app.routers.feedback",
+        "app.routers.tickets"
+      ],
+      "imports": [
+        "app.models",
+        "app.pagination",
+        "app.visibility"
+      ],
+      "module": "app.feedback",
+      "routes": [],
+      "summary": "Reading the requester's feedback (phase 4G). Writing it is app/action_links.py.",
+      "tables": [],
+      "tests": []
+    },
+    {
+      "classes": [],
       "file": "app/follower_updates.py",
       "functions": [
         "queue_follower_updates"
@@ -784,6 +811,7 @@
         "app.inbound",
         "app.resolution",
         "app.routers.admin",
+        "app.routers.feedback",
         "app.routers.portal",
         "app.routers.tickets",
         "app.templating"
@@ -1086,6 +1114,7 @@
         "app.routers.attachments",
         "app.routers.auth",
         "app.routers.dev_tools",
+        "app.routers.feedback",
         "app.routers.health",
         "app.routers.my_settings",
         "app.routers.notifications",
@@ -1242,6 +1271,7 @@
         "app.categories",
         "app.email_templates",
         "app.escalation",
+        "app.feedback",
         "app.follower_updates",
         "app.followers",
         "app.identity",
@@ -1264,6 +1294,7 @@
         "app.routers.approvals",
         "app.routers.attachments",
         "app.routers.auth",
+        "app.routers.feedback",
         "app.routers.my_settings",
         "app.routers.notifications",
         "app.routers.portal",
@@ -1452,6 +1483,7 @@
         "tests/test_email_templates.py",
         "tests/test_escalation.py",
         "tests/test_escalation_tidy.py",
+        "tests/test_feedback_views.py",
         "tests/test_follower_updates.py",
         "tests/test_followers.py",
         "tests/test_hardening.py",
@@ -1594,6 +1626,7 @@
         "app.jobs",
         "app.messages",
         "app.reopening",
+        "app.routers.feedback",
         "app.routers.my_settings",
         "app.routers.notifications",
         "app.routers.tickets",
@@ -1667,6 +1700,7 @@
         "paginate"
       ],
       "imported_by": [
+        "app.feedback",
         "app.routers.admin",
         "app.routers.notifications",
         "app.routers.portal",
@@ -1985,6 +2019,7 @@
         "update_user",
         "view_activity_log",
         "view_audit_log",
+        "view_feedback",
         "view_mail_intake",
         "view_outbound_mail",
         "view_scheduled_jobs",
@@ -2003,6 +2038,7 @@
         "app.config",
         "app.database",
         "app.email_templates",
+        "app.feedback",
         "app.followers",
         "app.forms",
         "app.inbound",
@@ -2114,6 +2150,11 @@
           "handler": "reset_email_template",
           "method": "POST",
           "path": "/admin/email-templates/{key}/reset"
+        },
+        {
+          "handler": "view_feedback",
+          "method": "GET",
+          "path": "/admin/feedback"
         },
         {
           "handler": "view_mail_intake",
@@ -2412,6 +2453,36 @@
     },
     {
       "classes": [],
+      "file": "app/routers/feedback.py",
+      "functions": [
+        "my_feedback"
+      ],
+      "imported_by": [
+        "app.main"
+      ],
+      "imports": [
+        "app.auth",
+        "app.database",
+        "app.feedback",
+        "app.forms",
+        "app.models",
+        "app.notifications",
+        "app.templating"
+      ],
+      "module": "app.routers.feedback",
+      "routes": [
+        {
+          "handler": "my_feedback",
+          "method": "GET",
+          "path": "/my-feedback"
+        }
+      ],
+      "summary": "An agent's own feedback (phase 4G). Admins see all of it under Admin > Feedback instead.",
+      "tables": [],
+      "tests": []
+    },
+    {
+      "classes": [],
       "file": "app/routers/health.py",
       "functions": [
         "health"
@@ -2667,6 +2738,7 @@
         "app.categories",
         "app.database",
         "app.escalation",
+        "app.feedback",
         "app.followers",
         "app.forms",
         "app.linking",
@@ -3239,6 +3311,7 @@
         "app.routers.admin",
         "app.routers.approvals",
         "app.routers.auth",
+        "app.routers.feedback",
         "app.routers.my_settings",
         "app.routers.notifications",
         "app.routers.portal",
@@ -3395,6 +3468,7 @@
       "functions": [
         "access_context",
         "assignable_agents",
+        "feedback_condition",
         "is_untriaged",
         "may_add_note",
         "may_self_assign",
@@ -3406,6 +3480,7 @@
         "visible_ticket_condition"
       ],
       "imported_by": [
+        "app.feedback",
         "app.main",
         "app.messages",
         "app.notifications",
@@ -3783,6 +3858,7 @@
     "tests/test_email_templates.py",
     "tests/test_escalation.py",
     "tests/test_escalation_tidy.py",
+    "tests/test_feedback_views.py",
     "tests/test_follower_updates.py",
     "tests/test_followers.py",
     "tests/test_hardening.py",
