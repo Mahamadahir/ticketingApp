@@ -42,12 +42,13 @@ from app.raising import (
 )
 from app.sla import IMPACT_LABELS, URGENCY_LABELS, Level
 from app.triage import TriageError
-from app.visibility import Access, access_context, ticket_access
+from app.visibility import Access, access_context, may_set_required_by, ticket_access
 from app.messages import about_labels, record_inbound, requester_visible_messages
 from app.follower_updates import queue_follower_updates
 from app.reopening import ReopenError, latest_follow_on, open_follow_on_ticket, related_tickets, reopen_ticket
 from app.splitting import apply_requester_reply
 from app.request_types import active_request_types, request_type_of
+from app.required_by import RequiredByError, offers_required_by, parse_required_by, set_required_by
 from app.models import Category, RequestType, Ticket, TicketSource, TicketStatus, TicketType, User, UserRole
 from app.ticket_service import get_by_number
 from app import identity
@@ -110,6 +111,7 @@ def _render_new_form(request: Request, user: User, session: Session) -> HTMLResp
             "max_subject_length": MAX_SUBJECT_LENGTH,
             "tell_requester": should_tell_requester(session),
             "request_types": active_request_types(session),
+            "required_by_names": [t.name for t in active_request_types(session) if t.offers_required_by],
         },
     )
 
@@ -151,6 +153,8 @@ def _render_ticket(request: Request, ticket: Ticket, user: User, session: Sessio
                 else []
             ),
             "is_requester": _is_requester(ticket, user),
+            "can_set_required_by": offers_required_by(session, ticket)
+            and may_set_required_by(user, ticket, access_context(session, user)),
             "can_withdraw": _is_requester(ticket, user) and ticket.status == TicketStatus.AWAITING_APPROVAL,
             "can_reopen": _is_requester(ticket, user) and ticket.status == TicketStatus.RESOLVED,
             # The earlier or later request this one is linked to by a reply after closure, if the person can read it.
@@ -204,6 +208,7 @@ def raise_new_ticket(
     agent_id: Optional[str] = Form(None),
     reported_at: Optional[str] = Form(None, max_length=40),
     resolved_at: Optional[str] = Form(None, max_length=40),
+    required_by: Optional[str] = Form(None, max_length=20),
     resolution_notes: Optional[str] = Form(None, max_length=MAX_MESSAGE_LENGTH + 1000),
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
@@ -229,13 +234,16 @@ def raise_new_ticket(
             level_impact = Level(impact) if impact else None
             level_urgency = Level(urgency) if urgency else None
             moments = (parse_moment(reported_at), parse_moment(resolved_at))
-        except (ValueError, BackdateError) as error:
-            raise RaiseError(str(error) if isinstance(error, BackdateError) else "Choose impact and urgency from the lists")
+            day = parse_required_by(required_by)
+        except (ValueError, BackdateError, RequiredByError) as error:
+            raise RaiseError(
+                str(error) if isinstance(error, (BackdateError, RequiredByError)) else "Choose impact and urgency from the lists"
+            )
         ticket = raise_ticket(
             session, user, subject=subject, description=description, for_email=for_email,
             ticket_type=ticket_type, category=chosen_category, impact=level_impact, urgency=level_urgency,
             assignee=assignee, reported_at=moments[0], resolved_at=moments[1], request_type=chosen_request_type,
-            resolution_notes=resolution_notes,
+            resolution_notes=resolution_notes, required_by=day,
         )
         log_action(session, user.email, "ticket", ticket.id, "raised", ticket.source.value)
         session.flush()
@@ -356,6 +364,26 @@ def reopen_my_ticket(
     except ReopenError:
         session.rollback()  # reopened or closed since the page was drawn: show them the ticket as it is now
         return RedirectResponse(f"/portal/{ticket.number}", status_code=303)
+    session.commit()
+    return RedirectResponse(f"/portal/{ticket.number}", status_code=303)
+
+
+@router.post("/{number}/required-by")
+def set_my_required_by(
+    number: int,
+    required_by: Optional[str] = Form(None, max_length=20),
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """The requester sets, changes or clears the Required by date until the ticket is triaged."""
+    ticket = _get_own_ticket(session, number, user)
+    if not may_set_required_by(user, ticket, access_context(session, user)):
+        raise HTTPException(status_code=403, detail="The Required by date can no longer be changed here; ask the agent")
+    try:
+        set_required_by(session, ticket, parse_required_by(required_by), user.email)
+    except RequiredByError as error:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(error))
     session.commit()
     return RedirectResponse(f"/portal/{ticket.number}", status_code=303)
 

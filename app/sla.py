@@ -12,11 +12,11 @@ as paused and sorted after tickets whose clock is running.
 """
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from enum import Enum
 from typing import Optional
 
-from sqlalchemy import case, null
+from sqlalchemy import and_, case, null, or_
 from sqlmodel import Session
 
 from app.models import FINISHED_STATUSES, Ticket, TicketStatus
@@ -73,18 +73,28 @@ def _aware(value: datetime) -> datetime:
     return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
 
+def required_by_deadline(day: date) -> datetime:
+    """A Required by date means any time on that day (UTC), so the deadline is the next midnight."""
+    return datetime(day.year, day.month, day.day, tzinfo=timezone.utc) + timedelta(days=1)
+
+
 def recalculate_deadlines(session: Session, ticket: Ticket) -> None:
     """Sets both deadlines from created_at, the current targets and the time already
-    spent paused. A ticket with no priority has none, and neither has a backdated one."""
+    spent paused. A ticket with no priority has none, and neither has a backdated one.
+    A Required by date replaces the resolution target (app/required_by.py): it is fixed
+    by the date, so time spent paused does not move it, and it needs no priority."""
     priority = Priority(ticket.priority) if ticket.priority else None
-    if priority is None or ticket.is_backdated:
+    if ticket.is_backdated or (priority is None and ticket.required_by is None):
         ticket.first_response_due_at = ticket.resolution_due_at = None
         return
     base = _aware(ticket.created_at) + timedelta(seconds=ticket.sla_paused_seconds)
-    first = target_minutes(session, priority, "first_response")
-    resolution = target_minutes(session, priority, "resolution")
+    first = target_minutes(session, priority, "first_response") if priority else None
+    resolution = target_minutes(session, priority, "resolution") if priority else None
     ticket.first_response_due_at = base + timedelta(minutes=first) if first else None
-    ticket.resolution_due_at = base + timedelta(minutes=resolution) if resolution else None
+    if ticket.required_by is not None:
+        ticket.resolution_due_at = required_by_deadline(ticket.required_by)
+    else:
+        ticket.resolution_due_at = base + timedelta(minutes=resolution) if resolution else None
 
 
 def apply_impact_urgency(session: Session, ticket: Ticket, impact: Level, urgency: Level) -> bool:
@@ -147,7 +157,7 @@ class SlaView:
     state: str  # none | paused | met | breached | ok | at_risk
     text: str
     due: Optional[datetime] = None
-    which: Optional[str] = None  # first response | resolution
+    which: Optional[str] = None  # first response | resolution | required by
 
 
 def _span(delta: timedelta) -> str:
@@ -171,22 +181,29 @@ def sla_view(ticket: Ticket, now: datetime, at_risk_percent: int) -> SlaView:
         if due is None or ticket.resolved_at is None:
             return SlaView("none", "")
         late = _aware(ticket.resolved_at) > due
-        return SlaView("breached" if late else "met", "resolved late" if late else "resolved in time", due)
+        text = "resolved late" if late else "resolved in time"
+        if ticket.required_by is not None:
+            text += f" (required by {ticket.required_by.isoformat()})"
+        return SlaView("breached" if late else "met", text, due, "required by" if ticket.required_by else None)
     if ticket.sla_paused_at is not None:
         return SlaView("paused", "paused (awaiting user)")
     if ticket.first_responded_at is None and ticket.first_response_due_at is not None:
         due, which = ticket.first_response_due_at, "first response"
     elif ticket.resolution_due_at is not None:
-        due, which = ticket.resolution_due_at, "resolution"
+        due, which = ticket.resolution_due_at, "required by" if ticket.required_by else "resolution"
     else:
         return SlaView("none", "")
+    # "required by 2026-10-30" names the date the requester gave; the others name the target.
+    label = f"required by {ticket.required_by.isoformat()}," if which == "required by" else which
     remaining = _aware(due) - now
     if remaining.total_seconds() < 0:
-        return SlaView("breached", f"{which} overdue {_span(remaining)}", due, which)
-    window = _aware(due) - _aware(ticket.created_at) - timedelta(seconds=ticket.sla_paused_seconds)
+        return SlaView("breached", f"{label.rstrip(',')} overdue {_span(remaining)}", due, which)
+    window = _aware(due) - _aware(ticket.created_at)
+    if which != "required by":
+        window -= timedelta(seconds=ticket.sla_paused_seconds)
     if window.total_seconds() > 0 and remaining <= window * at_risk_percent / 100:
-        return SlaView("at_risk", f"{which} due in {_span(remaining)}", due, which)
-    return SlaView("ok", f"{which} due in {_span(remaining)}", due, which)
+        return SlaView("at_risk", f"{label} due in {_span(remaining)}", due, which)
+    return SlaView("ok", f"{label} due in {_span(remaining)}", due, which)
 
 
 def at_risk_percent(session: Session) -> int:
@@ -194,14 +211,26 @@ def at_risk_percent(session: Session) -> int:
     return value if value is not None and 0 < value < 100 else 25
 
 
-def queue_order():
+def queue_order(required_by_lead_days: int):
     """The agents' queue: untriaged tickets pinned to the top (oldest first), then
     running clocks by time to breach, then paused clocks, then tickets without a
-    target, then finished tickets; priority breaks ties, then the latest update."""
+    target, then finished tickets; priority breaks ties, then the latest update.
+    A ticket with a Required by date counts as due `required_by_lead_days` before the end
+    of that day (the REQUIRED_BY_LEAD_DAYS setting), so work that takes time rises early."""
+    resolution_due = case(
+        (Ticket.required_by.is_not(None), Ticket.resolution_due_at - timedelta(days=required_by_lead_days)),
+        else_=Ticket.resolution_due_at,
+    )
     next_due = case(
         (Ticket.sla_paused_at.is_not(None), null()),
-        (Ticket.first_responded_at.is_(None), Ticket.first_response_due_at),
-        else_=Ticket.resolution_due_at,
+        (
+            and_(
+                Ticket.first_responded_at.is_(None),
+                or_(Ticket.first_response_due_at.is_not(None), Ticket.required_by.is_(None)),
+            ),
+            Ticket.first_response_due_at,
+        ),
+        else_=resolution_due,
     )
     finished = Ticket.status.in_(FINISHED_STATUSES)
     group = case(
