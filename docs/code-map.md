@@ -446,7 +446,7 @@ File: `app/escalation.py`
 
 Reading the requester's feedback (phase 4G). Writing it is app/action_links.py.  
 File: `app/feedback.py`
-- Functions: `feedback_for_ticket`, `feedback_page`, `feedback_query`
+- Functions: `feedback_for_ticket`, `feedback_page`, `feedback_query`, `resolvers_with_feedback`
 - Imports: `app.models`, `app.pagination`, `app.visibility`
 - Imported by: `app.routers.admin`, `app.routers.feedback`, `app.routers.tickets`
 - Tests: none

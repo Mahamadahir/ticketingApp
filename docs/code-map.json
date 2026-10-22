@@ -705,7 +705,8 @@
       "functions": [
         "feedback_for_ticket",
         "feedback_page",
-        "feedback_query"
+        "feedback_query",
+        "resolvers_with_feedback"
       ],
       "imported_by": [
         "app.routers.admin",

@@ -69,6 +69,7 @@ from app.email_templates import (
     save_template,
 )
 from app.database import get_session
+from app.feedback import feedback_page, resolvers_with_feedback
 from app.forms import MAX_MESSAGE_LENGTH, optional_int
 from app.followers import InvalidEmail, normalise_email
 from app.thanks_rules import (
@@ -107,7 +108,6 @@ from app.models import (
     User,
     UserRole,
 )
-from app.feedback import feedback_page
 from app.pagination import paginate
 from app.scheduled_jobs import SCHEDULED_JOBS, status_line, timing
 from app.settings_store import (
@@ -377,11 +377,9 @@ def view_feedback(
 ):
     agent_id, chosen_rating = optional_int(agent), optional_int(rating)
     entries = feedback_page(session, user, page, request.query_params, agent_id=agent_id, rating=chosen_rating)
-    agents = session.exec(
-        select(User).where(User.role.in_((UserRole.AGENT, UserRole.SUPER_ADMIN))).order_by(User.email)
-    ).all()
-    wanted = {f.resolved_by_id for f, _ in entries.items if f.resolved_by_id}
-    names = {u.id: u for u in session.exec(select(User).where(User.id.in_(wanted))).all()} if wanted else {}
+    # Current agents plus anyone who has feedback (a resolver since demoted still has to be filterable).
+    agents = resolvers_with_feedback(session)
+    names = {u.id: u for u in agents}
     return templates.TemplateResponse(
         request,
         "admin_feedback.html",

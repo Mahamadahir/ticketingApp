@@ -28,7 +28,7 @@ def my_feedback(
     """Always the signed-in agent's own: there is no agent parameter to change. (An admin's own
     page is also only their own; the all-feedback view is Admin > Feedback.)"""
     chosen = optional_int(rating)
-    entries = feedback_page(session, user, page, request.query_params, agent_id=user.id, rating=chosen)
+    entries = feedback_page(session, user, page, {"rating": rating or ""}, agent_id=user.id, rating=chosen)
     return templates.TemplateResponse(
         request, "my_feedback.html", {"page": entries, "rating": chosen, "user": user},
     )

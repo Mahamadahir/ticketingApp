@@ -26,7 +26,7 @@
     {% for f, t in page.items %}
     <tr>
       <td>{{ f.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
-      <td><a href="/tickets/{{ t.number }}">{{ t.reference }}</a> {{ t.subject }}</td>
+      <td><a href="/tickets/{{ t.number }}">{{ t.reference }}</a></td>
       <td>{{ f.rating }} / 5</td>
       <td>{{ f.comment }}</td>
     </tr>

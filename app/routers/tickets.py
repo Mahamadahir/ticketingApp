@@ -11,8 +11,8 @@ from sqlmodel import Session, select
 from app.audit import log_action
 from app.auth import require_roles
 from app.database import get_session
-from app.forms import MAX_MESSAGE_LENGTH, optional_int
 from app.feedback import feedback_for_ticket
+from app.forms import MAX_MESSAGE_LENGTH, optional_int
 from app.followers import (
     MAX_EXTERNAL_FOLLOWERS,
     InvalidEmail,
