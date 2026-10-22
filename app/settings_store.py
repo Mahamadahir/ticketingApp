@@ -83,7 +83,7 @@ def _sla_definitions() -> dict[str, SettingDef]:
                 kind="minutes",
                 description=(
                     f"How long a {priority.upper()} ticket may wait for its {label}. The clock runs "
-                    "24/7 and stops while the ticket is Awaiting user. Placeholder value until the "
+                    "24/7 and stops while the ticket is Awaiting user or Scheduled (a Required by date keeps running). Placeholder value until the "
                     "real target is agreed; blank means not tracked."
                 ),
                 default=str(default),

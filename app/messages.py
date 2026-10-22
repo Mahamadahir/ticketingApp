@@ -114,6 +114,7 @@ STATUS_CHOICES = (
     TicketStatus.AWAITING_USER,
     TicketStatus.WITH_SUPPLIER,
     TicketStatus.WITH_MSP,
+    TicketStatus.SCHEDULED,
 )
 
 
@@ -134,7 +135,7 @@ def status_choices(session: Session, ticket: Ticket) -> list[TicketStatus]:
 
 def default_status_after_email(ticket: Ticket) -> TicketStatus:
     """Emailing the user normally means we are now waiting on them, so Open and In progress default
-    to Awaiting user. With supplier, With MSP and Awaiting user stay as they are."""
+    to Awaiting user. With supplier, With MSP, Scheduled and Awaiting user stay as they are."""
     if ticket.status in (TicketStatus.OPEN, TicketStatus.IN_PROGRESS):
         return TicketStatus.AWAITING_USER
     return ticket.status

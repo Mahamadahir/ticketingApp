@@ -185,7 +185,7 @@ def set_status(
         # Any way out of Awaiting user (a reply, the reopen link, an agent) cancels a chase (app/auto_close_chase.py).
         ticket.chased_at = None
         ticket.chase_count = 0
-    # Awaiting user stops the SLA clock and leaving it restarts it. Imported here
+    # Awaiting user and Scheduled stop the SLA clock and leaving it restarts it. Imported here
     # because app.sla builds on this module.
     from app.sla import on_status_change
 

@@ -6,7 +6,7 @@
   {% if preview.about %}<p class="note">{{ preview.about }} (this email is about one part of a split request)</p>{% endif %}
   <pre class="message-body">{{ preview.body }}</pre>
   <p class="note">
-    {% if preview.status_after %}Sending moves this ticket to {{ preview.status_after.value.replace("_", " ") }}{% if preview.status_after.value == "awaiting_user" %} and pauses its SLA clock{% endif %}.
+    {% if preview.status_after %}Sending moves this ticket to {{ preview.status_after.value.replace("_", " ") }}{% if preview.status_after.value in ("awaiting_user", "scheduled") %} and pauses its SLA clock{% if preview.status_after.value == "scheduled" %} (unless the request has a Required by date){% endif %}{% endif %}.
     {% else %}Sending leaves the ticket's status as it is.{% endif %}
     The email is recorded on the ticket and goes to the requester.
   </p>

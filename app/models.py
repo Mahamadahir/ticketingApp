@@ -15,6 +15,7 @@ class TicketStatus(str, Enum):
     AWAITING_APPROVAL = "awaiting_approval"  # a service request waiting for its approvers (app/approvals.py)
     WITH_SUPPLIER = "with_supplier"  # waiting on an outside supplier or vendor (not the MSP)
     WITH_MSP = "with_msp"
+    SCHEDULED = "scheduled"  # work planned for a later date (usually the Required by date); set by hand
     RESOLVED = "resolved"
     CLOSED = "closed"
 
@@ -223,7 +224,7 @@ class Ticket(SQLModel, table=True):
 
     # The SLA clock (app/sla.py). The due times are created_at + target + the time
     # spent paused, and are recomputed when the priority changes or a pause ends.
-    # While paused (Awaiting user) sla_paused_at is set and the clock is not running.
+    # While paused (Awaiting user, or Scheduled) sla_paused_at is set and the clock is not running.
     first_response_due_at: Optional[datetime] = Field(default=None)
     resolution_due_at: Optional[datetime] = Field(default=None)
     first_responded_at: Optional[datetime] = Field(default=None)

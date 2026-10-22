@@ -44,7 +44,7 @@ def all_notifications(db_session):
 @pytest.mark.parametrize(
     "status",
     [
-        TicketStatus.OPEN, TicketStatus.IN_PROGRESS, TicketStatus.AWAITING_USER, TicketStatus.WITH_MSP,
+        TicketStatus.OPEN, TicketStatus.IN_PROGRESS, TicketStatus.AWAITING_USER, TicketStatus.WITH_MSP, TicketStatus.SCHEDULED,
         TicketStatus.RESOLVED, TicketStatus.CLOSED, TicketStatus.AWAITING_APPROVAL,
     ],
 )

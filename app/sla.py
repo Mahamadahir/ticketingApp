@@ -3,7 +3,7 @@
 Impact (how many people) x urgency (how bad for them) gives a priority, P1 to P4.
 The priority picks two targets, first response and resolution, which are admin
 settings (app/settings_store.py), never constants. The clock is 24/7 and stops while
-the ticket is Awaiting user.
+the ticket is Awaiting user or Scheduled (a Required by date keeps running).
 
 Deadlines are stored on the ticket: created_at + target + time spent paused. They
 move only when the priority changes or a pause ends, so the queue can sort on them
@@ -129,14 +129,19 @@ def describe_priority(ticket: Ticket) -> Optional[str]:
     return f"{ticket.priority.upper()} ({ticket.impact} impact, {ticket.urgency} urgency)"
 
 
+# Statuses in which the SLA clock is paused (unless the ticket has a Required by date).
+PAUSING_STATUSES = (TicketStatus.AWAITING_USER, TicketStatus.SCHEDULED)
+
+
 def on_status_change(
     session: Session, ticket: Ticket, previous: TicketStatus, new: TicketStatus, now: datetime
 ) -> None:
-    """Awaiting user stops the clock; leaving it starts the clock again and pushes
-    the deadlines out by the time spent waiting."""
-    if new == TicketStatus.AWAITING_USER and ticket.sla_paused_at is None:
+    """Awaiting user and Scheduled stop the clock; leaving them starts the clock again and pushes
+    the deadlines out by the time spent waiting. Moving between the two stays paused. A ticket with
+    a Required by date shows as running in either (sla_view, queue_order) and its date never moves."""
+    if new in PAUSING_STATUSES and ticket.sla_paused_at is None:
         ticket.sla_paused_at = now
-    elif previous == TicketStatus.AWAITING_USER and ticket.sla_paused_at is not None:
+    elif previous in PAUSING_STATUSES and new not in PAUSING_STATUSES and ticket.sla_paused_at is not None:
         waited = max(0, int((now - _aware(ticket.sla_paused_at)).total_seconds()))
         ticket.sla_paused_seconds += waited
         ticket.sla_paused_at = None
@@ -186,7 +191,7 @@ def sla_view(ticket: Ticket, now: datetime, at_risk_percent: int) -> SlaView:
             text += f" (required by {ticket.required_by.isoformat()})"
         return SlaView("breached" if late else "met", text, due, "required by" if ticket.required_by else None)
     if ticket.sla_paused_at is not None and ticket.required_by is None:  # a stated date keeps running
-        return SlaView("paused", "paused (awaiting user)")
+        return SlaView("paused", "paused (scheduled)" if ticket.status == TicketStatus.SCHEDULED else "paused (awaiting user)")
     if ticket.first_responded_at is None and ticket.first_response_due_at is not None:
         due, which = ticket.first_response_due_at, "first response"
     elif ticket.resolution_due_at is not None:

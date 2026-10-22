@@ -288,7 +288,7 @@ def test_the_wait_is_counted_from_entering_awaiting_user_not_from_the_ticket_age
 
 
 @pytest.mark.parametrize("status", [
-    TicketStatus.WITH_SUPPLIER, TicketStatus.WITH_MSP, TicketStatus.OPEN, TicketStatus.IN_PROGRESS,
+    TicketStatus.WITH_SUPPLIER, TicketStatus.WITH_MSP, TicketStatus.SCHEDULED, TicketStatus.OPEN, TicketStatus.IN_PROGRESS,
     TicketStatus.AWAITING_APPROVAL, TicketStatus.RESOLVED, TicketStatus.CLOSED,
 ])
 def test_only_awaiting_user_is_ever_chased(db_session, dev_mail, status):
