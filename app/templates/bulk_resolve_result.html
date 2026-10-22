@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Bulk resolve result{% endblock %}
+{% block content %}
+{% set done = plan.items | selectattr("resolved") | list %}
+<h2>Bulk resolve: {{ done | length }} resolved, {{ plan.skipped | length }} skipped</h2>
+{% if done %}
+<p><b>Resolved</b></p>
+<ul>{% for item in done %}<li><a href="/tickets/{{ item.number }}">{{ item.reference }}</a> {{ item.subject }}</li>{% endfor %}</ul>
+{% endif %}
+{% if plan.skipped %}
+<p><b>Skipped</b></p>
+<ul>{% for item in plan.skipped %}<li>{{ item.reference or ("#" ~ item.number) }}{% if item.subject %} {{ item.subject }}{% endif %}: {{ item.skipped }}</li>{% endfor %}</ul>
+{% endif %}
+<p><a href="/tickets">Back to tickets</a></p>
+{% endblock %}

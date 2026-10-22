@@ -29,9 +29,11 @@
   {% endif %}
 </div>
 
+<form method="get" action="/bulk-resolve">
 <table>
   <thead>
     <tr>
+      <th></th>
       <th>Ref</th>
       <th>Subject</th>
       <th>Requester</th>
@@ -46,6 +48,7 @@
   <tbody>
     {% for ticket in page.items %}
     <tr class="{{ 'escalated-row' if ticket.is_escalated else '' }}">
+      <td><input type="checkbox" name="number" value="{{ ticket.number }}" aria-label="Select {{ ticket.reference }}" /></td>
       <td>{{ ticket.reference }}</td>
       <td>
         <a href="/tickets/{{ ticket.number }}">{{ ticket.subject }}</a>
@@ -62,11 +65,13 @@
     </tr>
     {% else %}
     <tr>
-      <td colspan="9">{{ "No tickets match." if q else "No tickets yet." }}</td>
+      <td colspan="10">{{ "No tickets match." if q else "No tickets yet." }}</td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
+<button type="submit">Resolve selected tickets</button>
+</form>
 
 {% include "_pagination.html" %}
 {% endblock %}

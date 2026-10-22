@@ -50,6 +50,7 @@ AUTO_CLOSE_AFTER_DAYS = "auto_close_after_days"
 CHASE_ENABLED = "chase_enabled"
 CHASE_AFTER_DAYS = "chase_after_days"
 CHASE_RESOLVE_AFTER_DAYS = "chase_resolve_after_days"
+BULK_RESOLVE_MAX = "bulk_resolve_max_tickets"
 
 # PLACEHOLDER SLA targets, in minutes on a 24/7 clock, until the real ones are agreed
 # (TBC in docs/plan.md). They are settings, changed under Admin > Settings; a blank
@@ -366,6 +367,13 @@ REGISTRY: dict[str, SettingDef] = {
             "(the resolution email says to reply to reopen it). Placeholder."
         ),
         default="3",
+    ),
+    BULK_RESOLVE_MAX: SettingDef(
+        key=BULK_RESOLVE_MAX,
+        label="Bulk resolve: most tickets in one go",
+        kind="count",
+        description="The most tickets an agent can resolve together with one note. Placeholder.",
+        default="50",
     ),
     SLA_AT_RISK_PERCENT: SettingDef(
         key=SLA_AT_RISK_PERCENT,

@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Check before resolving{% endblock %}
+{% block content %}
+<h2>Check before resolving</h2>
+<p><b>Resolution notes</b></p>
+<pre class="message-body">{{ notes }}</pre>
+{% if plan.ready %}
+<p><b>{{ plan.ready | length }} ticket{{ "" if plan.ready | length == 1 else "s" }} will be resolved and emailed</b></p>
+<table>
+  <thead><tr><th>Ticket</th><th>To</th><th>Copied</th><th>Subject</th></tr></thead>
+  <tbody>
+  {% for item in plan.ready %}
+  <tr>
+    <td>{{ item.reference }} {{ item.subject }}</td>
+    <td>{{ item.preview.to }}</td>
+    <td>{{ item.preview.cc | join(", ") if item.preview.cc else "no one" }}</td>
+    <td>{{ item.preview.subject }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+<p class="note">The email text is the "resolution" template with the notes above, the same as a single resolve. Resolving moves each ticket to resolved and stops its SLA clock.</p>
+{% endif %}
+{% if plan.skipped %}
+<p><b>{{ plan.skipped | length }} will be skipped</b></p>
+<ul>
+  {% for item in plan.skipped %}<li>{{ item.reference or ("#" ~ item.number) }}{% if item.subject %} {{ item.subject }}{% endif %}: {{ item.skipped }}</li>{% endfor %}
+</ul>
+{% endif %}
+{% if plan.ready %}
+<form hx-post="/bulk-resolve" hx-target="main" hx-swap="innerHTML" hx-disabled-elt="find button[type=submit]">
+  <textarea name="resolution_notes" hidden>
+{{ notes }}</textarea>
+  {% for item in plan.ready %}<input type="hidden" name="number" value="{{ item.number }}" />{% endfor %}
+  <button type="submit">Resolve {{ plan.ready | length }} and send emails</button>
+  <a href="/tickets">Cancel</a>
+</form>
+{% else %}
+<p>Nothing can be resolved. <a href="/tickets">Back to tickets</a></p>
+{% endif %}
+{% endblock %}

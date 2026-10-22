@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Resolve several tickets{% endblock %}
+{% block content %}
+<h2>Resolve several tickets</h2>
+<p class="note">One resolution note goes to every ticket ticked below. Each requester gets their own resolution email for their own ticket. You see a single preview before anything is sent.</p>
+{% if omitted %}<p class="note">At most {{ limit }} tickets can be resolved at once, so {{ omitted }} more are not listed. Resolve these first, then come back for the rest.</p>{% endif %}
+<form hx-post="/bulk-resolve/preview" hx-target="main" hx-swap="innerHTML" hx-disabled-elt="find button[type=submit]">
+  <table>
+    <thead><tr><th></th><th>Ref</th><th>Subject</th><th>Requester</th><th>Status</th></tr></thead>
+    <tbody>
+    {% for row in rows %}
+    <tr>
+      {% if row.ticket %}
+      <td><input type="checkbox" name="number" value="{{ row.number }}" {{ "" if row.problem else "checked" }} aria-label="Resolve {{ row.ticket.reference }}" /></td>
+      <td>{{ row.ticket.reference }}</td>
+      <td><a href="/tickets/{{ row.ticket.number }}">{{ row.ticket.subject }}</a></td>
+      <td>{{ row.ticket.requester_email }}</td>
+      <td>{{ row.ticket.status.value.replace("_", " ") }}{% if row.problem %} <span class="note">(will be skipped: {{ row.problem }})</span>{% endif %}</td>
+      {% else %}
+      <td></td><td>#{{ row.number }}</td><td colspan="3" class="note">{{ row.problem }}</td>
+      {% endif %}
+    </tr>
+    {% else %}
+    <tr><td colspan="5">No tickets chosen. Tick tickets on the <a href="/tickets">ticket list</a>.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <label>Resolution notes (what was done to fix it; they go into every email)
+    <textarea name="resolution_notes" rows="4" maxlength="{{ max_message_length }}" required></textarea>
+  </label>
+  <button type="submit">Preview</button>
+</form>
+{% endblock %}
