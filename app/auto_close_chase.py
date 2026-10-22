@@ -37,6 +37,7 @@ from sqlmodel import Session, select
 
 from app.audit import log_action
 from app.models import OutboundEmail, Ticket, TicketEvent, TicketStatus
+from app.mail import give_up
 from app.outbox import CHASE, is_on, queue_chase
 from app.resolution import ResolveError, auto_resolution_note, resolve_ticket
 from app.settings_store import (
@@ -48,6 +49,7 @@ from app.settings_store import (
     count_setting,
     get_flag,
 )
+from app.teams import MAX_ATTEMPTS
 from app.splitting import SplitError, check_manual_status, has_sub_tickets
 from app.ticket_service import EVENT_STATUS_CHANGED, record_event, set_status
 
@@ -98,6 +100,37 @@ def waiting_since(session: Session, ticket: Ticket) -> datetime:
     return _aware(moment or ticket.updated_at)
 
 
+def _each(session: Session, ticket_ids, work, *args) -> None:
+    """Runs work(session, ticket_id, *args) for each ticket in a savepoint, so one ticket that cannot be handled
+    (an unexpected error) is logged and skipped instead of rolling back, and blocking, every other ticket."""
+    for ticket_id in ticket_ids:
+        try:
+            with session.begin_nested():
+                work(session, ticket_id, *args)
+        except Exception:
+            log.exception("Auto-close/chase skipped ticket %s", ticket_id)
+
+
+def _close_one(session: Session, ticket_id: int, now: datetime, days: int) -> None:
+    ticket = _lock(session, ticket_id)
+    # Read again under the lock: a reply or reopen since the list was read has taken it out of Resolved.
+    if ticket is None or ticket.status != TicketStatus.RESOLVED or ticket.resolved_at is None:
+        return
+    if _aware(ticket.resolved_at) > now - timedelta(days=days):
+        return
+    if ticket.split_from_id is not None:
+        original = session.get(Ticket, ticket.split_from_id)
+        if original is not None and original.status == TicketStatus.RESOLVED:
+            return  # a family closes from the original: reopening it brings back only its Resolved parts
+    try:
+        check_manual_status(session, ticket, TicketStatus.CLOSED)  # a split original with an unfinished part stays
+    except SplitError:
+        return
+    set_status(session, ticket, TicketStatus.CLOSED, None, detail="auto-closed")
+    record_event(session, ticket, EVENT_AUTO_CLOSED, None, detail=f"Resolved for {days} days")
+    log_action(session, AUDIT_ACTOR, "ticket", ticket.id, AUDIT_AUTO_CLOSED, f"Resolved for {days} days")
+
+
 def close_resolved_tickets(session: Session, now: datetime) -> None:
     days = count_setting(session, AUTO_CLOSE_AFTER_DAYS)
     ids = session.exec(
@@ -107,20 +140,7 @@ def close_resolved_tickets(session: Session, now: datetime) -> None:
             Ticket.resolved_at <= now - timedelta(days=days),
         ).order_by(Ticket.id)
     ).all()
-    for ticket_id in ids:
-        ticket = _lock(session, ticket_id)
-        # Read again under the lock: a reply or reopen since the list was read has taken it out of Resolved.
-        if ticket is None or ticket.status != TicketStatus.RESOLVED or ticket.resolved_at is None:
-            continue
-        if _aware(ticket.resolved_at) > now - timedelta(days=days):
-            continue
-        try:
-            check_manual_status(session, ticket, TicketStatus.CLOSED)  # a split original with an unfinished part stays
-        except SplitError:
-            continue
-        set_status(session, ticket, TicketStatus.CLOSED, None, detail="auto-closed")
-        record_event(session, ticket, EVENT_AUTO_CLOSED, None, detail=f"Resolved for {days} days")
-        log_action(session, AUDIT_ACTOR, "ticket", ticket.id, AUDIT_AUTO_CLOSED, f"Resolved for {days} days")
+    _each(session, ids, _close_one, now, days)
 
 
 def _last_chase_email(session: Session, ticket: Ticket) -> Optional[OutboundEmail]:
@@ -128,6 +148,32 @@ def _last_chase_email(session: Session, ticket: Ticket) -> Optional[OutboundEmai
         select(OutboundEmail).where(OutboundEmail.ticket_id == ticket.id, OutboundEmail.kind == CHASE)
         .order_by(OutboundEmail.id.desc()).limit(1)
     ).first()
+
+
+def _chase_one(session: Session, ticket_id: int, now: datetime, days: int) -> None:
+    ticket = _lock(session, ticket_id)
+    if ticket is None or ticket.status != TicketStatus.AWAITING_USER or ticket.chased_at is not None or has_sub_tickets(session, ticket):
+        return
+    since = waiting_since(session, ticket)
+    if now < since + timedelta(days=days):
+        return
+    # A chase from an earlier wait that never went (held by the cap, say) must not go out beside this one.
+    for old in session.exec(
+        select(OutboundEmail).where(
+            OutboundEmail.ticket_id == ticket.id, OutboundEmail.kind == CHASE, OutboundEmail.sent_at.is_(None),
+            OutboundEmail.attempts < MAX_ATTEMPTS,
+        )
+    ).all():
+        give_up(old, "Replaced by a newer chase")
+        session.add(old)
+    if queue_chase(session, ticket) is None:
+        return
+    ticket.chased_at = now
+    ticket.chase_count += 1
+    session.add(ticket)
+    waited = (now - since).days
+    record_event(session, ticket, EVENT_CHASED, None, detail=f"No reply for {waited} days")
+    log_action(session, AUDIT_ACTOR, "ticket", ticket.id, AUDIT_CHASED, f"No reply for {waited} days")
 
 
 def send_chases(session: Session, now: datetime) -> None:
@@ -143,21 +189,25 @@ def send_chases(session: Session, now: datetime) -> None:
             ~_has_parts(Ticket.id),
         ).order_by(Ticket.id)
     ).all()
-    for ticket_id in ids:
-        ticket = _lock(session, ticket_id)
-        if ticket is None or ticket.status != TicketStatus.AWAITING_USER or ticket.chased_at is not None or has_sub_tickets(session, ticket):
-            continue
-        since = waiting_since(session, ticket)
-        if now < since + timedelta(days=days):
-            continue
-        if queue_chase(session, ticket) is None:
-            continue
-        ticket.chased_at = now
-        ticket.chase_count += 1
-        session.add(ticket)
-        waited = (now - since).days
-        record_event(session, ticket, EVENT_CHASED, None, detail=f"No reply for {waited} days")
-        log_action(session, AUDIT_ACTOR, "ticket", ticket.id, AUDIT_CHASED, f"No reply for {waited} days")
+    _each(session, ids, _chase_one, now, days)
+
+
+def _resolve_one(session: Session, ticket_id: int, now: datetime, days: int) -> None:
+    ticket = _lock(session, ticket_id)
+    if ticket is None or ticket.status != TicketStatus.AWAITING_USER or ticket.chased_at is None or has_sub_tickets(session, ticket):
+        return
+    email = _last_chase_email(session, ticket)
+    # Counted from when the chase actually went: not while it is held or retrying, and never if it was given up on.
+    if email is None or email.sent_at is None or now < _aware(email.sent_at) + timedelta(days=days):
+        return
+    waited = max(1, (now - waiting_since(session, ticket)).days)
+    try:
+        resolve_ticket(
+            session, ticket, None, auto_resolution_note(session, ticket, waited),
+            detail=f"auto-resolved: no reply after the chase ({waited} days)",
+        )
+    except ResolveError as error:
+        log.info("Ticket %s not auto-resolved: %s", ticket.id, error)
 
 
 def resolve_unanswered(session: Session, now: datetime) -> None:
@@ -168,22 +218,7 @@ def resolve_unanswered(session: Session, now: datetime) -> None:
             Ticket.status == TicketStatus.AWAITING_USER, Ticket.chased_at.is_not(None), ~_has_parts(Ticket.id)
         ).order_by(Ticket.id)
     ).all()
-    for ticket_id in ids:
-        ticket = _lock(session, ticket_id)
-        if ticket is None or ticket.status != TicketStatus.AWAITING_USER or ticket.chased_at is None or has_sub_tickets(session, ticket):
-            continue
-        email = _last_chase_email(session, ticket)
-        # Counted from when the chase actually went: not while it is held or retrying, and never if it was given up on.
-        if email is None or email.sent_at is None or now < _aware(email.sent_at) + timedelta(days=days):
-            continue
-        waited = max(1, (now - waiting_since(session, ticket)).days)
-        try:
-            resolve_ticket(
-                session, ticket, None, auto_resolution_note(session, ticket, waited),
-                detail=f"auto-resolved: no reply after the chase ({waited} days)",
-            )
-        except ResolveError as error:
-            log.info("Ticket %s not auto-resolved: %s", ticket.id, error)
+    _each(session, ids, _resolve_one, now, days)
 
 
 def run_auto_close(session: Session, now: Optional[datetime] = None) -> None:

@@ -159,7 +159,7 @@ REGISTRY: dict[str, SettingDef] = {
         label="Automatic emails to one ticket's requester, at most per day",
         kind="count",
         description=(
-            "Stops a mail loop: automatic emails (approval decisions, 'a ticket was raised for you') "
+            "Stops a mail loop: automatic emails (approval decisions, 'a ticket was raised for you', the receipt, the chase 'is this still an issue?') "
             "to the same ticket are held back once this many have gone in the last 24 hours. Agent "
             "replies are never counted. Placeholder value until the real limit is agreed."
         ),

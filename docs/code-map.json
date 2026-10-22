@@ -418,11 +418,13 @@
       ],
       "imports": [
         "app.audit",
+        "app.mail",
         "app.models",
         "app.outbox",
         "app.resolution",
         "app.settings_store",
         "app.splitting",
+        "app.teams",
         "app.ticket_service"
       ],
       "module": "app.auto_close_chase",
@@ -1086,6 +1088,7 @@
         "send_through_graph"
       ],
       "imported_by": [
+        "app.auto_close_chase",
         "app.inbound",
         "app.jobs"
       ],
@@ -3304,6 +3307,7 @@
       ],
       "imported_by": [
         "app.approval_reminders",
+        "app.auto_close_chase",
         "app.inbound",
         "app.jobs",
         "app.mail",

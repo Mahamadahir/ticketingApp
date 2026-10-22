@@ -5,6 +5,7 @@ import pytest
 from sqlmodel import Session, select
 
 from app import mail, outbox, scheduled_jobs
+from app import auto_close_chase as auto_close_chase_module
 from app.auto_close_chase import run_auto_close, run_chase
 from app.config import settings
 from app.database import engine
@@ -538,3 +539,55 @@ def test_a_part_that_replied_is_not_chased_but_its_sibling_is(client, db_session
     configure(db_session)
     chase_job(db_session, 3.1)
     assert [r.ticket_id for r in chases(db_session)] == [second.id]
+
+
+# ---- Review fixes ---------------------------------------------------------------------------------------
+
+
+def test_a_part_is_not_closed_while_its_original_is_still_resolved(client, db_session):
+    original, _ = world(client, db_session)
+    split(client, original, ("One", ""), ("Two", ""))
+    first, second = subs_of(db_session, original)
+    for part in (first, second):
+        resolve_ticket(db_session, fresh(db_session, part), None, "Done", send_email=False)
+        db_session.commit()
+    resolve_ticket(db_session, fresh(db_session, original), None, "All done", send_email=False)
+    db_session.commit()
+    for part in (first, second):
+        part = fresh(db_session, part)
+        part.resolved_at = later(-10)
+        db_session.add(part)
+    db_session.commit()
+    configure(db_session)
+
+    close_job(db_session)  # the original was resolved a moment ago
+
+    assert {fresh(db_session, t).status for t in (original, first, second)} == {TicketStatus.RESOLVED}
+
+
+def test_an_older_chase_that_never_went_is_replaced_by_the_new_one(db_session, dev_mail):
+    ticket = waiting(db_session)
+    configure(db_session)
+    chase_job(db_session, 3.1)  # held, never sent
+    apply_requester_reply(db_session, fresh(db_session, ticket), "sam@example.com", "hello")
+    db_session.commit()
+    move(db_session, fresh(db_session, ticket), TicketStatus.AWAITING_USER)
+    chase_job(db_session, 7)
+    old, new = chases(db_session)
+    assert old.attempts >= 1 and old.last_error == "Replaced by a newer chase" and new.attempts == 0
+
+
+def test_one_ticket_that_fails_does_not_stop_the_others(db_session, dev_mail, monkeypatch):
+    bad = chased(db_session)
+    good = chased_other(db_session)
+    real = auto_close_chase_module.resolve_ticket
+
+    def flaky(session, ticket, *args, **kwargs):
+        if ticket.id == bad.id:
+            raise RuntimeError("boom")
+        return real(session, ticket, *args, **kwargs)
+
+    monkeypatch.setattr(auto_close_chase_module, "resolve_ticket", flaky)
+    chase_job(db_session, 60)
+    assert fresh(db_session, bad).status == TicketStatus.AWAITING_USER
+    assert fresh(db_session, good).status == TicketStatus.RESOLVED

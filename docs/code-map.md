@@ -363,7 +363,7 @@ File: `app/auth.py`
 Auto-close and chase (phase 4H): two recurring jobs on the database-driven scheduler  
 File: `app/auto_close_chase.py`
 - Functions: `close_resolved_tickets`, `resolve_unanswered`, `run_auto_close`, `run_chase`, `send_chases`, `waiting_since`
-- Imports: `app.audit`, `app.models`, `app.outbox`, `app.resolution`, `app.settings_store`, `app.splitting`, `app.ticket_service`
+- Imports: `app.audit`, `app.mail`, `app.models`, `app.outbox`, `app.resolution`, `app.settings_store`, `app.splitting`, `app.teams`, `app.ticket_service`
 - Imported by: `app.scheduled_jobs`
 - Tests: `test_auto_close_chase.py`
 
@@ -560,7 +560,7 @@ File: `app/mail.py`
 - Classes: `Mail`, `NotReady`
 - Functions: `automatic_cap`, `build_acknowledgement_mail`, `build_approval_mail`, `build_approval_reminder_mail`, `build_approval_withdrawn_mail`, `build_chase_mail`, `build_follower_update_mail`, `build_message_mail`, `build_raised_for_mail`, `cap_release`, `deliver_mail`, `describe_failure`, `give_up`, `is_permanent`, `own_first_message`, `quoted`, `record_only`, `send_through_graph`
 - Imports: `app.action_links`, `app.approval_groups`, `app.approval_links`, `app.approvals`, `app.config`, `app.email_templates`, `app.followers`, `app.graph_client`, `app.messages`, `app.models`, `app.never_follow`, `app.notification_settings`, `app.outbox`, `app.raising`, `app.settings_store`, `app.teams`
-- Imported by: `app.inbound`, `app.jobs`
+- Imported by: `app.auto_close_chase`, `app.inbound`, `app.jobs`
 - Tests: `test_acknowledgement.py`, `test_action_links.py`, `test_approval_reminders.py`, `test_auto_close_chase.py`, `test_email_templates.py`, `test_follower_updates.py`, `test_outbound_mail.py`, `test_reopening.py`, `test_resolution.py`, `test_withdraw.py`
 
 ### `app.main`
@@ -944,7 +944,7 @@ File: `app/teams.py`
 - Classes: `Unsendable`
 - Functions: `deliver_pending`, `describe_failure`, `give_up`, `is_permanent`, `mention_name`, `message`, `new_ticket_card`, `new_ticket_post`, `notification_card`, `notification_post`, `plain`, `post_card`, `queue_new_ticket`, `queue_notification`
 - Imports: `app.config`, `app.models`, `app.visibility`
-- Imported by: `app.approval_reminders`, `app.inbound`, `app.jobs`, `app.mail`, `app.routers.admin`, `app.ticket_service`
+- Imported by: `app.approval_reminders`, `app.auto_close_chase`, `app.inbound`, `app.jobs`, `app.mail`, `app.routers.admin`, `app.ticket_service`
 - Tests: `test_auto_close_chase.py`, `test_inbound_mail.py`, `test_outbound_mail.py`, `test_teams.py`, `test_teams_copy_sending.py`, `test_wiring_3f.py`, `test_withdraw.py`
 
 ### `app.telemetry`
