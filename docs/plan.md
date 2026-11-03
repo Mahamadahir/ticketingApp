@@ -1301,3 +1301,35 @@ order the laptop, each with a link to its how-to). Nothing below is built. All p
    thrown away, never stored.
 
 Schema: a template table keyed by request type and a per-ticket item table that flags agent-added items; both need an Alembic migration.
+
+## Loans of shared assets (LOAN, planned, not built)
+
+Asked for by the owner (3 Nov 2026): IT lends out **shared** equipment (chargers, power banks, spare laptops, headsets,
+adapters) and needs to know what it has, who has each item and when it is due back. This is **not** a full asset register:
+devices issued to one person for keeps are out of scope, and nothing is imported or discovered (no Intune, Entra or CSV
+feed). **Every asset is created by hand.** Not in a numbered phase yet; it can be built any time after phase 4, as its own
+PRs. The points below are **Proposed - needs owner confirmation** (each can change cheaply):
+
+1. **Proposed - needs owner confirmation: the asset record.** An asset tag (typed in, unique, the label stuck on the item), a
+   name, a kind from an admin-managed list (Charger, Power bank, Laptop, Headset, Other; seeded, editable), an optional serial
+   number and an optional note. Its state is one of Available, On loan, Under repair or Retired. An asset is never deleted, only
+   retired, so its loan history stays.
+2. **Proposed - needs owner confirmation: who manages assets.** Any agent can add an asset, edit it and change its state
+   (Available, Under repair, Retired); assets are shared across all IT teams, not owned by a team. Kinds are managed by super
+   admins in Admin. Every change writes an audit entry.
+3. **Proposed - needs owner confirmation: a loan.** Lent to a person (picked from known people or typed as an email address;
+   they need no account, like a requester), lent by the agent, out at, an optional due back date, an optional note and an
+   optional link to a ticket (for example a loan service request). One open loan per asset; lending an asset that is On loan,
+   Under repair or Retired is refused. Returning records who took it back, when, and an optional condition note, and the asset
+   goes back to Available (or Under repair if the agent says it is faulty).
+4. **Proposed - needs owner confirmation: where it shows.** An agent "Loans" page: all assets with their state and a filter by
+   kind and state, the loans that are out, and the overdue ones (past their due date) first. Each asset has a page with its
+   loan history. A ticket with linked loans lists them. The requester sees their own open loans, read only, in the portal
+   ("My loans"); nobody else's.
+5. **Proposed - needs owner confirmation: no automatic emails at first.** Overdue loans are shown, not chased. A reminder to the
+   borrower can be added later as a 4A recurring job with an admin template and a days setting, off by default (it needs mail
+   proved on staging).
+6. **Proposed - needs owner confirmation: reporting** (phase 7) adds loans out, overdue loans and the most borrowed kinds.
+
+Schema: `asset`, `asset_kind` and `asset_loan` tables (an Alembic migration). No Azure-only parts: nothing here needs staging to
+prove it, except a later reminder email.
