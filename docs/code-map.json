@@ -3354,6 +3354,7 @@
         "tests/test_follower_updates.py",
         "tests/test_inbound_mail.py",
         "tests/test_mail_subscriptions.py",
+        "tests/test_never_follow.py",
         "tests/test_notification_followup.py",
         "tests/test_outbound_mail.py",
         "tests/test_presence.py",
