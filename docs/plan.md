@@ -1300,4 +1300,4 @@ order the laptop, each with a link to its how-to). Nothing below is built; the p
    added after any existing ones; at most 100 items per list (an admin setting, placeholder value). The CSV file is read and
    thrown away, never stored.
 
-Schema: a template table keyed by request type and a per-ticket item table (agent-added items flagged as such) (both need an Alembic migration).
+Schema: a template table keyed by request type and a per-ticket item table that flags agent-added items; both need an Alembic migration.
