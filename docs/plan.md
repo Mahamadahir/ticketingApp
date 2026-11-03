@@ -1283,6 +1283,8 @@ order the laptop, each with a link to its how-to). Nothing below is built; the p
    untick an item, and each tick writes a ticket event (who, when). The requester does not see it in the portal or in email.
 4. **Proposed - needs owner confirmation: advisory, not blocking.** An unfinished list does not stop Resolve; the resolve step
    says how many items are left. Agents can add a one-off item to a ticket's own list but cannot remove template items.
+5. **Proposed - needs owner confirmation: links are plain links** to documents stored elsewhere; the app does not host them. If
+   hosted documents are wanted later they reuse the 3E storage interface and its visibility check. Links must be `https://`.
 6. **Asked for by the owner (3 Nov 2026): a to-do list on any ticket.** Any agent who works a ticket, of any type (incident,
    service request, major incident, problem), can add a to-do list to it, when raising it for someone or later from the ticket
    page. It is the same per-ticket list as above, so a service request with a template simply starts with items in it. Proposed -
@@ -1297,7 +1299,5 @@ order the laptop, each with a link to its how-to). Nothing below is built; the p
    (empty label, a link that is not `https://`) is reported by row number and nothing is saved until it is fixed; new items are
    added after any existing ones; at most 100 items per list (an admin setting, placeholder value). The CSV file is read and
    thrown away, never stored.
-5. **Proposed - needs owner confirmation: links are plain links** to documents stored elsewhere; the app does not host them. If
-   hosted documents are wanted later they reuse the 3E storage interface and its visibility check. Links must be `https://`.
 
-Schema: a template table keyed by request type and a per-ticket item table (both need an Alembic migration).
+Schema: a template table keyed by request type and a per-ticket item table (agent-added items flagged as such) (both need an Alembic migration).
