@@ -455,8 +455,8 @@ File: `app/database.py`
 
 The morning of a Scheduled ticket's Due date (issue #121). Nothing here commits.  
 File: `app/due_today.py`
-- Functions: `count_setting_hour`, `morning_of`, `run_scheduled_due`, `wake_scheduled_tickets`
-- Imports: `app.audit`, `app.models`, `app.notifications`, `app.settings_store`, `app.splitting`, `app.ticket_service`, `app.time_zones`
+- Functions: `run_scheduled_due`, `wake_scheduled_tickets`
+- Imports: `app.audit`, `app.models`, `app.notifications`, `app.splitting`, `app.ticket_service`, `app.time_zones`
 - Imported by: `app.scheduled_jobs`
 - Tests: `test_due_date.py`
 
@@ -626,7 +626,7 @@ File: `app/models.py`
 - Tables: `actiontoken`, `activitylog`, `approvalgroup`, `approvalgroupmember`, `approvalvote`, `attachment`, `auditlog`, `cannedresponse`, `category`, `emailtemplate`, `graphnotification`, `graphsubscription`, `inboundmail`, `mailsyncstate`, `message`, `neverfollowaddress`, `notification`, `notificationpreference`, `numbercounter`, `outboundemail`, `relatedticket`, `requesttype`, `requestertimezone`, `scheduledjob`, `setting`, `team`, `teammembership`, `teamspost`, `thankscandidate`, `thanksrule`, `ticket`, `ticketapproval`, `ticketescalator`, `ticketevent`, `ticketfeedback`, `ticketfollower`, `user`
 - Imports: none
 - Imported by: `app.action_links`, `app.activity`, `app.approval_groups`, `app.approval_reminders`, `app.approvals`, `app.attachments`, `app.audit`, `app.auth`, `app.auto_close_chase`, `app.backdating`, `app.bulk_resolve`, `app.canned`, `app.categories`, `app.due_today`, `app.email_templates`, `app.escalation`, `app.feedback`, `app.follower_updates`, `app.followers`, `app.identity`, `app.inbound`, `app.linking`, `app.mail`, `app.main`, `app.messages`, `app.never_follow`, `app.notification_settings`, `app.notifications`, `app.outbox`, `app.presence`, `app.raising`, `app.reopening`, `app.request_types`, `app.required_by`, `app.resolution`, `app.routers.action_links`, `app.routers.admin`, `app.routers.approvals`, `app.routers.attachments`, `app.routers.auth`, `app.routers.bulk_resolve`, `app.routers.feedback`, `app.routers.my_settings`, `app.routers.notifications`, `app.routers.portal`, `app.routers.tickets`, `app.routers.webhooks`, `app.scheduled_jobs`, `app.search`, `app.settings_store`, `app.sla`, `app.splitting`, `app.subscriptions`, `app.team_activity`, `app.teams`, `app.thanks_rules`, `app.ticket_service`, `app.time_zones`, `app.triage`, `app.visibility`
-- Tests: `conftest.py`, `test_access_context.py`, `test_acknowledgement.py`, `test_action_links.py`, `test_activity_log.py`, `test_admin.py`, `test_approval_groups.py`, `test_approval_reminders.py`, `test_approvals.py`, `test_attachments.py`, `test_auth.py`, `test_auto_close_chase.py`, `test_backdating.py`, `test_bell_access.py`, `test_bulk_resolve.py`, `test_canned.py`, `test_category_admin.py`, `test_due_date.py`, `test_email_preview.py`, `test_email_templates.py`, `test_escalation.py`, `test_escalation_tidy.py`, `test_feedback_views.py`, `test_follower_updates.py`, `test_followers.py`, `test_hardening.py`, `test_htmx_errors.py`, `test_htmx_partials.py`, `test_inbound_mail.py`, `test_linking.py`, `test_login_lockout.py`, `test_mail_subscriptions.py`, `test_messages.py`, `test_never_follow.py`, `test_notification_followup.py`, `test_notification_settings.py`, `test_notifications.py`, `test_outbound_mail.py`, `test_pagination_and_limits.py`, `test_portal.py`, `test_presence.py`, `test_public_surface.py`, `test_raising.py`, `test_reopening.py`, `test_reply_notification.py`, `test_request_types.py`, `test_required_by.py`, `test_resolution.py`, `test_scheduled_jobs.py`, `test_scheduled_status.py`, `test_search.py`, `test_sla.py`, `test_split_family.py`, `test_splitting.py`, `test_status_follows_conversation.py`, `test_team_activity.py`, `test_teams.py`, `test_teams_copy.py`, `test_teams_copy_sending.py`, `test_thanks_rules.py`, `test_ticket_core.py`, `test_ticket_urls.py`, `test_tickets_rbac.py`, `test_time_zones.py`, `test_triage.py`, `test_visibility.py`, `test_wiring_3f.py`, `test_with_supplier.py`, `test_withdraw.py`, `test_worker.py`
+- Tests: `conftest.py`, `test_access_context.py`, `test_acknowledgement.py`, `test_action_links.py`, `test_activity_log.py`, `test_admin.py`, `test_approval_groups.py`, `test_approval_reminders.py`, `test_approvals.py`, `test_attachments.py`, `test_auth.py`, `test_auto_close_chase.py`, `test_backdating.py`, `test_bell_access.py`, `test_bulk_resolve.py`, `test_canned.py`, `test_category_admin.py`, `test_due_date.py`, `test_due_date_review.py`, `test_email_preview.py`, `test_email_templates.py`, `test_escalation.py`, `test_escalation_tidy.py`, `test_feedback_views.py`, `test_follower_updates.py`, `test_followers.py`, `test_hardening.py`, `test_htmx_errors.py`, `test_htmx_partials.py`, `test_inbound_mail.py`, `test_linking.py`, `test_login_lockout.py`, `test_mail_subscriptions.py`, `test_messages.py`, `test_never_follow.py`, `test_notification_followup.py`, `test_notification_settings.py`, `test_notifications.py`, `test_outbound_mail.py`, `test_pagination_and_limits.py`, `test_portal.py`, `test_presence.py`, `test_public_surface.py`, `test_raising.py`, `test_reopening.py`, `test_reply_notification.py`, `test_request_types.py`, `test_required_by.py`, `test_resolution.py`, `test_scheduled_jobs.py`, `test_scheduled_status.py`, `test_search.py`, `test_sla.py`, `test_split_family.py`, `test_splitting.py`, `test_status_follows_conversation.py`, `test_team_activity.py`, `test_teams.py`, `test_teams_copy.py`, `test_teams_copy_sending.py`, `test_thanks_rules.py`, `test_ticket_core.py`, `test_ticket_urls.py`, `test_tickets_rbac.py`, `test_time_zones.py`, `test_triage.py`, `test_visibility.py`, `test_wiring_3f.py`, `test_with_supplier.py`, `test_withdraw.py`, `test_worker.py`
 
 ### `app.never_follow`
 
@@ -657,7 +657,7 @@ File: `app/notifications.py`
 - Functions: `bell_tickets`, `count_unread`, `default_teams_delay`, `drop_due_for_teams`, `due_for_teams`, `hand_to_teams`, `mark_all_read`, `mark_read`, `mentioned_in`, `notify`, `notify_approval_overdue`, `notify_approval_withdrawn`, `notify_assigned`, `notify_due_today`, `notify_mentions`, `notify_reopened`, `notify_reply`, `retire_read_for_teams`, `visible_to`
 - Imports: `app.models`, `app.notification_settings`, `app.settings_store`, `app.visibility`
 - Imported by: `app.approval_reminders`, `app.approvals`, `app.due_today`, `app.escalation`, `app.jobs`, `app.messages`, `app.reopening`, `app.routers.bulk_resolve`, `app.routers.feedback`, `app.routers.my_settings`, `app.routers.notifications`, `app.routers.tickets`, `app.triage`
-- Tests: `test_bell_access.py`, `test_notifications.py`, `test_teams_copy.py`, `test_teams_copy_sending.py`
+- Tests: `test_bell_access.py`, `test_due_date_review.py`, `test_notifications.py`, `test_teams_copy.py`, `test_teams_copy_sending.py`
 
 ### `app.outbox`
 
@@ -738,9 +738,9 @@ The Required by date and the Due date on a ticket (SRP-1, issue #92; the Due dat
 File: `app/required_by.py`
 
 - Classes: `RequiredByError`
-- Functions: `apply_form_dates`, `default_due`, `due_days_before`, `offers_required_by`, `parse_due`, `parse_required_by`, `prepare_scheduled`, `requester_today`, `set_due`, `set_required_by`
+- Functions: `apply_form_dates`, `default_due`, `due_days_before`, `offers_required_by`, `parse_due`, `parse_required_by`, `prepare_scheduled`, `refresh_default_due`, `requester_today`, `set_due`, `set_required_by`
 - Imports: `app.audit`, `app.models`, `app.settings_store`, `app.sla`, `app.ticket_service`, `app.time_zones`
-- Imported by: `app.raising`, `app.routers.portal`, `app.routers.tickets`
+- Imported by: `app.raising`, `app.routers.portal`, `app.routers.tickets`, `app.triage`
 - Tests: `test_due_date.py`, `test_required_by.py`
 
 ### `app.resolution`
@@ -930,8 +930,8 @@ File: `app/settings_store.py`
 - Classes: `SettingDef`
 - Functions: `count_setting`, `get_flag`, `get_int_setting`, `get_setting`, `set_setting`, `sla_key`
 - Imports: `app.models`
-- Imported by: `app.action_links`, `app.approval_reminders`, `app.auto_close_chase`, `app.bulk_resolve`, `app.categories`, `app.due_today`, `app.inbound`, `app.mail`, `app.notifications`, `app.presence`, `app.raising`, `app.required_by`, `app.routers.admin`, `app.routers.approvals`, `app.routers.bulk_resolve`, `app.routers.tickets`, `app.scheduled_jobs`, `app.sla`, `app.subscriptions`, `app.ticket_service`, `app.time_zones`
-- Tests: `test_acknowledgement.py`, `test_action_links.py`, `test_approval_reminders.py`, `test_approvals.py`, `test_auto_close_chase.py`, `test_backdating.py`, `test_bulk_resolve.py`, `test_category_admin.py`, `test_due_date.py`, `test_follower_updates.py`, `test_inbound_mail.py`, `test_mail_subscriptions.py`, `test_notification_followup.py`, `test_outbound_mail.py`, `test_presence.py`, `test_raising.py`, `test_request_types.py`, `test_required_by.py`, `test_resolution.py`, `test_scheduled_jobs.py`, `test_sla.py`, `test_teams_copy.py`, `test_time_zones.py`, `test_triage.py`
+- Imported by: `app.action_links`, `app.approval_reminders`, `app.auto_close_chase`, `app.bulk_resolve`, `app.categories`, `app.inbound`, `app.mail`, `app.notifications`, `app.presence`, `app.raising`, `app.required_by`, `app.routers.admin`, `app.routers.approvals`, `app.routers.bulk_resolve`, `app.routers.tickets`, `app.scheduled_jobs`, `app.sla`, `app.subscriptions`, `app.ticket_service`, `app.time_zones`
+- Tests: `test_acknowledgement.py`, `test_action_links.py`, `test_approval_reminders.py`, `test_approvals.py`, `test_auto_close_chase.py`, `test_backdating.py`, `test_bulk_resolve.py`, `test_category_admin.py`, `test_due_date.py`, `test_due_date_review.py`, `test_follower_updates.py`, `test_inbound_mail.py`, `test_mail_subscriptions.py`, `test_notification_followup.py`, `test_outbound_mail.py`, `test_presence.py`, `test_raising.py`, `test_request_types.py`, `test_required_by.py`, `test_resolution.py`, `test_scheduled_jobs.py`, `test_sla.py`, `test_teams_copy.py`, `test_time_zones.py`, `test_triage.py`
 
 ### `app.sla`
 
@@ -1045,7 +1045,7 @@ Per-person time zones. Everything is stored and calculated in UTC; only what a p
 File: `app/time_zones.py`
 
 - Classes: `RefreshResult`
-- Functions: `clear_manual_zone`, `default_zone`, `end_of_day_for_email`, `end_of_day_for_user`, `end_of_day_utc`, `format_date`, `format_moment`, `note_requester`, `refresh_requester_zones`, `set_browser_zone`, `set_manual_zone`, `valid_zone`, `windows_to_iana`, `zone_choices`, `zone_for_email`, `zone_for_user`
+- Functions: `clear_manual_zone`, `default_zone`, `end_of_day_for_email`, `end_of_day_for_user`, `end_of_day_utc`, `format_date`, `format_moment`, `morning_of`, `note_requester`, `refresh_requester_zones`, `scheduled_morning_hour`, `set_browser_zone`, `set_manual_zone`, `valid_zone`, `windows_to_iana`, `zone_choices`, `zone_for_email`, `zone_for_user`
 - Imports: `app.graph_client`, `app.models`, `app.settings_store`, `app.windows_zones`
 - Imported by: `app.auth`, `app.backdating`, `app.due_today`, `app.inbound`, `app.jobs`, `app.required_by`, `app.routers.admin`, `app.routers.my_settings`, `app.routers.portal`, `app.routers.tickets`, `app.sla`, `app.templating`, `app.ticket_service`
 - Tests: `test_due_date.py`, `test_time_zones.py`
@@ -1057,7 +1057,7 @@ File: `app/triage.py`
 
 - Classes: `TriageError`
 - Functions: `change_type`, `move_ticket`, `reassign_ticket`, `triage_ticket`
-- Imports: `app.approvals`, `app.categories`, `app.models`, `app.notifications`, `app.sla`, `app.ticket_service`, `app.visibility`
+- Imports: `app.approvals`, `app.categories`, `app.models`, `app.notifications`, `app.required_by`, `app.sla`, `app.ticket_service`, `app.visibility`
 - Imported by: `app.escalation`, `app.raising`, `app.routers.portal`, `app.routers.tickets`, `app.splitting`
 - Tests: `test_escalation_tidy.py`
 

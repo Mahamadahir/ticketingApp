@@ -14,6 +14,7 @@ from sqlmodel import Session
 from app.approvals import start_approvals, status_after_triage
 from app.categories import is_selectable, path_of, team_id_for
 from app.notifications import notify_assigned
+from app.required_by import refresh_default_due
 from app.models import (
     Category,
     RequestType,
@@ -125,6 +126,7 @@ def triage_ticket(
             session, ticket, EVENT_REQUEST_TYPE, actor.email,
             from_value=previous.name if previous else None, to_value=request_type.name, detail="chosen at triage",
         )
+        refresh_default_due(session, ticket, actor.email)
 
     previous_team = session.get(Team, ticket.team_id) if ticket.team_id else None
     new_team = session.get(Team, team_id)

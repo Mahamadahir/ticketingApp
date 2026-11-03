@@ -99,7 +99,7 @@
   <label>Kind of request (service requests)
     <select name="request_type_id"
       hx-get="/tickets/triage-dates" hx-trigger="change" hx-target="#triage-dates" hx-swap="outerHTML"
-      hx-include="[name='required_by'],[name='due_on'],[name='due_reason']">
+      hx-include="closest form">
       <option value="">Leave as is{{ " (" ~ request_info[0].name ~ ")" if request_info else " (none)" }}</option>
       {% for rt in request_types %}<option value="{{ rt.id }}">{{ rt.name }}</option>{% endfor %}
     </select>

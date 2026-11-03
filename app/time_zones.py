@@ -33,6 +33,7 @@ from app.models import RequesterTimeZone, User
 from app.settings_store import (
     DEFAULT_TIME_ZONE,
     REGISTRY,
+    SCHEDULED_MORNING_HOUR,
     TIME_ZONE_REFRESH_DAYS,
     TIME_ZONE_RETRY_HOURS,
     count_setting,
@@ -139,6 +140,19 @@ def end_of_day_utc(day: date, zone_name: str) -> datetime:
     or 25 hours long. An unknown zone name is read as UTC."""
     zone = ZoneInfo(valid_zone(zone_name) or "UTC")
     return datetime.combine(day + timedelta(days=1), time.min, tzinfo=zone).astimezone(timezone.utc)
+
+
+def morning_of(day: date, zone_name: str, hour: int) -> datetime:
+    """The moment the morning of day D starts in that zone (the given hour), as UTC. The Scheduled job
+    (app/due_today.py) and the check made when Scheduled is set (app/required_by.py) both use it."""
+    zone = ZoneInfo(valid_zone(zone_name) or "UTC")
+    return datetime.combine(day, time(hour), tzinfo=zone).astimezone(timezone.utc)
+
+
+def scheduled_morning_hour(session: Session) -> int:
+    """The SCHEDULED_MORNING_HOUR setting as an hour, 0 to 23 (a bad stored value falls back to the default)."""
+    hour = count_setting(session, SCHEDULED_MORNING_HOUR)
+    return hour if 0 <= hour <= 23 else int(REGISTRY[SCHEDULED_MORNING_HOUR].default)
 
 
 def end_of_day_for_user(session: Session, day: date, user: User) -> datetime:

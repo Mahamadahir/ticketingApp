@@ -349,4 +349,4 @@ def notify_due_today(session: Session, ticket: Ticket) -> Optional[Notification]
     agent = session.get(User, ticket.assigned_agent_id)
     if agent is None or not _can_open(session, agent, ticket):
         return None
-    return notify(session, agent, DUE_TODAY, ticket, f"{ticket.reference} is due today: {ticket.subject}", None)
+    return notify(session, agent, DUE_TODAY, ticket, f"{ticket.tag} {ticket.subject} is due today", None)

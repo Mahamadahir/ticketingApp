@@ -9,29 +9,22 @@ sub-tickets is left to them.
 """
 
 import logging
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
-from zoneinfo import ZoneInfo
 
 from sqlmodel import Session, select
 
 from app.audit import log_action
 from app.models import Ticket, TicketStatus
 from app.notifications import notify_due_today
-from app.settings_store import SCHEDULED_MORNING_HOUR, count_setting
 from app.splitting import has_sub_tickets
 from app.ticket_service import set_status
-from app.time_zones import zone_for_email
+from app.time_zones import morning_of, scheduled_morning_hour, zone_for_email  # morning_of: re-exported for tests
 
 log = logging.getLogger("app.worker")
 
 AUDIT_ACTOR = "system"
 AUDIT_DUE_TODAY = "due_today"
-
-
-def morning_of(day: date, zone_name: str, hour: int) -> datetime:
-    """The moment the morning of `day` starts in that zone, as UTC."""
-    return datetime.combine(day, time(hour), tzinfo=ZoneInfo(zone_name)).astimezone(timezone.utc)
 
 
 def _wake_one(session: Session, ticket_id: int, now: datetime, hour: int) -> bool:
@@ -55,7 +48,7 @@ def wake_scheduled_tickets(session: Session, now: Optional[datetime] = None) -> 
     """Moves each Scheduled ticket whose Due morning has come back to Open. Returns how many moved. One ticket
     that cannot be handled is logged and skipped (in a savepoint) rather than blocking the rest."""
     now = now or datetime.now(timezone.utc)
-    hour = count_setting_hour(session)
+    hour = scheduled_morning_hour(session)
     # Candidates: due today or earlier somewhere on Earth (a day of slack either side covers every zone);
     # the exact moment is checked per ticket under its lock.
     ids = session.exec(
@@ -73,12 +66,6 @@ def wake_scheduled_tickets(session: Session, now: Optional[datetime] = None) -> 
         except Exception:
             log.exception("Scheduled wake-up skipped ticket %s", ticket_id)
     return woken
-
-
-def count_setting_hour(session: Session) -> int:
-    """The setting as an hour, 0 to 23 (count_setting reads a number and falls back to the default)."""
-    hour = count_setting(session, SCHEDULED_MORNING_HOUR)
-    return hour if 0 <= hour <= 23 else 7
 
 
 def run_scheduled_due(session: Session) -> None:

@@ -740,7 +740,10 @@ def change_status(
     ticket = _get_ticket(session, number, user)
     if status == TicketStatus.NEW:
         raise HTTPException(status_code=400, detail="A ticket only starts in New; it leaves New by being triaged")
-    if status == TicketStatus.SCHEDULED and ticket.status != TicketStatus.SCHEDULED and ticket.triaged_at is not None:
+    if (
+        status == TicketStatus.SCHEDULED and ticket.status != TicketStatus.SCHEDULED and ticket.triaged_at is not None
+        and not has_sub_tickets(session, ticket)  # an original follows its parts: check_manual_status says so below
+    ):
         # Scheduled is a plan for a day: ask for it first (a reopen to Scheduled included).
         _ask_for_scheduled_date(session, ticket, user, due_on, due_reason)
 

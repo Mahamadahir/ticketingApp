@@ -365,7 +365,7 @@ def test_on_the_morning_of_the_due_date_it_goes_back_to_open_and_the_assignee_is
     [entry] = db_session.exec(select(AuditLog).where(AuditLog.action == "due_today")).all()
     assert entry.actor_email == "system" and entry.entity_id == ticket.id
     [bell] = db_session.exec(select(Notification).where(Notification.ticket_id == ticket.id)).all()
-    assert bell.user_id == assignee.id and bell.kind == "due_today" and bell.text.startswith(f"{ticket.reference} is due today")
+    assert bell.user_id == assignee.id and bell.kind == "due_today" and bell.text == f"{ticket.tag} {ticket.subject} is due today"
 
 
 def test_the_morning_is_in_the_requesters_time_zone(db_session):

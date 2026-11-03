@@ -34,7 +34,7 @@ from app.models import FINISHED_STATUSES, RequestType, Ticket, TicketStatus
 from app.settings_store import DUE_DAYS_BEFORE_REQUIRED_BY, count_setting
 from app.sla import recalculate_deadlines
 from app.ticket_service import EVENT_DUE_CHANGED, EVENT_REQUIRED_BY_CHANGED, record_event
-from app.time_zones import zone_for_email
+from app.time_zones import morning_of, scheduled_morning_hour, zone_for_email
 
 MAX_DAYS_AHEAD = 3650  # a sanity bound on typing, not a business rule
 MAX_REASON_LENGTH = 500
@@ -105,6 +105,7 @@ def set_required_by(
     is always allowed."""
     if value == ticket.required_by:
         return False
+    given_today = today
     if ticket.status in FINISHED_STATUSES:
         raise RequiredByError("The Required by date of a resolved or closed request cannot be changed")
     if value is not None:
@@ -117,8 +118,9 @@ def set_required_by(
             raise RequiredByError("That Required by date is too far ahead")
     before = ticket.required_by
     due_before = ticket.due_on
+    floor = given_today or requester_today(session, ticket)  # a default Due is not before today where the requester is
     ticket.required_by = value
-    _follow_required_by(session, ticket, today or datetime.now(timezone.utc).date())
+    _follow_required_by(session, ticket, floor)
     recalculate_deadlines(session, ticket)
     session.add(ticket)
     shown = (before.isoformat() if before else None, value.isoformat() if value else None)
@@ -131,11 +133,12 @@ def set_required_by(
 
 def _follow_required_by(session: Session, ticket: Ticket, today: date) -> None:
     """Brings Due in line with a changed Required by: recalculated from the default offset unless an agent set it
-    by hand, and then only clamped so it is never after Required by. A Scheduled ticket keeps a date."""
+    by hand or the ticket is Scheduled, and then only clamped so it is never after Required by."""
     if ticket.required_by is None:
         if not ticket.due_set_by_hand and ticket.status != TicketStatus.SCHEDULED:
             ticket.due_on = None
-    elif ticket.due_set_by_hand and ticket.due_on is not None:
+    elif (ticket.due_set_by_hand or ticket.status == TicketStatus.SCHEDULED) and ticket.due_on is not None:
+        # An agent's day, or a day work is planned for (Scheduled), is not moved by the requester: only clamped.
         ticket.due_on = min(ticket.due_on, ticket.required_by)
     else:
         ticket.due_on = default_due(session, ticket, ticket.required_by, today)
@@ -216,6 +219,9 @@ def prepare_scheduled(
         set_due(session, ticket, typed, reason, actor_email, reopening=ticket.status in FINISHED_STATUSES)
     elif value < requester_today(session, ticket):
         raise RequiredByError("The Due date is already past: choose the day the work is planned for")
+    if morning_of(value, zone_for_email(session, ticket.requester_email), scheduled_morning_hour(session)) <= datetime.now(timezone.utc):
+        # The morning job would take it straight back to Open and tell the assignee it is due today.
+        raise RequiredByError("The morning of that day has already started: choose a later day for Scheduled")
 
 
 def apply_form_dates(
@@ -228,11 +234,26 @@ def apply_form_dates(
 ) -> None:
     """The Required by and Due boxes on the triage form. None means the box was not on the form (the request
     type does not offer Required by) and leaves that date alone. Required by goes first, as Due follows it; a
-    blank Due box leaves Due as it is (the Due form puts it back to the default). Raises RequiredByError."""
+    blank Due box leaves Due as it is (the Due form puts it back to the default), and so does one still holding
+    the Due the form was drawn with (a changed Required by moves a default Due by itself). Raises RequiredByError."""
+    due_when_drawn = ticket.due_on
     if required_by_text is not None:
         value = parse_required_by(required_by_text)
         if value != ticket.required_by:
             set_required_by(session, ticket, value, actor_email, backdating=ticket.is_backdated)
     typed = parse_due(due_text)
-    if typed is not None and typed != ticket.due_on:
+    if typed is not None and typed != ticket.due_on and typed != due_when_drawn:
         set_due(session, ticket, typed, reason, actor_email)
+
+
+def refresh_default_due(session: Session, ticket: Ticket, actor_email: str) -> None:
+    """The kind of request changed (at triage): a Due date that was only the default from Required by is worked
+    out again with the new kind's days. One an agent set by hand, or no Required by, is left alone."""
+    if ticket.required_by is None or ticket.due_set_by_hand or ticket.status in FINISHED_STATUSES:
+        return
+    before = ticket.due_on
+    ticket.due_on = default_due(session, ticket, ticket.required_by, requester_today(session, ticket))
+    if ticket.due_on != before:
+        recalculate_deadlines(session, ticket)
+        session.add(ticket)
+        _record_due(session, ticket, actor_email, before, "follows the kind of request")

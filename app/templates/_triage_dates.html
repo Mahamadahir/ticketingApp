@@ -11,6 +11,7 @@
     <input type="date" name="due_on" value="{{ due_on }}" />
   </label>
   {% if has_due %}
+  <input type="hidden" name="has_due" value="1" />
   <label>Why Due is being moved (needed if you change it)
     <input type="text" name="due_reason" maxlength="500" value="{{ due_reason }}" />
   </label>

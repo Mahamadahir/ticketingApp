@@ -1294,7 +1294,7 @@ A ticket status **Scheduled** for work planned for a day. Decided by the owner:
    status follows its parts. Only agents set Scheduled; the system never does.
 3. **On the morning of the Due date** (the requester's time zone) a recurring job, `scheduled-due` (`app/due_today.py`, every 15
    minutes on the database-driven scheduler), moves Scheduled tickets back to **Open**, tells the assignee in the bell
-   ("INC-1042 ... is due today", an agent setting `due_today`, on by default in the bell and Teams), and records a status event and an
+   ("#1042 Subject is due today" with the number, as every stored notification text, an agent setting `due_today`, on by default in the bell and Teams), and records a status event and an
    audit entry by `system`. "Morning" is the hour in the setting `scheduled_morning_hour` (placeholder 7). It claims each ticket with
    `FOR UPDATE SKIP LOCKED` and checks again under the lock, so a late or repeated run does nothing twice, and a ticket Due in the
    past (for example when the date was moved back) is taken at the next run.

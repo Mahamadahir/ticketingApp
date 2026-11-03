@@ -41,7 +41,11 @@ def upgrade() -> None:
         "sla_paused_at = NULL "
         "WHERE status = 'SCHEDULED' AND sla_paused_at IS NOT NULL"
     )
-    op.execute("UPDATE ticket SET due_on = CURRENT_DATE WHERE status = 'SCHEDULED' AND due_on IS NULL")
+    op.execute(
+        "UPDATE ticket SET due_on = (now() AT TIME ZONE 'UTC')::date, "
+        "resolution_due_at = ((now() AT TIME ZONE 'UTC')::date + 1)::timestamp AT TIME ZONE 'UTC' "
+        "WHERE status = 'SCHEDULED' AND due_on IS NULL"
+    )
 
 
 def downgrade() -> None:
