@@ -33,7 +33,7 @@ def post_settings(client, *ticked, teams_delay=None):
     return client.post("/settings/notifications", data=data)  # follows the redirect: 200 when saved
 
 
-ALL_ON = {"assigned:in_app", "assigned:teams", "mentioned:in_app", "mentioned:teams", "replied:in_app", "replied:teams", "reopened:in_app", "reopened:teams", "raised_for_you:email", "follower_update:email", "approval_request:email", "due_today:in_app", "due_today:teams"}
+ALL_ON = {"assigned:in_app", "assigned:teams", "mentioned:in_app", "mentioned:teams", "replied:in_app", "replied:teams", "reopened:in_app", "reopened:teams", "raised_for_you:email", "follower_update:email", "approval_request:email", "approval_waiting:in_app", "due_today:in_app", "due_today:teams"}
 
 
 def an_agent(client, db_session, email="bob@example.com"):

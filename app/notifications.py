@@ -31,6 +31,7 @@ REPLIED = "replied"
 REOPENED = "reopened"
 APPROVAL_WITHDRAWN = "approval_withdrawn"
 APPROVAL_OVERDUE = "approval_overdue"
+APPROVAL_WAITING = "approval_waiting"
 DUE_TODAY = "due_today"
 AGENT_ROLES = (UserRole.AGENT, UserRole.SUPER_ADMIN)
 
@@ -41,8 +42,10 @@ _MENTION = re.compile(r"(?<![\w.@])@([A-Za-z0-9][A-Za-z0-9._-]*(?:@[A-Za-z0-9][A
 def notify(
     session: Session, recipient: User, kind: str, ticket: Optional[Ticket], text: str, actor_email: Optional[str]
 ) -> Optional[Notification]:
-    """Tells one agent something. Nothing for the person who did it themselves. Does not commit."""
-    if recipient.role not in AGENT_ROLES:
+    """Tells one agent something. Nothing for the person who did it themselves. Does not commit.
+    A request waiting for someone's vote is the one kind an ordinary signed-in person (an approver who is
+    not an agent) is told too: everything else is for agents."""
+    if recipient.role not in AGENT_ROLES and kind != APPROVAL_WAITING:
         return None
     if actor_email and recipient.email.lower() == actor_email.lower():
         return None
@@ -150,13 +153,19 @@ def visible_to(session: Session, user: User):
     """The SQL condition for the notifications this user may still see: their own, leaving out
     those about a ticket they can no longer open (it moved to another team). A notification would
     otherwise keep showing the subject of a ticket they have lost access to."""
+    if user.role not in AGENT_ROLES:  # an approver who is not an agent: only the "waiting for your vote" entries exist
+        return and_(Notification.user_id == user.id, Notification.bell.is_(True))
     visible = visible_ticket_condition(user, access_context(session, user))
     if visible is None:  # a super admin can open every ticket
         return and_(Notification.user_id == user.id, Notification.bell.is_(True))
     return and_(
         Notification.user_id == user.id,
         Notification.bell.is_(True),  # not the Teams-only ones
-        or_(Notification.ticket_id.is_(None), Notification.ticket_id.in_(select(Ticket.id).where(visible))),
+        or_(
+            Notification.ticket_id.is_(None),
+            Notification.kind == APPROVAL_WAITING,  # being asked to vote is not access to the ticket; it opens in the portal
+            Notification.ticket_id.in_(select(Ticket.id).where(visible)),
+        ),
     )
 
 
@@ -171,7 +180,7 @@ def bell_tickets(session: Session, user: User, notifications) -> dict[int, Ticke
     number or subject only from here, so one they cannot open never reaches a page, even if its
     notification was read in a moment when they still could."""
     ids = {n.ticket_id for n in notifications if n.ticket_id}
-    if not ids:
+    if not ids or user.role not in AGENT_ROLES:
         return {}
     query = select(Ticket).where(Ticket.id.in_(ids))
     visible = visible_ticket_condition(user, access_context(session, user))
@@ -327,6 +336,15 @@ def notify_approval_withdrawn(session: Session, ticket: Ticket, approver: User, 
     return notify(
         session, approver, APPROVAL_WITHDRAWN, ticket,
         f"{ticket.tag} {ticket.subject} was withdrawn by the requester, so it no longer needs your approval", actor_email,
+    )
+
+
+def notify_approval_waiting(session: Session, ticket: Ticket, approver: User) -> Optional[Notification]:
+    """Tells an approver, in the bell, that a request is waiting for their vote (#122). Follows the person's own
+    setting for this event only: it is shown even if they turned the approval email off, and whether they are
+    an agent or can open the ticket does not matter (it opens in the portal, where they vote). Does not commit."""
+    return notify(
+        session, approver, APPROVAL_WAITING, ticket, f"{ticket.tag} {ticket.subject} is waiting for your approval", None
     )
 
 

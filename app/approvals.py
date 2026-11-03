@@ -42,7 +42,7 @@ from app.approval_groups import is_member, members_of
 from app.audit import log_action
 from app.email_templates import render_template, ticket_values
 from app.messages import record_notice
-from app.notifications import notify_approval_withdrawn
+from app.notifications import notify_approval_waiting, notify_approval_withdrawn
 from app.outbox import queue_approval, queue_approval_withdrawn
 from app.models import (
     ApprovalGroupMember,
@@ -145,6 +145,7 @@ def start_approvals(session: Session, ticket: Ticket, actor_email: str) -> Ticke
     session.flush()
     for vote, voter in zip(votes, voters):
         queue_approval(session, vote, voter)
+        notify_approval_waiting(session, ticket, voter)
     record_event(
         session, ticket, EVENT_APPROVAL_REQUESTED, actor_email,
         to_value=", ".join(u.email for u in voters), detail=describe_rule(approval),

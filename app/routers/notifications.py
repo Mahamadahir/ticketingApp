@@ -5,15 +5,16 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from app.templating import templates
 from sqlmodel import Session, select
 
-from app.auth import require_roles
+from app.auth import get_current_user
 from app.database import get_session
-from app.models import Notification, User
-from app.notifications import AGENT_ROLES, bell_tickets, count_unread, mark_all_read, mark_read, visible_to
+from app.models import Notification, Ticket, User
+from app.notifications import APPROVAL_WAITING, bell_tickets, count_unread, mark_all_read, mark_read, visible_to
 from app.pagination import paginate
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
-agent_only = require_roles(*AGENT_ROLES)
+# Every signed-in person: an approver who is not an agent has a bell too, for requests waiting for their vote.
+agent_only = get_current_user
 
 
 @router.get("", response_class=HTMLResponse)
@@ -68,5 +69,10 @@ def open_notification(
     if notification is None:
         raise HTTPException(status_code=404, detail="Notification not found")
     ticket = bell_tickets(session, user, [notification]).get(notification.ticket_id)
+    destination = f"/tickets/{ticket.number}" if ticket else "/notifications"
+    if ticket is None and notification.kind == APPROVAL_WAITING and notification.ticket_id:
+        asked_about = session.get(Ticket, notification.ticket_id)
+        if asked_about is not None:
+            destination = f"/portal/{asked_about.number}"  # where an approver votes (agents without access included)
     session.commit()
-    return RedirectResponse(f"/tickets/{ticket.number}" if ticket else "/notifications", status_code=303)
+    return RedirectResponse(destination, status_code=303)

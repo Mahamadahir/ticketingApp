@@ -25,6 +25,7 @@ EMAIL = "email"
 RAISED_FOR_YOU = "raised_for_you"
 FOLLOWER_UPDATE = "follower_update"
 APPROVAL_REQUEST = "approval_request"
+APPROVAL_WAITING = "approval_waiting"  # the bell entry for the same request (#122)
 
 # The first half of the (two-number) advisory lock that serialises one person's saves; the second
 # is their user id. A different space from the worker's single-number lock.
@@ -96,6 +97,12 @@ EVENT_TYPES: tuple[EventType, ...] = (
         "An email asking you to approve or decline a request (and any reminder about it). Switching it off "
         "does not hide the request: it still shows under \"Waiting for your approval\" in the portal.",
         EVERYONE, (EMAIL,), (EMAIL,),
+    ),
+    EventType(
+        APPROVAL_WAITING, "A request is waiting for your approval (the bell)",
+        "A bell entry when a request is waiting for your vote. It is independent of the approval email: it still "
+        "shows if you switched the email off.",
+        EVERYONE, (IN_APP,), (IN_APP,),
     ),
 )
 _BY_KIND = {event.kind: event for event in EVENT_TYPES}

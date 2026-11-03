@@ -1,7 +1,7 @@
 from sqlmodel import select
 
 from app.models import MembershipLevel, Notification, Team, Ticket, User, UserRole
-from app.notifications import count_unread, mentioned_in
+from app.notifications import count_unread, mentioned_in, notify
 from tests.conftest import add_membership, create_category, create_team, login_as, set_role
 from tests.test_raising import desk, raise_it
 from tests.test_team_activity import classified, ticket_named
@@ -272,11 +272,13 @@ def test_read_all_clears_the_bell(client, db_session):
     assert client.get("/notifications").text.count("<b>") == 0  # nothing bold: all read
 
 
-def test_the_bell_is_for_agents_only_and_polls_without_clearing_messages(client, db_session):
+def test_only_approval_requests_reach_a_non_agent_and_the_bell_polls_without_clearing_messages(client, db_session):
     login_as(client, "jo@example.com")
-    assert client.get("/notifications").status_code == 403
-    assert client.get("/notifications/count").status_code == 403
-    assert 'href="/notifications"' not in client.get("/portal").text  # no bell for end users
+    # Everyone has a bell since #122 (an approver may not be an agent) but nothing else is ever written for them.
+    assert client.get("/notifications").status_code == 200
+    assert client.get("/notifications/count").status_code == 200
+    jo = db_session.exec(select(User).where(User.email == "jo@example.com")).one()
+    assert notify(db_session, jo, "assigned", None, "x", "someone@example.com") is None
 
     client.post("/auth/logout")
     desk(client, db_session)
