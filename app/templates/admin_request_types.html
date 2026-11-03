@@ -8,9 +8,8 @@
 <p class="note">
   The things people can ask IT for, listed on the request form (New starter, Software install ...).
   Each points at an approval group (Admin &gt; Approval groups) whose members vote on the request before the work goes ahead.
-  "Percent to pass" is the share of the voters that must approve; "percent to fail" is the share that must decline to close the
-  request. If both are reached together the decline wins. The two must add up to more than 100, so a complete vote always has an
-  outcome (for example 51 and 50: a simple majority; 100 and 1: everyone must approve and any decline closes it).
+  "Percent to pass" is the share of the voters that must approve, rounded up (5 voters at 60 needs 3; 100 means everyone). The
+  request is declined as soon as that can no longer be reached (5 voters at 60: a third decline closes it).
   The voters are the group's members when an agent triages the request, minus the requester.
   "Offer a Required by date" lets the person raising the request give a date; it then replaces the SLA resolution target
   for that request and the queue ranks it from the lead time (Admin &gt; Settings) before that date.
@@ -31,7 +30,6 @@
       </select>
     </label>
     <label>Percent to pass <input type="number" name="pass_percent" value="{{ t.pass_percent }}" min="1" max="100" required /></label>
-    <label>Percent to fail <input type="number" name="fail_percent" value="{{ t.fail_percent }}" min="1" max="100" required /></label>
     <label><input type="checkbox" name="is_active" {{ "checked" if t.is_active else "" }} /> Available on the request form</label>
     <label><input type="checkbox" name="offers_required_by" {{ "checked" if t.offers_required_by else "" }} /> Offer a Required by date</label>
     <button type="submit">Save</button>
@@ -54,7 +52,6 @@
     </select>
   </label>
   <label>Percent to pass <input type="number" name="pass_percent" value="{{ default_pass }}" min="1" max="100" required /></label>
-  <label>Percent to fail <input type="number" name="fail_percent" value="{{ default_fail }}" min="1" max="100" required /></label>
   <label><input type="checkbox" name="is_active" checked /> Available on the request form</label>
   <label><input type="checkbox" name="offers_required_by" /> Offer a Required by date</label>
   <button type="submit">Create</button>

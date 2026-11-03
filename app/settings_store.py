@@ -39,7 +39,6 @@ JOB_RETRY_MINUTES = "scheduled_job_retry_minutes"
 JOB_LATE_MINUTES = "scheduled_job_late_minutes"
 PRESENCE_RETRY_MINUTES = "presence_retry_minutes"
 APPROVAL_DEFAULT_PASS_PERCENT = "approval_default_pass_percent"
-APPROVAL_DEFAULT_FAIL_PERCENT = "approval_default_fail_percent"
 APPROVAL_REMINDERS_ENABLED = "approval_reminders_enabled"
 APPROVAL_REMIND_AFTER_DAYS = "approval_remind_after_days"
 APPROVAL_REMIND_EVERY_DAYS = "approval_remind_every_days"
@@ -272,16 +271,9 @@ REGISTRY: dict[str, SettingDef] = {
         kind="vote_percent",
         description=(
             "Pre-filled on the New request type form; each type keeps its own number. Placeholder (a simple "
-            "majority). The pass and fail percentages of a type must add up to more than 100."
+            "majority)."
         ),
         default="51",
-    ),
-    APPROVAL_DEFAULT_FAIL_PERCENT: SettingDef(
-        key=APPROVAL_DEFAULT_FAIL_PERCENT,
-        label="New request types: share of the group that must decline (percent)",
-        kind="vote_percent",
-        description="Pre-filled on the New request type form; each type keeps its own number. Placeholder.",
-        default="50",
     ),
     APPROVAL_REMINDERS_ENABLED: SettingDef(
         key=APPROVAL_REMINDERS_ENABLED,

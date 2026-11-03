@@ -42,16 +42,16 @@ def group_of(db_session, name, members=("boss@example.com",)):
     return group
 
 
-def make(db_session, name="New starter", description="", members=("boss@example.com",), pass_percent=51, fail_percent=50):
+def make(db_session, name="New starter", description="", members=("boss@example.com",), pass_percent=51):
     group = group_of(db_session, f"{name} group", members)
-    request_type = create_request_type(db_session, name, description, group.id, pass_percent, fail_percent)
+    request_type = create_request_type(db_session, name, description, group.id, pass_percent)
     db_session.commit()
     db_session.refresh(request_type)
     return request_type
 
 
 def form(group, **extra):
-    return {"approval_group_id": group.id if group is not None else "", "pass_percent": 51, "fail_percent": 50, **extra}
+    return {"approval_group_id": group.id if group is not None else "", "pass_percent": 51, **extra}
 
 
 def actions(db_session):
@@ -74,23 +74,23 @@ def test_an_admin_creates_edits_and_switches_one_off_with_audit(client, db_sessi
     assert created.status_code == 303
     [request_type] = db_session.exec(select(RequestType)).all()
     assert (request_type.name, request_type.description, request_type.is_active) == ("New starter", "A new colleague", True)
-    assert (request_type.approval_group_id, request_type.pass_percent, request_type.fail_percent) == (first.id, 51, 50)
+    assert (request_type.approval_group_id, request_type.pass_percent) == (first.id, 51)
     assert [u.email for u in members_of(db_session, request_type.approval_group_id)] == ["boss@example.com"]
 
     client.post(
         f"/admin/request-types/{request_type.id}",
-        data={"name": "New starter", "description": "A new colleague", "is_active": "on", **form(second, pass_percent=60, fail_percent=45)},
+        data={"name": "New starter", "description": "A new colleague", "is_active": "on", **form(second, pass_percent=60)},
     )
     db_session.expire_all()
     request_type = db_session.get(RequestType, request_type.id)
-    assert (request_type.approval_group_id, request_type.pass_percent, request_type.fail_percent) == (second.id, 60, 45)
+    assert (request_type.approval_group_id, request_type.pass_percent) == (second.id, 60)
 
-    client.post(f"/admin/request-types/{request_type.id}", data={"name": "New starter", "description": "A new colleague", **form(second, pass_percent=60, fail_percent=45)})
+    client.post(f"/admin/request-types/{request_type.id}", data={"name": "New starter", "description": "A new colleague", **form(second, pass_percent=60)})
     db_session.expire_all()
     assert db_session.get(RequestType, request_type.id).is_active is False
     assert actions(db_session) == ["created", "edited", "deactivated"]
     details = [a.detail for a in db_session.exec(select(AuditLog).where(AuditLog.action == "edited")).all()]
-    assert details == ["approval group Managers -> Leads; pass/fail 51%/50% -> 60%/45%"]
+    assert details == ["approval group Managers -> Leads; pass 51% -> 60%"]
     assert "New starter" in client.get("/admin/request-types").text  # still listed when off
 
 
@@ -122,43 +122,36 @@ def test_bad_input_is_refused_and_changes_nothing(client, db_session, data):
     assert [t.name for t in db_session.exec(select(RequestType)).all()] == ["Laptop"]
 
 
-@pytest.mark.parametrize("pass_percent,fail_percent", [(50, 50), (30, 70), (1, 99)])
-def test_pass_and_fail_must_add_up_to_more_than_100(client, db_session, pass_percent, fail_percent):
-    admin(client, db_session)
-    group = group_of(db_session, "Managers")
-
-    response = client.post(
-        "/admin/request-types",
-        data={"name": "Access", "is_active": "on", **form(group, pass_percent=pass_percent, fail_percent=fail_percent)},
-    )
-
-    assert response.status_code == 400 and "add up to more than 100" in response.text
-    assert db_session.exec(select(RequestType)).all() == []
-
-
-def test_the_edit_form_checks_the_percentages_too(client, db_session):
+def test_the_edit_form_checks_the_percentage_too(client, db_session):
     admin(client, db_session)
     request_type = make(db_session, "Access")
 
     response = client.post(
         f"/admin/request-types/{request_type.id}",
-        data={"name": "Access", "is_active": "on", **form(db_session.get(ApprovalGroup, request_type.approval_group_id), pass_percent=40, fail_percent=60)},
+        data={"name": "Access", "is_active": "on", **form(db_session.get(ApprovalGroup, request_type.approval_group_id), pass_percent=0)},
     )
 
-    assert response.status_code == 400 and "add up to more than 100" in response.text
+    assert response.status_code == 422
     db_session.expire_all()
-    assert (db_session.get(RequestType, request_type.id).pass_percent, db_session.get(RequestType, request_type.id).fail_percent) == (51, 50)
+    assert db_session.get(RequestType, request_type.id).pass_percent == 51
 
 
-@pytest.mark.parametrize("pass_percent,fail_percent", [(0, 100), (101, 5), (50, 0)])
-def test_each_percentage_is_between_1_and_100(client, db_session, pass_percent, fail_percent):
+@pytest.mark.parametrize("pass_percent", [0, 101, -3])
+def test_the_percentage_is_between_1_and_100(client, db_session, pass_percent):
     admin(client, db_session)
     group = group_of(db_session, "Managers")
     response = client.post(
         "/admin/request-types",
-        data={"name": "Access", "is_active": "on", **form(group, pass_percent=pass_percent, fail_percent=fail_percent)},
+        data={"name": "Access", "is_active": "on", **form(group, pass_percent=pass_percent)},
     )
     assert response.status_code == 422 and db_session.exec(select(RequestType)).all() == []
+
+
+def test_there_is_no_fail_percentage_on_the_form(client, db_session):
+    admin(client, db_session)
+    make(db_session, "Access")
+    page = client.get("/admin/request-types").text
+    assert "fail_percent" not in page and "Percent to fail" not in page and "Percent to pass" in page
 
 
 def test_an_active_request_type_needs_a_group_with_a_member(client, db_session):
@@ -167,7 +160,7 @@ def test_an_active_request_type_needs_a_group_with_a_member(client, db_session):
 
     no_group = client.post("/admin/request-types", data={"name": "A", "is_active": "on", **form(None)})
     empty_group = client.post("/admin/request-types", data={"name": "A", "is_active": "on", **form(empty)})
-    missing_group = client.post("/admin/request-types", data={"name": "A", "is_active": "on", "approval_group_id": 9999, "pass_percent": 51, "fail_percent": 50})
+    missing_group = client.post("/admin/request-types", data={"name": "A", "is_active": "on", "approval_group_id": 9999, "pass_percent": 51})
 
     for response in (no_group, empty_group, missing_group):
         assert response.status_code == 400
@@ -181,7 +174,7 @@ def test_an_active_request_type_needs_a_group_with_a_member(client, db_session):
 def test_switching_a_type_on_with_an_empty_group_is_refused(client, db_session):
     admin(client, db_session)
     empty = group_of(db_session, "Nobody", ())
-    off = create_request_type(db_session, "Dormant", "", empty.id, 51, 50, is_active=False)
+    off = create_request_type(db_session, "Dormant", "", empty.id, 51, is_active=False)
     db_session.commit()
 
     response = client.post(f"/admin/request-types/{off.id}", data={"name": "Dormant", "is_active": "on", **form(empty)})
@@ -190,17 +183,18 @@ def test_switching_a_type_on_with_an_empty_group_is_refused(client, db_session):
     db_session.expire_all()
     assert db_session.get(RequestType, off.id).is_active is False
     with pytest.raises(RequestTypeError):
-        update_request_type(db_session, off, "Dormant", "", empty.id, 51, 50, True)
+        update_request_type(db_session, off, "Dormant", "", empty.id, 51, True)
 
 
 def test_a_failed_edit_leaves_the_type_alone(client, db_session):
     admin(client, db_session)
     request_type = make(db_session, "Laptop")
+    make(db_session, "Notebook")  # the name is taken, so the edit is refused after the fields were set
     group = db_session.get(ApprovalGroup, request_type.approval_group_id)
 
     response = client.post(
         f"/admin/request-types/{request_type.id}",
-        data={"name": "Notebook", "is_active": "on", **form(group, pass_percent=10, fail_percent=10)},
+        data={"name": "Notebook", "is_active": "on", **form(group, pass_percent=10)},
     )
 
     assert response.status_code == 400
@@ -223,16 +217,15 @@ def test_only_super_admins_manage_request_types(client, db_session):
 
 
 def test_the_new_type_form_is_prefilled_from_the_settings(client, db_session):
-    from app.settings_store import APPROVAL_DEFAULT_FAIL_PERCENT, APPROVAL_DEFAULT_PASS_PERCENT, set_setting
+    from app.settings_store import APPROVAL_DEFAULT_PASS_PERCENT, set_setting
 
     admin(client, db_session)
     set_setting(db_session, APPROVAL_DEFAULT_PASS_PERCENT, "75")
-    set_setting(db_session, APPROVAL_DEFAULT_FAIL_PERCENT, "30")
     db_session.commit()
 
     page = client.get("/admin/request-types").text
 
-    assert 'name="pass_percent" value="75"' in page and 'name="fail_percent" value="30"' in page
+    assert 'name="pass_percent" value="75"' in page
 
 
 # ---- Raising one ------------------------------------------------------------------------------------
