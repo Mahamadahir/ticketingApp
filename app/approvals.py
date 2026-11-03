@@ -153,6 +153,20 @@ def start_approvals(session: Session, ticket: Ticket, actor_email: str) -> Ticke
     return approval
 
 
+def restart_after_reopen(session: Session, ticket: Ticket, actor_email: Optional[str]) -> bool:
+    """A ticket closed by a decline or a withdrawal that an agent has set back to an open status goes back to
+    asking its approvers: a new approval round, votes requested again (decided 3 Nov 2026, #122). Called by
+    `set_status` after such a move. Does nothing for a ticket whose latest approval was approved or waived, or
+    that has no one left to ask (the group is empty, or only the requester). Returns whether it restarted."""
+    approval = current_approval(session, ticket)
+    if approval is None or approval.status not in (DECLINED, WITHDRAWN) or not eligible_voters(session, ticket):
+        return False
+    set_status(session, ticket, TicketStatus.AWAITING_APPROVAL, actor_email, detail="approval restarted", by_approval=True)
+    start_approvals(session, ticket, actor_email or "system")
+    log_action(session, actor_email or "system", "ticket", ticket.id, "approval_restarted", f"after {approval.status}")
+    return True
+
+
 def describe_rule(approval: TicketApproval) -> str:
     n = approval.voters
     return f"{votes_needed(approval.pass_percent, n)} of {n} must approve ({approval.pass_percent}%)"

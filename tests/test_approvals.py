@@ -28,6 +28,7 @@ from app.models import (
     ApprovalGroupMember,
     ApprovalVote,
     AuditLog,
+    Notification,
     RequestType,
     Ticket,
     TicketApproval,
@@ -860,3 +861,71 @@ def test_the_waiting_count_leaves_out_what_the_person_already_answered(client, d
 
     assert status(db_session, ticket) == TicketStatus.AWAITING_APPROVAL
     assert count_pending_for(db_session, a) == 0 and count_pending_for(db_session, b) == 1
+
+
+# ---- Reopening a ticket closed by a decision (#122) ---------------------------------------------------
+
+
+def test_setting_a_declined_ticket_back_to_open_restarts_the_approval(client, db_session):
+    person(client, db_session, "boss@example.com")
+    person(client, db_session, "lead@example.com")
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, ["boss@example.com", "lead@example.com"], 51))
+    answer(client, ticket, "lead@example.com", "declined", "No budget")
+    assert status(db_session, ticket) == TicketStatus.CLOSED
+    first = current_approval(db_session, ticket)
+
+    second_agent(client, db_session)
+    assert client.post(f"/tickets/{ticket.number}/status", data={"status": "open"}).status_code == 200
+
+    assert status(db_session, ticket) == TicketStatus.AWAITING_APPROVAL
+    new = current_approval(db_session, ticket)
+    assert new.id != first.id and new.status == PENDING
+    assert approvals(db_session, ticket) == {"boss@example.com": PENDING, "lead@example.com": PENDING}
+    assert len(events(db_session, ticket, "approval_requested")) == 2
+    assert len(db_session.exec(select(Notification).where(Notification.kind == "approval_waiting")).all()) == 4  # two rounds of two
+    ticket = db_session.get(Ticket, ticket.id)
+    assert ticket.closed_at is None and ticket.resolved_at is None
+    answer(client, ticket, "boss@example.com", "approved")  # the new round works like the first
+    answer(client, ticket, "lead@example.com", "approved")
+    assert status(db_session, ticket) == TicketStatus.OPEN
+
+
+def test_setting_a_withdrawn_ticket_back_to_open_restarts_the_approval(client, db_session):
+    from app.approvals import withdraw
+
+    emails = many(client, db_session, ("a", "b"))
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 100))
+    withdraw(db_session, db_session.get(Ticket, ticket.id), "jo@example.com")
+    db_session.commit()
+    assert status(db_session, ticket) == TicketStatus.CLOSED
+
+    second_agent(client, db_session)
+    client.post(f"/tickets/{ticket.number}/status", data={"status": "in_progress"})
+
+    assert status(db_session, ticket) == TicketStatus.AWAITING_APPROVAL
+    assert current_approval(db_session, ticket).status == PENDING
+
+
+def test_a_ticket_closed_after_an_approval_is_reopened_without_asking_again(client, db_session):
+    person(client, db_session, "boss@example.com")
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, ["boss@example.com"]))
+    answer(client, ticket, "boss@example.com", "approved")
+    second_agent(client, db_session)
+    client.post(f"/tickets/{ticket.number}/status", data={"status": "closed", "resolution_notes": "Done by hand"})
+    assert status(db_session, ticket) == TicketStatus.CLOSED
+
+    client.post(f"/tickets/{ticket.number}/status", data={"status": "open"})
+    assert status(db_session, ticket) == TicketStatus.OPEN
+
+
+def test_nobody_to_ask_means_the_ticket_just_reopens(client, db_session):
+    person(client, db_session, "boss@example.com")
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, ["boss@example.com"], 100))
+    answer(client, ticket, "boss@example.com", "declined")
+    for row in db_session.exec(select(ApprovalGroupMember)).all():
+        db_session.delete(row)
+    db_session.commit()
+
+    second_agent(client, db_session)
+    client.post(f"/tickets/{ticket.number}/status", data={"status": "open"})
+    assert status(db_session, ticket) == TicketStatus.OPEN

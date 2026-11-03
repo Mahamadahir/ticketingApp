@@ -218,6 +218,15 @@ def set_status(
     on_status_change(session, ticket, previous, new_status, now)
     session.add(ticket)
     record_event(session, ticket, EVENT_STATUS_CHANGED, actor_email, previous.value, new_status.value, detail)
+    if (
+        previous == TicketStatus.CLOSED and new_status not in FINISHED_STATUSES
+        and new_status != TicketStatus.AWAITING_APPROVAL and not by_approval and not from_parts
+    ):
+        # A ticket closed by a decline or a withdrawal, set back to an open status, asks its approvers again.
+        # Imported here because app.approvals builds on this module.
+        from app.approvals import restart_after_reopen
+
+        restart_after_reopen(session, ticket, actor_email)
     if ticket.split_from_id is not None:
         # The original's status follows its sub-tickets. Imported here because
         # app.splitting builds on this module.
