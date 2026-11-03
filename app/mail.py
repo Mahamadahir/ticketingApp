@@ -27,7 +27,7 @@ from sqlmodel import Session, func, select
 
 from app.action_links import put_links_in
 from app.approval_links import make_token
-from app.approvals import PENDING, WITHDRAWN
+from app.approvals import PENDING, WITHDRAWN, current_approval, voters_yet_to_vote
 from app.config import settings
 from app.email_templates import LINK_LEFT_OUT, REQUEST_BLOCK, current_text, render_template, render_text, ticket_values
 from app.followers import is_follower
@@ -35,7 +35,7 @@ from app.graph_client import graph_client
 from app.messages import about_text, in_a_split, is_triaged, mail_subject, requester_visible_messages
 from app.never_follow import is_listed
 from app.approval_groups import is_member
-from app.notification_settings import EMAIL, FOLLOWER_UPDATE as FOLLOWER_UPDATE_EVENT, is_enabled, wants_approval_email
+from app.notification_settings import APPROVAL_OVERDUE as APPROVAL_OVERDUE_EVENT, EMAIL, FOLLOWER_UPDATE as FOLLOWER_UPDATE_EVENT, is_enabled, wants_approval_email
 from app.models import (
     Message,
     MessageDirection,
@@ -46,8 +46,9 @@ from app.models import (
     TicketApproval,
     TicketStatus,
     User,
+    UserRole,
 )
-from app.outbox import ACKNOWLEDGEMENT, APPROVAL, APPROVAL_REMINDER, APPROVAL_WITHDRAWN, AUTOMATIC_TO_REQUESTER, CHASE, FOLLOWER_UPDATE, NOTICE, RAISED_FOR, REPLY
+from app.outbox import ACKNOWLEDGEMENT, APPROVAL, APPROVAL_OVERDUE, APPROVAL_REMINDER, APPROVAL_WITHDRAWN, AUTOMATIC_TO_REQUESTER, CHASE, FOLLOWER_UPDATE, NOTICE, RAISED_FOR, REPLY
 from app.raising import should_tell_requester
 from app.settings_store import APPROVAL_LINK_MINUTES, AUTOMATIC_EMAIL_CAP, CHASE_RESOLVE_AFTER_DAYS, REGISTRY, get_int_setting
 from app.teams import MAX_ATTEMPTS, MAX_BACKOFF_MINUTES, Unsendable
@@ -299,6 +300,34 @@ def build_approval_withdrawn_mail(session: Session, row: OutboundEmail) -> Mail:
     )
 
 
+def build_approval_overdue_mail(session: Session, row: OutboundEmail) -> Mail:
+    """Tells a super admin a request has waited too long. Asked again now: the approval is still pending, the
+    person is still an active super admin and still wants the email."""
+    ticket = _ticket_of(session, row)
+    approval = current_approval(session, ticket)
+    if approval is None or approval.status != PENDING or ticket.status != TicketStatus.AWAITING_APPROVAL:
+        raise Unsendable("The request is no longer waiting for approval")
+    admin = session.exec(select(User).where(func.lower(User.email) == row.to_address.strip().lower())).first()
+    if admin is None or admin.role != UserRole.SUPER_ADMIN or not admin.is_active:
+        raise Unsendable("The person is not an active super admin")
+    if not is_enabled(session, admin, APPROVAL_OVERDUE_EVENT, EMAIL):
+        raise Unsendable("The person turned this email off in their notification settings")
+    _guard_recipient(row)
+    base = settings.public_base_url.rstrip("/")
+    values = {
+        **ticket_values(ticket),
+        "days_waiting": str(max(0, (datetime.now(timezone.utc) - approval.created_at).days)),
+        "unanswered": str(len(voters_yet_to_vote(session, approval))),
+        "ticket_link": f"{base}/tickets/{ticket.number}" if base else "(open the ticket in the app)",
+    }
+    subject, text = current_text(session, "approval_overdue")
+    body = render_text(text, values)
+    return Mail(
+        to=row.to_address, cc=[], subject=render_text(subject, values),
+        body=body, record=body, automatic=True, reference=ticket.reference,
+    )
+
+
 # One builder per kind: it turns the row into the email, or raises Unsendable (never) or NotReady
 # (not yet). A new kind of email is one builder and one entry here; the sending is shared.
 BUILDERS: dict[str, Callable[[Session, OutboundEmail], Mail]] = {
@@ -307,6 +336,7 @@ BUILDERS: dict[str, Callable[[Session, OutboundEmail], Mail]] = {
     RAISED_FOR: build_raised_for_mail,
     APPROVAL: build_approval_mail,
     APPROVAL_REMINDER: build_approval_reminder_mail,
+    APPROVAL_OVERDUE: build_approval_overdue_mail,
     APPROVAL_WITHDRAWN: build_approval_withdrawn_mail,
     ACKNOWLEDGEMENT: build_acknowledgement_mail,
     CHASE: build_chase_mail,

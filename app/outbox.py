@@ -15,14 +15,15 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from app.config import settings
-from app.models import ApprovalVote, Message, OutboundEmail, Ticket, TicketApproval, User
-from app.notification_settings import wants_approval_email
+from app.models import ApprovalVote, Message, OutboundEmail, Ticket, TicketApproval, User, UserRole
+from app.notification_settings import APPROVAL_OVERDUE as OVERDUE_EVENT, EMAIL, is_enabled, wants_approval_email
 
 REPLY = "reply"  # an agent's email to the requester (counts as a first response)
 NOTICE = "notice"  # an automatic message to the requester (an approval decision, say)
 RAISED_FOR = "raised_for_you"  # "an agent raised a ticket for you"
 APPROVAL = "approval"  # asks an approver to approve or decline
 APPROVAL_REMINDER = "approval_reminder"  # chases an approver who has not answered
+APPROVAL_OVERDUE = "approval_overdue"  # tells a super admin a request has waited too long for its approvers
 APPROVAL_WITHDRAWN = "approval_withdrawn"  # tells an approver the requester withdrew the request
 ACKNOWLEDGEMENT = "acknowledgement"  # "your issue has been logged", once, for a ticket that arrived by email
 CHASE = "chase"  # "is this still an issue?" to the requester of a ticket Awaiting user (app/auto_close_chase.py)
@@ -104,6 +105,18 @@ def queue_approval_withdrawn(session: Session, vote: ApprovalVote, approver: Use
         return None  # the approval email never went out (the one still queued is dropped), so there is nothing to take back
     approval = session.get(TicketApproval, vote.approval_id)
     row = OutboundEmail(kind=APPROVAL_WITHDRAWN, ticket_id=approval.ticket_id, vote_id=vote.id, to_address=approver.email)
+    session.add(row)
+    return row
+
+
+def queue_approval_overdue(session: Session, ticket: Ticket, admin: User) -> Optional[OutboundEmail]:
+    """Queues the "this request has waited too long" email to one super admin (app/approval_reminders.py decides
+    when, once per approval). None when mail is off or they switched it off in their notification settings. Whether
+    it is still wanted is asked again when it is sent (mail.build_approval_overdue_mail)."""
+    if not is_on() or admin.role != UserRole.SUPER_ADMIN or not is_enabled(session, admin, OVERDUE_EVENT, EMAIL):
+        return None
+    session.flush()
+    row = OutboundEmail(kind=APPROVAL_OVERDUE, ticket_id=ticket.id, to_address=admin.email)
     session.add(row)
     return row
 

@@ -25,6 +25,7 @@ EMAIL = "email"
 RAISED_FOR_YOU = "raised_for_you"
 FOLLOWER_UPDATE = "follower_update"
 APPROVAL_REQUEST = "approval_request"
+APPROVAL_OVERDUE = "approval_overdue"  # the escalation email to super admins (#122); its bell entry is always on
 APPROVAL_WAITING = "approval_waiting"  # the bell entry for the same request (#122)
 
 # The first half of the (two-number) advisory lock that serialises one person's saves; the second
@@ -103,6 +104,12 @@ EVENT_TYPES: tuple[EventType, ...] = (
         "A bell entry when a request is waiting for your vote. It is independent of the approval email: it still "
         "shows if you switched the email off.",
         EVERYONE, (IN_APP,), (IN_APP,),
+    ),
+    EventType(
+        APPROVAL_OVERDUE, "A request has waited too long for approval (email)",
+        "An email to super admins when a request has waited for its approvers longer than the escalation delay "
+        "set under Settings, so they can chase the approvers or waive the approval. The bell entry is always shown.",
+        (UserRole.SUPER_ADMIN,), (EMAIL,), (EMAIL,),
     ),
 )
 _BY_KIND = {event.kind: event for event in EVENT_TYPES}

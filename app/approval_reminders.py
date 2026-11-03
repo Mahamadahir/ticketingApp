@@ -16,7 +16,9 @@ Idempotent by data, not by "since the last run": what is due is worked out from 
 Run late, a vote gets one reminder (not one per missed slot); run twice, the second run finds nothing due.
 
 Escalation: when a pending approval is `approval_escalate_after_days` old, each super admin who can open
-the ticket gets one bell notification (`escalated_at` makes it once per approval). Teams reminders to
+the ticket gets one bell notification and one email (`escalated_at` makes it once per approval; the email is
+the `approval_overdue` template, on by default, and a super admin can switch it off in their notification
+settings, #122). Teams reminders to
 approvers wait for the phase 8 bot.
 
 Off by default (`approval_reminders_enabled`) until mail is proved on staging.
@@ -32,7 +34,7 @@ from app.approvals import PENDING, voters_yet_to_vote
 from app.audit import log_action
 from app.models import ApprovalVote, OutboundEmail, Ticket, TicketApproval, TicketStatus, User, UserRole
 from app.notifications import notify_approval_overdue
-from app.outbox import APPROVAL, APPROVAL_REMINDER, is_on, queue_approval_reminder
+from app.outbox import APPROVAL, APPROVAL_REMINDER, is_on, queue_approval_overdue, queue_approval_reminder
 from app.teams import MAX_ATTEMPTS
 from app.settings_store import (
     APPROVAL_ESCALATE_AFTER_DAYS,
@@ -116,11 +118,17 @@ def _still_queued(session: Session, vote: ApprovalVote) -> bool:
 
 
 def _escalate(session: Session, ticket: Ticket, approval: TicketApproval, now: datetime, unanswered: int) -> None:
-    """Tells the super admins once. Only counts as done if someone was told, so with no super admin yet it is
+    """Tells the super admins once, in the bell and by email (the `approval_overdue` template; each super admin can
+    switch the email off). Only counts as done if someone was told either way, so with no super admin yet it is
     tried again on the next run."""
     days = (now - approval.created_at).days
     admins = session.exec(select(User).where(User.role == UserRole.SUPER_ADMIN, User.is_active)).all()
-    told = [admin for admin in admins if notify_approval_overdue(session, ticket, admin, days, unanswered) is not None]
+    told = []
+    for admin in admins:
+        belled = notify_approval_overdue(session, ticket, admin, days, unanswered) is not None
+        emailed = queue_approval_overdue(session, ticket, admin) is not None
+        if belled or emailed:
+            told.append(admin)
     if not told:
         return
     approval.escalated_at = now

@@ -246,6 +246,28 @@ REGISTRY: dict[str, TemplateDef] = {
             },
         ),
         TemplateDef(
+            key="approval_overdue",
+            label="Approval overdue (to super admins)",
+            description=(
+                "Sent once to each super admin when a request has waited for its approvers longer than the "
+                "escalation delay set under Settings. Super admins can switch it off on their notification settings."
+            ),
+            subject_default="[{reference}] Approval overdue: {subject}",
+            subject_placeholders=_COMMON,
+            body_default=(
+                "{reference} ({subject}) has waited {days_waiting} days for approval. {unanswered} approver(s) "
+                "have not answered.\n\nYou can chase the approvers or waive the approval on the ticket: {ticket_link}"
+            ),
+            body_placeholders={
+                **_COMMON,
+                "days_waiting": "how many days the request has waited",
+                "unanswered": "how many approvers have not answered",
+                "ticket_link": "the link to the ticket in the app",
+            },
+            subject_required=("reference",),
+            sample={**_COMMON_SAMPLE, "days_waiting": "5", "unanswered": "2", "ticket_link": "https://tickets.example.org/tickets/1042"},
+        ),
+        TemplateDef(
             key="approval_withdrawn",
             label="Approval withdrawn",
             description="Sent to each approver who had not answered when the requester withdrew the request.",
