@@ -7,7 +7,7 @@
 <h2>Recurring jobs</h2>
 <p class="note">
   Jobs that must not be missed (auto-close, chase, reminders) are driven by a table: a late run happens once,
-  a failed run is retried, and a run the worker died in is picked up again. Times are UTC. The timings are under Settings.
+  a failed run is retried, and a run the worker died in is picked up again. Times are in your time zone. The timings are under Settings.
 </p>
 
 <p><strong>{{ status }}</strong></p>
@@ -21,12 +21,12 @@
     {% for row in rows %}
     <tr>
       <td>{{ row.name }}</td>
-      <td>{{ row.next_run_at.strftime("%Y-%m-%d %H:%M") }}</td>
-      <td>{{ row.last_started_at.strftime("%Y-%m-%d %H:%M") if row.last_started_at else "never" }}</td>
-      <td>{{ row.last_success_at.strftime("%Y-%m-%d %H:%M") if row.last_success_at else "never" }}</td>
-      <td>{% if row.lease_owner %}{{ row.lease_owner }} until {{ row.lease_expires_at.strftime("%H:%M") }}{% else %}nobody{% endif %}</td>
+      <td>{{ row.next_run_at|local_time }}</td>
+      <td>{{ row.last_started_at|local_time if row.last_started_at else "never" }}</td>
+      <td>{{ row.last_success_at|local_time if row.last_success_at else "never" }}</td>
+      <td>{% if row.lease_owner %}{{ row.lease_owner }} until {{ row.lease_expires_at|local_time }}{% else %}nobody{% endif %}</td>
       <td>{{ row.failures_in_a_row }}</td>
-      <td>{% if row.last_error %}{{ row.last_error }} ({{ row.last_error_at.strftime("%Y-%m-%d %H:%M") }}{% if row.last_success_at and row.last_success_at > row.last_error_at %}, since worked{% endif %}){% else %}none{% endif %}</td>
+      <td>{% if row.last_error %}{{ row.last_error }} ({{ row.last_error_at|local_time }}{% if row.last_success_at and row.last_success_at > row.last_error_at %}, since worked{% endif %}){% else %}none{% endif %}</td>
     </tr>
     {% endfor %}
   </tbody>

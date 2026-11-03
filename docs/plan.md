@@ -563,7 +563,7 @@ priority, minutes) with **placeholder** values: P1 15m/4h, P2 1h/8h, P3 4h/3d,
 P4 8h/7d; blank means not tracked. The clock starts at `created_at`, so time spent
 waiting for triage counts against the target. Backdating (1E) will exclude those
 tickets from SLA figures. Amber means the "at risk" setting (25%) or less of the
-target is left. Times are shown in UTC until the per-viewer timezone work.
+target is left. Times are shown in each viewer's time zone (see "Time zones").
 **Changed targets never touch existing tickets** (agreed 13 Oct 2026): a ticket's deadlines
 are fixed when it is triaged, when its priority is changed, or when a pause ends, so editing a
 target in Settings only affects tickets from then on and never rewrites breach history. **First
@@ -752,8 +752,7 @@ count towards volume. Sending the user the resolution email is on by
 default.
 *Built in 1E-ii (13 Oct 2026):* a Backdate control on the ticket page for anyone who
 works the ticket, shown only on agent-raised tickets (`may_backdate`); reported time on any ticket, resolved time only on a finished one, never
-before the report; the flag is permanent and removes the SLA deadlines. Times are UTC until
-the timezone work. The resolution email (default on) comes with the resolve action, phase 4.
+before the report; the flag is permanent and removes the SLA deadlines. The ticket page shows times in the viewer's zone; the backdate form still takes UTC. The resolution email (default on) comes with the resolve action, phase 4.
 
 **Service Requests.** Approvers are configured per request type in the
 admin portal.
@@ -1121,7 +1120,7 @@ off by default) decides whether the field is offered at all.
 The points below were settled in this note and are **Proposed - needs owner confirmation** (each can change cheaply):
 
 1. **Proposed - needs owner confirmation: the date is a calendar date, not a time.** The deadline is the end of that
-   day in UTC (the next midnight), so "required by 30 Oct" means any time on the 30th. Viewer timezones come later.
+   day in UTC (the next midnight), so "required by 30 Oct" means any time on the 30th. The requester's own zone for this comes with the Due date work (#121; helper in "Time zones").
 2. **Proposed - needs owner confirmation: lead time is plain calendar days, an admin setting** (`required_by_lead_days`,
    placeholder 2). The queue sorts a Required-by ticket by `deadline - lead time`, so work that needs a few days
    starts to rise before the day itself. Plain days, not working days, because the app has no working-day calendar
@@ -1144,6 +1143,40 @@ The points below were settled in this note and are **Proposed - needs owner conf
    raising a ticket for someone with Reported/Resolved times, or on a ticket already flagged backdated.
 8. A date cannot be changed on a resolved or closed request (it would rewrite the SLA record), and a date typed more than ten years ahead is refused. On a backdated ticket the date is recorded but drives nothing, because a backdated ticket has no SLA.
 9. Switching a request type's field off does not remove dates already on tickets; it only stops new ones.
+
+## Time zones (issue #120, built)
+
+Owner decision: many people travel or are international consultants, so each person sees times in their own time
+zone. **Everything is stored and calculated in UTC**; only what a person sees is converted, in one place
+(`app/time_zones.py`).
+
+- **Where a person's zone comes from.** (1) Agents and portal users: the browser reports
+  `Intl.DateTimeFormat().resolvedOptions().timeZone` from every page (a small script in `base.html`, posted to
+  `/settings/time-zone/browser`) and it is saved on the account, updating whenever it changes. A person can choose
+  one by hand on their settings page; a manual choice wins until they clear it. (2) Requesters who only use email:
+  their Outlook mailbox time zone read through Graph (`GET /users/{id}/mailboxSettings`, `timeZone`; application
+  permission `MailboxSettings.Read`, admin consent), looked up by the worker soon after their first ticket is
+  created and refreshed after an admin-set interval. Graph answers with a Windows name ("GMT Standard Time"); the
+  CLDR windowsZones table kept in `app/windows_zones.py` maps it to an IANA name (no network fetch at run time).
+  (3) Everyone else (external senders, failed lookups): the admin setting `default_time_zone` (placeholder
+  `Europe/London`).
+- **Where it is stored.** `User.time_zone` and `User.time_zone_source` (`browser` or `manual`). A requester with no
+  account is stored by lower-cased address in `requestertimezone` (zone, source `mailbox`, last-checked and next-check
+  times), the same key a ticket uses for its requester (`Ticket.requester_email`). An account's own zone beats a
+  mailbox reading, which beats the default. Only IANA names are stored, checked against the installed tz database;
+  an unknown name is ignored (or, if it was stored and later stops being valid, skipped for the default). `tzdata`
+  is a requirement so the database does not depend on the container image.
+- **Display.** One pair of functions (`format_moment`, `format_date`) and the Jinja filters `local_time` and
+  `local_date` (the viewer's zone). No template formats a time itself. Pages show "25 Oct 17:00 GMT" (a year is added
+  when it is not this year, seconds only on log pages). An email to a requester is written with `format_moment` and
+  `zone_for_email`; none of the current emails carries a time, so none changed. Dates that are dates (Required by) stay
+  dates; the backdate and raise-form time boxes are shown and read in the agent's own zone, while the event and audit
+  text of a backdate stays UTC and says so.
+- **The helper for the Due date (#121):** `end_of_day_utc(day, zone_name)`, and the shortcuts
+  `end_of_day_for_email(session, day, email)` and `end_of_day_for_user(session, day, user)`: "end of day D in that
+  person's zone, as UTC", the first instant of D+1 there (so a deadline compares with `<`), right across clock changes.
+- **Settings.** `default_time_zone` (Europe/London), `time_zone_refresh_days` (30), `time_zone_retry_hours` (24).
+  A failed or unmappable lookup keeps any earlier reading and is retried after the retry interval.
 
 ## Build order
 
@@ -1190,8 +1223,9 @@ here; this list is what the go-live review checks.
 4. **Graph mailbox scoping.** (The by-hand steps are in `docs/azure-setup.md`, section 3; this item is the go-live check that it was done and tested.) Application permissions such as `Mail.ReadWrite` cover every
    mailbox in the tenant. Restrict the app registration to the shared mailbox(es) only
    (Exchange RBAC for Applications, or an application access policy) and verify it on staging
-   by trying to read another mailbox. Same check for `Presence.Read.All`: confirm what scoping
-   is possible.
+   by trying to read another mailbox. Same check for `Presence.Read.All` and `MailboxSettings.Read` (requesters' time zones): confirm what scoping
+   is possible. Note `MailboxSettings.Read` is read for requesters' own mailboxes, so a policy that limits the app to the
+   shared mailbox makes that read fail and everyone gets the default time zone (decision needed at staging).
 5. **Rate limiting with a shared store** (Postgres table or Redis), not per-process memory:
    `public` runs several uvicorn workers across replicas. Keyed on the real client IP, which
    depends on `FORWARDED_ALLOW_IPS` being right.

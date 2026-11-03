@@ -61,7 +61,7 @@
       <td>{{ ticket.priority.upper() if ticket.priority else ("Untriaged" if not ticket.triaged_at else "") }}</td>
       <td class="sla sla-{{ sla[ticket.id].state }}">{{ sla[ticket.id].text }}</td>
       <td><span class="status status-{{ ticket.status.value }}">{{ ticket.status.value.replace("_", " ") }}</span></td>
-      <td>{{ ticket.updated_at.strftime("%Y-%m-%d %H:%M") }}</td>
+      <td>{{ ticket.updated_at|local_time }}</td>
     </tr>
     {% else %}
     <tr>

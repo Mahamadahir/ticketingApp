@@ -11,6 +11,7 @@ from sqlmodel import Session, select
 from app.config import settings
 from app.database import get_session
 from app.models import User, UserRole
+from app.time_zones import zone_for_user
 
 AUTHORITY_TEMPLATE = "https://login.microsoftonline.com/{tenant_id}"
 MAX_FAILED_LOGINS = 5
@@ -173,6 +174,9 @@ def get_current_user(request: Request, session: Session = Depends(get_session)) 
         raise NotAuthenticated()
     # Lets error pages (such as "no access") show the signed-in user's navigation.
     request.state.user = user
+    # Every page shows times in this person's zone (app/templating.py); worked out here with the request's
+    # own session, which costs a query only for someone whose zone is not known yet.
+    request.state.viewer_zone = zone_for_user(session, user)
     return user
 
 

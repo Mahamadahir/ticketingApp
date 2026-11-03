@@ -7,7 +7,7 @@
 <h2>Activity log</h2>
 <p class="note">
   Sign-ins, failed sign-ins, lockouts, refused access and every state-changing request, with who,
-  from where and what happened. Times are UTC. Request bodies, passwords, tokens and query strings are
+  from where and what happened. Times are in your time zone. Request bodies, passwords, tokens and query strings are
   never recorded, and the path shown is the route, not the full address. The named actions on tickets,
   users and teams are in the Audit log.
 </p>
@@ -28,12 +28,12 @@
 
 <table>
   <thead>
-    <tr><th>When (UTC)</th><th>Event</th><th>Who</th><th>Request</th><th>Result</th><th>From</th><th>Browser</th><th>Detail</th></tr>
+    <tr><th>When</th><th>Event</th><th>Who</th><th>Request</th><th>Result</th><th>From</th><th>Browser</th><th>Detail</th></tr>
   </thead>
   <tbody>
     {% for row in page.items %}
     <tr>
-      <td>{{ row.created_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>
+      <td>{{ row.created_at|local_time(seconds=True) }}</td>
       <td>{{ row.event_type.replace("_", " ") }}</td>
       <td>{{ row.actor_email or "(not signed in)" }}</td>
       <td>{% if row.path %}{{ row.method }} {{ row.path }}{% endif %}</td>

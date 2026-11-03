@@ -83,6 +83,7 @@ from app.reopening import (
 )
 from app.resolution import ResolveError, check_can_resolve, preview_resolution, resolve_ticket
 from app.ticket_service import AwaitingApproval, EVENT_ASSIGNED, NotTriaged, ResolutionRequired, find_ticket, get_by_number, record_event, set_status
+from app.time_zones import zone_for_user
 from app.triage import TriageError, reassign_ticket, triage_ticket
 from app.visibility import (
     Access,
@@ -353,10 +354,11 @@ def backdate(
     """Enter when the problem was reported and/or fixed, for a ticket logged after the
     fact. Up to 30 days back, never in the future. Blank leaves a date as it is."""
     ticket = _get_ticket(session, number, user)
+    zone = zone_for_user(session, user)  # the form is shown and read in the agent's own time zone
     try:
         changes = backdate_ticket(
             session, ticket, user.email,
-            reported_at=parse_moment(reported_at), resolved_at=parse_moment(resolved_at),
+            reported_at=parse_moment(reported_at, zone), resolved_at=parse_moment(resolved_at, zone),
         )
     except BackdateError as error:
         session.rollback()
@@ -364,7 +366,7 @@ def backdate(
     if changes:
         # What changed, from and to, so the audit log shows what was altered and not just the result.
         detail = "; ".join(
-            f"{what} {before:%Y-%m-%d %H:%M} -> {after:%Y-%m-%d %H:%M}" if before else f"{what} -> {after:%Y-%m-%d %H:%M}"
+            f"{what} {before:%Y-%m-%d %H:%M} -> {after:%Y-%m-%d %H:%M} UTC" if before else f"{what} -> {after:%Y-%m-%d %H:%M} UTC"
             for what, before, after in changes
         )
         log_action(session, user.email, "ticket", ticket.id, "backdated", detail)

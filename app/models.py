@@ -136,7 +136,27 @@ class User(SQLModel, table=True):
     # Phase 4: only stops presence polling. Hiding from pickers, refusing sign-in and the nightly Entra
     # check that sets this for leavers are phase 6.
     is_active: bool = Field(default=True, sa_column_kwargs={"server_default": "true"})
+    # The person's own time zone (an IANA name), what every page shows them times in (app/time_zones.py).
+    # The source is "browser" (reported by the page, follows them as they travel) or "manual" (chosen on
+    # their settings page; the browser no longer overwrites it until they clear it). None: not known yet.
+    time_zone: Optional[str] = Field(default=None)
+    time_zone_source: Optional[str] = Field(default=None)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class RequesterTimeZone(SQLModel, table=True):
+    """The time zone of someone who writes in by email, read from their Outlook mailbox through Graph
+    (mailboxSettings.timeZone, app/time_zones.py). Keyed by lower-cased address, the way a ticket stores its
+    requester (Ticket.requester_email), so it works for people with no account. An account's own time zone
+    (User.time_zone) wins over this. time_zone stays None when the lookup found nothing (an external
+    sender, a failed lookup), and the organisation default applies. next_check_at says when the worker looks
+    again: soon after a first ticket or a failure, after the refresh interval after a good reading."""
+
+    email: str = Field(primary_key=True)
+    time_zone: Optional[str] = Field(default=None)
+    source: Optional[str] = Field(default=None)  # "mailbox" once a reading has been stored
+    checked_at: Optional[datetime] = Field(default=None)  # the last lookup, good or not
+    next_check_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), index=True)
 
 
 class Ticket(SQLModel, table=True):

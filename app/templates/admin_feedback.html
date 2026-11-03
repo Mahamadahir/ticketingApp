@@ -37,7 +37,7 @@
   <tbody>
     {% for f, t in page.items %}
     <tr>
-      <td>{{ f.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
+      <td>{{ f.created_at|local_time }}</td>
       <td><a href="/tickets/{{ t.number }}">{{ t.reference }}</a> {{ t.subject }}</td>
       <td>{% if f.resolved_by_id %}{% set a = names.get(f.resolved_by_id) %}{{ (a.display_name or a.email) if a else "Unknown" }}{% else %}Resolved automatically{% endif %}</td>
       <td>{{ f.rating }} / 5</td>

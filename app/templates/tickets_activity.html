@@ -27,12 +27,12 @@
 
 <table>
   <thead>
-    <tr><th>When (UTC)</th><th>Ticket</th><th>Team</th><th>Who</th><th>What</th></tr>
+    <tr><th>When</th><th>Ticket</th><th>Team</th><th>Who</th><th>What</th></tr>
   </thead>
   <tbody>
     {% for row, ticket, text in entries %}
     <tr>
-      <td>{{ row.at.strftime("%Y-%m-%d %H:%M") }}</td>
+      <td>{{ row.at|local_time }}</td>
       <td>{% if ticket %}<a href="/tickets/{{ ticket.number }}">{{ ticket.reference }}</a> {{ ticket.subject }}{% endif %}</td>
       <td>{{ teams_by_id[ticket.team_id].name if ticket and ticket.team_id and ticket.team_id in teams_by_id else "Unassigned" }}</td>
       <td>{{ row.actor or "system" }}</td>

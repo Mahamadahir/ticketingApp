@@ -13,7 +13,7 @@
   <a class="ticket-card" href="/portal/{{ ticket.number }}">
     <div class="ticket-card-subject">{{ ticket.reference }} {{ ticket.subject }}{% if ticket.requester_email.strip().lower() not in my_emails %} <span class="note">(following)</span>{% endif %}</div>
     <span class="status status-{{ ticket.status.value }}">{{ ticket.status.value.replace("_", " ") }}</span>
-    <div class="ticket-card-updated">Updated {{ ticket.updated_at.strftime("%Y-%m-%d %H:%M") }}</div>
+    <div class="ticket-card-updated">Updated {{ ticket.updated_at|local_time }}</div>
   </a>
   {% if ticket.status.value == "resolved" and ticket.requester_email.strip().lower() in my_emails %}
   <form method="post" action="/portal/{{ ticket.number }}/reopen" class="inline-form"><button type="submit">Reopen</button></form>

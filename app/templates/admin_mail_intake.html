@@ -8,7 +8,7 @@
 <p class="note">
   How mail from the shared mailbox reaches the app: Microsoft tells the public app about new mail
   (the subscription), and the worker also asks every few minutes for anything that was missed (the catch-up).
-  Times are UTC. Settings for both are under Settings.
+  Times are in your time zone. Settings for both are under Settings.
 </p>
 
 {% if warnings %}
@@ -25,10 +25,10 @@
   <tbody>
     <tr><th>Resource</th><td>{{ subscription.resource }}</td></tr>
     <tr><th>Subscription id</th><td>{{ subscription.subscription_id or "none" }}</td></tr>
-    <tr><th>Expires</th><td>{{ subscription.expires_at.strftime("%Y-%m-%d %H:%M") if subscription.expires_at else "unknown" }}</td></tr>
-    <tr><th>Last created or renewed</th><td>{{ subscription.last_renewed_at.strftime("%Y-%m-%d %H:%M") if subscription.last_renewed_at else "never" }}</td></tr>
-    <tr><th>Last checked</th><td>{{ subscription.last_checked_at.strftime("%Y-%m-%d %H:%M") if subscription.last_checked_at else "never" }}</td></tr>
-    <tr><th>Last error</th><td>{% if subscription.last_error %}{{ subscription.last_error }} ({{ subscription.last_error_at.strftime("%Y-%m-%d %H:%M") }}){% else %}none{% endif %}</td></tr>
+    <tr><th>Expires</th><td>{{ subscription.expires_at|local_time if subscription.expires_at else "unknown" }}</td></tr>
+    <tr><th>Last created or renewed</th><td>{{ subscription.last_renewed_at|local_time if subscription.last_renewed_at else "never" }}</td></tr>
+    <tr><th>Last checked</th><td>{{ subscription.last_checked_at|local_time if subscription.last_checked_at else "never" }}</td></tr>
+    <tr><th>Last error</th><td>{% if subscription.last_error %}{{ subscription.last_error }} ({{ subscription.last_error_at|local_time }}){% else %}none{% endif %}</td></tr>
   </tbody>
 </table>
 {% else %}
@@ -39,10 +39,10 @@
 {% if sync %}
 <table>
   <tbody>
-    <tr><th>Last completed</th><td>{{ sync.last_synced_at.strftime("%Y-%m-%d %H:%M") if sync.last_synced_at else "never" }}</td></tr>
+    <tr><th>Last completed</th><td>{{ sync.last_synced_at|local_time if sync.last_synced_at else "never" }}</td></tr>
     <tr><th>New messages found at that run</th><td>{{ sync.last_handed_over }}</td></tr>
     <tr><th>Part way through a long run</th><td>{{ "yes" if sync.resume_link else "no" }}</td></tr>
-    <tr><th>Last error</th><td>{% if sync.last_error %}{{ sync.last_error }} ({{ sync.last_error_at.strftime("%Y-%m-%d %H:%M") }}){% else %}none{% endif %}</td></tr>
+    <tr><th>Last error</th><td>{% if sync.last_error %}{{ sync.last_error }} ({{ sync.last_error_at|local_time }}){% else %}none{% endif %}</td></tr>
   </tbody>
 </table>
 {% else %}
@@ -50,7 +50,7 @@
 {% endif %}
 
 <h3>Received, not yet processed</h3>
-<p>{{ waiting }} message notification{{ "" if waiting == 1 else "s" }}{% if oldest %}, the oldest from {{ oldest.strftime("%Y-%m-%d %H:%M") }}{% endif %}.</p>
+<p>{{ waiting }} message notification{{ "" if waiting == 1 else "s" }}{% if oldest %}, the oldest from {{ oldest|local_time }}{% endif %}.</p>
 
 <h3>Set aside as a probable loop</h3>
 <p>
@@ -59,10 +59,10 @@
 </p>
 {% if flood_recent %}
 <table>
-  <thead><tr><th>Received (UTC)</th><th>Sender</th></tr></thead>
+  <thead><tr><th>Received</th><th>Sender</th></tr></thead>
   <tbody>
     {% for row in flood_recent %}
-    <tr><td>{{ row.created_at.strftime("%Y-%m-%d %H:%M") }}</td><td>{{ row.sender or "unknown" }}</td></tr>
+    <tr><td>{{ row.created_at|local_time }}</td><td>{{ row.sender or "unknown" }}</td></tr>
     {% endfor %}
   </tbody>
 </table>

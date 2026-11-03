@@ -19,7 +19,7 @@
   <tbody>
   {% for r in rows %}
   <tr>
-    <td>{{ r.email }}</td><td>{{ r.reason }}</td><td>{{ r.added_by }}</td><td>{{ r.created_at.strftime("%Y-%m-%d") }}</td>
+    <td>{{ r.email }}</td><td>{{ r.reason }}</td><td>{{ r.added_by }}</td><td>{{ r.created_at|local_date }}</td>
     <td><form method="post" action="/admin/never-follow/{{ r.id }}/remove"><button type="submit">Remove</button></form></td>
   </tr>
   {% endfor %}

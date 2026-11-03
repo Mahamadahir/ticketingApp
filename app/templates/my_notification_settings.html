@@ -7,6 +7,22 @@
 </p>
 {% if saved %}<p role="status">Saved.</p>{% endif %}
 
+<form method="post" action="/settings/time-zone">
+  <fieldset>
+    <legend>My time zone</legend>
+    <p class="note">
+      Times are shown in your time zone, <b>{{ zone }}</b>{% if user.time_zone_source == "manual" %}, which you chose{% elif user.time_zone_source == "browser" %}, taken from your browser and updated when it changes{% else %} (the organisation default until your browser reports one){% endif %}.
+      Choose one yourself to stop your browser changing it, for example while you work remotely from elsewhere.
+    </p>
+    <label>Time zone
+      <input type="text" name="time_zone" list="time-zones" value="{{ user.time_zone if user.time_zone_source == 'manual' else '' }}" placeholder="Europe/London" />
+    </label>
+    <datalist id="time-zones">{% for name in zone_choices %}<option value="{{ name }}"></option>{% endfor %}</datalist>
+    <button type="submit">Use this time zone</button>
+    {% if user.time_zone_source == "manual" %}<button type="submit" name="clear" value="1" formnovalidate>Go back to my browser's</button>{% endif %}
+  </fieldset>
+</form>
+
 <form method="post" action="/settings/notifications">
   {% for event, options in choices %}
   <fieldset>

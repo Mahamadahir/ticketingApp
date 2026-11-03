@@ -85,6 +85,7 @@ from app.splitting import apply_requester_reply
 from app.storage import Storage, get_storage
 from app.teams import MAX_ATTEMPTS, MAX_BACKOFF_MINUTES
 from app.ticket_service import create_ticket, get_by_number, record_event
+from app.time_zones import note_requester
 
 log = logging.getLogger("app.inbound")
 
@@ -457,6 +458,7 @@ def ingest_mail(
         log.warning("Mail from one sender set aside: too many tickets and replies in an hour (a probable loop)")
         return settle(IGNORED_FLOOD)
 
+    note_requester(session, sender)  # whoever writes in gets their mailbox time zone read (app/time_zones.py)
     body = _body_of(mail)
     files = attachments or []
     account = session.exec(select(User).where(func.lower(User.email) == sender)).first()

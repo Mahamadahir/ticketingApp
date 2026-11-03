@@ -20,6 +20,16 @@ from tests.test_raising import ago, desk, last_ticket, raise_it, FORMAT
 from tests.test_splitting import split, subs_of
 
 
+@pytest.fixture(autouse=True)
+def utc_default_zone(db_session):
+    """These tests type times as UTC. The default zone is London, an hour out in summer, so make the
+    default UTC here (a person's own zone is tested in test_time_zones.py)."""
+    from app.settings_store import DEFAULT_TIME_ZONE, set_setting
+
+    set_setting(db_session, DEFAULT_TIME_ZONE, "UTC")
+    db_session.commit()
+
+
 @pytest.fixture
 def dev_mail(monkeypatch):
     monkeypatch.setattr(settings, "mail_sending", "dev")

@@ -10,6 +10,16 @@ from tests.conftest import add_membership, create_category, create_team
 from tests.test_sla import triaged_ticket as _triaged_ticket
 from tests.test_triage import agent, events, new_ticket
 
+
+@pytest.fixture(autouse=True)
+def utc_default_zone(db_session):
+    """These tests type times as UTC. The default zone is London, an hour out in summer, so make the
+    default UTC here (a person's own zone is tested in test_time_zones.py)."""
+    from app.settings_store import DEFAULT_TIME_ZONE, set_setting
+
+    set_setting(db_session, DEFAULT_TIME_ZONE, "UTC")
+    db_session.commit()
+
 FORMAT = "%Y-%m-%dT%H:%M"
 
 
@@ -349,7 +359,7 @@ def test_the_audit_entry_records_from_and_to(client, db_session):
     post(client, ticket, reported_at=when.strftime(FORMAT))
 
     [entry] = db_session.exec(select(AuditLog).where(AuditLog.action == "backdated")).all()
-    assert entry.detail == f"reported {before} -> {when:%Y-%m-%d %H:%M}"
+    assert entry.detail == f"reported {before} -> {when:%Y-%m-%d %H:%M} UTC"
 
 
 def test_a_change_to_one_date_does_not_log_the_other(client, db_session):
