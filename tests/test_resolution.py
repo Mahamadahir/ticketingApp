@@ -455,3 +455,17 @@ def test_set_status_closes_a_resolved_ticket_without_new_notes(client, db_sessio
     resolve(client, ticket)
     ticket = fresh(db_session, ticket)
     assert set_status(db_session, ticket, TicketStatus.CLOSED, None, detail="auto-closed")  # already has notes
+
+
+def test_pressing_closed_on_a_ticket_closed_by_a_decision_does_not_stamp_notes(client, db_session):
+    ticket = ticket_for_email(client, db_session)
+    client.post(f"/tickets/{ticket.number}/status", data={"status": "closed", "resolution_notes": "Dup"})
+    closed = fresh(db_session, ticket)
+    closed.resolution_notes = None
+    closed.resolved_by_id = None
+    db_session.add(closed)
+    db_session.commit()  # as a decline or withdrawal leaves it: Closed, no notes
+
+    client.post(f"/tickets/{ticket.number}/status", data={"status": "closed", "resolution_notes": "Again"})
+    again = fresh(db_session, ticket)
+    assert again.resolution_notes is None and again.resolved_by_id is None

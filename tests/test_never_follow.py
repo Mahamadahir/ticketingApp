@@ -223,3 +223,16 @@ def test_mail_from_a_listed_address_is_not_added_to_a_ticket_it_answers(db_sessi
     db_session.commit()
     assert result.outcome == inbound.IGNORED_NEVER_FOLLOW
     assert len(messages_of(db_session, ticket)) == before and emails(db_session, ticket) == []
+
+
+def test_a_looping_listed_sender_cannot_fill_the_audit_log(db_session):
+    from app.settings_store import INBOUND_MAX_PER_SENDER_HOUR, set_setting
+
+    add_listed(db_session, LISTED, "", "admin@example.com")
+    set_setting(db_session, INBOUND_MAX_PER_SENDER_HOUR, "3")
+    db_session.commit()
+    for n in range(6):
+        assert ingest_mail(db_session, mail(f"loop{n}", sender=LISTED)).outcome == inbound.IGNORED_NEVER_FOLLOW
+        db_session.commit()
+    assert len(db_session.exec(select(AuditLog).where(AuditLog.action == "mail_ignored")).all()) == 3
+    assert len(db_session.exec(select(inbound.InboundMail).where(inbound.InboundMail.outcome == inbound.IGNORED_NEVER_FOLLOW)).all()) == 6

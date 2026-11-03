@@ -766,7 +766,8 @@ def change_status(
     previous_status = ticket.status
     notes_on_close = None
     if (
-        status == TicketStatus.CLOSED and previous_status not in (TicketStatus.RESOLVED, TicketStatus.AWAITING_APPROVAL)
+        status == TicketStatus.CLOSED
+        and previous_status not in (TicketStatus.RESOLVED, TicketStatus.AWAITING_APPROVAL, TicketStatus.CLOSED)
         and ticket.triaged_at is not None and not ticket.resolution_notes
     ):
         # Closing directly needs resolution notes, the same as resolving (#122); nothing is changed without them.

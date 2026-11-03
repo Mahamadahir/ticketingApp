@@ -70,6 +70,7 @@ from app.mail import describe_failure
 from app.messages import record_inbound
 from app.models import (
     TICKET_TYPE_PREFIXES,
+    AuditLog,
     GraphNotification,
     InboundMail,
     Message,
@@ -460,10 +461,19 @@ def ingest_mail(
     if listed is not None:
         # Mail from a listed address (a list, the mailbox's alias, a no-reply) is ignored whole: no ticket, nothing
         # added to a ticket. The audit log keeps who and what, so an admin can see what was dropped.
-        log_action(
-            session, sender, "never_follow", listed.id, "mail_ignored",
-            f"{sender}: {_subject_of(mail)}"[:MAX_AUDIT_DETAIL],
-        )
+        # Every such mail still gets its InboundMail row; the audit entries stop at the per-sender hourly limit so
+        # a listed address caught in an auto-reply loop cannot fill the audit log.
+        logged = session.exec(
+            select(func.count()).select_from(AuditLog).where(
+                AuditLog.entity_type == "never_follow", AuditLog.entity_id == listed.id, AuditLog.action == "mail_ignored",
+                AuditLog.created_at >= now - timedelta(hours=1),
+            )
+        ).one()
+        if logged < count_setting(session, INBOUND_MAX_PER_SENDER_HOUR):
+            log_action(
+                session, sender, "never_follow", listed.id, "mail_ignored",
+                f"{sender}: {_subject_of(mail)}"[:MAX_AUDIT_DETAIL],
+            )
         return settle(IGNORED_NEVER_FOLLOW)
     if _flooding(session, sender, now):
         log.warning("Mail from one sender set aside: too many tickets and replies in an hour (a probable loop)")
