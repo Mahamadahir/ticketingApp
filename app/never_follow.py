@@ -5,7 +5,8 @@ blocks a Cc on inbound mail and an agent or requester adding the address by hand
 through app/followers.add_follower, which is the only place that enforces it). Addresses are
 stored lower case and matched exactly, never by domain. An agent's own account address is not
 checked, so escalating is never blocked. A listed address that emails IT also gets no
-acknowledgement email (a list or shared mailbox would only answer it back; app/inbound.py).
+acknowledgement email, and since #122 mail sent from a listed address is ignored whole (no ticket, nothing
+added to a ticket) and logged in the audit log (app/inbound.py).
 """
 
 from typing import Optional
@@ -30,6 +31,10 @@ def is_listed(session: Session, email: str) -> bool:
     return session.exec(
         select(NeverFollowAddress.id).where(NeverFollowAddress.email == email.strip().lower())
     ).first() is not None
+
+
+def listed_entry(session: Session, email: str) -> Optional[NeverFollowAddress]:
+    return session.exec(select(NeverFollowAddress).where(NeverFollowAddress.email == email.strip().lower())).first()
 
 
 def listed_among(session: Session, emails: list[str]) -> set[str]:

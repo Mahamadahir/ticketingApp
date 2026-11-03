@@ -78,7 +78,7 @@ from app.models import (
     TicketStatus,
     User,
 )
-from app.never_follow import is_listed
+from app.never_follow import listed_entry
 from app.outbox import is_on, queue_acknowledgement
 from app.raising import MAX_SUBJECT_LENGTH
 from app.splitting import apply_requester_reply
@@ -99,6 +99,7 @@ IGNORED_OWN = "ignored_own"
 IGNORED_NO_SENDER = "ignored_no_sender"
 IGNORED_FLOOD = "ignored_flood"
 IGNORED_DRAFT = "ignored_draft"
+IGNORED_NEVER_FOLLOW = "ignored_never_follow"  # sent from an address on the never-follow list
 HANDLED = (TICKET_CREATED, REPLY_ADDED)
 
 EVENT_ATTACHMENT_SKIPPED = "attachment_skipped"
@@ -111,6 +112,7 @@ NO_SUBJECT = "(no subject)"
 NO_TEXT = "(no message text)"
 CUT = "\n\n[cut short]"
 MAX_STORED_RECIPIENTS = 100  # of each of To and Cc kept on the record of a mail
+MAX_AUDIT_DETAIL = 500  # of an audit entry about an ignored mail
 MAX_ID = 998  # a Message-ID header is at most a line long
 
 # Headers whose presence marks a machine-made mail. A value of "no" for Auto-Submitted means a person.
@@ -454,6 +456,15 @@ def ingest_mail(
         sender = normalise_email(mail.sender)
     except InvalidEmail:
         return settle(IGNORED_NO_SENDER)
+    listed = listed_entry(session, sender)
+    if listed is not None:
+        # Mail from a listed address (a list, the mailbox's alias, a no-reply) is ignored whole: no ticket, nothing
+        # added to a ticket. The audit log keeps who and what, so an admin can see what was dropped.
+        log_action(
+            session, sender, "never_follow", listed.id, "mail_ignored",
+            f"{sender}: {_subject_of(mail)}"[:MAX_AUDIT_DETAIL],
+        )
+        return settle(IGNORED_NEVER_FOLLOW)
     if _flooding(session, sender, now):
         log.warning("Mail from one sender set aside: too many tickets and replies in an hour (a probable loop)")
         return settle(IGNORED_FLOOD)
@@ -522,9 +533,9 @@ def ingest_mail(
         except TooManyFollowers:
             break
     _store_files(session, storage, new, message, files)
-    # A receipt to a real person only: automatic mail, bounces, our own mail and floods were set
-    # aside above, and a never-follow address (a list or shared mailbox) is not answered either.
-    if is_on() and not is_listed(session, sender) and sender == new.requester_email:
+    # A receipt to a real person only: automatic mail, bounces, our own mail, floods and mail from a
+    # never-follow address (a list or shared mailbox) were all set aside above.
+    if is_on() and sender == new.requester_email:
         queue_acknowledgement(session, new)
     return settle(TICKET_CREATED, new, message)
 

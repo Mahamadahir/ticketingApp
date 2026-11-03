@@ -9,7 +9,7 @@ import pytest
 from app import email_templates as et
 from app import mail, outbox
 from app.config import settings
-from app.inbound import IGNORED_AUTOMATIC, IGNORED_FLOOD, IGNORED_OWN, REPLY_ADDED, TICKET_CREATED, ingest_mail
+from app.inbound import IGNORED_AUTOMATIC, IGNORED_FLOOD, IGNORED_NEVER_FOLLOW, IGNORED_OWN, REPLY_ADDED, TICKET_CREATED, ingest_mail
 from app.models import NeverFollowAddress, OutboundEmail, Ticket, TicketStatus
 from app.settings_store import AUTOMATIC_EMAIL_CAP, INBOUND_MAX_PER_SENDER_HOUR, set_setting
 from tests.test_inbound_mail import MAILBOX, tickets
@@ -71,12 +71,12 @@ def test_mail_that_is_not_from_a_person_gets_no_receipt(db_session, dev_mail):
     assert [r.to_address for r in acks(db_session)] == ["kim@example.com"]  # only the real first mail
 
 
-def test_a_never_follow_address_is_not_answered(db_session, dev_mail):
+def test_a_never_follow_address_is_ignored_and_not_answered(db_session, dev_mail):
     db_session.add(NeverFollowAddress(email="it-all@example.com", added_by="admin@example.com"))
     db_session.commit()
-    assert ingest_mail(db_session, incoming("m1", sender="it-all@example.com")).outcome == TICKET_CREATED
+    assert ingest_mail(db_session, incoming("m1", sender="it-all@example.com")).outcome == IGNORED_NEVER_FOLLOW
     db_session.commit()
-    assert len(tickets(db_session)) == 1 and acks(db_session) == []
+    assert tickets(db_session) == [] and acks(db_session) == []
 
 
 def test_nothing_is_queued_with_mail_sending_off(db_session, monkeypatch):
