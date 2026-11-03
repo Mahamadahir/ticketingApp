@@ -40,6 +40,7 @@ from app.approval_reminders import send_approval_reminders
 from app.audit import log_action
 from app.auto_close_chase import run_auto_close, run_chase
 from app.database import engine
+from app.due_today import run_scheduled_due
 from app.models import ScheduledJob
 from app.settings_store import JOB_LATE_MINUTES, JOB_LEASE_MINUTES, JOB_RETRY_MINUTES, REGISTRY, get_int_setting
 
@@ -63,6 +64,7 @@ SCHEDULED_JOBS: list[ScheduledJobDef] = [
     ScheduledJobDef("approval-reminders", 3600, send_approval_reminders),
     ScheduledJobDef("auto-close", 3600, run_auto_close),
     ScheduledJobDef("chase", 3600, run_chase),
+    ScheduledJobDef("scheduled-due", 900, run_scheduled_due),
 ]
 
 

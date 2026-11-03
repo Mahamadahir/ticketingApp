@@ -175,14 +175,22 @@ def may_triage(user: User, ticket: Ticket, levels: AccessContext) -> bool:
 
 def may_set_required_by(user: User, ticket: Ticket, levels: AccessContext) -> bool:
     """Who may set or change a service request's Required by date (app/required_by.py).
-    The requester, until the ticket is triaged; from then on only agents, and only those who
-    work the ticket (or can still triage it). A follower never can. Whether the request type
-    offers the field at all is checked where the date is set."""
+    The requester, at any time while the request is open; agents who work the ticket (or can still
+    triage it). A follower never can. Whether the request type offers the field at all is checked
+    where the date is set."""
     if ticket.status in FINISHED_STATUSES:
         return False
-    if is_untriaged(ticket) and ticket.requester_email.strip().lower() == user.email.strip().lower():
+    if ticket.requester_email.strip().lower() == user.email.strip().lower():
         return True
     return ticket_access(user, ticket, levels) == Access.WORK or may_triage(user, ticket, levels)
+
+
+def may_set_due(user: User, ticket: Ticket, levels: AccessContext) -> bool:
+    """Who may set or move a ticket's Due date (app/required_by.py): only agents who work the ticket, never
+    the requester. (Whoever triages an untriaged ticket can give it a Due date on the triage form.)"""
+    if ticket.status in FINISHED_STATUSES or user.role not in (UserRole.AGENT, UserRole.SUPER_ADMIN):
+        return False
+    return ticket_access(user, ticket, levels) == Access.WORK
 
 
 def may_add_note(user: User, ticket: Ticket, levels: AccessContext) -> bool:

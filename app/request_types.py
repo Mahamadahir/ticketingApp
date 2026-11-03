@@ -55,6 +55,15 @@ def _checked(session: Session, group_id: Optional[int], pass_percent: int, is_ac
         )
 
 
+MAX_LEAD_DAYS = 365
+
+
+def _check_days(*counts: Optional[int]) -> None:
+    for count in counts:
+        if count is not None and not 0 <= count <= MAX_LEAD_DAYS:
+            raise RequestTypeError(f"A number of days must be from 0 to {MAX_LEAD_DAYS}, or blank to use the setting")
+
+
 def _flush(session: Session) -> None:
     """Writes now, so two admins saving the same name at once get the friendly error
     (the database index is the last line of defence) rather than a server error."""
@@ -68,14 +77,17 @@ def _flush(session: Session) -> None:
 def create_request_type(
     session: Session, name: str, description: str, group_id: Optional[int],
     pass_percent: int, is_active: bool = True, offers_required_by: bool = False,
+    due_days_before: Optional[int] = None, queue_lead_days: Optional[int] = None,
 ) -> RequestType:
     name, description = _clean(name, description)
+    _check_days(due_days_before, queue_lead_days)
     if _name_taken(session, name, None):
         raise RequestTypeError("There is already a request type with that name")
     _checked(session, group_id, pass_percent, is_active)
     request_type = RequestType(
         name=name, description=description, is_active=is_active, approval_group_id=group_id,
         pass_percent=pass_percent, offers_required_by=offers_required_by,
+        due_days_before=due_days_before, queue_lead_days=queue_lead_days,
     )
     session.add(request_type)
     _flush(session)
@@ -85,8 +97,11 @@ def create_request_type(
 def update_request_type(
     session: Session, request_type: RequestType, name: str, description: str, group_id: Optional[int],
     pass_percent: int, is_active: bool, offers_required_by: Optional[bool] = None,
+    due_days_before: Optional[int] = None, queue_lead_days: Optional[int] = None,
 ) -> RequestType:
+    """Blank (None) day counts mean "use the setting"."""
     name, description = _clean(name, description)
+    _check_days(due_days_before, queue_lead_days)
     if _name_taken(session, name, request_type.id):
         raise RequestTypeError("There is already a request type with that name")
     _checked(session, group_id, pass_percent, is_active)
@@ -95,6 +110,7 @@ def update_request_type(
     request_type.pass_percent = pass_percent
     if offers_required_by is not None:
         request_type.offers_required_by = offers_required_by
+    request_type.due_days_before, request_type.queue_lead_days = due_days_before, queue_lead_days
     session.add(request_type)
     _flush(session)
     return request_type

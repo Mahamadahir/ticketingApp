@@ -27,8 +27,17 @@ from app.backdating import FORMAT as MOMENT_FORMAT, BackdateError, backdate_tick
 from app.categories import CategoryError, create_category, path_of, selectable, team_id_for
 from app.escalation import EscalationError, escalate_ticket as escalate, escalation_target, escalators_of
 from app.raising import source_label
-from app.request_types import request_type_of
-from app.required_by import RequiredByError, offers_required_by, parse_required_by, set_required_by
+from app.request_types import active_request_types, request_type_of
+from app.required_by import (
+    RequiredByError,
+    apply_form_dates,
+    offers_required_by,
+    parse_required_by,
+    parse_due,
+    prepare_scheduled,
+    set_due,
+    set_required_by,
+)
 from app.settings_store import REQUIRED_BY_LEAD_DAYS, count_setting
 from app.canned import active_canned, fill as fill_canned
 from app.approvals import ApprovalError, current_approval, describe_rule, votes_of, waive
@@ -58,7 +67,7 @@ from app.messages import (
     preview_email,
     status_choices,
 )
-from app.models import FINISHED_STATUSES, CannedResponse, Category, Team, Ticket, TicketSource, TicketStatus, TicketType, User, UserRole
+from app.models import FINISHED_STATUSES, CannedResponse, Category, RequestType, Team, Ticket, TicketSource, TicketStatus, TicketType, User, UserRole
 from app.pagination import paginate
 from app.team_activity import KIND_LABELS, Kind, describe as describe_activity, feed_query
 from app.sla import (
@@ -82,8 +91,8 @@ from app.reopening import (
     reopen_ticket,
 )
 from app.resolution import ResolveError, check_can_resolve, preview_resolution, resolve_ticket
-from app.ticket_service import AwaitingApproval, EVENT_ASSIGNED, NotTriaged, ResolutionRequired, find_ticket, get_by_number, record_event, set_status
-from app.time_zones import zone_for_user
+from app.ticket_service import AwaitingApproval, EVENT_ASSIGNED, NotTriaged, ResolutionRequired, ScheduledNeedsDate, find_ticket, get_by_number, record_event, set_status
+from app.time_zones import zone_for_email, zone_for_user
 from app.triage import TriageError, reassign_ticket, triage_ticket
 from app.visibility import (
     Access,
@@ -91,6 +100,7 @@ from app.visibility import (
     assignable_agents,
     may_add_note,
     may_self_assign,
+    may_set_due,
     may_set_required_by,
     may_triage,
     team_members,
@@ -257,6 +267,32 @@ def agent_options_for_category(
     return _agent_options(request, team_members(session, team_id), "Leave as is")
 
 
+@router.get("/triage-dates", response_class=HTMLResponse)
+def triage_dates(
+    request: Request,
+    request_type_id: Optional[str] = None,
+    required_by: str = "",
+    due_on: str = "",
+    due_reason: str = "",
+    has_due: bool = False,
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """The Required by and Due boxes of the triage form for the chosen kind of request, for its htmx call:
+    Required by only when the kind offers it, Due always. What was typed is kept."""
+    chosen = optional_int(request_type_id)
+    request_type = session.get(RequestType, chosen) if chosen is not None else None
+    return _triage_dates(request, request_type is not None and request_type.offers_required_by, required_by, due_on, due_reason, has_due)
+
+
+def _triage_dates(request: Request, offers: bool, required_by: str, due_on: str, due_reason: str, has_due: bool):
+    return templates.TemplateResponse(
+        request,
+        "_triage_dates.html",
+        {"offers": offers, "required_by": required_by, "due_on": due_on, "due_reason": due_reason, "has_due": has_due},
+    )
+
+
 @router.post("/{number}/triage", response_class=HTMLResponse)
 def triage(
     number: int,
@@ -269,6 +305,10 @@ def triage(
     new_category_name: Optional[str] = Form(None, max_length=200),
     new_category_parent_id: Optional[str] = Form(None),
     new_category_team_id: Optional[str] = Form(None),
+    request_type_id: Optional[str] = Form(None),
+    required_by: Optional[str] = Form(None, max_length=20),
+    due_on: Optional[str] = Form(None, max_length=20),
+    due_reason: Optional[str] = Form(None, max_length=600),
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
@@ -302,11 +342,17 @@ def triage(
         if chosen_agent is not None and (assignee is None or assignee.role != UserRole.AGENT):
             raise HTTPException(status_code=400, detail="Choose an agent from the list")
 
+        chosen_type = optional_int(request_type_id)
+        request_type = session.get(RequestType, chosen_type) if chosen_type is not None else None
+        if chosen_type is not None and request_type is None:
+            raise HTTPException(status_code=400, detail="Choose a kind of request from the list")
         triage_ticket(
             session, ticket, user, ticket_type=ticket_type, category=category,
-            impact=impact, urgency=urgency, assignee=assignee,
+            impact=impact, urgency=urgency, assignee=assignee, request_type=request_type,
         )
-    except (CategoryError, TriageError) as error:
+        # The dates after triage, as it may have changed the kind of request; the boxes are optional.
+        apply_form_dates(session, ticket, user.email, required_by, due_on, due_reason)
+    except (CategoryError, TriageError, RequiredByError) as error:
         session.rollback()
         raise HTTPException(status_code=400, detail=str(error))
 
@@ -392,6 +438,31 @@ def change_required_by(
         changed = set_required_by(
             session, ticket, parse_required_by(required_by), user.email, backdating=ticket.is_backdated
         )
+    except RequiredByError as error:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(error))
+    if changed:
+        session.commit()
+        session.refresh(ticket)
+    return _render_ticket_detail(request, ticket, user, session)
+
+
+@router.post("/{number}/due", response_class=HTMLResponse)
+def change_due(
+    number: int,
+    request: Request,
+    due_on: Optional[str] = Form(None, max_length=20),
+    due_reason: Optional[str] = Form(None, max_length=600),
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """An agent who works the ticket sets or moves its Due date. Moving one needs a reason (a ticket event and an
+    audit entry record it); a blank date puts it back to the default from Required by."""
+    ticket = _get_ticket(session, number, user, Access.READ)
+    if not may_set_due(user, ticket, access_context(session, user)):
+        raise HTTPException(status_code=403, detail="You cannot change the Due date of this ticket")
+    try:
+        changed = set_due(session, ticket, parse_due(due_on), due_reason, user.email)
     except RequiredByError as error:
         session.rollback()
         raise HTTPException(status_code=400, detail=str(error))
@@ -489,16 +560,38 @@ def fill_from_canned(
     return templates.TemplateResponse(request, "_email_body.html", {"body": body})
 
 
+def _ask_for_scheduled_date(
+    session: Session, ticket: Ticket, user: User, due_on: Optional[str], due_reason: Optional[str]
+) -> None:
+    """Every way of choosing Scheduled asks for its date (the Due date) first (app/required_by.py)."""
+    try:
+        prepare_scheduled(session, ticket, due_on, due_reason, user.email)
+    except RequiredByError as error:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+def _check_scheduled_date_given(ticket: Ticket, status_after: Optional[TicketStatus], due_on: Optional[str]) -> None:
+    """The preview's own check, so it refuses what the send would: Scheduled with no date anywhere."""
+    if status_after == TicketStatus.SCHEDULED and not (due_on or "").strip() and ticket.due_on is None:
+        raise HTTPException(status_code=400, detail="Scheduled needs a date: enter the Due date")
+
+
 def _set_status_from_message(
-    session: Session, ticket: Ticket, user: User, new_status: Optional[TicketStatus]
+    session: Session, ticket: Ticket, user: User, new_status: Optional[TicketStatus],
+    due_on: Optional[str] = None, due_reason: Optional[str] = None,
 ) -> None:
     """Applies the status the agent picked on the Email user or Add note form (None: no change).
     set_status still has the last word (an untriaged or waiting-for-approval ticket is refused)."""
     if new_status is None:
         return
+    if new_status == TicketStatus.SCHEDULED:
+        _ask_for_scheduled_date(session, ticket, user, due_on, due_reason)
     previous_status = ticket.status
     try:
         changed = set_status(session, ticket, new_status, user.email)
+    except ScheduledNeedsDate:
+        raise HTTPException(status_code=400, detail="Scheduled needs a date: enter the Due date")
     except (NotTriaged, AwaitingApproval, ResolutionRequired):
         raise HTTPException(status_code=400, detail="That status cannot be set here")
     if changed:
@@ -516,6 +609,8 @@ def preview_email_user(
     cc_form: Optional[str] = Form(None),
     cc: list[str] = Form(default=[]),
     next_status: Optional[str] = Form(None),
+    due_on: Optional[str] = Form(None, max_length=20),
+    due_reason: Optional[str] = Form(None, max_length=600),
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
@@ -533,6 +628,7 @@ def preview_email_user(
         raise HTTPException(status_code=400, detail=f"Not a follower of this ticket: {error}")
     except BadStatusChoice as error:
         raise HTTPException(status_code=400, detail=str(error))
+    _check_scheduled_date_given(ticket, preview.status_after, due_on)
     return templates.TemplateResponse(
         request,
         "_email_preview.html",
@@ -542,6 +638,8 @@ def preview_email_user(
             "cc_form": bool(cc_form),
             "ticked": cc,
             "next_status": next_status,
+            "due_on": due_on,
+            "due_reason": due_reason,
         },
     )
 
@@ -554,6 +652,8 @@ def email_user(
     cc_form: Optional[str] = Form(None),
     cc: list[str] = Form(default=[]),
     next_status: Optional[str] = Form(None),
+    due_on: Optional[str] = Form(None, max_length=20),
+    due_reason: Optional[str] = Form(None, max_length=600),
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
@@ -580,7 +680,7 @@ def email_user(
     except BadStatusChoice as error:
         raise HTTPException(status_code=400, detail=str(error))
 
-    _set_status_from_message(session, ticket, user, new_status)
+    _set_status_from_message(session, ticket, user, new_status, due_on, due_reason)
     log_action(session, user.email, "ticket", ticket.id, "emailed_requester", body[:200])
     session.commit()
     session.refresh(ticket)
@@ -597,6 +697,8 @@ def add_ticket_note(
     request: Request,
     body: str = Form(..., max_length=MAX_MESSAGE_LENGTH),
     next_status: Optional[str] = Form(None),
+    due_on: Optional[str] = Form(None, max_length=20),
+    due_reason: Optional[str] = Form(None, max_length=600),
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
@@ -614,9 +716,11 @@ def add_ticket_note(
     if new_status is not None:
         require_access(user, ticket, levels, Access.WORK)  # changing status needs more than reading
 
+    if new_status == TicketStatus.SCHEDULED:
+        _ask_for_scheduled_date(session, ticket, user, due_on, due_reason)  # before the note, so a refusal leaves nothing
     note = add_note(session, ticket, user, body)
     log_action(session, user.email, "ticket", ticket.id, "note_added", body[:200])
-    _set_status_from_message(session, ticket, user, new_status)
+    _set_status_from_message(session, ticket, user, new_status, due_on, due_reason)
     notify_mentions(session, ticket, note, user)
     session.commit()
     session.refresh(ticket)
@@ -628,12 +732,17 @@ def change_status(
     number: int,
     request: Request,
     status: TicketStatus = Form(...),
+    due_on: Optional[str] = Form(None, max_length=20),
+    due_reason: Optional[str] = Form(None, max_length=600),
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
     ticket = _get_ticket(session, number, user)
     if status == TicketStatus.NEW:
         raise HTTPException(status_code=400, detail="A ticket only starts in New; it leaves New by being triaged")
+    if status == TicketStatus.SCHEDULED and ticket.status != TicketStatus.SCHEDULED and ticket.triaged_at is not None:
+        # Scheduled is a plan for a day: ask for it first (a reopen to Scheduled included).
+        _ask_for_scheduled_date(session, ticket, user, due_on, due_reason)
 
     if ticket.status == TicketStatus.RESOLVED and status not in FINISHED_STATUSES and not has_sub_tickets(session, ticket):
         # Taking a resolved ticket back to an open status is a reopen: counted, recorded with a reason
@@ -659,6 +768,8 @@ def change_status(
         raise HTTPException(status_code=400, detail="This request is waiting for its approvers; its status changes when they decide")
     except ResolutionRequired:
         raise HTTPException(status_code=400, detail="Use the Resolve action to resolve a ticket: it needs resolution notes")
+    except ScheduledNeedsDate:
+        raise HTTPException(status_code=400, detail="Scheduled needs a date: enter the Due date")
     if changed:
         log_action(session, user.email, "ticket", ticket.id, "status_changed", f"{previous_status.value} -> {status.value}")
     session.commit()
@@ -1110,6 +1221,11 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             "can_backdate": may_backdate(ticket),
             "can_set_required_by": (offers_required_by(session, ticket) or ticket.required_by is not None)
             and may_set_required_by(user, ticket, levels),
+            "can_set_due": may_set_due(user, ticket, levels),
+            "due_on": ticket.due_on,
+            "request_types": active_request_types(session) if can_triage else [],
+            "offers_required_by": offers_required_by(session, ticket),
+            "requester_zone": zone_for_email(session, ticket.requester_email),
             "source_label": source_label(session, ticket),
             "request_info": request_type_of(session, ticket),
             "approvals": ticket_votes,

@@ -35,6 +35,7 @@ EVENT_APPROVAL_DECIDED = "approval_decided"  # actor: the approver, to_value: ap
 EVENT_APPROVAL_OUTCOME = "approval_outcome"  # to_value: approved, declined or waived
 EVENT_APPROVAL_WITHDRAWN = "approval_withdrawn"  # the requester withdrew the request while it waited (detail: how many had not answered)
 EVENT_REQUIRED_BY_CHANGED = "required_by_changed"  # a service request's Required by date was set, changed or cleared
+EVENT_DUE_CHANGED = "due_changed"  # the Due date was set, moved or cleared (detail: the reason)
 EVENT_REQUEST_TYPE = "request_type"  # a service request raised from the catalogue: to_value is its name
 
 
@@ -51,6 +52,10 @@ class ResolutionRequired(Exception):
 class NotTriaged(Exception):
     """Raised when something that needs a triaged ticket is attempted on one that
     has not been triaged yet (emailing the requester, moving it between statuses)."""
+
+
+class ScheduledNeedsDate(Exception):
+    """Raised when a ticket without a Due date is set to Scheduled: that status is a plan for a day."""
 
 
 # ASCII digits only (\d would also accept digits from other scripts), no leading zero (one spelling
@@ -144,10 +149,13 @@ def set_status(
     detail: Optional[str] = None,
     by_approval: bool = False,
     by_resolution: bool = False,
+    from_parts: bool = False,
 ) -> bool:
     """Moves the ticket to a new status. Returns False, changing nothing,
     when it is already there. A sub-ticket's change re-derives its original's status.
-    Resolved is refused unless by_resolution is set, which only app/resolution.py does."""
+    Resolved is refused unless by_resolution is set, which only app/resolution.py does. Scheduled is refused
+    on a ticket with no Due date (callers ask for it first: app/required_by.py, `prepare_scheduled`), except
+    for a split original whose status follows its parts (`from_parts`)."""
     previous = ticket.status
     if previous == new_status:
         return False
@@ -158,6 +166,8 @@ def set_status(
     if ticket.triaged_at is None and new_status != TicketStatus.NEW:
         # Leaving New is what triage does, and only triage.
         raise NotTriaged()
+    if new_status == TicketStatus.SCHEDULED and ticket.due_on is None and not from_parts:
+        raise ScheduledNeedsDate()
 
     if ticket.split_from_id is not None:
         # Lock the original before changing the part, the same order as everything else
@@ -187,7 +197,7 @@ def set_status(
         # Any way out of Awaiting user (a reply, the reopen link, an agent) cancels a chase (app/auto_close_chase.py).
         ticket.chased_at = None
         ticket.chase_count = 0
-    # Awaiting user and Scheduled stop the SLA clock and leaving it restarts it. Imported here
+    # Awaiting user stops the SLA clock and leaving it restarts it. Imported here
     # because app.sla builds on this module.
     from app.sla import on_status_change
 

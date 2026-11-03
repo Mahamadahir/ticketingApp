@@ -378,10 +378,10 @@ def set_my_required_by(
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    """The requester sets, changes or clears the Required by date until the ticket is triaged."""
+    """The requester sets, changes or clears the Required by date at any time while the request is open."""
     ticket = _get_own_ticket(session, number, user)
     if not may_set_required_by(user, ticket, access_context(session, user)):
-        raise HTTPException(status_code=403, detail="The Required by date can no longer be changed here; ask the agent")
+        raise HTTPException(status_code=403, detail="The Required by date can no longer be changed here")
     try:
         set_required_by(session, ticket, parse_required_by(required_by), user.email)
     except RequiredByError as error:
