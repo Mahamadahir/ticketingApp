@@ -10,6 +10,7 @@ from sqlmodel import Session, select
 
 from app.settings_store import DEFAULT_TRIAGE_TEAM, get_int_setting
 from app.teams import queue_new_ticket
+from app.time_zones import note_requester
 from app.models import (
     FINISHED_STATUSES,
     TICKET_TYPE_PREFIXES,
@@ -128,6 +129,7 @@ def create_ticket(
     )
     session.add(ticket)
     session.flush()
+    note_requester(session, ticket.requester_email)  # the worker reads their mailbox time zone (app/time_zones.py)
     record_event(session, ticket, EVENT_CREATED, actor_email, to_value=ticket.tag, detail=source.value)
     if announce:
         queue_new_ticket(session, ticket)

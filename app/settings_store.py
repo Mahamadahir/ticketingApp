@@ -15,7 +15,7 @@ from app.models import Setting
 class SettingDef:
     key: str
     label: str
-    kind: str  # "team": a team id, empty for none; "minutes": a whole number; "percent": 1 to 99; "vote_percent": 1 to 100; "flag": on or off; "count": a whole number, 1 to 1000
+    kind: str  # "team": a team id, empty for none; "minutes": a whole number; "percent": 1 to 99; "vote_percent": 1 to 100; "flag": on or off; "count": a whole number, 1 to 1000; "time_zone": an IANA time zone name
     description: str
     default: str = ""
 
@@ -51,6 +51,9 @@ CHASE_AFTER_DAYS = "chase_after_days"
 CHASE_RESOLVE_AFTER_DAYS = "chase_resolve_after_days"
 BULK_RESOLVE_MAX = "bulk_resolve_max_tickets"
 REQUIRED_BY_LEAD_DAYS = "required_by_lead_days"
+DEFAULT_TIME_ZONE = "default_time_zone"
+TIME_ZONE_REFRESH_DAYS = "time_zone_refresh_days"
+TIME_ZONE_RETRY_HOURS = "time_zone_retry_hours"
 
 # PLACEHOLDER SLA targets, in minutes on a 24/7 clock, until the real ones are agreed
 # (TBC in docs/plan.md). They are settings, changed under Admin > Settings; a blank
@@ -370,6 +373,37 @@ REGISTRY: dict[str, SettingDef] = {
             "days before that date, so work that takes time rises early. Placeholder."
         ),
         default="2",
+    ),
+    DEFAULT_TIME_ZONE: SettingDef(
+        key=DEFAULT_TIME_ZONE,
+        label="Default time zone",
+        kind="time_zone",
+        description=(
+            "An IANA name such as Europe/London. Shown to anyone whose own time zone is not known: someone who has "
+            "not signed in yet, an external sender, a mailbox lookup that failed. Everything is stored in UTC; this "
+            "only changes how times are shown. Placeholder."
+        ),
+        default="Europe/London",
+    ),
+    TIME_ZONE_REFRESH_DAYS: SettingDef(
+        key=TIME_ZONE_REFRESH_DAYS,
+        label="Requesters' time zones: read their Outlook mailbox again after (days)",
+        kind="count",
+        description=(
+            "A requester who only uses email has their time zone read from their Outlook mailbox when their first "
+            "ticket arrives, and again after this long, so a move is picked up. Placeholder."
+        ),
+        default="30",
+    ),
+    TIME_ZONE_RETRY_HOURS: SettingDef(
+        key=TIME_ZONE_RETRY_HOURS,
+        label="Requesters' time zones: try again after a failed lookup after (hours)",
+        kind="count",
+        description=(
+            "Graph did not know the address (an external sender) or the lookup failed. Until it works the default "
+            "time zone applies. Placeholder."
+        ),
+        default="24",
     ),
     BULK_RESOLVE_MAX: SettingDef(
         key=BULK_RESOLVE_MAX,

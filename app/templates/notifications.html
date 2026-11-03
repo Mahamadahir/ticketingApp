@@ -12,11 +12,11 @@
 {% endif %}
 
 <table>
-  <thead><tr><th>When (UTC)</th><th>What</th><th></th></tr></thead>
+  <thead><tr><th>When</th><th>What</th><th></th></tr></thead>
   <tbody>
     {% for n in page.items %}
     <tr>
-      <td>{{ n.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
+      <td>{{ n.created_at|local_time }}</td>
       <td>{% if not n.read_at %}<b>{{ n.text }}</b>{% else %}{{ n.text }}{% endif %}</td>
       <td>
         <form method="post" action="/notifications/{{ n.id }}/open" class="inline-form">

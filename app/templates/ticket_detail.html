@@ -15,8 +15,8 @@
   &middot; Category: {{ category_path or "Not triaged" }}
   &middot; Priority: {{ ticket.priority.upper() if ticket.priority else "Not set" }}
   {% if ticket.required_by %}&middot; Required by: {{ ticket.required_by.isoformat() }}{% endif %}
-  &middot; Reported: {{ ticket.reported_at.strftime("%Y-%m-%d %H:%M") }} UTC{% if ticket.is_backdated %} <span class="badge">backdated</span>{% endif %}
-  {% if ticket.resolved_at %}&middot; Resolved: {{ ticket.resolved_at.strftime("%Y-%m-%d %H:%M") }} UTC{% endif %}
+  &middot; Reported: {{ ticket.reported_at|local_time }}{% if ticket.is_backdated %} <span class="badge">backdated</span>{% endif %}
+  {% if ticket.resolved_at %}&middot; Resolved: {{ ticket.resolved_at|local_time }}{% endif %}
   &middot; Team: {{ team.name if team else "Unassigned" }}
   &middot; Assigned: {{ assigned_agent.display_name if assigned_agent else "Unassigned" }}
   &middot;
@@ -30,14 +30,14 @@
 <details {{ "open" if ticket.status.value == "awaiting_approval" else "" }}>
   <summary>Approvals: {{ approval_status }} ({{ approval_rule }})</summary>
   <table>
-    <thead><tr><th>Voter</th><th>Answer</th><th>Comment</th><th>When (UTC)</th></tr></thead>
+    <thead><tr><th>Voter</th><th>Answer</th><th>Comment</th><th>When</th></tr></thead>
     <tbody>
       {% for approval, approver in approvals %}
       <tr>
         <td>{{ approver.display_name or approver.email }}</td>
         <td>{{ approval.decision.replace("_", " ") }}</td>
         <td>{{ approval.comment }}</td>
-        <td>{{ approval.decided_at.strftime("%Y-%m-%d %H:%M") if approval.decided_at else "" }}</td>
+        <td>{{ approval.decided_at|local_time if approval.decided_at else "" }}</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -59,7 +59,7 @@
 {% endif %}
 
 {% if sla.state != "none" %}
-<p class="sla sla-{{ sla.state }}">SLA: {{ sla.text }}{% if sla.due %} (due {{ sla.due.strftime("%Y-%m-%d %H:%M") }} UTC){% endif %}</p>
+<p class="sla sla-{{ sla.state }}">SLA: {{ sla.text }}{% if sla.due %} (due {{ sla.due|local_time }}){% endif %}</p>
 {% endif %}
 
 {% if not can_work %}
@@ -290,13 +290,13 @@
 {% endif %}
 {% if ticket.resolution_notes and ticket.status.value in ("resolved", "closed") %}
 <h3>Resolution</h3>
-<p class="note">{% if resolved_by %}Resolved by {{ resolved_by.display_name or resolved_by.email }}{% else %}Resolved automatically{% endif %}{% if ticket.resolved_at %} on {{ ticket.resolved_at.strftime("%Y-%m-%d %H:%M") }} UTC{% endif %}{% if ticket.closed_at %}; closed {{ ticket.closed_at.strftime("%Y-%m-%d %H:%M") }} UTC{% endif %}.</p>
+<p class="note">{% if resolved_by %}Resolved by {{ resolved_by.display_name or resolved_by.email }}{% else %}Resolved automatically{% endif %}{% if ticket.resolved_at %} on {{ ticket.resolved_at|local_time }}{% endif %}{% if ticket.closed_at %}; closed {{ ticket.closed_at|local_time }}{% endif %}.</p>
 <pre class="message-body">{{ ticket.resolution_notes }}</pre>
 {% endif %}
 {% if feedback %}
 <h3>Requester feedback</h3>
 {% for f in feedback %}
-<p class="note">{{ f.rating }} out of 5, {{ f.created_at.strftime("%Y-%m-%d %H:%M") }} UTC</p>
+<p class="note">{{ f.rating }} out of 5, {{ f.created_at|local_time }}</p>
 {% if f.comment %}<pre class="message-body">{{ f.comment }}</pre>{% endif %}
 {% endfor %}
 {% endif %}
@@ -401,7 +401,7 @@
       {% elif message.direction.value == "outbound" %}<b>Email to requester</b>{% if message.cc %} (cc: {{ message.cc }}){% endif %}
       {% elif item.sender_kind == "follower" %}<b>From follower</b>
       {% else %}<b>From requester</b>{% endif %}
-      &middot; {{ message.sender }} &middot; {{ message.created_at.strftime("%Y-%m-%d %H:%M") }}
+      &middot; {{ message.sender }} &middot; {{ message.created_at|local_time }}
     </div>
     <div class="message-body">{{ message.body }}</div>
   </div>
@@ -409,7 +409,7 @@
   {% set event = item.event %}
   <div class="event">
     {% if item.source %}<span class="note">[{{ item.source.reference }} {{ item.source.subject }}]</span>{% endif %}
-    {{ event.created_at.strftime("%Y-%m-%d %H:%M") }} &middot;
+    {{ event.created_at|local_time }} &middot;
     {{ event.event_type.replace("_", " ") }}
     {% if event.from_value or event.to_value %}: {{ event.from_value or "none" }} &rarr; {{ event.to_value or "none" }}{% endif %}
     {% if event.detail %} ({{ event.detail }}){% endif %}

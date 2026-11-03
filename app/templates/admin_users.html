@@ -71,7 +71,7 @@
         {% if u.password_hash %}
           yes
           {% if u.locked_until and u.locked_until > now %}
-            <br />locked until {{ u.locked_until.strftime("%Y-%m-%d %H:%M") }} UTC
+            <br />locked until {{ u.locked_until|local_time }}
           {% endif %}
           {% if u.failed_login_count %}
             <br />{{ u.failed_login_count }} failed attempt{{ "" if u.failed_login_count == 1 else "s" }}

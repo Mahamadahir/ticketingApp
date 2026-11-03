@@ -23,6 +23,7 @@ from app.inbound import process_notifications
 from app.mail import deliver_mail
 from app.scheduled_jobs import TICK_EVERY_SECONDS, scheduled_jobs_tick
 from app.presence import CHECK_EVERY_SECONDS, refresh_presence
+from app.time_zones import refresh_requester_zones
 from app.subscriptions import CATCH_UP_EVERY_SECONDS, SUBSCRIPTION_EVERY_SECONDS, catch_up, keep_subscription_alive
 from app.notifications import drop_due_for_teams, hand_to_teams
 from app.teams import deliver_pending, queue_notification
@@ -65,6 +66,14 @@ def presence(session: Session) -> None:
         refresh_presence(session)
 
 
+def requester_time_zones(session: Session) -> None:
+    """Reads the Outlook mailbox time zone of requesters who are new or due a refresh
+    (app/time_zones.py; needs MailboxSettings.Read). Does nothing unless Graph is configured. A person
+    who cannot be read keeps the default time zone and is tried again later; it does not fail the job."""
+    if settings.graph_configured:
+        refresh_requester_zones(session)
+
+
 def mail_out(session: Session) -> None:
     """Sends the emails that are waiting (app/mail.py). With MAIL_SENDING off it does nothing. It
     commits after each email itself, so one that went is recorded even if a later one fails."""
@@ -100,6 +109,7 @@ def mail_in(session: Session) -> None:
 
 
 TEAMS_POSTS_EVERY_SECONDS = 60
+TIME_ZONES_EVERY_SECONDS = 300
 MAIL_OUT_EVERY_SECONDS = 30
 MAIL_IN_EVERY_SECONDS = 15
 
@@ -108,6 +118,7 @@ JOBS: list[Job] = [
     Job("teams-copies", TEAMS_POSTS_EVERY_SECONDS, teams_copies),
     Job("teams-posts", TEAMS_POSTS_EVERY_SECONDS, teams_posts),
     Job("presence", CHECK_EVERY_SECONDS, presence),
+    Job("requester-time-zones", TIME_ZONES_EVERY_SECONDS, requester_time_zones),
     Job("mail-out", MAIL_OUT_EVERY_SECONDS, mail_out),
     Job("graph-subscription", SUBSCRIPTION_EVERY_SECONDS, graph_subscription),
     Job("mail-catch-up", CATCH_UP_EVERY_SECONDS, mail_catch_up),

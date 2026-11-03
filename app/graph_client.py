@@ -71,6 +71,22 @@ class GraphClient:
         response.raise_for_status()
         return response.json().get("id")
 
+    def mailbox_time_zone(self, email: str) -> str | None:
+        """The time zone set on the person's Outlook mailbox, as Graph names it (a Windows name such as
+        "GMT Standard Time"; app/time_zones.py turns it into an IANA name), or None when Graph has no such
+        mailbox (an external sender, a user without Exchange). GET /users/{email}/mailboxSettings, which
+        needs MailboxSettings.Read (application, admin consent). Any other failure raises."""
+        response = httpx.get(
+            f"{GRAPH_BASE_URL}/users/{quote(email, safe='')}/mailboxSettings",
+            params={"$select": "timeZone"},
+            headers={"Authorization": f"Bearer {self._get_access_token()}"},
+            timeout=15,
+        )
+        if response.status_code == 404:
+            return None
+        response.raise_for_status()
+        return response.json().get("timeZone") or None
+
     def presences(self, object_ids: list[str]) -> list[dict]:
         """POST /communications/getPresencesByUserId: one reading per id, up to 650 ids a request
         (Presence.Read.All, application). Each reading carries outOfOfficeSettings.isOutOfOffice, which

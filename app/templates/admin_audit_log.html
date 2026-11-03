@@ -51,7 +51,7 @@
   <tbody>
     {% for entry in page.items %}
     <tr>
-      <td>{{ entry.created_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>
+      <td>{{ entry.created_at|local_time(seconds=True) }}</td>
       <td>{{ entry.actor_email }}</td>
       <td><span class="badge">{{ entry.action }}</span></td>
       <td>{{ entry.entity_type }} #{{ entry.entity_id }}</td>
