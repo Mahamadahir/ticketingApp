@@ -25,6 +25,7 @@ from functools import lru_cache
 from typing import Callable, Optional
 from zoneinfo import ZoneInfo, available_timezones
 
+from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlmodel import Session, select
 
@@ -96,7 +97,7 @@ def zone_for_email(session: Session, email: str) -> str:
     """The zone for an email address: the account's own, else the mailbox reading, else the default.
     What an email to a requester is written in."""
     address = email.strip().lower()
-    account = session.exec(select(User).where(User.email == address)).first()
+    account = session.exec(select(User).where(func.lower(User.email) == address)).first()
     if account is not None and valid_zone(account.time_zone):
         return account.time_zone
     return _mailbox_zone(session, address) or default_zone(session)

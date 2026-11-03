@@ -31,6 +31,11 @@
       "name": "presence"
     },
     {
+      "every": "TIME_ZONES_EVERY_SECONDS",
+      "function": "requester_time_zones",
+      "name": "requester-time-zones"
+    },
+    {
       "every": "TICK_EVERY_SECONDS",
       "function": "scheduled_jobs_tick",
       "name": "scheduled-jobs"
@@ -49,6 +54,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/e7a2c4d9b136_time_zones.py",
+        "revision": "e7a2c4d9b136"
+      },
+      {
         "file": "migrations/versions/a7d3e1f60b92_single_pass_percent.py",
         "revision": "a7d3e1f60b92"
       },
@@ -63,17 +72,13 @@
       {
         "file": "migrations/versions/5d1f0c2b7a96_chase_fields.py",
         "revision": "5d1f0c2b7a96"
-      },
-      {
-        "file": "migrations/versions/d546e15ede32_action_tokens_and_ticket_feedback.py",
-        "revision": "d546e15ede32"
       }
     ],
-    "count": 45,
+    "count": 46,
     "heads": [
       {
-        "file": "migrations/versions/a7d3e1f60b92_single_pass_percent.py",
-        "revision": "a7d3e1f60b92"
+        "file": "migrations/versions/e7a2c4d9b136_time_zones.py",
+        "revision": "e7a2c4d9b136"
       }
     ]
   },
@@ -639,6 +644,7 @@
         "tests/test_security.py",
         "tests/test_teams.py",
         "tests/test_teams_copy_sending.py",
+        "tests/test_time_zones.py",
         "tests/test_visibility.py",
         "tests/test_wiring_3f.py",
         "tests/test_worker.py"
@@ -668,6 +674,7 @@
         "app.routers.tickets",
         "app.routers.webhooks",
         "app.scheduled_jobs",
+        "app.templating",
         "app.worker"
       ],
       "imports": [
@@ -912,7 +919,8 @@
         "app.inbound",
         "app.mail",
         "app.presence",
-        "app.subscriptions"
+        "app.subscriptions",
+        "app.time_zones"
       ],
       "imports": [
         "app.config"
@@ -925,7 +933,8 @@
         "tests/test_inbound_mail.py",
         "tests/test_mail_subscriptions.py",
         "tests/test_outbound_mail.py",
-        "tests/test_presence.py"
+        "tests/test_presence.py",
+        "tests/test_time_zones.py"
       ]
     },
     {
@@ -1021,6 +1030,7 @@
         "mail_in",
         "mail_out",
         "presence",
+        "requester_time_zones",
         "teams_copies",
         "teams_posts"
       ],
@@ -1035,7 +1045,8 @@
         "app.presence",
         "app.scheduled_jobs",
         "app.subscriptions",
-        "app.teams"
+        "app.teams",
+        "app.time_zones"
       ],
       "module": "app.jobs",
       "routes": [],
@@ -1049,6 +1060,7 @@
         "tests/test_scheduled_jobs.py",
         "tests/test_teams.py",
         "tests/test_teams_copy_sending.py",
+        "tests/test_time_zones.py",
         "tests/test_worker.py"
       ]
     },
@@ -1315,6 +1327,7 @@
         "OutboundEmail",
         "RelatedTicket",
         "RequestType",
+        "RequesterTimeZone",
         "ScheduledJob",
         "Setting",
         "Team",
@@ -1395,6 +1408,7 @@
         "app.teams",
         "app.thanks_rules",
         "app.ticket_service",
+        "app.time_zones",
         "app.triage",
         "app.visibility"
       ],
@@ -1490,6 +1504,10 @@
         {
           "class": "RequestType",
           "table": "requesttype"
+        },
+        {
+          "class": "RequesterTimeZone",
+          "table": "requestertimezone"
         },
         {
           "class": "ScheduledJob",
@@ -1611,6 +1629,7 @@
         "tests/test_ticket_core.py",
         "tests/test_ticket_urls.py",
         "tests/test_tickets_rbac.py",
+        "tests/test_time_zones.py",
         "tests/test_triage.py",
         "tests/test_visibility.py",
         "tests/test_wiring_3f.py",
@@ -2182,7 +2201,8 @@
         "app.teams",
         "app.templating",
         "app.thanks_rules",
-        "app.ticket_service"
+        "app.ticket_service",
+        "app.time_zones"
       ],
       "module": "app.routers.admin",
       "routes": [
@@ -2688,7 +2708,9 @@
       "file": "app/routers/my_settings.py",
       "functions": [
         "notification_settings",
-        "save_notification_settings"
+        "report_browser_time_zone",
+        "save_notification_settings",
+        "save_time_zone"
       ],
       "imported_by": [
         "app.main"
@@ -2700,7 +2722,8 @@
         "app.models",
         "app.notification_settings",
         "app.notifications",
-        "app.templating"
+        "app.templating",
+        "app.time_zones"
       ],
       "module": "app.routers.my_settings",
       "routes": [
@@ -2713,6 +2736,16 @@
           "handler": "save_notification_settings",
           "method": "POST",
           "path": "/settings/notifications"
+        },
+        {
+          "handler": "save_time_zone",
+          "method": "POST",
+          "path": "/settings/time-zone"
+        },
+        {
+          "handler": "report_browser_time_zone",
+          "method": "POST",
+          "path": "/settings/time-zone/browser"
         }
       ],
       "summary": "A person's own settings (phase 2B): which channels they want for which events. Anyone signed in,",
@@ -3215,7 +3248,8 @@
         "app.scheduled_jobs",
         "app.sla",
         "app.subscriptions",
-        "app.ticket_service"
+        "app.ticket_service",
+        "app.time_zones"
       ],
       "imports": [
         "app.models"
@@ -3243,6 +3277,7 @@
         "tests/test_scheduled_jobs.py",
         "tests/test_sla.py",
         "tests/test_teams_copy.py",
+        "tests/test_time_zones.py",
         "tests/test_triage.py"
       ]
     },
@@ -3531,8 +3566,10 @@
         "app.routers.tickets"
       ],
       "imports": [
+        "app.database",
         "app.forms",
-        "app.presence"
+        "app.presence",
+        "app.time_zones"
       ],
       "module": "app.templating",
       "routes": [],
@@ -3620,7 +3657,8 @@
         "app.settings_store",
         "app.sla",
         "app.splitting",
-        "app.teams"
+        "app.teams",
+        "app.time_zones"
       ],
       "module": "app.ticket_service",
       "routes": [],
@@ -3639,6 +3677,48 @@
         "tests/test_thanks_rules.py",
         "tests/test_ticket_core.py",
         "tests/test_triage.py"
+      ]
+    },
+    {
+      "classes": [],
+      "file": "app/time_zones.py",
+      "functions": [
+        "clear_manual_zone",
+        "default_zone",
+        "end_of_day_for_email",
+        "end_of_day_for_user",
+        "end_of_day_utc",
+        "format_date",
+        "format_moment",
+        "note_requester",
+        "refresh_requester_zones",
+        "set_browser_zone",
+        "set_manual_zone",
+        "valid_zone",
+        "windows_to_iana",
+        "zone_choices",
+        "zone_for_email",
+        "zone_for_user"
+      ],
+      "imported_by": [
+        "app.jobs",
+        "app.routers.admin",
+        "app.routers.my_settings",
+        "app.templating",
+        "app.ticket_service"
+      ],
+      "imports": [
+        "app.graph_client",
+        "app.models",
+        "app.settings_store",
+        "app.windows_zones"
+      ],
+      "module": "app.time_zones",
+      "routes": [],
+      "summary": "Per-person time zones. Everything is stored and calculated in UTC; only what a person SEES is converted,",
+      "tables": [],
+      "tests": [
+        "tests/test_time_zones.py"
       ]
     },
     {
@@ -3725,6 +3805,22 @@
         "tests/test_escalation.py",
         "tests/test_messages.py",
         "tests/test_visibility.py"
+      ]
+    },
+    {
+      "classes": [],
+      "file": "app/windows_zones.py",
+      "functions": [],
+      "imported_by": [
+        "app.time_zones"
+      ],
+      "imports": [],
+      "module": "app.windows_zones",
+      "routes": [],
+      "summary": "Windows time zone names (what Microsoft Graph returns for a mailbox, e.g. \"GMT Standard Time\") to IANA names.",
+      "tables": [],
+      "tests": [
+        "tests/test_time_zones.py"
       ]
     },
     {
@@ -4127,6 +4223,7 @@
     "tests/test_ticket_core.py",
     "tests/test_ticket_urls.py",
     "tests/test_tickets_rbac.py",
+    "tests/test_time_zones.py",
     "tests/test_triage.py",
     "tests/test_visibility.py",
     "tests/test_wiring_3f.py",
