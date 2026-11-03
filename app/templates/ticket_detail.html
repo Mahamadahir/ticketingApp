@@ -242,11 +242,11 @@
   {% if can_backdate %}
   <details>
     <summary>Backdate (log after the fact)</summary>
-    <p class="note">Enter when it was reported or fixed: up to 30 days back, never in the future, times in UTC. A backdated ticket counts towards volume but is left out of SLA figures. Leave a box blank to keep that date.</p>
+    <p class="note">Enter when it was reported or fixed: up to 30 days back, never in the future, times in your time zone ({{ viewer_zone() }}). A backdated ticket counts towards volume but is left out of SLA figures. Leave a box blank to keep that date.</p>
     <form hx-post="/tickets/{{ ticket.number }}/backdate" hx-target="main" hx-swap="innerHTML">
-      <label>Reported <input type="datetime-local" name="reported_at" value="{{ ticket.reported_at.strftime(moment_format) }}" /></label>
+      <label>Reported <input type="datetime-local" name="reported_at" value="{{ ticket.reported_at|local_input }}" /></label>
       {% if ticket.resolved_at %}
-      <label>Resolved <input type="datetime-local" name="resolved_at" value="{{ ticket.resolved_at.strftime(moment_format) }}" /></label>
+      <label>Resolved <input type="datetime-local" name="resolved_at" value="{{ ticket.resolved_at|local_input }}" /></label>
       {% endif %}
       <button type="submit">Save dates</button>
     </form>
@@ -411,7 +411,7 @@
     {% if item.source %}<span class="note">[{{ item.source.reference }} {{ item.source.subject }}]</span>{% endif %}
     {{ event.created_at|local_time }} &middot;
     {{ event.event_type.replace("_", " ") }}
-    {% if event.from_value or event.to_value %}: {{ event.from_value or "none" }} &rarr; {{ event.to_value or "none" }}{% endif %}
+    {% if event.from_value or event.to_value %}: {{ event.from_value or "none" }}{% if event.event_type == "backdated" and event.from_value %} UTC{% endif %} &rarr; {{ event.to_value or "none" }}{% if event.event_type == "backdated" and event.to_value %} UTC{% endif %}{% endif %}
     {% if event.detail %} ({{ event.detail }}){% endif %}
     &middot; {{ event.actor_email or "system" }}
   </div>

@@ -269,7 +269,9 @@ Outlook mailbox time zone with `GET /users/{id}/mailboxSettings`. Add the Micros
 **application** permission `MailboxSettings.Read` to the same registration and grant admin
 consent. Without it the reads are refused (403): the job carries on, each requester is shown
 times in the `default_time_zone` setting, and the lookup is retried after
-`time_zone_retry_hours`. Nothing in the Bicep changes.
+`time_zone_retry_hours`, and when every lookup in a run is refused the job logs `status=failed`. Note this reads requesters' own
+mailboxes: an application access policy that limits the registration to the shared mailbox (docs/plan.md, security item 4)
+would also refuse it, so decide the scoping before relying on it. Nothing in the Bicep changes.
 
 ## Custom domain (at roll-out)
 

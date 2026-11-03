@@ -15,7 +15,7 @@ from app.models import Setting
 class SettingDef:
     key: str
     label: str
-    kind: str  # "team": a team id, empty for none; "minutes": a whole number; "percent": 1 to 99; "vote_percent": 1 to 100; "flag": on or off; "count": a whole number, 1 to 1000; "time_zone": an IANA time zone name
+    kind: str  # "team": a team id, empty for none; "minutes": a whole number; "percent": 1 to 99; "vote_percent": 1 to 100; "flag": on or off; "count": a whole number, 1 to 1000; "time_zone": an IANA time zone name, blank for the default
     description: str
     default: str = ""
 
@@ -381,7 +381,7 @@ REGISTRY: dict[str, SettingDef] = {
         description=(
             "An IANA name such as Europe/London. Shown to anyone whose own time zone is not known: someone who has "
             "not signed in yet, an external sender, a mailbox lookup that failed. Everything is stored in UTC; this "
-            "only changes how times are shown. Placeholder."
+            "only changes how times are shown. Blank means Europe/London. Placeholder."
         ),
         default="Europe/London",
     ),

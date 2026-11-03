@@ -27,6 +27,7 @@ from app.time_zones import (
     format_date,
     format_moment,
     note_requester,
+    RefreshResult,
     refresh_requester_zones,
     set_browser_zone,
     set_manual_zone,
@@ -307,10 +308,10 @@ class FakeMailboxes:
 
 
 def refresh(db_session, mailboxes, now=NOW):
-    count = refresh_requester_zones(db_session, mailboxes, now=now)
+    result = refresh_requester_zones(db_session, mailboxes, now=now)
     db_session.commit()
     db_session.expire_all()
-    return count
+    return result.looked_at
 
 
 def row_of(db_session, email):
@@ -426,7 +427,7 @@ def test_the_worker_runs_the_requester_time_zone_job_only_when_graph_is_configur
 
     assert [j.every_seconds for j in JOBS if j.name == "requester-time-zones"] == [300]
     calls = []
-    monkeypatch.setattr(jobs, "refresh_requester_zones", lambda session: calls.append(session))
+    monkeypatch.setattr(jobs, "refresh_requester_zones", lambda session: calls.append(session) or RefreshResult(0, 0, ""))
     for value in ("", "x"):
         monkeypatch.setattr(settings, "graph_tenant_id", value)
         monkeypatch.setattr(settings, "graph_client_id", value)
@@ -445,6 +446,73 @@ def test_the_default_time_zone_is_a_validated_admin_setting(client, db_session):
     login_as(client, "admin@example.com")
     assert DEFAULT_TIME_ZONE in client.get("/admin/settings").text
     assert client.post("/admin/settings", data={"key": DEFAULT_TIME_ZONE, "value": "Mars/Olympus"}).status_code == 400
-    assert client.post("/admin/settings", data={"key": DEFAULT_TIME_ZONE, "value": ""}).status_code == 400
+    assert client.post("/admin/settings", data={"key": DEFAULT_TIME_ZONE, "value": "Asia/Tokyo"}, follow_redirects=False).status_code == 303
+    assert client.post("/admin/settings", data={"key": DEFAULT_TIME_ZONE, "value": ""}, follow_redirects=False).status_code == 303
+    assert default_zone(db_session) == "Europe/London"  # blank means the placeholder again
     assert client.post("/admin/settings", data={"key": DEFAULT_TIME_ZONE, "value": "Asia/Tokyo"}, follow_redirects=False).status_code == 303
     assert db_session.get(Setting, DEFAULT_TIME_ZONE).value == "Asia/Tokyo"
+
+
+# ---- Failures show, intake and the backdate form --------------------------------------------------------------
+
+
+def test_a_run_where_every_lookup_failed_fails_the_job_but_keeps_the_retry_times(db_session, monkeypatch):
+    from app import jobs, time_zones
+
+    for email in ("a@example.com", "b@example.com"):
+        note_requester(db_session, email, now=NOW)
+    db_session.commit()
+    denied = httpx.HTTPStatusError("denied", request=httpx.Request("GET", "https://x"), response=httpx.Response(403))
+    monkeypatch.setattr(settings, "graph_tenant_id", "t")
+    monkeypatch.setattr(settings, "graph_client_id", "c")
+    monkeypatch.setattr(settings, "graph_client_secret", "s")
+    real = time_zones.refresh_requester_zones
+    monkeypatch.setattr(jobs, "refresh_requester_zones", lambda session: real(session, FakeMailboxes({"a@example.com": denied, "b@example.com": denied})))
+
+    with pytest.raises(RuntimeError, match="HTTPStatusError 403.*MailboxSettings.Read"):
+        jobs.requester_time_zones(db_session)
+
+    db_session.expire_all()
+    assert all(row.next_check_at > datetime.now(timezone.utc) for row in db_session.exec(select(RequesterTimeZone)).all())
+
+
+def test_one_failure_among_good_lookups_does_not_fail_the_job(db_session, monkeypatch):
+    from app import jobs, time_zones
+
+    for email in ("a@example.com", "b@example.com"):
+        note_requester(db_session, email, now=NOW)
+    db_session.commit()
+    monkeypatch.setattr(settings, "graph_tenant_id", "t")
+    monkeypatch.setattr(settings, "graph_client_id", "c")
+    monkeypatch.setattr(settings, "graph_client_secret", "s")
+    real = time_zones.refresh_requester_zones
+    answers = FakeMailboxes({"a@example.com": "GMT Standard Time", "b@example.com": httpx.ConnectError("down")})
+    monkeypatch.setattr(jobs, "refresh_requester_zones", lambda session: real(session, answers))
+
+    jobs.requester_time_zones(db_session)  # no error
+
+
+def test_mail_from_a_sender_notes_them_for_a_mailbox_lookup_even_when_it_is_a_reply(db_session):
+    from app.inbound import ingest_mail
+    from tests.test_inbound_mail import mail, mailbox  # noqa: F401  (the helper builds the IncomingMail)
+
+    ingest_mail(db_session, mail(sender="Newcomer@Example.com"))
+    db_session.commit()
+    assert db_session.get(RequesterTimeZone, "newcomer@example.com") is not None
+
+
+def test_the_backdate_form_is_shown_and_read_in_the_agents_own_zone(client, db_session):
+    from app.backdating import parse_moment
+    from app.models import Ticket, TicketSource
+
+    assert parse_moment("2026-10-25T17:00", "Asia/Tokyo") == datetime(2026, 10, 25, 8, 0, tzinfo=timezone.utc)
+    assert parse_moment("2026-10-25T17:00") == datetime(2026, 10, 25, 17, 0, tzinfo=timezone.utc)
+    assert parse_moment("2026-10-25T17:00", "Mars/Olympus") == datetime(2026, 10, 25, 17, 0, tzinfo=timezone.utc)
+
+    ticket = ticket_in_a_team(client, db_session, zone="Asia/Tokyo")
+    ticket.source = TicketSource.AGENT
+    db_session.add(ticket)
+    db_session.commit()
+    page = client.get(f"/tickets/{ticket.number}").text
+    assert 'name="reported_at" value="2026-10-26T01:00"' in page  # 16:00 UTC is 01:00 the next day in Tokyo
+    assert "times in your time zone (Asia/Tokyo)" in page

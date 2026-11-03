@@ -1170,7 +1170,8 @@ zone. **Everything is stored and calculated in UTC**; only what a person sees is
   `local_date` (the viewer's zone). No template formats a time itself. Pages show "25 Oct 17:00 GMT" (a year is added
   when it is not this year, seconds only on log pages). An email to a requester is written with `format_moment` and
   `zone_for_email`; none of the current emails carries a time, so none changed. Dates that are dates (Required by) stay
-  dates; the backdating form still takes UTC and says so.
+  dates; the backdate and raise-form time boxes are shown and read in the agent's own zone, while the event and audit
+  text of a backdate stays UTC and says so.
 - **The helper for the Due date (#121):** `end_of_day_utc(day, zone_name)`, and the shortcuts
   `end_of_day_for_email(session, day, email)` and `end_of_day_for_user(session, day, user)`: "end of day D in that
   person's zone, as UTC", the first instant of D+1 there (so a deadline compares with `<`), right across clock changes.
@@ -1223,7 +1224,8 @@ here; this list is what the go-live review checks.
    mailbox in the tenant. Restrict the app registration to the shared mailbox(es) only
    (Exchange RBAC for Applications, or an application access policy) and verify it on staging
    by trying to read another mailbox. Same check for `Presence.Read.All` and `MailboxSettings.Read` (requesters' time zones): confirm what scoping
-   is possible.
+   is possible. Note `MailboxSettings.Read` is read for requesters' own mailboxes, so a policy that limits the app to the
+   shared mailbox makes that read fail and everyone gets the default time zone (decision needed at staging).
 5. **Rate limiting with a shared store** (Postgres table or Redis), not per-process memory:
    `public` runs several uvicorn workers across replicas. Keyed on the real client IP, which
    depends on `FORWARDED_ALLOW_IPS` being right.

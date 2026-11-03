@@ -22,7 +22,7 @@ The next feature (a Due date, issue #121) turns a date into a deadline with `end
 import logging
 from datetime import date, datetime, time, timedelta, timezone
 from functools import lru_cache
-from typing import Callable, Optional
+from typing import Callable, NamedTuple, Optional
 from zoneinfo import ZoneInfo, available_timezones
 
 from sqlalchemy import func
@@ -198,15 +198,22 @@ def note_requester(session: Session, email: str, now: Optional[datetime] = None)
     )
 
 
+class RefreshResult(NamedTuple):
+    looked_at: int  # requesters whose check was due
+    failed: int  # of those, how many raised (not "Graph does not know them", which is a normal answer)
+    first_error: str  # what the first failure was, for the log
+
+
 def refresh_requester_zones(
     session: Session,
     read_zone: Optional[Callable[[str], Optional[str]]] = None,
     now: Optional[datetime] = None,
-) -> int:
+) -> RefreshResult:
     """Reads the mailbox time zone of every requester whose check is due (a new one, or one older than the
-    refresh setting) and stores it. Returns how many were looked at. One person's failure does not stop the
-    others; it is retried after the retry setting, and until then their earlier reading, or the default, is
-    used. Does not commit."""
+    refresh setting) and stores it. One person's failure does not stop the others; it is retried after the
+    retry setting, and until then their earlier reading, or the default, is used. No row is locked while
+    Graph is asked: there is one worker, and two readings of the same mailbox would store the same value.
+    Does not commit."""
     from app.graph_client import graph_client  # resolved now, so tests can swap the function
 
     read_zone = read_zone or graph_client.mailbox_time_zone
@@ -218,14 +225,17 @@ def refresh_requester_zones(
         .where(RequesterTimeZone.next_check_at <= now)
         .order_by(RequesterTimeZone.next_check_at)
         .limit(LOOKUPS_PER_RUN)
-        .with_for_update(skip_locked=True)
     ).all()
+    failed, first_error = 0, ""
     for row in due:
         zone = None
         try:
             zone = windows_to_iana(read_zone(row.email))
         except Exception as error:
-            logger.warning("time zone: could not read a mailbox time zone (%s)", type(error).__name__)
+            failed += 1
+            status = getattr(getattr(error, "response", None), "status_code", None)
+            first_error = first_error or f"{type(error).__name__}{f' {status}' if status else ''}"
+            logger.warning("time zone: could not read a mailbox time zone (%s)", first_error)
         row.checked_at = now
         if zone is not None:
             row.time_zone, row.source = zone, SOURCE_MAILBOX
@@ -234,4 +244,4 @@ def refresh_requester_zones(
             # Not known to Graph, a zone we cannot map, or a failure: keep any earlier reading and ask again later.
             row.next_check_at = now + retry
         session.add(row)
-    return len(due)
+    return RefreshResult(len(due), failed, first_error)

@@ -54,6 +54,7 @@ from app.ticket_service import get_by_number
 from app import identity
 from app.identity import is_follower_of, is_requester, my_tickets_query
 from app.pagination import paginate
+from app.time_zones import zone_for_user
 
 router = APIRouter(prefix="/portal", tags=["portal"])
 
@@ -234,7 +235,8 @@ def raise_new_ticket(
         try:
             level_impact = Level(impact) if impact else None
             level_urgency = Level(urgency) if urgency else None
-            moments = (parse_moment(reported_at), parse_moment(resolved_at))
+            zone = zone_for_user(session, user)  # the form is shown and read in the agent's own time zone
+            moments = (parse_moment(reported_at, zone), parse_moment(resolved_at, zone))
             day = parse_required_by(required_by)
         except (ValueError, BackdateError, RequiredByError) as error:
             raise RaiseError(

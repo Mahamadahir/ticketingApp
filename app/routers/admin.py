@@ -1200,7 +1200,7 @@ def save_setting(
     if definition.kind == "count":
         if not (value.isascii() and value.isdigit()) or not 1 <= int(value) <= 1000:
             raise HTTPException(status_code=400, detail="Enter a whole number from 1 to 1000")
-    if definition.kind == "time_zone" and valid_zone(value) is None:
+    if definition.kind == "time_zone" and value and valid_zone(value) is None:
         raise HTTPException(status_code=400, detail="Enter an IANA time zone name such as Europe/London")
     if definition.kind == "flag" and value not in ("on", "off"):
         raise HTTPException(status_code=400, detail="Choose on or off")

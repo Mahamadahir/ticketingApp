@@ -34,21 +34,33 @@
   {% if user %}
   <script>
     // Tell the server the browser's time zone, so times follow the person as they travel. Only when it
-    // differs from what is stored, and never when they chose one by hand. The page is fetched again once so
-    // the times already on it are shown in the new zone (it does not repeat: the zone then matches).
+    // differs from what is stored, never when they chose one by hand, and not again in this browser session
+    // once the server has ignored a name (one it does not know). The page is fetched again so
+    // the times already on it are shown in the new zone, unless the person has already typed something.
     (function () {
       var source = {{ (user.time_zone_source or "")|tojson }};
       var stored = {{ (user.time_zone or "")|tojson }};
       var zone;
       try { zone = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) { return; }
       if (!zone || source === "manual" || zone === stored) { return; }
+      try {
+        if (sessionStorage.getItem("ignoredTimeZone") === zone) { return; }
+      } catch (e) {}
       fetch("/settings/time-zone/browser", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: "time_zone=" + encodeURIComponent(zone),
         credentials: "same-origin"
       }).then(function (response) { return response.ok ? response.json() : null; })
-        .then(function (result) { if (result && result.changed) { window.location.assign(window.location.href); } })
+        .then(function (result) {
+          if (result && !result.changed) {
+            // The server did not take it (a name it does not know): do not offer it again on every page.
+            try { sessionStorage.setItem("ignoredTimeZone", zone); } catch (e) {}
+          }
+          if (!(result && result.changed)) { return; }
+          var typed = Array.prototype.some.call(document.querySelectorAll("textarea, input[type=text]"), function (box) { return box.value; });
+          if (!typed) { window.location.assign(window.location.href); }
+        })
         .catch(function () {});
     })();
   </script>

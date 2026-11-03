@@ -37,6 +37,12 @@ def upgrade() -> None:
     )
     with op.batch_alter_table('requestertimezone', schema=None) as batch_op:
         batch_op.create_index(batch_op.f('ix_requestertimezone_next_check_at'), ['next_check_at'], unique=False)
+    # Everyone who already has a ticket is looked up by the worker too, not only people who write in later.
+    op.execute(
+        "INSERT INTO requestertimezone (email, next_check_at) "
+        "SELECT DISTINCT lower(trim(requester_email)), now() FROM ticket WHERE requester_email IS NOT NULL "
+        "ON CONFLICT (email) DO NOTHING"
+    )
 
 
 def downgrade() -> None:

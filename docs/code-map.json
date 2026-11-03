@@ -395,7 +395,8 @@
       "imports": [
         "app.config",
         "app.database",
-        "app.models"
+        "app.models",
+        "app.time_zones"
       ],
       "module": "app.auth",
       "routes": [],
@@ -455,19 +456,22 @@
       "imported_by": [
         "app.raising",
         "app.routers.portal",
-        "app.routers.tickets"
+        "app.routers.tickets",
+        "app.templating"
       ],
       "imports": [
         "app.models",
         "app.sla",
-        "app.ticket_service"
+        "app.ticket_service",
+        "app.time_zones"
       ],
       "module": "app.backdating",
       "routes": [],
       "summary": "Logging tickets and fixes after the fact. Nothing here commits.",
       "tables": [],
       "tests": [
-        "tests/test_backdating.py"
+        "tests/test_backdating.py",
+        "tests/test_time_zones.py"
       ]
     },
     {
@@ -1003,7 +1007,8 @@
         "app.splitting",
         "app.storage",
         "app.teams",
-        "app.ticket_service"
+        "app.ticket_service",
+        "app.time_zones"
       ],
       "module": "app.inbound",
       "routes": [],
@@ -1015,7 +1020,8 @@
         "tests/test_inbound_mail.py",
         "tests/test_never_follow.py",
         "tests/test_reopening.py",
-        "tests/test_thanks_rules.py"
+        "tests/test_thanks_rules.py",
+        "tests/test_time_zones.py"
       ]
     },
     {
@@ -2841,6 +2847,7 @@
         "app.splitting",
         "app.templating",
         "app.ticket_service",
+        "app.time_zones",
         "app.triage",
         "app.visibility"
       ],
@@ -2977,6 +2984,7 @@
         "app.team_activity",
         "app.templating",
         "app.ticket_service",
+        "app.time_zones",
         "app.triage",
         "app.visibility"
       ],
@@ -3264,6 +3272,7 @@
         "tests/test_approval_reminders.py",
         "tests/test_approvals.py",
         "tests/test_auto_close_chase.py",
+        "tests/test_backdating.py",
         "tests/test_bulk_resolve.py",
         "tests/test_category_admin.py",
         "tests/test_follower_updates.py",
@@ -3272,8 +3281,10 @@
         "tests/test_notification_followup.py",
         "tests/test_outbound_mail.py",
         "tests/test_presence.py",
+        "tests/test_raising.py",
         "tests/test_request_types.py",
         "tests/test_required_by.py",
+        "tests/test_resolution.py",
         "tests/test_scheduled_jobs.py",
         "tests/test_sla.py",
         "tests/test_teams_copy.py",
@@ -3566,6 +3577,7 @@
         "app.routers.tickets"
       ],
       "imports": [
+        "app.backdating",
         "app.database",
         "app.forms",
         "app.presence",
@@ -3680,7 +3692,9 @@
       ]
     },
     {
-      "classes": [],
+      "classes": [
+        "RefreshResult"
+      ],
       "file": "app/time_zones.py",
       "functions": [
         "clear_manual_zone",
@@ -3701,9 +3715,14 @@
         "zone_for_user"
       ],
       "imported_by": [
+        "app.auth",
+        "app.backdating",
+        "app.inbound",
         "app.jobs",
         "app.routers.admin",
         "app.routers.my_settings",
+        "app.routers.portal",
+        "app.routers.tickets",
         "app.templating",
         "app.ticket_service"
       ],

@@ -12,12 +12,14 @@ got round to logging it, not how fast it was handled.
 
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from sqlmodel import Session
 
 from app.models import FINISHED_STATUSES, Ticket, TicketSource
 from app.sla import recalculate_deadlines
 from app.ticket_service import record_event
+from app.time_zones import valid_zone
 
 EVENT_BACKDATED = "backdated"
 
@@ -36,15 +38,15 @@ def may_backdate(ticket: Ticket) -> bool:
     return ticket.source == TicketSource.AGENT
 
 
-def parse_moment(text: Optional[str]) -> Optional[datetime]:
-    """A date and time typed as 2026-10-01T14:30 (seconds are accepted too), read as UTC
-    (viewer timezones come with the timezone work). Blank means "leave as it is"."""
+def parse_moment(text: Optional[str], zone_name: str = "UTC") -> Optional[datetime]:
+    """A date and time typed as 2026-10-01T14:30 (seconds are accepted too), read in the typist's time
+    zone (UTC when none is given) and returned as UTC. Blank means "leave as it is"."""
     text = (text or "").strip()
     if not text:
         return None
     for form in (FORMAT, FORMAT + ":%S"):
         try:
-            return datetime.strptime(text, form).replace(tzinfo=timezone.utc)
+            return datetime.strptime(text, form).replace(tzinfo=ZoneInfo(valid_zone(zone_name) or "UTC")).astimezone(timezone.utc)
         except ValueError:
             continue
     raise BackdateError("Enter the date and time as YYYY-MM-DDTHH:MM")
