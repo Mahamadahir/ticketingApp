@@ -6,7 +6,7 @@ from sqlmodel import select
 from app.models import AuditLog, RequestType, Ticket, TicketStatus, UserRole
 from app.required_by import RequiredByError, parse_required_by
 from app.settings_store import REQUIRED_BY_LEAD_DAYS, set_setting
-from app.sla import required_by_deadline, sla_view
+from app.sla import sla_view
 from tests.conftest import create_category, create_team, login_as, set_role
 from tests.test_raising import desk, last_ticket, raise_it
 from tests.test_request_types import make
@@ -23,6 +23,11 @@ def utc_default_zone(db_session):
     db_session.commit()
 
 NOW = datetime(2026, 10, 13, 12, 0, tzinfo=timezone.utc)
+
+
+def required_by_deadline(day):
+    """The end of that day. The default zone is UTC in these tests, so it is the next UTC midnight."""
+    return datetime(day.year, day.month, day.day, tzinfo=timezone.utc) + timedelta(days=1)
 
 
 def today():
@@ -63,7 +68,8 @@ def test_the_requester_raises_a_request_with_a_date_that_replaces_the_resolution
     assert response.status_code == 204
     ticket = last_ticket(db_session)
     assert ticket.required_by == today() + timedelta(days=5)
-    assert ticket.resolution_due_at == required_by_deadline(ticket.required_by)  # the end of that day
+    assert ticket.due_on == today() + timedelta(days=4)  # one day before, the default
+    assert ticket.resolution_due_at == required_by_deadline(ticket.due_on)  # the end of the Due day
     [event] = events(db_session, ticket, "required_by_changed")
     assert (event.from_value, event.to_value) == (None, day(5))
     assert audit(db_session) == [f"none -> {day(5)}"]
@@ -96,7 +102,7 @@ def test_triage_keeps_the_date_as_the_resolution_deadline_and_the_priority_sets_
 
     assert response.status_code == 200
     db_session.refresh(ticket)
-    assert ticket.resolution_due_at == required_by_deadline(today() + timedelta(days=20))  # not the P1 4 hours
+    assert ticket.resolution_due_at == required_by_deadline(today() + timedelta(days=19))  # not the P1 4 hours
     assert ticket.first_response_due_at is not None
 
 
@@ -197,7 +203,7 @@ def test_on_the_ticket_page_a_past_date_needs_a_backdated_ticket(client, db_sess
 # ---- Who may change it, and the audit ----------------------------------------------------------
 
 
-def test_the_requester_may_change_it_until_triage_and_every_change_is_audited(client, db_session):
+def test_the_requester_may_change_it_while_it_is_open_and_every_change_is_audited(client, db_session):
     request_type = offering(db_session)
     as_requester(client)
     raise_it(client, request_type_id=request_type.id, required_by=day(5))
@@ -225,7 +231,7 @@ def test_saving_the_same_date_changes_nothing(client, db_session):
     assert len(events(db_session, ticket, "required_by_changed")) == 1
 
 
-def test_the_requester_cannot_change_it_after_triage(client, db_session):
+def test_the_requester_may_still_change_it_after_triage_but_not_once_it_is_resolved(client, db_session):
     request_type = offering(db_session)
     as_requester(client)
     raise_it(client, request_type_id=request_type.id, required_by=day(5))
@@ -236,9 +242,17 @@ def test_the_requester_cannot_change_it_after_triage(client, db_session):
 
     response = client.post(f"/portal/{ticket.number}/required-by", data={"required_by": day(9)}, follow_redirects=False)
 
-    assert response.status_code == 403
+    assert response.status_code == 303
     db_session.refresh(ticket)
-    assert ticket.required_by == today() + timedelta(days=5)
+    assert ticket.required_by == today() + timedelta(days=9)
+    assert ticket.due_on == today() + timedelta(days=8)  # Due follows
+    assert "Save date" in client.get(f"/portal/{ticket.number}").text
+
+    ticket.status = TicketStatus.RESOLVED
+    db_session.add(ticket)
+    db_session.commit()
+    response = client.post(f"/portal/{ticket.number}/required-by", data={"required_by": day(12)}, follow_redirects=False)
+    assert response.status_code == 403
     assert "Save date" not in client.get(f"/portal/{ticket.number}").text
 
 
@@ -341,7 +355,7 @@ def queue_pair(client, db_session):
         ticket = new_ticket(db_session, team)
         ticket.subject, ticket.triaged_at, ticket.status = subject, now, TicketStatus.OPEN
         ticket.category_id, ticket.priority, ticket.first_responded_at = category.id, "p3", now
-        ticket.required_by = required
+        ticket.required_by = ticket.due_on = required
         ticket.resolution_due_at = required_by_deadline(required) if required else due
         db_session.add(ticket)
     db_session.commit()
@@ -405,7 +419,7 @@ def test_the_countdown_and_pages_say_required_by(client, db_session):
 def test_sla_view_marks_a_resolved_dated_ticket_as_required_by(client, db_session):
     ticket = Ticket(
         subject="x", requester_email="a@example.com", priority="p3", status=TicketStatus.RESOLVED,
-        required_by=NOW.date(), resolution_due_at=required_by_deadline(NOW.date()), resolved_at=NOW,
+        required_by=NOW.date(), due_on=NOW.date(), resolution_due_at=required_by_deadline(NOW.date()), resolved_at=NOW,
     )
 
     view = sla_view(ticket, NOW, 25)
@@ -416,7 +430,7 @@ def test_sla_view_marks_a_resolved_dated_ticket_as_required_by(client, db_sessio
 def test_the_lead_time_is_a_setting_with_a_placeholder():
     from app.settings_store import REGISTRY
 
-    assert REGISTRY[REQUIRED_BY_LEAD_DAYS].default == "2"
+    assert REGISTRY[REQUIRED_BY_LEAD_DAYS].default == "1"
 
 
 # ---- Review follow-ups -----------------------------------------------------------------------------
@@ -449,17 +463,15 @@ def test_the_date_of_a_resolved_request_cannot_be_changed(client, db_session):
     assert ticket.required_by == today() + timedelta(days=5)
 
 
-def test_an_untriaged_dated_request_shows_its_deadline_and_a_waiting_one_keeps_running():
+def test_an_untriaged_dated_request_shows_its_deadline_and_a_waiting_one_is_paused_but_keeps_its_date():
     ticket = Ticket(
         subject="x", requester_email="a@example.com", status=TicketStatus.NEW, required_by=NOW.date() + timedelta(days=3),
-        resolution_due_at=required_by_deadline(NOW.date() + timedelta(days=3)), created_at=NOW,
+        due_on=NOW.date() + timedelta(days=2), resolution_due_at=required_by_deadline(NOW.date() + timedelta(days=3)), created_at=NOW,
     )
     assert sla_view(ticket, NOW, 25).state == "ok"  # no priority yet, still a deadline to show
 
     ticket.priority, ticket.status, ticket.sla_paused_at = "p3", TicketStatus.AWAITING_USER, NOW
-    assert sla_view(ticket, NOW, 25).state == "ok"  # not "paused"
-    ticket.required_by = None
-    assert sla_view(ticket, NOW, 25).state == "paused"
+    assert sla_view(ticket, NOW, 25).state == "paused"  # Awaiting user always pauses, even with a date
 
 
 def test_a_date_can_be_cleared_after_the_type_stops_offering_it(client, db_session):

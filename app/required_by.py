@@ -158,6 +158,7 @@ def set_due(
     actor_email: str,
     *,
     today: Optional[date] = None,
+    reopening: bool = False,
 ) -> bool:
     """An agent sets or moves the Due date. Returns whether anything changed. The caller has already checked who
     may (`may_set_due`). Moving an existing Due date needs a reason (setting the first one does not); Due is never
@@ -167,7 +168,7 @@ def set_due(
     reason = (reason or "").strip()
     if len(reason) > MAX_REASON_LENGTH:
         raise RequiredByError(f"Keep the reason under {MAX_REASON_LENGTH} characters")
-    if ticket.status in FINISHED_STATUSES:
+    if ticket.status in FINISHED_STATUSES and not reopening:
         raise RequiredByError("The Due date of a resolved or closed request cannot be changed")
     today = today or requester_today(session, ticket)
     if value is None:
@@ -211,7 +212,8 @@ def prepare_scheduled(
     if value is None:
         raise RequiredByError("Scheduled needs a date: enter the Due date")
     if typed is not None and typed != ticket.due_on:
-        set_due(session, ticket, typed, reason, actor_email)
+        # A resolved ticket being reopened to Scheduled is about to be open again.
+        set_due(session, ticket, typed, reason, actor_email, reopening=ticket.status in FINISHED_STATUSES)
     elif value < requester_today(session, ticket):
         raise RequiredByError("The Due date is already past: choose the day the work is planned for")
 

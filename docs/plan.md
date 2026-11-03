@@ -1110,39 +1110,48 @@ satisfaction by agent, team and category; MSP handoffs split automatic and
 manual; Major Incident count and duration; incidents per Problem. CSV export
 for all of them.
 
-## Required by date on service requests (SRP-1, issue #92)
+## Required by date and Due date on service requests (SRP-1, issue #92; Due date, issue #121)
 
-Decided by the owner (issue #92): a **Required by** date, when given, replaces the SLA resolution target for that
-ticket; none given means the normal SLA applies. The requester sets it in the portal, otherwise an agent does. A past
-date is refused unless an agent is backdating the ticket. A per-request-type switch (`RequestType.offers_required_by`,
-off by default) decides whether the field is offered at all.
+Decided by the owner. A service request can carry a **Required by** date (the day the requester needs it), offered per
+request type (`RequestType.offers_required_by`, off by default). A ticket also has a **Due date** (`Ticket.due_on`), and
+that is what the SLA measures.
 
-The points below were settled in this note and are **Proposed - needs owner confirmation** (each can change cheaply):
+- **Due is the SLA resolution target.** The resolution deadline is the end of the Due day in the requester's time zone,
+  stored as UTC (`app/time_zones.py`: `end_of_day_for_email`; "Time zones" below). A ticket with a Due date needs no
+  priority for it. The first-response target is unchanged. The SLA is reported against Due, worded "required by" where the
+  ticket has a Required by date, otherwise "due".
+- **Default.** With a Required by date, Due defaults to Required by minus N days. N is the request type's `due_days_before`;
+  blank uses the setting `due_days_before_required_by` (placeholder 1). A room needed on the 23rd is due by the end of
+  the 22nd. The default is never earlier than today (a request for tomorrow with a three day lead is due today, not already
+  late; decided in the PR) and never later than Required by.
+- **Agents can move Due.** Only agents who work the ticket (`visibility.may_set_due`); never the requester. Every move
+  needs a reason (setting the first Due date does not), recorded as a `due_changed` ticket event and an audit entry.
+  Due can never be later than Required by, never in the past (in the requester's time zone) unless the ticket is backdated,
+  and never more than ten years ahead. A blank date puts Due back to the default. Use case: a room only available on the
+  morning of the event; the agent sets Due to the Required by day and the ticket is not shown as breached.
+- **When Required by changes**, Due is recalculated from the default offset, unless an agent set it by hand
+  (`Ticket.due_set_by_hand`); even then it is clamped so it is never after Required by. Clearing Required by clears a
+  default Due and keeps a hand-set one. A Scheduled ticket always keeps a Due date.
+- **Tickets with no Required by** can still get a Due date from an agent (the Due form on the ticket, or the triage form).
+- **Awaiting user always pauses the SLA clock**, including on a ticket with a Due date. A Due date never moves while it is
+  paused: the SLA view says "paused" and the date stays.
+- **Queue lead time, per request type.** `RequestType.queue_lead_days`, blank meaning the setting `required_by_lead_days`
+  (placeholder 1). It only affects sorting: the queue ranks a ticket with a Due date as if it were due that many days
+  before Due.
+- **Who sets Required by.** The requester in the portal at any time while the ticket is open (no longer only before
+  triage); agents who work the ticket can set, change or clear it at any time. A request to change it by email or Teams is
+  handled by an agent. A date more than ten years ahead is refused. Past dates are refused unless an agent is backdating
+  (raising for someone with Reported/Resolved times, or a ticket already flagged backdated). A date cannot be changed on a
+  resolved or closed request. Switching a type's field off keeps the dates already on tickets.
+- **The triage form** has Required by and Due (both optional). Required by shows only when the chosen kind of request
+  offers it, by an htmx swap like category to agents; Due shows for any ticket. Because triage had no way to choose the kind of
+  request, the form also offers a "Kind of request" list (chosen before the approvers are looked up). Blank dates are fine: an
+  emailed request with no date is triaged, the agent asks the user and adds the date later.
+- **Audit.** Every change to Required by or Due writes a ticket event and an audit entry.
 
-1. **Proposed - needs owner confirmation: the date is a calendar date, not a time.** The deadline is the end of that
-   day in UTC (the next midnight), so "required by 30 Oct" means any time on the 30th. The requester's own zone for this comes with the Due date work (#121; helper in "Time zones").
-2. **Proposed - needs owner confirmation: lead time is plain calendar days, an admin setting** (`required_by_lead_days`,
-   placeholder 2). The queue sorts a Required-by ticket by `deadline - lead time`, so work that needs a few days
-   starts to rise before the day itself. Plain days, not working days, because the app has no working-day calendar
-   yet (bank holidays, per-team hours); the SLA clock is already 24/7. If working days are wanted, build the calendar
-   once and use it for both.
-3. **Proposed - needs owner confirmation: the first-response target is unchanged.** Required by replaces only the
-   resolution target. A ticket with a date is not paused-extended: pausing in Awaiting user does not push a stated date
-   out (the requester named it), and the queue and ticket page keep it running (not shown as paused) while it waits on the user.
-4. **Proposed - needs owner confirmation: display is plain text.** The queue's SLA column and the ticket page say
-   "required by 2026-10-30" instead of "resolution due in ...", with the live remaining time; the ticket page header also
-   shows "Required by: 2026-10-30". The requester sees the date they asked for on their own ticket page.
-5. **Proposed - needs owner confirmation: SLA reporting.** A ticket with a Required by date is measured against that date
-   (met / breached uses it, since it is stored as the resolution deadline) and is marked "required by" so figures can
-   be split from priority-target tickets. A backdated ticket is still left out of SLA figures altogether.
-6. **Proposed - needs owner confirmation: changes are audited, and who may change it.** Every set, change or clear
-   writes a ticket event (`required_by_changed`, old and new) and an audit log entry. The requester can change it until the
-   ticket is triaged; from triage on only agents who work the ticket (or super admins) can. A follower cannot. Only a
-   ticket whose request type offers the field can have one. Rule lives in `app/visibility.py` (`may_set_required_by`).
-7. **Backdating exception (decided).** A date before today (UTC) is refused, except when an agent is backdating:
-   raising a ticket for someone with Reported/Resolved times, or on a ticket already flagged backdated.
-8. A date cannot be changed on a resolved or closed request (it would rewrite the SLA record), and a date typed more than ten years ahead is refused. On a backdated ticket the date is recorded but drives nothing, because a backdated ticket has no SLA.
-9. Switching a request type's field off does not remove dates already on tickets; it only stops new ones.
+Where it lives: `app/required_by.py` (all the rules), `app/sla.py` (deadline and queue), `app/visibility.py`
+(`may_set_required_by`, `may_set_due`), `app/triage.py` (the kind of request at triage), the Due form and triage boxes in
+`app/templates/ticket_detail.html` and `_triage_dates.html`.
 
 ## Time zones (issue #120, built)
 
@@ -1273,33 +1282,25 @@ days), upload size limit, SLA targets per priority, triage team, auto-close
 days, chase X and Y, automatic email cap per ticket, office and VPN IP
 ranges, internal domain name, alert recipients, Azure subscription.
 
-## Scheduled status (SRP-2, issue #93)
+## Scheduled status (SRP-2, issue #93; decided in issue #121)
 
-A ticket status **Scheduled** for work planned for a later date, typically a service request with a Required by date.
-The issue's "Decided" bullets (the requester sets the date in the portal, past dates are refused unless backdating) are
-about the date and were built in SRP-1 (#92); Scheduled reuses that `Ticket.required_by` and adds no second date field.
-The points below are **Proposed - needs owner confirmation** (each can change cheaply):
+A ticket status **Scheduled** for work planned for a day. Decided by the owner:
 
-1. **Proposed - needs owner confirmation: the SLA clock pauses like Awaiting user, unless the ticket has a Required by date.**
-   Waiting for a planned date is not the agents' time running out, so a priority-target ticket stops the clock and a
-   resume pushes its deadlines out by the time spent Scheduled. A ticket with a Required by date keeps running against
-   that date, as SRP-1 already does for Awaiting user (a stated date is not pushed out). So the date, not the status, is what
-   is measured, and a Scheduled ticket with no date does not breach while it waits. Moving between Awaiting user and Scheduled
-   stays paused. The first-response target of a dated ticket is not paused either (as for Awaiting user in SRP-1), so a dated
-   Scheduled ticket nobody has emailed can still show first response overdue.
-2. **Proposed - needs owner confirmation: entered by hand only,** from the Status buttons or the Email user / Add note status
-   dropdown (4B-5), like With supplier. Nothing moves a ticket to Scheduled automatically when a date is set.
-3. **Proposed - needs owner confirmation: nothing happens automatically on the date.** No status move and no new job or
-   notification. This is the smaller safe option: auto-moving to In progress would change a status nobody asked to change, and
-   a reminder needs a new scheduled job, a setting and a staging check. The Required by date already ranks the ticket in the
-   queue from `required_by_lead_days` before the day and shows "required by DATE, overdue" after it. A reminder job can be
-   added later on the 4A table if wanted.
-4. **Proposed - needs owner confirmation: replies follow the With supplier pattern.** A requester or follower reply on a
-   Scheduled ticket changes no status and notifies the assigned agent. Emailing the requester also leaves it Scheduled.
-   It is not finished, access does not change, and it is never chased (only Awaiting user is, `app/auto_close_chase.py`).
-5. **Proposed - needs owner confirmation: wording** is the plain label "scheduled" in the dropdown, status buttons, queue and the
-   requester's portal. No email or Teams template has text of its own for it. A split original takes Scheduled from its parts by the
-   same rule as every status (all Scheduled, or the only unfinished part).
+1. **Scheduled never pauses the SLA clock.** Only Awaiting user pauses it. Moving from Awaiting user to Scheduled ends the pause.
+2. **Setting Scheduled requires a date: the Due date,** filled in when the ticket already has one. Every way of setting it asks
+   for it: the status buttons (and reopening to Scheduled by hand), and the status dropdown on Email user and Add note (and its
+   preview, which carries the date to the send). Typing a different date moves Due and needs a reason like any move; a date already
+   in the past is refused. `set_status` itself refuses Scheduled on a ticket without a Due date, except for a split original whose
+   status follows its parts. Only agents set Scheduled; the system never does.
+3. **On the morning of the Due date** (the requester's time zone) a recurring job, `scheduled-due` (`app/due_today.py`, every 15
+   minutes on the database-driven scheduler), moves Scheduled tickets back to **Open**, tells the assignee in the bell
+   ("INC-1042 ... is due today", an agent setting `due_today`, on by default in the bell and Teams), and records a status event and an
+   audit entry by `system`. "Morning" is the hour in the setting `scheduled_morning_hour` (placeholder 7). It claims each ticket with
+   `FOR UPDATE SKIP LOCKED` and checks again under the lock, so a late or repeated run does nothing twice, and a ticket Due in the
+   past (for example when the date was moved back) is taken at the next run.
+4. Replies follow the With supplier pattern: a requester or follower reply on a Scheduled ticket changes no status and notifies the
+   assigned agent. Emailing the requester also leaves it Scheduled. It is never chased (only Awaiting user is).
+5. Wording is the plain label "scheduled". A split original takes Scheduled from its parts by the same rule as every status.
 
 ## To-do lists and request checklists (SRP-3, planned, not built)
 
