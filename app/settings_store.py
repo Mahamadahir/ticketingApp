@@ -24,7 +24,6 @@ DEFAULT_TRIAGE_TEAM = "default_triage_team_id"
 TELL_REQUESTER_RAISED_FOR = "tell_requester_when_raised_for_them"
 APPROVAL_LINK_MINUTES = "approval_link_minutes"
 FEEDBACK_LINK_MINUTES = "feedback_link_minutes"
-REOPEN_LINK_MINUTES = "reopen_link_minutes"
 TEAMS_UNREAD_MINUTES = "teams_unread_minutes"
 AUTOMATIC_EMAIL_CAP = "automatic_email_cap_per_ticket"
 INBOUND_MAX_PER_SENDER_HOUR = "inbound_max_per_sender_hour"
@@ -146,17 +145,6 @@ REGISTRY: dict[str, SettingDef] = {
         description=(
             "The resolution email carries a link where the requester rates how the ticket was handled. "
             "It works once, and stops working after this long. 43200 is 30 days. Placeholder value."
-        ),
-        default="43200",
-    ),
-    REOPEN_LINK_MINUTES: SettingDef(
-        key=REOPEN_LINK_MINUTES,
-        label="How long the emailed reopen link works (minutes)",
-        kind="minutes",
-        description=(
-            "The resolution email carries a link that reopens the ticket (after a confirming click). It works "
-            "once, and only while the ticket is still Resolved; after this long, or once the ticket is closed, "
-            "the page tells the requester to reply to the email instead. 43200 is 30 days. Placeholder value."
         ),
         default="43200",
     ),
@@ -336,7 +324,10 @@ REGISTRY: dict[str, SettingDef] = {
         key=AUTO_CLOSE_AFTER_DAYS,
         label="Auto-close: close a resolved ticket after (days)",
         kind="count",
-        description="A ticket Resolved for this many days is closed. A reopen or a reply before then keeps it open. Placeholder.",
+        description=(
+            "A ticket Resolved for this many days is closed. A reopen or a reply before then keeps it open. "
+            "The emailed reopen link works for the same time (it expires when the ticket auto-closes). Placeholder."
+        ),
         default="7",
     ),
     CHASE_ENABLED: SettingDef(

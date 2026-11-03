@@ -30,14 +30,14 @@ from sqlmodel import Session, select
 from app.config import settings
 from app.models import ActionToken, Ticket, TicketFeedback, TicketStatus
 from app.reopening import ReopenError, check_can_reopen, reopen_ticket
-from app.settings_store import FEEDBACK_LINK_MINUTES, REGISTRY, REOPEN_LINK_MINUTES, get_int_setting
+from app.settings_store import AUTO_CLOSE_AFTER_DAYS, FEEDBACK_LINK_MINUTES, REGISTRY, count_setting, get_int_setting
 
 log = logging.getLogger("app.action_links")
 
 FEEDBACK = "feedback"
 REOPEN = "reopen"
 PATHS = {FEEDBACK: "/feedback/", REOPEN: "/reopen/"}
-LIFETIME_SETTINGS = {FEEDBACK: FEEDBACK_LINK_MINUTES, REOPEN: REOPEN_LINK_MINUTES}
+LIFETIME_SETTINGS = {FEEDBACK: FEEDBACK_LINK_MINUTES}  # the reopen link has none: it follows auto-close (below)
 
 # What stands in for each link in the stored resolution text.
 # Worded to read sensibly where the requester sees the stored text (the portal timeline).
@@ -65,12 +65,18 @@ def mint(session: Session, ticket: Ticket, kind: str, now: Optional[datetime] = 
     session.execute(delete(ActionToken).where(
         ActionToken.ticket_id == ticket.id, ActionToken.kind == kind, ActionToken.used_at.is_(None)
     ))
-    key = LIFETIME_SETTINGS[kind]
-    minutes = get_int_setting(session, key) or int(REGISTRY[key].default)
+    if kind == REOPEN:
+        # The reopen link expires when the ticket auto-closes: auto_close_after_days from when it was resolved
+        # (#122). One number, so the link never outlives the ticket's Resolved status, whether or not the
+        # auto-close switch is on.
+        expires_at = (ticket.resolved_at or now) + timedelta(days=count_setting(session, AUTO_CLOSE_AFTER_DAYS))
+    else:
+        key = LIFETIME_SETTINGS[kind]
+        expires_at = now + timedelta(minutes=get_int_setting(session, key) or int(REGISTRY[key].default))
     token = secrets.token_urlsafe(TOKEN_BYTES)
     session.add(ActionToken(
         ticket_id=ticket.id, kind=kind, token_hash=hash_token(token), resolved_by_id=ticket.resolved_by_id,
-        created_at=now, expires_at=now + timedelta(minutes=minutes),
+        created_at=now, expires_at=expires_at,
     ))
     return token
 
