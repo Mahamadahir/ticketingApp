@@ -15,8 +15,8 @@
         {% if user.role.value in ("super_admin", "agent") %}
         <a href="/tickets">Tickets</a>
         <a href="/my-feedback">My feedback</a>
-        <a href="/notifications" data-poll hx-get="/notifications/count" hx-trigger="load, every 30s" hx-swap="innerHTML">Notifications</a>
         {% endif %}
+        <a href="/notifications" data-poll hx-get="/notifications/count" hx-trigger="load, every 30s" hx-swap="innerHTML">Notifications</a>
         <a href="/portal">My requests</a>
         <a href="/settings/notifications">Settings</a>
         {% if user.role.value == "super_admin" %}

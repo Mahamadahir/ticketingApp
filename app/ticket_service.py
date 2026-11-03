@@ -49,6 +49,13 @@ class ResolutionRequired(Exception):
     app/resolution.py, which takes the resolution notes."""
 
 
+class ClosingNeedsNotes(Exception):
+    """Raised when a ticket that is not Resolved is closed directly without resolution notes (#122).
+    The agent's status buttons take the notes (`close_with_notes`); a decline or withdrawal, a reclose
+    of a reopened ticket and a split original following its parts are exempt, and a Resolved ticket
+    already has its notes."""
+
+
 class NotTriaged(Exception):
     """Raised when something that needs a triaged ticket is attempted on one that
     has not been triaged yet (emailing the requester, moving it between statuses)."""
@@ -150,12 +157,14 @@ def set_status(
     by_approval: bool = False,
     by_resolution: bool = False,
     from_parts: bool = False,
+    by_reclose: bool = False,
 ) -> bool:
     """Moves the ticket to a new status. Returns False, changing nothing,
     when it is already there. A sub-ticket's change re-derives its original's status.
     Resolved is refused unless by_resolution is set, which only app/resolution.py does. Scheduled is refused
     on a ticket with no Due date (callers ask for it first: app/required_by.py, `prepare_scheduled`), except
-    for a split original whose status follows its parts (`from_parts`)."""
+    for a split original whose status follows its parts (`from_parts`). Closed from any status but Resolved needs
+    resolution notes on the ticket first (ClosingNeedsNotes), except by approval, `by_reclose` or `from_parts`."""
     previous = ticket.status
     if previous == new_status:
         return False
@@ -166,6 +175,11 @@ def set_status(
     if ticket.triaged_at is None and new_status != TicketStatus.NEW:
         # Leaving New is what triage does, and only triage.
         raise NotTriaged()
+    if (
+        new_status == TicketStatus.CLOSED and previous != TicketStatus.RESOLVED
+        and not (by_approval or by_reclose or from_parts) and not (ticket.resolution_notes or "").strip()
+    ):
+        raise ClosingNeedsNotes()
     if new_status == TicketStatus.SCHEDULED and ticket.due_on is None and not from_parts:
         raise ScheduledNeedsDate()
 
@@ -204,6 +218,15 @@ def set_status(
     on_status_change(session, ticket, previous, new_status, now)
     session.add(ticket)
     record_event(session, ticket, EVENT_STATUS_CHANGED, actor_email, previous.value, new_status.value, detail)
+    if (
+        previous == TicketStatus.CLOSED and new_status not in FINISHED_STATUSES
+        and new_status != TicketStatus.AWAITING_APPROVAL and not by_approval and not from_parts
+    ):
+        # A ticket closed by a decline or a withdrawal, set back to an open status, asks its approvers again.
+        # Imported here because app.approvals builds on this module.
+        from app.approvals import restart_after_reopen
+
+        restart_after_reopen(session, ticket, actor_email)
     if ticket.split_from_id is not None:
         # The original's status follows its sub-tickets. Imported here because
         # app.splitting builds on this module.

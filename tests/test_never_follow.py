@@ -10,7 +10,7 @@ from app.inbound import ingest_mail
 from app.models import AuditLog, NeverFollowAddress, Ticket, TicketEvent, User, UserRole
 from app.never_follow import NeverFollowError, add_listed, is_listed
 from tests.conftest import create_team, login_as, set_role
-from tests.test_inbound_mail import MAILBOX, mail, open_ticket  # noqa: F401  (MAILBOX also sets the mailbox fixture)
+from tests.test_inbound_mail import MAILBOX, mail, messages_of, open_ticket  # noqa: F401  (MAILBOX also sets the mailbox fixture)
 from tests.test_inbound_mail import mailbox  # noqa: F401
 
 LISTED = "all-staff@corp.example"
@@ -198,3 +198,41 @@ def test_an_agents_email_and_its_preview_skip_a_follower_listed_after_following(
         preview_email(db_session, ticket, "Hello", cc_emails=["pat@example.com", "sam@example.com"])
     assert email_requester(db_session, ticket, agent, "Hello").cc == "pat@example.com"
     assert cc_list(db_session, ticket) == ["pat@example.com"]  # the same rule as the portal and mail
+
+
+# ---- Mail sent from a listed address is ignored (#122) ---------------------------------------
+
+
+def test_mail_from_a_listed_address_creates_no_ticket_and_is_logged(db_session):
+    add_listed(db_session, LISTED, "", "admin@example.com")
+    db_session.commit()
+    result = ingest_mail(db_session, mail("n1", sender="ALL-Staff@corp.example", subject="Lunch on Friday"))
+    db_session.commit()
+    assert result.outcome == inbound.IGNORED_NEVER_FOLLOW and result.ticket is None
+    assert db_session.exec(select(Ticket)).all() == []
+    entry = db_session.exec(select(AuditLog).where(AuditLog.action == "mail_ignored")).one()
+    assert entry.entity_type == "never_follow" and LISTED in entry.detail and "Lunch on Friday" in entry.detail
+
+
+def test_mail_from_a_listed_address_is_not_added_to_a_ticket_it_answers(db_session):
+    ticket = open_ticket(db_session, message_id="a")
+    add_listed(db_session, LISTED, "", "admin@example.com")
+    db_session.commit()
+    before = len(messages_of(db_session, ticket))
+    result = ingest_mail(db_session, mail("n2", sender=LISTED, in_reply_to=["a@mail.example.com"], subject=f"Re: [{ticket.reference}] x"))
+    db_session.commit()
+    assert result.outcome == inbound.IGNORED_NEVER_FOLLOW
+    assert len(messages_of(db_session, ticket)) == before and emails(db_session, ticket) == []
+
+
+def test_a_looping_listed_sender_cannot_fill_the_audit_log(db_session):
+    from app.settings_store import INBOUND_MAX_PER_SENDER_HOUR, set_setting
+
+    add_listed(db_session, LISTED, "", "admin@example.com")
+    set_setting(db_session, INBOUND_MAX_PER_SENDER_HOUR, "3")
+    db_session.commit()
+    for n in range(6):
+        assert ingest_mail(db_session, mail(f"loop{n}", sender=LISTED)).outcome == inbound.IGNORED_NEVER_FOLLOW
+        db_session.commit()
+    assert len(db_session.exec(select(AuditLog).where(AuditLog.action == "mail_ignored")).all()) == 3
+    assert len(db_session.exec(select(inbound.InboundMail).where(inbound.InboundMail.outcome == inbound.IGNORED_NEVER_FOLLOW)).all()) == 6

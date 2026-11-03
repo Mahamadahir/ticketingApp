@@ -154,6 +154,8 @@
     {% if s.value == "resolved" %}<button type="button" disabled class="button-active">resolved</button>{% else %}
     <button type="submit" name="status" value="{{ s.value }}" class="{{ 'button-active' if ticket.status == s else 'button-outline' }}">{{ s.value.replace("_", " ") }}</button>{% endif %}
     {% endfor %}
+    <label>Resolution notes, needed to close a ticket that is not resolved
+      <input type="text" name="resolution_notes" maxlength="10000" /></label>
     <label>Scheduled needs a date: Due
       <input type="date" name="due_on" value="{{ ticket.due_on.isoformat() if ticket.due_on else "" }}" /></label>
     <label>Why the date is being moved (only if you change it)

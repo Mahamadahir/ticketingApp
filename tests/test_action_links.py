@@ -16,7 +16,7 @@ from app.config import settings
 from app.log_redaction import ApprovalTokenFilter
 from app.main import build_app
 from app.models import ActionToken, Message, OutboundEmail, Ticket, TicketEvent, TicketFeedback, TicketStatus
-from app.settings_store import FEEDBACK_LINK_MINUTES, set_setting
+from app.settings_store import AUTO_CLOSE_AFTER_DAYS, FEEDBACK_LINK_MINUTES, set_setting
 from app.telemetry import EXCLUDED_URLS
 from tests.test_email_preview import ticket_for_email
 from tests.test_raising import raise_it
@@ -107,14 +107,14 @@ def test_a_sent_row_never_keeps_a_link(client, db_session):
     assert len(tokens_of(db_session, ticket)) == 2  # the links that went out were made at send time
 
 
-def test_tokens_last_the_setting_and_the_default_is_thirty_days(client, db_session):
+def test_feedback_lasts_the_setting_and_reopen_follows_auto_close(client, db_session):
     ticket = resolved_ticket(client, db_session)
     set_setting(db_session, FEEDBACK_LINK_MINUTES, "60")
     db_session.commit()
     links(db_session, ticket)
     by_kind = {t.kind: t for t in tokens_of(db_session, ticket)}
     assert by_kind["feedback"].expires_at - by_kind["feedback"].created_at == timedelta(minutes=60)
-    assert by_kind["reopen"].expires_at - by_kind["reopen"].created_at == timedelta(days=30)
+    assert by_kind["reopen"].expires_at - ticket.resolved_at == timedelta(days=7)  # the auto-close default (#122)
 
 
 def test_no_public_address_means_no_link_lines_rather_than_dead_markers(client, db_session, monkeypatch):
@@ -307,6 +307,16 @@ def test_an_expired_reopen_link_does_not_reopen(client, db_session, public):
     assert public.get(f"/reopen/{found['reopen']}").status_code == 410
     assert "expired" in public.post(f"/reopen/{found['reopen']}").text
     assert fresh(db_session, ticket).status == TicketStatus.RESOLVED
+
+
+def test_the_reopen_link_expires_when_the_ticket_would_auto_close(client, db_session):
+    set_setting(db_session, AUTO_CLOSE_AFTER_DAYS, "5")
+    db_session.commit()
+    ticket = resolved_ticket(client, db_session)
+    links(db_session, ticket)
+    by_kind = {t.kind: t for t in tokens_of(db_session, ticket)}
+    assert by_kind["reopen"].expires_at == ticket.resolved_at + timedelta(days=5)  # the same moment auto-close is due
+    assert by_kind["feedback"].expires_at != by_kind["reopen"].expires_at  # feedback keeps its own lifetime setting
 
 
 def test_claiming_is_atomic_a_second_claim_loses(client, db_session):

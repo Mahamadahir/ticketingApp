@@ -99,7 +99,7 @@ REGISTRY: dict[str, TemplateDef] = {
                 "keep it free of ticket content, a queue position or a promised time (an emailed ticket has no "
                 "priority until it is triaged). It goes out under the ticket's own subject."
             ),
-            body_default="Your issue has been logged as {reference} with IT. You will be updated once the ticket is taken.",
+            body_default="Your issue has been logged as {reference} with IT. We'll be in touch.",
             body_placeholders={"reference": _COMMON["reference"], "ticket_number": _COMMON["ticket_number"]},
             sample={"reference": "INC-1042", "ticket_number": "1042"},
         ),
@@ -244,6 +244,28 @@ REGISTRY: dict[str, TemplateDef] = {
                 "link_days": "14",
                 "days_waiting": "3",
             },
+        ),
+        TemplateDef(
+            key="approval_overdue",
+            label="Approval overdue (to super admins)",
+            description=(
+                "Sent once to each super admin when a request has waited for its approvers longer than the "
+                "escalation delay set under Settings. Super admins can switch it off on their notification settings."
+            ),
+            subject_default="[{reference}] Approval overdue: {subject}",
+            subject_placeholders=_COMMON,
+            body_default=(
+                "{reference} ({subject}) has waited {days_waiting} days for approval. {unanswered} approver(s) "
+                "have not answered.\n\nYou can chase the approvers or waive the approval on the ticket: {ticket_link}"
+            ),
+            body_placeholders={
+                **_COMMON,
+                "days_waiting": "how many days the request has waited",
+                "unanswered": "how many approvers have not answered",
+                "ticket_link": "the link to the ticket in the app",
+            },
+            subject_required=("reference",),
+            sample={**_COMMON_SAMPLE, "days_waiting": "5", "unanswered": "2", "ticket_link": "https://tickets.example.org/tickets/1042"},
         ),
         TemplateDef(
             key="approval_withdrawn",

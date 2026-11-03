@@ -42,7 +42,7 @@ from app.approval_groups import is_member, members_of
 from app.audit import log_action
 from app.email_templates import render_template, ticket_values
 from app.messages import record_notice
-from app.notifications import notify_approval_withdrawn
+from app.notifications import notify_approval_waiting, notify_approval_withdrawn
 from app.outbox import queue_approval, queue_approval_withdrawn
 from app.models import (
     ApprovalGroupMember,
@@ -145,11 +145,26 @@ def start_approvals(session: Session, ticket: Ticket, actor_email: str) -> Ticke
     session.flush()
     for vote, voter in zip(votes, voters):
         queue_approval(session, vote, voter)
+        notify_approval_waiting(session, ticket, voter)
     record_event(
         session, ticket, EVENT_APPROVAL_REQUESTED, actor_email,
         to_value=", ".join(u.email for u in voters), detail=describe_rule(approval),
     )
     return approval
+
+
+def restart_after_reopen(session: Session, ticket: Ticket, actor_email: Optional[str]) -> bool:
+    """A ticket closed by a decline or a withdrawal that an agent has set back to an open status goes back to
+    asking its approvers: a new approval round, votes requested again (decided 3 Nov 2026, #122). Called by
+    `set_status` after such a move. Does nothing for a ticket whose latest approval was approved or waived, or
+    that has no one left to ask (the group is empty, or only the requester). Returns whether it restarted."""
+    approval = current_approval(session, ticket)
+    if approval is None or approval.status not in (DECLINED, WITHDRAWN) or not eligible_voters(session, ticket):
+        return False
+    set_status(session, ticket, TicketStatus.AWAITING_APPROVAL, actor_email, detail="approval restarted", by_approval=True)
+    start_approvals(session, ticket, actor_email or "system")
+    log_action(session, actor_email or "system", "ticket", ticket.id, "approval_restarted", f"after {approval.status}")
+    return True
 
 
 def describe_rule(approval: TicketApproval) -> str:

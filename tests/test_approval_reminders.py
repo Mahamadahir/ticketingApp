@@ -9,8 +9,9 @@ from app.approval_groups import remove_member
 from app.approval_reminders import send_approval_reminders
 from app.approvals import withdraw
 from app.database import engine
-from app.models import ApprovalGroup, ApprovalVote, AuditLog, Notification, OutboundEmail, Ticket, TicketApproval, User, UserRole
+from app.models import ApprovalGroup, ApprovalVote, AuditLog, Notification, NotificationPreference, OutboundEmail, Ticket, TicketApproval, User, UserRole
 from app.scheduled_jobs import run_due_jobs
+from app.teams import Unsendable
 from app.settings_store import (
     APPROVAL_ESCALATE_AFTER_DAYS,
     APPROVAL_MAX_REMINDERS,
@@ -350,3 +351,67 @@ def test_a_ticket_someone_is_working_on_is_left_to_the_next_run_without_waiting(
         other.rollback()
     run(db_session, days=3)
     assert len(reminders(db_session)) == 1
+
+
+# ---- The overdue email to super admins (#122) ---------------------------------------------------------------
+
+
+def overdue_emails(db_session):
+    return rows(db_session, outbox.APPROVAL_OVERDUE)
+
+
+def a_super_admin(client, db_session, email="admin@example.com"):
+    client.post("/auth/logout")
+    user_id = login_as(client, email)
+    set_role(db_session, user_id, UserRole.SUPER_ADMIN)
+    return user_id
+
+
+def test_each_super_admin_is_emailed_once_as_well_as_belled(client, db_session, dev_mail):
+    emails, ticket = waiting_request(client, db_session, ("a", "b"))
+    a_super_admin(client, db_session, "admin@example.com")
+    a_super_admin(client, db_session, "second@example.com")
+    configure(db_session, escalate=7)
+    run(db_session, days=6)
+    assert overdue_emails(db_session) == []
+
+    run(db_session, days=7.1)
+    run(db_session, days=9)
+    assert sorted(r.to_address for r in overdue_emails(db_session)) == ["admin@example.com", "second@example.com"]
+    assert mail.deliver_mail(db_session)[0] >= 2
+    [row, _] = overdue_emails(db_session)
+    assert row.sent_at is not None and row.subject == f"[{ticket.reference}] Approval overdue: {ticket.subject}"
+    assert ticket.reference in row.body and "2 approver(s) have not answered" in row.body
+
+
+def test_a_super_admin_can_opt_out_of_the_email_and_still_gets_the_bell(client, db_session, dev_mail):
+    waiting_request(client, db_session, ("a",))
+    admin_id = a_super_admin(client, db_session)
+    db_session.add(NotificationPreference(user_id=admin_id, kind="approval_overdue", channel="email", enabled=False))
+    db_session.commit()
+    configure(db_session, escalate=1)
+    run(db_session, days=3)
+    assert overdue_emails(db_session) == []
+    assert len(db_session.exec(select(Notification).where(Notification.kind == "approval_overdue")).all()) == 1
+    assert db_session.exec(select(TicketApproval)).one().escalated_at is not None
+
+
+def test_the_overdue_email_is_on_by_default_and_listed_for_super_admins_only(client, db_session):
+    from app.notification_settings import EMAIL, events_for, is_enabled
+
+    admin = db_session.get(User, a_super_admin(client, db_session))
+    assert is_enabled(db_session, admin, "approval_overdue", EMAIL)
+    assert "approval_overdue" in [e.kind for e in events_for(admin)]
+    agent = User(email="agent@example.com", display_name="A", role=UserRole.AGENT)
+    assert "approval_overdue" not in [e.kind for e in events_for(agent)]
+
+
+def test_the_overdue_email_asks_again_when_it_is_sent(client, db_session, dev_mail):
+    emails, ticket = waiting_request(client, db_session, ("a",))
+    a_super_admin(client, db_session)
+    configure(db_session, escalate=1)
+    run(db_session, days=3)
+    [row] = overdue_emails(db_session)
+    answer(client, ticket, "a@example.com", "approved")  # decided before it went
+    with pytest.raises(Unsendable):
+        mail.build_approval_overdue_mail(db_session, row)

@@ -4,7 +4,7 @@
 <h2>Notifications</h2>
 <p class="note">
   When a ticket is assigned to you, or someone mentions you in an internal note (write @ and the part of
-  your email address before the @). You are only told about tickets you can open; if a ticket moves to a team you are not in, its notifications are hidden (and not counted) until you can open it again.
+  your email address before the @), or when a request is waiting for your approval (that one opens in the portal, where you vote). You are only told about tickets you can open; if a ticket moves to a team you are not in, its notifications are hidden (and not counted) until you can open it again.
 </p>
 
 {% if unread %}
@@ -20,7 +20,7 @@
       <td>{% if not n.read_at %}<b>{{ n.text }}</b>{% else %}{{ n.text }}{% endif %}</td>
       <td>
         <form method="post" action="/notifications/{{ n.id }}/open" class="inline-form">
-          <button type="submit" class="button-outline">{{ "Open" if tickets.get(n.ticket_id) else "Mark read" }}</button>
+          <button type="submit" class="button-outline">{{ "Open" if tickets.get(n.ticket_id) or n.kind == "approval_waiting" else "Mark read" }}</button>
         </form>
       </td>
     </tr>

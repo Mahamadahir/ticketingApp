@@ -262,6 +262,7 @@
         "outcome",
         "pending_for",
         "record_decision",
+        "restart_after_reopen",
         "start_approvals",
         "status_after_triage",
         "tally",
@@ -279,6 +280,7 @@
         "app.routers.approvals",
         "app.routers.portal",
         "app.routers.tickets",
+        "app.ticket_service",
         "app.triage"
       ],
       "imports": [
@@ -416,6 +418,7 @@
       "file": "app/auto_close_chase.py",
       "functions": [
         "close_resolved_tickets",
+        "report_given_up_chases",
         "resolve_unanswered",
         "run_auto_close",
         "run_chase",
@@ -429,6 +432,7 @@
         "app.audit",
         "app.mail",
         "app.models",
+        "app.notifications",
         "app.outbox",
         "app.resolution",
         "app.settings_store",
@@ -1155,6 +1159,7 @@
         "automatic_cap",
         "build_acknowledgement_mail",
         "build_approval_mail",
+        "build_approval_overdue_mail",
         "build_approval_reminder_mail",
         "build_approval_withdrawn_mail",
         "build_chase_mail",
@@ -1608,6 +1613,7 @@
         "tests/test_action_links.py",
         "tests/test_activity_log.py",
         "tests/test_admin.py",
+        "tests/test_approval_bell.py",
         "tests/test_approval_groups.py",
         "tests/test_approval_reminders.py",
         "tests/test_approvals.py",
@@ -1685,6 +1691,7 @@
         "all_listed",
         "is_listed",
         "listed_among",
+        "listed_entry",
         "remove_listed"
       ],
       "imported_by": [
@@ -1736,6 +1743,8 @@
       "summary": "Notification settings (phase 2B): which channels each person wants for each kind of event.",
       "tables": [],
       "tests": [
+        "tests/test_approval_bell.py",
+        "tests/test_approval_reminders.py",
         "tests/test_notification_followup.py",
         "tests/test_notification_settings.py",
         "tests/test_teams_copy.py"
@@ -1756,8 +1765,10 @@
         "mentioned_in",
         "notify",
         "notify_approval_overdue",
+        "notify_approval_waiting",
         "notify_approval_withdrawn",
         "notify_assigned",
+        "notify_chase_given_up",
         "notify_due_today",
         "notify_mentions",
         "notify_reopened",
@@ -1768,6 +1779,7 @@
       "imported_by": [
         "app.approval_reminders",
         "app.approvals",
+        "app.auto_close_chase",
         "app.due_today",
         "app.escalation",
         "app.jobs",
@@ -1805,6 +1817,7 @@
         "is_on",
         "queue_acknowledgement",
         "queue_approval",
+        "queue_approval_overdue",
         "queue_approval_reminder",
         "queue_approval_withdrawn",
         "queue_chase",
@@ -3341,6 +3354,7 @@
         "tests/test_follower_updates.py",
         "tests/test_inbound_mail.py",
         "tests/test_mail_subscriptions.py",
+        "tests/test_never_follow.py",
         "tests/test_notification_followup.py",
         "tests/test_outbound_mail.py",
         "tests/test_presence.py",
@@ -3590,6 +3604,7 @@
       "summary": "Teams channel posts (phase 2D): a card in the support channel for each new ticket.",
       "tables": [],
       "tests": [
+        "tests/test_approval_reminders.py",
         "tests/test_auto_close_chase.py",
         "tests/test_inbound_mail.py",
         "tests/test_outbound_mail.py",
@@ -3694,6 +3709,7 @@
     {
       "classes": [
         "AwaitingApproval",
+        "ClosingNeedsNotes",
         "NotTriaged",
         "ResolutionRequired",
         "ScheduledNeedsDate"
@@ -3731,6 +3747,7 @@
         "app.triage"
       ],
       "imports": [
+        "app.approvals",
         "app.models",
         "app.settings_store",
         "app.sla",
@@ -4254,6 +4271,7 @@
     "tests/test_action_links.py",
     "tests/test_activity_log.py",
     "tests/test_admin.py",
+    "tests/test_approval_bell.py",
     "tests/test_approval_groups.py",
     "tests/test_approval_groups_migration.py",
     "tests/test_approval_reminders.py",

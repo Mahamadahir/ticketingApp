@@ -177,7 +177,7 @@ def reclose_ticket(session: Session, ticket: Ticket, actor_email: str, reason_ke
     session.flush()
     session.refresh(ticket, with_for_update=True)
     check_can_reclose(session, ticket)
-    set_status(session, ticket, TicketStatus.CLOSED, actor_email, detail=f"reclosed: {label}")
+    set_status(session, ticket, TicketStatus.CLOSED, actor_email, detail=f"reclosed: {label}", by_reclose=True)
     record_event(session, ticket, EVENT_RECLOSED, actor_email, to_value=reason_key, detail=label)
     log_action(session, actor_email, "ticket", ticket.id, AUDIT_RECLOSED, label)
     if reason_key == "said_thanks":

@@ -21,7 +21,9 @@ def set_to(client, ticket, status):
     if status == RESOLVED:
         response = client.post(f"/tickets/{ticket.number}/resolve", data={"resolution_notes": "Fixed it"})
     else:
-        response = client.post(f"/tickets/{ticket.number}/status", data={"status": status.value})
+        response = client.post(
+            f"/tickets/{ticket.number}/status", data={"status": status.value, "resolution_notes": "Closed by test"}
+        )
     assert response.status_code == 200, response.text
 
 

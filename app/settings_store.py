@@ -24,7 +24,6 @@ DEFAULT_TRIAGE_TEAM = "default_triage_team_id"
 TELL_REQUESTER_RAISED_FOR = "tell_requester_when_raised_for_them"
 APPROVAL_LINK_MINUTES = "approval_link_minutes"
 FEEDBACK_LINK_MINUTES = "feedback_link_minutes"
-REOPEN_LINK_MINUTES = "reopen_link_minutes"
 TEAMS_UNREAD_MINUTES = "teams_unread_minutes"
 AUTOMATIC_EMAIL_CAP = "automatic_email_cap_per_ticket"
 INBOUND_MAX_PER_SENDER_HOUR = "inbound_max_per_sender_hour"
@@ -149,17 +148,6 @@ REGISTRY: dict[str, SettingDef] = {
         ),
         default="43200",
     ),
-    REOPEN_LINK_MINUTES: SettingDef(
-        key=REOPEN_LINK_MINUTES,
-        label="How long the emailed reopen link works (minutes)",
-        kind="minutes",
-        description=(
-            "The resolution email carries a link that reopens the ticket (after a confirming click). It works "
-            "once, and only while the ticket is still Resolved; after this long, or once the ticket is closed, "
-            "the page tells the requester to reply to the email instead. 43200 is 30 days. Placeholder value."
-        ),
-        default="43200",
-    ),
     AUTOMATIC_EMAIL_CAP: SettingDef(
         key=AUTOMATIC_EMAIL_CAP,
         label="Automatic emails to one ticket's requester, at most per day",
@@ -266,9 +254,9 @@ REGISTRY: dict[str, SettingDef] = {
         kind="minutes",
         description=(
             "When Graph does not know a person or gives no reading for them, the presence job leaves them "
-            "alone for this long before asking again. Placeholder (1440 is a day)."
+            "alone for this long before asking again. Default 60 (an hour; decided 3 Nov 2026)."
         ),
-        default="1440",
+        default="60",
     ),
     APPROVAL_DEFAULT_PASS_PERCENT: SettingDef(
         key=APPROVAL_DEFAULT_PASS_PERCENT,
@@ -336,7 +324,10 @@ REGISTRY: dict[str, SettingDef] = {
         key=AUTO_CLOSE_AFTER_DAYS,
         label="Auto-close: close a resolved ticket after (days)",
         kind="count",
-        description="A ticket Resolved for this many days is closed. A reopen or a reply before then keeps it open. Placeholder.",
+        description=(
+            "A ticket Resolved for this many days is closed. A reopen or a reply before then keeps it open. "
+            "The emailed reopen link works for the same time (it expires when the ticket auto-closes). Placeholder."
+        ),
         default="7",
     ),
     CHASE_ENABLED: SettingDef(

@@ -348,7 +348,7 @@ reference users. "My requests" matches tickets by lower-cased email through one 
 `app/identity.py`) and also lists tickets the person follows. For agents, a nightly Entra `accountEnabled` check sets an `is_active`
 flag (the same flag as the out-of-office item under Notifications, and the leaver step of the session work in "Security
 hardening phase"); it is built in phase 6, alongside matching users on the Entra object id. An admin-managed **never-follow
-list** (the shared mailbox, distribution lists; built in 4B-2, `app/never_follow.py`) keeps those addresses from being added as followers, by an inbound Cc or by hand.
+list** (the shared mailbox, distribution lists; built in 4B-2, `app/never_follow.py`) keeps those addresses from being added as followers, by an inbound Cc or by hand. Mail **sent from** a listed address is ignored whole (no ticket, nothing added to a ticket) and logged in the audit log with the sender and subject (#122).
 
 **Linked identities** (decided 22 Oct 2026; phase 6; manual, super admin only). One person can have two Entra accounts on the
 same tenant (for example upn@companyA.com and upn@companyB.com). A super admin links a secondary account to a primary person:
@@ -800,12 +800,12 @@ requester sees the request name only. Sub-tickets from a split do not inherit th
   each member gets their own emailed link (GET shows, POST decides). Handing over for leave or a leaver is adding or removing a
   person in the group, so there is no per-approval re-assignment and no standing delegate accounts (someone removed mid-request still
   counts as a voter but can no longer answer; a super admin can waive). A group may later map to an Entra security group. Withdrawing
-  a request while it waits (4C-2, built: the requester only, closes it as "withdrawn", approval status `withdrawn`, the unanswered approvers told), reminders (4C-3, built: see "Approval reminders" below). The per-person email preference is built (4C-4): approvers get the approval email unless they switch it off under their notification settings (the portal list is unaffected).
+  a request while it waits (4C-2, built: the requester only, closes it as "withdrawn", approval status `withdrawn`, the unanswered approvers told), reminders (4C-3, built: see "Approval reminders" below). The per-person email preference is built (4C-4): approvers get the approval email unless they switch it off under their notification settings (the portal list is unaffected). Each approver also gets a bell entry when a request waits for their vote (#122), with its own setting, so it shows even with the email off; everyone has a bell, and the entry opens the request in the portal. When an agent sets a ticket closed by a decline or a withdrawal back to an open status, the approval restarts as a new round (#122).
 - **Approval reminders (4C-3, built).** A job on the database-driven scheduler (`approval-reminders`, hourly) emails each approver who has
   not answered: first after X days, then every Y days, at most N, all admin settings (placeholders 2, 2, 3). It stops when the request is
   approved, declined, waived or withdrawn, or the member answers; it skips a person who switched approval emails off or left the group. The
   reminder counts toward the automatic-email cap (its own allowance per approver). After Z days (placeholder 7) the super admins get one bell
-  notification so they can chase or waive. What is due is worked out from each vote's reminder count and last-reminded time, so a late or
+  notification and one email (admin template `approval_overdue`; each super admin can switch the email off, default on) so they can chase or waive. What is due is worked out from each vote's reminder count and last-reminded time, so a late or
   repeated run sends once. Off by default until staging (`approval_reminders_enabled`). Teams reminders wait for the phase 8 bot.
 
 **History.** A `ticket_event` table records every status change,
@@ -881,7 +881,7 @@ A template is plain text with `{placeholders}` from a fixed list per email; the 
   attachments kept per mail (20) and Cc followers made per mail (10) sit next to the automatic email cap under Admin > Settings; the
   Bicep no longer passes them. Mail set aside as `ignored_flood` is shown on Admin > Mail intake. They are counts of 1 to 1000
   (no "off" for the per-sender limit).
-- **Acknowledgement and queue** (decided 22 Oct 2026; acknowledgement built as 4B-3). A ticket that arrives by email from a person gets one automatic receipt: "Your issue has been logged as INC-1042 with IT. You will be updated once the ticket is taken." (admin-editable template `acknowledgement`). It is content-free: the reference and that line only, no queue position (positions mislead because a higher priority jumps the queue) and no priority or target time (an emailed ticket has none until triage). It is a deliberate exception to "requester email is hidden until triaged", it counts toward the per-ticket cap on automatic emails, and it is never sent for automatic mail, bounces, our own mail, a flood or a never-follow address. *Open idea:* an
+- **Acknowledgement and queue** (decided 22 Oct 2026; acknowledgement built as 4B-3). A ticket that arrives by email from a person gets one automatic receipt: "Your issue has been logged as INC-1042 with IT. We'll be in touch." (admin-editable template `acknowledgement`). It is content-free: the reference and that line only, no queue position (positions mislead because a higher priority jumps the queue) and no priority or target time (an emailed ticket has none until triage). It is a deliberate exception to "requester email is hidden until triaged", it counts toward the per-ticket cap on automatic emails, and it is never sent for automatic mail, bounces, our own mail, a flood or a never-follow address. *Open idea:* an
   indication of how busy the team is. The agent-side priority queue (P1 to P4, SLA deadline) is unchanged. *Planned, not built, design
   to be agreed:* service requests get an optional **"Required by"** date on the request form, feeding queue order and the SLA target.
 - *Outbound mail, built in 3D (20 Oct 2026):* `app/outbox.py` queues an `OutboundEmail` row in the same
@@ -930,7 +930,7 @@ A template is plain text with `{placeholders}` from a fixed list per email; the 
   ("thanks", "cheers"; equals / starts with / contains / ends with, `*` wildcard, a
   maximum length per rule, no regular expressions) and has no attachment is added without
   reopening (*built, 4E-2:* `app/thanks_rules.py`; mail and portal comments alike). Anything else reopens and
-  notifies the agent. The emailed reopen link (*built, 4F*) reopens a Resolved ticket after a confirming click; a Closed ticket is never reopened, so the page tells the requester to reply to the email, which opens a linked new ticket.
+  notifies the agent. The emailed reopen link (*built, 4F*) reopens a Resolved ticket after a confirming click; the link expires when the ticket would auto-close (`auto_close_after_days` from resolution, #122); a Closed ticket is never reopened, so the page tells the requester to reply to the email, which opens a linked new ticket.
 - Agents reclose with a reason: user said thanks, duplicate, new issue
   raised separately, reopened in error. "User said thanks" sends the reply
   text to an admin review list to add to the ignore list or dismiss. (*built, 4E-2:* Admin > Thanks rules.)

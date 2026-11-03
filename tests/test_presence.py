@@ -328,10 +328,10 @@ def test_an_agent_graph_does_not_know_is_not_asked_again_until_the_retry_interva
     graph = FakeGraph({})
 
     refresh(db_session, graph)
-    refresh(db_session, graph, now=NOW + timedelta(hours=1))
+    refresh(db_session, graph, now=NOW + timedelta(minutes=30))
     assert graph.lookups == ["ghost@example.com"]
 
-    refresh(db_session, graph, now=NOW + timedelta(days=1, minutes=1))
+    refresh(db_session, graph, now=NOW + timedelta(minutes=61))  # the default retry wait is an hour (#122)
     assert graph.lookups == ["ghost@example.com"] * 2
 
 
