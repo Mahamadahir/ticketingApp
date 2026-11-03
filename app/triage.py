@@ -14,6 +14,7 @@ from sqlmodel import Session
 from app.approvals import start_approvals, status_after_triage
 from app.categories import is_selectable, path_of, team_id_for
 from app.notifications import notify_assigned
+from app.required_by import refresh_default_due
 from app.models import (
     Category,
     RequestType,
@@ -93,10 +94,12 @@ def triage_ticket(
     impact: Level,
     urgency: Level,
     assignee: Optional[User] = None,
+    request_type: Optional[RequestType] = None,
 ) -> None:
     """Classifies an untriaged ticket and moves it from New to Open. The category
     decides the team; the type may change (the number does not); impact and urgency give the priority and start the SLA deadlines.
-    Assigning is optional and independent."""
+    Assigning is optional and independent. `request_type` is the kind of request chosen for a service request
+    (None leaves it as it was); it is set before the approvers are looked up, so it decides whether approval is needed."""
     if ticket.triaged_at is not None:
         raise TriageError("This ticket has already been triaged")
     if not is_selectable(session, category):
@@ -111,6 +114,19 @@ def triage_ticket(
 
     now = datetime.now(timezone.utc)
     change_type(session, ticket, ticket_type, actor.email)
+    if request_type is not None and request_type.id != ticket.request_type_id:
+        if ticket.type != TicketType.SERVICE_REQUEST:
+            raise TriageError("Only a service request has a kind of request")
+        if not request_type.is_active:
+            raise TriageError("That kind of request is no longer available")
+        previous = session.get(RequestType, ticket.request_type_id) if ticket.request_type_id else None
+        ticket.request_type_id = request_type.id
+        session.add(ticket)
+        record_event(
+            session, ticket, EVENT_REQUEST_TYPE, actor.email,
+            from_value=previous.name if previous else None, to_value=request_type.name, detail="chosen at triage",
+        )
+        refresh_default_due(session, ticket, actor.email)
 
     previous_team = session.get(Team, ticket.team_id) if ticket.team_id else None
     new_team = session.get(Team, team_id)

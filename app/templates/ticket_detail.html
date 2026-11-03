@@ -15,6 +15,7 @@
   &middot; Category: {{ category_path or "Not triaged" }}
   &middot; Priority: {{ ticket.priority.upper() if ticket.priority else "Not set" }}
   {% if ticket.required_by %}&middot; Required by: {{ ticket.required_by.isoformat() }}{% endif %}
+  {% if ticket.due_on %}&middot; Due: {{ ticket.due_on.isoformat() }} (end of the day in {{ requester_zone }}){% endif %}
   &middot; Reported: {{ ticket.reported_at|local_time }}{% if ticket.is_backdated %} <span class="badge">backdated</span>{% endif %}
   {% if ticket.resolved_at %}&middot; Resolved: {{ ticket.resolved_at|local_time }}{% endif %}
   &middot; Team: {{ team.name if team else "Unassigned" }}
@@ -94,6 +95,17 @@
       {% for value, label in urgency_options %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
     </select>
   </label>
+  {% if request_types %}
+  <label>Kind of request (service requests)
+    <select name="request_type_id"
+      hx-get="/tickets/triage-dates" hx-trigger="change" hx-target="#triage-dates" hx-swap="outerHTML"
+      hx-include="closest form">
+      <option value="">Leave as is{{ " (" ~ request_info[0].name ~ ")" if request_info else " (none)" }}</option>
+      {% for rt in request_types %}<option value="{{ rt.id }}">{{ rt.name }}</option>{% endfor %}
+    </select>
+  </label>
+  {% endif %}
+  {% with offers = offers_required_by, required_by = ticket.required_by.isoformat() if ticket.required_by else "", due_on = ticket.due_on.isoformat() if ticket.due_on else "", due_reason = "", has_due = ticket.due_on is not none %}{% include "_triage_dates.html" %}{% endwith %}
   <label>Category
     <select name="category_id" hx-get="/tickets/agents-for-category" hx-trigger="change" hx-target="#triage-agent">
       <option value="">Choose a category</option>
@@ -142,6 +154,10 @@
     {% if s.value == "resolved" %}<button type="button" disabled class="button-active">resolved</button>{% else %}
     <button type="submit" name="status" value="{{ s.value }}" class="{{ 'button-active' if ticket.status == s else 'button-outline' }}">{{ s.value.replace("_", " ") }}</button>{% endif %}
     {% endfor %}
+    <label>Scheduled needs a date: Due
+      <input type="date" name="due_on" value="{{ ticket.due_on.isoformat() if ticket.due_on else "" }}" /></label>
+    <label>Why the date is being moved (only if you change it)
+      <input type="text" name="due_reason" maxlength="500" /></label>
   </form>
   {% if status_follows_parts %}<p class="note">This ticket has sub-tickets, so its status follows them. You can resolve or close it once they are all finished.</p>{% endif %}
   {% if can_resolve %}
@@ -233,9 +249,19 @@
 
   {% if can_set_required_by %}
   <form hx-post="/tickets/{{ ticket.number }}/required-by" hx-target="main" hx-swap="innerHTML">
-    <label>Required by ({{ "recorded only: a backdated ticket has no SLA, so a past date is allowed" if ticket.is_backdated else "replaces the SLA resolution target; not in the past, UTC" }}; blank to remove)
+    <label>Required by ({{ "recorded only: a backdated ticket has no SLA, so a past date is allowed" if ticket.is_backdated else "Due follows it unless you have set Due by hand; not in the past, UTC" }}; blank to remove)
       <input type="date" name="required_by" value="{{ ticket.required_by.isoformat() if ticket.required_by else "" }}" /></label>
     <button type="submit">Save date</button>
+  </form>
+  {% endif %}
+
+  {% if can_set_due %}
+  <form hx-post="/tickets/{{ ticket.number }}/due" hx-target="main" hx-swap="innerHTML">
+    <label>Due (the SLA target is the end of this day in {{ requester_zone }}; never after Required by; blank puts it back to the default)
+      <input type="date" name="due_on" value="{{ ticket.due_on.isoformat() if ticket.due_on else "" }}" /></label>
+    <label>Why Due is being moved (required when it changes)
+      <input type="text" name="due_reason" maxlength="500" /></label>
+    <button type="submit">Save Due</button>
   </form>
   {% endif %}
 

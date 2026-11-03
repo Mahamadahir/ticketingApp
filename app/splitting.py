@@ -20,7 +20,7 @@ from sqlmodel import Session, select
 
 from app.messages import add_note
 from app.models import FINISHED_STATUSES, Category, Ticket, TicketStatus, User
-from app.sla import PAUSING_STATUSES, Level, recalculate_deadlines
+from app.sla import Level, recalculate_deadlines
 from app.ticket_service import create_ticket, record_event, set_status
 from app.triage import TriageError, triage_ticket
 
@@ -90,13 +90,13 @@ def sync_original_status(session: Session, original_id: int) -> bool:
         return False
     statuses = list(session.exec(select(Ticket.status).where(Ticket.split_from_id == original_id)).all())
     target = derived_status(statuses)
-    if target is None and statuses and original.status in PAUSING_STATUSES:
-        # Every part is finished, so nothing is waiting on the requester or on a planned date: the SLA
-        # clock restarts and the original waits for an agent to resolve it.
+    if target is None and statuses and original.status in (TicketStatus.AWAITING_USER, TicketStatus.SCHEDULED):
+        # Every part is finished, so nothing is waiting on the requester or on a planned date: the
+        # original waits for an agent to resolve it.
         target = TicketStatus.IN_PROGRESS
     if target is None or target == original.status:
         return False
-    return set_status(session, original, target, None, detail="from its sub-tickets")
+    return set_status(session, original, target, None, detail="from its sub-tickets", from_parts=True)
 
 
 def has_sub_tickets(session: Session, original: Ticket) -> bool:

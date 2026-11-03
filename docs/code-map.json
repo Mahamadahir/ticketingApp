@@ -54,6 +54,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/f3b9d2a6c841_due_date.py",
+        "revision": "f3b9d2a6c841"
+      },
+      {
         "file": "migrations/versions/e7a2c4d9b136_time_zones.py",
         "revision": "e7a2c4d9b136"
       },
@@ -68,17 +72,13 @@
       {
         "file": "migrations/versions/8b3e5a1c9d27_required_by.py",
         "revision": "8b3e5a1c9d27"
-      },
-      {
-        "file": "migrations/versions/5d1f0c2b7a96_chase_fields.py",
-        "revision": "5d1f0c2b7a96"
       }
     ],
-    "count": 46,
+    "count": 47,
     "heads": [
       {
-        "file": "migrations/versions/e7a2c4d9b136_time_zones.py",
-        "revision": "e7a2c4d9b136"
+        "file": "migrations/versions/f3b9d2a6c841_due_date.py",
+        "revision": "f3b9d2a6c841"
       }
     ]
   },
@@ -345,6 +345,7 @@
         "app.approval_reminders",
         "app.approvals",
         "app.auto_close_chase",
+        "app.due_today",
         "app.escalation",
         "app.inbound",
         "app.notification_settings",
@@ -697,6 +698,7 @@
         "tests/test_auth.py",
         "tests/test_auto_close_chase.py",
         "tests/test_category_admin.py",
+        "tests/test_due_date.py",
         "tests/test_followers.py",
         "tests/test_hardening.py",
         "tests/test_health.py",
@@ -713,6 +715,32 @@
         "tests/test_ticket_core.py",
         "tests/test_withdraw.py",
         "tests/test_worker.py"
+      ]
+    },
+    {
+      "classes": [],
+      "file": "app/due_today.py",
+      "functions": [
+        "run_scheduled_due",
+        "wake_scheduled_tickets"
+      ],
+      "imported_by": [
+        "app.scheduled_jobs"
+      ],
+      "imports": [
+        "app.audit",
+        "app.models",
+        "app.notifications",
+        "app.splitting",
+        "app.ticket_service",
+        "app.time_zones"
+      ],
+      "module": "app.due_today",
+      "routes": [],
+      "summary": "The morning of a Scheduled ticket's Due date (issue #121). Nothing here commits.",
+      "tables": [],
+      "tests": [
+        "tests/test_due_date.py"
       ]
     },
     {
@@ -1371,6 +1399,7 @@
         "app.bulk_resolve",
         "app.canned",
         "app.categories",
+        "app.due_today",
         "app.email_templates",
         "app.escalation",
         "app.feedback",
@@ -1590,6 +1619,8 @@
         "tests/test_bulk_resolve.py",
         "tests/test_canned.py",
         "tests/test_category_admin.py",
+        "tests/test_due_date.py",
+        "tests/test_due_date_review.py",
         "tests/test_email_preview.py",
         "tests/test_email_templates.py",
         "tests/test_escalation.py",
@@ -1727,6 +1758,7 @@
         "notify_approval_overdue",
         "notify_approval_withdrawn",
         "notify_assigned",
+        "notify_due_today",
         "notify_mentions",
         "notify_reopened",
         "notify_reply",
@@ -1736,6 +1768,7 @@
       "imported_by": [
         "app.approval_reminders",
         "app.approvals",
+        "app.due_today",
         "app.escalation",
         "app.jobs",
         "app.messages",
@@ -1759,6 +1792,7 @@
       "tables": [],
       "tests": [
         "tests/test_bell_access.py",
+        "tests/test_due_date_review.py",
         "tests/test_notifications.py",
         "tests/test_teams_copy.py",
         "tests/test_teams_copy_sending.py"
@@ -2007,26 +2041,38 @@
       ],
       "file": "app/required_by.py",
       "functions": [
+        "apply_form_dates",
+        "default_due",
+        "due_days_before",
         "offers_required_by",
+        "parse_due",
         "parse_required_by",
+        "prepare_scheduled",
+        "refresh_default_due",
+        "requester_today",
+        "set_due",
         "set_required_by"
       ],
       "imported_by": [
         "app.raising",
         "app.routers.portal",
-        "app.routers.tickets"
+        "app.routers.tickets",
+        "app.triage"
       ],
       "imports": [
         "app.audit",
         "app.models",
+        "app.settings_store",
         "app.sla",
-        "app.ticket_service"
+        "app.ticket_service",
+        "app.time_zones"
       ],
       "module": "app.required_by",
       "routes": [],
-      "summary": "The Required by date on a service request (SRP-1). Nothing here commits.",
+      "summary": "The Required by date and the Due date on a ticket (SRP-1, issue #92; the Due date, issue #121). Nothing",
       "tables": [],
       "tests": [
+        "tests/test_due_date.py",
         "tests/test_required_by.py"
       ]
     },
@@ -2928,6 +2974,7 @@
         "agent_options_for_team",
         "assign_ticket",
         "backdate",
+        "change_due",
         "change_priority",
         "change_required_by",
         "change_status",
@@ -2946,6 +2993,7 @@
         "split",
         "team_activity",
         "triage",
+        "triage_dates",
         "unlink",
         "view_ticket",
         "view_ticket_by_number",
@@ -3016,6 +3064,11 @@
           "path": "/tickets/agents-for-team"
         },
         {
+          "handler": "triage_dates",
+          "method": "GET",
+          "path": "/tickets/triage-dates"
+        },
+        {
           "handler": "view_ticket",
           "method": "GET",
           "path": "/tickets/{number}"
@@ -3039,6 +3092,11 @@
           "handler": "fill_from_canned",
           "method": "GET",
           "path": "/tickets/{number}/canned"
+        },
+        {
+          "handler": "change_due",
+          "method": "POST",
+          "path": "/tickets/{number}/due"
         },
         {
           "handler": "email_user",
@@ -3190,6 +3248,7 @@
         "app.audit",
         "app.auto_close_chase",
         "app.database",
+        "app.due_today",
         "app.models",
         "app.settings_store"
       ],
@@ -3200,6 +3259,7 @@
       "tests": [
         "tests/test_approval_reminders.py",
         "tests/test_auto_close_chase.py",
+        "tests/test_due_date.py",
         "tests/test_scheduled_jobs.py"
       ]
     },
@@ -3249,6 +3309,7 @@
         "app.notifications",
         "app.presence",
         "app.raising",
+        "app.required_by",
         "app.routers.admin",
         "app.routers.approvals",
         "app.routers.bulk_resolve",
@@ -3275,6 +3336,8 @@
         "tests/test_backdating.py",
         "tests/test_bulk_resolve.py",
         "tests/test_category_admin.py",
+        "tests/test_due_date.py",
+        "tests/test_due_date_review.py",
         "tests/test_follower_updates.py",
         "tests/test_inbound_mail.py",
         "tests/test_mail_subscriptions.py",
@@ -3308,7 +3371,6 @@
         "priority_for",
         "queue_order",
         "recalculate_deadlines",
-        "required_by_deadline",
         "set_impact_urgency",
         "sla_view",
         "target_minutes"
@@ -3327,7 +3389,8 @@
       "imports": [
         "app.models",
         "app.settings_store",
-        "app.ticket_service"
+        "app.ticket_service",
+        "app.time_zones"
       ],
       "module": "app.sla",
       "routes": [],
@@ -3364,6 +3427,7 @@
       "imported_by": [
         "app.auto_close_chase",
         "app.bulk_resolve",
+        "app.due_today",
         "app.inbound",
         "app.messages",
         "app.reopening",
@@ -3631,7 +3695,8 @@
       "classes": [
         "AwaitingApproval",
         "NotTriaged",
-        "ResolutionRequired"
+        "ResolutionRequired",
+        "ScheduledNeedsDate"
       ],
       "file": "app/ticket_service.py",
       "functions": [
@@ -3647,6 +3712,7 @@
         "app.auto_close_chase",
         "app.backdating",
         "app.bulk_resolve",
+        "app.due_today",
         "app.followers",
         "app.inbound",
         "app.linking",
@@ -3679,6 +3745,7 @@
       "tests": [
         "tests/test_auto_close_chase.py",
         "tests/test_category_admin.py",
+        "tests/test_due_date.py",
         "tests/test_email_preview.py",
         "tests/test_portal.py",
         "tests/test_reopening.py",
@@ -3704,8 +3771,10 @@
         "end_of_day_utc",
         "format_date",
         "format_moment",
+        "morning_of",
         "note_requester",
         "refresh_requester_zones",
+        "scheduled_morning_hour",
         "set_browser_zone",
         "set_manual_zone",
         "valid_zone",
@@ -3717,12 +3786,15 @@
       "imported_by": [
         "app.auth",
         "app.backdating",
+        "app.due_today",
         "app.inbound",
         "app.jobs",
+        "app.required_by",
         "app.routers.admin",
         "app.routers.my_settings",
         "app.routers.portal",
         "app.routers.tickets",
+        "app.sla",
         "app.templating",
         "app.ticket_service"
       ],
@@ -3737,6 +3809,7 @@
       "summary": "Per-person time zones. Everything is stored and calculated in UTC; only what a person SEES is converted,",
       "tables": [],
       "tests": [
+        "tests/test_due_date.py",
         "tests/test_time_zones.py"
       ]
     },
@@ -3763,6 +3836,7 @@
         "app.categories",
         "app.models",
         "app.notifications",
+        "app.required_by",
         "app.sla",
         "app.ticket_service",
         "app.visibility"
@@ -3789,6 +3863,7 @@
         "is_untriaged",
         "may_add_note",
         "may_self_assign",
+        "may_set_due",
         "may_set_required_by",
         "may_triage",
         "may_view_attachment",
@@ -4192,6 +4267,8 @@
     "tests/test_canned.py",
     "tests/test_category_admin.py",
     "tests/test_code_map.py",
+    "tests/test_due_date.py",
+    "tests/test_due_date_review.py",
     "tests/test_email_preview.py",
     "tests/test_email_templates.py",
     "tests/test_escalation.py",

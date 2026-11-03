@@ -1,0 +1,19 @@
+{# The Required by and Due boxes of the triage form, swapped when the kind of request changes. Needs: offers
+   (the kind offers Required by), required_by, due_on, due_reason (what was typed), has_due (the ticket has a
+   Due date already, so moving it needs a reason). Both dates are optional: blank leaves them as they are. #}
+<div id="triage-dates">
+  {% if offers %}
+  <label>Required by (optional; the day the requester needs it)
+    <input type="date" name="required_by" value="{{ required_by }}" />
+  </label>
+  {% endif %}
+  <label>Due (optional; the SLA target is the end of this day in the requester's time zone{{ ", and it follows Required by when left blank" if offers else "" }})
+    <input type="date" name="due_on" value="{{ due_on }}" />
+  </label>
+  {% if has_due %}
+  <input type="hidden" name="has_due" value="1" />
+  <label>Why Due is being moved (needed if you change it)
+    <input type="text" name="due_reason" maxlength="500" value="{{ due_reason }}" />
+  </label>
+  {% endif %}
+</div>

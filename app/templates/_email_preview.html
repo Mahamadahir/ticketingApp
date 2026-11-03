@@ -6,7 +6,7 @@
   {% if preview.about %}<p class="note">{{ preview.about }} (this email is about one part of a split request)</p>{% endif %}
   <pre class="message-body">{{ preview.body }}</pre>
   <p class="note">
-    {% if preview.status_after %}Sending moves this ticket to {{ preview.status_after.value.replace("_", " ") }}{% if preview.status_after.value in ("awaiting_user", "scheduled") %} and pauses its SLA clock{% if preview.status_after.value == "scheduled" %} (unless the request has a Required by date){% endif %}{% endif %}.
+    {% if preview.status_after %}Sending moves this ticket to {{ preview.status_after.value.replace("_", " ") }}{% if preview.status_after.value == "awaiting_user" %} and pauses its SLA clock{% endif %}.
     {% else %}Sending leaves the ticket's status as it is.{% endif %}
     The email is recorded on the ticket and goes to the requester.
   </p>
@@ -18,6 +18,8 @@
     {% for address in ticked %}<input type="hidden" name="cc" value="{{ address }}" />{% endfor %}
     {% endif %}
     {% if next_status %}<input type="hidden" name="next_status" value="{{ next_status }}" />{% endif %}
+    {% if due_on %}<input type="hidden" name="due_on" value="{{ due_on }}" />{% endif %}
+    {% if due_reason %}<input type="hidden" name="due_reason" value="{{ due_reason }}" />{% endif %}
     <button type="submit">Send email</button>
     <button type="button" class="button-outline" hx-on:click="document.getElementById('email-preview').innerHTML = ''">Keep editing</button>
   </form>

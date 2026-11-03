@@ -217,6 +217,11 @@ class Ticket(SQLModel, table=True):
     # A service request's Required by date (app/required_by.py): when given, the end of that day
     # replaces the SLA resolution target (app/sla.py). A calendar date, read as UTC.
     required_by: Optional[date] = Field(default=None)
+    # The Due date (app/required_by.py): the SLA resolution target is the end of this day in the requester's
+    # time zone. Defaults to Required by minus the request type's days; `due_set_by_hand` is set when an agent
+    # moved it, so a later change of Required by clamps it instead of recalculating it. Scheduled needs one.
+    due_on: Optional[date] = Field(default=None)
+    due_set_by_hand: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
 
     # Set on a sub-ticket made by splitting another ticket (the original). One level only:
     # a sub-ticket is never split again. Separate from linked_parent_id, which is for
@@ -244,7 +249,7 @@ class Ticket(SQLModel, table=True):
 
     # The SLA clock (app/sla.py). The due times are created_at + target + the time
     # spent paused, and are recomputed when the priority changes or a pause ends.
-    # While paused (Awaiting user, or Scheduled) sla_paused_at is set and the clock is not running.
+    # While paused (Awaiting user) sla_paused_at is set and the clock is not running.
     first_response_due_at: Optional[datetime] = Field(default=None)
     resolution_due_at: Optional[datetime] = Field(default=None)
     first_responded_at: Optional[datetime] = Field(default=None)
@@ -458,6 +463,10 @@ class RequestType(SQLModel, table=True):
     pass_percent: int = Field(default=51)
     # Whether the request form offers a Required by date for this kind of request (app/required_by.py).
     offers_required_by: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
+    # Days before Required by that a ticket of this type is due, and days before Due that the agents' queue
+    # ranks it (app/required_by.py, app/sla.py). Blank: the global setting is used.
+    due_days_before: Optional[int] = Field(default=None)
+    queue_lead_days: Optional[int] = Field(default=None)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

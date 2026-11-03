@@ -1,6 +1,8 @@
 """Status follows the conversation: emailing the user puts the ticket in Awaiting
 user by itself, and a reply from the requester or a follower hands it back."""
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 from sqlmodel import select
 
@@ -197,7 +199,10 @@ def test_the_chosen_status_is_what_an_email_sets(client, db_session, chosen):
     ticket = make_ticket(db_session, team.id, TicketStatus.OPEN)
     agent_for(client, db_session, team)
 
-    assert client.post(f"/tickets/{ticket.number}/email", data={"body": "Update", "next_status": chosen}).status_code == 200
+    data = {"body": "Update", "next_status": chosen}
+    if chosen == "scheduled":
+        data["due_on"] = (datetime.now(timezone.utc).date() + timedelta(days=3)).isoformat()  # Scheduled needs a date
+    assert client.post(f"/tickets/{ticket.number}/email", data=data).status_code == 200
 
     assert status_of(db_session, ticket) == TicketStatus(chosen)
     expected = [] if chosen == "open" else [("open", chosen, "agent@example.com")]

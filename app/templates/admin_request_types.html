@@ -11,8 +11,10 @@
   "Percent to pass" is the share of the voters that must approve, rounded up (5 voters at 60 needs 3; 100 means everyone). The
   request is declined as soon as that can no longer be reached (5 voters at 60: a third decline closes it).
   The voters are the group's members when an agent triages the request, minus the requester.
-  "Offer a Required by date" lets the person raising the request give a date; it then replaces the SLA resolution target
-  for that request and the queue ranks it from the lead time (Admin &gt; Settings) before that date.
+  "Offer a Required by date" lets the person raising the request give a date. The request is then due some days before it
+  ("Due: days before Required by"; blank uses the setting under Admin &gt; Settings): the SLA resolution target is the end
+  of the Due day in the requester's time zone. "Queue lead time" (blank uses the setting) only changes the sorting: the
+  queue ranks the request as if it were due that many days before its Due date.
   An available type needs a group with at least one member. Switching a type off hides it from the form; tickets already raised keep it.
 </p>
 
@@ -32,6 +34,8 @@
     <label>Percent to pass <input type="number" name="pass_percent" value="{{ t.pass_percent }}" min="1" max="100" required /></label>
     <label><input type="checkbox" name="is_active" {{ "checked" if t.is_active else "" }} /> Available on the request form</label>
     <label><input type="checkbox" name="offers_required_by" {{ "checked" if t.offers_required_by else "" }} /> Offer a Required by date</label>
+    <label>Due: days before Required by (blank: {{ default_due_days }}) <input type="number" name="due_days_before" value="{{ t.due_days_before if t.due_days_before is not none else "" }}" min="0" max="365" /></label>
+    <label>Queue lead time in days (blank: {{ default_queue_days }}) <input type="number" name="queue_lead_days" value="{{ t.queue_lead_days if t.queue_lead_days is not none else "" }}" min="0" max="365" /></label>
     <button type="submit">Save</button>
   </fieldset>
 </form>
@@ -54,6 +58,8 @@
   <label>Percent to pass <input type="number" name="pass_percent" value="{{ default_pass }}" min="1" max="100" required /></label>
   <label><input type="checkbox" name="is_active" checked /> Available on the request form</label>
   <label><input type="checkbox" name="offers_required_by" /> Offer a Required by date</label>
+  <label>Due: days before Required by (blank: {{ default_due_days }}) <input type="number" name="due_days_before" min="0" max="365" /></label>
+  <label>Queue lead time in days (blank: {{ default_queue_days }}) <input type="number" name="queue_lead_days" min="0" max="365" /></label>
   <button type="submit">Create</button>
 </form>
 {% endblock %}

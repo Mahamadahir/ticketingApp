@@ -75,6 +75,11 @@ EVENT_TYPES: tuple[EventType, ...] = (
         AGENT_ROLES, (IN_APP, TEAMS), (IN_APP, TEAMS),
     ),
     EventType(
+        "due_today", "A Scheduled ticket assigned to you is due today",
+        "On the morning of the Due date of a Scheduled ticket assigned to you, when it goes back to Open.",
+        AGENT_ROLES, (IN_APP, TEAMS), (IN_APP, TEAMS),
+    ),
+    EventType(
         RAISED_FOR_YOU, "An agent raises a ticket for you",
         "An email telling you a ticket was raised on your behalf. Also off for everyone if an admin "
         "switches it off in Settings.",

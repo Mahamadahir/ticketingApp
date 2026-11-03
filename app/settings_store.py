@@ -15,7 +15,7 @@ from app.models import Setting
 class SettingDef:
     key: str
     label: str
-    kind: str  # "team": a team id, empty for none; "minutes": a whole number; "percent": 1 to 99; "vote_percent": 1 to 100; "flag": on or off; "count": a whole number, 1 to 1000; "time_zone": an IANA time zone name, blank for the default
+    kind: str  # "team": a team id, empty for none; "minutes": a whole number; "percent": 1 to 99; "vote_percent": 1 to 100; "flag": on or off; "count": a whole number, 1 to 1000; "hour": a whole number, 0 to 23; "time_zone": an IANA time zone name, blank for the default
     description: str
     default: str = ""
 
@@ -50,7 +50,9 @@ CHASE_ENABLED = "chase_enabled"
 CHASE_AFTER_DAYS = "chase_after_days"
 CHASE_RESOLVE_AFTER_DAYS = "chase_resolve_after_days"
 BULK_RESOLVE_MAX = "bulk_resolve_max_tickets"
-REQUIRED_BY_LEAD_DAYS = "required_by_lead_days"
+REQUIRED_BY_LEAD_DAYS = "required_by_lead_days"  # the queue lead time when a request type has none of its own
+DUE_DAYS_BEFORE_REQUIRED_BY = "due_days_before_required_by"
+SCHEDULED_MORNING_HOUR = "scheduled_morning_hour"
 DEFAULT_TIME_ZONE = "default_time_zone"
 TIME_ZONE_REFRESH_DAYS = "time_zone_refresh_days"
 TIME_ZONE_RETRY_HOURS = "time_zone_retry_hours"
@@ -85,7 +87,7 @@ def _sla_definitions() -> dict[str, SettingDef]:
                 kind="minutes",
                 description=(
                     f"How long a {priority.upper()} ticket may wait for its {label}. The clock runs "
-                    "24/7 and stops while the ticket is Awaiting user or Scheduled (a Required by date keeps running). Placeholder value until the "
+                    "24/7 and stops while the ticket is Awaiting user (a Due date never moves because of the wait). Placeholder value until the "
                     "real target is agreed; blank means not tracked."
                 ),
                 default=str(default),
@@ -366,13 +368,35 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     REQUIRED_BY_LEAD_DAYS: SettingDef(
         key=REQUIRED_BY_LEAD_DAYS,
-        label="Required by: lead time in the queue (calendar days)",
+        label="Queue lead time (calendar days), when the request type has none",
         kind="count",
         description=(
-            "A request with a Required by date is ranked in the agents' queue as if it were due this many calendar "
-            "days before that date, so work that takes time rises early. Placeholder."
+            "A request with a Due date is ranked in the agents' queue as if it were due this many calendar "
+            "days before that date, so work that takes time rises early. Only changes the sorting. A request type "
+            "can set its own under Admin > Request types. Placeholder."
         ),
-        default="2",
+        default="1",
+    ),
+    DUE_DAYS_BEFORE_REQUIRED_BY: SettingDef(
+        key=DUE_DAYS_BEFORE_REQUIRED_BY,
+        label="Due date: days before Required by, when the request type has none",
+        kind="count",
+        description=(
+            "A request with a Required by date is due this many calendar days before it (a meeting room needed on "
+            "the 23rd is due by the end of the 22nd), in the requester's time zone. A request type can set its "
+            "own under Admin > Request types. An agent can move the Due date with a reason. Placeholder."
+        ),
+        default="1",
+    ),
+    SCHEDULED_MORNING_HOUR: SettingDef(
+        key=SCHEDULED_MORNING_HOUR,
+        label="Scheduled tickets: the hour that counts as the morning of the Due date (0 to 23)",
+        kind="hour",
+        description=(
+            "From this hour on the Due date, in the requester's time zone, a Scheduled ticket goes back to Open and "
+            "its assignee is told it is due today. Placeholder."
+        ),
+        default="7",
     ),
     DEFAULT_TIME_ZONE: SettingDef(
         key=DEFAULT_TIME_ZONE,

@@ -86,7 +86,10 @@ def _reopen_one(
     session: Session, ticket: Ticket, actor_email: Optional[str], reason: str, target: TicketStatus,
     tell_assignee: bool, already_told: Optional[int],
 ) -> None:
-    set_status(session, ticket, target, actor_email, detail="reopened")
+    from app.splitting import has_sub_tickets
+
+    # A split original's status follows its parts, so it needs no date of its own to be Scheduled.
+    set_status(session, ticket, target, actor_email, detail="reopened", from_parts=has_sub_tickets(session, ticket))
     ticket.reopen_count += 1
     session.add(ticket)
     record_event(session, ticket, EVENT_REOPENED, actor_email, detail=reason)

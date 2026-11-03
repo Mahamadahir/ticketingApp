@@ -112,6 +112,8 @@ from app.pagination import paginate
 from app.scheduled_jobs import SCHEDULED_JOBS, status_line, timing
 from app.settings_store import (
     APPROVAL_DEFAULT_PASS_PERCENT,
+    DUE_DAYS_BEFORE_REQUIRED_BY,
+    REQUIRED_BY_LEAD_DAYS,
     JOB_LATE_MINUTES,
     REGISTRY,
     get_setting,
@@ -981,6 +983,7 @@ def _type_snapshot(session: Session, request_type: RequestType) -> tuple:
     return (
         request_type.name, request_type.description, group.name if group else "(none)",
         request_type.pass_percent, request_type.offers_required_by,
+        request_type.due_days_before, request_type.queue_lead_days,
     )
 
 
@@ -997,6 +1000,8 @@ def list_request_types(
             "types": all_request_types(session),
             "groups": all_groups(session),
             "default_pass": get_setting(session, APPROVAL_DEFAULT_PASS_PERCENT),
+            "default_due_days": get_setting(session, DUE_DAYS_BEFORE_REQUIRED_BY),
+            "default_queue_days": get_setting(session, REQUIRED_BY_LEAD_DAYS),
             "max_name_length": MAX_REQUEST_NAME_LENGTH,
             "max_description_length": MAX_REQUEST_DESCRIPTION_LENGTH,
             "user": user,
@@ -1012,13 +1017,15 @@ def add_request_type(
     pass_percent: int = Form(..., ge=1, le=100),
     is_active: Optional[str] = Form(None),
     offers_required_by: Optional[str] = Form(None),
+    due_days_before: Optional[str] = Form(None),
+    queue_lead_days: Optional[str] = Form(None),
     admin: User = Depends(require_super_admin),
     session: Session = Depends(get_session),
 ):
     try:
         request_type = create_request_type(
             session, name, description, optional_int(approval_group_id), pass_percent, is_active == "on",
-            offers_required_by == "on",
+            offers_required_by == "on", optional_int(due_days_before), optional_int(queue_lead_days),
         )
     except RequestTypeError as error:
         session.rollback()
@@ -1037,6 +1044,8 @@ def edit_request_type(
     pass_percent: int = Form(..., ge=1, le=100),
     is_active: Optional[str] = Form(None),
     offers_required_by: Optional[str] = Form(None),
+    due_days_before: Optional[str] = Form(None),
+    queue_lead_days: Optional[str] = Form(None),
     admin: User = Depends(require_super_admin),
     session: Session = Depends(get_session),
 ):
@@ -1049,6 +1058,7 @@ def edit_request_type(
         update_request_type(
             session, request_type, name, description, optional_int(approval_group_id),
             pass_percent, is_active == "on", offers_required_by == "on",
+            optional_int(due_days_before), optional_int(queue_lead_days),
         )
     except RequestTypeError as error:
         session.rollback()
@@ -1067,6 +1077,10 @@ def edit_request_type(
             changes.append(f"pass {before[3]}% -> {after[3]}%")
         if before[4] != after[4]:
             changes.append(f"Required by date offered {before[4]} -> {after[4]}")
+        if before[5] != after[5]:
+            changes.append(f"Due days before Required by {before[5]} -> {after[5]}")
+        if before[6] != after[6]:
+            changes.append(f"queue lead days {before[6]} -> {after[6]}")
         log_action(session, admin.email, "request_type", request_type.id, "edited", "; ".join(changes))
     if request_type.is_active != was_active:
         log_action(
@@ -1200,6 +1214,9 @@ def save_setting(
     if definition.kind == "count":
         if not (value.isascii() and value.isdigit()) or not 1 <= int(value) <= 1000:
             raise HTTPException(status_code=400, detail="Enter a whole number from 1 to 1000")
+    if definition.kind == "hour":
+        if not (value.isascii() and value.isdigit()) or not 0 <= int(value) <= 23:
+            raise HTTPException(status_code=400, detail="Enter a whole number from 0 to 23")
     if definition.kind == "time_zone" and value and valid_zone(value) is None:
         raise HTTPException(status_code=400, detail="Enter an IANA time zone name such as Europe/London")
     if definition.kind == "flag" and value not in ("on", "off"):

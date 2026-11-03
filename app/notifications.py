@@ -31,6 +31,7 @@ REPLIED = "replied"
 REOPENED = "reopened"
 APPROVAL_WITHDRAWN = "approval_withdrawn"
 APPROVAL_OVERDUE = "approval_overdue"
+DUE_TODAY = "due_today"
 AGENT_ROLES = (UserRole.AGENT, UserRole.SUPER_ADMIN)
 
 # @alice or @alice@example.com: letters, digits, dots, dashes and underscores.
@@ -338,3 +339,14 @@ def notify_approval_overdue(session: Session, ticket: Ticket, super_admin: User,
         session, super_admin, APPROVAL_OVERDUE, ticket,
         f"{ticket.tag} {ticket.subject} has waited {days} days for approval ({unanswered} had not answered)", None,
     )
+
+
+def notify_due_today(session: Session, ticket: Ticket) -> Optional[Notification]:
+    """Tells the assigned agent their Scheduled ticket is due today (app/due_today.py), as the job moves it back to
+    Open. Nobody assigned tells nobody; nobody who cannot open the ticket is told about it. Does not commit."""
+    if ticket.assigned_agent_id is None:
+        return None
+    agent = session.get(User, ticket.assigned_agent_id)
+    if agent is None or not _can_open(session, agent, ticket):
+        return None
+    return notify(session, agent, DUE_TODAY, ticket, f"{ticket.tag} {ticket.subject} is due today", None)

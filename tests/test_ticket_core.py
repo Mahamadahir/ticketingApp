@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor
 
 from sqlmodel import Session, select
@@ -162,7 +162,10 @@ def test_every_status_except_new_approval_and_resolved_can_be_set(client, db_ses
     for status in TicketStatus:
         if status in (TicketStatus.NEW, TicketStatus.AWAITING_APPROVAL, TicketStatus.RESOLVED):
             continue  # New is left only by triage; Awaiting approval by the approvers; Resolved by the Resolve action
-        assert client.post(f"/tickets/{ticket.number}/status", data={"status": status.value}).status_code == 200
+        data = {"status": status.value}
+        if status == TicketStatus.SCHEDULED:
+            data["due_on"] = (date.today() + timedelta(days=7)).isoformat()  # Scheduled needs its date
+        assert client.post(f"/tickets/{ticket.number}/status", data=data).status_code == 200
         db_session.refresh(ticket)
         assert ticket.status == status
 
