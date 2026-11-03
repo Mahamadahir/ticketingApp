@@ -179,6 +179,34 @@ def test_the_mail_that_makes_a_colleague_a_follower_updates_the_others(db_sessio
     assert who(db_session) == ["pat@example.com"]  # kim wrote it and jo was on it; pat was not
 
 
+def test_a_colleague_replying_only_to_the_mailbox_updates_the_requester_and_every_follower(db_session, dev_mail):
+    """#122: Bob forwarded the thread (he follows); Kim, a new colleague, joins by replying only to IT.
+    The requester and every existing follower, Bob included, are updated; Kim, who wrote it, is not."""
+    ticket = open_ticket(db_session, cc=["bob@example.com", "pat@example.com"])
+    triage_by_hand(db_session, ticket)
+    ingest_mail(
+        db_session,
+        incoming("r1", sender="kim@example.com", to=[MAILBOX], conversation_id="conv-m1", subject="Re: Printer jam"),
+    )
+    db_session.commit()
+    assert who(db_session) == ["bob@example.com", "jo@example.com", "pat@example.com"]
+    assert "kim@example.com" in [f.email for f in followers_of(db_session, ticket)]
+
+
+def test_people_already_on_the_to_or_cc_of_the_joining_mail_are_not_sent_it_twice(db_session, dev_mail):
+    ticket = open_ticket(db_session, cc=["bob@example.com", "pat@example.com"])
+    triage_by_hand(db_session, ticket)
+    ingest_mail(
+        db_session,
+        incoming(
+            "r1", sender="kim@example.com", to=[MAILBOX, "Bob <BOB@example.com>"], cc=["jo@example.com"],
+            conversation_id="conv-m1", subject="Re: Printer jam",
+        ),
+    )
+    db_session.commit()
+    assert who(db_session) == ["pat@example.com"]  # bob (To) and jo (Cc) already have it
+
+
 # ---- Send-time rules ---------------------------------------------------------------------------------
 
 
