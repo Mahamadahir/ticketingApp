@@ -1266,3 +1266,38 @@ The points below are **Proposed - needs owner confirmation** (each can change ch
 5. **Proposed - needs owner confirmation: wording** is the plain label "scheduled" in the dropdown, status buttons, queue and the
    requester's portal. No email or Teams template has text of its own for it. A split original takes Scheduled from its parts by the
    same rule as every status (all Scheduled, or the only unfinished part).
+
+## To-do lists and request checklists (SRP-3, planned, not built)
+
+Asked for by the owner (3 Nov 2026): a service request type can have a **prebuilt to-do list** that appears on every ticket of
+that type, and each item can link to the documents needed to do it ("New starter": create the account, assign the licence,
+order the laptop, each with a link to its how-to). Nothing below is built. All points were **confirmed by the owner on 3 Nov 2026**:
+
+1. **Decided: defined per request type** in Admin > Request types (the 1H-i catalogue): an ordered
+   list of items, each a short label, an optional link (a URL to a document, such as a SharePoint or knowledge base page) and an
+   optional note. Only super admins edit it, like the rest of the catalogue, and changes are audited.
+2. **Decided: copied onto the ticket when it becomes that request type** (raised from the form, or
+   retyped at triage), like the approval's vote percentages: later edits to the template do not change tickets already open.
+   Retyping away from the request type keeps the ticket's list (ticked items are history). Sub-tickets from a split do not inherit it.
+3. **Decided: agents only.** Shown on the agent ticket page; anyone who works the ticket can tick and
+   untick an item, and each tick writes a ticket event (who, when). The requester does not see it in the portal or in email.
+4. **Decided: advisory, not blocking.** An unfinished list does not stop Resolve; the resolve step
+   says how many items are left. Agents can add a one-off item to a ticket's own list but cannot remove template items.
+5. **Decided: links are plain links** to documents stored elsewhere; the app does not host them. If
+   hosted documents are wanted later they reuse the 3E storage interface and its visibility check. Links must be `https://`.
+6. **Asked for by the owner (3 Nov 2026): a to-do list on any ticket.** Any agent who works a ticket, of any type (incident,
+   service request, major incident, problem), can add a to-do list to it, when raising it for someone or later from the ticket
+   page. It is the same per-ticket list as above, so a service request with a template simply starts with items in it. Decided:
+   agent-added items can be edited and removed by anyone who works the ticket (template items cannot
+   be removed); one list per ticket, not several named lists.
+7. **Asked for by the owner (3 Nov 2026): entering items in bulk.** Wherever a list is written (the request type template in
+   admin, and a ticket's own list) there are two ways to enter items besides one at a time:
+   - **One per line:** a text box where each non-blank line becomes an item, in order.
+   - **CSV:** paste CSV text or upload a `.csv` file. Decided: columns `label,link,note` in that
+     order, only `label` required; a first row reading `label` is treated as a header and skipped; UTF-8, quoted fields allowed.
+   Decided: either way the parsed items are shown for checking before they are saved; a bad row
+   (empty label, a link that is not `https://`) is reported by row number and nothing is saved until it is fixed; new items are
+   added after any existing ones; at most 100 items per list (an admin setting, placeholder value). The CSV file is read and
+   thrown away, never stored.
+
+Schema: a template table keyed by request type and a per-ticket item table that flags agent-added items; both need an Alembic migration.
