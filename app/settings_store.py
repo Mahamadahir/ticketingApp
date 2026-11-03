@@ -266,9 +266,9 @@ REGISTRY: dict[str, SettingDef] = {
         kind="minutes",
         description=(
             "When Graph does not know a person or gives no reading for them, the presence job leaves them "
-            "alone for this long before asking again. Placeholder (1440 is a day)."
+            "alone for this long before asking again. Default 60 (an hour; decided 3 Nov 2026)."
         ),
-        default="1440",
+        default="60",
     ),
     APPROVAL_DEFAULT_PASS_PERCENT: SettingDef(
         key=APPROVAL_DEFAULT_PASS_PERCENT,

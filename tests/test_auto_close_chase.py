@@ -301,6 +301,8 @@ def test_only_awaiting_user_is_ever_chased(db_session, dev_mail, status):
         resolve_ticket(db_session, ticket, None, "Fixed", send_email=False)
         db_session.commit()
     elif status != TicketStatus.OPEN:
+        if status == TicketStatus.CLOSED:
+            ticket.resolution_notes = "Closed by hand"  # closing directly needs notes (#122)
         if status == TicketStatus.SCHEDULED:
             ticket.due_on = datetime.now(timezone.utc).date() + timedelta(days=3)  # Scheduled needs a date
         move(db_session, ticket, status)

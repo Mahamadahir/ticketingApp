@@ -163,6 +163,8 @@ def test_every_status_except_new_approval_and_resolved_can_be_set(client, db_ses
         if status in (TicketStatus.NEW, TicketStatus.AWAITING_APPROVAL, TicketStatus.RESOLVED):
             continue  # New is left only by triage; Awaiting approval by the approvers; Resolved by the Resolve action
         data = {"status": status.value}
+        if status == TicketStatus.CLOSED:
+            data["resolution_notes"] = "Not needed any more"  # closing directly needs notes (#122)
         if status == TicketStatus.SCHEDULED:
             data["due_on"] = (date.today() + timedelta(days=7)).isoformat()  # Scheduled needs its date
         assert client.post(f"/tickets/{ticket.number}/status", data=data).status_code == 200
@@ -283,7 +285,7 @@ def test_email_does_not_undo_a_deliberate_status(client, db_session):
         if status == TicketStatus.RESOLVED:
             client.post(f"/tickets/{ticket.number}/resolve", data={"resolution_notes": "Fixed it"})
         else:
-            client.post(f"/tickets/{ticket.number}/status", data={"status": status.value})
+            client.post(f"/tickets/{ticket.number}/status", data={"status": status.value, "resolution_notes": "Closed"})
         db_session.refresh(ticket)
         resolved_at = ticket.resolved_at
 

@@ -99,7 +99,7 @@ REGISTRY: dict[str, TemplateDef] = {
                 "keep it free of ticket content, a queue position or a promised time (an emailed ticket has no "
                 "priority until it is triaged). It goes out under the ticket's own subject."
             ),
-            body_default="Your issue has been logged as {reference} with IT. You will be updated once the ticket is taken.",
+            body_default="Your issue has been logged as {reference} with IT. We'll be in touch.",
             body_placeholders={"reference": _COMMON["reference"], "ticket_number": _COMMON["ticket_number"]},
             sample={"reference": "INC-1042", "ticket_number": "1042"},
         ),

@@ -13,7 +13,7 @@ from app.email_templates import save_template
 from app.models import AuditLog, Message, OutboundEmail, Ticket, TicketEvent, TicketStatus, User, UserRole
 from app.resolution import ResolveError, auto_resolution_note, resolve_ticket
 from app.sla import sla_view
-from app.ticket_service import ResolutionRequired, set_status
+from app.ticket_service import ClosingNeedsNotes, ResolutionRequired, set_status
 from tests.conftest import create_team, login_as, set_role
 from tests.test_email_preview import follow, recorded, ticket_for_email
 from tests.test_raising import ago, desk, last_ticket, raise_it, FORMAT
@@ -420,3 +420,38 @@ def test_notes_without_a_resolved_time_are_refused_not_dropped(client, db_sessio
 
     assert response.status_code == 400 and "Resolved time" in response.text
     assert db_session.exec(select(Ticket)).all() == []
+
+
+# ---- Closing directly needs notes (#122) -------------------------------------------------------------
+
+
+def test_closing_an_open_ticket_needs_resolution_notes(client, db_session):
+    ticket = ticket_for_email(client, db_session)
+
+    for data in ({"status": "closed"}, {"status": "closed", "resolution_notes": "   "}):
+        response = client.post(f"/tickets/{ticket.number}/status", data=data)
+        assert response.status_code == 400 and "resolution notes" in response.text
+    assert fresh(db_session, ticket).status == TicketStatus.OPEN
+
+    assert client.post(
+        f"/tickets/{ticket.number}/status", data={"status": "closed", "resolution_notes": "Duplicate of INC-1"}
+    ).status_code == 200
+    closed = fresh(db_session, ticket)
+    assert closed.status == TicketStatus.CLOSED and closed.resolution_notes == "Duplicate of INC-1"
+    assert closed.resolved_by_id is not None and closed.closed_at is not None
+    entry = db_session.exec(select(AuditLog).where(AuditLog.action == "closed")).one()
+    assert entry.detail == "Duplicate of INC-1"
+
+
+def test_set_status_refuses_closing_without_notes_but_not_a_resolved_ticket(client, db_session):
+    ticket = ticket_for_email(client, db_session)
+    with pytest.raises(ClosingNeedsNotes):
+        set_status(db_session, ticket, TicketStatus.CLOSED, "agent@example.com")
+    db_session.rollback()
+
+
+def test_set_status_closes_a_resolved_ticket_without_new_notes(client, db_session):
+    ticket = ticket_for_email(client, db_session)
+    resolve(client, ticket)
+    ticket = fresh(db_session, ticket)
+    assert set_status(db_session, ticket, TicketStatus.CLOSED, None, detail="auto-closed")  # already has notes

@@ -135,7 +135,7 @@ def test_status_change_writes_audit(client, db_session):
     agent_id = login_as(client, "agent@example.com")
     set_role(db_session, agent_id, UserRole.AGENT, team.id)
 
-    client.post(f"/tickets/{ticket.number}/status", data={"status": "closed"})
+    client.post(f"/tickets/{ticket.number}/status", data={"status": "closed", "resolution_notes": "Duplicate"})
 
     db_session.refresh(ticket)
     assert ticket.status == TicketStatus.CLOSED

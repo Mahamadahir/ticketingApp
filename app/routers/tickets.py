@@ -90,8 +90,8 @@ from app.reopening import (
     related_tickets,
     reopen_ticket,
 )
-from app.resolution import ResolveError, check_can_resolve, preview_resolution, resolve_ticket
-from app.ticket_service import AwaitingApproval, EVENT_ASSIGNED, NotTriaged, ResolutionRequired, ScheduledNeedsDate, find_ticket, get_by_number, record_event, set_status
+from app.resolution import ResolveError, check_can_resolve, clean_notes, preview_resolution, resolve_ticket
+from app.ticket_service import AwaitingApproval, ClosingNeedsNotes, EVENT_ASSIGNED, NotTriaged, ResolutionRequired, ScheduledNeedsDate, find_ticket, get_by_number, record_event, set_status
 from app.time_zones import zone_for_email, zone_for_user
 from app.triage import TriageError, reassign_ticket, triage_ticket
 from app.visibility import (
@@ -734,6 +734,7 @@ def change_status(
     status: TicketStatus = Form(...),
     due_on: Optional[str] = Form(None, max_length=20),
     due_reason: Optional[str] = Form(None, max_length=600),
+    resolution_notes: Optional[str] = Form(None, max_length=MAX_MESSAGE_LENGTH + 1000),
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
@@ -763,10 +764,25 @@ def change_status(
     except SplitError as error:
         raise HTTPException(status_code=400, detail=str(error))
     previous_status = ticket.status
+    notes_on_close = None
+    if (
+        status == TicketStatus.CLOSED and previous_status not in (TicketStatus.RESOLVED, TicketStatus.AWAITING_APPROVAL)
+        and ticket.triaged_at is not None and not ticket.resolution_notes
+    ):
+        # Closing directly needs resolution notes, the same as resolving (#122); nothing is changed without them.
+        try:
+            notes_on_close = clean_notes(resolution_notes)
+        except ResolveError as error:
+            raise HTTPException(status_code=400, detail=str(error).replace("resolution notes", "resolution notes to close the ticket", 1))
     try:
+        if notes_on_close is not None:  # a refusal below raises, so the request never commits these
+            ticket.resolution_notes = notes_on_close
+            ticket.resolved_by_id = user.id
         changed = set_status(session, ticket, status, user.email)
     except NotTriaged:
         raise HTTPException(status_code=400, detail="Triage the ticket before changing its status")
+    except ClosingNeedsNotes:
+        raise HTTPException(status_code=400, detail="Closing a ticket needs resolution notes")
     except AwaitingApproval:
         raise HTTPException(status_code=400, detail="This request is waiting for its approvers; its status changes when they decide")
     except ResolutionRequired:
@@ -775,6 +791,8 @@ def change_status(
         raise HTTPException(status_code=400, detail="Scheduled needs a date: enter the Due date")
     if changed:
         log_action(session, user.email, "ticket", ticket.id, "status_changed", f"{previous_status.value} -> {status.value}")
+        if notes_on_close is not None:
+            log_action(session, user.email, "ticket", ticket.id, "closed", notes_on_close[:200])
     session.commit()
     session.refresh(ticket)
 

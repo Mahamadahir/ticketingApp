@@ -36,7 +36,7 @@ def test_an_emailed_ticket_gets_one_receipt_before_triage(db_session, dev_mail):
     assert mail.deliver_mail(db_session) == (1, 0)  # goes although the ticket is not triaged
     [row] = acks(db_session)
     assert row.sent_at is not None
-    assert row.body == f"Your issue has been logged as {ticket.reference} with IT. You will be updated once the ticket is taken."
+    assert row.body == f"Your issue has been logged as {ticket.reference} with IT. We'll be in touch."
     assert row.subject == f"[{ticket.reference}] Printer jam"  # the requester's own subject, so a reply finds the ticket
 
 
