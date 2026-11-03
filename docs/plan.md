@@ -1266,3 +1266,24 @@ The points below are **Proposed - needs owner confirmation** (each can change ch
 5. **Proposed - needs owner confirmation: wording** is the plain label "scheduled" in the dropdown, status buttons, queue and the
    requester's portal. No email or Teams template has text of its own for it. A split original takes Scheduled from its parts by the
    same rule as every status (all Scheduled, or the only unfinished part).
+
+## Request checklists (SRP-3, planned, not built)
+
+Asked for by the owner (3 Nov 2026): a service request type can have a **prebuilt to-do list** that appears on every ticket of
+that type, and each item can link to the documents needed to do it ("New starter": create the account, assign the licence,
+order the laptop, each with a link to its how-to). Nothing below is built; the points are **Proposed - needs owner confirmation**:
+
+1. **Proposed - needs owner confirmation: defined per request type** in Admin > Request types (the 1H-i catalogue): an ordered
+   list of items, each a short label, an optional link (a URL to a document, such as a SharePoint or knowledge base page) and an
+   optional note. Only super admins edit it, like the rest of the catalogue, and changes are audited.
+2. **Proposed - needs owner confirmation: copied onto the ticket when it becomes that request type** (raised from the form, or
+   retyped at triage), like the approval's vote percentages: later edits to the template do not change tickets already open.
+   Retyping away from the request type keeps the ticket's list (ticked items are history). Sub-tickets from a split do not inherit it.
+3. **Proposed - needs owner confirmation: agents only.** Shown on the agent ticket page; anyone who works the ticket can tick and
+   untick an item, and each tick writes a ticket event (who, when). The requester does not see it in the portal or in email.
+4. **Proposed - needs owner confirmation: advisory, not blocking.** An unfinished list does not stop Resolve; the resolve step
+   says how many items are left. Agents can add a one-off item to a ticket's own list but cannot remove template items.
+5. **Proposed - needs owner confirmation: links are plain links** to documents stored elsewhere; the app does not host them. If
+   hosted documents are wanted later they reuse the 3E storage interface and its visibility check. Links must be `https://`.
+
+Schema: a template table keyed by request type and a per-ticket item table (both need an Alembic migration).

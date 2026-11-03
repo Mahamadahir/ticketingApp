@@ -175,6 +175,8 @@ with `createReply` (sendMail returns no id, so a sent message has none).
   re-assign it to any team and then loses sight of it. Whether re-assign should be limited to
   teams the agent can see is undecided.
 
+**Request checklists (SRP-3, planned, not started).** A service request type can carry a prebuilt to-do list, copied onto each ticket of that type, with items linking to documents. Design note and Proposed choices in `docs/plan.md`, "Request checklists".
+
 **Small PRs from the decisions below (not started):** unassign tickets when an agent is removed from a team, category change after triage and per-user timezone display. (The status dropdown on Email user / Add note is built, 4B-5; see the decisions log.)
 
 
@@ -431,6 +433,7 @@ base image digest by taking Dependabot's docker PR, or by hand with `docker buil
 
 ## Open questions
 
+- **Request checklists (SRP-3) - Proposed, needs owner confirmation** (design note in `docs/plan.md`, "Request checklists"): (1) defined per request type by super admins; (2) copied onto the ticket when it becomes that type, later template edits do not change open tickets; (3) agents only, each tick is a ticket event; (4) advisory, does not block Resolve; (5) links to documents held elsewhere, not hosted by the app.
 - **Scheduled status (SRP-2, #93) - Proposed, needs owner confirmation** (design note in `docs/plan.md`, "Scheduled status"): (1) SLA: Scheduled pauses the clock like Awaiting user, except a ticket with a Required by date, which keeps running against that date (SRP-1); (2) entered by hand only, like With supplier; (3) on the date nothing happens automatically (no status move, no new job or notification); the Required by date already drives the queue order and the "required by ..., due in/overdue" SLA text; (4) a requester or follower reply changes nothing and notifies the assignee (With supplier pattern); (5) wording is the plain label "scheduled" everywhere, in the dropdown, buttons, portal and queue, with no email or Teams text of its own. The issue's "Decided" bullets (requester sets the date, past dates refused) are SRP-1's and were reused, not rebuilt.
 - **Required by date (SRP-1, #92) - Proposed, needs owner confirmation** (design note in `docs/plan.md`, "Required by date on service requests"): (1) a calendar date, deadline = end of that day UTC; (2) lead time is plain calendar days, setting `required_by_lead_days` (placeholder 2), not working days, as there is no working-day calendar; (3) first-response target unchanged, a stated date is not pushed out by Awaiting user; (4) shown as plain text "required by DATE" on the queue SLA column and ticket pages; (5) SLA figures measure these tickets against the date and mark them "required by"; (6) changes are a ticket event plus audit entry, requester may change until triage, then agents who work the ticket only.
 - **Inbound mail (3B), to confirm.** (1) Decided 22 Oct 2026: a reply-all from an unknown address inside the thread joins as a follower (see decisions); only a subject-reference-only match keeps opening a new ticket. (2) Exchange may give two separate mails with the same subject the same `conversationId`; a new mail from the requester could then join
