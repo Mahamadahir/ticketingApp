@@ -23,7 +23,7 @@ from sqlmodel import Session, select
 from app.models import FINISHED_STATUSES, Message, Notification, Ticket, User, UserRole
 from app.notification_settings import IN_APP, TEAMS, is_enabled, offers, wants_approval_email
 from app.settings_store import TEAMS_UNREAD_MINUTES, get_int_setting
-from app.visibility import Access, access_context, ticket_access, visible_ticket_condition
+from app.visibility import Access, access_context, team_members, ticket_access, visible_ticket_condition
 
 ASSIGNED = "assigned"
 MENTIONED = "mentioned"
@@ -33,6 +33,7 @@ APPROVAL_WITHDRAWN = "approval_withdrawn"
 APPROVAL_OVERDUE = "approval_overdue"
 APPROVAL_WAITING = "approval_waiting"
 DUE_TODAY = "due_today"
+CHASE_GIVEN_UP = "chase_given_up"
 AGENT_ROLES = (UserRole.AGENT, UserRole.SUPER_ADMIN)
 
 # @alice or @alice@example.com: letters, digits, dots, dashes and underscores.
@@ -357,6 +358,25 @@ def notify_approval_overdue(session: Session, ticket: Ticket, super_admin: User,
         session, super_admin, APPROVAL_OVERDUE, ticket,
         f"{ticket.tag} {ticket.subject} has waited {days} days for approval ({unanswered} had not answered)", None,
     )
+
+
+def notify_chase_given_up(session: Session, ticket: Ticket) -> list[Notification]:
+    """Tells whoever owns a ticket that its chase email could not be sent (app/auto_close_chase.py), so it is not left
+    in Awaiting user unseen: the assigned agent, or the whole team (its working members) while nobody is assigned.
+    Only people who can open the ticket. Does not commit."""
+    if ticket.assigned_agent_id is not None:
+        people = [session.get(User, ticket.assigned_agent_id)]
+    else:
+        people = team_members(session, ticket.team_id)
+    text = f"{ticket.tag} {ticket.subject}: the chase email to the requester could not be sent, so it is still waiting for them"
+    made = []
+    for person in people:
+        if person is None or not person.is_active or not _can_open(session, person, ticket):
+            continue
+        notification = notify(session, person, CHASE_GIVEN_UP, ticket, text, None)
+        if notification is not None:
+            made.append(notification)
+    return made
 
 
 def notify_due_today(session: Session, ticket: Ticket) -> Optional[Notification]:

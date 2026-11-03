@@ -18,7 +18,8 @@ change) clears the chase in `set_status`, so a ticket that goes back to Awaiting
 - A split original is never chased: its status follows its parts, so each part is chased on its own. An
   original that has been Resolved for long enough is closed like any ticket.
 - If the chase email is held (the cap, mail down) the clock waits for it to go; if it is given up on, the ticket
-  is left for an agent rather than resolved without the requester ever having been asked.
+  is left for an agent rather than resolved without the requester ever having been asked, and the assignee (or,
+  while nobody is assigned, the team's members) is told in the bell, once per chase, so it is not stuck unseen (#122).
 - With MAIL_SENDING off nothing is chased (the email would never exist), but a ticket already chased is still
   resolved when its time comes.
 
@@ -36,8 +37,9 @@ from sqlalchemy import func
 from sqlmodel import Session, select
 
 from app.audit import log_action
-from app.models import OutboundEmail, Ticket, TicketEvent, TicketStatus
+from app.models import Notification, OutboundEmail, Ticket, TicketEvent, TicketStatus
 from app.mail import give_up
+from app.notifications import CHASE_GIVEN_UP, notify_chase_given_up
 from app.outbox import CHASE, is_on, queue_chase
 from app.resolution import ResolveError, auto_resolution_note, resolve_ticket
 from app.settings_store import (
@@ -60,6 +62,7 @@ EVENT_AUTO_CLOSED = "auto_closed"  # detail: how long it had been resolved
 EVENT_CHASED = "chased"  # detail: how long it had been waiting
 AUDIT_AUTO_CLOSED = "auto_closed"
 AUDIT_CHASED = "chased"
+AUDIT_CHASE_GIVEN_UP = "chase_given_up"
 
 
 def _aware(moment: datetime) -> datetime:
@@ -221,6 +224,33 @@ def resolve_unanswered(session: Session, now: datetime) -> None:
     _each(session, ids, _resolve_one, now, days)
 
 
+def _report_one(session: Session, ticket_id: int) -> None:
+    ticket = session.get(Ticket, ticket_id)
+    if ticket is None or ticket.status != TicketStatus.AWAITING_USER or ticket.chased_at is None:
+        return
+    email = _last_chase_email(session, ticket)
+    if email is None or email.sent_at is not None or email.attempts < MAX_ATTEMPTS:
+        return  # sent, or still held or retrying
+    told = session.exec(
+        select(Notification.id).where(
+            Notification.ticket_id == ticket.id, Notification.kind == CHASE_GIVEN_UP, Notification.created_at >= email.created_at
+        ).limit(1)
+    ).first()
+    if told is None and notify_chase_given_up(session, ticket):
+        log_action(session, AUDIT_ACTOR, "ticket", ticket.id, AUDIT_CHASE_GIVEN_UP, email.last_error or "")
+
+
+def report_given_up_chases(session: Session) -> None:
+    """Tells the assignee (or the team) when a chase email was given up on, once per chase, so the ticket is not
+    left in Awaiting user with nobody knowing (an agent decides: the auto-resolve never follows a given-up chase)."""
+    ids = session.exec(
+        select(Ticket.id).where(
+            Ticket.status == TicketStatus.AWAITING_USER, Ticket.chased_at.is_not(None), ~_has_parts(Ticket.id)
+        ).order_by(Ticket.id)
+    ).all()
+    _each(session, ids, _report_one)
+
+
 def run_auto_close(session: Session, now: Optional[datetime] = None) -> None:
     """The auto-close job. Does not commit (the runner does)."""
     if not get_flag(session, AUTO_CLOSE_ENABLED):
@@ -234,4 +264,5 @@ def run_chase(session: Session, now: Optional[datetime] = None) -> None:
         return
     now = now or datetime.now(timezone.utc)
     resolve_unanswered(session, now)
+    report_given_up_chases(session)
     send_chases(session, now)

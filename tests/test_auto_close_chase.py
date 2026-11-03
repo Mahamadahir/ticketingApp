@@ -10,7 +10,7 @@ from app.auto_close_chase import run_auto_close, run_chase
 from app.config import settings
 from app.database import engine
 from app.email_templates import definition
-from app.models import AuditLog, OutboundEmail, Ticket, TicketEvent, TicketStatus
+from app.models import AuditLog, Notification, OutboundEmail, User, UserRole, Ticket, TicketEvent, TicketStatus
 from app.reopening import reopen_ticket
 from app.scheduled_jobs import run_due_jobs
 from app.settings_store import (
@@ -28,6 +28,7 @@ from app.splitting import apply_requester_reply
 from app.resolution import resolve_ticket
 from app.teams import Unsendable
 from app.ticket_service import set_status
+from tests.conftest import add_membership, create_team
 from tests.test_outbound_mail import dev_mail, rows  # noqa: F401  (dev_mail is a fixture)
 from tests.test_splitting import split, subs_of, world
 
@@ -595,3 +596,71 @@ def test_one_ticket_that_fails_does_not_stop_the_others(db_session, dev_mail, mo
     chase_job(db_session, 60)
     assert fresh(db_session, bad).status == TicketStatus.AWAITING_USER
     assert fresh(db_session, good).status == TicketStatus.RESOLVED
+
+
+# ---- A chase that cannot be sent is not left unseen (#122) -------------------------------------------------
+
+
+def agent_in(db_session, team, email):
+    agent = User(email=email, display_name=email, role=UserRole.AGENT)
+    db_session.add(agent)
+    db_session.commit()
+    add_membership(db_session, agent.id, team.id)
+    return agent
+
+
+def given_up_chase(db_session, **fields):
+    ticket = waiting(db_session, **fields)
+    configure(db_session)
+    chase_job(db_session, 3.1)
+    [row] = chases(db_session)
+    mail.give_up(row, "no address")
+    db_session.add(row)
+    db_session.commit()
+    return ticket
+
+
+def given_up_notes(db_session):
+    db_session.expire_all()
+    return db_session.exec(select(Notification).where(Notification.kind == "chase_given_up")).all()
+
+
+def test_a_given_up_chase_tells_the_assignee_once(db_session, dev_mail):
+    team = create_team(db_session, "Desk")
+    pat = agent_in(db_session, team, "pat@example.com")
+    agent_in(db_session, team, "kim@example.com")
+    ticket = given_up_chase(db_session, team_id=team.id, assigned_agent_id=pat.id)
+
+    chase_job(db_session, 4)
+    chase_job(db_session, 5)  # a second run adds nothing
+
+    [note] = given_up_notes(db_session)
+    assert note.user_id == pat.id and note.ticket_id == ticket.id and "could not be sent" in note.text
+    assert db_session.exec(select(AuditLog).where(AuditLog.action == "chase_given_up")).one().entity_id == ticket.id
+    assert fresh(db_session, ticket).status == TicketStatus.AWAITING_USER
+
+
+def test_an_unassigned_ticket_tells_the_team(db_session, dev_mail):
+    team = create_team(db_session, "Desk")
+    pat = agent_in(db_session, team, "pat@example.com")
+    kim = agent_in(db_session, team, "kim@example.com")
+    other = create_team(db_session, "Elsewhere")
+    agent_in(db_session, other, "lee@example.com")
+    given_up_chase(db_session, team_id=team.id)
+
+    chase_job(db_session, 4)
+
+    assert sorted(n.user_id for n in given_up_notes(db_session)) == sorted([pat.id, kim.id])
+
+
+def test_nothing_is_said_while_the_chase_is_still_going_or_after_it_was_sent(db_session, dev_mail):
+    team = create_team(db_session, "Desk")
+    pat = agent_in(db_session, team, "pat@example.com")
+    waiting(db_session, team_id=team.id, assigned_agent_id=pat.id)
+    configure(db_session)
+    chase_job(db_session, 3.1)  # queued, not yet sent
+    chase_job(db_session, 4)
+    assert given_up_notes(db_session) == []
+    mark_sent(db_session, outbox.CHASE)
+    chase_job(db_session, 5)
+    assert given_up_notes(db_session) == []
