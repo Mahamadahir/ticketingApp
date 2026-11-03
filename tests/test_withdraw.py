@@ -43,7 +43,7 @@ def vote_id_of(db_session, email):
 
 def test_the_requester_withdraws_while_it_waits(client, db_session):
     emails = many(client, db_session, ("a", "b"))
-    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 100, 2))
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 100))
     client.post("/auth/logout")
     login_as(client, "jo@example.com")
     assert "Withdraw this request" in client.get(f"/portal/{ticket.number}").text
@@ -64,7 +64,7 @@ def test_the_requester_withdraws_while_it_waits(client, db_session):
 
 def test_nobody_but_the_requester_can_withdraw(client, db_session):
     emails = many(client, db_session, ("a", "b"))
-    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 100, 2))
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 100))
     person(client, db_session, "other@example.com")
     for who in ("a@example.com", "other@example.com"):  # an approver, a stranger
         assert withdraw_as(client, ticket, who).status_code == 404
@@ -78,7 +78,7 @@ def test_a_follower_cannot_withdraw(client, db_session):
     from app.followers import add_follower
 
     emails = many(client, db_session, ("a", "b"))
-    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 100, 2))
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 100))
     person(client, db_session, "friend@example.com")
     add_follower(db_session, fresh(db_session, ticket), "friend@example.com", "jo@example.com")
     db_session.commit()
@@ -88,7 +88,7 @@ def test_a_follower_cannot_withdraw(client, db_session):
 
 def test_not_after_an_approval(client, db_session):
     emails = many(client, db_session, ("a", "b"))
-    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 50, 100))
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 50))
     assert answer(client, ticket, "a@example.com", "approved").status_code == 200
     assert status(db_session, ticket) == TicketStatus.OPEN
 
@@ -103,7 +103,7 @@ def test_not_after_an_approval(client, db_session):
 
 def test_not_after_a_decline(client, db_session):
     emails = many(client, db_session, ("a", "b"))
-    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 100, 2))
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 100))
     answer(client, ticket, "a@example.com", "declined")
     assert status(db_session, ticket) == TicketStatus.CLOSED
     withdraw_as(client, ticket)
@@ -121,7 +121,7 @@ def test_withdrawing_twice_changes_nothing_the_second_time(client, db_session):
 
 def test_a_voter_who_had_answered_keeps_their_vote(client, db_session):
     emails = many(client, db_session, ("a", "b", "c"))
-    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 100, 2))
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 100))
     answer(client, ticket, "a@example.com", "approved")
     withdraw_as(client, ticket)
     assert approvals(db_session, ticket) == {"a@example.com": APPROVED, "b@example.com": NOT_NEEDED, "c@example.com": NOT_NEEDED}
@@ -129,7 +129,7 @@ def test_a_voter_who_had_answered_keeps_their_vote(client, db_session):
 
 def test_the_emailed_link_no_longer_decides_anything(client, db_session):
     emails = many(client, db_session, ("a", "b"))
-    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 100, 2))
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 100))
     url = link_for(db_session, ticket, "a@example.com")
     withdraw_as(client, ticket)
     client.post("/auth/logout")
@@ -147,7 +147,7 @@ def test_the_emailed_link_no_longer_decides_anything(client, db_session):
 
 def test_the_portal_answer_is_refused_too(client, db_session):
     emails = many(client, db_session, ("a", "b"))
-    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 100, 2))
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 100))
     withdraw_as(client, ticket)
     assert answer(client, ticket, "a@example.com", "approved").status_code == 400
     assert status(db_session, ticket) == TicketStatus.CLOSED
@@ -167,7 +167,7 @@ def test_the_request_leaves_the_approvers_waiting_list(client, db_session):
 
 def test_unanswered_approvers_are_emailed_per_preference_and_answered_ones_are_not(client, db_session, dev_mail):
     emails = many(client, db_session, ("a", "b", "c"))
-    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 100, 2))
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 100))
     opt_out_of_approval_emails(db_session, "c@example.com")
     mark_approval_emails_sent(db_session)
     answer(client, ticket, "a@example.com", "approved")
@@ -241,7 +241,7 @@ def test_an_end_user_approver_has_no_bell(client, db_session):
 
 def test_a_withdrawal_racing_the_final_vote_gives_exactly_one_outcome(client, db_session):
     emails = many(client, db_session, ("a", "b"))
-    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 50, 100))
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 50))
     vote_id = vote_id_of(db_session, "a@example.com")
     outcome = {}
 
@@ -272,7 +272,7 @@ def test_a_withdrawal_racing_the_final_vote_gives_exactly_one_outcome(client, db
 
 def test_a_final_vote_landing_first_makes_the_withdrawal_refuse(client, db_session):
     emails = many(client, db_session, ("a", "b"))
-    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 50, 100))
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 50))
     vote_id = vote_id_of(db_session, "a@example.com")
     holder = Session(engine)
     assert record_decision(holder, holder.get(ApprovalVote, vote_id), APPROVED, "") == APPROVED
@@ -302,7 +302,7 @@ def test_a_final_vote_landing_first_makes_the_withdrawal_refuse(client, db_sessi
 
 def test_a_vote_decided_since_the_session_loaded_it_is_not_overwritten(client, db_session):
     emails = many(client, db_session, ("a", "b"))
-    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 100, 2))
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 100))
     session = Session(engine)
     loaded = session.get(Ticket, ticket.id)
     approval = current_approval(session, loaded)

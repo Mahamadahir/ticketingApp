@@ -433,11 +433,9 @@ class RequestType(SQLModel, table=True):
     description: str = Field(default="")
     is_active: bool = Field(default=True)
     approval_group_id: Optional[int] = Field(default=None, foreign_key="approvalgroup.id", index=True)
-    # Share of the voters that must approve for the request to pass, and that must decline for
-    # it to fail (app/approvals.py). pass + fail must be more than 100, so a complete vote
-    # always has an outcome.
+    # Share of the voters that must approve for the request to pass, 1 to 100 (app/approvals.py);
+    # it fails as soon as that can no longer be reached.
     pass_percent: int = Field(default=51)
-    fail_percent: int = Field(default=50)
     # Whether the request form offers a Required by date for this kind of request (app/required_by.py).
     offers_required_by: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -445,7 +443,7 @@ class RequestType(SQLModel, table=True):
 
 class TicketApproval(SQLModel, table=True):
     """The approval asked of a ticket (app/approvals.py): at most one pending at a time. The group,
-    the two percentages and the number of voters are copied when it starts, so editing the request
+    the pass percentage and the number of voters are copied when it starts, so editing the request
     type or the group later cannot change a request already waiting."""
 
     __table_args__ = (
@@ -456,7 +454,6 @@ class TicketApproval(SQLModel, table=True):
     ticket_id: int = Field(foreign_key="ticket.id", index=True)
     group_id: int = Field(foreign_key="approvalgroup.id", index=True)
     pass_percent: int
-    fail_percent: int
     voters: int  # fixed when the approval starts
     status: str = Field(default="pending")  # pending, approved, declined, waived, withdrawn
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

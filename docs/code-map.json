@@ -49,6 +49,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/a7d3e1f60b92_single_pass_percent.py",
+        "revision": "a7d3e1f60b92"
+      },
+      {
         "file": "migrations/versions/c4e7a2b9d106_scheduled_status.py",
         "revision": "c4e7a2b9d106"
       },
@@ -63,17 +67,13 @@
       {
         "file": "migrations/versions/d546e15ede32_action_tokens_and_ticket_feedback.py",
         "revision": "d546e15ede32"
-      },
-      {
-        "file": "migrations/versions/cee91863c890_thanks_rules.py",
-        "revision": "cee91863c890"
       }
     ],
-    "count": 44,
+    "count": 45,
     "heads": [
       {
-        "file": "migrations/versions/c4e7a2b9d106_scheduled_status.py",
-        "revision": "c4e7a2b9d106"
+        "file": "migrations/versions/a7d3e1f60b92_single_pass_percent.py",
+        "revision": "a7d3e1f60b92"
       }
     ]
   },

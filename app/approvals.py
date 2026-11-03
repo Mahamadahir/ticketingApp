@@ -82,19 +82,13 @@ class ApprovalError(ValueError):
 
 
 class PercentError(ValueError):
-    """A reason the two percentages cannot be saved, worded for the admin."""
+    """A reason the pass percentage cannot be saved, worded for the admin."""
 
 
-def check_percentages(pass_percent: int, fail_percent: int) -> None:
-    """Both 1 to 100, and together more than 100 so that a complete vote always has an outcome."""
-    for value in (pass_percent, fail_percent):
-        if not 1 <= value <= 100:
-            raise PercentError("The percentages must be whole numbers from 1 to 100")
-    if pass_percent + fail_percent <= 100:
-        raise PercentError(
-            f"The pass and fail percentages must add up to more than 100 (they add up to {pass_percent + fail_percent}), "
-            "or a complete vote could end without an outcome"
-        )
+def check_percentages(pass_percent: int) -> None:
+    """The pass percentage is a whole number from 1 to 100."""
+    if not 1 <= pass_percent <= 100:
+        raise PercentError("The pass percentage must be a whole number from 1 to 100")
 
 
 def votes_needed(percent: int, voters: int) -> int:
@@ -102,18 +96,16 @@ def votes_needed(percent: int, voters: int) -> int:
     return -(-percent * voters // 100)
 
 
-def outcome(approved: int, declined: int, voters: int, pass_percent: int, fail_percent: int) -> Optional[str]:
-    """APPROVED, DECLINED, or None while it is still open. A decline wins when both are reached, and a
-    complete vote that reached neither share is a decline."""
+def outcome(approved: int, declined: int, voters: int, pass_percent: int) -> Optional[str]:
+    """APPROVED as soon as the approvals reach the pass percentage, DECLINED as soon as it can no longer
+    be reached (more declines than voters - votes_needed), else None while it is still open. A complete
+    vote always reaches one of the two."""
     if voters <= 0:
         return None
-    if declined * 100 >= fail_percent * voters:
-        return DECLINED
-    if approved * 100 >= pass_percent * voters:
+    needed = votes_needed(pass_percent, voters)
+    if approved >= needed:
         return APPROVED
-    if approved + declined >= voters:
-        # Everyone has answered and neither share was reached (pass + fail above 100 allows that, for
-        # example 1 of 2 at 57 and 51): not approved, so it is declined rather than left waiting for ever.
+    if declined > voters - needed:
         return DECLINED
     return None
 
@@ -145,7 +137,7 @@ def start_approvals(session: Session, ticket: Ticket, actor_email: str) -> Ticke
     request_type = session.get(RequestType, ticket.request_type_id)
     approval = TicketApproval(
         ticket_id=ticket.id, group_id=request_type.approval_group_id, voters=len(voters),
-        pass_percent=request_type.pass_percent, fail_percent=request_type.fail_percent,
+        pass_percent=request_type.pass_percent,
     )
     session.add(approval)
     session.flush()
@@ -163,10 +155,7 @@ def start_approvals(session: Session, ticket: Ticket, actor_email: str) -> Ticke
 
 def describe_rule(approval: TicketApproval) -> str:
     n = approval.voters
-    return (
-        f"{votes_needed(approval.pass_percent, n)} of {n} must approve ({approval.pass_percent}%), "
-        f"{votes_needed(approval.fail_percent, n)} must decline ({approval.fail_percent}%)"
-    )
+    return f"{votes_needed(approval.pass_percent, n)} of {n} must approve ({approval.pass_percent}%)"
 
 
 def current_approval(session: Session, ticket: Ticket) -> Optional[TicketApproval]:
@@ -323,7 +312,7 @@ def decide(session: Session, vote: ApprovalVote, decision: str, comment: str) ->
 
     votes = [v for v, _ in votes_of(session, approval)]
     approved, declined, _ = tally(votes)
-    result = outcome(approved, declined, approval.voters, approval.pass_percent, approval.fail_percent)
+    result = outcome(approved, declined, approval.voters, approval.pass_percent)
     if result is not None:
         _settle(session, ticket, approval, result, votes, voter)
     return result

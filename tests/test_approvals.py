@@ -48,16 +48,16 @@ def person(client, db_session, email, name=None):
     client.post("/auth/logout")
 
 
-def request_type(db_session, approvers, pass_percent=50, fail_percent=51, name="New starter"):
-    """A request type whose group (named like it) has these members. The defaults let one approval pass
-    the request (with two voters) and need everyone to decline; tests that care pass their own numbers."""
+def request_type(db_session, approvers, pass_percent=50, name="New starter"):
+    """A request type whose group (named like it) has these members. The default lets one approval pass
+    the request (with two voters), and it takes both declining to close it; tests that care pass their own numbers."""
     group = create_group(db_session, name)
     for email in approvers or ["nobody-yet@example.com"]:
         if db_session.exec(select(User).where(User.email == email)).first() is None:
             db_session.add(User(email=email, display_name=email))
             db_session.flush()
         add_member(db_session, group, email)
-    created = create_request_type(db_session, name, "", group.id, pass_percent, fail_percent)
+    created = create_request_type(db_session, name, "", group.id, pass_percent)
     if not approvers:  # an active type whose group has since been emptied (saving one that way is refused)
         for row in db_session.exec(select(ApprovalGroupMember)).all():
             db_session.delete(row)
@@ -136,13 +136,13 @@ def test_triaging_a_catalogue_request_with_a_group_waits_for_its_members(client,
     assert ticket.status == TicketStatus.AWAITING_APPROVAL and ticket.triaged_at is not None
     assert approvals(db_session, ticket) == {"boss@example.com": PENDING, "lead@example.com": PENDING}
     approval = current_approval(db_session, ticket)
-    assert (approval.voters, approval.pass_percent, approval.fail_percent, approval.status) == (2, 50, 51, PENDING)
+    assert (approval.voters, approval.pass_percent, approval.status) == (2, 50, PENDING)
     assert approval.group_id == kind.approval_group_id
     [asked] = events(db_session, ticket, "approval_requested")
     assert asked.to_value == "boss@example.com, lead@example.com"
-    assert asked.detail == "1 of 2 must approve (50%), 2 must decline (51%)"
+    assert asked.detail == "1 of 2 must approve (50%)"
     page = client.get(f"/tickets/{ticket.number}").text
-    assert "Waiting for approval</b> (1 of 2 must approve (50%), 2 must decline (51%))" in page
+    assert "Waiting for approval</b> (1 of 2 must approve (50%))" in page
     assert "Approvals: pending" in page
 
 
@@ -155,7 +155,7 @@ def test_a_request_type_with_an_empty_group_opens_as_usual(client, db_session):
 def test_the_requester_never_votes_on_their_own_request(client, db_session):
     person(client, db_session, "boss@example.com")
     person(client, db_session, "jo@example.com")
-    kind = request_type(db_session, ["boss@example.com", "jo@example.com"], 100, 1)
+    kind = request_type(db_session, ["boss@example.com", "jo@example.com"], 100)
 
     ticket = raised_and_triaged(client, db_session, kind, requester="jo@example.com")
 
@@ -229,7 +229,7 @@ def test_there_is_only_one_pending_approval_per_ticket(client, db_session):
     ticket = raised_and_triaged(client, db_session, request_type(db_session, ["boss@example.com"]))
     approval = current_approval(db_session, ticket)
     db_session.add(TicketApproval(
-        ticket_id=ticket.id, group_id=approval.group_id, voters=1, pass_percent=50, fail_percent=51,
+        ticket_id=ticket.id, group_id=approval.group_id, voters=1, pass_percent=50,
     ))
     with pytest.raises(IntegrityError):
         db_session.commit()
@@ -240,63 +240,59 @@ def test_there_is_only_one_pending_approval_per_ticket(client, db_session):
 
 
 @pytest.mark.parametrize(
-    "approved,declined,voters,pass_percent,fail_percent,expected",
+    "approved,declined,voters,pass_percent,expected",
     [
-        (0, 0, 3, 51, 50, None),
-        (1, 0, 1, 51, 50, APPROVED),
-        (2, 0, 3, 51, 50, APPROVED),  # 66.7% >= 51%
-        (1, 1, 3, 51, 50, None),
-        (1, 2, 3, 51, 50, DECLINED),
-        (1, 1, 2, 51, 50, DECLINED),  # 50% decline reaches 50%; the 50% approve does not reach 51%
-        (1, 0, 2, 51, 50, None),  # 50% < 51%: half is not a majority
-        (1, 0, 2, 50, 51, APPROVED),  # exactly 50% reaches a 50% threshold
-        (0, 1, 2, 50, 51, None),
-        (0, 2, 2, 50, 51, DECLINED),
-        (3, 0, 4, 75, 26, APPROVED),  # 75% exactly
-        (2, 0, 4, 75, 26, None),
-        (1, 0, 4, 75, 26, None),  # 25% < 26%
-        (1, 1, 4, 75, 26, None),  # 25% each: neither reaches its threshold
-        # 100 / 1: everyone must approve, any decline closes it
-        (2, 0, 3, 100, 1, None),
-        (3, 0, 3, 100, 1, APPROVED),
-        (2, 1, 3, 100, 1, DECLINED),
-        # 1 / 100: any one approval passes, only everyone declining fails
-        (1, 0, 5, 1, 100, APPROVED),
-        (0, 4, 5, 1, 100, None),
-        (0, 5, 5, 1, 100, DECLINED),
-        # a decline wins when both are reached together (only possible if the numbers were not validated)
-        (1, 1, 2, 50, 50, DECLINED),
-        (2, 2, 4, 50, 50, DECLINED),
-        (0, 0, 0, 50, 51, None),  # nobody to vote: never settles by itself
-        (1, 1, 2, 57, 51, DECLINED),  # everyone answered, neither share reached (57/51 allows that): declined
-        (2, 1, 3, 100, 100, DECLINED),  # 67% approve < 100% and 33% decline < 100%, all answered
-        (1, 0, 2, 57, 51, None),  # still waiting for the second
+        (0, 0, 0, 50, None),  # nobody to vote: never settles by itself
+        (0, 0, 3, 51, None),
+        (1, 0, 1, 51, APPROVED),
+        (2, 0, 3, 51, APPROVED),  # needs ceil(1.53) = 2
+        (1, 1, 3, 51, None),
+        (1, 2, 3, 51, DECLINED),  # 2 declines leave only 1 possible approval, 2 are needed
+        (1, 1, 2, 51, DECLINED),  # needs 2 of 2, one decline makes it unreachable
+        (1, 0, 2, 51, None),
+        (1, 0, 2, 50, APPROVED),  # equal counts as met
+        (0, 1, 2, 50, None),
+        (0, 2, 2, 50, DECLINED),
+        # 5 voters at 60%: 3 yes approves, 3 no declines
+        (2, 2, 5, 60, None),
+        (3, 0, 5, 60, APPROVED),
+        (0, 3, 5, 60, DECLINED),
+        (2, 3, 5, 60, DECLINED),
+        # 4 voters at 60%: 2.4 rounds up to 3
+        (2, 0, 4, 60, None),
+        (3, 0, 4, 60, APPROVED),
+        (1, 2, 4, 60, DECLINED),
+        (2, 1, 4, 60, None),
+        # 100%: everyone must approve, any decline closes it
+        (2, 0, 3, 100, None),
+        (3, 0, 3, 100, APPROVED),
+        (2, 1, 3, 100, DECLINED),
+        # 1%: any one approval passes, only everyone declining fails
+        (1, 0, 5, 1, APPROVED),
+        (0, 4, 5, 1, None),
+        (0, 5, 5, 1, DECLINED),
     ],
 )
-def test_the_outcome_rule(approved, declined, voters, pass_percent, fail_percent, expected):
-    assert outcome(approved, declined, voters, pass_percent, fail_percent) == expected
+def test_the_outcome_rule(approved, declined, voters, pass_percent, expected):
+    assert outcome(approved, declined, voters, pass_percent) == expected
 
 
 def test_a_complete_vote_always_has_an_outcome():
     for voters in range(1, 9):
-        for pass_percent in range(1, 101, 7):
-            for fail_percent in range(max(1, 101 - pass_percent), 101, 7):
-                check_percentages(pass_percent, fail_percent)
-                for approved in range(voters + 1):
-                    assert outcome(approved, voters - approved, voters, pass_percent, fail_percent) is not None, (
-                        voters, pass_percent, fail_percent, approved,
-                    )
+        for pass_percent in range(1, 101):
+            for approved in range(voters + 1):
+                assert outcome(approved, voters - approved, voters, pass_percent) is not None, (voters, pass_percent, approved)
 
 
-@pytest.mark.parametrize("pass_percent,fail_percent", [(50, 50), (1, 99), (100, 0), (0, 100), (101, 50), (30, 30), (-5, 120)])
-def test_the_percentages_must_add_up_to_more_than_100(pass_percent, fail_percent):
+@pytest.mark.parametrize("pass_percent", [0, 101, -5, 150])
+def test_the_pass_percentage_must_be_1_to_100(pass_percent):
     with pytest.raises(PercentError):
-        check_percentages(pass_percent, fail_percent)
+        check_percentages(pass_percent)
 
 
-@pytest.mark.parametrize("pass_percent,fail_percent", [(51, 50), (50, 51), (100, 1), (1, 100), (100, 100)])
-def test_valid_percentages_are_accepted(pass_percent, fail_percent):
-    check_percentages(pass_percent, fail_percent)
+@pytest.mark.parametrize("pass_percent", [1, 50, 51, 100])
+def test_valid_percentages_are_accepted(pass_percent):
+    check_percentages(pass_percent)
 
 
 def test_votes_needed_rounds_up():
@@ -326,10 +322,10 @@ def test_one_approval_can_be_enough_and_opens_the_request(client, db_session):
     assert "Your request has been approved" in client.get(f"/portal/{ticket.number}").text
 
 
-def test_a_decline_that_reaches_the_fail_percent_closes_it_and_tells_the_requester_why(client, db_session):
+def test_a_decline_that_makes_the_pass_percent_unreachable_closes_it_and_tells_the_requester_why(client, db_session):
     person(client, db_session, "boss@example.com")
     person(client, db_session, "lead@example.com")
-    ticket = raised_and_triaged(client, db_session, request_type(db_session, ["boss@example.com", "lead@example.com"], 51, 50))
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, ["boss@example.com", "lead@example.com"], 51))
 
     answer(client, ticket, "lead@example.com", "declined", "No budget")
 
@@ -346,7 +342,7 @@ def test_a_decline_that_reaches_the_fail_percent_closes_it_and_tells_the_request
 
 def test_two_of_three_pass_a_simple_majority_and_the_third_is_not_needed(client, db_session):
     emails = many(client, db_session)
-    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 51, 50))
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 51))
 
     answer(client, ticket, "a@example.com", "approved")
     assert status(db_session, ticket) == TicketStatus.AWAITING_APPROVAL
@@ -358,7 +354,7 @@ def test_two_of_three_pass_a_simple_majority_and_the_third_is_not_needed(client,
 
 def test_two_declines_of_three_close_it_at_fifty_percent(client, db_session):
     emails = many(client, db_session)
-    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 51, 50))
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 51))
 
     answer(client, ticket, "a@example.com", "declined")
     assert status(db_session, ticket) == TicketStatus.AWAITING_APPROVAL  # 33% < 50%
@@ -369,7 +365,7 @@ def test_two_declines_of_three_close_it_at_fifty_percent(client, db_session):
 
 def test_a_pass_of_100_needs_everyone(client, db_session):
     emails = many(client, db_session)
-    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 100, 1))
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 100))
     answer(client, ticket, "a@example.com", "approved")
     answer(client, ticket, "b@example.com", "approved")
     assert status(db_session, ticket) == TicketStatus.AWAITING_APPROVAL  # 67% < 100%
@@ -380,14 +376,14 @@ def test_a_pass_of_100_needs_everyone(client, db_session):
 
 def test_a_fail_of_1_closes_on_the_first_decline(client, db_session):
     emails = many(client, db_session)
-    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 100, 1))
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 100))
     answer(client, ticket, "a@example.com", "declined")
     assert status(db_session, ticket) == TicketStatus.CLOSED
 
 
 def test_fifty_and_fifty_one_split_a_pair(client, db_session):
     emails = many(client, db_session, ("a", "b"))
-    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 50, 51))
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 50))
     answer(client, ticket, "a@example.com", "declined")
     assert status(db_session, ticket) == TicketStatus.AWAITING_APPROVAL  # 50% < 51%
     answer(client, ticket, "b@example.com", "approved")  # 50% reaches pass 50%
@@ -396,7 +392,7 @@ def test_fifty_and_fifty_one_split_a_pair(client, db_session):
 
 def test_a_tie_in_a_pair_is_a_decline_at_51_and_50(client, db_session):
     emails = many(client, db_session, ("a", "b"))
-    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 51, 50))
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 51))
     answer(client, ticket, "a@example.com", "approved")
     assert status(db_session, ticket) == TicketStatus.AWAITING_APPROVAL  # 50% < 51%
     answer(client, ticket, "b@example.com", "declined")  # 50% reaches 50%
@@ -406,7 +402,7 @@ def test_a_tie_in_a_pair_is_a_decline_at_51_and_50(client, db_session):
 def test_the_voters_are_fixed_when_it_starts(client, db_session):
     emails = many(client, db_session, ("a", "b", "c", "d"))
     person(client, db_session, "late@example.com")
-    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails[:2], 100, 1))
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails[:2], 100))
     approval = current_approval(db_session, ticket)
     group = db_session.get(ApprovalGroup, approval.group_id)
     for email in ("c@example.com", "d@example.com"):
@@ -423,9 +419,9 @@ def test_the_voters_are_fixed_when_it_starts(client, db_session):
 
 def test_the_rule_is_copied_when_it_starts_so_later_edits_do_not_change_it(client, db_session):
     emails = many(client, db_session, ("a", "b"))
-    kind = request_type(db_session, emails, 100, 1)
+    kind = request_type(db_session, emails, 100)
     ticket = raised_and_triaged(client, db_session, kind)
-    kind.pass_percent, kind.fail_percent = 50, 100
+    kind.pass_percent = 50
     db_session.add(kind)
     db_session.commit()
 
@@ -439,7 +435,7 @@ def test_the_rule_is_copied_when_it_starts_so_later_edits_do_not_change_it(clien
 
 def test_each_voter_answers_once_and_only_while_it_is_waiting(client, db_session):
     emails = many(client, db_session, ("a", "b"))
-    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 100, 2))
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 100))
 
     assert answer(client, ticket, "a@example.com", "approved").status_code == 200
     again = answer(client, ticket, "a@example.com", "declined")
@@ -488,7 +484,7 @@ def test_two_members_voting_at_the_same_moment_are_counted_once_each(client, db_
     its own vote (the other is uncommitted) and the request would wait for ever. The barrier makes the
     two meet at the count; with the lock the second one is held outside it, so the first gives up waiting."""
     emails = many(client, db_session, ("a", "b"))
-    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 100, 2))
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 100))
     ids = {
         user.email: vote.id
         for vote, user in db_session.exec(select(ApprovalVote, User).join(User, User.id == ApprovalVote.voter_id)).all()
@@ -535,7 +531,7 @@ def test_two_members_voting_at_the_same_moment_are_counted_once_each(client, db_
 
 def test_voters_yet_to_vote_lists_the_pending_members_of_a_pending_approval(client, db_session):
     emails = many(client, db_session)
-    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 100, 2))
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 100))
     approval = current_approval(db_session, ticket)
     assert [u.email for _, u in voters_yet_to_vote(db_session, approval)] == emails
 
@@ -549,8 +545,8 @@ def test_voters_yet_to_vote_lists_the_pending_members_of_a_pending_approval(clie
 
 
 def test_describe_rule_is_for_people(client, db_session):
-    approval = TicketApproval(ticket_id=1, group_id=1, voters=3, pass_percent=67, fail_percent=34)
-    assert describe_rule(approval) == "3 of 3 must approve (67%), 2 must decline (34%)"
+    approval = TicketApproval(ticket_id=1, group_id=1, voters=5, pass_percent=60)
+    assert describe_rule(approval) == "3 of 5 must approve (60%)"
 
 
 # ---- The hold ----------------------------------------------------------------------------------------
@@ -592,7 +588,7 @@ def test_the_clock_keeps_running_while_waiting(client, db_session):
 
 def test_a_super_admin_can_waive_the_approval_and_agents_cannot(client, db_session):
     emails = many(client, db_session, ("a", "b"))
-    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 100, 2))
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 100))
     assert client.post(f"/tickets/{ticket.number}/approval/waive").status_code == 403  # the agent
 
     client.post("/auth/logout")
@@ -632,7 +628,7 @@ def test_a_member_sees_and_opens_what_waits_for_them_in_the_portal(client, db_se
 
 def test_waiting_for_your_approval_follows_group_membership(client, db_session):
     emails = many(client, db_session, ("a", "b"))
-    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 100, 2))
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 100))
     group = db_session.get(ApprovalGroup, current_approval(db_session, ticket).group_id)
     from app.approval_groups import remove_member
 
@@ -729,7 +725,7 @@ def test_a_bad_or_expired_link_is_a_404_page_that_points_to_the_portal(client, d
 
 def test_every_member_has_their_own_link_and_it_answers_only_for_them(client, db_session):
     emails = many(client, db_session, ("a", "b"))
-    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 100, 2))
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 100))
     url_a, url_b = link_for(db_session, ticket, "a@example.com"), link_for(db_session, ticket, "b@example.com")
     assert url_a != url_b
     client.post("/auth/logout")
@@ -742,7 +738,7 @@ def test_every_member_has_their_own_link_and_it_answers_only_for_them(client, db
 
 def test_a_link_for_a_removed_member_no_longer_answers(client, db_session):
     emails = many(client, db_session, ("a", "b"))
-    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 100, 2))
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 100))
     url = link_for(db_session, ticket, "a@example.com")
     group = db_session.get(ApprovalGroup, current_approval(db_session, ticket).group_id)
     from app.approval_groups import remove_member
@@ -793,17 +789,12 @@ def test_page_text_is_escaped(client, db_session):
 
 
 def test_the_default_percentages_are_settings(client, db_session):
-    from app.settings_store import (
-        APPROVAL_DEFAULT_FAIL_PERCENT,
-        APPROVAL_DEFAULT_PASS_PERCENT,
-        REGISTRY,
-        get_setting,
-    )
+    from app.settings_store import APPROVAL_DEFAULT_PASS_PERCENT, REGISTRY, get_setting
 
-    for key in (APPROVAL_DEFAULT_PASS_PERCENT, APPROVAL_DEFAULT_FAIL_PERCENT):
-        assert REGISTRY[key].kind == "vote_percent"
-    assert (get_setting(db_session, APPROVAL_DEFAULT_PASS_PERCENT), get_setting(db_session, APPROVAL_DEFAULT_FAIL_PERCENT)) == ("51", "50")
-    check_percentages(int(REGISTRY[APPROVAL_DEFAULT_PASS_PERCENT].default), int(REGISTRY[APPROVAL_DEFAULT_FAIL_PERCENT].default))
+    assert REGISTRY[APPROVAL_DEFAULT_PASS_PERCENT].kind == "vote_percent"
+    assert get_setting(db_session, APPROVAL_DEFAULT_PASS_PERCENT) == "51"
+    assert "approval_default_fail_percent" not in REGISTRY
+    check_percentages(int(REGISTRY[APPROVAL_DEFAULT_PASS_PERCENT].default))
 
 
 # ---- Review fixes -----------------------------------------------------------------------------------
@@ -811,7 +802,7 @@ def test_the_default_percentages_are_settings(client, db_session):
 
 def test_someone_removed_from_the_group_can_no_longer_answer_but_still_counts_as_a_voter(client, db_session):
     emails = many(client, db_session, ("a", "b"))
-    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 100, 2))
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 100))
     group = db_session.get(ApprovalGroup, current_approval(db_session, ticket).group_id)
     from app.approval_groups import remove_member
 
@@ -860,7 +851,7 @@ def test_the_waiting_count_is_right(client, db_session):
 
 def test_the_waiting_count_leaves_out_what_the_person_already_answered(client, db_session):
     emails = many(client, db_session, ("a", "b"))
-    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 100, 2))
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, 100))
     from app.approvals import count_pending_for
 
     a = db_session.exec(select(User).where(User.email == "a@example.com")).one()

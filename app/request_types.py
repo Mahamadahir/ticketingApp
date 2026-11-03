@@ -42,11 +42,11 @@ def _name_taken(session: Session, name: str, except_id: Optional[int]) -> bool:
     return session.exec(query).first() is not None
 
 
-def _checked(session: Session, group_id: Optional[int], pass_percent: int, fail_percent: int, is_active: bool) -> None:
+def _checked(session: Session, group_id: Optional[int], pass_percent: int, is_active: bool) -> None:
     if group_id is not None and session.get(ApprovalGroup, group_id) is None:
         raise RequestTypeError("That approval group does not exist")
     try:
-        check_percentages(pass_percent, fail_percent)
+        check_percentages(pass_percent)
     except PercentError as error:
         raise RequestTypeError(str(error))
     if is_active and not members_of(session, group_id):
@@ -67,15 +67,15 @@ def _flush(session: Session) -> None:
 
 def create_request_type(
     session: Session, name: str, description: str, group_id: Optional[int],
-    pass_percent: int, fail_percent: int, is_active: bool = True, offers_required_by: bool = False,
+    pass_percent: int, is_active: bool = True, offers_required_by: bool = False,
 ) -> RequestType:
     name, description = _clean(name, description)
     if _name_taken(session, name, None):
         raise RequestTypeError("There is already a request type with that name")
-    _checked(session, group_id, pass_percent, fail_percent, is_active)
+    _checked(session, group_id, pass_percent, is_active)
     request_type = RequestType(
         name=name, description=description, is_active=is_active, approval_group_id=group_id,
-        pass_percent=pass_percent, fail_percent=fail_percent, offers_required_by=offers_required_by,
+        pass_percent=pass_percent, offers_required_by=offers_required_by,
     )
     session.add(request_type)
     _flush(session)
@@ -84,15 +84,15 @@ def create_request_type(
 
 def update_request_type(
     session: Session, request_type: RequestType, name: str, description: str, group_id: Optional[int],
-    pass_percent: int, fail_percent: int, is_active: bool, offers_required_by: Optional[bool] = None,
+    pass_percent: int, is_active: bool, offers_required_by: Optional[bool] = None,
 ) -> RequestType:
     name, description = _clean(name, description)
     if _name_taken(session, name, request_type.id):
         raise RequestTypeError("There is already a request type with that name")
-    _checked(session, group_id, pass_percent, fail_percent, is_active)
+    _checked(session, group_id, pass_percent, is_active)
     request_type.name, request_type.description, request_type.is_active = name, description, is_active
     request_type.approval_group_id = group_id
-    request_type.pass_percent, request_type.fail_percent = pass_percent, fail_percent
+    request_type.pass_percent = pass_percent
     if offers_required_by is not None:
         request_type.offers_required_by = offers_required_by
     session.add(request_type)

@@ -247,15 +247,15 @@ any change that adds, removes or renames modules, routes, models, jobs, settings
 
 ## Migrations
 
-44 revisions. Head: `c4e7a2b9d106`.
+45 revisions. Head: `a7d3e1f60b92`.
 
 Chain tail (newest first):
 
+- `a7d3e1f60b92` migrations/versions/a7d3e1f60b92_single_pass_percent.py
 - `c4e7a2b9d106` migrations/versions/c4e7a2b9d106_scheduled_status.py
 - `8b3e5a1c9d27` migrations/versions/8b3e5a1c9d27_required_by.py
 - `5d1f0c2b7a96` migrations/versions/5d1f0c2b7a96_chase_fields.py
 - `d546e15ede32` migrations/versions/d546e15ede32_action_tokens_and_ticket_feedback.py
-- `cee91863c890` migrations/versions/cee91863c890_thanks_rules.py
 
 ## Modules
 

@@ -63,10 +63,10 @@ def mark_sent(db_session, *kinds):
     db_session.commit()
 
 
-def waiting_request(client, db_session, names=("a", "b", "c"), pass_percent=100, fail_percent=2):
+def waiting_request(client, db_session, names=("a", "b", "c"), pass_percent=100):
     """A request waiting on these approvers, whose approval emails have gone."""
     emails = many(client, db_session, names)
-    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, pass_percent, fail_percent))
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, emails, pass_percent))
     mark_sent(db_session, outbox.APPROVAL)
     return emails, ticket
 
@@ -161,7 +161,7 @@ def test_at_most_the_maximum_number_of_reminders(client, db_session, dev_mail):
 
 @pytest.mark.parametrize("how", ["approved", "declined", "waived", "withdrawn"])
 def test_reminders_stop_when_the_approval_is_settled(client, db_session, dev_mail, how):
-    emails, ticket = waiting_request(client, db_session, ("a", "b"), pass_percent=100 if how == "approved" else 100, fail_percent=51 if how != "declined" else 50)
+    emails, ticket = waiting_request(client, db_session, ("a", "b"), pass_percent=100)
     configure(db_session)
     if how == "approved":
         answer(client, ticket, "a@example.com", "approved")

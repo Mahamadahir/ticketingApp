@@ -293,7 +293,7 @@ def test_the_admin_switch_turns_the_field_on_and_off_for_a_type(client, db_sessi
     set_role(db_session, login_as(client, "admin@example.com"), UserRole.SUPER_ADMIN)
     base = {
         "name": "Laptop", "description": "", "approval_group_id": request_type.approval_group_id,
-        "pass_percent": 51, "fail_percent": 50, "is_active": "on",
+        "pass_percent": 51, "is_active": "on",
     }
     assert request_type.offers_required_by is False
     assert 'name="required_by"' not in client.get("/portal/new").text

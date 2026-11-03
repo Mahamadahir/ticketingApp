@@ -772,7 +772,7 @@ requester sees the request name only. Sub-tickets from a split do not inherit th
   the server refuses with a clear message), cannot be split, and cannot be logged as already
   resolved. The SLA clock keeps running. Agents can still triage, assign, write notes and email.
 - **A reusable rule** (`app/approvals.py`, written so another kind of ticket, such as change
-  control, can use it): since 4C-1 two vote percentages per request type (see "Approval groups" below), copied onto the
+  control, can use it): since 4C-1 a pass percentage per request type (see "Approval groups" below), copied onto the
   approval when it starts so later edits do not change a request already waiting. Whichever outcome is reached first settles it
   and everyone still pending is marked "not needed". Approved: the ticket goes to Open and the requester gets an
   automatic message. Declined: it is Closed with the approvers' reasons in the message to the requester.
@@ -792,12 +792,12 @@ requester sees the request name only. Sub-tickets from a split do not inherit th
   It is internet-facing, so it belongs with the public routers when `APP_ROLE` splits them.
 - **A super admin can waive** a pending approval (an approver has left); agents cannot.
 - **Approval groups (decided 21 and 22 Oct 2026; built in 4C-1).** Approvals go to **approval groups** (Admin > Approval groups:
-  create, rename, add and remove members by email, all audited). A request type points at one group and carries two percentages a
-  super admin sets: **pass %** and **fail %**. The voters are the group's members when the approval starts, minus the requester, and
-  their number is fixed then. Approved when approve votes / voters >= pass %; declined when decline votes / voters >= fail %; a
-  decline wins if both are reached together. Both percentages are 1 to 100 and must add up to more than 100 (checked on save); because
-  that alone does not make every complete vote decisive, a request where everyone has answered and neither share was reached is
-  declined. An active request type needs a group with a member. There is one pending approval per ticket and one vote per member;
+  create, rename, add and remove members by email, all audited). A request type points at one group and carries one percentage a
+  super admin sets: **pass %** (1 to 100; there is no fail %). The voters are the group's members when the approval starts, minus the requester, and
+  their number is fixed then. `votes_needed` = ceil(pass % x voters / 100) (5 voters at 60% needs 3; 4 at 60% needs 3; 100% means everyone).
+  Approved as soon as the approvals reach `votes_needed` (equal counts); declined as soon as that can no longer be reached
+  (declines > voters - votes_needed), so a complete vote always has an outcome. The voter-facing summary reads "3 of 5 must
+  approve (60%)". An active request type needs a group with a member. There is one pending approval per ticket and one vote per member;
   each member gets their own emailed link (GET shows, POST decides). Handing over for leave or a leaver is adding or removing a
   person in the group, so there is no per-approval re-assignment and no standing delegate accounts (someone removed mid-request still
   counts as a voter but can no longer answer; a super admin can waive). A group may later map to an Entra security group. Withdrawing
