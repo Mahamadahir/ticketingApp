@@ -90,7 +90,7 @@ def test_an_admin_creates_edits_and_switches_one_off_with_audit(client, db_sessi
     assert db_session.get(RequestType, request_type.id).is_active is False
     assert actions(db_session) == ["created", "edited", "deactivated"]
     details = [a.detail for a in db_session.exec(select(AuditLog).where(AuditLog.action == "edited")).all()]
-    assert details == ["approval group Managers -> Leads; pass/fail 51%/50% -> 60%/45%"]
+    assert details == ["approval group Managers -> Leads; pass 51% -> 60%"]
     assert "New starter" in client.get("/admin/request-types").text  # still listed when off
 
 
@@ -189,6 +189,7 @@ def test_switching_a_type_on_with_an_empty_group_is_refused(client, db_session):
 def test_a_failed_edit_leaves_the_type_alone(client, db_session):
     admin(client, db_session)
     request_type = make(db_session, "Laptop")
+    make(db_session, "Notebook")  # the name is taken, so the edit is refused after the fields were set
     group = db_session.get(ApprovalGroup, request_type.approval_group_id)
 
     response = client.post(

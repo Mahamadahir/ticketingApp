@@ -2,17 +2,16 @@
 
 Built for service requests from the catalogue, but nothing here knows about request types
 beyond where the group and the rule come from, so another kind of ticket (change control
-later) can use it: give it a group and two percentages, call start_approvals, and let decide settle it.
+later) can use it: give it a group and a pass percentage, call start_approvals, and let decide settle it.
 
 The rule, set per request type by a super admin and copied onto the approval when it starts:
   * voters: the members of the type's approval group at that moment, minus the requester. The number
     is fixed when the approval starts, so changing the group mid-request cannot flip a result.
-  * approved when approve votes / voters >= pass percent;
-  * declined when decline votes / voters >= fail percent;
-  * if both are reached together, the decline wins;
-  * pass + fail must be more than 100 (check_percentages, on save). That alone does not give every complete
-    vote an outcome (1 of 2 at 57 and 51 reaches neither), so when everyone has answered and neither share
-    was reached the request is declined: only a reached pass percentage approves.
+  * votes_needed = ceil(pass percent x voters / 100), so 5 voters at 60% need 3 and 4 at 60% need 3;
+  * approved as soon as the approvals reach votes_needed (equal counts as met);
+  * declined as soon as that can no longer be reached (declines > voters - votes_needed), so a complete
+    vote always has an outcome;
+  * the pass percentage is 1 to 100 (check_percentages, on save); there is no fail percentage.
 Whichever settles it first wins; voters who had not answered are marked not needed.
 
 The requester may withdraw while it waits (`withdraw`): the approval ends as "withdrawn", the ticket closes

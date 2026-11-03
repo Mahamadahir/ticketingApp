@@ -26,9 +26,10 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Best effort: the column comes back with a default (50 on a request type; an approval gets
-    # the smallest value that keeps pass + fail above 100).
+    # Best effort: the column comes back with a default of 50, raised where needed so that pass + fail
+    # stays above 100 as the old rule required.
     op.add_column('requesttype', sa.Column('fail_percent', sa.Integer(), server_default='50', nullable=False))
     op.add_column('ticketapproval', sa.Column('fail_percent', sa.Integer(), server_default='50', nullable=False))
-    op.execute("UPDATE ticketapproval SET fail_percent = GREATEST(1, 101 - pass_percent)")
+    op.execute("UPDATE requesttype SET fail_percent = GREATEST(50, 101 - pass_percent)")
+    op.execute("UPDATE ticketapproval SET fail_percent = GREATEST(50, 101 - pass_percent)")
     op.alter_column('ticketapproval', 'fail_percent', server_default=None)

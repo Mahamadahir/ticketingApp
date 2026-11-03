@@ -1063,7 +1063,7 @@ def edit_request_type(
         if before[2] != after[2]:
             changes.append(f"approval group {before[2]} -> {after[2]}")
         if before[3] != after[3]:
-            changes.append(f"pass/fail {before[3][0]}%/{before[3][1]}% -> {after[3][0]}%/{after[3][1]}%")
+            changes.append(f"pass {before[3]}% -> {after[3]}%")
         if before[4] != after[4]:
             changes.append(f"Required by date offered {before[4]} -> {after[4]}")
         log_action(session, admin.email, "request_type", request_type.id, "edited", "; ".join(changes))
