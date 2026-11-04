@@ -319,6 +319,23 @@ def test_the_reference_is_filled_in_when_shown_so_it_follows_a_retype(client, db
     assert "\x1f" not in notification_text(told, None)
 
 
+def test_a_name_holding_the_marker_cannot_displace_the_reference(client, db_session):
+    from app.notifications import REF
+
+    team, category, ann_id = desk(client, db_session)
+    bob = agent_in_desk(client, db_session, "bob@example.com")
+    back_to(client)
+    classified(client, category, "Router down")
+    ticket = ticket_named(db_session, "Router down")
+    ann = db_session.exec(select(User).where(User.email == "agent@example.com")).one()
+    ann.display_name = f"Ann{REF}"
+    db_session.add(ann)
+    db_session.commit()
+    note(client, ticket, "@bob look")
+    [told] = notifications_for(db_session, "bob@example.com")
+    assert notification_text(told, ticket) == f"Ann mentioned you on {ticket.reference} Router down"
+
+
 def test_an_assignee_who_cannot_open_the_ticket_is_not_told_about_it(client, db_session):
     from app.notifications import notify_assigned
 

@@ -172,7 +172,7 @@ jobs:
             echo "::warning::Mail sending or the Graph subscription is on but the public app is not deployed (DEPLOY_PUBLIC_APP): approval links and Graph notifications have nowhere to go."
           fi
           if { [ "${TEAMS_NEW_TICKET_ENABLED:-}" = true ] || [ "${TEAMS_NOTIFICATIONS_ENABLED:-}" = true ] || [ "${PRESENCE_ENABLED:-}" = true ] || [ "${MAILBOX_TIME_ZONES_ENABLED:-}" = true ] || [ "${MAIL_SENDING:-}" = graph ] || [ "${GRAPH_SUBSCRIPTION_ENABLED:-}" = true ] || [ "${MAIL_CATCH_UP_ENABLED:-}" = true ] || [ "${INBOUND_ENABLED:-}" = true ]; } && [ "$worker_on" != true ]; then
-            echo "::warning::A Teams, presence or mail switch is on but the worker is not deployed (DEPLOY_WORKER), and the worker does the sending and the presence checks. Posts and emails will queue and nothing will send them."
+            echo "::warning::A Teams, presence, mailbox time zone or mail switch is on but the worker is not deployed (DEPLOY_WORKER), and the worker does the sending and the presence checks. Posts and emails will queue and nothing will send them."
           fi
           if [ "${TEAMS_NEW_TICKET_ENABLED:-}" = true ] || [ "${TEAMS_NOTIFICATIONS_ENABLED:-}" = true ]; then
             if [ -z "$TEAMS_NEW_TICKET_WEBHOOK_URL" ]; then
@@ -182,7 +182,7 @@ jobs:
           fi
           if [ "${PRESENCE_ENABLED:-}" = true ] || [ "${MAILBOX_TIME_ZONES_ENABLED:-}" = true ] || [ "${MAIL_SENDING:-}" = graph ] || [ "${GRAPH_SUBSCRIPTION_ENABLED:-}" = true ] || [ "${MAIL_CATCH_UP_ENABLED:-}" = true ] || [ "${INBOUND_ENABLED:-}" = true ]; then
             if [ -z "$GRAPH_TENANT_ID" ] || [ -z "$GRAPH_CLIENT_ID" ] || [ -z "$GRAPH_CLIENT_SECRET" ]; then
-              echo "::error::Presence, mail sending and the inbound mail switches need GRAPH_TENANT_ID, GRAPH_CLIENT_ID and GRAPH_CLIENT_SECRET." >&2
+              echo "::error::Presence, mailbox time zones (which also need MailboxSettings.Read), mail sending and the inbound mail switches need GRAPH_TENANT_ID, GRAPH_CLIENT_ID and GRAPH_CLIENT_SECRET." >&2
               fail=1
             fi
           fi

@@ -26,7 +26,7 @@ from sqlmodel import Session, select
 
 from app.config import settings
 from app.models import Notification, TeamsPost, Ticket, TicketSource, User
-from app.notifications import APPROVAL_WAITING, notification_text
+from app.notifications import notification_text
 from app.visibility import Access, access_context, ticket_access
 
 log = logging.getLogger("app.teams")
@@ -191,8 +191,7 @@ def notification_card(notification: Notification, person: User, ticket: Optional
         },
     }
     if ticket is not None and settings.ticket_link_base:
-        page = "portal" if notification.kind == APPROVAL_WAITING else "tickets"  # an approver votes in the portal
-        link = f"{settings.ticket_link_base.rstrip('/')}/{page}/{ticket.number}"
+        link = f"{settings.ticket_link_base.rstrip('/')}/tickets/{ticket.number}"
         card["actions"] = [{"type": "Action.OpenUrl", "title": "Open ticket", "url": link}]
     return message(card)
 

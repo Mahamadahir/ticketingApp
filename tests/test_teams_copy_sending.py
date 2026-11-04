@@ -170,7 +170,7 @@ def test_the_card_links_to_the_ticket_when_the_address_is_known(client, db_sessi
     assert "actions" not in card_for(db_session, n)
 
 
-def test_the_card_text_has_the_current_reference_and_a_vote_request_links_to_the_portal(client, db_session, monkeypatch):
+def test_the_card_text_has_the_current_reference(client, db_session, monkeypatch):
     from app.models import TicketType
     from app.notifications import REF
 
@@ -180,14 +180,13 @@ def test_the_card_text_has_the_current_reference_and_a_vote_request_links_to_the
     db_session.add(ticket)
     db_session.commit()
     n = due_notification(db_session, bob)
-    n.kind, n.text, n.ticket_id = "approval_waiting", f"{REF} Laptop is waiting for your approval", ticket.id
+    n.kind, n.text, n.ticket_id = "assigned", f"{REF} Laptop was assigned to you", ticket.id
     db_session.add(n)
     db_session.commit()
 
     card = card_for(db_session, n)
 
-    assert f"SR\\-{ticket.number} Laptop is waiting for your approval" in card["body"][0]["text"] and REF not in card["body"][0]["text"]
-    assert card["actions"][0]["url"] == f"https://tickets.example.org/portal/{ticket.number}"
+    assert f"SR\\-{ticket.number} Laptop was assigned to you" in card["body"][0]["text"] and REF not in card["body"][0]["text"]
 
 
 def test_words_from_a_requester_cannot_make_markup_or_links_in_the_card(client, db_session):

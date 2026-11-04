@@ -73,7 +73,7 @@ def open_notification(
     ticket = bell_tickets(session, user, [notification]).get(notification.ticket_id)
     destination = f"/tickets/{ticket.number}" if ticket else "/notifications"
     if notification.kind == APPROVAL_WAITING and notification.ticket_id:
-        asked_about = session.get(Ticket, notification.ticket_id)
+        asked_about = ticket or session.get(Ticket, notification.ticket_id)
         if asked_about is not None:
             destination = f"/portal/{asked_about.number}"  # where an approver votes, whether or not they can open it as an agent
     session.commit()

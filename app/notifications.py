@@ -136,7 +136,7 @@ def notify_mentions(
     for person in mentioned_in(session, ticket, note.body if text is None else text, author):
         made = notify(
             session, person, MENTIONED, ticket,
-            f"{author.display_name} mentioned you on {REF} {ticket.subject}", author.email,
+            f"{author.display_name.replace(REF, '')} mentioned you on {REF} {ticket.subject}", author.email,
         )
         if made is not None:
             notifications.append(made)
