@@ -15,7 +15,7 @@ from app.models import Setting
 class SettingDef:
     key: str
     label: str
-    kind: str  # "team": a team id, empty for none; "minutes": a whole number; "percent": 1 to 99; "vote_percent": 1 to 100; "flag": on or off; "count": a whole number, 1 to 1000; "hour": a whole number, 0 to 23; "time_zone": an IANA time zone name, blank for the default
+    kind: str  # "team": a team id, empty for none; "minutes": a whole number; "percent": 1 to 99; "vote_percent": 1 to 100; "flag": on or off; "count": a whole number, 1 to 1000; "hour": a whole number, 0 to 23; "time_zone": an IANA time zone name, blank for the default; "email": one email address, blank for none; "dates": a list of dates (2026-12-25, separated by commas or spaces), blank for none
     description: str
     default: str = ""
 
@@ -56,6 +56,10 @@ SCHEDULED_MORNING_HOUR = "scheduled_morning_hour"
 DEFAULT_TIME_ZONE = "default_time_zone"
 TIME_ZONE_REFRESH_DAYS = "time_zone_refresh_days"
 TIME_ZONE_RETRY_HOURS = "time_zone_retry_hours"
+MSP_ADDRESS = "msp_address"
+MSP_HANDOFF_HOUR = "msp_handoff_hour"
+MSP_BUSINESS_MORNING_HOUR = "msp_business_morning_hour"
+MSP_BANK_HOLIDAYS = "msp_bank_holidays"
 
 # PLACEHOLDER SLA targets, in minutes on a 24/7 clock, until the real ones are agreed
 # (TBC in docs/plan.md). They are settings, changed under Admin > Settings; a blank
@@ -420,6 +424,46 @@ REGISTRY: dict[str, SettingDef] = {
             "time zone applies. Placeholder."
         ),
         default="24",
+    ),
+    MSP_ADDRESS: SettingDef(
+        key=MSP_ADDRESS,
+        label="MSP: the address tickets are sent to",
+        kind="email",
+        description=(
+            "The support partner's address. Send to MSP, an escalation to the MSP and the automatic handoff all email it. "
+            "Blank (the default) means no MSP is set: Send to MSP is refused and the automatic handoff does nothing."
+        ),
+        default="",
+    ),
+    MSP_HANDOFF_HOUR: SettingDef(
+        key=MSP_HANDOFF_HOUR,
+        label="MSP: the hour of the automatic handoff (0 to 23)",
+        kind="hour",
+        description=(
+            "Every day from this hour, in the default time zone, open tickets of the teams that are included in the automatic "
+            "handoff and due to breach before the next business morning go to the MSP, unless held. Placeholder: 18 is 18:00."
+        ),
+        default="18",
+    ),
+    MSP_BUSINESS_MORNING_HOUR: SettingDef(
+        key=MSP_BUSINESS_MORNING_HOUR,
+        label="MSP: the hour business starts again, Monday to Friday (0 to 23)",
+        kind="hour",
+        description=(
+            "The automatic handoff takes tickets due to breach before the next morning at this hour (Monday to Friday, "
+            "bank holidays below excluded, in the default time zone). It only runs between the handoff hour and then. Placeholder: 8 is 08:00."
+        ),
+        default="8",
+    ),
+    MSP_BANK_HOLIDAYS: SettingDef(
+        key=MSP_BANK_HOLIDAYS,
+        label="MSP: bank holidays, when there is no business morning",
+        kind="dates",
+        description=(
+            "Dates (such as 2026-12-25 and 2026-12-28, separated by commas or spaces) that count as a weekend for the "
+            "automatic MSP handoff. Blank means none. Kept here until a holiday calendar is wired in."
+        ),
+        default="",
     ),
     MAX_SUB_TICKETS: SettingDef(
         key=MAX_SUB_TICKETS,

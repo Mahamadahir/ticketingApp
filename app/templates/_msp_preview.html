@@ -1,0 +1,22 @@
+<div class="email-preview">
+  <h3>Check before sending to the MSP</h3>
+  <p><b>Why:</b> {{ reason }}</p>
+  <p><b>The email to the MSP</b></p>
+  <p><b>To:</b> {{ preview.to }}</p>
+  <p><b>Copied:</b> {{ preview.cc | join(", ") if preview.cc else "no one" }}</p>
+  <p><b>Subject:</b> {{ preview.subject }}</p>
+  <pre class="message-body">{{ preview.body }}</pre>
+  <p><b>The requester is told:</b></p>
+  <pre class="message-body">{{ preview.notice }}</pre>
+  <p class="note">
+    Sending moves this ticket to With MSP. It stays in its team and keeps its assignee, and you are added as an escalator and a follower.
+    {% if preview.mail_is_off %}<b>Email sending is switched off on this server, so nothing will be emailed.</b>{% endif %}
+  </p>
+  <form hx-post="/tickets/{{ ticket.number }}/send-to-msp" hx-target="main" hx-swap="innerHTML" hx-disabled-elt="find button[type=submit]">
+    <textarea name="reason" hidden>
+{{ reason }}</textarea>
+    <input type="hidden" name="scope" value="{{ preview.scope }}" />
+    <button type="submit" class="button-destructive">Send to the MSP</button>
+    <button type="button" class="button-outline" hx-on:click="document.getElementById('msp-preview').innerHTML = ''">Keep editing</button>
+  </form>
+</div>

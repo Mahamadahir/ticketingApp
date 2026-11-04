@@ -643,8 +643,8 @@ already have visibility of that team through membership or a parent team.
   ticket can escalate on again. Built so far: the category's target, or the MSP if the
   ticket is already with that team. A (category, current team) table for longer chains is
   not built.
-- The MSP handoff is phase 5. Until it exists a category whose target is the MSP
-  (the default) cannot be escalated: the Escalate control says so.
+- The MSP handoff is built (phase 5A, 4 Nov 2026): a category whose target is the MSP (the default) is escalated by
+  Send to MSP. With no MSP address set (an admin setting) it is refused and the control says so.
 - Escalating to another team leaves the ticket unassigned there, and the escalator keeps
   working access to that ticket (and only that ticket).
 - Escalating to the MSP is the same action as Send to MSP (see MSP): the ticket stays in
@@ -963,8 +963,10 @@ A template is plain text with `{placeholders}` from a fixed list per email; the 
 
 ## MSP
 
-- Single MSP, address **TBC**.
-- Escalating to the MSP stays blocked until this handoff is built in phase 5 (decided 22 Oct 2026); testing will use nuisance tickets with the MSP. Not a risk.
+- Single MSP. Its address is an admin setting (`msp_address`, blank until set; decided 4 Nov 2026, so the build was not
+  waiting for it). With no address, Send to MSP is refused with a clear message and the 18:00 job does nothing and
+  records why. Built in phase 5A (#138); MSP mail handling and forwarding is 5B (#139).
+- Escalating to the MSP was blocked until this handoff was built (decided 22 Oct 2026); testing will use nuisance tickets with the MSP. Not a risk.
 - "Send to MSP" button on any ticket. It is the same action as escalating to the MSP
   and the button may carry either label.
 - The agent chooses what goes: the **thread** (the default), or **only the original
@@ -977,14 +979,20 @@ A template is plain text with `{placeholders}` from a fixed list per email; the 
   when the ticket was passed between teams and the MSP does not need that history, for
   example 1st line triaged it, escalated it to 2nd line, and 2nd line decided it is MSP
   work. The preview step shows exactly what will be sent. The 18:00 automatic send
-  uses the thread.
+  uses the thread. *Built:* the preview is the function that builds the email, and the email is queued with that exact
+  text. Attachments are listed by name in the email; attaching the files is 5B.
 - Each team has an admin setting, "include in the automatic 18:00 MSP handoff"
   (a setting, not a constant). Tickets of a team with it off are never sent
   automatically; an agent can still send them by hand.
 - At 18:00 daily, every ticket due to breach before the next business
   morning (08:00, Monday to Friday, UK bank holidays excluded) goes to the
   MSP, unless the assigned agent has put it on hold. A hold lasts until the
-  agent releases it.
+  agent releases it. *Built (5A):* the hour (18), the business morning (8) and the bank holidays are admin settings and
+  the time is in the organisation time zone. The job (`msp-handoff` in the recurring jobs table, every 5 minutes) works
+  from the tickets: open (Open or In progress, triaged) at the handoff moment, in an included team, not held, not a split
+  original, with an unmet first response or the resolution due before that morning (overdue counts). It only acts between
+  the handoff hour and the next business morning, so a missed night is not made up in the day. The assigned agent holds;
+  anyone who works the ticket can release it; sending by hand ends a hold.
 - The email to the MSP opens with the end user's details and the requesting
   agent, then reference, priority, SLA due time, category, the full thread
   including internal notes, and attachments.
@@ -1302,7 +1310,7 @@ routing by sender, forwarded-email intake, portal-only notes.
 
 ## TBC values
 
-Shared mailbox address, MSP address, database restore window (7 to 35
+Shared mailbox address, database restore window (7 to 35
 days), upload size limit, SLA targets per priority, triage team, auto-close
 days, chase X and Y, automatic email cap per ticket, office and VPN IP
 ranges, internal domain name, alert recipients, Azure subscription.

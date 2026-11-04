@@ -20,6 +20,7 @@ The next feature (a Due date, issue #121) turns a date into a deadline with `end
 """
 
 import logging
+import re
 from datetime import date, datetime, time, timedelta, timezone
 from functools import lru_cache
 from typing import Callable, NamedTuple, Optional
@@ -147,6 +148,24 @@ def morning_of(day: date, zone_name: str, hour: int) -> datetime:
     (app/due_today.py) and the check made when Scheduled is set (app/required_by.py) both use it."""
     zone = ZoneInfo(valid_zone(zone_name) or "UTC")
     return datetime.combine(day, time(hour), tzinfo=zone).astimezone(timezone.utc)
+
+
+def parse_dates(text: str) -> list[date]:
+    """Dates written 2026-12-25, separated by commas, semicolons or spaces. Raises ValueError on anything else."""
+    return [date.fromisoformat(part) for part in re.split(r"[,;\s]+", text.strip()) if part] if text.strip() else []
+
+
+def next_business_morning(after: datetime, zone_name: str, hour: int, holidays: frozenset[date] = frozenset()) -> datetime:
+    """The first business morning (the given hour, Monday to Friday, not a listed holiday) at or after `after`,
+    in that zone, as UTC. A moment before the hour on a business day is that day's morning."""
+    zone = ZoneInfo(valid_zone(zone_name) or "UTC")
+    local = _aware(after).astimezone(zone)
+    day = local.date() if local.time() < time(hour) else local.date() + timedelta(days=1)
+    for _ in range(366):  # a year of holidays cannot all be business days
+        if day.weekday() < 5 and day not in holidays:
+            break
+        day += timedelta(days=1)
+    return morning_of(day, zone_name, hour)
 
 
 def scheduled_morning_hour(session: Session) -> int:

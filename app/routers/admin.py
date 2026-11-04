@@ -149,7 +149,7 @@ from app.settings_store import (
 from app.inbound import IGNORED_FLOOD
 from app.subscriptions import health_warnings, mail_folder, subscription_resource
 from app.teams import MAX_ATTEMPTS
-from app.time_zones import valid_zone
+from app.time_zones import parse_dates, valid_zone
 from app.ticket_service import EVENT_CATEGORY_REVIEWED, get_by_number, record_event
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -417,6 +417,26 @@ def list_teams(
             "user": user,
         },
     )
+
+@router.post("/teams/{team_id}/msp-handoff")
+def set_team_msp_handoff(
+    team_id: int,
+    included: Optional[str] = Form(None),
+    admin: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    """Includes a team in (or leaves it out of) the automatic MSP handoff (app/msp.py)."""
+    team = session.get(Team, team_id)
+    if team is None:
+        raise HTTPException(status_code=404, detail="Team not found")
+    want = bool(included)
+    if team.msp_handoff_included != want:
+        team.msp_handoff_included = want
+        session.add(team)
+        log_action(session, admin.email, "team", team.id, "msp_handoff_included" if want else "msp_handoff_excluded", team.name)
+        session.commit()
+    return RedirectResponse("/admin/teams", status_code=303)
+
 
 @router.post("/teams")
 def create_team(
@@ -1541,7 +1561,7 @@ def view_settings(
 @router.post("/settings")
 def save_setting(
     key: str = Form(...),
-    value: str = Form("", max_length=200),
+    value: str = Form("", max_length=2000),
     admin: User = Depends(require_super_admin),
     session: Session = Depends(get_session),
 ):
@@ -1550,6 +1570,18 @@ def save_setting(
         raise HTTPException(status_code=404, detail="Unknown setting")
 
     value = value.strip()
+    if len(value) > 200 and definition.kind != "dates":
+        raise HTTPException(status_code=400, detail="That is too long (200 characters at most)")
+    if definition.kind == "email" and value:
+        try:
+            value = normalise_email(value)
+        except InvalidEmail:
+            raise HTTPException(status_code=400, detail="Enter one email address, or leave it blank")
+    if definition.kind == "dates" and value:
+        try:
+            value = ", ".join(d.isoformat() for d in sorted(set(parse_dates(value))))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Enter dates like 2026-12-25, separated by commas or spaces")
     if definition.kind == "team" and value:
         if not (value.isascii() and value.isdigit()) or session.get(Team, int(value)) is None:
             raise HTTPException(status_code=400, detail="That team does not exist")

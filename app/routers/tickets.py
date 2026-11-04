@@ -25,6 +25,7 @@ from app.followers import (
 )
 from app.backdating import FORMAT as MOMENT_FORMAT, BackdateError, backdate_ticket, may_backdate, parse_moment
 from app.categories import CategoryError, create_category, is_selectable, path_of, selectable, team_id_for
+from app.msp import MspError, compose as compose_msp, check_can_send, hold_ticket, may_hold, release_hold, send_to_msp
 from app.escalation import EscalationError, escalate_ticket as escalate, escalation_target, escalators_of
 from app.raising import source_label
 from app.request_questions import QuestionError, answer_rows, form_rows, save_answers
@@ -1131,6 +1132,86 @@ def escalate_ticket(
     return _render_ticket_detail(request, ticket, user, session)
 
 
+@router.post("/{number}/send-to-msp/preview", response_class=HTMLResponse)
+def preview_send_to_msp(
+    number: int,
+    request: Request,
+    reason: str = Form("", max_length=MAX_MESSAGE_LENGTH),
+    scope: str = Form("thread", max_length=20),
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """The "are you sure?" step before sending a ticket to the MSP: the email exactly as it will go, who is copied,
+    what the requester is told, and what sending does. Records and sends nothing."""
+    ticket = _get_ticket(session, number, user)
+    if not reason.strip():
+        raise HTTPException(status_code=400, detail="Say why it is being sent to the MSP")
+    try:
+        preview = compose_msp(session, ticket, scope=scope, reason=reason, actor=user)
+    except MspError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    return templates.TemplateResponse(
+        request, "_msp_preview.html", {"ticket": ticket, "preview": preview, "reason": reason.strip()}
+    )
+
+
+@router.post("/{number}/send-to-msp", response_class=HTMLResponse)
+def send_ticket_to_msp(
+    number: int,
+    request: Request,
+    reason: str = Form("", max_length=MAX_MESSAGE_LENGTH),
+    scope: str = Form("thread", max_length=20),
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """Sends the ticket to the MSP (the same action as escalating to an MSP-target category), with a reason.
+    The ticket stays in its team, With MSP."""
+    ticket = _get_ticket(session, number, user)
+    try:
+        send_to_msp(session, ticket, user, reason, scope)
+    except MspError as error:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(error))
+    session.commit()
+    session.refresh(ticket)
+    return _render_ticket_detail(request, ticket, user, session)
+
+
+@router.post("/{number}/msp-hold", response_class=HTMLResponse)
+def msp_hold(
+    number: int,
+    request: Request,
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """The assigned agent keeps the ticket out of the automatic MSP handoff until it is released."""
+    ticket = _get_ticket(session, number, user)
+    try:
+        hold_ticket(session, ticket, user)
+    except MspError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    session.commit()
+    session.refresh(ticket)
+    return _render_ticket_detail(request, ticket, user, session)
+
+
+@router.post("/{number}/msp-hold/release", response_class=HTMLResponse)
+def msp_hold_release(
+    number: int,
+    request: Request,
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    ticket = _get_ticket(session, number, user)
+    try:
+        release_hold(session, ticket, user)
+    except MspError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    session.commit()
+    session.refresh(ticket)
+    return _render_ticket_detail(request, ticket, user, session)
+
+
 @router.post("/{number}/link", response_class=HTMLResponse)
 def link(
     number: int,
@@ -1297,12 +1378,20 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
     category = session.get(Category, ticket.category_id) if ticket.category_id else None
     options = selectable(session) if can_triage else []
     teams = session.exec(select(Team)).all()
-    escalation_team, escalation_blocked = None, None
+    escalation_team, escalation_blocked, escalation_is_msp = None, None, False
     if can_work:
         try:
             escalation_team = escalation_target(session, ticket)
+            escalation_is_msp = escalation_team is None
         except EscalationError as error:
             escalation_blocked = str(error)
+    # Send to MSP is offered on any ticket the MSP could take (not only one whose category escalates there).
+    msp_blocked = None
+    if can_work:
+        try:
+            check_can_send(session, ticket)
+        except MspError as error:
+            msp_blocked = str(error)
     timeline = agent_timeline(session, ticket, viewer=(user, levels))
 
     # A link is only shown to someone who could open the other ticket anyway.
@@ -1347,6 +1436,10 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             "teams": teams,
             "escalation_team": escalation_team,
             "escalation_blocked": escalation_blocked,
+            "escalation_is_msp": escalation_is_msp,
+            "msp_blocked": msp_blocked,
+            "can_hold": can_work and may_hold(ticket, user),
+            "can_release_hold": can_work and ticket.msp_hold,
             "timeline": timeline,
             "escalators": escalators_of(session, ticket),
             "followers": followers_of(session, ticket),

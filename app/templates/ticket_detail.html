@@ -22,7 +22,7 @@
   &middot; Team: {{ team.name if team else "Unassigned" }}
   &middot; Assigned: {{ assigned_agent.display_name if assigned_agent else "Unassigned" }}
   &middot;
-  <span class="status status-{{ ticket.status.value }}">{{ ticket.status.value }}</span>
+  <span class="status status-{{ ticket.status.value }}">{{ ticket.status.value }}</span>{% if ticket.msp_hold %} <span class="badge">on MSP hold</span>{% endif %}
 </p>
 
 {% if ticket.status.value == "awaiting_approval" %}
@@ -337,8 +337,39 @@
   {% endif %}
 
   <details>
+    <summary>Send to MSP</summary>
+    {% if msp_blocked %}
+    <p class="note">Cannot send to the MSP: {{ msp_blocked }}</p>
+    {% else %}
+    <form hx-post="/tickets/{{ ticket.number }}/send-to-msp/preview" hx-target="#msp-preview" hx-swap="innerHTML"
+          hx-on:input="document.getElementById('msp-preview').innerHTML = ''">
+      <p class="note">The ticket stays in its team, with the status With MSP, and nobody's access changes. You keep access to it and are copied on its mail to the MSP.{% if escalation_is_msp %} This is also what escalating does for this category.{% endif %}</p>
+      <textarea name="reason" maxlength="{{ max_message_length }}" placeholder="Why is it being sent to the MSP?" required></textarea>
+      <label><input type="radio" name="scope" value="thread" checked /> Send the thread (the user's messages, emails sent, comments and notes)</label>
+      <label><input type="radio" name="scope" value="original" /> Send only the original request (use this when it was passed between teams and the MSP does not need that history)</label>
+      <button type="submit">Preview</button>
+    </form>
+    <div id="msp-preview"></div>
+    {% endif %}
+  </details>
+
+  {% if ticket.msp_hold %}
+  <form hx-post="/tickets/{{ ticket.number }}/msp-hold/release" hx-target="main" hx-swap="innerHTML">
+    <p class="note"><b>On hold:</b> kept out of the automatic MSP handoff until someone releases it.</p>
+    {% if can_release_hold %}<button type="submit">Release the hold</button>{% endif %}
+  </form>
+  {% elif can_hold %}
+  <form hx-post="/tickets/{{ ticket.number }}/msp-hold" hx-target="main" hx-swap="innerHTML">
+    <p class="note">Hold keeps this ticket out of the automatic MSP handoff. It lasts until you or someone else releases it.</p>
+    <button type="submit" class="button-outline">Hold (keep out of the MSP handoff)</button>
+  </form>
+  {% endif %}
+
+  <details>
     <summary>Escalate</summary>
-    {% if escalation_team %}
+    {% if escalation_is_msp %}
+    <p class="note">The escalation target for this category is the MSP: use Send to MSP above.</p>
+    {% elif escalation_team %}
     <form hx-post="/tickets/{{ ticket.number }}/escalate" hx-target="main" hx-swap="innerHTML">
       <p class="note">Goes to {{ escalation_team.name }}, unassigned. You keep access to this ticket. To hand it to a different team, use Re-assign.</p>
       <textarea name="reason" maxlength="{{ max_message_length }}" placeholder="Why does this need escalating?" required></textarea>
