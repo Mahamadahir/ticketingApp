@@ -4,8 +4,13 @@ approves each. Admins manage it; the request form lists the active types.
 A type points at one approval group (app/approval_groups.py) and carries the two percentages that
 settle a request (app/approvals.py): how much of the group must approve for it to pass, and how much
 must decline for it to fail. An active type must have a group with at least one member.
+
+A type can also carry defaults: a team, a category, an impact and an urgency (#133). The admin gives them the same
+checks as triage (an active category that belongs to the team). With all four set, a portal request of the type
+triages itself when raised (`self_triage`); with some set they only prefill the triage form.
 """
 
+from dataclasses import dataclass
 from typing import Optional
 
 from sqlalchemy import func
@@ -14,7 +19,10 @@ from sqlmodel import Session, select
 
 from app.approval_groups import members_of
 from app.approvals import PercentError, check_percentages
-from app.models import ApprovalGroup, RequestType
+from app.audit import log_action
+from app.categories import is_selectable, path_of, team_id_for
+from app.models import ApprovalGroup, Category, RequestType, Team, Ticket, TicketSource, TicketType
+from app.sla import Level
 
 MAX_NAME_LENGTH = 100
 MAX_DESCRIPTION_LENGTH = 1000
@@ -58,6 +66,84 @@ def _checked(session: Session, group_id: Optional[int], pass_percent: int, is_ac
 MAX_LEAD_DAYS = 365
 
 
+@dataclass(frozen=True)
+class TypeDefaults:
+    """What an admin chose for a type's defaults (all optional)."""
+
+    team_id: Optional[int] = None
+    category_id: Optional[int] = None
+    impact: Optional[str] = None
+    urgency: Optional[str] = None
+
+
+def _check_defaults(session: Session, defaults: TypeDefaults) -> None:
+    """The same checks as triage: the team exists, the category is in use (and so is its parent) and, with both
+    chosen, the category belongs to that team; impact and urgency are real levels."""
+    team = session.get(Team, defaults.team_id) if defaults.team_id is not None else None
+    if defaults.team_id is not None and team is None:
+        raise RequestTypeError("That team does not exist")
+    category = session.get(Category, defaults.category_id) if defaults.category_id is not None else None
+    if defaults.category_id is not None:
+        if category is None or not is_selectable(session, category):
+            raise RequestTypeError("That category is no longer in use")
+        category_team = team_id_for(session, category)
+        if category_team is None:
+            raise RequestTypeError(
+                "That category has no team yet. Ask a super admin to give it one "
+                "(for 'Other', set a default triage team under Settings)."
+            )
+        if team is not None and category_team != team.id:
+            raise RequestTypeError(f"That category belongs to a different team than {team.name}")
+    for value, label in ((defaults.impact, "impact"), (defaults.urgency, "urgency")):
+        if value is not None and value not in {level.value for level in Level}:
+            raise RequestTypeError(f"Choose the {label} from the list")
+
+
+def self_triage_defaults(session: Session, request_type: RequestType) -> Optional[Category]:
+    """The category a portal request of this type is triaged into by itself, or None when the type's defaults are
+    not all set or no longer hold (the category was switched off, or moved to another team): such a request
+    waits in New for an agent, as it always did."""
+    if None in (
+        request_type.default_team_id, request_type.default_category_id,
+        request_type.default_impact, request_type.default_urgency,
+    ):
+        return None
+    try:
+        defaults = TypeDefaults(
+            request_type.default_team_id, request_type.default_category_id,
+            request_type.default_impact, request_type.default_urgency,
+        )
+        _check_defaults(session, defaults)
+    except RequestTypeError:
+        return None
+    return session.get(Category, request_type.default_category_id)
+
+
+def self_triage(session: Session, ticket: Ticket, request_type: RequestType) -> bool:
+    """Triages a just-raised portal request through the real `triage_ticket` with the system as the actor, when its
+    type's defaults are all set: the type becomes Service Request, the type's team (through its category) and
+    priority apply, the SLA starts, and approvals start as for an agent's triage (Awaiting approval with a group,
+    else Open unassigned in the team queue). Returns whether it did. An email- or Teams-raised ticket never comes
+    here. Records the triaged event (naming the type) and a `triaged_automatically` audit entry. Does not commit."""
+    if ticket.triaged_at is not None or ticket.source != TicketSource.PORTAL:
+        return False
+    category = self_triage_defaults(session, request_type)
+    if category is None:
+        return False
+    from app.triage import triage_ticket  # imported here because app.triage builds on app.approvals, as this module does
+
+    triage_ticket(
+        session, ticket, None, ticket_type=TicketType.SERVICE_REQUEST, category=category,
+        impact=Level(request_type.default_impact), urgency=Level(request_type.default_urgency),
+        request_type=request_type, automatic_from=request_type,
+    )
+    log_action(
+        session, "system", "ticket", ticket.id, "triaged_automatically",
+        f"{request_type.name}: {path_of(session, category)}",
+    )
+    return True
+
+
 def _check_days(*counts: Optional[int]) -> None:
     for count in counts:
         if count is not None and not 0 <= count <= MAX_LEAD_DAYS:
@@ -78,9 +164,12 @@ def create_request_type(
     session: Session, name: str, description: str, group_id: Optional[int],
     pass_percent: int, is_active: bool = True, offers_required_by: bool = False,
     due_days_before: Optional[int] = None, queue_lead_days: Optional[int] = None,
+    defaults: Optional[TypeDefaults] = None,
 ) -> RequestType:
     name, description = _clean(name, description)
     _check_days(due_days_before, queue_lead_days)
+    defaults = defaults or TypeDefaults()
+    _check_defaults(session, defaults)
     if _name_taken(session, name, None):
         raise RequestTypeError("There is already a request type with that name")
     _checked(session, group_id, pass_percent, is_active)
@@ -88,6 +177,8 @@ def create_request_type(
         name=name, description=description, is_active=is_active, approval_group_id=group_id,
         pass_percent=pass_percent, offers_required_by=offers_required_by,
         due_days_before=due_days_before, queue_lead_days=queue_lead_days,
+        default_team_id=defaults.team_id, default_category_id=defaults.category_id,
+        default_impact=defaults.impact, default_urgency=defaults.urgency,
     )
     session.add(request_type)
     _flush(session)
@@ -98,10 +189,13 @@ def update_request_type(
     session: Session, request_type: RequestType, name: str, description: str, group_id: Optional[int],
     pass_percent: int, is_active: bool, offers_required_by: Optional[bool] = None,
     due_days_before: Optional[int] = None, queue_lead_days: Optional[int] = None,
+    defaults: Optional[TypeDefaults] = None,
 ) -> RequestType:
-    """Blank (None) day counts mean "use the setting"."""
+    """Blank (None) day counts mean "use the setting". `defaults` None leaves the type's defaults as they are."""
     name, description = _clean(name, description)
     _check_days(due_days_before, queue_lead_days)
+    if defaults is not None:
+        _check_defaults(session, defaults)
     if _name_taken(session, name, request_type.id):
         raise RequestTypeError("There is already a request type with that name")
     _checked(session, group_id, pass_percent, is_active)
@@ -111,6 +205,9 @@ def update_request_type(
     if offers_required_by is not None:
         request_type.offers_required_by = offers_required_by
     request_type.due_days_before, request_type.queue_lead_days = due_days_before, queue_lead_days
+    if defaults is not None:
+        request_type.default_team_id, request_type.default_category_id = defaults.team_id, defaults.category_id
+        request_type.default_impact, request_type.default_urgency = defaults.impact, defaults.urgency
     session.add(request_type)
     _flush(session)
     return request_type

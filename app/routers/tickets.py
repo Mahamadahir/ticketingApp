@@ -24,7 +24,7 @@ from app.followers import (
     remove_follower,
 )
 from app.backdating import FORMAT as MOMENT_FORMAT, BackdateError, backdate_ticket, may_backdate, parse_moment
-from app.categories import CategoryError, create_category, path_of, selectable, team_id_for
+from app.categories import CategoryError, create_category, is_selectable, path_of, selectable, team_id_for
 from app.escalation import EscalationError, escalate_ticket as escalate, escalation_target, escalators_of
 from app.raising import source_label
 from app.request_types import active_request_types, request_type_of
@@ -283,14 +283,40 @@ def triage_dates(
     Required by only when the kind offers it, Due always. What was typed is kept."""
     chosen = optional_int(request_type_id)
     request_type = session.get(RequestType, chosen) if chosen is not None else None
-    return _triage_dates(request, request_type is not None and request_type.offers_required_by, required_by, due_on, due_reason, has_due)
+    prefill = _type_defaults(session, request_type) if request_type is not None else None
+    return _triage_dates(
+        request, request_type is not None and request_type.offers_required_by, required_by, due_on, due_reason, has_due, prefill
+    )
 
 
-def _triage_dates(request: Request, offers: bool, required_by: str, due_on: str, due_reason: str, has_due: bool):
+def _type_defaults(session: Session, request_type: RequestType) -> Optional[dict]:
+    """What choosing this kind of request fills in on the triage form (#133): the impact, urgency and category the
+    type has defaults for (a category that has since been switched off is not offered). None when it has none."""
+    category = session.get(Category, request_type.default_category_id) if request_type.default_category_id else None
+    if category is not None and not is_selectable(session, category):
+        category = None
+    if not (request_type.default_impact or request_type.default_urgency or category):
+        return None
+    team_id = team_id_for(session, category) if category is not None else None
+    return {
+        "impact": request_type.default_impact, "urgency": request_type.default_urgency,
+        "category_id": category.id if category is not None else None,
+        "impact_options": [(level.value, label) for level, label in IMPACT_LABELS.items()],
+        "urgency_options": [(level.value, label) for level, label in URGENCY_LABELS.items()],
+        "category_options": selectable(session), "members": team_members(session, team_id),
+    }
+
+
+def _triage_dates(
+    request: Request, offers: bool, required_by: str, due_on: str, due_reason: str, has_due: bool, prefill: Optional[dict] = None
+):
     return templates.TemplateResponse(
         request,
         "_triage_dates.html",
-        {"offers": offers, "required_by": required_by, "due_on": due_on, "due_reason": due_reason, "has_due": has_due},
+        {
+            "offers": offers, "required_by": required_by, "due_on": due_on, "due_reason": due_reason,
+            "has_due": has_due, "prefill": prefill,
+        },
     )
 
 

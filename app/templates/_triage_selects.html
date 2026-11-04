@@ -1,0 +1,23 @@
+{# The selects of the triage form that a request type's defaults prefill (#133). Each is also sent back out of band by
+   /tickets/triage-dates when the agent picks a kind of request, replacing the one on the page (same id), so the form
+   keeps one markup. selected is the chosen value or ""; oob adds the htmx swap flag. #}
+{% macro impact_select(options, selected, oob=false) %}
+<select name="impact" id="triage-impact" required {% if oob %}hx-swap-oob="true"{% endif %}>
+  <option value="">Choose</option>
+  {% for value, label in options %}<option value="{{ value }}" {{ "selected" if value == selected else "" }}>{{ label }}</option>{% endfor %}
+</select>
+{% endmacro %}
+
+{% macro urgency_select(options, selected, oob=false) %}
+<select name="urgency" id="triage-urgency" required {% if oob %}hx-swap-oob="true"{% endif %}>
+  <option value="">Choose</option>
+  {% for value, label in options %}<option value="{{ value }}" {{ "selected" if value == selected else "" }}>{{ label }}</option>{% endfor %}
+</select>
+{% endmacro %}
+
+{% macro category_select(options, selected, oob=false) %}
+<select name="category_id" id="triage-category" hx-get="/tickets/agents-for-category" hx-trigger="change" hx-target="#triage-agent" {% if oob %}hx-swap-oob="true"{% endif %}>
+  <option value="">Choose a category</option>
+  {% for option, label in options %}<option value="{{ option.id }}" {{ "selected" if option.id == selected else "" }}>{{ label }}</option>{% endfor %}
+</select>
+{% endmacro %}

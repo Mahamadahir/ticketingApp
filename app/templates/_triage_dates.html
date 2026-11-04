@@ -17,3 +17,15 @@
   </label>
   {% endif %}
 </div>
+{# The chosen kind's defaults (#133), swapped into the triage form out of band: prefill is None, or a dict with
+   impact, urgency, category_id (each may be empty), their options, and members (the category's team, for Assign to).
+   The agent can change every one of them. #}
+{% if prefill %}
+{% from "_triage_selects.html" import impact_select, urgency_select, category_select %}
+{% if prefill.impact %}{{ impact_select(prefill.impact_options, prefill.impact, true) }}{% endif %}
+{% if prefill.urgency %}{{ urgency_select(prefill.urgency_options, prefill.urgency, true) }}{% endif %}
+{% if prefill.category_id %}
+{{ category_select(prefill.category_options, prefill.category_id, true) }}
+<select name="agent_id" id="triage-agent" hx-swap-oob="true">{% with members = prefill.members, blank_label = "Leave as is" %}{% include "_agent_options.html" %}{% endwith %}</select>
+{% endif %}
+{% endif %}

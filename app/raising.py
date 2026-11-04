@@ -36,6 +36,7 @@ from app.required_by import RequiredByError, set_required_by
 from app.sla import Level
 from app.resolution import ResolveError, clean_notes, resolve_ticket
 from app.ticket_service import EVENT_REQUEST_TYPE, create_ticket, record_event
+from app.request_types import self_triage
 from app.triage import triage_ticket
 
 AGENT_ROLES = (UserRole.AGENT, UserRole.SUPER_ADMIN)
@@ -185,6 +186,9 @@ def raise_ticket(
             session, ticket, creator, ticket_type=ticket_type, category=category,
             impact=impact, urgency=urgency, assignee=assignee,
         )
+    elif request_type is not None and not on_behalf:
+        # A request for a type with all its defaults needs no triage (#133); with incomplete ones it waits in New.
+        self_triage(session, ticket, request_type)
     if resolved_at is not None:
         try:
             # Logged after the fact: the same resolve as at the desk, but nobody is emailed.

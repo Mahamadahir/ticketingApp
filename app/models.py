@@ -480,6 +480,12 @@ class RequestType(SQLModel, table=True):
     # ranks it (app/required_by.py, app/sla.py). Blank: the global setting is used.
     due_days_before: Optional[int] = Field(default=None)
     queue_lead_days: Optional[int] = Field(default=None)
+    # Optional defaults (app/request_types.py). All four set: a portal request of this type triages itself
+    # when raised (app/request_types.py `self_triage`); some set: they only prefill the triage form.
+    default_team_id: Optional[int] = Field(default=None, foreign_key="team.id")
+    default_category_id: Optional[int] = Field(default=None, foreign_key="category.id")
+    default_impact: Optional[str] = Field(default=None)  # a sla.Level value
+    default_urgency: Optional[str] = Field(default=None)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
