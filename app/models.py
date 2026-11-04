@@ -76,6 +76,9 @@ class Team(SQLModel, table=True):
     # A sub-team has a parent. Members of the parent get the same level on the
     # sub-team's tickets (app/visibility.py). One level deep only.
     parent_team_id: Optional[int] = Field(default=None, foreign_key="team.id")
+    # Whether the automatic MSP handoff (app/msp.py) takes this team's tickets. Off unless an admin switches it on;
+    # an agent can still send any ticket by hand.
+    msp_handoff_included: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -272,6 +275,11 @@ class Ticket(SQLModel, table=True):
     escalation_reason: Optional[str] = Field(default=None)
     escalated_by_id: Optional[int] = Field(default=None, foreign_key="user.id")
     escalated_at: Optional[datetime] = Field(default=None)
+
+    # The MSP handoff (app/msp.py). msp_hold keeps the ticket out of the automatic handoff until the agent releases
+    # it; msp_sent_at is when it last went to the MSP (by hand or by the 18:00 job).
+    msp_hold: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
+    msp_sent_at: Optional[datetime] = Field(default=None)
 
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

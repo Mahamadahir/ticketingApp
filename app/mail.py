@@ -48,7 +48,7 @@ from app.models import (
     User,
     UserRole,
 )
-from app.outbox import ACKNOWLEDGEMENT, APPROVAL, APPROVAL_OVERDUE, APPROVAL_REMINDER, APPROVAL_WITHDRAWN, AUTOMATIC_TO_REQUESTER, CHASE, FOLLOWER_UPDATE, NOTICE, RAISED_FOR, REPLY
+from app.outbox import ACKNOWLEDGEMENT, MSP_HANDOFF, APPROVAL, APPROVAL_OVERDUE, APPROVAL_REMINDER, APPROVAL_WITHDRAWN, AUTOMATIC_TO_REQUESTER, CHASE, FOLLOWER_UPDATE, NOTICE, RAISED_FOR, REPLY
 from app.raising import should_tell_requester
 from app.settings_store import APPROVAL_LINK_MINUTES, AUTOMATIC_EMAIL_CAP, CHASE_RESOLVE_AFTER_DAYS, REGISTRY, get_int_setting
 from app.teams import MAX_ATTEMPTS, MAX_BACKOFF_MINUTES, Unsendable
@@ -328,6 +328,22 @@ def build_approval_overdue_mail(session: Session, row: OutboundEmail) -> Mail:
     )
 
 
+def build_msp_handoff_mail(session: Session, row: OutboundEmail) -> Mail:
+    """The email to the MSP. The text was fixed when the ticket was sent (app/msp.py), so this only checks the
+    ticket is still with the MSP (an agent may have taken it back before the email went) and that there is
+    somewhere to send it."""
+    ticket = _ticket_of(session, row)
+    if ticket.status != TicketStatus.WITH_MSP:
+        raise Unsendable("The ticket is no longer with the MSP")
+    if not row.body or not row.subject:
+        raise Unsendable("The email has no text")
+    _guard_recipient(row)
+    return Mail(
+        to=row.to_address, cc=[a.strip() for a in (row.cc or "").split(",") if a.strip()], subject=row.subject,
+        body=row.body, record=row.body, automatic=False, reference=ticket.reference,
+    )
+
+
 # One builder per kind: it turns the row into the email, or raises Unsendable (never) or NotReady
 # (not yet). A new kind of email is one builder and one entry here; the sending is shared.
 BUILDERS: dict[str, Callable[[Session, OutboundEmail], Mail]] = {
@@ -340,6 +356,7 @@ BUILDERS: dict[str, Callable[[Session, OutboundEmail], Mail]] = {
     APPROVAL_WITHDRAWN: build_approval_withdrawn_mail,
     ACKNOWLEDGEMENT: build_acknowledgement_mail,
     CHASE: build_chase_mail,
+    MSP_HANDOFF: build_msp_handoff_mail,
     FOLLOWER_UPDATE: build_follower_update_mail,
 }
 

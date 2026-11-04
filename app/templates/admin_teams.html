@@ -12,11 +12,18 @@
     {% if team.parent_team_id %}<div>Sub-team of {{ teams_by_id[team.parent_team_id].name }}</div>{% endif %}
     <div>{{ member_counts.get(team.id, 0) }} members</div>
     <div>{{ ticket_counts.get(team.id, 0) }} tickets</div>
+    <form method="post" action="/admin/teams/{{ team.id }}/msp-handoff">
+      <label><input type="checkbox" name="included" value="1" {{ "checked" if team.msp_handoff_included else "" }} />
+        Include in the automatic MSP handoff</label>
+      <button type="submit">Save</button>
+    </form>
   </div>
   {% else %}
   <p>No teams yet &mdash; create one below.</p>
   {% endfor %}
 </div>
+
+<p class="note">The automatic MSP handoff takes the open tickets of included teams that are due to breach before the next business morning, unless the assigned agent has put them on hold. Tickets of a team that is not included are never sent automatically; an agent can still send them by hand. The address, the time and the holidays are under Settings.</p>
 
 <h2>New team</h2>
 <p class="note">A sub-team (for example 2nd line under Support) is worked by its own members, and every member of the parent team gets the same level on its tickets. Sub-teams go one level deep.</p>

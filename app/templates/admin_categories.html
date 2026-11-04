@@ -13,9 +13,9 @@
 </p>
 <p class="note">
   "Escalates to" is where the Escalate button sends a triaged ticket in that category. Every category
-  starts on the MSP; a sub-category follows its main category unless you pick something else. Until the MSP
-  handoff is built, a category set to the MSP cannot be escalated, so pick a team to enable it. If the
-  ticket is already with that team, the next step is the MSP.
+  starts on the MSP; a sub-category follows its main category unless you pick something else. Escalating to the MSP is
+  Send to MSP: the ticket stays in its team with the status With MSP (set the MSP address under Settings first). If the
+  ticket is already with the chosen team, the next step is the MSP.
 </p>
 
 <table>
@@ -37,7 +37,7 @@
         </td>
         <td>
           <select name="escalation">
-            <option value="msp" {{ "selected" if main.escalation_team_id is none else "" }}>MSP (not available yet)</option>
+            <option value="msp" {{ "selected" if main.escalation_team_id is none else "" }}>MSP</option>
             {% for t in teams %}
             <option value="{{ t.id }}" {{ "selected" if main.escalation_team_id == t.id else "" }}>{{ t.name }}</option>
             {% endfor %}
@@ -55,7 +55,7 @@
         <td>
           <select name="escalation">
             <option value="inherit" {{ "selected" if sub.escalation_inherits else "" }}>Same as {{ main.name }}</option>
-            <option value="msp" {{ "selected" if not sub.escalation_inherits and sub.escalation_team_id is none else "" }}>MSP (not available yet)</option>
+            <option value="msp" {{ "selected" if not sub.escalation_inherits and sub.escalation_team_id is none else "" }}>MSP</option>
             {% for t in teams %}
             <option value="{{ t.id }}" {{ "selected" if not sub.escalation_inherits and sub.escalation_team_id == t.id else "" }}>{{ t.name }}</option>
             {% endfor %}
@@ -81,7 +81,7 @@
   </label>
   <label>Escalates to
     <select name="escalation">
-      <option value="msp">MSP (not available yet: tickets in it cannot be escalated)</option>
+      <option value="msp">MSP (escalating sends the ticket to the MSP)</option>
       {% for t in teams %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
     </select>
   </label>
@@ -100,7 +100,7 @@
   <label>Escalates to
     <select name="escalation">
       <option value="inherit">Same as its main category</option>
-      <option value="msp">MSP (not available yet)</option>
+      <option value="msp">MSP</option>
       {% for t in teams %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
     </select>
   </label>

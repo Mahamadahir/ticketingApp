@@ -6,14 +6,15 @@ it overrides. If the ticket is already with that team the next step is the MSP, 
 second-line ticket cannot escalate back to itself.
 
 Re-assign (app/triage.py) is the tool for handing a ticket to the right team; it is not
-an escalation. The MSP handoff is phase 5 and is not built, so a ticket whose target is
-the MSP cannot be escalated yet: the escalation is refused with a message that says so.
+an escalation. When the target is the MSP, escalating is the Send to MSP action (app/msp.py): the ticket
+stays in its team with status With MSP and nobody's access changes. With no MSP address set it is refused.
 
 The escalating agent keeps working access to that one ticket (TicketEscalator, read in
 app/visibility.py) and becomes an internal follower. Nothing here commits.
 """
 
 from datetime import datetime, timezone
+from typing import Optional
 
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
@@ -23,21 +24,17 @@ from app.categories import escalation_team_id_for
 from app.followers import add_follower
 from app.messages import add_note
 from app.models import FINISHED_STATUSES, Category, Team, Ticket, TicketEscalator, User
+from app.msp import MspError, check_can_send, send_to_msp
 from app.notifications import notify_mentions
 from app.triage import MOVE_ESCALATE, move_ticket
-
-MSP_NOT_BUILT = (
-    "Escalating from here goes to the MSP (the category's escalation team is the MSP, or the ticket is "
-    "already with it), and the MSP handoff is not available yet."
-)
-
 
 class EscalationError(ValueError):
     """Why a ticket cannot be escalated, in words for the agent."""
 
 
-def escalation_target(session: Session, ticket: Ticket) -> Team:
-    """The team this ticket escalates to, or EscalationError saying why there is none."""
+def escalation_target(session: Session, ticket: Ticket) -> Optional[Team]:
+    """The team this ticket escalates to, None when it goes to the MSP, or EscalationError saying why there is
+    nowhere to go (including an MSP with no address set, or a ticket already with it)."""
     if ticket.triaged_at is None:
         raise EscalationError("Triage the ticket first; its category decides where it escalates")
     if ticket.status in FINISHED_STATUSES:
@@ -53,11 +50,20 @@ def escalation_target(session: Session, ticket: Ticket) -> Team:
     if team_id is None or already_there:
         # In the target, or in one of its sub-teams (moving up to the parent would be
         # a step back, not an escalation): the next step is the MSP.
-        raise EscalationError(MSP_NOT_BUILT)
+        return _msp_or_error(session, ticket)
     team = session.get(Team, team_id)
     if team is None:  # cannot happen with the foreign key; keeps the answer honest if it does
-        raise EscalationError(MSP_NOT_BUILT)
+        return _msp_or_error(session, ticket)
     return team
+
+
+def _msp_or_error(session: Session, ticket: Ticket) -> None:
+    """None (the MSP) if the ticket can go there, else the reason it cannot."""
+    try:
+        check_can_send(session, ticket)
+    except MspError as error:
+        raise EscalationError(str(error))
+    return None
 
 
 def escalators_of(session: Session, ticket: Ticket) -> list[User]:
@@ -73,10 +79,17 @@ def escalators_of(session: Session, ticket: Ticket) -> list[User]:
     )
 
 
-def escalate_ticket(session: Session, ticket: Ticket, actor: User, reason: str) -> Team:
-    """Moves the ticket to its escalation team, unassigned, and records who and why.
-    Returns the team. Raises EscalationError and changes nothing when it cannot."""
+def escalate_ticket(session: Session, ticket: Ticket, actor: User, reason: str) -> Optional[Team]:
+    """Moves the ticket to its escalation team, unassigned, and records who and why. Returns the team, or None
+    when the target is the MSP and the ticket was sent there (the whole thread; the Send to MSP form offers the
+    other choice, with a preview). Raises EscalationError and changes nothing when it cannot."""
     new_team = escalation_target(session, ticket)
+    if new_team is None:
+        try:
+            send_to_msp(session, ticket, actor, reason)
+        except MspError as error:
+            raise EscalationError(str(error))
+        return None
 
     # The move itself (team, unassigning the agent, the event and its history) is the same code
     # as a re-assign; what makes it an escalation is the rest of this function.

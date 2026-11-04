@@ -132,7 +132,7 @@ def create_category(
     """Creates a main category (needs a team) or a sub-category (inherits the
     parent's team). `escalation` says where escalating a ticket in it goes ("inherit" for
     a sub-category, "msp", or a team id); left out it is the default: a sub-category follows
-    its parent, a main category goes to the MSP, which cannot be escalated to yet. Does not commit."""
+    its parent, a main category goes to the MSP. Does not commit."""
     _lock_categories(session)  # taken first, so the duplicate check below cannot race
     name = " ".join(name.split())
     if not name or len(name) > MAX_NAME_LENGTH:

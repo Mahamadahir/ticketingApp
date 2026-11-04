@@ -27,6 +27,7 @@ APPROVAL_OVERDUE = "approval_overdue"  # tells a super admin a request has waite
 APPROVAL_WITHDRAWN = "approval_withdrawn"  # tells an approver the requester withdrew the request
 ACKNOWLEDGEMENT = "acknowledgement"  # "your issue has been logged", once, for a ticket that arrived by email
 CHASE = "chase"  # "is this still an issue?" to the requester of a ticket Awaiting user (app/auto_close_chase.py)
+MSP_HANDOFF = "msp_handoff"  # a ticket sent to the MSP (app/msp.py); the text is fixed when it is queued
 FOLLOWER_UPDATE = "follower_update"  # an inbound update passed to someone who was not on the mail it came in
 
 # Kinds that go to the requester without an agent having just written them. These are what the
@@ -166,4 +167,20 @@ def queue_follower_update(session: Session, ticket: Ticket, message: Message, to
             session.flush()
     except IntegrityError:
         return None
+    return row
+
+
+def queue_msp_handoff(
+    session: Session, ticket: Ticket, to_address: str, cc: list[str], subject: str, body: str
+) -> Optional[OutboundEmail]:
+    """Queues the email to the MSP with the text built by app/msp.py (the one the agent previewed, or the preview is shown again): unlike
+    the other kinds it is not rebuilt when sent, since the thread then would differ from what was agreed to go.
+    None when mail is off."""
+    if not is_on():
+        return None
+    session.flush()
+    row = OutboundEmail(
+        kind=MSP_HANDOFF, ticket_id=ticket.id, to_address=to_address, cc=", ".join(cc) or None, subject=subject, body=body
+    )
+    session.add(row)
     return row

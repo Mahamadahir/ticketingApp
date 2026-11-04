@@ -310,6 +310,57 @@ REGISTRY: dict[str, TemplateDef] = {
             sample={**_COMMON_SAMPLE, "requester_email": "sam@example.com"},
         ),
         TemplateDef(
+            key="msp_handoff",
+            label="Send to MSP (to the MSP)",
+            description=(
+                "Sent to the support partner (the MSP address under Settings) when a ticket is sent to them, by an agent or "
+                "by the automatic handoff. It opens with the end user's details and who asked, then the reference, priority, "
+                "SLA, category and the conversation. It goes out under the ticket's own subject, so the reference in it "
+                "lets replies find the ticket. {conversation} holds the thread (or only the original request) with internal "
+                "notes marked as such; ticket events are never sent."
+            ),
+            body_default=(
+                "End user: {end_user}\nRequested by: {requested_by}\n\n"
+                "Reference: {reference}\nSubject: {subject}\nPriority: {priority}\nSLA: {sla_due}\nCategory: {category}\n"
+                "Why it is being sent: {reason}\n\n{conversation}\n\n{attachments}\n\n"
+                "Please deal with the end user directly, copy the IT mailbox, and keep {reference} in the subject of every email."
+            ),
+            body_placeholders={
+                **_COMMON,
+                "end_user": "the requester's name and email address",
+                "requested_by": "the agent who sent it, or the automatic handoff",
+                "priority": "the ticket's priority (P1 to P4, or not set)",
+                "sla_due": "when the first response and the resolution are due",
+                "category": "the ticket's category",
+                "reason": "why it is being sent",
+                "conversation": "the thread, or only the original request, as the agent chose (the automatic handoff sends the thread)",
+                "attachments": "the names of the files on the ticket (left out if none)",
+            },
+            required=("conversation",),
+            sample={
+                **_COMMON_SAMPLE,
+                "end_user": "Sam Smith (sam@example.com)",
+                "requested_by": "Alex Agent (alex@example.com)",
+                "priority": "P2",
+                "sla_due": "first response by 4 Nov 17:30 GMT; resolution by 5 Nov 09:00 GMT",
+                "category": "Hardware / Printer",
+                "reason": "Needs an engineer on site.",
+                "conversation": "The thread:\n\n--- 4 Nov 09:12 GMT, from the user (sam@example.com) ---\nThe printer shows a paper jam error.",
+                "attachments": "Attachments on the ticket (names only; the files are not attached to this email):\n- jam.jpg (120 KB)",
+            },
+        ),
+        TemplateDef(
+            key="msp_sent_notice",
+            label="Notice: sent to the MSP",
+            description="Told to the requester when their ticket has gone to the support partner.",
+            body_default=(
+                "Your ticket {reference} has been passed to our support partner, who will help you directly. "
+                "Please keep {reference} in the subject of any email about it."
+            ),
+            body_placeholders=dict(_COMMON),
+            sample=dict(_COMMON_SAMPLE),
+        ),
+        TemplateDef(
             key="approval_approved",
             label="Notice: request approved",
             description="Told to the requester when their request has been approved.",

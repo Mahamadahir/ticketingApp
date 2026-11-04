@@ -54,6 +54,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/b5c1e7a3d902_msp_handoff.py",
+        "revision": "b5c1e7a3d902"
+      },
+      {
         "file": "migrations/versions/c4e8a1d7b362_sub_request_templates.py",
         "revision": "c4e8a1d7b362"
       },
@@ -68,17 +72,13 @@
       {
         "file": "migrations/versions/a4c7e1b9d205_user_permissions.py",
         "revision": "a4c7e1b9d205"
-      },
-      {
-        "file": "migrations/versions/f3b9d2a6c841_due_date.py",
-        "revision": "f3b9d2a6c841"
       }
     ],
-    "count": 51,
+    "count": 52,
     "heads": [
       {
-        "file": "migrations/versions/c4e8a1d7b362_sub_request_templates.py",
-        "revision": "c4e8a1d7b362"
+        "file": "migrations/versions/b5c1e7a3d902_msp_handoff.py",
+        "revision": "b5c1e7a3d902"
       }
     ]
   },
@@ -356,6 +356,7 @@
         "app.due_today",
         "app.escalation",
         "app.inbound",
+        "app.msp",
         "app.notification_settings",
         "app.reopening",
         "app.request_types",
@@ -569,6 +570,7 @@
       ],
       "imported_by": [
         "app.escalation",
+        "app.msp",
         "app.request_types",
         "app.routers.admin",
         "app.routers.portal",
@@ -664,6 +666,7 @@
         "app.jobs",
         "app.mail",
         "app.main",
+        "app.msp",
         "app.outbox",
         "app.rate_limit",
         "app.routers.admin",
@@ -694,6 +697,7 @@
         "tests/test_follower_updates.py",
         "tests/test_inbound_mail.py",
         "tests/test_mail_subscriptions.py",
+        "tests/test_msp.py",
         "tests/test_outbound_mail.py",
         "tests/test_presence.py",
         "tests/test_public_surface.py",
@@ -818,6 +822,7 @@
         "app.approvals",
         "app.closing",
         "app.mail",
+        "app.msp",
         "app.resolution",
         "app.routers.admin"
       ],
@@ -857,6 +862,7 @@
         "app.followers",
         "app.messages",
         "app.models",
+        "app.msp",
         "app.notifications",
         "app.triage"
       ],
@@ -940,6 +946,7 @@
         "app.inbound",
         "app.mail",
         "app.messages",
+        "app.msp",
         "app.notifications",
         "app.raising",
         "app.reopening",
@@ -1223,6 +1230,7 @@
         "build_chase_mail",
         "build_follower_update_mail",
         "build_message_mail",
+        "build_msp_handoff_mail",
         "build_raised_for_mail",
         "cap_release",
         "deliver_mail",
@@ -1237,7 +1245,8 @@
       "imported_by": [
         "app.auto_close_chase",
         "app.inbound",
-        "app.jobs"
+        "app.jobs",
+        "app.msp"
       ],
       "imports": [
         "app.action_links",
@@ -1269,6 +1278,7 @@
         "tests/test_closing_email.py",
         "tests/test_email_templates.py",
         "tests/test_follower_updates.py",
+        "tests/test_msp.py",
         "tests/test_outbound_mail.py",
         "tests/test_reopening.py",
         "tests/test_resolution.py",
@@ -1363,6 +1373,7 @@
         "app.escalation",
         "app.inbound",
         "app.mail",
+        "app.msp",
         "app.raising",
         "app.reopening",
         "app.resolution",
@@ -1484,6 +1495,7 @@
         "app.mail",
         "app.main",
         "app.messages",
+        "app.msp",
         "app.never_follow",
         "app.notification_settings",
         "app.notifications",
@@ -1731,6 +1743,7 @@
         "tests/test_login_lockout.py",
         "tests/test_mail_subscriptions.py",
         "tests/test_messages.py",
+        "tests/test_msp.py",
         "tests/test_never_follow.py",
         "tests/test_notification_followup.py",
         "tests/test_notification_settings.py",
@@ -1773,6 +1786,53 @@
         "tests/test_with_supplier.py",
         "tests/test_withdraw.py",
         "tests/test_worker.py"
+      ]
+    },
+    {
+      "classes": [
+        "MspError",
+        "MspPreview"
+      ],
+      "file": "app/msp.py",
+      "functions": [
+        "check_can_send",
+        "compose",
+        "hand_off_due_tickets",
+        "handoff_window",
+        "hold_ticket",
+        "may_hold",
+        "msp_address",
+        "release_hold",
+        "run_msp_handoff",
+        "send_to_msp"
+      ],
+      "imported_by": [
+        "app.escalation",
+        "app.routers.tickets",
+        "app.scheduled_jobs"
+      ],
+      "imports": [
+        "app.audit",
+        "app.categories",
+        "app.config",
+        "app.email_templates",
+        "app.followers",
+        "app.mail",
+        "app.messages",
+        "app.models",
+        "app.notifications",
+        "app.outbox",
+        "app.settings_store",
+        "app.splitting",
+        "app.ticket_service",
+        "app.time_zones"
+      ],
+      "module": "app.msp",
+      "routes": [],
+      "summary": "Sending a ticket to the MSP, putting it on hold, and the automatic handoff (phase 5A, issue #138). Nothing",
+      "tables": [],
+      "tests": [
+        "tests/test_msp.py"
       ]
     },
     {
@@ -1889,6 +1949,7 @@
         "app.escalation",
         "app.jobs",
         "app.messages",
+        "app.msp",
         "app.reopening",
         "app.resolution",
         "app.routers.bulk_resolve",
@@ -1939,6 +2000,7 @@
         "queue_chase",
         "queue_follower_update",
         "queue_message",
+        "queue_msp_handoff",
         "queue_raised_for"
       ],
       "imported_by": [
@@ -1949,6 +2011,7 @@
         "app.inbound",
         "app.mail",
         "app.messages",
+        "app.msp",
         "app.raising"
       ],
       "imports": [
@@ -2334,6 +2397,7 @@
       "tests": [
         "tests/test_auto_close_chase.py",
         "tests/test_bulk_resolve.py",
+        "tests/test_msp.py",
         "tests/test_reopening.py",
         "tests/test_resolution.py"
       ]
@@ -2441,6 +2505,7 @@
         "save_email_template",
         "save_setting",
         "set_membership",
+        "set_team_msp_handoff",
         "set_user_active",
         "set_user_permissions",
         "thanks_candidate_to_rule",
@@ -2696,6 +2761,11 @@
           "handler": "create_team",
           "method": "POST",
           "path": "/admin/teams"
+        },
+        {
+          "handler": "set_team_msp_handoff",
+          "method": "POST",
+          "path": "/admin/teams/{team_id}/msp-handoff"
         },
         {
           "handler": "list_thanks_rules",
@@ -3271,14 +3341,18 @@
         "fill_from_canned",
         "link",
         "list_tickets",
+        "msp_hold",
+        "msp_hold_release",
         "preview_close",
         "preview_email_user",
         "preview_resolve",
+        "preview_send_to_msp",
         "reassign",
         "reclose",
         "remove_ticket_follower",
         "reopen",
         "resolve",
+        "send_ticket_to_msp",
         "split",
         "team_activity",
         "triage",
@@ -3308,6 +3382,7 @@
         "app.linking",
         "app.messages",
         "app.models",
+        "app.msp",
         "app.notifications",
         "app.pagination",
         "app.presence",
@@ -3442,6 +3517,16 @@
           "path": "/tickets/{number}/link"
         },
         {
+          "handler": "msp_hold",
+          "method": "POST",
+          "path": "/tickets/{number}/msp-hold"
+        },
+        {
+          "handler": "msp_hold_release",
+          "method": "POST",
+          "path": "/tickets/{number}/msp-hold/release"
+        },
+        {
           "handler": "add_ticket_note",
           "method": "POST",
           "path": "/tickets/{number}/note"
@@ -3480,6 +3565,16 @@
           "handler": "preview_resolve",
           "method": "POST",
           "path": "/tickets/{number}/resolve/preview"
+        },
+        {
+          "handler": "send_ticket_to_msp",
+          "method": "POST",
+          "path": "/tickets/{number}/send-to-msp"
+        },
+        {
+          "handler": "preview_send_to_msp",
+          "method": "POST",
+          "path": "/tickets/{number}/send-to-msp/preview"
         },
         {
           "handler": "split",
@@ -3563,6 +3658,7 @@
         "app.database",
         "app.due_today",
         "app.models",
+        "app.msp",
         "app.settings_store"
       ],
       "module": "app.scheduled_jobs",
@@ -3573,6 +3669,7 @@
         "tests/test_approval_reminders.py",
         "tests/test_auto_close_chase.py",
         "tests/test_due_date.py",
+        "tests/test_msp.py",
         "tests/test_scheduled_jobs.py"
       ]
     },
@@ -3619,6 +3716,7 @@
         "app.categories",
         "app.inbound",
         "app.mail",
+        "app.msp",
         "app.notifications",
         "app.presence",
         "app.raising",
@@ -3656,6 +3754,7 @@
         "tests/test_follower_updates.py",
         "tests/test_inbound_mail.py",
         "tests/test_mail_subscriptions.py",
+        "tests/test_msp.py",
         "tests/test_never_follow.py",
         "tests/test_notification_followup.py",
         "tests/test_outbound_mail.py",
@@ -3755,6 +3854,7 @@
         "app.due_today",
         "app.inbound",
         "app.messages",
+        "app.msp",
         "app.reopening",
         "app.resolution",
         "app.routers.bulk_resolve",
@@ -4112,6 +4212,7 @@
         "app.inbound",
         "app.linking",
         "app.messages",
+        "app.msp",
         "app.raising",
         "app.reopening",
         "app.request_questions",
@@ -4175,7 +4276,9 @@
         "format_date",
         "format_moment",
         "morning_of",
+        "next_business_morning",
         "note_requester",
+        "parse_dates",
         "refresh_requester_zones",
         "scheduled_morning_hour",
         "set_browser_zone",
@@ -4192,6 +4295,7 @@
         "app.due_today",
         "app.inbound",
         "app.jobs",
+        "app.msp",
         "app.required_by",
         "app.routers.admin",
         "app.routers.my_settings",
@@ -4213,6 +4317,7 @@
       "tables": [],
       "tests": [
         "tests/test_due_date.py",
+        "tests/test_msp.py",
         "tests/test_time_zones.py"
       ]
     },
@@ -4413,6 +4518,12 @@
         "detail": "select() on Message",
         "file": "app/mail.py",
         "in": "own_first_message",
+        "rule": "messages-via-messages-module"
+      },
+      {
+        "detail": "select() on Message",
+        "file": "app/msp.py",
+        "in": "_conversation",
         "rule": "messages-via-messages-module"
       },
       {
@@ -4714,6 +4825,7 @@
     "tests/test_mail_subscriptions.py",
     "tests/test_messages.py",
     "tests/test_migrations_env.py",
+    "tests/test_msp.py",
     "tests/test_never_follow.py",
     "tests/test_notification_followup.py",
     "tests/test_notification_settings.py",

@@ -197,6 +197,7 @@ def set_status(
     ticket.status = new_status
     ticket.updated_at = now
     if new_status in FINISHED_STATUSES:
+        ticket.msp_hold = False  # a hold is about the automatic MSP handoff; a finished ticket has no use for it (app/msp.py)
         # Closing a resolved ticket keeps the original resolution time.
         if ticket.resolved_at is None:
             ticket.resolved_at = now
