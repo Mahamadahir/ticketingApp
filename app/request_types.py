@@ -23,6 +23,7 @@ from app.audit import log_action
 from app.categories import is_selectable, path_of, team_id_for
 from app.models import ApprovalGroup, Category, RequestType, Team, Ticket, TicketSource, TicketType
 from app.sla import Level
+from app.triage import triage_ticket
 
 MAX_NAME_LENGTH = 100
 MAX_DESCRIPTION_LENGTH = 1000
@@ -130,8 +131,6 @@ def self_triage(session: Session, ticket: Ticket, request_type: RequestType) -> 
     category = self_triage_defaults(session, request_type)
     if category is None:
         return False
-    from app.triage import triage_ticket  # imported here because app.triage builds on app.approvals, as this module does
-
     triage_ticket(
         session, ticket, None, ticket_type=TicketType.SERVICE_REQUEST, category=category,
         impact=Level(request_type.default_impact), urgency=Level(request_type.default_urgency),

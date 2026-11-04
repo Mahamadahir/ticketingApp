@@ -21,7 +21,7 @@ from app.activity import (
 from app.audit import log_action
 from app.auth import hash_password, require_permission, require_roles
 from app.permissions import ASSIGNABLE_ROLES, MANAGE_REQUEST_TEMPLATES, PERMISSIONS
-from app.sla import IMPACT_LABELS, URGENCY_LABELS
+from app.sla import impact_options, urgency_options
 from app.categories import (
     CategoryError,
     create_category,
@@ -48,6 +48,7 @@ from app.request_types import (
     RequestTypeError,
     TypeDefaults,
     all_request_types,
+    self_triage_defaults,
     create_request_type,
     update_request_type,
 )
@@ -1051,6 +1052,17 @@ def _defaults_text(session: Session, request_type: RequestType) -> str:
     )
 
 
+def _stale_default_categories(session: Session, types: list[RequestType]) -> dict[int, str]:
+    """A type's default category that has been switched off, by id, so the edit form still shows it as chosen
+    (saving then says why it cannot be kept) instead of quietly clearing it."""
+    stale = {}
+    for request_type in types:
+        category = session.get(Category, request_type.default_category_id) if request_type.default_category_id else None
+        if category is not None and not is_selectable(session, category):
+            stale[category.id] = f"{path_of(session, category)} (switched off)"
+    return stale
+
+
 def _defaults_from_form(team_id, category_id, impact, urgency) -> TypeDefaults:
     return TypeDefaults(optional_int(team_id), optional_int(category_id), (impact or "").strip() or None, (urgency or "").strip() or None)
 
@@ -1061,11 +1073,12 @@ def list_request_types(
     user: User = Depends(require_request_templates),
     session: Session = Depends(get_session),
 ):
+    types = all_request_types(session)
     return templates.TemplateResponse(
         request,
         "admin_request_types.html",
         {
-            "types": all_request_types(session),
+            "types": types,
             "groups": all_groups(session),
             "default_pass": get_setting(session, APPROVAL_DEFAULT_PASS_PERCENT),
             "default_due_days": get_setting(session, DUE_DAYS_BEFORE_REQUIRED_BY),
@@ -1074,8 +1087,10 @@ def list_request_types(
             "max_description_length": MAX_REQUEST_DESCRIPTION_LENGTH,
             "teams": session.exec(select(Team).order_by(Team.name)).all(),
             "category_options": selectable(session),
-            "impact_options": [(level.value, label) for level, label in IMPACT_LABELS.items()],
-            "urgency_options": [(level.value, label) for level, label in URGENCY_LABELS.items()],
+            "impact_options": impact_options(),
+            "urgency_options": urgency_options(),
+            "stale_categories": _stale_default_categories(session, types),
+            "self_triages": {t.id for t in types if self_triage_defaults(session, t) is not None},
             "user": user,
         },
     )

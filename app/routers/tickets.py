@@ -71,8 +71,8 @@ from app.models import FINISHED_STATUSES, CannedResponse, Category, RequestType,
 from app.pagination import paginate
 from app.team_activity import KIND_LABELS, Kind, describe as describe_activity, feed_query
 from app.sla import (
-    IMPACT_LABELS,
-    URGENCY_LABELS,
+    impact_options,
+    urgency_options,
     Level,
     at_risk_percent,
     describe_priority,
@@ -276,6 +276,9 @@ def triage_dates(
     due_on: str = "",
     due_reason: str = "",
     has_due: bool = False,
+    impact: str = "",
+    urgency: str = "",
+    category_id: str = "",
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
@@ -283,26 +286,31 @@ def triage_dates(
     Required by only when the kind offers it, Due always. What was typed is kept."""
     chosen = optional_int(request_type_id)
     request_type = session.get(RequestType, chosen) if chosen is not None else None
-    prefill = _type_defaults(session, request_type) if request_type is not None else None
+    prefill = _type_defaults(session, request_type, impact, urgency, category_id) if request_type is not None else None
     return _triage_dates(
         request, request_type is not None and request_type.offers_required_by, required_by, due_on, due_reason, has_due, prefill
     )
 
 
-def _type_defaults(session: Session, request_type: RequestType) -> Optional[dict]:
+def _type_defaults(
+    session: Session, request_type: RequestType, impact: str = "", urgency: str = "", category_id: str = ""
+) -> Optional[dict]:
     """What choosing this kind of request fills in on the triage form (#133): the impact, urgency and category the
-    type has defaults for (a category that has since been switched off is not offered). None when it has none."""
+    type has defaults for, but only into a box the agent has not already filled in (the form is sent with the call).
+    A category that has since been switched off is not offered. None when there is nothing to fill in."""
     category = session.get(Category, request_type.default_category_id) if request_type.default_category_id else None
-    if category is not None and not is_selectable(session, category):
+    if category is not None and (category_id.strip() or not is_selectable(session, category)):
         category = None
-    if not (request_type.default_impact or request_type.default_urgency or category):
+    default_impact = None if impact.strip() else request_type.default_impact
+    default_urgency = None if urgency.strip() else request_type.default_urgency
+    if not (default_impact or default_urgency or category):
         return None
     team_id = team_id_for(session, category) if category is not None else None
     return {
-        "impact": request_type.default_impact, "urgency": request_type.default_urgency,
+        "impact": default_impact, "urgency": default_urgency,
         "category_id": category.id if category is not None else None,
-        "impact_options": [(level.value, label) for level, label in IMPACT_LABELS.items()],
-        "urgency_options": [(level.value, label) for level, label in URGENCY_LABELS.items()],
+        "impact_options": impact_options(),
+        "urgency_options": urgency_options(),
         "category_options": selectable(session), "members": team_members(session, team_id),
     }
 
@@ -1316,8 +1324,8 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             "hidden_linked_count": linked_total - linked_visible,
             "more_linked_count": linked_visible - len(linked),
             "can_link": can_work and ticket.triaged_at is not None and linked_total == 0,
-            "impact_options": [(level.value, label) for level, label in IMPACT_LABELS.items()],
-            "urgency_options": [(level.value, label) for level, label in URGENCY_LABELS.items()],
+            "impact_options": impact_options(),
+            "urgency_options": urgency_options(),
             "sla": sla_view(ticket, datetime.now(timezone.utc), at_risk_percent(session)),
             "moment_format": MOMENT_FORMAT,
             "can_backdate": may_backdate(ticket),

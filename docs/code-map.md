@@ -965,7 +965,7 @@ Priority and the SLA clock. Nothing here commits.
 File: `app/sla.py`
 
 - Classes: `Level`, `Priority`, `SlaView`
-- Functions: `apply_impact_urgency`, `at_risk_percent`, `describe_priority`, `note_first_response`, `on_status_change`, `priority_for`, `queue_order`, `recalculate_deadlines`, `set_impact_urgency`, `sla_view`, `target_minutes`
+- Functions: `apply_impact_urgency`, `at_risk_percent`, `describe_priority`, `impact_options`, `note_first_response`, `on_status_change`, `priority_for`, `queue_order`, `recalculate_deadlines`, `set_impact_urgency`, `sla_view`, `target_minutes`, `urgency_options`
 - Imports: `app.models`, `app.settings_store`, `app.ticket_service`, `app.time_zones`
 - Imported by: `app.backdating`, `app.messages`, `app.raising`, `app.request_types`, `app.required_by`, `app.routers.admin`, `app.routers.portal`, `app.routers.tickets`, `app.splitting`, `app.ticket_service`, `app.triage`
 - Tests: `test_backdating.py`, `test_required_by.py`, `test_resolution.py`, `test_scheduled_status.py`, `test_sla.py`, `test_with_supplier.py`

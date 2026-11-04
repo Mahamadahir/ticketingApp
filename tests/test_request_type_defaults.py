@@ -435,3 +435,48 @@ def test_the_agent_can_change_the_prefilled_values_when_triaging(client, db_sess
 
     db_session.expire_all()
     assert db_session.get(Ticket, ticket.id).priority == "p4"
+
+
+def test_picking_a_kind_does_not_overwrite_what_the_agent_already_chose(client, db_session):
+    team, category = world(db_session)
+    request_type = typed(db_session, team, category, impact="high", urgency="high")
+    other = create_category(db_session, team, "Software")
+    agent_in(client, db_session, team)
+
+    html = client.get(
+        f"/tickets/triage-dates?request_type_id={request_type.id}&impact=low&category_id={other.id}"
+    ).text
+
+    assert 'id="triage-impact"' not in html and 'id="triage-category"' not in html
+    assert 'id="triage-agent"' not in html
+    assert 'id="triage-urgency"' in html
+
+
+def test_a_switched_off_default_category_stays_chosen_on_the_edit_form_and_saving_says_why(client, db_session):
+    team, category = world(db_session)
+    request_type = typed(db_session, team, category)
+    category.is_active = False
+    db_session.add(category)
+    db_session.commit()
+    admin(client, db_session)
+
+    page = client.get("/admin/request-types").text
+    assert f'<option value="{category.id}" selected>Hardware (switched off)</option>' in page
+    assert "Not self-triaging" in page
+
+    # Saving with it still chosen is refused with the reason, rather than the default being wiped.
+    response = edit(
+        client, request_type, default_team_id=team.id, default_category_id=category.id,
+        default_impact="medium", default_urgency="high",
+    )
+    assert response.status_code == 400 and "no longer in use" in response.text
+    db_session.refresh(request_type)
+    assert request_type.default_category_id == category.id
+
+
+def test_the_admin_page_says_which_types_triage_themselves(client, db_session):
+    team, category = world(db_session)
+    typed(db_session, team, category)
+    admin(client, db_session)
+
+    assert "this request triages itself" in client.get("/admin/request-types").text

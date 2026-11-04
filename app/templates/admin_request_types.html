@@ -11,6 +11,7 @@
     <label>Default category (must belong to that team)
       <select name="default_category_id">
         <option value="">(none)</option>
+        {% if t and t.default_category_id in stale_categories %}<option value="{{ t.default_category_id }}" selected>{{ stale_categories[t.default_category_id] }}</option>{% endif %}
         {% for option, label in category_options %}<option value="{{ option.id }}" {{ "selected" if t and option.id == t.default_category_id else "" }}>{{ label }}</option>{% endfor %}
       </select>
     </label>
@@ -68,6 +69,7 @@
     <label>Due: days before Required by (blank: {{ default_due_days }}) <input type="number" name="due_days_before" value="{{ t.due_days_before if t.due_days_before is not none else "" }}" min="0" max="365" /></label>
     <label>Queue lead time in days (blank: {{ default_queue_days }}) <input type="number" name="queue_lead_days" value="{{ t.queue_lead_days if t.queue_lead_days is not none else "" }}" min="0" max="365" /></label>
     {{ defaults_fields(t) }}
+    <p class="note">{{ "Raised in the portal, this request triages itself." if t.id in self_triages else "Not self-triaging: it needs all four defaults, and the category in use and in that team." }}</p>
     <button type="submit">Save</button>
   </fieldset>
 </form>
