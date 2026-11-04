@@ -42,7 +42,7 @@ from app.approval_groups import is_member, members_of
 from app.audit import log_action
 from app.email_templates import render_template, ticket_values
 from app.messages import record_notice
-from app.notifications import notify_approval_waiting, notify_approval_withdrawn
+from app.notifications import notify_approval_outcome, notify_approval_waiting, notify_approval_withdrawn
 from app.outbox import queue_approval, queue_approval_withdrawn
 from app.models import (
     ApprovalGroupMember,
@@ -272,11 +272,13 @@ def _settle(session: Session, ticket: Ticket, approval: TicketApproval, result: 
     if result == APPROVED:
         set_status(session, ticket, TicketStatus.OPEN, who.email, detail="approved", by_approval=True)
         record_notice(session, ticket, _notice(session, ticket, "approval_approved"))
+        notify_approval_outcome(session, ticket, APPROVED, who.email)
     else:
         set_status(session, ticket, TicketStatus.CLOSED, who.email, detail="approval declined", by_approval=True)
         reasons = [v.comment for v in votes if v.decision == DECLINED and v.comment]
         reason_text = f" Reason: {' / '.join(reasons)}" if reasons else ""
         record_notice(session, ticket, _notice(session, ticket, "approval_declined", reason_text=reason_text))
+        notify_approval_outcome(session, ticket, DECLINED, who.email)
 
 
 def record_decision(session: Session, vote: ApprovalVote, decision: str, comment: str) -> Optional[str]:
@@ -347,6 +349,7 @@ def waive(session: Session, ticket: Ticket, actor: User) -> None:
     record_event(session, ticket, EVENT_APPROVAL_OUTCOME, actor.email, to_value="waived")
     set_status(session, ticket, TicketStatus.OPEN, actor.email, detail="approval waived", by_approval=True)
     record_notice(session, ticket, _notice(session, ticket, "approval_waived"))
+    notify_approval_outcome(session, ticket, "waived", actor.email)
 
 
 def withdraw(session: Session, ticket: Ticket, requester_email: str) -> None:

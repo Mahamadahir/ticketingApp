@@ -27,7 +27,7 @@ from app.models import (
     TicketStatus,
     User,
 )
-from app.notifications import notify_reply
+from app.notifications import notify_agent_emailed, notify_reply
 from app.sla import note_first_response
 from app.ticket_service import NotTriaged
 from app.visibility import Access, is_untriaged, ticket_access, visible_ticket_condition
@@ -193,7 +193,8 @@ def in_a_split(session: Session, ticket: Ticket) -> bool:
 
 
 def email_requester(
-    session: Session, ticket: Ticket, author: User, body: str, cc_emails: Optional[list[str]] = None
+    session: Session, ticket: Ticket, author: User, body: str, cc_emails: Optional[list[str]] = None,
+    bell: bool = True,
 ) -> Message:
     """A public message from an agent to the requester. Records it and queues the email
     (app/outbox.py); the worker sends it (app/mail.py).
@@ -202,7 +203,9 @@ def email_requester(
     cc_emails as the addresses to copy (None means all of them). Unticking does not
     remove anyone as a follower. Internal followers are agents and are always
     copied. The list is recorded on the message, so the timeline shows exactly who
-    received it even if the followers change later."""
+    received it even if the followers change later. The requester and the followers with an account get a bell
+    entry (#130) unless bell is False: the caller then tells them itself, or says something more specific
+    (the status it sets next, the resolution)."""
     if not is_triaged(ticket):
         raise NotTriaged()
     if not body.strip():
@@ -216,6 +219,8 @@ def email_requester(
         direction=MessageDirection.OUTBOUND, visibility=MessageVisibility.PUBLIC, cc=cc,
     )
     queue_message(session, message, ticket)
+    if bell:
+        notify_agent_emailed(session, ticket, author.email)
     return message
 
 

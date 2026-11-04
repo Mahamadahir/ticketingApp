@@ -302,6 +302,7 @@
         "tests/test_approvals.py",
         "tests/test_email_templates.py",
         "tests/test_outbound_mail.py",
+        "tests/test_requester_bell.py",
         "tests/test_withdraw.py"
       ]
     },
@@ -879,6 +880,7 @@
         "followers_of",
         "is_follower",
         "normalise_email",
+        "portal_audience",
         "remove_follower",
         "uncopied_recipients"
       ],
@@ -889,6 +891,7 @@
         "app.inbound",
         "app.mail",
         "app.messages",
+        "app.notifications",
         "app.raising",
         "app.reopening",
         "app.routers.admin",
@@ -1655,6 +1658,7 @@
         "tests/test_reopening.py",
         "tests/test_reply_notification.py",
         "tests/test_request_types.py",
+        "tests/test_requester_bell.py",
         "tests/test_required_by.py",
         "tests/test_resolution.py",
         "tests/test_scheduled_jobs.py",
@@ -1747,6 +1751,7 @@
         "tests/test_approval_reminders.py",
         "tests/test_notification_followup.py",
         "tests/test_notification_settings.py",
+        "tests/test_requester_bell.py",
         "tests/test_teams_copy.py"
       ]
     },
@@ -1766,6 +1771,8 @@
         "mentioned_in",
         "notification_text",
         "notify",
+        "notify_agent_emailed",
+        "notify_approval_outcome",
         "notify_approval_overdue",
         "notify_approval_waiting",
         "notify_approval_withdrawn",
@@ -1775,6 +1782,8 @@
         "notify_mentions",
         "notify_reopened",
         "notify_reply",
+        "notify_requesters",
+        "notify_status_for_requesters",
         "retire_read_for_teams",
         "visible_to"
       ],
@@ -1793,9 +1802,11 @@
         "app.routers.notifications",
         "app.routers.tickets",
         "app.teams",
+        "app.ticket_service",
         "app.triage"
       ],
       "imports": [
+        "app.followers",
         "app.models",
         "app.notification_settings",
         "app.settings_store",
@@ -1812,6 +1823,7 @@
         "tests/test_inbound_mail.py",
         "tests/test_notifications.py",
         "tests/test_reply_notification.py",
+        "tests/test_requester_bell.py",
         "tests/test_teams_copy.py",
         "tests/test_teams_copy_sending.py"
       ]
@@ -3756,6 +3768,7 @@
       "imports": [
         "app.approvals",
         "app.models",
+        "app.notifications",
         "app.settings_store",
         "app.sla",
         "app.splitting",
@@ -3774,6 +3787,7 @@
         "tests/test_portal.py",
         "tests/test_reopening.py",
         "tests/test_reply_notification.py",
+        "tests/test_requester_bell.py",
         "tests/test_resolution.py",
         "tests/test_split_family.py",
         "tests/test_teams.py",
@@ -4330,6 +4344,7 @@
     "tests/test_reopening.py",
     "tests/test_reply_notification.py",
     "tests/test_request_types.py",
+    "tests/test_requester_bell.py",
     "tests/test_required_by.py",
     "tests/test_resolution.py",
     "tests/test_scheduled_jobs.py",

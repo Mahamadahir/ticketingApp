@@ -123,6 +123,6 @@ def resolve_ticket(
 
     if body is not None:
         if actor is not None:
-            email_requester(session, ticket, actor, body, cc_emails=cc_emails)
+            email_requester(session, ticket, actor, body, cc_emails=cc_emails, bell=False)  # the resolved entry says it
         else:
             record_notice(session, ticket, body, copy_followers=True)

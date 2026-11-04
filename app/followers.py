@@ -174,6 +174,15 @@ def copyable_followers(session: Session, ticket: Ticket) -> list[TicketFollower]
     return [f for f in followers if f.email != requester and f.email not in blocked]
 
 
+def portal_audience(session: Session, ticket: Ticket) -> list[str]:
+    """The addresses (lower case) of the people who follow this ticket in the portal: the requester and the
+    external followers, who may read what the requester may (app/messages.py). Internal followers are agents
+    and use the agent pages. The one list the requester bell entries (app/notifications.py) go to."""
+    emails = [ticket.requester_email.strip().lower()]
+    emails += [f.email for f in followers_of(session, ticket) if not f.is_internal]
+    return list(dict.fromkeys(emails))
+
+
 def cc_list(session: Session, ticket: Ticket) -> list[str]:
     """Who is copied on an outgoing email (see copyable_followers)."""
     return [f.email for f in copyable_followers(session, ticket)]

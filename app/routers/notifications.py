@@ -8,7 +8,7 @@ from sqlmodel import Session, select
 from app.auth import get_current_user
 from app.database import get_session
 from app.models import Notification, Ticket, User
-from app.notifications import APPROVAL_WAITING, bell_references, bell_tickets, notification_text, count_unread, mark_all_read, mark_read, visible_to
+from app.notifications import PORTAL_KINDS, bell_references, bell_tickets, notification_text, count_unread, mark_all_read, mark_read, visible_to
 from app.pagination import paginate
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
@@ -36,7 +36,7 @@ def list_notifications(
     return templates.TemplateResponse(
         request,
         "notifications.html",
-        {"page": notifications, "tickets": tickets, "texts": texts, "unread": count_unread(session, user), "user": user},
+        {"page": notifications, "tickets": tickets, "texts": texts, "unread": count_unread(session, user), "user": user, "portal_kinds": PORTAL_KINDS},
     )
 
 
@@ -72,9 +72,9 @@ def open_notification(
         raise HTTPException(status_code=404, detail="Notification not found")
     ticket = bell_tickets(session, user, [notification]).get(notification.ticket_id)
     destination = f"/tickets/{ticket.number}" if ticket else "/notifications"
-    if notification.kind == APPROVAL_WAITING and notification.ticket_id:
+    if notification.kind in PORTAL_KINDS and notification.ticket_id:
         asked_about = ticket or session.get(Ticket, notification.ticket_id)
         if asked_about is not None:
-            destination = f"/portal/{asked_about.number}"  # where an approver votes, whether or not they can open it as an agent
+            destination = f"/portal/{asked_about.number}"  # where an approver votes and a requester or follower reads, whether or not they can open it as an agent
     session.commit()
     return RedirectResponse(destination, status_code=303)
