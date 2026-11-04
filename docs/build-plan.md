@@ -96,7 +96,7 @@ those. Do not record test counts or merge status here.
 **Phase 3 (Graph mail) is built.** What remains is Azure-only: the staging checks (Graph webhooks and lifecycle, real send, Blob and
 managed identity, Application Insights, the public app) live in the staging checklist below and wait for a subscription.
 
-**5A (Send to MSP, hold and the 18:00 handoff, #138) is built; 5B (MSP mail handling and forwarding, #139) is next in phase 5.** **Phase 4 is next** (`docs/plan.md`, "Build order"). Already recorded for it:
+**5A (Send to MSP, hold and the 18:00 handoff, #138) is built; 5B (MSP mail handling and forwarding, #139) is in progress.** **Phase 4 is next** (`docs/plan.md`, "Build order"). Already recorded for it:
 - The resolve action with its resolution email, the reopen flow (including a reply after closure making a new ticket), chasing
   awaiting-user tickets, and requester feedback.
 - Teams reminders to approvers (phase 8 bot; the email reminder, 4C-3, is built). Approval groups (4C-1), the approval-email preference (4C-4) and withdrawing (4C-2) are built; the helpers they use are `approvals.voters_yet_to_vote`, `approvals.current_approval` and `approvals.votes_of`.
