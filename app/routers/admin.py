@@ -53,7 +53,6 @@ from app.request_questions import (
     update_question,
 )
 from app.subrequests import (
-    OPERATORS as CONDITION_OPERATORS,
     TemplateError as SubTemplateError,
     all_templates_by_type,
     delete_template as delete_sub_template,
@@ -61,7 +60,6 @@ from app.subrequests import (
     format_conditions,
     move_template,
     save_template as save_sub_template,
-    team_and_category_label,
 )
 from app.request_types import (
     MAX_DESCRIPTION_LENGTH as MAX_REQUEST_DESCRIPTION_LENGTH,
@@ -1099,6 +1097,7 @@ def list_request_types(
     types = all_request_types(session)
     sub_templates = all_templates_by_type(session)
     all_sub = [t for group in sub_templates.values() for t in group]
+    question_labels = {q.id: q.label for group in all_questions_by_type(session).values() for q in group}
     return templates.TemplateResponse(
         request,
         "admin_request_types.html",
@@ -1120,10 +1119,8 @@ def list_request_types(
             "answered_questions": answered_question_ids(session),
             "question_kinds": QUESTION_KINDS,
             "sub_templates": sub_templates,
-            "condition_text": {t.id: format_conditions(session, t.condition_groups) for t in all_sub},
-            "template_labels": {t.id: team_and_category_label(session, t) for t in all_sub},
+            "condition_text": {t.id: format_conditions(session, t.condition_groups, question_labels) for t in all_sub},
             "agents": session.exec(select(User).where(User.role == UserRole.AGENT, User.is_active).order_by(User.display_name)).all(),
-            "condition_operators": CONDITION_OPERATORS,
             "user": user,
         },
     )

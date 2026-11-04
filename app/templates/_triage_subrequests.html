@@ -5,7 +5,7 @@
    decided by the rules. #}
 <div id="triage-subrequests"
   hx-get="/tickets/triage-subrequests?number={{ ticket.number }}" hx-trigger="change from:#triage-form"
-  hx-include="#triage-form" hx-swap="outerHTML">
+  hx-include="#triage-form" hx-target="this" hx-swap="outerHTML">
   {% if rows %}
   <fieldset>
     <legend>Sub-requests</legend>

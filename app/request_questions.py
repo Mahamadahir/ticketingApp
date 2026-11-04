@@ -128,7 +128,13 @@ def update_question(
 ) -> RequestTypeQuestion:
     """The kind of answer cannot change (answers already given would no longer fit it). The options of a pick list
     can: an answer given earlier keeps the text it was given with."""
-    question.label = _check_label(label)
+    new_label = _check_label(label)
+    if new_label.casefold() != question.label.casefold():
+        from app.subrequests import label_used_by_template  # here: sub-request templates build on this module
+
+        if label_used_by_template(session, question):
+            raise QuestionError("A sub-request template uses this question in its subject: change the template first")
+    question.label = new_label
     question.options = _check_options(question.kind, options_text)
     question.is_required, question.is_active = is_required, is_active
     session.add(question)
@@ -139,10 +145,12 @@ def update_question(
 def delete_question(session: Session, question: RequestTypeQuestion) -> None:
     if has_answers(session, question):
         raise QuestionError("This question has been answered on tickets: switch it off instead of deleting it")
-    from app.subrequests import used_by_template  # here: sub-request templates build on this module
+    from app.subrequests import label_used_by_template, used_by_template  # here: sub-request templates build on this module
 
     if used_by_template(session, question):
         raise QuestionError("A sub-request template has a condition on this question: remove the condition first")
+    if label_used_by_template(session, question):
+        raise QuestionError("A sub-request template uses this question in its subject: change the template first")
     session.delete(question)
     session.flush()
 

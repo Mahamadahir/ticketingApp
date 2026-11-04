@@ -31,7 +31,7 @@ from typing import Optional
 from sqlmodel import Session, select
 
 from app.audit import log_action
-from app.categories import is_selectable, path_of, team_id_for
+from app.categories import is_selectable, team_id_for
 from app.models import (
     Category,
     RequestSubTemplate,
@@ -139,26 +139,30 @@ def _parse_line(line: str, questions: list[RequestTypeQuestion]) -> dict:
 
 
 def _canonical(question: RequestTypeQuestion, operator: str, text: str) -> str:
-    """The answer(s) of a condition in the canonical text the answers are stored in; several are joined with ' | '."""
+    """The answer(s) of a condition in the canonical text the answers are stored in; several are stored one per line
+    (a pick-list option is one line, so it never holds a newline)."""
     parts = [p.strip() for p in text.split("|")] if operator == ONE_OF else [text.strip()]
     parts = [p for p in parts if p]
     if not parts:
         raise TemplateError(f"Give the answer to compare {question.label!r} with")
     try:
-        return " | ".join(clean_value(question, p) or "" for p in parts)
+        return "\n".join(clean_value(question, p) or "" for p in parts)
     except QuestionError as error:
         raise TemplateError(str(error))
 
 
-def format_conditions(session: Session, groups: list) -> str:
-    """The stored conditions as the admin box shows them (the inverse of parse_conditions)."""
-    labels = {q.id: q.label for q in session.exec(select(RequestTypeQuestion)).all()}
+def format_conditions(session: Session, groups: list, labels: Optional[dict[int, str]] = None) -> str:
+    """The stored conditions as the admin box shows them (the inverse of parse_conditions). `labels` (question id ->
+    label) saves a lookup when many are shown at once."""
+    if labels is None:
+        labels = {q.id: q.label for q in session.exec(select(RequestTypeQuestion)).all()}
     blocks = []
     for group in groups or []:
         lines = []
         for c in group:
             label = labels.get(c["question_id"], f"question {c['question_id']}")
-            lines.append(f"{label} is answered" if c["operator"] == ANSWERED else f"{label}{_SIGNS[c['operator']]}{c['value']}")
+            shown = c["value"].replace("\n", " | ")
+            lines.append(f"{label} is answered" if c["operator"] == ANSWERED else f"{label}{_SIGNS[c['operator']]}{shown}")
         blocks.append("\n".join(lines))
     return "\n---\n".join(blocks)
 
@@ -174,7 +178,7 @@ def condition_holds(condition: dict, answers: dict[int, str]) -> bool:
     if operator == NOT_EQUALS:
         return given is None or given.casefold() != wanted.casefold()
     if operator == ONE_OF:
-        return given is not None and given.casefold() in {w.strip().casefold() for w in wanted.split("|")}
+        return given is not None and given.casefold() in {w.strip().casefold() for w in wanted.split("\n")}
     return False  # an operator this code does not know never matches
 
 
@@ -367,18 +371,19 @@ def _guard(ticket: Ticket) -> bool:
 
 def after_triage(
     session: Session, ticket: Ticket, actor: Optional[User], ticked: Optional[list[int]] = None,
-    listed: Optional[list[int]] = None,
+    listed: Optional[list[int]] = None, strict: Optional[bool] = None,
 ) -> list[Ticket]:
     """Called once a request has been triaged. When it is Open the sub-requests are made now; when it waits for
     approval the list is recorded on it and made by `after_approval`. `actor` is the agent who triaged it, or None for
-    an automatic triage; an agent's list that would go past the sub-ticket cap is refused (TemplateError, the caller
-    rolls back), an automatic one makes what fits. Returns the sub-tickets made."""
+    an automatic triage. A list an agent confirmed (`strict`, by default whenever there is an agent) that would go past
+    the sub-ticket cap is refused (TemplateError, the caller rolls back); otherwise what fits is made and the rest
+    recorded as skipped. Returns the sub-tickets made."""
     if not _guard(ticket):
         return []
     specs = specs_to_make(session, ticket, ticked, listed)
     if not specs:
         return []
-    if actor is not None:
+    if actor is not None if strict is None else strict:
         room = max_sub_tickets(session) - sub_ticket_count(session, ticket)
         if len(specs) > room:
             raise TemplateError(
@@ -427,7 +432,7 @@ def create_from_specs(session: Session, original: Ticket, specs: list[dict], act
         try:
             with session.begin_nested():
                 sub = _make(session, original, template, subject, actor)
-        except (SplitError, TriageError) as error:
+        except (SplitError, TriageError, ValueError) as error:  # ValueError: a stored impact or urgency that is no level
             _skip(session, original, actor_email, subject, str(error))
             continue
         made.append(sub)
@@ -457,6 +462,7 @@ def _make(session: Session, original: Ticket, template: RequestSubTemplate, subj
     sub = make_sub_ticket(
         session, original, actor, subject=subject, category=category, impact=impact, urgency=urgency,
         request_type=request_type, approval_covered=request_type is None or not request_type.subrequests_need_own_approval,
+        answers_required=False,  # a sub-request has no answers of its own to give: they are its parent's
         parent_event=EVENT_SUBREQUEST,
     )
     assignee = _assignee(session, template, original, sub)
@@ -525,6 +531,17 @@ def used_by_template(session: Session, question: RequestTypeQuestion) -> bool:
     )
 
 
+def label_used_by_template(session: Session, question: RequestTypeQuestion) -> bool:
+    """Whether any template of the question's request type names it as {Label} in its subject (the question then
+    cannot be deleted or renamed, or the subjects would keep the braces)."""
+    label = question.label.strip().casefold()
+    return any(
+        name.strip().casefold() == label
+        for t in templates_for(session, question.request_type_id, include_inactive=True)
+        for name in _PLACEHOLDER.findall(t.subject_pattern)
+    )
+
+
 def preview(
     session: Session, ticket: Ticket, request_type_id: Optional[int], typed: dict[int, str],
     listed: list[int], ticked: list[int],
@@ -557,9 +574,3 @@ def preview(
             "ticked": (template.id in ticked) if template.id in listed else applies,
         })
     return rows
-
-
-def team_and_category_label(session: Session, template: RequestSubTemplate) -> str:
-    team = session.get(Team, template.team_id)
-    category = session.get(Category, template.category_id)
-    return f"{team.name if team else '?'} / {path_of(session, category) if category else '?'}"

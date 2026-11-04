@@ -107,9 +107,9 @@ def test_each_operator_compares_the_canonical_answer():
     assert condition_holds(condition(1, "not_equals", "Sales"), answers)
     assert not condition_holds(condition(1, "not_equals", "Finance"), answers)
     assert condition_holds(condition(3, "not_equals", "Sales"), answers)  # never answered: does not equal it
-    assert condition_holds(condition(1, "one_of", "Sales | Finance"), answers)
-    assert not condition_holds(condition(1, "one_of", "Sales | IT"), answers)
-    assert not condition_holds(condition(3, "one_of", "Sales | IT"), answers)
+    assert condition_holds(condition(1, "one_of", "Sales\nFinance"), answers)
+    assert not condition_holds(condition(1, "one_of", "Sales\nIT"), answers)
+    assert not condition_holds(condition(3, "one_of", "Sales\nIT"), answers)
     assert condition_holds(condition(2, "answered"), answers) and not condition_holds(condition(3, "answered"), answers)
     assert not condition_holds(condition(1, "something else", "x"), answers)
 
@@ -133,7 +133,7 @@ def test_conditions_are_typed_one_per_line_with_groups_and_read_back(db_session)
     groups = parse_conditions(db_session, request_type.id, text)
     assert groups == [
         [condition(department.id, "equals", "Finance"), condition(laptop.id, "not_equals", "no")],
-        [condition(department.id, "one_of", "Sales | IT")],
+        [condition(department.id, "one_of", "Sales\nIT")],
         [condition(name.id, "answered")],
     ]
     assert format_conditions(db_session, groups) == (
@@ -731,3 +731,81 @@ def test_answers_changed_with_no_sub_requests_made_show_no_extra_note(client, db
     client.post(f"/tickets/{parent.number}/answers", data={f"q_{laptop.id}": "no", f"q_{name.id}": "Ann Lee"})
     page = client.get(f"/tickets/{parent.number}").text
     assert "after they were first given" in page and "nothing was added or removed" not in page
+
+
+# ---- Found in review -------------------------------------------------------------------------------
+
+
+def test_the_sub_requests_list_swaps_itself_and_not_the_page(client, db_session):
+    ticket, request_type, name, department, laptop, it, laptops, category = email_starter(client, db_session)
+    template(db_session, request_type, it, laptops)
+    fragment = client.get("/tickets/triage-subrequests", params={"number": ticket.number, "request_type_id": request_type.id}).text
+    assert 'hx-target="this"' in fragment and 'hx-swap="outerHTML"' in fragment  # the form's own target is main
+
+
+def test_an_agent_raising_a_request_with_a_category_makes_the_sub_requests_too(client, db_session):
+    request_type, name, _, _, it, laptops = starter(db_session)
+    template(db_session, request_type, it, laptops)
+    from app.models import Category, Team
+
+    desk = db_session.exec(select(Team).where(Team.name == "Service Desk")).one()
+    category = db_session.exec(select(Category).where(Category.name == "Hardware")).one()
+    agent_of(client, db_session, desk)
+    response = raise_it(
+        client, subject="A new starter", for_email="walkin@example.com", category_id=category.id, impact="low", urgency="low",
+        request_type_id=request_type.id, **{f"q_{name.id}": "Ann Lee"},
+    )
+    assert response.status_code == 204
+    parent = parent_of(db_session)
+    assert parent.triaged_at is not None and [s.subject for s in subs_of(db_session, parent)] == ["Laptop for Ann Lee"]
+
+
+def test_a_skipped_one_says_what_was_wrong_not_that_the_category_cannot_be_taken(client, db_session):
+    request_type, name, _, _, it, laptops = starter(db_session)
+    other = make(db_session, "Laptop request")
+    template(db_session, request_type, it, laptops, "Laptop for {Name}", sub_request_type_id=other.id)
+    other.is_active = False
+    db_session.add(other)
+    db_session.commit()
+    login_as(client, "jo@example.com")
+    raise_starter(client, request_type, name)
+    [skipped] = events(db_session, parent_of(db_session), "subrequest_skipped")
+    assert "no longer available" in skipped.detail and "category" not in skipped.detail
+
+
+def test_a_stored_impact_that_is_no_level_skips_that_template_only(client, db_session):
+    request_type, name, _, _, it, laptops = starter(db_session)
+    bad = template(db_session, request_type, it, laptops, "Bad {Name}")
+    template(db_session, request_type, it, laptops, "Good {Name}")
+    bad.impact = "enormous"
+    db_session.add(bad)
+    db_session.commit()
+    login_as(client, "jo@example.com")
+    raise_starter(client, request_type, name)
+    parent = parent_of(db_session)
+    assert [s.subject for s in subs_of(db_session, parent)] == ["Good Ann Lee"]
+    assert [e.to_value for e in events(db_session, parent, "subrequest_skipped")] == ["Bad Ann Lee"]
+
+
+def test_a_question_named_in_a_subject_cannot_be_deleted_or_renamed_but_can_be_switched_off(db_session):
+    from app.request_questions import update_question
+
+    request_type, name, department, _, it, laptops = starter(db_session)
+    template(db_session, request_type, it, laptops, "Laptop for {name}")
+    with pytest.raises(QuestionError, match="subject"):
+        delete_question(db_session, name)
+    with pytest.raises(QuestionError, match="subject"):
+        update_question(db_session, name, "Full name", None, True, True)
+    update_question(db_session, name, "NAME", None, True, True)  # the same label apart from case
+    update_question(db_session, department, "Team", "Finance\nSales\nIT", False, True)  # not named: free to change
+    update_question(db_session, name, "NAME", None, True, False)  # switching it off is fine
+
+
+def test_a_pick_list_option_with_a_bar_is_matched_by_equals_and_cannot_be_typed_into_is_one_of(db_session):
+    request_type, *_ = starter(db_session)
+    add_question(db_session, request_type, "Kit", "choice", "Laptop | Dock\nPhone")
+    db_session.commit()
+    with pytest.raises(TemplateError):
+        parse_conditions(db_session, request_type.id, "Kit in Laptop | Dock | Phone")  # typed with the bar: cannot tell them apart
+    [[stored]] = parse_conditions(db_session, request_type.id, "Kit = Laptop | Dock")
+    assert stored["value"] == "Laptop | Dock"

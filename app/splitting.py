@@ -200,6 +200,7 @@ def make_sub_ticket(
     details: Optional[str] = None,
     request_type: Optional[RequestType] = None,
     approval_covered: bool = False,
+    answers_required: bool = True,
     parent_event: str = EVENT_SPLIT,
 ) -> Ticket:
     """Makes one sub-ticket of `original`: a new ticket with the original's requester, type and source, triaged
@@ -208,7 +209,7 @@ def make_sub_ticket(
     app/subrequests.py both come through here, so the derived status, the shared thread and "resolve the original
     when every part is done" are the same for both. `actor` None is the system. It does not re-derive the original's
     status (the caller does, once, when every part exists) and does not check the limit or that the original may
-    be split (the callers do)."""
+    be split (the callers do). Raises TriageError when the part cannot be triaged."""
     actor_email = actor.email if actor is not None else "system"
     sub = create_ticket(
         session,
@@ -221,15 +222,11 @@ def make_sub_ticket(
         created_by_id=original.created_by_id,
         announce=False,
     )
-    try:
-        triage_ticket(
-            session, sub, actor,
-            ticket_type=original.type, category=category, impact=impact, urgency=urgency,
-            request_type=request_type, approval_covered=approval_covered, answers_required=request_type is None,
-        )
-    except TriageError as error:
-        # The parts take this ticket's category, so the cause is the original's.
-        raise SplitError(f"The parts cannot take this ticket's category. {error}")
+    triage_ticket(
+        session, sub, actor,
+        ticket_type=original.type, category=category, impact=impact, urgency=urgency,
+        request_type=request_type, approval_covered=approval_covered, answers_required=answers_required,
+    )
     # Linked after triage, so triaging the part does not re-derive the original's status
     # once per part; it is derived once, by the caller, when every part exists.
     sub.split_from_id = original.id
@@ -278,13 +275,16 @@ def split_ticket(
     if existing + len(parts) > limit:
         raise SplitError(f"A ticket can have at most {limit} sub-tickets")
 
-    made = [
-        make_sub_ticket(
-            session, original, actor, subject=subject, details=details, category=category,
-            impact=Level(original.impact), urgency=Level(original.urgency),
-        )
-        for subject, (_, details) in zip(subjects, parts)
-    ]
+    made = []
+    for subject, (_, details) in zip(subjects, parts):
+        try:
+            made.append(make_sub_ticket(
+                session, original, actor, subject=subject, details=details, category=category,
+                impact=Level(original.impact), urgency=Level(original.urgency),
+            ))
+        except TriageError as error:
+            # The parts take this ticket's category, so the cause is the original's.
+            raise SplitError(f"The parts cannot take this ticket's category. {error}")
     original.updated_at = datetime.now(timezone.utc)
     session.add(original)
     sync_original_status(session, original.id)

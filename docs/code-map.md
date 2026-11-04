@@ -736,7 +736,7 @@ File: `app/raising.py`
 
 - Classes: `RaiseError`
 - Functions: `is_agent`, `raise_ticket`, `should_tell_requester`, `source_label`, `tell_requester_decision`
-- Imports: `app.backdating`, `app.followers`, `app.messages`, `app.models`, `app.notification_settings`, `app.outbox`, `app.request_questions`, `app.request_types`, `app.required_by`, `app.resolution`, `app.settings_store`, `app.sla`, `app.ticket_service`, `app.triage`
+- Imports: `app.backdating`, `app.followers`, `app.messages`, `app.models`, `app.notification_settings`, `app.outbox`, `app.request_questions`, `app.request_types`, `app.required_by`, `app.resolution`, `app.settings_store`, `app.sla`, `app.subrequests`, `app.ticket_service`, `app.triage`
 - Imported by: `app.inbound`, `app.mail`, `app.routers.portal`, `app.routers.tickets`
 - Tests: `test_email_preview.py`, `test_notification_settings.py`
 
@@ -1024,9 +1024,9 @@ Automatic sub-requests: templates on a request type (#118 part 2). Nothing here 
 File: `app/subrequests.py`
 
 - Classes: `TemplateError`
-- Functions: `after_approval`, `after_triage`, `all_templates_by_type`, `answers_changed_note`, `answers_for_subject`, `condition_holds`, `create_from_specs`, `delete_template`, `describe_template`, `format_conditions`, `move_template`, `parse_conditions`, `pending_subjects`, `plan_rows`, `preview`, `render_subject`, `save_template`, `specs_to_make`, `team_and_category_label`, `template_applies`, `templates_for`, `ticket_answers`, `used_by_template`
+- Functions: `after_approval`, `after_triage`, `all_templates_by_type`, `answers_changed_note`, `answers_for_subject`, `condition_holds`, `create_from_specs`, `delete_template`, `describe_template`, `format_conditions`, `label_used_by_template`, `move_template`, `parse_conditions`, `pending_subjects`, `plan_rows`, `preview`, `render_subject`, `save_template`, `specs_to_make`, `template_applies`, `templates_for`, `ticket_answers`, `used_by_template`
 - Imports: `app.audit`, `app.categories`, `app.models`, `app.notifications`, `app.presence`, `app.request_questions`, `app.required_by`, `app.sla`, `app.splitting`, `app.ticket_service`, `app.triage`, `app.visibility`
-- Imported by: `app.approvals`, `app.request_questions`, `app.request_types`, `app.routers.admin`, `app.routers.tickets`
+- Imported by: `app.approvals`, `app.raising`, `app.request_questions`, `app.request_types`, `app.routers.admin`, `app.routers.tickets`
 - Tests: `test_subrequests.py`
 
 ### `app.subscriptions`

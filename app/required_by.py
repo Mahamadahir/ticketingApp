@@ -83,10 +83,12 @@ def requester_today(session: Session, ticket: Ticket, now: Optional[datetime] = 
     return now.astimezone(ZoneInfo(zone_for_email(session, ticket.requester_email))).date()
 
 
-def default_due(session: Session, ticket: Ticket, required_by: date, today: date) -> date:
-    """Required by minus the days for this ticket, but not before today (a request made for tomorrow with a
-    two day lead is due today, not already late) and never after Required by."""
-    return min(max(required_by - timedelta(days=due_days_before(session, ticket)), today), required_by)
+def default_due(session: Session, ticket: Ticket, required_by: date, today: date, days: Optional[int] = None) -> date:
+    """Required by minus the days for this ticket (`days`, else the ticket's own: its request type's or the setting),
+    but not before today (a request made for tomorrow with a two day lead is due today, not already late) and
+    never after Required by."""
+    days = due_days_before(session, ticket) if days is None else days
+    return min(max(required_by - timedelta(days=days), today), required_by)
 
 
 def sub_request_due(session: Session, parent: Ticket, days_before: Optional[int], today: Optional[date] = None) -> Optional[date]:
@@ -96,8 +98,7 @@ def sub_request_due(session: Session, parent: Ticket, days_before: Optional[int]
     if parent.required_by is None:
         return None
     days = days_before if days_before is not None else count_setting(session, DUE_DAYS_BEFORE_REQUIRED_BY)
-    today = today or requester_today(session, parent)
-    return min(max(parent.required_by - timedelta(days=days), today), parent.required_by)
+    return default_due(session, parent, parent.required_by, today or requester_today(session, parent), days)
 
 
 def set_required_by(
