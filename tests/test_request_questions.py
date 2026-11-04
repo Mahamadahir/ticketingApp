@@ -6,6 +6,7 @@ from sqlmodel import select
 from app.messages import requester_visible_answers
 from app.models import (
     AuditLog,
+    MembershipLevel,
     RequestTypeQuestion,
     Ticket,
     TicketAnswer,
@@ -449,6 +450,14 @@ def test_who_may_edit_answers(client, db_session):
     other_team = create_team(db_session, "Network")
     agent_of(client, db_session, other_team, "other@example.com")
     assert client.post(f"/tickets/{ticket.number}/answers", data=data).status_code in (403, 404)
+    # A viewer of the team can read the ticket but not work it, so cannot change the answers.
+    client.post("/auth/logout")
+    viewer_id = login_as(client, "viewer@example.com")
+    set_role(db_session, viewer_id, UserRole.AGENT)
+    add_membership(db_session, viewer_id, team.id, MembershipLevel.VIEWER)
+    assert client.get(f"/tickets/{ticket.number}").status_code == 200
+    assert client.post(f"/tickets/{ticket.number}/answers", data=data).status_code == 403
+    assert "Save answers" not in client.get(f"/tickets/{ticket.number}").text
     client.post("/auth/logout")
     login_as(client, "boss@example.com")  # the requester
     assert client.post(f"/tickets/{ticket.number}/answers", data=data).status_code == 403
