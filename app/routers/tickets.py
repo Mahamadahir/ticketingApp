@@ -1161,6 +1161,7 @@ def send_ticket_to_msp(
     request: Request,
     reason: str = Form("", max_length=MAX_MESSAGE_LENGTH),
     scope: str = Form("thread", max_length=20),
+    digest: Optional[str] = Form(None, max_length=64),
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
@@ -1168,7 +1169,7 @@ def send_ticket_to_msp(
     The ticket stays in its team, With MSP."""
     ticket = _get_ticket(session, number, user)
     try:
-        send_to_msp(session, ticket, user, reason, scope)
+        send_to_msp(session, ticket, user, reason, scope, expect_digest=digest)
     except MspError as error:
         session.rollback()
         raise HTTPException(status_code=400, detail=str(error))

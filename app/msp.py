@@ -9,12 +9,13 @@ requester is told by an ordinary notice from the admin template `msp_sent_notice
 handoff runs, are admin settings (app/settings_store.py); with no MSP address nothing is sent and the job records why.
 
 The automatic handoff. Each day from the handoff hour (in the default time zone) until the next business morning,
-the open tickets of teams that are included (`Team.msp_handoff_included`) that were due to breach before that morning
-and are not held go to the MSP. What is due is worked out from the tickets, not from the last run, so a late or
+the open tickets of teams that are included (`Team.msp_handoff_included`) that are due to breach before that morning
+and are not held go to the MSP; a ticket that becomes due or eligible later in the night goes at the next run. What is due is worked out from the tickets, not from the last run, so a late or
 repeated run does the same and a second run finds nothing left. A hold lasts until it is released (an accepted risk
 in docs/plan.md). The job does not run in business hours: a handoff missed overnight is not made the next day.
 """
 
+import hashlib
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -26,6 +27,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from app.audit import log_action
+from app.config import settings
 from app.categories import path_of
 from app.email_templates import render_template, ticket_values
 from app.followers import add_follower, followers_of
@@ -93,6 +95,13 @@ class MspPreview:
     notice: str  # what the requester is told
     mail_is_off: bool  # nothing would actually be emailed (MAIL_SENDING is off)
 
+    @property
+    def digest(self) -> str:
+        """A fingerprint of everything that would go, carried by the preview's confirm form so a thread that changed
+        in between (a reply, a note) is shown again instead of being sent unseen."""
+        text = "\x1f".join([self.to, ", ".join(self.cc), self.subject, self.body, self.scope, self.notice])
+        return hashlib.sha256(text.encode()).hexdigest()
+
 
 def msp_address(session: Session) -> str:
     return get_setting(session, MSP_ADDRESS).strip().lower()
@@ -103,6 +112,8 @@ def check_can_send(session: Session, ticket: Ticket) -> str:
     address = msp_address(session)
     if not address:
         raise MspError(NO_ADDRESS)
+    if address == settings.graph_shared_mailbox.strip().lower():
+        raise MspError("The MSP address is the shared mailbox itself, so the email would loop. A super admin sets it under Admin > Settings.")
     if ticket.triaged_at is None:
         raise MspError("Triage the ticket first, so it has a category and a priority to send")
     if ticket.status in FINISHED_STATUSES:
@@ -225,17 +236,21 @@ def _lock(session: Session, ticket: Ticket) -> Ticket:
 
 
 def send_to_msp(
-    session: Session, ticket: Ticket, actor: Optional[User], reason: str, scope: str = SCOPE_THREAD
+    session: Session, ticket: Ticket, actor: Optional[User], reason: str, scope: str = SCOPE_THREAD,
+    expect_digest: Optional[str] = None,
 ) -> MspPreview:
     """Sends the ticket to the MSP: queues the email, moves it to With MSP (it stays in its team, assigned as it
     was), tells the requester, and records an event and an audit entry. An agent (`actor`) also becomes an escalator
     of it, as with any escalation (the reason is also an internal note, they keep access and are copied on its mail).
-    `actor` None is the automatic handoff. Raises MspError and changes nothing when it cannot be sent."""
+    `actor` None is the automatic handoff. `expect_digest` is the fingerprint of the preview the agent confirmed: if
+    what would go is not that any more, nothing is sent. Raises MspError and changes nothing when it cannot be sent."""
     ticket = _lock(session, ticket)
     if actor is not None and not reason.strip():
         raise MspError("Say why it is being sent to the MSP")
     reason = reason.strip() or f"The automatic {_handoff_label(session)} handoff: due to breach before the next business morning."
     preview = compose(session, ticket, scope=scope, reason=reason, actor=actor)
+    if expect_digest is not None and preview.digest != expect_digest:
+        raise MspError("The ticket changed since the preview (a new message or note, for instance). Preview it again to see what will be sent.")
 
     now = datetime.now(timezone.utc)
     actor_email = actor.email if actor is not None else AUDIT_ACTOR
@@ -334,7 +349,7 @@ def handoff_window(session: Session, now: datetime) -> Optional[tuple[datetime, 
     hour = _handoff_hour(session)
     today = now.astimezone(ZoneInfo(zone)).date()
     starts = [morning_of(today - timedelta(days=1), zone, hour), morning_of(today, zone, hour)]
-    start = max(moment for moment in starts if moment <= now) if any(moment <= now for moment in starts) else None
+    start = max((moment for moment in starts if moment <= now), default=None)
     if start is None:
         return None
     end = next_business_morning(start, zone, _hour(session, MSP_BUSINESS_MORNING_HOUR), _holidays(session))
@@ -351,7 +366,7 @@ def _due_before(ticket: Ticket, end: datetime) -> bool:
 def _eligible(session: Session, ticket: Ticket, start: datetime, end: datetime) -> bool:
     if ticket.status not in HANDOFF_STATUSES or ticket.triaged_at is None or ticket.msp_hold:
         return False
-    if ticket.created_at > start or not _due_before(ticket, end):
+    if not _due_before(ticket, end):
         return False
     team = session.get(Team, ticket.team_id) if ticket.team_id else None
     return team is not None and team.msp_handoff_included and not has_sub_tickets(session, ticket)
@@ -367,7 +382,6 @@ def _handoff_candidates(session: Session, start: datetime, end: datetime) -> lis
                 Ticket.status.in_(HANDOFF_STATUSES),
                 Ticket.triaged_at.is_not(None),
                 Ticket.msp_hold.is_(False),
-                Ticket.created_at <= start,
                 or_(
                     and_(Ticket.first_responded_at.is_(None), Ticket.first_response_due_at < end),
                     Ticket.resolution_due_at < end,
@@ -410,6 +424,10 @@ def hand_off_due_tickets(session: Session, now: Optional[datetime] = None) -> in
     start, end = window
     if not msp_address(session):
         _record_skip(session, start, "no MSP address is set")
+        return 0
+    if not is_on():
+        # A ticket moved to With MSP with nothing emailed would be stranded: nothing retries it.
+        _record_skip(session, start, "email sending is switched off (MAIL_SENDING), so nothing could be sent")
         return 0
     sent = 0
     for ticket_id in _handoff_candidates(session, start, end):

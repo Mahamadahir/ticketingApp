@@ -16,6 +16,7 @@
     <textarea name="reason" hidden>
 {{ reason }}</textarea>
     <input type="hidden" name="scope" value="{{ preview.scope }}" />
+    <input type="hidden" name="digest" value="{{ preview.digest }}" />
     <button type="submit" class="button-destructive">Send to the MSP</button>
     <button type="button" class="button-outline" hx-on:click="document.getElementById('msp-preview').innerHTML = ''">Keep editing</button>
   </form>

@@ -500,7 +500,6 @@ def test_who_is_left_out(db_session, mail_on):
         at_risk(db_session, team, TicketStatus.SCHEDULED),
         at_risk(db_session, team, TicketStatus.WITH_MSP),
         at_risk(db_session, team, TicketStatus.RESOLVED),
-        at_risk(db_session, team, created_at=START + timedelta(minutes=10)),  # arrived after the handoff moment
         at_risk(db_session, team, triaged_at=None, status=TicketStatus.NEW),
     ]
     original = at_risk(db_session, team)
@@ -542,6 +541,14 @@ def test_with_no_address_the_job_does_nothing_and_records_why_once(db_session, m
     assert hand_off_due_tickets(db_session, NOW + timedelta(minutes=10)) == 1
 
 
+def test_a_ticket_that_arrives_during_the_night_and_is_due_before_morning_goes_at_the_next_run(db_session, mail_on):
+    set_msp(db_session)
+    team = included_team(db_session)
+    late = at_risk(db_session, team, created_at=START + timedelta(hours=1), due=THURSDAY_MORNING - timedelta(hours=5))
+    assert hand_off_due_tickets(db_session, START + timedelta(hours=2)) == 1
+    assert db_session.get(Ticket, late.id).status == TicketStatus.WITH_MSP
+
+
 def test_a_held_ticket_is_sent_once_released_if_the_window_is_still_open(db_session, mail_on):
     set_msp(db_session)
     team = included_team(db_session)
@@ -563,3 +570,64 @@ def test_the_job_is_registered_and_runs_through_the_runner(db_session, mail_on):
     from app.msp import run_msp_handoff
 
     run_msp_handoff(db_session)
+
+
+def test_the_job_does_nothing_with_mail_switched_off_and_says_so(db_session):
+    set_msp(db_session)
+    team = included_team(db_session)
+    ticket = at_risk(db_session, team)
+    assert settings.mail_sending == "off"
+    assert hand_off_due_tickets(db_session, NOW) == 0
+    db_session.commit()
+    assert db_session.get(Ticket, ticket.id).status == TicketStatus.OPEN
+    (note,) = db_session.exec(select(AuditLog).where(AuditLog.entity_type == "msp_handoff")).all()
+    assert "MAIL_SENDING" in note.detail
+
+
+def test_the_address_cannot_be_the_shared_mailbox(client, db_session, mail_on, monkeypatch):
+    monkeypatch.setattr(settings, "graph_shared_mailbox", MSP)
+    set_msp(db_session)
+    team = create_team(db_session, "Support")
+    agent_in(client, db_session, member_of=[team])
+    ticket = triaged(db_session, team)
+    response = send(client, ticket)
+    assert response.status_code == 400 and "shared mailbox" in response.text
+    db_session.refresh(ticket)
+    assert ticket.status == TicketStatus.OPEN
+
+
+def test_a_thread_that_changed_since_the_preview_is_not_sent_unseen(client, db_session, mail_on):
+    import re
+
+    set_msp(db_session)
+    team = create_team(db_session, "Support")
+    agent_in(client, db_session, member_of=[team])
+    ticket = triaged(db_session, team)
+    message(db_session, ticket, "Hello", MessageDirection.INBOUND, sender="requester@example.com")
+    shown = client.post(f"/tickets/{ticket.number}/send-to-msp/preview", data={"reason": "Because", "scope": "thread"}).text
+    digest = re.search(r'name="digest" value="([0-9a-f]{64})"', shown).group(1)
+
+    message(db_session, ticket, "A reply that arrived after the preview", MessageDirection.INBOUND, sender="requester@example.com")
+    stale = client.post(f"/tickets/{ticket.number}/send-to-msp", data={"reason": "Because", "scope": "thread", "digest": digest})
+    assert stale.status_code == 400 and "Preview it again" in stale.text
+    db_session.refresh(ticket)
+    assert ticket.status == TicketStatus.OPEN and msp_mail(db_session) == []
+
+    fresh = client.post(f"/tickets/{ticket.number}/send-to-msp/preview", data={"reason": "Because", "scope": "thread"}).text
+    digest = re.search(r'name="digest" value="([0-9a-f]{64})"', fresh).group(1)
+    assert client.post(f"/tickets/{ticket.number}/send-to-msp", data={"reason": "Because", "scope": "thread", "digest": digest}).status_code == 200
+    (mail,) = msp_mail(db_session)
+    assert "A reply that arrived after the preview" in mail.body
+
+
+def test_resolving_ends_a_hold(client, db_session):
+    team = create_team(db_session, "Support")
+    mine = agent_in(client, db_session, member_of=[team])
+    ticket = triaged(db_session, team, assigned_agent_id=mine, msp_hold=True)
+    from app.resolution import resolve_ticket
+    from app.models import User
+
+    resolve_ticket(db_session, ticket, db_session.get(User, mine), "Fixed", send_email=False)
+    db_session.commit()
+    db_session.refresh(ticket)
+    assert ticket.status == TicketStatus.RESOLVED and ticket.msp_hold is False

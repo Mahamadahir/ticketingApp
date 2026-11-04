@@ -989,8 +989,8 @@ A template is plain text with `{placeholders}` from a fixed list per email; the 
   MSP, unless the assigned agent has put it on hold. A hold lasts until the
   agent releases it. *Built (5A):* the hour (18), the business morning (8) and the bank holidays are admin settings and
   the time is in the organisation time zone. The job (`msp-handoff` in the recurring jobs table, every 5 minutes) works
-  from the tickets: open (Open or In progress, triaged) at the handoff moment, in an included team, not held, not a split
-  original, with an unmet first response or the resolution due before that morning (overdue counts). It only acts between
+  from the tickets: open (Open or In progress, triaged), in an included team, not held, not a split
+  original, with an unmet first response or the resolution due before that morning (overdue counts; a ticket that arrives or becomes eligible during the night goes at the next run). It only acts between
   the handoff hour and the next business morning, so a missed night is not made up in the day. The assigned agent holds;
   anyone who works the ticket can release it; sending by hand ends a hold.
 - The email to the MSP opens with the end user's details and the requesting

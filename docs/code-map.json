@@ -666,6 +666,7 @@
         "app.jobs",
         "app.mail",
         "app.main",
+        "app.msp",
         "app.outbox",
         "app.rate_limit",
         "app.routers.admin",
@@ -1813,6 +1814,7 @@
       "imports": [
         "app.audit",
         "app.categories",
+        "app.config",
         "app.email_templates",
         "app.followers",
         "app.mail",
@@ -2395,6 +2397,7 @@
       "tests": [
         "tests/test_auto_close_chase.py",
         "tests/test_bulk_resolve.py",
+        "tests/test_msp.py",
         "tests/test_reopening.py",
         "tests/test_resolution.py"
       ]

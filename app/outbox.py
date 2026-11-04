@@ -173,7 +173,7 @@ def queue_follower_update(session: Session, ticket: Ticket, message: Message, to
 def queue_msp_handoff(
     session: Session, ticket: Ticket, to_address: str, cc: list[str], subject: str, body: str
 ) -> Optional[OutboundEmail]:
-    """Queues the email to the MSP with the text exactly as the agent previewed it (app/msp.py built it): unlike
+    """Queues the email to the MSP with the text built by app/msp.py (the one the agent previewed, or the preview is shown again): unlike
     the other kinds it is not rebuilt when sent, since the thread then would differ from what was agreed to go.
     None when mail is off."""
     if not is_on():

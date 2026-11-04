@@ -156,8 +156,8 @@ def parse_dates(text: str) -> list[date]:
 
 
 def next_business_morning(after: datetime, zone_name: str, hour: int, holidays: frozenset[date] = frozenset()) -> datetime:
-    """The first business morning (the given hour, Monday to Friday, not a listed holiday) at or after `after`,
-    in that zone, as UTC. A moment before the hour on a business day is that day's morning."""
+    """The first business morning (the given hour, Monday to Friday, not a listed holiday) after `after`, in that
+    zone, as UTC. A moment before the hour on a business day is that day's morning; at or after it, the next one."""
     zone = ZoneInfo(valid_zone(zone_name) or "UTC")
     local = _aware(after).astimezone(zone)
     day = local.date() if local.time() < time(hour) else local.date() + timedelta(days=1)
