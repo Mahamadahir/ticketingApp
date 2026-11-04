@@ -5,13 +5,17 @@ from zoneinfo import ZoneInfo
 
 from fastapi import Request
 from jinja2 import pass_context
+from sqlalchemy.orm import object_session
 from sqlmodel import Session
 from fastapi.templating import Jinja2Templates
 
 from app.backdating import FORMAT as MOMENT_FORMAT
 from app.database import engine
 from app.forms import MAX_MESSAGE_LENGTH
+from app.models import UserRole
+from app.permissions import ASSIGNABLE_ROLES
 from app.presence import agent_label
+from app.visibility import has_permission
 from app.time_zones import default_zone, format_date, format_moment, valid_zone, zone_for_user
 
 
@@ -34,12 +38,14 @@ templates.env.globals["agent_label"] = agent_label  # a name, plus "(out of offi
 
 def _can(user, key: str) -> bool:
     """{{ can(user, "manage_request_templates") }}: for navigation only; routes use require_permission."""
-    from sqlalchemy.orm import object_session
-    from app.visibility import has_permission
-
+    if user.role == UserRole.SUPER_ADMIN:
+        return True
+    if user.role not in ASSIGNABLE_ROLES:
+        return False  # no query for someone who can never hold a permission
     session = object_session(user)
-    if session is None:
-        return user.role.value == "super_admin"
+    if session is None:  # detached (an error page): look it up on its own connection
+        with Session(engine) as own:
+            return has_permission(own, user, key)
     return has_permission(session, user, key)
 
 

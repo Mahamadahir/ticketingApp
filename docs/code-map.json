@@ -1501,6 +1501,7 @@
         "app.subscriptions",
         "app.team_activity",
         "app.teams",
+        "app.templating",
         "app.thanks_rules",
         "app.ticket_service",
         "app.time_zones",
@@ -1974,6 +1975,7 @@
       "functions": [],
       "imported_by": [
         "app.routers.admin",
+        "app.templating",
         "app.visibility"
       ],
       "imports": [
@@ -3788,6 +3790,8 @@
         "app.backdating",
         "app.database",
         "app.forms",
+        "app.models",
+        "app.permissions",
         "app.presence",
         "app.time_zones",
         "app.visibility"

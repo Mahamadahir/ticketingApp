@@ -38,20 +38,6 @@
         </form>
       </td>
       <td>
-        {% if u.role.value == "super_admin" %}
-          all (super admin)
-        {% elif u.role in assignable_roles %}
-        <form method="post" action="/admin/users/{{ u.id }}/permissions">
-          {% for key, perm in permissions.items() %}
-          <label title="{{ perm.description }}"><input type="checkbox" name="permissions" value="{{ key }}" {{ "checked" if key in granted.get(u.id, ()) else "" }} /> {{ perm.label }}</label><br />
-          {% endfor %}
-          <button type="submit">Save</button>
-        </form>
-        {% else %}
-          none (agents only)
-        {% endif %}
-      </td>
-      <td>
         {% for m in memberships.get(u.id, []) %}
         <form method="post" action="/admin/users/{{ u.id }}/memberships/{{ m.team_id }}/remove" class="inline-form">
           {{ teams_by_id[m.team_id].name }} ({{ m.level.value }})
@@ -75,6 +61,20 @@
           </select>
           <button type="submit">Add or change</button>
         </form>
+      </td>
+      <td>
+        {% if u.role.value == "super_admin" %}
+          all (super admin)
+        {% elif u.role in assignable_roles %}
+        <form method="post" action="/admin/users/{{ u.id }}/permissions">
+          {% for key, perm in permissions.items() %}
+          <label title="{{ perm.description }}"><input type="checkbox" name="permissions" value="{{ key }}" {{ "checked" if key in granted.get(u.id, ()) else "" }} /> {{ perm.label }}</label><br />
+          {% endfor %}
+          <button type="submit">Save</button>
+        </form>
+        {% else %}
+          none (agents only)
+        {% endif %}
       </td>
       <td>
         <form method="post" action="/admin/users/{{ u.id }}/active">

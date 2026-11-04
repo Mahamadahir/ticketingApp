@@ -78,7 +78,19 @@ def test_a_permitted_agent_reaches_request_types_and_nothing_else_in_admin(clien
     assert "/admin/users" not in page.text and "/admin/settings" not in page.text
     for url in ("/admin/users", "/admin/approval-groups", "/admin/settings", "/admin/teams"):
         assert client.get(url).status_code == 403
-    assert client.post("/admin/request-types", data={"name": "x"}).status_code != 403
+    from tests.test_request_types import form, group_of, make
+    group = group_of(db_session, "Managers")
+    assert client.post("/admin/request-types", data={"name": "Laptop", **form(group)}).status_code == 200
+    from app.models import RequestType
+    assert db_session.exec(select(RequestType).where(RequestType.name == "Laptop")).first() is not None
+    existing = make(db_session)
+    assert client.post(f"/admin/request-types/{existing.id}", data={"name": "Renamed", **form(group)}).status_code == 200
+    # without the grant, both writes are refused
+    client.post("/auth/logout")
+    make_user(client, db_session, "b@example.com", UserRole.AGENT)
+    login_as(client, "b@example.com")
+    assert client.post("/admin/request-types", data={"name": "x", **form(group)}).status_code == 403
+    assert client.post(f"/admin/request-types/{existing.id}", data={"name": "x", **form(group)}).status_code == 403
 
 
 def test_without_the_permission_no_admin_link_and_request_types_refused(client, db_session):

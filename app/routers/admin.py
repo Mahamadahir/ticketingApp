@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from app.templating import templates
 from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, func, select
 
 from app.activity import (
@@ -220,7 +221,12 @@ def set_user_permissions(
     rows = session.exec(select(UserPermission).where(UserPermission.user_id == target.id)).all()
     held = {row.permission: row for row in rows}
     for key in sorted(wanted - set(held)):
-        session.add(UserPermission(user_id=target.id, permission=key, granted_by=admin.email))
+        try:
+            with session.begin_nested():  # a double submit may have added it already: not an error
+                session.add(UserPermission(user_id=target.id, permission=key, granted_by=admin.email))
+                session.flush()
+        except IntegrityError:
+            continue
         log_action(session, admin.email, "user", target.id, "permission_granted", key)
     for key, row in held.items():
         if key not in wanted:
