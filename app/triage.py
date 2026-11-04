@@ -35,7 +35,7 @@ from app.ticket_service import (
     record_event,
     set_status,
 )
-from app.request_questions import QuestionError, save_answers
+from app.request_questions import QuestionError, drop_other_answers, save_answers
 from app.visibility import team_members
 
 
@@ -137,6 +137,7 @@ def triage_ticket(
             from_value=previous.name if previous else None, to_value=request_type.name, detail="chosen at triage",
         )
         refresh_default_due(session, ticket, actor_email)
+    drop_other_answers(session, ticket, actor_email)
     if ticket.request_type_id is not None:
         try:
             save_answers(session, ticket, answers or {}, actor_email, first_time=True, require_all=True)

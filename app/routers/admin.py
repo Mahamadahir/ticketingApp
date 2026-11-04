@@ -47,9 +47,9 @@ from app.request_questions import (
     QuestionError,
     add_question,
     delete_question,
-    has_answers,
+    all_questions_by_type,
+    answered_question_ids,
     move_question,
-    questions_for,
     update_question,
 )
 from app.request_types import (
@@ -1102,10 +1102,8 @@ def list_request_types(
             "urgency_options": urgency_options(),
             "stale_categories": _stale_default_categories(session, types),
             "self_triages": {t.id for t in types if self_triage_defaults(session, t) is not None},
-            "questions": {t.id: questions_for(session, t.id, include_inactive=True) for t in types},
-            "answered_questions": {
-                q.id for t in types for q in questions_for(session, t.id, include_inactive=True) if has_answers(session, q)
-            },
+            "questions": all_questions_by_type(session),
+            "answered_questions": answered_question_ids(session),
             "question_kinds": QUESTION_KINDS,
             "user": user,
         },

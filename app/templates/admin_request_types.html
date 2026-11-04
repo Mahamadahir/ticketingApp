@@ -79,7 +79,7 @@
 </form>
 <fieldset>
   <legend>Form questions for {{ t.name }}</legend>
-  {% for q in questions[t.id] %}
+  {% for q in questions.get(t.id, []) %}
   <form method="post" action="/admin/request-types/questions/{{ q.id }}">
     <label>Question <input type="text" name="label" value="{{ q.label }}" maxlength="200" required /></label>
     <span class="note">{{ question_kinds[q.kind] }}</span>

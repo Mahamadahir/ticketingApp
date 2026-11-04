@@ -761,7 +761,7 @@ Form questions on request types, and the answers on tickets (#118 part 1). Nothi
 File: `app/request_questions.py`
 
 - Classes: `QuestionError`
-- Functions: `add_question`, `answer_rows`, `answers_of`, `clean_value`, `delete_question`, `display_value`, `form_rows`, `has_answers`, `missing_required`, `move_question`, `parse_options`, `questions_for`, `save_answers`, `update_question`
+- Functions: `add_question`, `all_questions_by_type`, `answer_rows`, `answered_question_ids`, `answers_of`, `clean_value`, `delete_question`, `display_value`, `drop_other_answers`, `form_rows`, `has_answers`, `missing_required`, `move_question`, `parse_options`, `questions_for`, `save_answers`, `update_question`
 - Imports: `app.models`, `app.ticket_service`
 - Imported by: `app.messages`, `app.raising`, `app.request_types`, `app.routers.admin`, `app.routers.portal`, `app.routers.tickets`, `app.triage`
 - Tests: `test_request_questions.py`

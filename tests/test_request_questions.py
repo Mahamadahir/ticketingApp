@@ -513,3 +513,53 @@ def test_delete_question_without_answers_works_and_with_answers_does_not(db_sess
         delete_question(db_session, a)
     delete_question(db_session, b)
     assert [q.label for q in questions_for(db_session, request_type.id, include_inactive=True)] == ["A"]
+
+
+# ---- Found in review ----------------------------------------------------------------------------
+
+
+def test_an_answer_whose_option_was_removed_survives_saving_other_answers(client, db_session):
+    team, category = world(db_session)
+    ticket, department, notes, _ = triaged_with_answers(client, db_session, team, category)
+    update_question(db_session, db_session.get(RequestTypeQuestion, department.id), "Department", "Sales\nLegal", True, True)
+    db_session.commit()
+
+    page = client.get(f"/tickets/{ticket.number}").text
+    assert "Finance (no longer listed)" in page
+    # What the browser posts back: the old value is still selected, so it is kept and the other answer saves.
+    assert client.post(f"/tickets/{ticket.number}/answers", data={f"q_{department.id}": "Finance", f"q_{notes.id}": "x"}).status_code == 200
+    assert answers_by_label(db_session, db_session.get(Ticket, ticket.id)) == {"Department": "Finance", "Notes": "x"}
+    # A new answer must still come from the current list.
+    assert client.post(f"/tickets/{ticket.number}/answers", data={f"q_{department.id}": "Marketing"}).status_code == 400
+
+
+def test_a_field_name_that_only_looks_like_a_number_is_ignored(client, db_session):
+    request_type = make(db_session)
+    login_as(client, "jo@example.com")
+    assert raise_it(client, request_type_id=request_type.id, **{"q_²": "x", "q_" + "9" * 5000: "y"}).status_code == 204
+
+
+def test_answers_of_the_old_kind_are_dropped_when_triage_picks_another_kind(client, db_session):
+    team, category = world(db_session)
+    first, second = make(db_session, "Laptop"), make(db_session, "Phone")
+    old = question(db_session, first, "Model")
+    new = question(db_session, second, "Number", required=True)
+    login_as(client, "jo@example.com")
+    raise_it(client, request_type_id=first.id, **{f"q_{old.id}": "X1"})
+    ticket = only_ticket(db_session)
+    client.post("/auth/logout")
+    agent_of(client, db_session, team)
+
+    assert triage_post(client, ticket, category, second, **{f"q_{new.id}": "0123"}).status_code == 200
+    assert answers_by_label(db_session, db_session.get(Ticket, ticket.id)) == {"Number": "0123"}
+    assert not db_session.exec(select(TicketAnswer).where(TicketAnswer.question_id == old.id)).all()
+
+
+def test_answers_cannot_be_edited_before_triage(client, db_session):
+    team, category = world(db_session)
+    request_type = make(db_session)
+    asked = question(db_session, request_type, "Department")
+    ticket = email_ticket(db_session, team, request_type)
+    agent_of(client, db_session, team)
+    assert client.post(f"/tickets/{ticket.number}/answers", data={f"q_{asked.id}": "x"}).status_code == 403
+    assert db_session.get(Ticket, ticket.id).answers_changed_at is None

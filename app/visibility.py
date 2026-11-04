@@ -189,9 +189,9 @@ def may_set_required_by(user: User, ticket: Ticket, levels: AccessContext) -> bo
 
 def may_edit_answers(user: User, ticket: Ticket, levels: AccessContext) -> bool:
     """Who may change the answers to a service request's form questions (app/request_questions.py) after they
-    were first given: agents who work the ticket, while it is not finished. The requester gives them when raising
+    were first given: agents who work the ticket, once it is triaged (before that they are given on the triage form) and until it is finished. The requester gives them when raising
     the request, and an agent fills them in at triage (which is `may_triage`); a follower never can."""
-    if ticket.status in FINISHED_STATUSES or ticket.request_type_id is None:
+    if ticket.status in FINISHED_STATUSES or ticket.request_type_id is None or is_untriaged(ticket):
         return False
     if user.role not in (UserRole.AGENT, UserRole.SUPER_ADMIN):
         return False

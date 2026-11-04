@@ -7,6 +7,7 @@
     {% if q.kind == "choice" %}
     <select name="q_{{ q.id }}" {{ "required" if q.is_required else "" }}>
       <option value="">-</option>
+      {% if value and value not in q.options %}<option value="{{ value }}" selected>{{ value }} (no longer listed)</option>{% endif %}
       {% for option in q.options %}<option value="{{ option }}" {{ "selected" if option == value else "" }}>{{ option }}</option>{% endfor %}
     </select>
     {% elif q.kind == "yes_no" %}

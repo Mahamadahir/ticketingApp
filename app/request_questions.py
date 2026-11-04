@@ -89,6 +89,18 @@ def questions_for(session: Session, request_type_id: Optional[int], include_inac
     return list(session.exec(query.order_by(RequestTypeQuestion.position, RequestTypeQuestion.id)).all())
 
 
+def all_questions_by_type(session: Session) -> dict[int, list[RequestTypeQuestion]]:
+    """Every question, switched off ones too, by request type id and in order: one query, for the admin page."""
+    by_type: dict[int, list[RequestTypeQuestion]] = {}
+    for question in session.exec(select(RequestTypeQuestion).order_by(RequestTypeQuestion.position, RequestTypeQuestion.id)).all():
+        by_type.setdefault(question.request_type_id, []).append(question)
+    return by_type
+
+
+def answered_question_ids(session: Session) -> set[int]:
+    return set(session.exec(select(TicketAnswer.question_id).distinct()).all())
+
+
 def has_answers(session: Session, question: RequestTypeQuestion) -> bool:
     return session.exec(select(TicketAnswer.id).where(TicketAnswer.question_id == question.id)).first() is not None
 
@@ -215,8 +227,11 @@ def save_answers(
     cleaned: dict[int, Optional[str]] = {}
     for question_id, text in raw.items():
         question = questions.get(question_id)
-        if question is not None:
-            cleaned[question_id] = clean_value(question, text)
+        if question is None:
+            continue
+        row = stored.get(question_id)
+        # An answer left as it was stays valid even if the question's options have changed since.
+        cleaned[question_id] = row.value if row is not None and (text or "").strip() == row.value else clean_value(question, text)
     blank_required = [questions[i] for i, v in cleaned.items() if v is None and questions[i].is_required]
     if blank_required:
         _complain_missing(blank_required)
@@ -253,6 +268,21 @@ def save_answers(
         session.add(ticket)
     session.flush()
     return changed
+
+
+def drop_other_answers(session: Session, ticket: Ticket, actor_email: str) -> None:
+    """Removes answers to questions of any kind of request but the ticket's current one (triage changed the kind, or
+    retyped the ticket to something that has none), so nothing reads or compares answers the ticket's kind never
+    asked for. Each is a ticket event, which keeps the history."""
+    for row in answers_of(session, ticket).values():
+        question = session.get(RequestTypeQuestion, row.question_id)
+        if question is not None and question.request_type_id != ticket.request_type_id:
+            record_event(
+                session, ticket, EVENT_ANSWER_CHANGED, actor_email,
+                from_value=display_value(row.question_kind, row.value), detail=f"{row.question_label} (kind of request changed)",
+            )
+            session.delete(row)
+    session.flush()
 
 
 def form_rows(

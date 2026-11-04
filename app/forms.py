@@ -10,8 +10,9 @@ async def form_answers(request: Request) -> dict[int, str]:
     Text only; whether each answer is valid is decided in app/request_questions.py."""
     answers: dict[int, str] = {}
     for key, value in (await request.form()).multi_items():
-        if key.startswith(ANSWER_FIELD_PREFIX) and key[len(ANSWER_FIELD_PREFIX):].isdigit() and isinstance(value, str):
-            answers[int(key[len(ANSWER_FIELD_PREFIX):])] = value
+        number = key[len(ANSWER_FIELD_PREFIX):]
+        if key.startswith(ANSWER_FIELD_PREFIX) and number.isascii() and number.isdecimal() and len(number) < 10 and isinstance(value, str):
+            answers[int(number)] = value
     return answers
 
 

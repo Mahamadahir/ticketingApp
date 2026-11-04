@@ -478,6 +478,7 @@ def change_answers(
     ticket event and an audit entry; nothing else follows from it (it only marks the answers as changed, for the
     automatic sub-requests of #118 part 2)."""
     ticket = _get_ticket(session, number, user, Access.READ)
+    session.refresh(ticket, with_for_update=True)  # two saves at once must not both insert the same answer
     if not may_edit_answers(user, ticket, access_context(session, user)):
         raise HTTPException(status_code=403, detail="You cannot change the answers on this ticket")
     try:
