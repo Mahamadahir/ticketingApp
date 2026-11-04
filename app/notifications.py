@@ -8,9 +8,11 @@ breaches) and skipping agents who are out of office. Which events reach which ch
 person's choice (app/notification_settings.py); notify() honours the in-app one. Everything
 that notifies goes through notify() so those arrive in one place.
 
-Only agents are notified, and only about tickets they can open: a mention of someone outside
-the ticket's team does nothing (access follows the team, and a notification would say what the
-ticket is).
+Agents are notified about the tickets they can open: a mention of someone outside the ticket's
+team does nothing (access follows the team, and a notification would say what the ticket is).
+Everyone signed in also has a bell, for the entries about their own tickets (REQUESTER_KINDS, #130:
+the requester and external followers) and requests waiting for their vote; those open the portal,
+and notify() refuses every other kind for a person who is not an agent.
 """
 
 import re
@@ -20,7 +22,8 @@ from typing import Callable, Optional
 from sqlalchemy import and_, func, or_, update
 from sqlmodel import Session, select
 
-from app.models import FINISHED_STATUSES, Message, Notification, Ticket, User, UserRole
+from app.identity import my_ticket_condition
+from app.models import FINISHED_STATUSES, Message, Notification, Ticket, TicketStatus, User, UserRole
 from app.notification_settings import IN_APP, TEAMS, is_enabled, offers, wants_approval_email
 from app.settings_store import TEAMS_UNREAD_MINUTES, get_int_setting
 from app.visibility import Access, access_context, team_members, ticket_access, visible_ticket_condition
@@ -34,6 +37,15 @@ APPROVAL_OVERDUE = "approval_overdue"
 APPROVAL_WAITING = "approval_waiting"
 DUE_TODAY = "due_today"
 CHASE_GIVEN_UP = "chase_given_up"
+# The bell entries for the requester and the external followers of a ticket (#130). They open in the portal.
+AGENT_EMAILED = "agent_emailed"
+AWAITING_YOU = "awaiting_you"
+TICKET_RESOLVED = "ticket_resolved"
+TICKET_CLOSED = "ticket_closed"
+APPROVAL_OUTCOME = "approval_outcome"
+REQUESTER_KINDS = (AGENT_EMAILED, AWAITING_YOU, TICKET_RESOLVED, TICKET_CLOSED, APPROVAL_OUTCOME)
+# Kinds that open in the portal, where the person (agent or not) is the requester, follower or approver.
+PORTAL_KINDS = (APPROVAL_WAITING,) + REQUESTER_KINDS
 AGENT_ROLES = (UserRole.AGENT, UserRole.SUPER_ADMIN)
 
 # Stored text names its ticket with this marker, never with the number or reference itself. The reference's
@@ -50,8 +62,9 @@ def notify(
 ) -> Optional[Notification]:
     """Tells one agent something. Nothing for the person who did it themselves. Does not commit.
     A request waiting for someone's vote is the one kind an ordinary signed-in person (an approver who is
-    not an agent) is told too: everything else is for agents."""
-    if recipient.role not in AGENT_ROLES and kind != APPROVAL_WAITING:
+    not an agent) is told too, and so is the requester or follower of a ticket about their own ticket
+    (REQUESTER_KINDS); everything else is for agents."""
+    if recipient.role not in AGENT_ROLES and kind not in PORTAL_KINDS:
         return None
     if actor_email and recipient.email.lower() == actor_email.lower():
         return None
@@ -177,8 +190,16 @@ def visible_to(session: Session, user: User):
     """The SQL condition for the notifications this user may still see: their own, leaving out
     those about a ticket they can no longer open (it moved to another team). A notification would
     otherwise keep showing the subject of a ticket they have lost access to."""
-    if user.role not in AGENT_ROLES:  # an approver who is not an agent: only the "waiting for your vote" entries exist
-        return and_(Notification.user_id == user.id, Notification.bell.is_(True))
+    # The portal entries open in the portal, so they need no agent access: being asked to vote always counts, and
+    # the requester kinds only while the person is still the requester or a follower (a ticket they no longer follow
+    # must not keep showing its subject).
+    mine = select(Ticket.id).where(my_ticket_condition(user))
+    portal = or_(
+        Notification.kind == APPROVAL_WAITING,
+        and_(Notification.kind.in_(REQUESTER_KINDS), Notification.ticket_id.in_(mine)),
+    )
+    if user.role not in AGENT_ROLES:  # not an agent: only the portal entries exist (waiting for your vote, your own tickets)
+        return and_(Notification.user_id == user.id, Notification.bell.is_(True), portal)
     visible = visible_ticket_condition(user, access_context(session, user))
     if visible is None:  # a super admin can open every ticket
         return and_(Notification.user_id == user.id, Notification.bell.is_(True))
@@ -187,7 +208,7 @@ def visible_to(session: Session, user: User):
         Notification.bell.is_(True),  # not the Teams-only ones
         or_(
             Notification.ticket_id.is_(None),
-            Notification.kind == APPROVAL_WAITING,  # being asked to vote is not access to the ticket; it opens in the portal
+            portal,
             Notification.ticket_id.in_(select(Ticket.id).where(visible)),
         ),
     )
@@ -360,6 +381,63 @@ def notify_approval_withdrawn(session: Session, ticket: Ticket, approver: User, 
     return notify(
         session, approver, APPROVAL_WITHDRAWN, ticket,
         f"{REF} {ticket.subject} was withdrawn by the requester, so it no longer needs your approval", actor_email,
+    )
+
+
+def notify_requesters(
+    session: Session, ticket: Ticket, kind: str, text: str, actor_email: Optional[str],
+    skip: Optional[Callable[[User], bool]] = None,
+) -> list[Notification]:
+    """Tells the requester and the external followers who have an account something about their own ticket (#130).
+    Never the person who caused it (notify() skips them) and nobody without an account (they have no bell; email
+    carries on as before). An agent who is the requester is told too, and the entry opens the portal. Does not commit."""
+    from app.followers import portal_audience  # here: followers builds on ticket_service, which imports this module
+
+    emails = portal_audience(session, ticket)
+    people = session.exec(select(User).where(func.lower(User.email).in_(emails), User.is_active.is_(True))).all()
+    made = []
+    for person in sorted(people, key=lambda p: p.id):
+        if skip is not None and skip(person):
+            continue
+        notification = notify(session, person, kind, ticket, text, actor_email)
+        if notification is not None:
+            made.append(notification)
+    return made
+
+
+def notify_agent_emailed(
+    session: Session, ticket: Ticket, actor_email: Optional[str], instead_of: Optional[str] = None
+) -> list[Notification]:
+    """The "IT Support emailed you" entry. `instead_of` is the kind of entry the same action also makes (Awaiting user,
+    Resolved): whoever has that one switched on is told by it, so only the others get this, and nobody is told twice
+    or not at all."""
+    return notify_requesters(
+        session, ticket, AGENT_EMAILED, f"{REF} {ticket.subject}: IT Support emailed you", actor_email,
+        skip=(lambda person: is_enabled(session, person, instead_of, IN_APP)) if instead_of else None,
+    )
+
+
+def notify_status_for_requesters(
+    session: Session, ticket: Ticket, status: TicketStatus, actor_email: Optional[str]
+) -> list[Notification]:
+    """The requester's entry for a ticket moving to Awaiting user, Resolved or Closed; any other status tells nobody."""
+    kind, what = {
+        TicketStatus.AWAITING_USER: (AWAITING_YOU, "is waiting for your reply"),
+        TicketStatus.RESOLVED: (TICKET_RESOLVED, "was resolved"),
+        TicketStatus.CLOSED: (TICKET_CLOSED, "was closed"),
+    }.get(status, (None, None))
+    if kind is None:
+        return []
+    return notify_requesters(session, ticket, kind, f"{REF} {ticket.subject} {what}", actor_email)
+
+
+def notify_approval_outcome(
+    session: Session, ticket: Ticket, result: str, actor_email: Optional[str]
+) -> list[Notification]:
+    """Tells the requester and followers how their request was decided: approved, declined or waived."""
+    what = {"approved": "was approved", "declined": "was declined", "waived": "was let through without waiting for every approver", "withdrawn": "was withdrawn"}
+    return notify_requesters(
+        session, ticket, APPROVAL_OUTCOME, f"{REF} {ticket.subject} {what.get(result, 'was decided')}", actor_email
     )
 
 

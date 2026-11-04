@@ -1023,6 +1023,13 @@ A template is plain text with `{placeholders}` from a fixed list per email; the 
   open tabs queue up instead of both inserting the same row. Preferences stored for an event a role
   does not have are harmless: only agents are ever notified, and the choice returns with the role.
 - A reply notifies the assigned agent, whatever the ticket's status.
+  *Built (4 Nov 2026, #130): the bell for everyone.* The requester, and external followers who have an account, get
+  in-app entries about their own tickets: an agent emailed you, the ticket is waiting for your reply (Awaiting user),
+  resolved, closed, and the approval outcome (approved, declined or waived). Each is an event on My notification
+  settings (in-app only, default on); email is unchanged and there is no Teams copy. Never the person who caused it.
+  The entries open the portal ticket (`/portal/{n}`), also for an agent who is the requester. Agent-only kinds are still
+  refused for people who are not agents. A sub-ticket created is left for #118.
+
   *Built (20 Oct 2026):* event type `replied` ("A ticket assigned to you is updated by the requester"; bell and Teams,
   both on by default; Teams label "Ticket updated"; bell text "#42 Printer jam: Ticket updated by Jo Bloggs", the replier's display name, else their email). When the requester or a follower replies, the ticket's assignee is told in every status,
   including Awaiting user, With MSP, Resolved and Closed, where the reply moves nothing and this is the

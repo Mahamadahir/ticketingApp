@@ -82,6 +82,32 @@ EVENT_TYPES: tuple[EventType, ...] = (
         AGENT_ROLES, (IN_APP, TEAMS), (IN_APP, TEAMS),
     ),
     EventType(
+        "agent_emailed", "IT Support emails you about your ticket",
+        "A bell entry when an agent writes to you on a ticket you raised, or follow from outside the team. "
+        "The email is sent as well; this is in addition. You are not told about your own emails.",
+        EVERYONE, (IN_APP,), (IN_APP,),
+    ),
+    EventType(
+        "awaiting_you", "Your ticket is waiting for your reply",
+        "A bell entry when a ticket you raised or follow moves to Awaiting user.",
+        EVERYONE, (IN_APP,), (IN_APP,),
+    ),
+    EventType(
+        "ticket_resolved", "Your ticket is resolved",
+        "A bell entry when a ticket you raised or follow is resolved.",
+        EVERYONE, (IN_APP,), (IN_APP,),
+    ),
+    EventType(
+        "ticket_closed", "Your ticket is closed",
+        "A bell entry when a ticket you raised or follow is closed.",
+        EVERYONE, (IN_APP,), (IN_APP,),
+    ),
+    EventType(
+        "approval_outcome", "Your request is approved or declined",
+        "A bell entry when the approvers decide a request you raised or follow (or an admin lets it through).",
+        EVERYONE, (IN_APP,), (IN_APP,),
+    ),
+    EventType(
         RAISED_FOR_YOU, "An agent raises a ticket for you",
         "An email telling you a ticket was raised on your behalf. Also off for everyone if an admin "
         "switches it off in Settings.",

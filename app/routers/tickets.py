@@ -41,7 +41,7 @@ from app.required_by import (
 from app.settings_store import REQUIRED_BY_LEAD_DAYS, count_setting
 from app.canned import active_canned, fill as fill_canned
 from app.approvals import ApprovalError, current_approval, describe_rule, votes_of, waive
-from app.notifications import notify_assigned, notify_mentions
+from app.notifications import AWAITING_YOU, notify_agent_emailed, notify_assigned, notify_mentions
 from app.presence import agent_label
 from app.search import normalise, search_condition
 from app.splitting import (
@@ -665,7 +665,7 @@ def email_user(
     ticket = _get_ticket(session, number, user)
 
     try:
-        email_requester(session, ticket, user, body, cc_emails=cc if cc_form else None)
+        email_requester(session, ticket, user, body, cc_emails=cc if cc_form else None, bell=False)
     except NotTriaged:
         raise HTTPException(status_code=400, detail="Triage the ticket before emailing the requester")
     except EmptyEmail:
@@ -680,7 +680,12 @@ def email_user(
     except BadStatusChoice as error:
         raise HTTPException(status_code=400, detail=str(error))
 
+    status_before = ticket.status
     _set_status_from_message(session, ticket, user, new_status, due_on, due_reason)
+    # The requester's bell (#130): when this moved the ticket to Awaiting user, "waiting for your reply" says an agent
+    # wrote, so whoever has that on gets only it.
+    moved_to_awaiting = status_before != TicketStatus.AWAITING_USER and ticket.status == TicketStatus.AWAITING_USER
+    notify_agent_emailed(session, ticket, user.email, instead_of=AWAITING_YOU if moved_to_awaiting else None)
     log_action(session, user.email, "ticket", ticket.id, "emailed_requester", body[:200])
     session.commit()
     session.refresh(ticket)

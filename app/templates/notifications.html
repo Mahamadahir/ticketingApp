@@ -4,7 +4,11 @@
 <h2>Notifications</h2>
 <p class="note">
   When a ticket is assigned to you, or someone mentions you in an internal note (write @ and the part of
-  your email address before the @), or when a request is waiting for your approval (that one opens in the portal, where you vote). You are only told about tickets you can open; if a ticket moves to a team you are not in, its notifications are hidden (and not counted) until you can open it again.
+  your email address before the @), or when a request is waiting for your approval (that one opens in the portal, where you vote).
+  Everyone is also told about their own tickets, the ones they raised or follow from outside the team: when IT Support emails
+  you, the ticket is waiting for your reply, resolved or closed, or your request is approved or declined (these open in the
+  portal; the emails are sent as well). Choose which of these you want under My notification settings.
+  For tickets you work as an agent, you are only told about tickets you can open; if a ticket moves to a team you are not in, its notifications are hidden (and not counted) until you can open it again.
 </p>
 
 {% if unread %}
@@ -20,7 +24,7 @@
       <td>{% if not n.read_at %}<b>{{ texts[n.id] }}</b>{% else %}{{ texts[n.id] }}{% endif %}</td>
       <td>
         <form method="post" action="/notifications/{{ n.id }}/open" class="inline-form">
-          <button type="submit" class="button-outline">{{ "Open" if tickets.get(n.ticket_id) or n.kind == "approval_waiting" else "Mark read" }}</button>
+          <button type="submit" class="button-outline">{{ "Open" if tickets.get(n.ticket_id) or n.kind in portal_kinds else "Mark read" }}</button>
         </form>
       </td>
     </tr>
