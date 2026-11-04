@@ -32,6 +32,20 @@ templates.env.globals["max_message_length"] = MAX_MESSAGE_LENGTH
 templates.env.globals["agent_label"] = agent_label  # a name, plus "(out of office)" when they are
 
 
+def _can(user, key: str) -> bool:
+    """{{ can(user, "manage_request_templates") }}: for navigation only; routes use require_permission."""
+    from sqlalchemy.orm import object_session
+    from app.visibility import has_permission
+
+    session = object_session(user)
+    if session is None:
+        return user.role.value == "super_admin"
+    return has_permission(session, user, key)
+
+
+templates.env.globals["can"] = _can
+
+
 @pass_context
 def _viewer_zone(context) -> str:
     """The viewer's time zone. For a signed-in person `get_current_user` has already worked it out with the

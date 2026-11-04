@@ -364,6 +364,12 @@ same tenant (for example upn@companyA.com and upn@companyB.com). A super admin l
 Entra app roles (the `roles` claim) comes later; assigning whole groups to an
 app role needs Entra ID P1.
 
+**Extra permissions (#132).** Not RBAC: on top of the role a super admin can grant an agent a named
+extra (registry in `app/permissions.py`; the first is `manage_request_templates`, which opens Admin >
+Request types and nothing else under Admin). Super admins hold every permission; end users cannot hold
+one; approval groups stay super-admin only. Granting is on Admin > Users and audited. The check is one
+function (`visibility.has_permission`), so phase 6 can feed it from an Entra app-role claim instead.
+
 **Break-glass.** Two local super admin accounts not tied to anyone's UPN,
 with long passwords and TOTP. Always able to sign in.
 

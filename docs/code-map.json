@@ -54,6 +54,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/a4c7e1b9d205_user_permissions.py",
+        "revision": "a4c7e1b9d205"
+      },
+      {
         "file": "migrations/versions/f3b9d2a6c841_due_date.py",
         "revision": "f3b9d2a6c841"
       },
@@ -68,17 +72,13 @@
       {
         "file": "migrations/versions/c4e7a2b9d106_scheduled_status.py",
         "revision": "c4e7a2b9d106"
-      },
-      {
-        "file": "migrations/versions/8b3e5a1c9d27_required_by.py",
-        "revision": "8b3e5a1c9d27"
       }
     ],
-    "count": 47,
+    "count": 48,
     "heads": [
       {
-        "file": "migrations/versions/f3b9d2a6c841_due_date.py",
-        "revision": "f3b9d2a6c841"
+        "file": "migrations/versions/a4c7e1b9d205_user_permissions.py",
+        "revision": "a4c7e1b9d205"
       }
     ]
   },
@@ -385,6 +385,7 @@
         "get_current_user",
         "get_or_create_user",
         "hash_password",
+        "require_permission",
         "require_roles"
       ],
       "imported_by": [
@@ -403,7 +404,8 @@
         "app.config",
         "app.database",
         "app.models",
-        "app.time_zones"
+        "app.time_zones",
+        "app.visibility"
       ],
       "module": "app.auth",
       "routes": [],
@@ -1434,6 +1436,7 @@
         "TicketStatus",
         "TicketType",
         "User",
+        "UserPermission",
         "UserRole"
       ],
       "file": "app/models.py",
@@ -1471,6 +1474,7 @@
         "app.notification_settings",
         "app.notifications",
         "app.outbox",
+        "app.permissions",
         "app.presence",
         "app.raising",
         "app.reopening",
@@ -1655,6 +1659,10 @@
         {
           "class": "User",
           "table": "user"
+        },
+        {
+          "class": "UserPermission",
+          "table": "userpermission"
         }
       ],
       "tests": [
@@ -1700,6 +1708,7 @@
         "tests/test_notifications.py",
         "tests/test_outbound_mail.py",
         "tests/test_pagination_and_limits.py",
+        "tests/test_permissions.py",
         "tests/test_portal.py",
         "tests/test_presence.py",
         "tests/test_public_surface.py",
@@ -1955,6 +1964,27 @@
         "tests/test_hardening.py",
         "tests/test_pagination_and_limits.py",
         "tests/test_sla.py"
+      ]
+    },
+    {
+      "classes": [
+        "Permission"
+      ],
+      "file": "app/permissions.py",
+      "functions": [],
+      "imported_by": [
+        "app.routers.admin",
+        "app.visibility"
+      ],
+      "imports": [
+        "app.models"
+      ],
+      "module": "app.permissions",
+      "routes": [],
+      "summary": "Extra permissions a super admin can grant (issue #132). Not RBAC: the three roles stay, and a",
+      "tables": [],
+      "tests": [
+        "tests/test_permissions.py"
       ]
     },
     {
@@ -2302,6 +2332,7 @@
         "save_setting",
         "set_membership",
         "set_user_active",
+        "set_user_permissions",
         "thanks_candidate_to_rule",
         "toggle_thanks_rule",
         "unlock_user",
@@ -2335,6 +2366,7 @@
         "app.models",
         "app.never_follow",
         "app.pagination",
+        "app.permissions",
         "app.request_types",
         "app.scheduled_jobs",
         "app.settings_store",
@@ -2571,6 +2603,11 @@
           "handler": "remove_membership",
           "method": "POST",
           "path": "/admin/users/{user_id}/memberships/{team_id}/remove"
+        },
+        {
+          "handler": "set_user_permissions",
+          "method": "POST",
+          "path": "/admin/users/{user_id}/permissions"
         },
         {
           "handler": "unlock_user",
@@ -3752,7 +3789,8 @@
         "app.database",
         "app.forms",
         "app.presence",
-        "app.time_zones"
+        "app.time_zones",
+        "app.visibility"
       ],
       "module": "app.templating",
       "routes": [],
@@ -3972,6 +4010,7 @@
         "access_context",
         "assignable_agents",
         "feedback_condition",
+        "has_permission",
         "is_untriaged",
         "may_add_note",
         "may_self_assign",
@@ -3985,6 +4024,7 @@
         "visible_ticket_condition"
       ],
       "imported_by": [
+        "app.auth",
         "app.bulk_resolve",
         "app.feedback",
         "app.main",
@@ -3995,12 +4035,14 @@
         "app.routers.portal",
         "app.routers.tickets",
         "app.teams",
+        "app.templating",
         "app.triage"
       ],
       "imports": [
         "app.followers",
         "app.messages",
-        "app.models"
+        "app.models",
+        "app.permissions"
       ],
       "module": "app.visibility",
       "routes": [],
@@ -4010,6 +4052,7 @@
         "tests/test_access_context.py",
         "tests/test_escalation.py",
         "tests/test_messages.py",
+        "tests/test_permissions.py",
         "tests/test_visibility.py"
       ]
     },
@@ -4412,6 +4455,7 @@
     "tests/test_notifications.py",
     "tests/test_outbound_mail.py",
     "tests/test_pagination_and_limits.py",
+    "tests/test_permissions.py",
     "tests/test_portal.py",
     "tests/test_presence.py",
     "tests/test_public_surface.py",

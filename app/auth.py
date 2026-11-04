@@ -187,3 +187,16 @@ def require_roles(*roles: UserRole):
         return user
 
     return dependency
+
+
+def require_permission(key: str):
+    """A super admin, or an agent a super admin granted this permission (app/permissions.py). The rule
+    itself is app.visibility.has_permission."""
+    from app.visibility import has_permission
+
+    def dependency(user: User = Depends(get_current_user), session: Session = Depends(get_session)) -> User:
+        if not has_permission(session, user, key):
+            raise HTTPException(status_code=403, detail="Not permitted")
+        return user
+
+    return dependency

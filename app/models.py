@@ -448,6 +448,19 @@ class ApprovalGroupMember(SQLModel, table=True):
     user_id: int = Field(foreign_key="user.id", index=True)
 
 
+class UserPermission(SQLModel, table=True):
+    """An extra permission a super admin has granted (app/permissions.py holds the registry of keys).
+    Super admins need no row: they hold every permission. Whether a row counts also depends on the
+    person's role (see app.permissions.has_permission)."""
+    __table_args__ = (UniqueConstraint("user_id", "permission", name="uq_userpermission"),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    permission: str = Field(index=True)
+    granted_by: Optional[str] = Field(default=None)  # the super admin's email
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 class RequestType(SQLModel, table=True):
     """A thing people can ask IT for ("New starter", "Software install"), each with the
     group that approves it. Managed by admins in app/request_types.py. Switching one off hides
