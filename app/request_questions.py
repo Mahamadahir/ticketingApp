@@ -139,6 +139,10 @@ def update_question(
 def delete_question(session: Session, question: RequestTypeQuestion) -> None:
     if has_answers(session, question):
         raise QuestionError("This question has been answered on tickets: switch it off instead of deleting it")
+    from app.subrequests import used_by_template  # here: sub-request templates build on this module
+
+    if used_by_template(session, question):
+        raise QuestionError("A sub-request template has a condition on this question: remove the condition first")
     session.delete(question)
     session.flush()
 

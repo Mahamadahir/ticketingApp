@@ -69,20 +69,22 @@ def _assignee_for(session: Session, team_id: int, assignee: Optional[User]) -> O
     return assignee
 
 
-def _set_assignee(session: Session, ticket: Ticket, assignee: Optional[User], actor: User) -> None:
-    """Changes who the ticket is assigned to, recording it. None unassigns."""
+def set_assignee(session: Session, ticket: Ticket, assignee: Optional[User], actor: Optional[User]) -> None:
+    """Changes who the ticket is assigned to, recording it. None unassigns. `actor` None is the system (an
+    automatic sub-request, app/subrequests.py)."""
+    actor_email = actor.email if actor is not None else "system"
     previous = session.get(User, ticket.assigned_agent_id) if ticket.assigned_agent_id else None
     if (previous.id if previous else None) == (assignee.id if assignee else None):
         return
     ticket.assigned_agent_id = assignee.id if assignee else None
     session.add(ticket)
     record_event(
-        session, ticket, EVENT_ASSIGNED, actor.email,
+        session, ticket, EVENT_ASSIGNED, actor_email,
         from_value=previous.email if previous else None,
         to_value=assignee.email if assignee else None,
     )
     if assignee is not None:
-        notify_assigned(session, ticket, assignee, actor.email)
+        notify_assigned(session, ticket, assignee, actor_email)
 
 
 def triage_ticket(
@@ -98,6 +100,8 @@ def triage_ticket(
     request_type: Optional[RequestType] = None,
     automatic_from: Optional[RequestType] = None,
     answers: Optional[dict[int, str]] = None,
+    approval_covered: bool = False,
+    answers_required: bool = True,
 ) -> None:
     """Classifies an untriaged ticket and moves it from New to Open. The category
     decides the team; the type may change (the number does not); impact and urgency give the priority and start the SLA deadlines.
@@ -106,7 +110,10 @@ def triage_ticket(
     `actor` None is the system: a portal request whose type has all its defaults triages itself (`automatic_from` is that
     type, named on the triaged event; app/request_types.py `self_triage`). The system assigns no one.
     `answers` are the form answers typed on the triage form (question id -> text, app/request_questions.py): a kind
-    of request with required questions cannot be triaged until each is answered, here or earlier."""
+    of request with required questions cannot be triaged until each is answered, here or earlier.
+    An automatic sub-request (app/subrequests.py) passes `approval_covered` (its parent's approval covers it, so it
+    opens without asking its own approvers) and `answers_required` False (it has none to give: the answers are
+    its parent's)."""
     actor_email = actor.email if actor is not None else "system"
     if actor is None and assignee is not None:
         raise TriageError("The system does not assign tickets")
@@ -140,7 +147,7 @@ def triage_ticket(
     drop_other_answers(session, ticket, actor_email)
     if ticket.request_type_id is not None:
         try:
-            save_answers(session, ticket, answers or {}, actor_email, first_time=True, require_all=True)
+            save_answers(session, ticket, answers or {}, actor_email, first_time=True, require_all=answers_required)
         except QuestionError as error:
             raise TriageError(str(error))
 
@@ -169,18 +176,18 @@ def triage_ticket(
         )
     # Triaged is what lets it leave New. Set after triaged_at so set_status allows it.
     # A catalogue request with approvers waits for them (Awaiting approval) instead of opening.
-    target = status_after_triage(session, ticket)
+    target = TicketStatus.OPEN if approval_covered else status_after_triage(session, ticket)
     set_status(session, ticket, target, actor_email)
     if target == TicketStatus.AWAITING_APPROVAL:
         start_approvals(session, ticket, actor_email)
     if assignee is not None:
-        _set_assignee(session, ticket, assignee, actor)
+        set_assignee(session, ticket, assignee, actor)
     elif ticket.assigned_agent_id is not None and actor is not None:
         # Choosing no one leaves the assignment as it is (the ticket may have been handed
         # to someone to triage), unless that person is not in the team it now belongs to:
         # access follows the team, so they could no longer open it.
         if ticket.assigned_agent_id not in {member.id for member in team_members(session, team_id)}:
-            _set_assignee(session, ticket, None, actor)
+            set_assignee(session, ticket, None, actor)
 
 
 MOVE_REASSIGN = "reassign"
@@ -223,7 +230,7 @@ def move_ticket(
         changed = True
 
     before = ticket.assigned_agent_id
-    _set_assignee(session, ticket, assignee, actor)
+    set_assignee(session, ticket, assignee, actor)
     changed = changed or ticket.assigned_agent_id != before
     if changed:
         ticket.updated_at = datetime.now(timezone.utc)

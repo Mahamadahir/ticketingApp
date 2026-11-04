@@ -1,0 +1,22 @@
+{# The sub-requests list of the triage form (#118, app/subrequests.py). Needs: rows (each: template, subject, applies,
+   ticked), max_sub_tickets and ticket. Redrawn (outerHTML) whenever the triage form changes, so the list follows the
+   kind of request and the answers typed. Everything the rules produce is ticked; the agent can untick, or tick the
+   others, before triaging. The hidden listed ids tell the server which were shown, so one the agent never saw is
+   decided by the rules. #}
+<div id="triage-subrequests"
+  hx-get="/tickets/triage-subrequests?number={{ ticket.number }}" hx-trigger="change from:#triage-form"
+  hx-include="#triage-form" hx-swap="outerHTML">
+  {% if rows %}
+  <fieldset>
+    <legend>Sub-requests</legend>
+    <p class="note">Made as sub-tickets of this request, once it is approved if it needs approval. Ticked: what the rules produce for the answers above. Untick any you do not want, or tick another; at most {{ max_sub_tickets }} sub-tickets in all.</p>
+    {% for row in rows %}
+    <label>
+      <input type="hidden" name="subrequest_listed" value="{{ row.template.id }}" />
+      <input type="checkbox" name="subrequest_template" value="{{ row.template.id }}" {{ "checked" if row.ticked else "" }} />
+      {{ row.subject }}{{ "" if row.applies else " (the rules do not produce this one)" }}
+    </label>
+    {% endfor %}
+  </fieldset>
+  {% endif %}
+</div>

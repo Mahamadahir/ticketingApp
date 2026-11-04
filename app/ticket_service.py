@@ -37,6 +37,9 @@ EVENT_APPROVAL_WITHDRAWN = "approval_withdrawn"  # the requester withdrew the re
 EVENT_REQUIRED_BY_CHANGED = "required_by_changed"  # a service request's Required by date was set, changed or cleared
 EVENT_DUE_CHANGED = "due_changed"  # the Due date was set, moved or cleared (detail: the reason)
 EVENT_ANSWER_CHANGED = "answer_changed"  # a form answer was given or changed (detail: the question)
+EVENT_SUBREQUEST = "subrequest_created"  # on the request: to_value is the sub-ticket made from a template (#118)
+EVENT_SUBREQUEST_SKIPPED = "subrequest_skipped"  # on the request: to_value is the subject, detail why it was not made
+EVENT_SUBREQUESTS_PLANNED = "subrequests_planned"  # on the request: the list confirmed at triage, made once approved
 EVENT_REQUEST_TYPE = "request_type"  # a service request raised from the catalogue: to_value is its name
 
 

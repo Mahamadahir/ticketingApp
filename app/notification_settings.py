@@ -108,6 +108,12 @@ EVENT_TYPES: tuple[EventType, ...] = (
         EVERYONE, (IN_APP,), (IN_APP,),
     ),
     EventType(
+        "subrequest_created", "Sub-requests are created for your request",
+        "A bell entry when sub-requests are made automatically for a request you raised or follow (a new starter's "
+        "laptop, phone and account, say).",
+        EVERYONE, (IN_APP,), (IN_APP,),
+    ),
+    EventType(
         RAISED_FOR_YOU, "An agent raises a ticket for you",
         "An email telling you a ticket was raised on your behalf. Also off for everyone if an admin "
         "switches it off in Settings.",

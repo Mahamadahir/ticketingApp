@@ -43,7 +43,8 @@ AWAITING_YOU = "awaiting_you"
 TICKET_RESOLVED = "ticket_resolved"
 TICKET_CLOSED = "ticket_closed"
 APPROVAL_OUTCOME = "approval_outcome"
-REQUESTER_KINDS = (AGENT_EMAILED, AWAITING_YOU, TICKET_RESOLVED, TICKET_CLOSED, APPROVAL_OUTCOME)
+SUBREQUEST_CREATED = "subrequest_created"  # #118: sub-requests were made automatically for the request
+REQUESTER_KINDS = (AGENT_EMAILED, AWAITING_YOU, TICKET_RESOLVED, TICKET_CLOSED, APPROVAL_OUTCOME, SUBREQUEST_CREATED)
 # Kinds that open in the portal, where the person (agent or not) is the requester, follower or approver.
 PORTAL_KINDS = (APPROVAL_WAITING,) + REQUESTER_KINDS
 AGENT_ROLES = (UserRole.AGENT, UserRole.SUPER_ADMIN)
@@ -439,6 +440,16 @@ def notify_approval_outcome(
     return notify_requesters(
         session, ticket, APPROVAL_OUTCOME, f"{REF} {ticket.subject} {what.get(result, 'was decided')}", actor_email
     )
+
+
+def notify_subrequests_created(
+    session: Session, ticket: Ticket, made: list[Ticket], actor_email: Optional[str]
+) -> list[Notification]:
+    """Tells the requester and followers that sub-requests were made for their request (one entry however many,
+    opening the request; app/subrequests.py)."""
+    count = len(made)
+    what = "a sub-request was" if count == 1 else f"{count} sub-requests were"
+    return notify_requesters(session, ticket, SUBREQUEST_CREATED, f"{REF} {ticket.subject}: {what} created for your request", actor_email)
 
 
 def notify_approval_waiting(session: Session, ticket: Ticket, approver: User) -> Optional[Notification]:

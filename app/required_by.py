@@ -89,6 +89,17 @@ def default_due(session: Session, ticket: Ticket, required_by: date, today: date
     return min(max(required_by - timedelta(days=due_days_before(session, ticket)), today), required_by)
 
 
+def sub_request_due(session: Session, parent: Ticket, days_before: Optional[int], today: Optional[date] = None) -> Optional[date]:
+    """The Due date of an automatic sub-request (#118): the parent's Required by minus the template's days (blank:
+    the Due date setting), never before today where the requester is and never after Required by. None when the
+    parent has no Required by."""
+    if parent.required_by is None:
+        return None
+    days = days_before if days_before is not None else count_setting(session, DUE_DAYS_BEFORE_REQUIRED_BY)
+    today = today or requester_today(session, parent)
+    return min(max(parent.required_by - timedelta(days=days), today), parent.required_by)
+
+
 def set_required_by(
     session: Session,
     ticket: Ticket,

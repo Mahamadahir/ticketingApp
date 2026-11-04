@@ -12,7 +12,7 @@ from app.audit import log_action
 from app.auth import require_roles
 from app.database import get_session
 from app.feedback import feedback_for_ticket
-from app.forms import MAX_MESSAGE_LENGTH, form_answers, optional_int
+from app.forms import MAX_MESSAGE_LENGTH, answers_from_pairs, form_answers, optional_int
 from app.followers import (
     MAX_EXTERNAL_FOLLOWERS,
     InvalidEmail,
@@ -29,6 +29,7 @@ from app.escalation import EscalationError, escalate_ticket as escalate, escalat
 from app.raising import source_label
 from app.request_questions import QuestionError, answer_rows, form_rows, save_answers
 from app.request_types import active_request_types, request_type_of
+from app.subrequests import TemplateError, after_triage as make_subrequests, answers_changed_note, pending_subjects, preview as preview_subrequests
 from app.required_by import (
     RequiredByError,
     apply_form_dates,
@@ -46,7 +47,7 @@ from app.notifications import AWAITING_YOU, notify_agent_emailed, notify_assigne
 from app.presence import agent_label
 from app.search import normalise, search_condition
 from app.splitting import (
-    MAX_PARTS,
+    max_sub_tickets,
     SplitError,
     all_sub_tickets_finished,
     check_manual_status,
@@ -270,6 +271,27 @@ def agent_options_for_category(
     return _agent_options(request, team_members(session, team_id), "Leave as is")
 
 
+@router.get("/triage-subrequests", response_class=HTMLResponse)
+def triage_subrequests(
+    request: Request,
+    number: int,
+    request_type_id: Optional[str] = None,
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """The sub-requests list of the triage form (#118): the templates of the chosen kind of request (or the ticket's own
+    when "Leave as is"), each with its subject and ticked when the rules produce it for the answers typed so far, or as
+    the agent left it. Redrawn whenever the form changes, so a changed answer changes the list."""
+    ticket = _get_ticket(session, number, user, Access.READ)
+    chosen = optional_int(request_type_id)
+    type_id = chosen if chosen is not None else ticket.request_type_id
+    pairs = request.query_params.multi_items()
+    ticked = [int(v) for k, v in pairs if k == "subrequest_template" and v.isdecimal()]
+    listed = [int(v) for k, v in pairs if k == "subrequest_listed" and v.isdecimal()]
+    rows = preview_subrequests(session, ticket, type_id, answers_from_pairs(pairs), listed, ticked) if ticket.triaged_at is None else []
+    return templates.TemplateResponse(request, "_triage_subrequests.html", {"rows": rows, "ticket": ticket, "max_sub_tickets": max_sub_tickets(session)})
+
+
 @router.get("/triage-dates", response_class=HTMLResponse)
 def triage_dates(
     request: Request,
@@ -354,6 +376,8 @@ def triage(
     due_on: Optional[str] = Form(None, max_length=20),
     due_reason: Optional[str] = Form(None, max_length=600),
     answers: dict[int, str] = Depends(form_answers),
+    subrequest_template: list[int] = Form(default=[]),
+    subrequest_listed: list[int] = Form(default=[]),
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
@@ -397,7 +421,10 @@ def triage(
         )
         # The dates after triage, as it may have changed the kind of request; the boxes are optional.
         apply_form_dates(session, ticket, user.email, required_by, due_on, due_reason)
-    except (CategoryError, TriageError, RequiredByError) as error:
+        # The sub-requests the agent confirmed (or, with no list shown, everything the rules produce), after the dates
+        # as their Due follows Required by. Made now, or once approved.
+        make_subrequests(session, ticket, user, subrequest_template, subrequest_listed)
+    except (CategoryError, TriageError, RequiredByError, TemplateError) as error:
         session.rollback()
         raise HTTPException(status_code=400, detail=str(error))
 
@@ -1166,7 +1193,7 @@ def split(
     ticket = _get_ticket(session, number, user)
     details = details + [""] * (len(subject) - len(details))
     parts = [(s, d) for s, d in zip(subject, details) if s.strip() or d.strip()]
-    if len(parts) > MAX_PARTS or any(len(s) > 200 or len(d) > 5000 for s, d in parts):
+    if len(parts) > max_sub_tickets(session) or any(len(s) > 200 or len(d) > 5000 for s, d in parts):
         raise HTTPException(status_code=400, detail="Too many parts, or a subject or details that is too long")
     try:
         made = split_ticket(session, ticket, user, parts)
@@ -1378,6 +1405,10 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             "request_info": request_type_of(session, ticket),
             "answers": answer_rows(session, ticket),
             "triage_questions": form_rows(session, ticket.request_type_id, ticket) if can_triage else [],
+            "triage_subrequests": preview_subrequests(session, ticket, ticket.request_type_id, {}, [], []) if can_triage else [],
+            "max_sub_tickets": max_sub_tickets(session),
+            "pending_subrequests": pending_subjects(ticket),
+            "answers_changed_after_subrequests": answers_changed_note(session, ticket),
             "edit_questions": form_rows(session, ticket.request_type_id, ticket) if can_edit_answers else [],
             "can_edit_answers": can_edit_answers,
             "answers_changed_at": ticket.answers_changed_at,

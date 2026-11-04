@@ -52,6 +52,17 @@ from app.request_questions import (
     move_question,
     update_question,
 )
+from app.subrequests import (
+    OPERATORS as CONDITION_OPERATORS,
+    TemplateError as SubTemplateError,
+    all_templates_by_type,
+    delete_template as delete_sub_template,
+    describe_template,
+    format_conditions,
+    move_template,
+    save_template as save_sub_template,
+    team_and_category_label,
+)
 from app.request_types import (
     MAX_DESCRIPTION_LENGTH as MAX_REQUEST_DESCRIPTION_LENGTH,
     MAX_NAME_LENGTH as MAX_REQUEST_NAME_LENGTH,
@@ -115,6 +126,7 @@ from app.models import (
     MailSyncState,
     OutboundEmail,
     RequestType,
+    RequestSubTemplate,
     RequestTypeQuestion,
     ScheduledJob,
     MembershipLevel,
@@ -1050,7 +1062,7 @@ def _type_snapshot(session: Session, request_type: RequestType) -> tuple:
         request_type.name, request_type.description, group.name if group else "(none)",
         request_type.pass_percent, request_type.offers_required_by,
         request_type.due_days_before, request_type.queue_lead_days,
-        _defaults_text(session, request_type),
+        _defaults_text(session, request_type), request_type.subrequests_need_own_approval,
     )
 
 
@@ -1085,6 +1097,8 @@ def list_request_types(
     session: Session = Depends(get_session),
 ):
     types = all_request_types(session)
+    sub_templates = all_templates_by_type(session)
+    all_sub = [t for group in sub_templates.values() for t in group]
     return templates.TemplateResponse(
         request,
         "admin_request_types.html",
@@ -1105,6 +1119,11 @@ def list_request_types(
             "questions": all_questions_by_type(session),
             "answered_questions": answered_question_ids(session),
             "question_kinds": QUESTION_KINDS,
+            "sub_templates": sub_templates,
+            "condition_text": {t.id: format_conditions(session, t.condition_groups) for t in all_sub},
+            "template_labels": {t.id: team_and_category_label(session, t) for t in all_sub},
+            "agents": session.exec(select(User).where(User.role == UserRole.AGENT, User.is_active).order_by(User.display_name)).all(),
+            "condition_operators": CONDITION_OPERATORS,
             "user": user,
         },
     )
@@ -1124,6 +1143,7 @@ def add_request_type(
     default_category_id: Optional[str] = Form(None),
     default_impact: Optional[str] = Form(None, max_length=20),
     default_urgency: Optional[str] = Form(None, max_length=20),
+    subrequests_need_own_approval: Optional[str] = Form(None),
     admin: User = Depends(require_request_templates),
     session: Session = Depends(get_session),
 ):
@@ -1132,6 +1152,7 @@ def add_request_type(
             session, name, description, optional_int(approval_group_id), pass_percent, is_active == "on",
             offers_required_by == "on", optional_int(due_days_before), optional_int(queue_lead_days),
             defaults=_defaults_from_form(default_team_id, default_category_id, default_impact, default_urgency),
+            subrequests_need_own_approval=subrequests_need_own_approval == "on",
         )
     except RequestTypeError as error:
         session.rollback()
@@ -1156,6 +1177,7 @@ def edit_request_type(
     default_category_id: Optional[str] = Form(None),
     default_impact: Optional[str] = Form(None, max_length=20),
     default_urgency: Optional[str] = Form(None, max_length=20),
+    subrequests_need_own_approval: Optional[str] = Form(None),
     admin: User = Depends(require_request_templates),
     session: Session = Depends(get_session),
 ):
@@ -1170,6 +1192,7 @@ def edit_request_type(
             pass_percent, is_active == "on", offers_required_by == "on",
             optional_int(due_days_before), optional_int(queue_lead_days),
             defaults=_defaults_from_form(default_team_id, default_category_id, default_impact, default_urgency),
+            subrequests_need_own_approval=subrequests_need_own_approval == "on",
         )
     except RequestTypeError as error:
         session.rollback()
@@ -1194,6 +1217,8 @@ def edit_request_type(
             changes.append(f"queue lead days {before[6]} -> {after[6]}")
         if before[7] != after[7]:
             changes.append(f"defaults {before[7]} -> {after[7]}")
+        if before[8] != after[8]:
+            changes.append(f"sub-requests of this type need their own approval {before[8]} -> {after[8]}")
         log_action(session, admin.email, "request_type", request_type.id, "edited", "; ".join(changes))
     if request_type.is_active != was_active:
         log_action(
@@ -1209,6 +1234,125 @@ def _get_question(session: Session, question_id: int) -> RequestTypeQuestion:
     if question is None:
         raise HTTPException(status_code=404, detail="Question not found")
     return question
+
+
+def _template_args(
+    subject_pattern, team_id, category_id, sub_request_type_id, impact, urgency, assignee, due_days_before,
+    conditions, is_active,
+) -> dict:
+    """The form fields of a sub-request template as save_sub_template takes them. The assignee box holds an agent's id,
+    "parent" (the parent's assignee) or nothing."""
+    parent = (assignee or "").strip() == "parent"
+    return dict(
+        subject_pattern=subject_pattern, team_id=optional_int(team_id), category_id=optional_int(category_id),
+        sub_request_type_id=optional_int(sub_request_type_id), impact=(impact or "").strip() or None,
+        urgency=(urgency or "").strip() or None, assignee_id=None if parent else optional_int(assignee),
+        assign_to_parent_assignee=parent, due_days_before=optional_int(due_days_before),
+        conditions_text=conditions, is_active=is_active == "on",
+    )
+
+
+@router.post("/request-types/{type_id}/subrequest-templates")
+def add_subrequest_template(
+    type_id: int,
+    subject_pattern: str = Form("", max_length=1000),
+    team_id: Optional[str] = Form(None),
+    category_id: Optional[str] = Form(None),
+    sub_request_type_id: Optional[str] = Form(None),
+    impact: Optional[str] = Form(None, max_length=20),
+    urgency: Optional[str] = Form(None, max_length=20),
+    assignee: Optional[str] = Form(None, max_length=20),
+    due_days_before: Optional[str] = Form(None),
+    conditions: str = Form("", max_length=5000),
+    admin: User = Depends(require_request_templates),
+    session: Session = Depends(get_session),
+):
+    request_type = session.get(RequestType, type_id)
+    if request_type is None:
+        raise HTTPException(status_code=404, detail="Request type not found")
+    try:
+        template = save_sub_template(session, request_type, None, **_template_args(
+            subject_pattern, team_id, category_id, sub_request_type_id, impact, urgency, assignee, due_days_before,
+            conditions, "on",
+        ))
+    except SubTemplateError as error:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(error))
+    log_action(session, admin.email, "request_type", request_type.id, "subrequest_template_added", describe_template(session, template))
+    session.commit()
+    return RedirectResponse("/admin/request-types", status_code=303)
+
+
+def _get_template(session: Session, template_id: int) -> RequestSubTemplate:
+    template = session.get(RequestSubTemplate, template_id)
+    if template is None:
+        raise HTTPException(status_code=404, detail="Template not found")
+    return template
+
+
+@router.post("/request-types/subrequest-templates/{template_id}")
+def edit_subrequest_template(
+    template_id: int,
+    subject_pattern: str = Form("", max_length=1000),
+    team_id: Optional[str] = Form(None),
+    category_id: Optional[str] = Form(None),
+    sub_request_type_id: Optional[str] = Form(None),
+    impact: Optional[str] = Form(None, max_length=20),
+    urgency: Optional[str] = Form(None, max_length=20),
+    assignee: Optional[str] = Form(None, max_length=20),
+    due_days_before: Optional[str] = Form(None),
+    conditions: str = Form("", max_length=5000),
+    is_active: Optional[str] = Form(None),
+    admin: User = Depends(require_request_templates),
+    session: Session = Depends(get_session),
+):
+    template = _get_template(session, template_id)
+    request_type = session.get(RequestType, template.request_type_id)
+    before = describe_template(session, template)
+    try:
+        save_sub_template(session, request_type, template, **_template_args(
+            subject_pattern, team_id, category_id, sub_request_type_id, impact, urgency, assignee, due_days_before,
+            conditions, is_active,
+        ))
+    except SubTemplateError as error:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(error))
+    log_action(
+        session, admin.email, "request_type", request_type.id, "subrequest_template_edited",
+        f"{before} -> {describe_template(session, template)}, available {template.is_active}",
+    )
+    session.commit()
+    return RedirectResponse("/admin/request-types", status_code=303)
+
+
+@router.post("/request-types/subrequest-templates/{template_id}/move")
+def move_subrequest_template(
+    template_id: int,
+    direction: str = Form(..., max_length=10),
+    admin: User = Depends(require_request_templates),
+    session: Session = Depends(get_session),
+):
+    template = _get_template(session, template_id)
+    if direction not in ("up", "down"):
+        raise HTTPException(status_code=400, detail="Choose up or down")
+    if move_template(session, template, direction == "up"):
+        log_action(session, admin.email, "request_type", template.request_type_id, "subrequest_template_moved", f"{template.subject_pattern} {direction}")
+    session.commit()
+    return RedirectResponse("/admin/request-types", status_code=303)
+
+
+@router.post("/request-types/subrequest-templates/{template_id}/delete")
+def delete_subrequest_template(
+    template_id: int,
+    admin: User = Depends(require_request_templates),
+    session: Session = Depends(get_session),
+):
+    template = _get_template(session, template_id)
+    detail, type_id = describe_template(session, template), template.request_type_id
+    delete_sub_template(session, template)
+    log_action(session, admin.email, "request_type", type_id, "subrequest_template_deleted", detail)
+    session.commit()
+    return RedirectResponse("/admin/request-types", status_code=303)
 
 
 @router.post("/request-types/{type_id}/questions")
