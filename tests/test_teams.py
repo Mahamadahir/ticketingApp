@@ -104,7 +104,7 @@ def test_delivery_sends_the_card_and_marks_the_post_sent_once(client, db_session
     assert post.sent_at is not None and post.attempts == 0 and post.last_error is None
     [payload] = sender.sent
     text = str(payload)
-    assert ticket.tag in text and "Printer jam" in text and "jane@example" in text
+    assert ticket.reference in text and ticket.tag not in text and "Printer jam" in text and "jane@example" in text
     assert payload["type"] == "message"
     assert payload["attachments"][0]["contentType"] == "application/vnd.microsoft.card.adaptive"
 
