@@ -425,17 +425,19 @@ def test_notes_without_a_resolved_time_are_refused_not_dropped(client, db_sessio
 # ---- Closing directly needs notes (#122) -------------------------------------------------------------
 
 
-def test_closing_an_open_ticket_needs_resolution_notes(client, db_session):
+def test_closing_an_open_ticket_needs_closing_notes(client, db_session):
     ticket = ticket_for_email(client, db_session)
 
-    for data in ({"status": "closed"}, {"status": "closed", "resolution_notes": "   "}):
-        response = client.post(f"/tickets/{ticket.number}/status", data=data)
-        assert response.status_code == 400 and "resolution notes" in response.text
+    for data in ({}, {"closing_notes": "   "}):
+        response = client.post(f"/tickets/{ticket.number}/close", data=data)
+        assert response.status_code == 400 and "closing notes" in response.text
+    assert fresh(db_session, ticket).status == TicketStatus.OPEN
+    # The status buttons no longer close a ticket that is not resolved: the Close action does, with the email (#131).
+    response = client.post(f"/tickets/{ticket.number}/status", data={"status": "closed"})
+    assert response.status_code == 400 and "Close action" in response.text
     assert fresh(db_session, ticket).status == TicketStatus.OPEN
 
-    assert client.post(
-        f"/tickets/{ticket.number}/status", data={"status": "closed", "resolution_notes": "Duplicate of INC-1"}
-    ).status_code == 200
+    assert client.post(f"/tickets/{ticket.number}/close", data={"closing_notes": "Duplicate of INC-1"}).status_code == 200
     closed = fresh(db_session, ticket)
     assert closed.status == TicketStatus.CLOSED and closed.resolution_notes == "Duplicate of INC-1"
     assert closed.resolved_by_id is not None and closed.closed_at is not None
@@ -459,13 +461,13 @@ def test_set_status_closes_a_resolved_ticket_without_new_notes(client, db_sessio
 
 def test_pressing_closed_on_a_ticket_closed_by_a_decision_does_not_stamp_notes(client, db_session):
     ticket = ticket_for_email(client, db_session)
-    client.post(f"/tickets/{ticket.number}/status", data={"status": "closed", "resolution_notes": "Dup"})
+    client.post(f"/tickets/{ticket.number}/close", data={"closing_notes": "Dup"})
     closed = fresh(db_session, ticket)
     closed.resolution_notes = None
     closed.resolved_by_id = None
     db_session.add(closed)
     db_session.commit()  # as a decline or withdrawal leaves it: Closed, no notes
 
-    client.post(f"/tickets/{ticket.number}/status", data={"status": "closed", "resolution_notes": "Again"})
+    client.post(f"/tickets/{ticket.number}/status", data={"status": "closed"})
     again = fresh(db_session, ticket)
     assert again.resolution_notes is None and again.resolved_by_id is None

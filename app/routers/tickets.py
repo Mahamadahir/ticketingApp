@@ -90,7 +90,8 @@ from app.reopening import (
     related_tickets,
     reopen_ticket,
 )
-from app.resolution import ResolveError, check_can_resolve, clean_notes, preview_resolution, resolve_ticket
+from app.closing import CloseError, check_can_close, close_ticket, preview_closing
+from app.resolution import ResolveError, check_can_resolve, preview_resolution, resolve_ticket
 from app.ticket_service import AwaitingApproval, ClosingNeedsNotes, EVENT_ASSIGNED, NotTriaged, ResolutionRequired, ScheduledNeedsDate, find_ticket, get_by_number, record_event, set_status
 from app.time_zones import zone_for_email, zone_for_user
 from app.triage import TriageError, reassign_ticket, triage_ticket
@@ -739,7 +740,6 @@ def change_status(
     status: TicketStatus = Form(...),
     due_on: Optional[str] = Form(None, max_length=20),
     due_reason: Optional[str] = Form(None, max_length=600),
-    resolution_notes: Optional[str] = Form(None, max_length=MAX_MESSAGE_LENGTH + 1000),
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
@@ -769,21 +769,14 @@ def change_status(
     except SplitError as error:
         raise HTTPException(status_code=400, detail=str(error))
     previous_status = ticket.status
-    notes_on_close = None
     if (
         status == TicketStatus.CLOSED
         and previous_status not in (TicketStatus.RESOLVED, TicketStatus.AWAITING_APPROVAL, TicketStatus.CLOSED)
         and ticket.triaged_at is not None and not ticket.resolution_notes
     ):
-        # Closing directly needs resolution notes, the same as resolving (#122); nothing is changed without them.
-        try:
-            notes_on_close = clean_notes(resolution_notes)
-        except ResolveError as error:
-            raise HTTPException(status_code=400, detail=str(error).replace("resolution notes", "resolution notes to close the ticket", 1))
+        # Closing directly needs closing notes and emails the requester, with a preview first (#131).
+        raise HTTPException(status_code=400, detail="Use the Close action: it needs closing notes and emails the requester")
     try:
-        if notes_on_close is not None:  # a refusal below raises, so the request never commits these
-            ticket.resolution_notes = notes_on_close
-            ticket.resolved_by_id = user.id
         changed = set_status(session, ticket, status, user.email)
     except NotTriaged:
         raise HTTPException(status_code=400, detail="Triage the ticket before changing its status")
@@ -797,8 +790,6 @@ def change_status(
         raise HTTPException(status_code=400, detail="Scheduled needs a date: enter the Due date")
     if changed:
         log_action(session, user.email, "ticket", ticket.id, "status_changed", f"{previous_status.value} -> {status.value}")
-        if notes_on_close is not None:
-            log_action(session, user.email, "ticket", ticket.id, "closed", notes_on_close[:200])
     session.commit()
     session.refresh(ticket)
 
@@ -853,6 +844,58 @@ def resolve(
     try:
         resolve_ticket(session, ticket, user, resolution_notes, cc_emails=cc if cc_form else None)
     except ResolveError as error:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(error))
+    except UnknownRecipient as error:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=f"Not a follower of this ticket: {error}")
+    session.commit()
+    session.refresh(ticket)
+    return _render_ticket_detail(request, ticket, user, session)
+
+
+@router.post("/{number}/close/preview", response_class=HTMLResponse)
+def preview_close(
+    number: int,
+    request: Request,
+    closing_notes: str = Form("", max_length=MAX_MESSAGE_LENGTH + 1000),
+    cc_form: Optional[str] = Form(None),
+    cc: list[str] = Form(default=[]),
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """The "are you sure?" step before closing a ticket that was not resolved: the notes and the closed email
+    (who gets it, who is copied, the subject and the text). Records and sends nothing."""
+    ticket = _get_ticket(session, number, user)
+    try:
+        preview = preview_closing(session, ticket, closing_notes, cc_emails=cc if cc_form else None)
+    except CloseError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    except UnknownRecipient as error:
+        raise HTTPException(status_code=400, detail=f"Not a follower of this ticket: {error}")
+    return templates.TemplateResponse(
+        request,
+        "_close_preview.html",
+        {"ticket": ticket, "preview": preview, "notes": closing_notes.strip(), "cc_form": bool(cc_form), "ticked": cc},
+    )
+
+
+@router.post("/{number}/close", response_class=HTMLResponse)
+def close(
+    number: int,
+    request: Request,
+    closing_notes: str = Form("", max_length=MAX_MESSAGE_LENGTH + 1000),
+    cc_form: Optional[str] = Form(None),
+    cc: list[str] = Form(default=[]),
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """Close a ticket that was not resolved, with notes (required). Emails the requester, copying the
+    followers the agent left ticked, through app/closing.py."""
+    ticket = _get_ticket(session, number, user)
+    try:
+        close_ticket(session, ticket, user, closing_notes, cc_emails=cc if cc_form else None)
+    except CloseError as error:
         session.rollback()
         raise HTTPException(status_code=400, detail=str(error))
     except UnknownRecipient as error:
@@ -1127,6 +1170,11 @@ def _may_resolve(session: Session, ticket: Ticket) -> bool:
     return _may(check_can_resolve, ResolveError, session, ticket)
 
 
+def _may_close(session: Session, ticket: Ticket) -> bool:
+    """Whether to offer the Close form (a ticket that is not resolved)."""
+    return _may(check_can_close, CloseError, session, ticket)
+
+
 def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session: Session) -> HTMLResponse:
     ticket_approval = current_approval(session, ticket)
     ticket_votes = votes_of(session, ticket_approval)
@@ -1223,6 +1271,7 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             "feedback": feedback_for_ticket(session, user, ticket),
             "resolved_by": session.get(User, ticket.resolved_by_id) if ticket.resolved_by_id else None,
             "can_resolve": can_work and _may_resolve(session, ticket),
+            "can_close": can_work and _may_close(session, ticket),
             "can_reopen": can_work and _may(check_can_reopen, ReopenError, ticket),
             "can_reclose": can_work and _may(check_can_reclose, ReopenError, session, ticket),
             "reclose_reasons": RECLOSE_REASONS,

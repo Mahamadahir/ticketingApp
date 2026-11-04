@@ -911,7 +911,7 @@ def test_a_ticket_closed_after_an_approval_is_reopened_without_asking_again(clie
     ticket = raised_and_triaged(client, db_session, request_type(db_session, ["boss@example.com"]))
     answer(client, ticket, "boss@example.com", "approved")
     second_agent(client, db_session)
-    client.post(f"/tickets/{ticket.number}/status", data={"status": "closed", "resolution_notes": "Done by hand"})
+    client.post(f"/tickets/{ticket.number}/close", data={"closing_notes": "Done by hand"})
     assert status(db_session, ticket) == TicketStatus.CLOSED
 
     client.post(f"/tickets/{ticket.number}/status", data={"status": "open"})
