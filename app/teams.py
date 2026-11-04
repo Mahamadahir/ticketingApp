@@ -26,6 +26,7 @@ from sqlmodel import Session, select
 
 from app.config import settings
 from app.models import Notification, TeamsPost, Ticket, TicketSource, User
+from app.notifications import APPROVAL_WAITING, notification_text
 from app.visibility import Access, access_context, ticket_access
 
 log = logging.getLogger("app.teams")
@@ -82,9 +83,9 @@ def message(card: dict) -> dict:
 
 def new_ticket_card(ticket: Ticket) -> dict:
     """The Teams Workflows payload: a message carrying one Adaptive Card. The text is the ticket's
-    number (#1042, which never changes), subject, how it arrived and who it is for."""
+    reference (INC-1042), subject, how it arrived and who it is for."""
     body = [
-        {"type": "TextBlock", "text": f"New ticket {ticket.tag}", "weight": "Bolder", "size": "Medium"},
+        {"type": "TextBlock", "text": f"New ticket {ticket.reference}", "weight": "Bolder", "size": "Medium"},
         {"type": "TextBlock", "text": plain(ticket.subject), "wrap": True},
         {
             "type": "FactSet",
@@ -169,7 +170,7 @@ def notification_card(notification: Notification, person: User, ticket: Optional
     name = mention_name(person)
     at = f"<at>{name}</at>"
     body = [
-        {"type": "TextBlock", "text": f"{at} {plain(notification.text)}", "wrap": True},
+        {"type": "TextBlock", "text": f"{at} {plain(notification_text(notification, ticket))}", "wrap": True},
         {
             "type": "FactSet",
             "facts": [
@@ -190,7 +191,8 @@ def notification_card(notification: Notification, person: User, ticket: Optional
         },
     }
     if ticket is not None and settings.ticket_link_base:
-        link = f"{settings.ticket_link_base.rstrip('/')}/tickets/{ticket.number}"
+        page = "portal" if notification.kind == APPROVAL_WAITING else "tickets"  # an approver votes in the portal
+        link = f"{settings.ticket_link_base.rstrip('/')}/{page}/{ticket.number}"
         card["actions"] = [{"type": "Action.OpenUrl", "title": "Open ticket", "url": link}]
     return message(card)
 

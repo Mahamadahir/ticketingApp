@@ -8,7 +8,7 @@ from sqlmodel import Session, select
 from app.auth import get_current_user
 from app.database import get_session
 from app.models import Notification, Ticket, User
-from app.notifications import APPROVAL_WAITING, bell_tickets, count_unread, mark_all_read, mark_read, visible_to
+from app.notifications import APPROVAL_WAITING, bell_references, bell_tickets, notification_text, count_unread, mark_all_read, mark_read, visible_to
 from app.pagination import paginate
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
@@ -31,10 +31,12 @@ def list_notifications(
     )
     notifications = paginate(session, query, page, request.query_params)
     tickets = bell_tickets(session, user, notifications.items)
+    references = bell_references(session, notifications.items)
+    texts = {n.id: notification_text(n, references.get(n.ticket_id)) for n in notifications.items}
     return templates.TemplateResponse(
         request,
         "notifications.html",
-        {"page": notifications, "tickets": tickets, "unread": count_unread(session, user), "user": user},
+        {"page": notifications, "tickets": tickets, "texts": texts, "unread": count_unread(session, user), "user": user},
     )
 
 
@@ -70,9 +72,9 @@ def open_notification(
         raise HTTPException(status_code=404, detail="Notification not found")
     ticket = bell_tickets(session, user, [notification]).get(notification.ticket_id)
     destination = f"/tickets/{ticket.number}" if ticket else "/notifications"
-    if ticket is None and notification.kind == APPROVAL_WAITING and notification.ticket_id:
+    if notification.kind == APPROVAL_WAITING and notification.ticket_id:
         asked_about = session.get(Ticket, notification.ticket_id)
         if asked_about is not None:
-            destination = f"/portal/{asked_about.number}"  # where an approver votes (agents without access included)
+            destination = f"/portal/{asked_about.number}"  # where an approver votes, whether or not they can open it as an agent
     session.commit()
     return RedirectResponse(destination, status_code=303)

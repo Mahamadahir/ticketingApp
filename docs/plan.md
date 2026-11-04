@@ -1164,7 +1164,8 @@ zone. **Everything is stored and calculated in UTC**; only what a person sees is
   `/settings/time-zone/browser`) and it is saved on the account, updating whenever it changes. A person can choose
   one by hand on their settings page; a manual choice wins until they clear it. (2) Requesters who only use email:
   their Outlook mailbox time zone read through Graph (`GET /users/{id}/mailboxSettings`, `timeZone`; application
-  permission `MailboxSettings.Read`, admin consent), looked up by the worker soon after their first ticket is
+  permission `MailboxSettings.Read`, admin consent). **Off by default** (`MAILBOX_TIME_ZONES_ENABLED`, owner decision
+  #129: that permission cannot be scoped to the shared mailbox; a feature for after a stable release). When on, looked up by the worker soon after their first ticket is
   created and refreshed after an admin-set interval. Graph answers with a Windows name ("GMT Standard Time"); the
   CLDR windowsZones table kept in `app/windows_zones.py` maps it to an IANA name (no network fetch at run time).
   (3) Everyone else (external senders, failed lookups): the admin setting `default_time_zone` (placeholder
@@ -1232,9 +1233,9 @@ here; this list is what the go-live review checks.
 4. **Graph mailbox scoping.** (The by-hand steps are in `docs/azure-setup.md`, section 3; this item is the go-live check that it was done and tested.) Application permissions such as `Mail.ReadWrite` cover every
    mailbox in the tenant. Restrict the app registration to the shared mailbox(es) only
    (Exchange RBAC for Applications, or an application access policy) and verify it on staging
-   by trying to read another mailbox. Same check for `Presence.Read.All` and `MailboxSettings.Read` (requesters' time zones): confirm what scoping
-   is possible. Note `MailboxSettings.Read` is read for requesters' own mailboxes, so a policy that limits the app to the
-   shared mailbox makes that read fail and everyone gets the default time zone (decision needed at staging).
+   by trying to read another mailbox. Same check for `Presence.Read.All`: confirm what scoping
+   is possible. `MailboxSettings.Read` (requesters' time zones) is not requested while `MAILBOX_TIME_ZONES_ENABLED` is off; it
+   cannot be scoped to the shared mailbox, so turning that feature on needs its own decision.
 5. **Rate limiting with a shared store** (Postgres table or Redis), not per-process memory:
    `public` runs several uvicorn workers across replicas. Keyed on the real client IP, which
    depends on `FORWARDED_ALLOW_IPS` being right.

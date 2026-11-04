@@ -39,6 +39,7 @@ param superAdminEmails = readEnvironmentVariable('SUPER_ADMIN_EMAILS', '')
 param teamsNewTicketEnabled = toLower(trim(readEnvironmentVariable('TEAMS_NEW_TICKET_ENABLED', 'false'))) == 'true'
 param teamsNotificationsEnabled = toLower(trim(readEnvironmentVariable('TEAMS_NOTIFICATIONS_ENABLED', 'false'))) == 'true'
 param presenceEnabled = toLower(trim(readEnvironmentVariable('PRESENCE_ENABLED', 'false'))) == 'true'
+param mailboxTimeZonesEnabled = toLower(trim(readEnvironmentVariable('MAILBOX_TIME_ZONES_ENABLED', 'false'))) == 'true'
 
 // Secrets come from the environment at deploy time. Never write values here.
 param postgresAdminPassword = readEnvironmentVariable('POSTGRES_ADMIN_PASSWORD')
