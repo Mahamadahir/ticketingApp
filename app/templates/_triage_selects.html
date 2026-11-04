@@ -16,7 +16,7 @@
 {% endmacro %}
 
 {% macro category_select(options, selected, oob=false) %}
-<select name="category_id" id="triage-category" hx-get="/tickets/agents-for-category" hx-trigger="change" hx-target="#triage-agent" {% if oob %}hx-swap-oob="true"{% endif %}>
+<select name="category_id" id="triage-category" hx-get="/tickets/triage-team" hx-trigger="change" hx-target="#triage-team" hx-swap="outerHTML" {% if oob %}hx-swap-oob="true"{% endif %}>
   <option value="">Choose a category</option>
   {% for option, label in options %}<option value="{{ option.id }}" {{ "selected" if option.id == selected else "" }}>{{ label }}</option>{% endfor %}
 </select>

@@ -530,7 +530,7 @@ notifying the requester.
 
 **Triage** (agreed 12 Oct 2026). Manual for now, automated later. Triage and
 assignment are separate actions. Triaging a ticket classifies it: type,
-category (which decides the team), impact and urgency. It does not assign it,
+category (which suggests the team), team, impact and urgency. It does not assign it,
 and assigning does not triage it. So a ticket can be untriaged and unassigned,
 untriaged and assigned (handed to whoever will triage it), triaged and
 unassigned (waiting in its team's queue for anyone to pick up), or triaged and
@@ -546,7 +546,13 @@ agent can record "I spoke to the user, they told me X" without committing to a
 category.
 
 **Categories.** A main category with optional sub-categories; the main category
-decides the team. When triaging, any super admin can create a new category on
+suggests the team (*changed 4 Nov 2026*, it used to decide it). The triage panel fills
+in the category's team and the triager may pick another, which is recorded as a
+`team_overridden` event (suggested team to chosen team, with the category), so a
+category whose team is often changed shows up. A main category may have no team, for
+work anyone can do (a password reset): its tickets, and its sub-categories', get the
+default triage team (**TBC**, the same setting "Other" uses). Escalation still follows
+the category, not the team. Splitting gives the parts the original's team. When triaging, any super admin can create a new category on
 the spot. An agent who cannot find a fit picks "Other" (a main category, never a
 sub-category). The ticket is not held up: "Other" belongs to a configurable
 default team (**TBC**, the service desk), so it is worked and resolved on time

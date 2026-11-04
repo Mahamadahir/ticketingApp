@@ -92,7 +92,7 @@
 
 {% if can_triage %}
 <h3>Triage</h3>
-<p class="note">Classify this ticket. The category decides the team. Assigning is optional: leave it as is and the team can pick it up.</p>
+<p class="note">Classify this ticket. The category fills in its team; pick another team if this ticket belongs elsewhere (that is recorded). Assigning is optional: leave it as is and the team can pick it up.</p>
 <form id="triage-form" hx-post="/tickets/{{ ticket.number }}/triage" hx-target="main" hx-swap="innerHTML">
   <label>Type
     <select name="ticket_type">
@@ -123,15 +123,11 @@
   <label>Category
     {{ category_select(category_options, none) }}
   </label>
-  <label>Assign to
-    <select name="agent_id" id="triage-agent">
-      <option value="">Leave as is{{ " (" ~ assigned_agent.display_name ~ ")" if assigned_agent else " (unassigned)" }}</option>
-    </select>
-  </label>
+  {% with suggested_id = none, needs_team = false, oob = false, members = [], blank_label = "Leave as is" ~ (" (" ~ assigned_agent.display_name ~ ")" if assigned_agent else " (unassigned)") %}{% include "_triage_team.html" %}{% endwith %}
   {% if can_create_category %}
   <details>
     <summary>Create a new category instead</summary>
-    <p class="note">Leave the category above on "Choose a category". A new main category needs a team; a sub-category uses its parent's.</p>
+    <p class="note">Leave the category above on "Choose a category". A new main category may have a team (none: the default triage team); a sub-category uses its parent's. The Team box above still applies.</p>
     <label>Name <input type="text" name="new_category_name" maxlength="80" /></label>
     <label>Under
       <select name="new_category_parent_id">
@@ -143,7 +139,7 @@
     </label>
     <label>Team (main category only)
       <select name="new_category_team_id">
-        <option value="">Choose a team</option>
+        <option value="">No team (the default triage team)</option>
         {% for t in teams %}
         <option value="{{ t.id }}">{{ t.name }}</option>
         {% endfor %}

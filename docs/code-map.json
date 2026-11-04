@@ -584,7 +584,7 @@
       ],
       "module": "app.categories",
       "routes": [],
-      "summary": "Ticket categories: a main category (owned by a team) with optional",
+      "summary": "Ticket categories: a main category (with a team, or none) with optional",
       "tables": [],
       "tests": [
         "tests/test_category_admin.py",
@@ -1781,6 +1781,7 @@
         "tests/test_tickets_rbac.py",
         "tests/test_time_zones.py",
         "tests/test_triage.py",
+        "tests/test_triage_team.py",
         "tests/test_visibility.py",
         "tests/test_wiring_3f.py",
         "tests/test_with_supplier.py",
@@ -3356,8 +3357,10 @@
         "split",
         "team_activity",
         "triage",
+        "triage_agents",
         "triage_dates",
         "triage_subrequests",
+        "triage_team",
         "unlink",
         "view_ticket",
         "view_ticket_by_number",
@@ -3432,6 +3435,11 @@
           "path": "/tickets/agents-for-team"
         },
         {
+          "handler": "triage_agents",
+          "method": "GET",
+          "path": "/tickets/triage-agents"
+        },
+        {
           "handler": "triage_dates",
           "method": "GET",
           "path": "/tickets/triage-dates"
@@ -3440,6 +3448,11 @@
           "handler": "triage_subrequests",
           "method": "GET",
           "path": "/tickets/triage-subrequests"
+        },
+        {
+          "handler": "triage_team",
+          "method": "GET",
+          "path": "/tickets/triage-team"
         },
         {
           "handler": "view_ticket",
@@ -3768,7 +3781,8 @@
         "tests/test_subrequests.py",
         "tests/test_teams_copy.py",
         "tests/test_time_zones.py",
-        "tests/test_triage.py"
+        "tests/test_triage.py",
+        "tests/test_triage_team.py"
       ]
     },
     {
@@ -4866,6 +4880,7 @@
     "tests/test_tickets_rbac.py",
     "tests/test_time_zones.py",
     "tests/test_triage.py",
+    "tests/test_triage_team.py",
     "tests/test_visibility.py",
     "tests/test_wiring_3f.py",
     "tests/test_with_supplier.py",

@@ -48,9 +48,11 @@ separate action (`/tickets/{id}/assign`), not a side effect of emailing the user
 
 **Triage.** A new ticket arrives untriaged in the default triage team (a setting
 under Admin > Settings). Any agent can triage it: choose the type and a category,
-and the category decides the team. Assigning is optional and separate: choose an
-agent in the category's team, or leave the assignment as it is and the team picks
-it up. Saving the triage panel moves the ticket from New to Open; nothing else
+and the category fills in its team (its own, its main category's, or the default
+triage team for a category with none). The triager may pick another team; that is
+recorded on the ticket as "team overridden". Assigning is optional and separate:
+choose an agent in the chosen team, or leave the assignment as it is and the team
+picks it up. Saving the triage panel moves the ticket from New to Open; nothing else
 leaves New, and the status buttons do not offer it. Whoever triages a ticket keeps
 read access to it. Every ticket has one number from a counter shared by all
 types (1042); its reference is the number with the current type's prefix (INC-1042),

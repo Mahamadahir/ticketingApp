@@ -80,7 +80,6 @@ def test_category_creation_refusals(client, db_session):
 
     refused = (
         {"name": "hardware", "team_id": desk.id},  # duplicate
-        {"name": "No team"},
         {"name": "Bad team", "team_id": 9999},
         {"name": "   "},
         {"name": "Other", "team_id": desk.id},
@@ -128,7 +127,10 @@ def test_changing_a_categorys_team_and_switching_it_off(client, db_session):
         "team_changed",
         "deactivated",
     }
-    assert client.post(f"/admin/categories/{hardware.id}", data={"team_id": ""}, follow_redirects=False).status_code == 400
+    # No team is allowed: tickets in it go to the default triage team unless the triager picks another.
+    assert client.post(f"/admin/categories/{hardware.id}", data={"team_id": ""}, follow_redirects=False).status_code == 303
+    db_session.refresh(hardware)
+    assert hardware.team_id is None
     assert client.post("/admin/categories/9999", data={}).status_code == 404
 
 
@@ -211,7 +213,7 @@ def test_review_refusals(client, db_session):
     assert client.post(f"/admin/category-review/{ticket.number}", data={}).status_code == 400
     assert client.post(f"/admin/category-review/{ticket.number}", data={"category_id": other.id}).status_code == 400
     assert client.post(f"/admin/category-review/{ticket.number}", data={"category_id": off.id}).status_code == 400
-    assert client.post(f"/admin/category-review/{ticket.number}", data={"new_category_name": "No team"}).status_code == 400
+    assert client.post(f"/admin/category-review/{ticket.number}", data={"new_category_name": "Bad team", "new_category_team_id": 9999}).status_code == 400
     assert client.post("/admin/category-review/9999", data={"category_id": 1}).status_code == 404
     db_session.refresh(ticket)
     assert ticket.needs_category_review is True  # still waiting

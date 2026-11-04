@@ -293,6 +293,49 @@ def triage_subrequests(
     return templates.TemplateResponse(request, "_triage_subrequests.html", {"rows": rows, "ticket": ticket, "max_sub_tickets": max_sub_tickets(session)})
 
 
+@router.get("/triage-team", response_class=HTMLResponse)
+def triage_team(
+    request: Request,
+    category_id: Optional[str] = None,
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """The triage panel's Team and Assign to boxes for the chosen category: the category's team
+    (its own, its parent's, or the default triage team) chosen, every team offered."""
+    chosen = optional_int(category_id)
+    category = session.get(Category, chosen) if chosen is not None else None
+    suggested_id = team_id_for(session, category) if category is not None else None
+    return templates.TemplateResponse(
+        request,
+        "_triage_team.html",
+        {
+            "teams": session.exec(select(Team)).all(),
+            "suggested_id": suggested_id,
+            "needs_team": category is not None and suggested_id is None,
+            "members": team_members(session, suggested_id),
+            "blank_label": "Leave as is",
+        },
+    )
+
+
+@router.get("/triage-agents", response_class=HTMLResponse)
+def triage_agents(
+    request: Request,
+    team_id: Optional[str] = None,
+    category_id: Optional[str] = None,
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """The Assign to choices for the team picked in the triage panel; no team picked means the
+    category's team."""
+    chosen_team = optional_int(team_id)
+    if chosen_team is None:
+        chosen = optional_int(category_id)
+        category = session.get(Category, chosen) if chosen is not None else None
+        chosen_team = team_id_for(session, category) if category is not None else None
+    return _agent_options(request, team_members(session, chosen_team), "Leave as is")
+
+
 @router.get("/triage-dates", response_class=HTMLResponse)
 def triage_dates(
     request: Request,
@@ -343,6 +386,7 @@ def _type_defaults(
         "impact_options": impact_options(),
         "urgency_options": urgency_options(),
         "category_options": selectable(session), "members": team_members(session, team_id),
+        "teams": session.exec(select(Team)).all(), "suggested_id": team_id,
     }
 
 
@@ -368,6 +412,7 @@ def triage(
     impact: Level = Form(...),
     urgency: Level = Form(...),
     category_id: Optional[str] = Form(None),
+    team_id: Optional[str] = Form(None),
     agent_id: Optional[str] = Form(None),
     new_category_name: Optional[str] = Form(None, max_length=200),
     new_category_parent_id: Optional[str] = Form(None),
@@ -382,8 +427,8 @@ def triage(
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
-    """Classifies a New ticket: type and category (which picks the team), and
-    optionally assigns it. Assignment is not required; the team can pick it up."""
+    """Classifies a New ticket: type, category and team (the category's unless the triager
+    picks another), and optionally assigns it. Assignment is not required; the team can pick it up."""
     ticket = _get_ticket(session, number, user, Access.READ)
     # Lock the row and re-read it, so two people triaging at once cannot both pass
     # the check below: the second waits, then sees it is already triaged.
@@ -407,6 +452,11 @@ def triage(
             if category is None:
                 raise HTTPException(status_code=400, detail="Choose a category")
 
+        chosen_team = optional_int(team_id)
+        team = session.get(Team, chosen_team) if chosen_team is not None else None
+        if chosen_team is not None and team is None:
+            raise HTTPException(status_code=400, detail="Choose a team from the list")
+
         chosen_agent = optional_int(agent_id)
         assignee = session.get(User, chosen_agent) if chosen_agent is not None else None
         if chosen_agent is not None and (assignee is None or assignee.role != UserRole.AGENT):
@@ -418,7 +468,7 @@ def triage(
             raise HTTPException(status_code=400, detail="Choose a kind of request from the list")
         triage_ticket(
             session, ticket, user, ticket_type=ticket_type, category=category,
-            impact=impact, urgency=urgency, assignee=assignee, request_type=request_type, answers=answers,
+            impact=impact, urgency=urgency, assignee=assignee, request_type=request_type, answers=answers, team=team,
         )
         # The dates after triage, as it may have changed the kind of request; the boxes are optional.
         apply_form_dates(session, ticket, user.email, required_by, due_on, due_reason)

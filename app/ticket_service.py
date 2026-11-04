@@ -28,6 +28,7 @@ EVENT_ESCALATED = "escalated"
 EVENT_TRIAGED = "triaged"
 EVENT_TYPE_CHANGED = "type_changed"
 EVENT_TEAM_CHANGED = "team_changed"
+EVENT_TEAM_OVERRIDDEN = "team_overridden"  # triage chose a team other than the category's: from the suggested team to the chosen one, detail the category
 EVENT_CATEGORY_REVIEWED = "category_reviewed"
 EVENT_PRIORITY_CHANGED = "priority_changed"
 EVENT_APPROVAL_REQUESTED = "approval_requested"  # to_value: who was asked, detail: how many must approve

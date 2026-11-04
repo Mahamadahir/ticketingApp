@@ -19,7 +19,7 @@ from sqlalchemy import func
 from sqlmodel import Session, select
 
 from app.messages import add_note
-from app.models import FINISHED_STATUSES, Category, RequestType, Ticket, TicketStatus, User
+from app.models import FINISHED_STATUSES, Category, RequestType, Team, Ticket, TicketStatus, User
 from app.settings_store import MAX_SUB_TICKETS, count_setting
 from app.sla import Level, recalculate_deadlines
 from app.ticket_service import create_ticket, record_event, set_status
@@ -202,6 +202,7 @@ def make_sub_ticket(
     approval_covered: bool = False,
     answers_required: bool = True,
     parent_event: str = EVENT_SPLIT,
+    team: Optional[Team] = None,
 ) -> Ticket:
     """Makes one sub-ticket of `original`: a new ticket with the original's requester, type and source, triaged
     into `category` with the given impact and urgency, linked to the original (`split_from_id`) and recorded on both.
@@ -209,7 +210,8 @@ def make_sub_ticket(
     app/subrequests.py both come through here, so the derived status, the shared thread and "resolve the original
     when every part is done" are the same for both. `actor` None is the system. It does not re-derive the original's
     status (the caller does, once, when every part exists) and does not check the limit or that the original may
-    be split (the callers do). Raises TriageError when the part cannot be triaged."""
+    be split (the callers do). `team` None takes the category's team; a split passes the original's. Raises
+    TriageError when the part cannot be triaged."""
     actor_email = actor.email if actor is not None else "system"
     sub = create_ticket(
         session,
@@ -225,7 +227,7 @@ def make_sub_ticket(
     triage_ticket(
         session, sub, actor,
         ticket_type=original.type, category=category, impact=impact, urgency=urgency,
-        request_type=request_type, approval_covered=approval_covered, answers_required=answers_required,
+        request_type=request_type, approval_covered=approval_covered, answers_required=answers_required, team=team,
     )
     # Linked after triage, so triaging the part does not re-derive the original's status
     # once per part; it is derived once, by the caller, when every part exists.
@@ -281,6 +283,9 @@ def split_ticket(
             made.append(make_sub_ticket(
                 session, original, actor, subject=subject, details=details, category=category,
                 impact=Level(original.impact), urgency=Level(original.urgency),
+                # The original's team, not the category's suggestion: the original may have been
+                # given another team at triage, and its parts belong with it.
+                team=session.get(Team, original.team_id) if original.team_id else None,
             ))
         except TriageError as error:
             # The parts take this ticket's category, so the cause is the original's.
