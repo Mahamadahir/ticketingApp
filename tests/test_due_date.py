@@ -523,7 +523,7 @@ def test_the_triage_form_shows_required_by_only_for_a_kind_that_offers_it_and_du
     agent(client, db_session)
 
     page = client.get(f"/tickets/{ticket.number}").text
-    assert 'name="due_on"' in page and 'name="required_by"' not in page and 'hx-get="/tickets/triage-dates"' in page
+    assert 'name="due_on"' in page and 'name="required_by"' not in page and 'hx-get="/tickets/triage-dates' in page
 
     offers = offering(db_session, "Room")
     swapped = client.get("/tickets/triage-dates", params={"request_type_id": offers.id, "due_on": day(3)})
