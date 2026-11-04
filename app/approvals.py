@@ -264,6 +264,14 @@ def _close_pending_votes(session: Session, votes: list[ApprovalVote]) -> None:
             session.add(vote)
 
 
+def _make_subrequests(session: Session, ticket: Ticket) -> None:
+    """Approval passed: the sub-requests recorded at triage are made now (app/subrequests.py). Imported here because
+    app.subrequests builds on the splitting machinery, which builds on this module."""
+    from app.subrequests import after_approval
+
+    after_approval(session, ticket)
+
+
 def _settle(session: Session, ticket: Ticket, approval: TicketApproval, result: str, votes: list[ApprovalVote], who: User) -> None:
     approval.status, approval.settled_at = result, datetime.now(timezone.utc)
     session.add(approval)
@@ -273,6 +281,7 @@ def _settle(session: Session, ticket: Ticket, approval: TicketApproval, result: 
         set_status(session, ticket, TicketStatus.OPEN, who.email, detail="approved", by_approval=True)
         record_notice(session, ticket, _notice(session, ticket, "approval_approved"))
         notify_approval_outcome(session, ticket, APPROVED, who.email)
+        _make_subrequests(session, ticket)
     else:
         set_status(session, ticket, TicketStatus.CLOSED, who.email, detail="approval declined", by_approval=True)
         reasons = [v.comment for v in votes if v.decision == DECLINED and v.comment]
@@ -350,6 +359,7 @@ def waive(session: Session, ticket: Ticket, actor: User) -> None:
     set_status(session, ticket, TicketStatus.OPEN, actor.email, detail="approval waived", by_approval=True)
     record_notice(session, ticket, _notice(session, ticket, "approval_waived"))
     notify_approval_outcome(session, ticket, "waived", actor.email)
+    _make_subrequests(session, ticket)
 
 
 def withdraw(session: Session, ticket: Ticket, requester_email: str) -> None:

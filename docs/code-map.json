@@ -54,6 +54,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/c4e8a1d7b362_sub_request_templates.py",
+        "revision": "c4e8a1d7b362"
+      },
+      {
         "file": "migrations/versions/a1b7e3c94d25_request_type_form_questions_and_ticket_.py",
         "revision": "a1b7e3c94d25"
       },
@@ -68,17 +72,13 @@
       {
         "file": "migrations/versions/f3b9d2a6c841_due_date.py",
         "revision": "f3b9d2a6c841"
-      },
-      {
-        "file": "migrations/versions/e7a2c4d9b136_time_zones.py",
-        "revision": "e7a2c4d9b136"
       }
     ],
-    "count": 50,
+    "count": 51,
     "heads": [
       {
-        "file": "migrations/versions/a1b7e3c94d25_request_type_form_questions_and_ticket_.py",
-        "revision": "a1b7e3c94d25"
+        "file": "migrations/versions/c4e8a1d7b362_sub_request_templates.py",
+        "revision": "c4e8a1d7b362"
       }
     ]
   },
@@ -293,6 +293,7 @@
         "app.models",
         "app.notifications",
         "app.outbox",
+        "app.subrequests",
         "app.ticket_service"
       ],
       "module": "app.approvals",
@@ -305,6 +306,7 @@
         "tests/test_email_templates.py",
         "tests/test_outbound_mail.py",
         "tests/test_requester_bell.py",
+        "tests/test_subrequests.py",
         "tests/test_withdraw.py"
       ]
     },
@@ -362,7 +364,8 @@
         "app.routers.admin",
         "app.routers.portal",
         "app.routers.tickets",
-        "app.scheduled_jobs"
+        "app.scheduled_jobs",
+        "app.subrequests"
       ],
       "imports": [
         "app.models"
@@ -570,6 +573,7 @@
         "app.routers.admin",
         "app.routers.portal",
         "app.routers.tickets",
+        "app.subrequests",
         "app.triage"
       ],
       "imports": [
@@ -970,6 +974,7 @@
       "classes": [],
       "file": "app/forms.py",
       "functions": [
+        "answers_from_pairs",
         "form_answers",
         "optional_int"
       ],
@@ -1423,6 +1428,7 @@
         "NumberCounter",
         "OutboundEmail",
         "RelatedTicket",
+        "RequestSubTemplate",
         "RequestType",
         "RequestTypeQuestion",
         "RequesterTimeZone",
@@ -1507,6 +1513,7 @@
         "app.settings_store",
         "app.sla",
         "app.splitting",
+        "app.subrequests",
         "app.subscriptions",
         "app.team_activity",
         "app.teams",
@@ -1605,6 +1612,10 @@
         {
           "class": "RelatedTicket",
           "table": "relatedticket"
+        },
+        {
+          "class": "RequestSubTemplate",
+          "table": "requestsubtemplate"
         },
         {
           "class": "RequestType",
@@ -1746,6 +1757,7 @@
         "tests/test_split_family.py",
         "tests/test_splitting.py",
         "tests/test_status_follows_conversation.py",
+        "tests/test_subrequests.py",
         "tests/test_team_activity.py",
         "tests/test_teams.py",
         "tests/test_teams_copy.py",
@@ -1864,6 +1876,7 @@
         "notify_reply",
         "notify_requesters",
         "notify_status_for_requesters",
+        "notify_subrequests_created",
         "retire_read_for_teams",
         "visible_to"
       ],
@@ -1883,6 +1896,7 @@
         "app.routers.my_settings",
         "app.routers.notifications",
         "app.routers.tickets",
+        "app.subrequests",
         "app.teams",
         "app.ticket_service",
         "app.triage"
@@ -2020,6 +2034,7 @@
       "imported_by": [
         "app.jobs",
         "app.routers.tickets",
+        "app.subrequests",
         "app.templating"
       ],
       "imports": [
@@ -2066,6 +2081,7 @@
         "app.resolution",
         "app.settings_store",
         "app.sla",
+        "app.subrequests",
         "app.ticket_service",
         "app.triage"
       ],
@@ -2176,10 +2192,12 @@
         "app.routers.admin",
         "app.routers.portal",
         "app.routers.tickets",
+        "app.subrequests",
         "app.triage"
       ],
       "imports": [
         "app.models",
+        "app.subrequests",
         "app.ticket_service"
       ],
       "module": "app.request_questions",
@@ -2187,7 +2205,8 @@
       "summary": "Form questions on request types, and the answers on tickets (#118 part 1). Nothing here commits.",
       "tables": [],
       "tests": [
-        "tests/test_request_questions.py"
+        "tests/test_request_questions.py",
+        "tests/test_subrequests.py"
       ]
     },
     {
@@ -2219,6 +2238,7 @@
         "app.models",
         "app.request_questions",
         "app.sla",
+        "app.subrequests",
         "app.triage"
       ],
       "module": "app.request_types",
@@ -2248,12 +2268,14 @@
         "refresh_default_due",
         "requester_today",
         "set_due",
-        "set_required_by"
+        "set_required_by",
+        "sub_request_due"
       ],
       "imported_by": [
         "app.raising",
         "app.routers.portal",
         "app.routers.tickets",
+        "app.subrequests",
         "app.triage"
       ],
       "imports": [
@@ -2270,7 +2292,8 @@
       "tables": [],
       "tests": [
         "tests/test_due_date.py",
-        "tests/test_required_by.py"
+        "tests/test_required_by.py",
+        "tests/test_subrequests.py"
       ]
     },
     {
@@ -2383,15 +2406,18 @@
         "add_category",
         "add_never_follow",
         "add_request_type",
+        "add_subrequest_template",
         "add_thanks_rule_route",
         "add_type_question",
         "category_review",
         "create_local_user",
         "create_team",
+        "delete_subrequest_template",
         "delete_type_question",
         "dismiss_thanks_candidate",
         "edit_canned",
         "edit_request_type",
+        "edit_subrequest_template",
         "edit_thanks_rule",
         "edit_type_question",
         "list_approval_groups",
@@ -2403,6 +2429,7 @@
         "list_teams",
         "list_thanks_rules",
         "list_users",
+        "move_subrequest_template",
         "move_type_question",
         "preview_email_template",
         "remove_approval_group_member",
@@ -2455,6 +2482,7 @@
         "app.scheduled_jobs",
         "app.settings_store",
         "app.sla",
+        "app.subrequests",
         "app.subscriptions",
         "app.teams",
         "app.templating",
@@ -2615,6 +2643,21 @@
           "path": "/admin/request-types/questions/{question_id}/move"
         },
         {
+          "handler": "edit_subrequest_template",
+          "method": "POST",
+          "path": "/admin/request-types/subrequest-templates/{template_id}"
+        },
+        {
+          "handler": "delete_subrequest_template",
+          "method": "POST",
+          "path": "/admin/request-types/subrequest-templates/{template_id}/delete"
+        },
+        {
+          "handler": "move_subrequest_template",
+          "method": "POST",
+          "path": "/admin/request-types/subrequest-templates/{template_id}/move"
+        },
+        {
           "handler": "edit_request_type",
           "method": "POST",
           "path": "/admin/request-types/{type_id}"
@@ -2623,6 +2666,11 @@
           "handler": "add_type_question",
           "method": "POST",
           "path": "/admin/request-types/{type_id}/questions"
+        },
+        {
+          "handler": "add_subrequest_template",
+          "method": "POST",
+          "path": "/admin/request-types/{type_id}/subrequest-templates"
         },
         {
           "handler": "view_scheduled_jobs",
@@ -3235,6 +3283,7 @@
         "team_activity",
         "triage",
         "triage_dates",
+        "triage_subrequests",
         "unlink",
         "view_ticket",
         "view_ticket_by_number",
@@ -3272,6 +3321,7 @@
         "app.settings_store",
         "app.sla",
         "app.splitting",
+        "app.subrequests",
         "app.team_activity",
         "app.templating",
         "app.ticket_service",
@@ -3310,6 +3360,11 @@
           "handler": "triage_dates",
           "method": "GET",
           "path": "/tickets/triage-dates"
+        },
+        {
+          "handler": "triage_subrequests",
+          "method": "GET",
+          "path": "/tickets/triage-subrequests"
         },
         {
           "handler": "view_ticket",
@@ -3574,6 +3629,7 @@
         "app.routers.tickets",
         "app.scheduled_jobs",
         "app.sla",
+        "app.splitting",
         "app.subscriptions",
         "app.ticket_service",
         "app.time_zones"
@@ -3610,6 +3666,7 @@
         "tests/test_resolution.py",
         "tests/test_scheduled_jobs.py",
         "tests/test_sla.py",
+        "tests/test_subrequests.py",
         "tests/test_teams_copy.py",
         "tests/test_time_zones.py",
         "tests/test_triage.py"
@@ -3647,6 +3704,7 @@
         "app.routers.portal",
         "app.routers.tickets",
         "app.splitting",
+        "app.subrequests",
         "app.ticket_service",
         "app.triage"
       ],
@@ -3681,6 +3739,8 @@
         "derived_status",
         "has_sub_tickets",
         "lock_ticket",
+        "make_sub_ticket",
+        "max_sub_tickets",
         "refresh_open_sub_tickets",
         "split_ticket",
         "sub_ticket_count",
@@ -3700,12 +3760,14 @@
         "app.routers.bulk_resolve",
         "app.routers.portal",
         "app.routers.tickets",
+        "app.subrequests",
         "app.ticket_service"
       ],
       "imports": [
         "app.messages",
         "app.models",
         "app.reopening",
+        "app.settings_store",
         "app.sla",
         "app.thanks_rules",
         "app.ticket_service",
@@ -3720,6 +3782,7 @@
         "tests/test_scheduled_status.py",
         "tests/test_split_family.py",
         "tests/test_splitting.py",
+        "tests/test_subrequests.py",
         "tests/test_with_supplier.py"
       ]
     },
@@ -3751,6 +3814,66 @@
         "tests/test_attachments.py",
         "tests/test_inbound_mail.py",
         "tests/test_storage.py"
+      ]
+    },
+    {
+      "classes": [
+        "TemplateError"
+      ],
+      "file": "app/subrequests.py",
+      "functions": [
+        "after_approval",
+        "after_triage",
+        "all_templates_by_type",
+        "answers_changed_note",
+        "answers_for_subject",
+        "condition_holds",
+        "create_from_specs",
+        "delete_template",
+        "describe_template",
+        "format_conditions",
+        "label_used_by_template",
+        "move_template",
+        "parse_conditions",
+        "pending_subjects",
+        "plan_rows",
+        "preview",
+        "render_subject",
+        "save_template",
+        "specs_to_make",
+        "template_applies",
+        "templates_for",
+        "ticket_answers",
+        "used_by_template"
+      ],
+      "imported_by": [
+        "app.approvals",
+        "app.raising",
+        "app.request_questions",
+        "app.request_types",
+        "app.routers.admin",
+        "app.routers.tickets"
+      ],
+      "imports": [
+        "app.audit",
+        "app.categories",
+        "app.models",
+        "app.notifications",
+        "app.presence",
+        "app.request_questions",
+        "app.required_by",
+        "app.sla",
+        "app.splitting",
+        "app.ticket_service",
+        "app.triage",
+        "app.visibility"
+      ],
+      "module": "app.subrequests",
+      "routes": [],
+      "summary": "Automatic sub-requests: templates on a request type (#118 part 2). Nothing here commits.",
+      "tables": [],
+      "tests": [
+        "tests/test_subrequests.py"
       ]
     },
     {
@@ -4001,6 +4124,7 @@
         "app.search",
         "app.sla",
         "app.splitting",
+        "app.subrequests",
         "app.triage"
       ],
       "imports": [
@@ -4030,6 +4154,7 @@
         "tests/test_requester_bell.py",
         "tests/test_resolution.py",
         "tests/test_split_family.py",
+        "tests/test_subrequests.py",
         "tests/test_teams.py",
         "tests/test_thanks_rules.py",
         "tests/test_ticket_core.py",
@@ -4100,6 +4225,7 @@
         "change_type",
         "move_ticket",
         "reassign_ticket",
+        "set_assignee",
         "triage_ticket"
       ],
       "imported_by": [
@@ -4108,7 +4234,8 @@
         "app.request_types",
         "app.routers.portal",
         "app.routers.tickets",
-        "app.splitting"
+        "app.splitting",
+        "app.subrequests"
       ],
       "imports": [
         "app.approvals",
@@ -4165,6 +4292,7 @@
         "app.routers.bulk_resolve",
         "app.routers.portal",
         "app.routers.tickets",
+        "app.subrequests",
         "app.teams",
         "app.templating",
         "app.triage"
@@ -4306,6 +4434,12 @@
         "file": "app/thanks_rules.py",
         "in": "_reply_that_reopened",
         "rule": "messages-via-messages-module"
+      },
+      {
+        "detail": "builds Ticket(...) directly",
+        "file": "app/subrequests.py",
+        "in": "preview",
+        "rule": "tickets-via-ticket-service"
       }
     ]
   },
@@ -4609,6 +4743,7 @@
     "tests/test_static.py",
     "tests/test_status_follows_conversation.py",
     "tests/test_storage.py",
+    "tests/test_subrequests.py",
     "tests/test_team_activity.py",
     "tests/test_teams.py",
     "tests/test_teams_copy.py",

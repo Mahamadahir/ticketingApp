@@ -145,6 +145,11 @@ def self_triage(session: Session, ticket: Ticket, request_type: RequestType) -> 
         session, "system", "ticket", ticket.id, "triaged_automatically",
         f"{request_type.name}: {path_of(session, category)}",
     )
+    # No agent step: everything the rules produce is made (now, or once approved). Imported here because
+    # app.subrequests builds on the splitting machinery, which builds on app.triage.
+    from app.subrequests import after_triage
+
+    after_triage(session, ticket, None)
     return True
 
 
@@ -168,7 +173,7 @@ def create_request_type(
     session: Session, name: str, description: str, group_id: Optional[int],
     pass_percent: int, is_active: bool = True, offers_required_by: bool = False,
     due_days_before: Optional[int] = None, queue_lead_days: Optional[int] = None,
-    defaults: Optional[TypeDefaults] = None,
+    defaults: Optional[TypeDefaults] = None, subrequests_need_own_approval: bool = False,
 ) -> RequestType:
     name, description = _clean(name, description)
     _check_days(due_days_before, queue_lead_days)
@@ -183,6 +188,7 @@ def create_request_type(
         due_days_before=due_days_before, queue_lead_days=queue_lead_days,
         default_team_id=defaults.team_id, default_category_id=defaults.category_id,
         default_impact=defaults.impact, default_urgency=defaults.urgency,
+        subrequests_need_own_approval=subrequests_need_own_approval,
     )
     session.add(request_type)
     _flush(session)
@@ -193,9 +199,10 @@ def update_request_type(
     session: Session, request_type: RequestType, name: str, description: str, group_id: Optional[int],
     pass_percent: int, is_active: bool, offers_required_by: Optional[bool] = None,
     due_days_before: Optional[int] = None, queue_lead_days: Optional[int] = None,
-    defaults: Optional[TypeDefaults] = None,
+    defaults: Optional[TypeDefaults] = None, subrequests_need_own_approval: Optional[bool] = None,
 ) -> RequestType:
-    """Blank (None) day counts mean "use the setting". `defaults` None leaves the type's defaults as they are."""
+    """Blank (None) day counts mean "use the setting". `defaults` None leaves the type's defaults as they are, and so
+    does `subrequests_need_own_approval` None."""
     name, description = _clean(name, description)
     _check_days(due_days_before, queue_lead_days)
     if defaults is not None:
@@ -209,6 +216,8 @@ def update_request_type(
     if offers_required_by is not None:
         request_type.offers_required_by = offers_required_by
     request_type.due_days_before, request_type.queue_lead_days = due_days_before, queue_lead_days
+    if subrequests_need_own_approval is not None:
+        request_type.subrequests_need_own_approval = subrequests_need_own_approval
     if defaults is not None:
         request_type.default_team_id, request_type.default_category_id = defaults.team_id, defaults.category_id
         request_type.default_impact, request_type.default_urgency = defaults.impact, defaults.urgency

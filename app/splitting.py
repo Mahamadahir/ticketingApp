@@ -19,7 +19,8 @@ from sqlalchemy import func
 from sqlmodel import Session, select
 
 from app.messages import add_note
-from app.models import FINISHED_STATUSES, Category, Ticket, TicketStatus, User
+from app.models import FINISHED_STATUSES, Category, RequestType, Ticket, TicketStatus, User
+from app.settings_store import MAX_SUB_TICKETS, count_setting
 from app.sla import Level, recalculate_deadlines
 from app.ticket_service import create_ticket, record_event, set_status
 from app.triage import TriageError, triage_ticket
@@ -28,12 +29,17 @@ EVENT_SPLIT = "split"  # on the original: to_value is the new sub-ticket
 EVENT_SPLIT_FROM = "split_from"  # on the sub-ticket: to_value is the original
 
 MIN_PARTS = 2  # a split leaves at least two sub-tickets in all
-MAX_PARTS = 10  # in all, across every split of the same ticket
 MAX_LISTED = 50
 
 
 class SplitError(ValueError):
     """A reason a ticket cannot be split, worded for the agent."""
+
+
+def max_sub_tickets(session: Session) -> int:
+    """The most sub-tickets one ticket can have in all, whether an agent split them off or the request type's
+    templates made them (the admin setting `max_sub_tickets`)."""
+    return count_setting(session, MAX_SUB_TICKETS)
 
 
 def sub_ticket_count(session: Session, original: Ticket) -> int:
@@ -182,6 +188,60 @@ def apply_requester_reply(
     return None
 
 
+def make_sub_ticket(
+    session: Session,
+    original: Ticket,
+    actor: Optional[User],
+    *,
+    subject: str,
+    category: Category,
+    impact: Level,
+    urgency: Level,
+    details: Optional[str] = None,
+    request_type: Optional[RequestType] = None,
+    approval_covered: bool = False,
+    answers_required: bool = True,
+    parent_event: str = EVENT_SPLIT,
+) -> Ticket:
+    """Makes one sub-ticket of `original`: a new ticket with the original's requester, type and source, triaged
+    into `category` with the given impact and urgency, linked to the original (`split_from_id`) and recorded on both.
+    The one place a sub-ticket is made: an agent's split above and the automatic sub-requests of
+    app/subrequests.py both come through here, so the derived status, the shared thread and "resolve the original
+    when every part is done" are the same for both. `actor` None is the system. It does not re-derive the original's
+    status (the caller does, once, when every part exists) and does not check the limit or that the original may
+    be split (the callers do). Raises TriageError when the part cannot be triaged."""
+    actor_email = actor.email if actor is not None else "system"
+    sub = create_ticket(
+        session,
+        subject=subject,
+        requester_email=original.requester_email,
+        source=original.source,
+        ticket_type=original.type,
+        team_id=original.team_id,
+        actor_email=actor_email,
+        created_by_id=original.created_by_id,
+        announce=False,
+    )
+    triage_ticket(
+        session, sub, actor,
+        ticket_type=original.type, category=category, impact=impact, urgency=urgency,
+        request_type=request_type, approval_covered=approval_covered, answers_required=answers_required,
+    )
+    # Linked after triage, so triaging the part does not re-derive the original's status
+    # once per part; it is derived once, by the caller, when every part exists.
+    sub.split_from_id = original.id
+    session.add(sub)
+    if original.is_backdated:
+        # A ticket logged after the fact has no SLA, and neither do its parts.
+        sub.is_backdated = True
+        recalculate_deadlines(session, sub)
+    if (details or "").strip():
+        add_note(session, sub, actor, details.strip())
+    record_event(session, sub, EVENT_SPLIT_FROM, actor_email, to_value=original.tag)
+    record_event(session, original, parent_event, actor_email, to_value=sub.tag)
+    return sub
+
+
 def split_ticket(
     session: Session, original: Ticket, actor: User, parts: list[tuple[str, str]]
 ) -> list[Ticket]:
@@ -211,44 +271,20 @@ def split_ticket(
     existing = sub_ticket_count(session, original)
     if existing + len(parts) < MIN_PARTS:
         raise SplitError(f"Split into at least {MIN_PARTS} parts")
-    if existing + len(parts) > MAX_PARTS:
-        raise SplitError(f"A ticket can have at most {MAX_PARTS} sub-tickets")
+    limit = max_sub_tickets(session)
+    if existing + len(parts) > limit:
+        raise SplitError(f"A ticket can have at most {limit} sub-tickets")
 
     made = []
     for subject, (_, details) in zip(subjects, parts):
-        sub = create_ticket(
-            session,
-            subject=subject,
-            requester_email=original.requester_email,
-            source=original.source,
-            ticket_type=original.type,
-            team_id=original.team_id,
-            actor_email=actor.email,
-            created_by_id=original.created_by_id,
-            announce=False,
-        )
         try:
-            triage_ticket(
-                session, sub, actor,
-                ticket_type=original.type, category=category,
+            made.append(make_sub_ticket(
+                session, original, actor, subject=subject, details=details, category=category,
                 impact=Level(original.impact), urgency=Level(original.urgency),
-            )
+            ))
         except TriageError as error:
             # The parts take this ticket's category, so the cause is the original's.
             raise SplitError(f"The parts cannot take this ticket's category. {error}")
-        # Linked after triage, so triaging the part does not re-derive the original's status
-        # once per part; it is derived once, below, when every part exists.
-        sub.split_from_id = original.id
-        session.add(sub)
-        if original.is_backdated:
-            # A ticket logged after the fact has no SLA, and neither do its parts.
-            sub.is_backdated = True
-            recalculate_deadlines(session, sub)
-        if (details or "").strip():
-            add_note(session, sub, actor, details.strip())
-        record_event(session, sub, EVENT_SPLIT_FROM, actor.email, to_value=original.tag)
-        record_event(session, original, EVENT_SPLIT, actor.email, to_value=sub.tag)
-        made.append(sub)
     original.updated_at = datetime.now(timezone.utc)
     session.add(original)
     sync_original_status(session, original.id)

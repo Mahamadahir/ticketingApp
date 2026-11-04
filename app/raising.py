@@ -194,6 +194,12 @@ def raise_ticket(
             session, ticket, creator, ticket_type=ticket_type, category=category,
             impact=impact, urgency=urgency, assignee=assignee,
         )
+        if resolved_at is None:
+            # No list is shown to the agent here, so everything the rules produce is made (now, or once approved);
+            # one logged as already resolved makes none. Imported here: app.subrequests builds on app.triage.
+            from app.subrequests import after_triage
+
+            after_triage(session, ticket, creator, strict=False)
     elif request_type is not None and not on_behalf:
         # A request for a type with all its defaults needs no triage (#133); with incomplete ones it waits in New.
         self_triage(session, ticket, request_type)

@@ -80,7 +80,8 @@
   {% for a in answers %}<dt>{{ a.label }}</dt><dd>{{ a.display }}</dd>{% endfor %}
 </dl>
 {% endif %}
-{% if answers_changed_at %}<p class="note">Answers were changed on {{ answers_changed_at|local_time }} after they were first given.</p>{% endif %}
+{% if answers_changed_at %}<p class="note">Answers were changed on {{ answers_changed_at|local_time }} after they were first given.{% if answers_changed_after_subrequests %} Sub-requests were already made from the earlier answers; nothing was added or removed for the change, so check them.{% endif %}</p>{% endif %}
+{% if pending_subrequests %}<p class="note">Once this request is approved these sub-requests will be made: {{ pending_subrequests|join("; ") }}.</p>{% endif %}
 {% if can_edit_answers and not can_triage and edit_questions %}
 <form hx-post="/tickets/{{ ticket.number }}/answers" hx-target="main" hx-swap="innerHTML">
   {% with div_id = "edit-answers", rows = edit_questions, oob = false %}{% include "_request_questions.html" %}{% endwith %}
@@ -92,7 +93,7 @@
 {% if can_triage %}
 <h3>Triage</h3>
 <p class="note">Classify this ticket. The category decides the team. Assigning is optional: leave it as is and the team can pick it up.</p>
-<form hx-post="/tickets/{{ ticket.number }}/triage" hx-target="main" hx-swap="innerHTML">
+<form id="triage-form" hx-post="/tickets/{{ ticket.number }}/triage" hx-target="main" hx-swap="innerHTML">
   <label>Type
     <select name="ticket_type">
       {% for type in ticket_types %}
@@ -118,6 +119,7 @@
   {% endif %}
   {% with offers = offers_required_by, required_by = ticket.required_by.isoformat() if ticket.required_by else "", due_on = ticket.due_on.isoformat() if ticket.due_on else "", due_reason = "", has_due = ticket.due_on is not none %}{% include "_triage_dates.html" %}{% endwith %}
   {% with div_id = "triage-questions", rows = triage_questions, oob = false %}{% include "_request_questions.html" %}{% endwith %}
+  {% with rows = triage_subrequests %}{% include "_triage_subrequests.html" %}{% endwith %}
   <label>Category
     {{ category_select(category_options, none) }}
   </label>
@@ -413,7 +415,7 @@
 {% if can_split %}
 <details>
   <summary>Split ticket</summary>
-  <p class="note">Each part with a subject becomes its own ticket, triaged like this one (type, category, impact, urgency, team); amend or assign it on its own page. Leave unused parts blank; a part with details needs a subject. A ticket needs at least two sub-tickets in all and at most 10.</p>
+  <p class="note">Each part with a subject becomes its own ticket, triaged like this one (type, category, impact, urgency, team); amend or assign it on its own page. Leave unused parts blank; a part with details needs a subject. A ticket needs at least two sub-tickets in all and at most {{ max_sub_tickets }} (sub-requests made automatically count too).</p>
   <form hx-post="/tickets/{{ ticket.number }}/split" hx-target="main" hx-swap="innerHTML">
     {% for i in split_slots %}
     <fieldset>
