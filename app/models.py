@@ -226,6 +226,10 @@ class Ticket(SQLModel, table=True):
     # reacts to it yet: it is the hook for the automatic sub-requests of #118 part 2 (answers changed after they
     # were made means a note for agents, never an automatic change).
     answers_changed_at: Optional[datetime] = Field(default=None)
+    # The sub-requests an agent confirmed at triage (or the rules produced for an automatic triage) while the request
+    # waits for approval: a list of {"template_id", "subject"}, made once approval passes and cleared then, or when the
+    # approval fails (app/subrequests.py).
+    pending_subrequests: Optional[list] = Field(default=None, sa_column=Column(JSON, nullable=True))
 
     # Set on a sub-ticket made by splitting another ticket (the original). One level only:
     # a sub-ticket is never split again. Separate from linked_parent_id, which is for
@@ -490,6 +494,36 @@ class RequestType(SQLModel, table=True):
     default_category_id: Optional[int] = Field(default=None, foreign_key="category.id")
     default_impact: Optional[str] = Field(default=None)  # a sla.Level value
     default_urgency: Optional[str] = Field(default=None)
+    # Off by default (#118 part 2): a sub-request of THIS kind made automatically from another type's templates is
+    # covered by its parent's approval. On: it goes through this type's own approval group like any request.
+    subrequests_need_own_approval: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class RequestSubTemplate(SQLModel, table=True):
+    """A sub-request template on a request type (#118 part 2, app/subrequests.py): when a request of the type is
+    triaged (once approved, if it needs approval) each template whose conditions hold becomes a sub-ticket.
+    `condition_groups` is a list of groups, each a list of {"question_id", "operator", "value"}: every condition of a
+    group must hold (AND) and the template applies when any group does (OR); no groups means always. The sub-request
+    gets `team_id` and `category_id` (the category belongs to the team), the optional kind of request, impact and
+    urgency (the parent's when blank), the subject from `subject_pattern` ({Question label} is replaced by the answer),
+    the named agent or the parent's assignee when they are available, and a Due date `due_days_before` days before the
+    parent's Required by (blank: the Due date setting)."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    request_type_id: int = Field(foreign_key="requesttype.id", index=True)
+    position: int = Field(default=0)
+    is_active: bool = Field(default=True, sa_column_kwargs={"server_default": "true"})
+    sub_request_type_id: Optional[int] = Field(default=None, foreign_key="requesttype.id")
+    team_id: int = Field(foreign_key="team.id")
+    category_id: int = Field(foreign_key="category.id")
+    impact: Optional[str] = Field(default=None)
+    urgency: Optional[str] = Field(default=None)
+    subject_pattern: str
+    assignee_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    assign_to_parent_assignee: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
+    due_days_before: Optional[int] = Field(default=None)
+    condition_groups: list = Field(default_factory=list, sa_column=Column(JSON, nullable=False, server_default="[]"))
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

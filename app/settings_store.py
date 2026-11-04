@@ -49,6 +49,7 @@ CHASE_ENABLED = "chase_enabled"
 CHASE_AFTER_DAYS = "chase_after_days"
 CHASE_RESOLVE_AFTER_DAYS = "chase_resolve_after_days"
 BULK_RESOLVE_MAX = "bulk_resolve_max_tickets"
+MAX_SUB_TICKETS = "max_sub_tickets"  # shared by manual splitting and automatic sub-requests
 REQUIRED_BY_LEAD_DAYS = "required_by_lead_days"  # the queue lead time when a request type has none of its own
 DUE_DAYS_BEFORE_REQUIRED_BY = "due_days_before_required_by"
 SCHEDULED_MORNING_HOUR = "scheduled_morning_hour"
@@ -419,6 +420,16 @@ REGISTRY: dict[str, SettingDef] = {
             "time zone applies. Placeholder."
         ),
         default="24",
+    ),
+    MAX_SUB_TICKETS: SettingDef(
+        key=MAX_SUB_TICKETS,
+        label="Sub-tickets: most on one ticket",
+        kind="count",
+        description=(
+            "The most sub-tickets one ticket can have in all: the parts an agent splits it into and the sub-requests "
+            "made automatically from its request type's templates both count. Placeholder."
+        ),
+        default="10",
     ),
     BULK_RESOLVE_MAX: SettingDef(
         key=BULK_RESOLVE_MAX,
