@@ -4,7 +4,7 @@ own tickets: an agent emailed, waiting on you, resolved, closed, the approval ou
 import pytest
 from sqlmodel import select
 
-from app.models import Notification, NotificationPreference, Ticket, TicketStatus, User, UserRole
+from app.models import Notification, NotificationPreference, Ticket, TicketFollower, TicketStatus, User, UserRole
 from app.notification_settings import IN_APP
 from app.notifications import (
     AGENT_EMAILED, APPROVAL_OUTCOME, AWAITING_YOU, REQUESTER_KINDS, TICKET_CLOSED, TICKET_RESOLVED, notify,
@@ -214,3 +214,85 @@ def test_an_approval_that_passes_tells_the_requester(client, db_session):
     decide(db_session, vote, APPROVED, "")
     db_session.commit()
     assert [(n.kind, "was approved" in n.text) for n in entries(db_session, "jo@example.com")] == [(APPROVAL_OUTCOME, True)]
+
+
+def switch_off(db_session, email, kind):
+    user = db_session.exec(select(User).where(User.email == email)).one()
+    db_session.add(NotificationPreference(user_id=user.id, kind=kind, channel=IN_APP, enabled=False))
+    db_session.commit()
+
+
+def test_with_waiting_on_you_off_an_email_that_awaits_a_reply_still_says_emailed(client, db_session):
+    with_accounts(client, db_session, "walkin@example.com")
+    switch_off(db_session, "walkin@example.com", AWAITING_YOU)
+    agent_session(client, db_session)
+    ticket = ticket_for_email(client, db_session)
+    email_them(client, ticket)
+    assert kinds(db_session, "walkin@example.com") == [AGENT_EMAILED]
+
+
+def test_with_resolved_off_the_resolution_email_still_says_emailed(client, db_session):
+    with_accounts(client, db_session, "walkin@example.com")
+    switch_off(db_session, "walkin@example.com", TICKET_RESOLVED)
+    agent_session(client, db_session)
+    ticket = ticket_for_email(client, db_session)
+    resolve(client, ticket)
+    assert kinds(db_session, "walkin@example.com") == [AGENT_EMAILED]
+
+
+def test_a_withdrawal_tells_the_followers_but_not_the_requester(client, db_session):
+    from app.approvals import withdraw
+    from app.followers import add_follower
+
+    person(client, db_session, "jo@example.com")
+    person(client, db_session, "friend@example.com")
+    person(client, db_session, "boss@example.com")
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, ["boss@example.com"]))
+    add_follower(db_session, ticket, "friend@example.com", "jo@example.com")
+    withdraw(db_session, ticket, "jo@example.com")
+    db_session.commit()
+    assert entries(db_session, "jo@example.com") == []
+    [entry] = entries(db_session, "friend@example.com")
+    assert entry.kind == APPROVAL_OUTCOME and "was withdrawn" in entry.text
+
+
+def test_a_never_follow_listed_follower_is_not_belled(client, db_session):
+    from app.never_follow import add_listed
+
+    with_accounts(client, db_session, "walkin@example.com", "boss@example.com")
+    agent_session(client, db_session)
+    ticket = ticket_for_email(client, db_session)
+    follow(client, ticket, "boss@example.com")
+    add_listed(db_session, "boss@example.com", "shared box", "agent@example.com")
+    db_session.commit()
+    resolve(client, ticket)
+    assert kinds(db_session, "boss@example.com") == []
+    assert kinds(db_session, "walkin@example.com") == [TICKET_RESOLVED]
+
+
+def test_an_entry_about_a_ticket_you_no_longer_follow_is_hidden(client, db_session):
+    with_accounts(client, db_session, "walkin@example.com", "boss@example.com")
+    agent_session(client, db_session)
+    ticket = ticket_for_email(client, db_session)
+    follow(client, ticket, "boss@example.com")
+    resolve(client, ticket)
+    follower_id = db_session.exec(select(TicketFollower).where(TicketFollower.email == "boss@example.com")).one().id
+    assert client.post(f"/tickets/{ticket.number}/followers/{follower_id}/remove").status_code == 200
+
+    client.post("/auth/logout")
+    login_as(client, "boss@example.com")
+    assert client.get("/notifications/count").text == "Notifications"
+    assert "Printer jam" not in client.get("/notifications").text
+
+
+def test_resolving_the_parts_of_a_split_does_not_also_tell_about_the_original(client, db_session):
+    from tests.test_splitting import split, subs_of
+
+    with_accounts(client, db_session, "walkin@example.com")
+    agent_session(client, db_session)
+    ticket = ticket_for_email(client, db_session)
+    assert split(client, ticket, ("Part one", "a"), ("Part two", "b")).status_code in (200, 303)
+    for part in subs_of(db_session, ticket):
+        assert resolve(client, part).status_code == 200
+    db_session.expire_all()
+    assert {n.ticket_id for n in entries(db_session, "walkin@example.com")} == {p.id for p in subs_of(db_session, ticket)}

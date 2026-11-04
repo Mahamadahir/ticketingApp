@@ -27,6 +27,7 @@ from app.audit import log_action
 from app.email_templates import render_template, ticket_values
 from app.forms import MAX_MESSAGE_LENGTH
 from app.messages import EmailPreview, email_requester, is_triaged, preview_email, record_notice
+from app.notifications import TICKET_RESOLVED, notify_agent_emailed
 from app.models import FINISHED_STATUSES, Ticket, TicketStatus, User
 from app.splitting import SplitError, check_manual_status, lock_ticket
 from app.ticket_service import set_status
@@ -123,6 +124,8 @@ def resolve_ticket(
 
     if body is not None:
         if actor is not None:
-            email_requester(session, ticket, actor, body, cc_emails=cc_emails, bell=False)  # the resolved entry says it
+            email_requester(session, ticket, actor, body, cc_emails=cc_emails, bell=False)
+            # Whoever has "resolved" on is told by that entry; the others by "emailed you" (#130).
+            notify_agent_emailed(session, ticket, actor.email, instead_of=TICKET_RESOLVED)
         else:
             record_notice(session, ticket, body, copy_followers=True)

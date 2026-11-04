@@ -510,7 +510,7 @@ File: `app/followers.py`
 - Functions: `add_follower`, `bare_address`, `cc_list`, `copyable_followers`, `followers_of`, `is_follower`, `normalise_email`, `portal_audience`, `remove_follower`, `uncopied_recipients`
 - Imports: `app.config`, `app.models`, `app.never_follow`, `app.ticket_service`
 - Imported by: `app.approval_groups`, `app.escalation`, `app.follower_updates`, `app.inbound`, `app.mail`, `app.messages`, `app.notifications`, `app.raising`, `app.reopening`, `app.routers.admin`, `app.routers.portal`, `app.routers.tickets`, `app.visibility`
-- Tests: `test_bell_access.py`, `test_follower_updates.py`, `test_followers.py`, `test_inbound_mail.py`, `test_never_follow.py`, `test_reopening.py`, `test_reply_notification.py`, `test_withdraw.py`
+- Tests: `test_bell_access.py`, `test_follower_updates.py`, `test_followers.py`, `test_inbound_mail.py`, `test_never_follow.py`, `test_reopening.py`, `test_reply_notification.py`, `test_requester_bell.py`, `test_withdraw.py`
 
 ### `app.forms`
 
@@ -535,9 +535,9 @@ File: `app/graph_client.py`
 
 Which tickets a signed-in person counts as their own in the portal.  
 File: `app/identity.py`
-- Functions: `is_follower_of`, `is_requester`, `my_tickets_query`, `requester_emails`
+- Functions: `is_follower_of`, `is_requester`, `my_ticket_condition`, `my_tickets_query`, `requester_emails`
 - Imports: `app.models`
-- Imported by: `app.routers.portal`
+- Imported by: `app.notifications`, `app.routers.portal`
 - Tests: `test_portal.py`
 
 ### `app.inbound`
@@ -638,7 +638,7 @@ File: `app/never_follow.py`
 - Functions: `add_listed`, `all_listed`, `is_listed`, `listed_among`, `listed_entry`, `remove_listed`
 - Imports: `app.models`
 - Imported by: `app.followers`, `app.inbound`, `app.mail`, `app.routers.admin`
-- Tests: `test_never_follow.py`
+- Tests: `test_never_follow.py`, `test_requester_bell.py`
 
 ### `app.notification_settings`
 
@@ -656,8 +656,8 @@ File: `app/notification_settings.py`
 In-app notifications (phase 2A): the bell. Something happens that an agent should know about,  
 File: `app/notifications.py`
 - Functions: `bell_references`, `bell_tickets`, `count_unread`, `default_teams_delay`, `drop_due_for_teams`, `due_for_teams`, `hand_to_teams`, `mark_all_read`, `mark_read`, `mentioned_in`, `notification_text`, `notify`, `notify_agent_emailed`, `notify_approval_outcome`, `notify_approval_overdue`, `notify_approval_waiting`, `notify_approval_withdrawn`, `notify_assigned`, `notify_chase_given_up`, `notify_due_today`, `notify_mentions`, `notify_reopened`, `notify_reply`, `notify_requesters`, `notify_status_for_requesters`, `retire_read_for_teams`, `visible_to`
-- Imports: `app.followers`, `app.models`, `app.notification_settings`, `app.settings_store`, `app.visibility`
-- Imported by: `app.approval_reminders`, `app.approvals`, `app.auto_close_chase`, `app.due_today`, `app.escalation`, `app.jobs`, `app.messages`, `app.reopening`, `app.routers.bulk_resolve`, `app.routers.feedback`, `app.routers.my_settings`, `app.routers.notifications`, `app.routers.tickets`, `app.teams`, `app.ticket_service`, `app.triage`
+- Imports: `app.followers`, `app.identity`, `app.models`, `app.notification_settings`, `app.settings_store`, `app.visibility`
+- Imported by: `app.approval_reminders`, `app.approvals`, `app.auto_close_chase`, `app.due_today`, `app.escalation`, `app.jobs`, `app.messages`, `app.reopening`, `app.resolution`, `app.routers.bulk_resolve`, `app.routers.feedback`, `app.routers.my_settings`, `app.routers.notifications`, `app.routers.tickets`, `app.teams`, `app.ticket_service`, `app.triage`
 - Tests: `test_bell_access.py`, `test_due_date.py`, `test_due_date_review.py`, `test_inbound_mail.py`, `test_notifications.py`, `test_reply_notification.py`, `test_requester_bell.py`, `test_teams_copy.py`, `test_teams_copy_sending.py`
 
 ### `app.outbox`
@@ -751,7 +751,7 @@ File: `app/resolution.py`
 
 - Classes: `ResolveError`
 - Functions: `auto_resolution_note`, `check_can_resolve`, `clean_notes`, `preview_resolution`, `resolution_email_body`, `resolve_ticket`
-- Imports: `app.action_links`, `app.audit`, `app.email_templates`, `app.forms`, `app.messages`, `app.models`, `app.splitting`, `app.ticket_service`
+- Imports: `app.action_links`, `app.audit`, `app.email_templates`, `app.forms`, `app.messages`, `app.models`, `app.notifications`, `app.splitting`, `app.ticket_service`
 - Imported by: `app.auto_close_chase`, `app.bulk_resolve`, `app.raising`, `app.routers.bulk_resolve`, `app.routers.tickets`
 - Tests: `test_auto_close_chase.py`, `test_bulk_resolve.py`, `test_reopening.py`, `test_resolution.py`
 
@@ -865,7 +865,7 @@ File: `app/routers/my_settings.py`
 
 ### `app.routers.notifications`
 
-The bell: an agent's notifications (phase 2A). Own notifications only.  
+The bell: a person's notifications (phase 2A; everyone since #122 and #130). Own notifications only.  
 File: `app/routers/notifications.py`
 - Functions: `list_notifications`, `open_notification`, `read_all`, `unread_count`
 - Routes: GET `/notifications`, GET `/notifications/count`, POST `/notifications/read-all`, POST `/notifications/{notification_id}/open`

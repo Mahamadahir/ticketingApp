@@ -179,7 +179,9 @@ def portal_audience(session: Session, ticket: Ticket) -> list[str]:
     external followers, who may read what the requester may (app/messages.py). Internal followers are agents
     and use the agent pages. The one list the requester bell entries (app/notifications.py) go to."""
     emails = [ticket.requester_email.strip().lower()]
-    emails += [f.email for f in followers_of(session, ticket) if not f.is_internal]
+    followers = [f.email for f in followers_of(session, ticket) if not f.is_internal]
+    blocked = listed_among(session, followers)  # a listed address is never copied, and never belled either
+    emails += [e for e in followers if e not in blocked]
     return list(dict.fromkeys(emails))
 
 

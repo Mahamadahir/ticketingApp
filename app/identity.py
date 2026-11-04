@@ -29,6 +29,14 @@ def is_follower_of(session: Session, ticket: Ticket, user: User, *, include_inte
     return session.exec(select(TicketFollower.id).where(*conditions)).first() is not None
 
 
+def my_ticket_condition(user: User):
+    """SQL: the ticket is one the person raised or follows (the portal's "My requests", before ordering)."""
+    emails = requester_emails(user)
+    own = func.lower(func.trim(Ticket.requester_email)).in_(emails)
+    followed = Ticket.id.in_(select(TicketFollower.ticket_id).where(func.lower(TicketFollower.email).in_(emails)))
+    return own | followed
+
+
 def my_tickets_query(user: User):
     """Tickets the person raised, then tickets they follow, the ones they raised first.
     What they may read of each is decided on the ticket page, through app/messages.py."""

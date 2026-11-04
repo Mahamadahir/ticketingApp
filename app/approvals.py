@@ -377,6 +377,7 @@ def withdraw(session: Session, ticket: Ticket, requester_email: str) -> None:
     record_event(session, ticket, EVENT_APPROVAL_WITHDRAWN, requester_email, detail=f"{len(unanswered)} had not answered")
     set_status(session, ticket, TicketStatus.CLOSED, requester_email, detail="withdrawn", by_approval=True)
     log_action(session, requester_email, "ticket", ticket.id, "approval_withdrawn", ticket.tag)
+    notify_approval_outcome(session, ticket, "withdrawn", requester_email)  # the followers; never the requester
     for vote, voter in unanswered:
         notify_approval_withdrawn(session, ticket, voter, requester_email)
         queue_approval_withdrawn(session, vote, voter)

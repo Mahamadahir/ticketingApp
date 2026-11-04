@@ -1,4 +1,4 @@
-"""The bell: an agent's notifications (phase 2A). Own notifications only."""
+"""The bell: a person's notifications (phase 2A; everyone since #122 and #130). Own notifications only."""
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -13,15 +13,16 @@ from app.pagination import paginate
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
-# Every signed-in person: an approver who is not an agent has a bell too, for requests waiting for their vote.
-agent_only = get_current_user
+# Every signed-in person: a requester, follower or approver who is not an agent has a bell too, for their own tickets
+# and requests waiting for their vote.
+signed_in = get_current_user
 
 
 @router.get("", response_class=HTMLResponse)
 def list_notifications(
     request: Request,
     page: int = 1,
-    user: User = Depends(agent_only),
+    user: User = Depends(signed_in),
     session: Session = Depends(get_session),
 ):
     query = (
@@ -42,7 +43,7 @@ def list_notifications(
 
 @router.get("/count", response_class=HTMLResponse)
 def unread_count(
-    user: User = Depends(agent_only),
+    user: User = Depends(signed_in),
     session: Session = Depends(get_session),
 ):
     """The bell's label, polled by the page every 30 seconds."""
@@ -52,7 +53,7 @@ def unread_count(
 
 @router.post("/read-all")
 def read_all(
-    user: User = Depends(agent_only),
+    user: User = Depends(signed_in),
     session: Session = Depends(get_session),
 ):
     mark_all_read(session, user)
@@ -63,7 +64,7 @@ def read_all(
 @router.post("/{notification_id}/open")
 def open_notification(
     notification_id: int,
-    user: User = Depends(agent_only),
+    user: User = Depends(signed_in),
     session: Session = Depends(get_session),
 ):
     """Marks one read and goes to its ticket. A POST, so a link scanner or a prefetch cannot read it away."""

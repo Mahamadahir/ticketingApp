@@ -917,6 +917,7 @@
         "tests/test_never_follow.py",
         "tests/test_reopening.py",
         "tests/test_reply_notification.py",
+        "tests/test_requester_bell.py",
         "tests/test_withdraw.py"
       ]
     },
@@ -982,10 +983,12 @@
       "functions": [
         "is_follower_of",
         "is_requester",
+        "my_ticket_condition",
         "my_tickets_query",
         "requester_emails"
       ],
       "imported_by": [
+        "app.notifications",
         "app.routers.portal"
       ],
       "imports": [
@@ -1712,7 +1715,8 @@
       "summary": "The never-follow list: addresses that must never become followers (4B-2).",
       "tables": [],
       "tests": [
-        "tests/test_never_follow.py"
+        "tests/test_never_follow.py",
+        "tests/test_requester_bell.py"
       ]
     },
     {
@@ -1796,6 +1800,7 @@
         "app.jobs",
         "app.messages",
         "app.reopening",
+        "app.resolution",
         "app.routers.bulk_resolve",
         "app.routers.feedback",
         "app.routers.my_settings",
@@ -1807,6 +1812,7 @@
       ],
       "imports": [
         "app.followers",
+        "app.identity",
         "app.models",
         "app.notification_settings",
         "app.settings_store",
@@ -2134,6 +2140,7 @@
         "app.forms",
         "app.messages",
         "app.models",
+        "app.notifications",
         "app.splitting",
         "app.ticket_service"
       ],
@@ -2878,7 +2885,7 @@
           "path": "/notifications/{notification_id}/open"
         }
       ],
-      "summary": "The bell: an agent's notifications (phase 2A). Own notifications only.",
+      "summary": "The bell: a person's notifications (phase 2A; everyone since #122 and #130). Own notifications only.",
       "tables": [],
       "tests": []
     },

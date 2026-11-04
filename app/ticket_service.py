@@ -218,8 +218,8 @@ def set_status(
     on_status_change(session, ticket, previous, new_status, now)
     session.add(ticket)
     record_event(session, ticket, EVENT_STATUS_CHANGED, actor_email, previous.value, new_status.value, detail)
-    if not by_approval:
-        # The requester's bell (#130). An approval's decline or withdrawal has its own outcome entry. Imported
+    if not by_approval and not from_parts:
+        # The requester's bell (#130). An approval's decline or withdrawal has its own outcome entry, and a split original's derived status is silent (each part told them). Imported
         # here because app.notifications builds on this module.
         from app.notifications import notify_status_for_requesters
 
