@@ -771,6 +771,14 @@ on/off switch (off hides it from the form; tickets keep it). The raise form (`/p
 ticket a Service Request (`SR-`) and records `request_type_id` and a `request_type` event. Agents
 raising for someone else can pick one too. The agent page shows the request and its approvers; the
 requester sees the request name only. Sub-tickets from a split do not inherit the request type.
+*Request type defaults (#133, built 4 Nov 2026):* a request type can carry a default team, category, impact and urgency
+(Admin > Request types, checked like triage: an active category that belongs to the team). A request raised in the portal for
+a type with all four set triages itself at creation, through the real triage function with the system as the actor: it becomes
+a Service Request in that category and team with that priority, the SLA starts, and approvals start as for an agent's triage
+(Awaiting approval with an approval group, otherwise Open and unassigned in the team queue). A type with incomplete defaults,
+and every email- or Teams-raised ticket, still goes to New for an agent. The triaged event says "triaged automatically from
+request type X" and the audit log has an entry. When an agent picks a kind of request on the triage form its defaults are
+prefilled and can be changed.
 *Built in 1H-ii (14 Oct 2026, decisions confirmed that day):*
 - **A new status, Awaiting approval.** Reached only through triage; it is the one place the plan's
   status list grew. While in it the ticket cannot be moved by hand by anyone (no status buttons;

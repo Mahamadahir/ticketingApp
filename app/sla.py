@@ -51,6 +51,17 @@ URGENCY_LABELS = {
     Level.HIGH: "Cannot work at all, or a deadline is at stake",
 }
 
+
+
+def impact_options() -> list[tuple[str, str]]:
+    """(value, label) pairs for an impact select."""
+    return [(level.value, label) for level, label in IMPACT_LABELS.items()]
+
+
+def urgency_options() -> list[tuple[str, str]]:
+    return [(level.value, label) for level, label in URGENCY_LABELS.items()]
+
+
 _SCORE = {Level.LOW: 1, Level.MEDIUM: 2, Level.HIGH: 3}
 
 

@@ -1,6 +1,33 @@
 {% extends "base.html" %}
 {% block title %}Admin: Request types{% endblock %}
 {% block content %}
+{% macro defaults_fields(t) %}
+    <label>Default team
+      <select name="default_team_id">
+        <option value="">(none)</option>
+        {% for team in teams %}<option value="{{ team.id }}" {{ "selected" if t and team.id == t.default_team_id else "" }}>{{ team.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Default category (must belong to that team)
+      <select name="default_category_id">
+        <option value="">(none)</option>
+        {% if t and t.default_category_id in stale_categories %}<option value="{{ t.default_category_id }}" selected>{{ stale_categories[t.default_category_id] }}</option>{% endif %}
+        {% for option, label in category_options %}<option value="{{ option.id }}" {{ "selected" if t and option.id == t.default_category_id else "" }}>{{ label }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Default impact
+      <select name="default_impact">
+        <option value="">(none)</option>
+        {% for value, label in impact_options %}<option value="{{ value }}" {{ "selected" if t and value == t.default_impact else "" }}>{{ label }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Default urgency
+      <select name="default_urgency">
+        <option value="">(none)</option>
+        {% for value, label in urgency_options %}<option value="{{ value }}" {{ "selected" if t and value == t.default_urgency else "" }}>{{ label }}</option>{% endfor %}
+      </select>
+    </label>
+{% endmacro %}
 {% set active = "/admin/request-types" %}
 {% include "_admin_tabs.html" %}
 
@@ -15,6 +42,11 @@
   ("Due: days before Required by"; blank uses the setting under Admin &gt; Settings): the SLA resolution target is the end
   of the Due day in the requester's time zone. "Queue lead time" (blank uses the setting) only changes the sorting: the
   queue ranks the request as if it were due that many days before its Due date.
+  The defaults (team, category, impact, urgency) are optional. With all four set, a request of this type raised in the
+  portal triages itself: it becomes a Service Request in that category and team with that priority, the SLA starts, and it
+  goes to Awaiting approval (with an approval group) or to Open in the team queue, without waiting for an agent. With some
+  missing it waits in New as before. Email and Teams requests are always triaged by an agent; the defaults are then
+  filled in on the triage form when the agent picks the kind of request, and can be changed.
   An available type needs a group with at least one member. Switching a type off hides it from the form; tickets already raised keep it.
 </p>
 
@@ -36,6 +68,8 @@
     <label><input type="checkbox" name="offers_required_by" {{ "checked" if t.offers_required_by else "" }} /> Offer a Required by date</label>
     <label>Due: days before Required by (blank: {{ default_due_days }}) <input type="number" name="due_days_before" value="{{ t.due_days_before if t.due_days_before is not none else "" }}" min="0" max="365" /></label>
     <label>Queue lead time in days (blank: {{ default_queue_days }}) <input type="number" name="queue_lead_days" value="{{ t.queue_lead_days if t.queue_lead_days is not none else "" }}" min="0" max="365" /></label>
+    {{ defaults_fields(t) }}
+    <p class="note">{{ "Raised in the portal, this request triages itself." if t.id in self_triages else "Not self-triaging: it needs all four defaults, and the category in use and in that team." }}</p>
     <button type="submit">Save</button>
   </fieldset>
 </form>
@@ -60,6 +94,7 @@
   <label><input type="checkbox" name="offers_required_by" /> Offer a Required by date</label>
   <label>Due: days before Required by (blank: {{ default_due_days }}) <input type="number" name="due_days_before" min="0" max="365" /></label>
   <label>Queue lead time in days (blank: {{ default_queue_days }}) <input type="number" name="queue_lead_days" min="0" max="365" /></label>
+  {{ defaults_fields(none) }}
   <button type="submit">Create</button>
 </form>
 {% endblock %}

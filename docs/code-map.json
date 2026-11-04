@@ -54,6 +54,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/4046d214dcb1_request_type_defaults.py",
+        "revision": "4046d214dcb1"
+      },
+      {
         "file": "migrations/versions/a4c7e1b9d205_user_permissions.py",
         "revision": "a4c7e1b9d205"
       },
@@ -68,17 +72,13 @@
       {
         "file": "migrations/versions/a7d3e1f60b92_single_pass_percent.py",
         "revision": "a7d3e1f60b92"
-      },
-      {
-        "file": "migrations/versions/c4e7a2b9d106_scheduled_status.py",
-        "revision": "c4e7a2b9d106"
       }
     ],
-    "count": 48,
+    "count": 49,
     "heads": [
       {
-        "file": "migrations/versions/a4c7e1b9d205_user_permissions.py",
-        "revision": "a4c7e1b9d205"
+        "file": "migrations/versions/4046d214dcb1_request_type_defaults.py",
+        "revision": "4046d214dcb1"
       }
     ]
   },
@@ -356,6 +356,7 @@
         "app.inbound",
         "app.notification_settings",
         "app.reopening",
+        "app.request_types",
         "app.required_by",
         "app.resolution",
         "app.routers.admin",
@@ -565,6 +566,7 @@
       ],
       "imported_by": [
         "app.escalation",
+        "app.request_types",
         "app.routers.admin",
         "app.routers.portal",
         "app.routers.tickets",
@@ -1716,6 +1718,7 @@
         "tests/test_raising.py",
         "tests/test_reopening.py",
         "tests/test_reply_notification.py",
+        "tests/test_request_type_defaults.py",
         "tests/test_request_types.py",
         "tests/test_requester_bell.py",
         "tests/test_required_by.py",
@@ -2041,6 +2044,7 @@
         "app.models",
         "app.notification_settings",
         "app.outbox",
+        "app.request_types",
         "app.required_by",
         "app.resolution",
         "app.settings_store",
@@ -2126,7 +2130,8 @@
     },
     {
       "classes": [
-        "RequestTypeError"
+        "RequestTypeError",
+        "TypeDefaults"
       ],
       "file": "app/request_types.py",
       "functions": [
@@ -2134,9 +2139,12 @@
         "all_request_types",
         "create_request_type",
         "request_type_of",
+        "self_triage",
+        "self_triage_defaults",
         "update_request_type"
       ],
       "imported_by": [
+        "app.raising",
         "app.routers.admin",
         "app.routers.portal",
         "app.routers.tickets"
@@ -2144,7 +2152,11 @@
       "imports": [
         "app.approval_groups",
         "app.approvals",
-        "app.models"
+        "app.audit",
+        "app.categories",
+        "app.models",
+        "app.sla",
+        "app.triage"
       ],
       "module": "app.request_types",
       "routes": [],
@@ -2152,6 +2164,7 @@
       "tables": [],
       "tests": [
         "tests/test_approvals.py",
+        "tests/test_request_type_defaults.py",
         "tests/test_request_types.py"
       ]
     },
@@ -2372,6 +2385,7 @@
         "app.request_types",
         "app.scheduled_jobs",
         "app.settings_store",
+        "app.sla",
         "app.subscriptions",
         "app.teams",
         "app.templating",
@@ -3509,6 +3523,7 @@
         "apply_impact_urgency",
         "at_risk_percent",
         "describe_priority",
+        "impact_options",
         "note_first_response",
         "on_status_change",
         "priority_for",
@@ -3516,13 +3531,16 @@
         "recalculate_deadlines",
         "set_impact_urgency",
         "sla_view",
-        "target_minutes"
+        "target_minutes",
+        "urgency_options"
       ],
       "imported_by": [
         "app.backdating",
         "app.messages",
         "app.raising",
+        "app.request_types",
         "app.required_by",
+        "app.routers.admin",
         "app.routers.portal",
         "app.routers.tickets",
         "app.splitting",
@@ -3903,6 +3921,7 @@
         "tests/test_portal.py",
         "tests/test_reopening.py",
         "tests/test_reply_notification.py",
+        "tests/test_request_type_defaults.py",
         "tests/test_requester_bell.py",
         "tests/test_resolution.py",
         "tests/test_split_family.py",
@@ -3981,6 +4000,7 @@
       "imported_by": [
         "app.escalation",
         "app.raising",
+        "app.request_types",
         "app.routers.portal",
         "app.routers.tickets",
         "app.splitting"
@@ -4466,6 +4486,7 @@
     "tests/test_raising.py",
     "tests/test_reopening.py",
     "tests/test_reply_notification.py",
+    "tests/test_request_type_defaults.py",
     "tests/test_request_types.py",
     "tests/test_requester_bell.py",
     "tests/test_required_by.py",

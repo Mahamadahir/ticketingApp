@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ ticket.reference }}{% endblock %}
 {% block content %}
+{% from "_triage_selects.html" import impact_select, urgency_select, category_select %}
 <p><a href="/tickets">&larr; back to tickets</a></p>
 
 <h2>
@@ -84,16 +85,10 @@
     </select>
   </label>
   <label>Impact
-    <select name="impact" required>
-      <option value="">Choose</option>
-      {% for value, label in impact_options %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
-    </select>
+    {{ impact_select(impact_options, "") }}
   </label>
   <label>Urgency
-    <select name="urgency" required>
-      <option value="">Choose</option>
-      {% for value, label in urgency_options %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
-    </select>
+    {{ urgency_select(urgency_options, "") }}
   </label>
   {% if request_types %}
   <label>Kind of request (service requests)
@@ -107,12 +102,7 @@
   {% endif %}
   {% with offers = offers_required_by, required_by = ticket.required_by.isoformat() if ticket.required_by else "", due_on = ticket.due_on.isoformat() if ticket.due_on else "", due_reason = "", has_due = ticket.due_on is not none %}{% include "_triage_dates.html" %}{% endwith %}
   <label>Category
-    <select name="category_id" hx-get="/tickets/agents-for-category" hx-trigger="change" hx-target="#triage-agent">
-      <option value="">Choose a category</option>
-      {% for option, label in category_options %}
-      <option value="{{ option.id }}">{{ label }}</option>
-      {% endfor %}
-    </select>
+    {{ category_select(category_options, none) }}
   </label>
   <label>Assign to
     <select name="agent_id" id="triage-agent">

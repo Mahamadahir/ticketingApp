@@ -21,6 +21,7 @@ from app.activity import (
 from app.audit import log_action
 from app.auth import hash_password, require_permission, require_roles
 from app.permissions import ASSIGNABLE_ROLES, MANAGE_REQUEST_TEMPLATES, PERMISSIONS
+from app.sla import impact_options, urgency_options
 from app.categories import (
     CategoryError,
     create_category,
@@ -45,7 +46,9 @@ from app.request_types import (
     MAX_DESCRIPTION_LENGTH as MAX_REQUEST_DESCRIPTION_LENGTH,
     MAX_NAME_LENGTH as MAX_REQUEST_NAME_LENGTH,
     RequestTypeError,
+    TypeDefaults,
     all_request_types,
+    self_triage_defaults,
     create_request_type,
     update_request_type,
 )
@@ -1036,7 +1039,32 @@ def _type_snapshot(session: Session, request_type: RequestType) -> tuple:
         request_type.name, request_type.description, group.name if group else "(none)",
         request_type.pass_percent, request_type.offers_required_by,
         request_type.due_days_before, request_type.queue_lead_days,
+        _defaults_text(session, request_type),
     )
+
+
+def _defaults_text(session: Session, request_type: RequestType) -> str:
+    team = session.get(Team, request_type.default_team_id) if request_type.default_team_id else None
+    category = session.get(Category, request_type.default_category_id) if request_type.default_category_id else None
+    return "team {}, category {}, impact {}, urgency {}".format(
+        team.name if team else "(none)", path_of(session, category) if category else "(none)",
+        request_type.default_impact or "(none)", request_type.default_urgency or "(none)",
+    )
+
+
+def _stale_default_categories(session: Session, types: list[RequestType]) -> dict[int, str]:
+    """A type's default category that has been switched off, by id, so the edit form still shows it as chosen
+    (saving then says why it cannot be kept) instead of quietly clearing it."""
+    stale = {}
+    for request_type in types:
+        category = session.get(Category, request_type.default_category_id) if request_type.default_category_id else None
+        if category is not None and not is_selectable(session, category):
+            stale[category.id] = f"{path_of(session, category)} (switched off)"
+    return stale
+
+
+def _defaults_from_form(team_id, category_id, impact, urgency) -> TypeDefaults:
+    return TypeDefaults(optional_int(team_id), optional_int(category_id), (impact or "").strip() or None, (urgency or "").strip() or None)
 
 
 @router.get("/request-types", response_class=HTMLResponse)
@@ -1045,17 +1073,24 @@ def list_request_types(
     user: User = Depends(require_request_templates),
     session: Session = Depends(get_session),
 ):
+    types = all_request_types(session)
     return templates.TemplateResponse(
         request,
         "admin_request_types.html",
         {
-            "types": all_request_types(session),
+            "types": types,
             "groups": all_groups(session),
             "default_pass": get_setting(session, APPROVAL_DEFAULT_PASS_PERCENT),
             "default_due_days": get_setting(session, DUE_DAYS_BEFORE_REQUIRED_BY),
             "default_queue_days": get_setting(session, REQUIRED_BY_LEAD_DAYS),
             "max_name_length": MAX_REQUEST_NAME_LENGTH,
             "max_description_length": MAX_REQUEST_DESCRIPTION_LENGTH,
+            "teams": session.exec(select(Team).order_by(Team.name)).all(),
+            "category_options": selectable(session),
+            "impact_options": impact_options(),
+            "urgency_options": urgency_options(),
+            "stale_categories": _stale_default_categories(session, types),
+            "self_triages": {t.id for t in types if self_triage_defaults(session, t) is not None},
             "user": user,
         },
     )
@@ -1071,6 +1106,10 @@ def add_request_type(
     offers_required_by: Optional[str] = Form(None),
     due_days_before: Optional[str] = Form(None),
     queue_lead_days: Optional[str] = Form(None),
+    default_team_id: Optional[str] = Form(None),
+    default_category_id: Optional[str] = Form(None),
+    default_impact: Optional[str] = Form(None, max_length=20),
+    default_urgency: Optional[str] = Form(None, max_length=20),
     admin: User = Depends(require_request_templates),
     session: Session = Depends(get_session),
 ):
@@ -1078,6 +1117,7 @@ def add_request_type(
         request_type = create_request_type(
             session, name, description, optional_int(approval_group_id), pass_percent, is_active == "on",
             offers_required_by == "on", optional_int(due_days_before), optional_int(queue_lead_days),
+            defaults=_defaults_from_form(default_team_id, default_category_id, default_impact, default_urgency),
         )
     except RequestTypeError as error:
         session.rollback()
@@ -1098,6 +1138,10 @@ def edit_request_type(
     offers_required_by: Optional[str] = Form(None),
     due_days_before: Optional[str] = Form(None),
     queue_lead_days: Optional[str] = Form(None),
+    default_team_id: Optional[str] = Form(None),
+    default_category_id: Optional[str] = Form(None),
+    default_impact: Optional[str] = Form(None, max_length=20),
+    default_urgency: Optional[str] = Form(None, max_length=20),
     admin: User = Depends(require_request_templates),
     session: Session = Depends(get_session),
 ):
@@ -1111,6 +1155,7 @@ def edit_request_type(
             session, request_type, name, description, optional_int(approval_group_id),
             pass_percent, is_active == "on", offers_required_by == "on",
             optional_int(due_days_before), optional_int(queue_lead_days),
+            defaults=_defaults_from_form(default_team_id, default_category_id, default_impact, default_urgency),
         )
     except RequestTypeError as error:
         session.rollback()
@@ -1133,6 +1178,8 @@ def edit_request_type(
             changes.append(f"Due days before Required by {before[5]} -> {after[5]}")
         if before[6] != after[6]:
             changes.append(f"queue lead days {before[6]} -> {after[6]}")
+        if before[7] != after[7]:
+            changes.append(f"defaults {before[7]} -> {after[7]}")
         log_action(session, admin.email, "request_type", request_type.id, "edited", "; ".join(changes))
     if request_type.is_active != was_active:
         log_action(

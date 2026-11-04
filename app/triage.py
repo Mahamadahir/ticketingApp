@@ -87,7 +87,7 @@ def _set_assignee(session: Session, ticket: Ticket, assignee: Optional[User], ac
 def triage_ticket(
     session: Session,
     ticket: Ticket,
-    actor: User,
+    actor: Optional[User],
     *,
     ticket_type: TicketType,
     category: Category,
@@ -95,11 +95,17 @@ def triage_ticket(
     urgency: Level,
     assignee: Optional[User] = None,
     request_type: Optional[RequestType] = None,
+    automatic_from: Optional[RequestType] = None,
 ) -> None:
     """Classifies an untriaged ticket and moves it from New to Open. The category
     decides the team; the type may change (the number does not); impact and urgency give the priority and start the SLA deadlines.
     Assigning is optional and independent. `request_type` is the kind of request chosen for a service request
-    (None leaves it as it was); it is set before the approvers are looked up, so it decides whether approval is needed."""
+    (None leaves it as it was); it is set before the approvers are looked up, so it decides whether approval is needed.
+    `actor` None is the system: a portal request whose type has all its defaults triages itself (`automatic_from` is that
+    type, named on the triaged event; app/request_types.py `self_triage`). The system assigns no one."""
+    actor_email = actor.email if actor is not None else "system"
+    if actor is None and assignee is not None:
+        raise TriageError("The system does not assign tickets")
     if ticket.triaged_at is not None:
         raise TriageError("This ticket has already been triaged")
     if not is_selectable(session, category):
@@ -113,7 +119,7 @@ def triage_ticket(
     assignee = _assignee_for(session, team_id, assignee)
 
     now = datetime.now(timezone.utc)
-    change_type(session, ticket, ticket_type, actor.email)
+    change_type(session, ticket, ticket_type, actor_email)
     if request_type is not None and request_type.id != ticket.request_type_id:
         if ticket.type != TicketType.SERVICE_REQUEST:
             raise TriageError("Only a service request has a kind of request")
@@ -123,17 +129,17 @@ def triage_ticket(
         ticket.request_type_id = request_type.id
         session.add(ticket)
         record_event(
-            session, ticket, EVENT_REQUEST_TYPE, actor.email,
+            session, ticket, EVENT_REQUEST_TYPE, actor_email,
             from_value=previous.name if previous else None, to_value=request_type.name, detail="chosen at triage",
         )
-        refresh_default_due(session, ticket, actor.email)
+        refresh_default_due(session, ticket, actor_email)
 
     previous_team = session.get(Team, ticket.team_id) if ticket.team_id else None
     new_team = session.get(Team, team_id)
     ticket.category_id = category.id
     ticket.team_id = team_id
     ticket.triaged_at = now
-    ticket.triaged_by_id = actor.id
+    ticket.triaged_by_id = actor.id if actor is not None else None
     ticket.needs_category_review = category.is_other
     ticket.updated_at = now
     session.add(ticket)
@@ -141,24 +147,25 @@ def triage_ticket(
     apply_impact_urgency(session, ticket, impact, urgency)
 
     record_event(
-        session, ticket, EVENT_TRIAGED, actor.email,
+        session, ticket, EVENT_TRIAGED, actor_email,
         to_value=path_of(session, category),
-        detail=f"{ticket_type.value}, team {new_team.name}, {describe_priority(ticket)}",
+        detail=f"{ticket_type.value}, team {new_team.name}, {describe_priority(ticket)}"
+        + (f"; triaged automatically from request type {automatic_from.name}" if automatic_from is not None else ""),
     )
     if previous_team is None or previous_team.id != team_id:
         record_event(
-            session, ticket, EVENT_TEAM_CHANGED, actor.email,
+            session, ticket, EVENT_TEAM_CHANGED, actor_email,
             from_value=previous_team.name if previous_team else None, to_value=new_team.name,
         )
     # Triaged is what lets it leave New. Set after triaged_at so set_status allows it.
     # A catalogue request with approvers waits for them (Awaiting approval) instead of opening.
     target = status_after_triage(session, ticket)
-    set_status(session, ticket, target, actor.email)
+    set_status(session, ticket, target, actor_email)
     if target == TicketStatus.AWAITING_APPROVAL:
-        start_approvals(session, ticket, actor.email)
+        start_approvals(session, ticket, actor_email)
     if assignee is not None:
         _set_assignee(session, ticket, assignee, actor)
-    elif ticket.assigned_agent_id is not None:
+    elif ticket.assigned_agent_id is not None and actor is not None:
         # Choosing no one leaves the assignment as it is (the ticket may have been handed
         # to someone to triage), unless that person is not in the team it now belongs to:
         # access follows the team, so they could no longer open it.
