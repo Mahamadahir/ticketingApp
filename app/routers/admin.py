@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from app.templating import templates
 from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, func, select
 
 from app.activity import (
@@ -18,7 +19,8 @@ from app.activity import (
     SSO_FAILED,
 )
 from app.audit import log_action
-from app.auth import hash_password, require_roles
+from app.auth import hash_password, require_permission, require_roles
+from app.permissions import ASSIGNABLE_ROLES, MANAGE_REQUEST_TEMPLATES, PERMISSIONS
 from app.categories import (
     CategoryError,
     create_category,
@@ -106,6 +108,7 @@ from app.models import (
     TeamMembership,
     Ticket,
     User,
+    UserPermission,
     UserRole,
 )
 from app.pagination import paginate
@@ -128,6 +131,7 @@ from app.ticket_service import EVENT_CATEGORY_REVIEWED, get_by_number, record_ev
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 require_super_admin = require_roles(UserRole.SUPER_ADMIN)
+require_request_templates = require_permission(MANAGE_REQUEST_TEMPLATES)
 
 
 @router.get("/users", response_class=HTMLResponse)
@@ -148,10 +152,18 @@ def list_users(
         for row in rows:
             memberships.setdefault(row.user_id, []).append(row)
 
+    granted: dict[int, set[str]] = {}
+    if user_ids:
+        for row in session.exec(select(UserPermission).where(UserPermission.user_id.in_(user_ids))).all():
+            granted.setdefault(row.user_id, set()).add(row.permission)
+
     return templates.TemplateResponse(
         request,
         "admin_users.html",
         {
+            "permissions": PERMISSIONS,
+            "assignable_roles": ASSIGNABLE_ROLES,
+            "granted": granted,
             "page": users_page,
             "teams": teams,
             "teams_by_id": teams_by_id,
@@ -178,8 +190,48 @@ def update_user(
     if target.role != role:
         log_action(session, admin.email, "user", target.id, "role_changed", f"{target.role.value} -> {role.value}")
         target.role = role
+        if role not in ASSIGNABLE_ROLES:
+            # Grants only mean something for a role that may hold them; drop them rather than leave them dormant.
+            for row in session.exec(select(UserPermission).where(UserPermission.user_id == target.id)).all():
+                log_action(session, admin.email, "user", target.id, "permission_revoked", row.permission)
+                session.delete(row)
 
     session.add(target)
+    session.commit()
+    return RedirectResponse("/admin/users", status_code=303)
+
+
+@router.post("/users/{user_id}/permissions")
+def set_user_permissions(
+    user_id: int,
+    permissions: list[str] = Form(default=[]),
+    admin: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    """Saves the ticked boxes as this person's extra permissions (app/permissions.py): grants the new
+    ones, revokes the unticked ones, one audit entry each."""
+    target = session.get(User, user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    wanted = set(permissions)
+    if not wanted <= set(PERMISSIONS):
+        raise HTTPException(status_code=400, detail="Unknown permission")
+    if wanted and target.role not in ASSIGNABLE_ROLES:
+        raise HTTPException(status_code=400, detail="Only agents can be given extra permissions")
+    rows = session.exec(select(UserPermission).where(UserPermission.user_id == target.id)).all()
+    held = {row.permission: row for row in rows}
+    for key in sorted(wanted - set(held)):
+        try:
+            with session.begin_nested():  # a double submit may have added it already: not an error
+                session.add(UserPermission(user_id=target.id, permission=key, granted_by=admin.email))
+                session.flush()
+        except IntegrityError:
+            continue
+        log_action(session, admin.email, "user", target.id, "permission_granted", key)
+    for key, row in held.items():
+        if key not in wanted:
+            session.delete(row)
+            log_action(session, admin.email, "user", target.id, "permission_revoked", key)
     session.commit()
     return RedirectResponse("/admin/users", status_code=303)
 
@@ -990,7 +1042,7 @@ def _type_snapshot(session: Session, request_type: RequestType) -> tuple:
 @router.get("/request-types", response_class=HTMLResponse)
 def list_request_types(
     request: Request,
-    user: User = Depends(require_super_admin),
+    user: User = Depends(require_request_templates),
     session: Session = Depends(get_session),
 ):
     return templates.TemplateResponse(
@@ -1019,7 +1071,7 @@ def add_request_type(
     offers_required_by: Optional[str] = Form(None),
     due_days_before: Optional[str] = Form(None),
     queue_lead_days: Optional[str] = Form(None),
-    admin: User = Depends(require_super_admin),
+    admin: User = Depends(require_request_templates),
     session: Session = Depends(get_session),
 ):
     try:
@@ -1046,7 +1098,7 @@ def edit_request_type(
     offers_required_by: Optional[str] = Form(None),
     due_days_before: Optional[str] = Form(None),
     queue_lead_days: Optional[str] = Form(None),
-    admin: User = Depends(require_super_admin),
+    admin: User = Depends(require_request_templates),
     session: Session = Depends(get_session),
 ):
     request_type = session.get(RequestType, type_id)

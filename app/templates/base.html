@@ -21,6 +21,8 @@
         <a href="/settings/notifications">Settings</a>
         {% if user.role.value == "super_admin" %}
         <a href="/admin/users">Admin</a>
+        {% elif can(user, "manage_request_templates") %}
+        <a href="/admin/request-types">Admin</a>
         {% endif %}
         <span class="user-chip">{{ user.display_name }} &middot; {{ user.role.value }}</span>
         <form method="post" action="/auth/logout" class="inline-form"><button type="submit">Sign out</button></form>

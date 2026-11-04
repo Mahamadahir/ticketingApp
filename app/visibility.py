@@ -21,6 +21,7 @@ from sqlalchemy import event, or_, true
 from sqlalchemy.orm import Session as OrmSession
 from sqlmodel import Session, select
 
+from app.permissions import ASSIGNABLE_ROLES, PERMISSIONS
 from app.models import (
     FINISHED_STATUSES,
     Attachment,
@@ -28,6 +29,7 @@ from app.models import (
     Team,
     TeamMembership,
     Ticket,
+    UserPermission,
     TicketEscalator,
     TicketFeedback,
     User,
@@ -287,3 +289,15 @@ def team_members(session: Session, team_id: int | None) -> list[User]:
             .order_by(User.display_name)
         ).all()
     )
+
+
+def has_permission(session: Session, user: User, key: str) -> bool:
+    """Whether the person holds an extra permission (app/permissions.py). Super admins hold all of
+    them; otherwise it takes a grant row and a role that may hold permissions."""
+    if user.role == UserRole.SUPER_ADMIN:
+        return key in PERMISSIONS
+    if user.role not in ASSIGNABLE_ROLES or key not in PERMISSIONS:
+        return False
+    return session.exec(
+        select(UserPermission.id).where(UserPermission.user_id == user.id, UserPermission.permission == key)
+    ).first() is not None
