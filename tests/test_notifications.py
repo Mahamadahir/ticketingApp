@@ -1,7 +1,7 @@
 from sqlmodel import select
 
 from app.models import MembershipLevel, Notification, Team, Ticket, User, UserRole
-from app.notifications import count_unread, mentioned_in, notify
+from app.notifications import count_unread, mentioned_in, notification_text, notify
 from tests.conftest import add_membership, create_category, create_team, login_as, set_role
 from tests.test_raising import desk, raise_it
 from tests.test_team_activity import classified, ticket_named
@@ -50,7 +50,7 @@ def test_assigning_a_ticket_notifies_the_assignee_but_not_yourself(client, db_se
     client.post(f"/tickets/{ticket.number}/reassign", data={"team_id": team.id, "agent_id": bob.id})
     [told] = notifications_for(db_session, "bob@example.com")
     assert (told.kind, told.ticket_id, told.actor_email, told.read_at) == ("assigned", ticket.id, "agent@example.com", None)
-    assert told.text == f"{ticket.tag} Printer jam was assigned to you"
+    assert notification_text(told, ticket) == f"{ticket.reference} Printer jam was assigned to you"
 
 
 def test_assigning_during_triage_and_by_a_super_admin_notifies_too(client, db_session):
@@ -97,7 +97,7 @@ def test_a_mention_in_a_note_notifies_the_agent_who_can_open_the_ticket(client, 
 
     [told] = notifications_for(db_session, "bob@example.com")  # once, however often they are named
     assert (told.kind, told.actor_email) == ("mentioned", "agent@example.com")
-    assert told.text == f"Agent Ann mentioned you on {ticket.tag} Router down"
+    assert notification_text(told, ticket) == f"Agent Ann mentioned you on {ticket.reference} Router down"
     assert notifications_for(db_session, "agent@example.com") == []
 
 
@@ -293,7 +293,9 @@ def test_only_approval_requests_reach_a_non_agent_and_the_bell_polls_without_cle
 # ---- Review fixes -----------------------------------------------------------------------------------
 
 
-def test_the_stored_text_uses_the_number_not_a_prefix_that_can_change(client, db_session):
+def test_the_reference_is_filled_in_when_shown_so_it_follows_a_retype(client, db_session):
+    from app.models import TicketType
+
     team, category, _ = desk(client, db_session)
     bob = agent_in_desk(client, db_session, "bob@example.com")
     back_to(client)
@@ -302,8 +304,36 @@ def test_the_stored_text_uses_the_number_not_a_prefix_that_can_change(client, db
     client.post(f"/tickets/{ticket.number}/reassign", data={"team_id": team.id, "agent_id": bob.id})
 
     [told] = notifications_for(db_session, "bob@example.com")
+    assert f"#{ticket.number}" not in told.text and "INC-" not in told.text  # stored with a marker only
+    client.post("/auth/logout")
+    login_as(client, "bob@example.com")
+    page = client.get("/notifications").text
+    assert f"INC-{ticket.number} Retyped later was assigned to you" in page and f"#{ticket.number}" not in page
 
-    assert f"#{ticket.number} " in told.text and "INC-" not in told.text
+    ticket.type = TicketType.SERVICE_REQUEST  # the type changes after the notification was written
+    db_session.add(ticket)
+    db_session.commit()
+    page = client.get("/notifications").text
+    assert f"SR-{ticket.number} Retyped later was assigned to you" in page and "INC-" not in page
+    assert notification_text(told, ticket) == f"SR-{ticket.number} Retyped later was assigned to you"
+    assert "\x1f" not in notification_text(told, None)
+
+
+def test_a_name_holding_the_marker_cannot_displace_the_reference(client, db_session):
+    from app.notifications import REF
+
+    team, category, ann_id = desk(client, db_session)
+    bob = agent_in_desk(client, db_session, "bob@example.com")
+    back_to(client)
+    classified(client, category, "Router down")
+    ticket = ticket_named(db_session, "Router down")
+    ann = db_session.exec(select(User).where(User.email == "agent@example.com")).one()
+    ann.display_name = f"Ann{REF}"
+    db_session.add(ann)
+    db_session.commit()
+    note(client, ticket, "@bob look")
+    [told] = notifications_for(db_session, "bob@example.com")
+    assert notification_text(told, ticket) == f"Ann mentioned you on {ticket.reference} Router down"
 
 
 def test_an_assignee_who_cannot_open_the_ticket_is_not_told_about_it(client, db_session):

@@ -35,7 +35,7 @@ def test_an_approver_who_is_not_an_agent_sees_the_bell_and_it_opens_the_portal(c
     assert 'href="/notifications"' in client.get("/portal").text  # the bell is in the navbar for everyone
     assert client.get("/notifications/count").text == "Notifications (1)"
     page = client.get("/notifications").text
-    assert "waiting for your approval" in page
+    assert "waiting for your approval" in page and f"{ticket.reference} " in page and ticket.tag not in page
     [entry] = bell(db_session, "boss@example.com")
     response = client.post(f"/notifications/{entry.id}/open", follow_redirects=False)
     assert response.headers["location"] == f"/portal/{ticket.number}"
@@ -72,5 +72,19 @@ def test_an_agent_approver_without_access_to_the_ticket_still_sees_it_and_opens_
     login_as(client, "boss@example.com")
 
     assert "waiting for your approval" in client.get("/notifications").text
+    [entry] = bell(db_session, "boss@example.com")
+    assert client.post(f"/notifications/{entry.id}/open", follow_redirects=False).headers["location"] == f"/portal/{ticket.number}"
+
+
+def test_an_agent_approver_who_can_open_the_ticket_is_still_sent_to_the_portal_to_vote(client, db_session):
+    from tests.conftest import set_role
+
+    person(client, db_session, "boss@example.com")
+    boss = db_session.exec(select(User).where(User.email == "boss@example.com")).one()
+    set_role(db_session, boss.id, UserRole.SUPER_ADMIN)  # can open every ticket
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, ["boss@example.com"]))
+    client.post("/auth/logout")
+    login_as(client, "boss@example.com")
+
     [entry] = bell(db_session, "boss@example.com")
     assert client.post(f"/notifications/{entry.id}/open", follow_redirects=False).headers["location"] == f"/portal/{ticket.number}"

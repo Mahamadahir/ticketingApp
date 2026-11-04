@@ -34,6 +34,7 @@ from app.inbound import (
 )
 from app.jobs import JOBS, mail_in
 from app.messages import agent_timeline, record_inbound, requester_visible_messages
+from app.notifications import notification_text
 from app.models import (
     Attachment,
     AuditLog,
@@ -481,7 +482,7 @@ def test_a_colleagues_reply_all_resumes_a_waiting_ticket_and_tells_the_assignee_
     assert db_session.get(Ticket, ticket.id).status == TicketStatus.IN_PROGRESS
     [told] = db_session.exec(select(Notification)).all()
     assert (told.kind, told.actor_email) == ("replied", "kim@example.com")
-    assert told.text == f"{ticket.tag} Printer jam: Ticket updated by kim@example.com"
+    assert notification_text(told, ticket) == f"{ticket.reference} Printer jam: Ticket updated by kim@example.com"
     assert len(followers_of(db_session, ticket)) == 1 and len(messages_of(db_session, ticket)) == 1
 
 

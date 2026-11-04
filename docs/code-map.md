@@ -230,6 +230,7 @@ any change that adds, removes or renames modules, routes, models, jobs, settings
 | `INBOUND_ENABLED` | `bool` | `False` |
 | `MAIL_CATCH_UP_ENABLED` | `bool` | `False` |
 | `MAIL_SENDING` | `str` | `'off'` |
+| `MAILBOX_TIME_ZONES_ENABLED` | `bool` | `False` |
 | `PRESENCE_ENABLED` | `bool` | `False` |
 | `PUBLIC_BASE_URL` | `str` | `''` |
 | `RATE_LIMIT_ACTION_LINKS_PER_MINUTE` | `int` | `30` |
@@ -654,10 +655,10 @@ File: `app/notification_settings.py`
 
 In-app notifications (phase 2A): the bell. Something happens that an agent should know about,  
 File: `app/notifications.py`
-- Functions: `bell_tickets`, `count_unread`, `default_teams_delay`, `drop_due_for_teams`, `due_for_teams`, `hand_to_teams`, `mark_all_read`, `mark_read`, `mentioned_in`, `notify`, `notify_approval_overdue`, `notify_approval_waiting`, `notify_approval_withdrawn`, `notify_assigned`, `notify_chase_given_up`, `notify_due_today`, `notify_mentions`, `notify_reopened`, `notify_reply`, `retire_read_for_teams`, `visible_to`
+- Functions: `bell_references`, `bell_tickets`, `count_unread`, `default_teams_delay`, `drop_due_for_teams`, `due_for_teams`, `hand_to_teams`, `mark_all_read`, `mark_read`, `mentioned_in`, `notification_text`, `notify`, `notify_approval_overdue`, `notify_approval_waiting`, `notify_approval_withdrawn`, `notify_assigned`, `notify_chase_given_up`, `notify_due_today`, `notify_mentions`, `notify_reopened`, `notify_reply`, `retire_read_for_teams`, `visible_to`
 - Imports: `app.models`, `app.notification_settings`, `app.settings_store`, `app.visibility`
-- Imported by: `app.approval_reminders`, `app.approvals`, `app.auto_close_chase`, `app.due_today`, `app.escalation`, `app.jobs`, `app.messages`, `app.reopening`, `app.routers.bulk_resolve`, `app.routers.feedback`, `app.routers.my_settings`, `app.routers.notifications`, `app.routers.tickets`, `app.triage`
-- Tests: `test_bell_access.py`, `test_due_date_review.py`, `test_notifications.py`, `test_teams_copy.py`, `test_teams_copy_sending.py`
+- Imported by: `app.approval_reminders`, `app.approvals`, `app.auto_close_chase`, `app.due_today`, `app.escalation`, `app.jobs`, `app.messages`, `app.reopening`, `app.routers.bulk_resolve`, `app.routers.feedback`, `app.routers.my_settings`, `app.routers.notifications`, `app.routers.tickets`, `app.teams`, `app.triage`
+- Tests: `test_bell_access.py`, `test_due_date.py`, `test_due_date_review.py`, `test_inbound_mail.py`, `test_notifications.py`, `test_reply_notification.py`, `test_teams_copy.py`, `test_teams_copy_sending.py`
 
 ### `app.outbox`
 
@@ -995,7 +996,7 @@ File: `app/teams.py`
 
 - Classes: `Unsendable`
 - Functions: `deliver_pending`, `describe_failure`, `give_up`, `is_permanent`, `mention_name`, `message`, `new_ticket_card`, `new_ticket_post`, `notification_card`, `notification_post`, `plain`, `post_card`, `queue_new_ticket`, `queue_notification`
-- Imports: `app.config`, `app.models`, `app.visibility`
+- Imports: `app.config`, `app.models`, `app.notifications`, `app.visibility`
 - Imported by: `app.approval_reminders`, `app.auto_close_chase`, `app.inbound`, `app.jobs`, `app.mail`, `app.routers.admin`, `app.ticket_service`
 - Tests: `test_approval_reminders.py`, `test_auto_close_chase.py`, `test_inbound_mail.py`, `test_outbound_mail.py`, `test_teams.py`, `test_teams_copy_sending.py`, `test_wiring_3f.py`, `test_withdraw.py`
 

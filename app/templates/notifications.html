@@ -17,7 +17,7 @@
     {% for n in page.items %}
     <tr>
       <td>{{ n.created_at|local_time }}</td>
-      <td>{% if not n.read_at %}<b>{{ n.text }}</b>{% else %}{{ n.text }}{% endif %}</td>
+      <td>{% if not n.read_at %}<b>{{ texts[n.id] }}</b>{% else %}{{ texts[n.id] }}{% endif %}</td>
       <td>
         <form method="post" action="/notifications/{{ n.id }}/open" class="inline-form">
           <button type="submit" class="button-outline">{{ "Open" if tickets.get(n.ticket_id) or n.kind == "approval_waiting" else "Mark read" }}</button>

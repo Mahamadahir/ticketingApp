@@ -2,6 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 
+from app.notifications import notification_text
 from app.models import Ticket, TicketStatus, TicketType, User, UserRole
 from app.settings_store import SCHEDULED_MORNING_HOUR, set_setting
 from tests.conftest import create_category, create_team, login_as, set_role
@@ -119,4 +120,4 @@ def test_the_bell_text_uses_the_number_not_the_reference_that_follows_the_type(d
 
     notification = notify_due_today(db_session, ticket)
 
-    assert notification.text == f"{ticket.tag} {ticket.subject} is due today"
+    assert notification_text(notification, ticket) == f"{ticket.reference} {ticket.subject} is due today"

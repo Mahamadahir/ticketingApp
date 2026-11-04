@@ -55,6 +55,11 @@ class Settings(BaseSettings):
     # Out-of-office detection (phase 2E): the worker reads agents' presence from Graph
     # (Presence.Read.All) and marks those who are out of office. Needs the GRAPH_* credentials.
     presence_enabled: bool = False
+    # Reading a requester's Outlook mailbox time zone from Graph (GET /users/{id}/mailboxSettings, application
+    # permission MailboxSettings.Read), run by the worker. OFF: that permission cannot be scoped to the shared
+    # mailbox, so for now requesters use their account zone or the default_time_zone setting. The code stays
+    # for a later release; intake still notes each address, so turning it on picks everyone up.
+    mailbox_time_zones_enabled: bool = False
     # Keeping a Graph change-notification subscription on the shared mailbox alive (phase 3C), run by the
     # worker. GRAPH_NOTIFICATION_URL is the public address of POST /webhooks/graph/notifications on the
     # public app (https, reachable from Microsoft); lifecycle notifications come to the same address.

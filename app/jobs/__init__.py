@@ -68,11 +68,12 @@ def presence(session: Session) -> None:
 
 def requester_time_zones(session: Session) -> None:
     """Reads the Outlook mailbox time zone of requesters who are new or due a refresh
-    (app/time_zones.py; needs MailboxSettings.Read). Does nothing unless Graph is configured. A person
+    (app/time_zones.py; needs MailboxSettings.Read). Does nothing, and makes no Graph call, unless
+    MAILBOX_TIME_ZONES_ENABLED is on (it is off by default) and Graph is configured. A person
     who cannot be read keeps the default time zone and is tried again later and does not fail the job. When
     EVERY lookup in a run failed (typically MailboxSettings.Read not granted, or Graph down) the retry
     times are kept and the job fails, so it shows in the worker log like the presence job's 403."""
-    if settings.graph_configured:
+    if settings.mailbox_time_zones_enabled and settings.graph_configured:
         result = refresh_requester_zones(session)
         if result.looked_at and result.failed == result.looked_at:
             session.commit()  # keep the retry times: a systematic failure must not be retried on every run

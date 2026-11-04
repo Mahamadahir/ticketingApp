@@ -1754,6 +1754,7 @@
       "classes": [],
       "file": "app/notifications.py",
       "functions": [
+        "bell_references",
         "bell_tickets",
         "count_unread",
         "default_teams_delay",
@@ -1763,6 +1764,7 @@
         "mark_all_read",
         "mark_read",
         "mentioned_in",
+        "notification_text",
         "notify",
         "notify_approval_overdue",
         "notify_approval_waiting",
@@ -1790,6 +1792,7 @@
         "app.routers.my_settings",
         "app.routers.notifications",
         "app.routers.tickets",
+        "app.teams",
         "app.triage"
       ],
       "imports": [
@@ -1804,8 +1807,11 @@
       "tables": [],
       "tests": [
         "tests/test_bell_access.py",
+        "tests/test_due_date.py",
         "tests/test_due_date_review.py",
+        "tests/test_inbound_mail.py",
         "tests/test_notifications.py",
+        "tests/test_reply_notification.py",
         "tests/test_teams_copy.py",
         "tests/test_teams_copy_sending.py"
       ]
@@ -3597,6 +3603,7 @@
       "imports": [
         "app.config",
         "app.models",
+        "app.notifications",
         "app.visibility"
       ],
       "module": "app.teams",
@@ -4142,6 +4149,12 @@
       "env": "MAIL_SENDING",
       "name": "mail_sending",
       "type": "str"
+    },
+    {
+      "default": "False",
+      "env": "MAILBOX_TIME_ZONES_ENABLED",
+      "name": "mailbox_time_zones_enabled",
+      "type": "bool"
     },
     {
       "default": "False",

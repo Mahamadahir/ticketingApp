@@ -82,7 +82,7 @@ name, the storage account name).
 | App registration | Purpose | Permissions (application unless noted) | Redirect URI |
 |---|---|---|---|
 | **ticketing-sso-staging** | Agents sign in with Microsoft | delegated `openid`, `profile`, `email` | `https://<staging web address>/auth/callback` |
-| **ticketing-graph-staging** | The app reads and sends the shared mailbox, checks presence and requesters' time zones | `Mail.Read`, `Mail.Send`, `Presence.Read.All`, `User.Read.All`, `MailboxSettings.Read` (admin consent) | none |
+| **ticketing-graph-staging** | The app reads and sends the shared mailbox, checks presence | `Mail.Read`, `Mail.Send`, `Presence.Read.All`, `User.Read.All` (admin consent; `MailboxSettings.Read` only for the later requester time-zone feature, see below) | none |
 | **ticketing-github-staging** | GitHub Actions deploys with OIDC | none in Entra; Azure roles in step 5 | none |
 
 Notes:
@@ -180,10 +180,11 @@ Everything below can only be proved here. Tick each, note the date, and say what
 - [ ] Presence: out of office by Outlook automatic reply, Teams scheduled out of office and a
       calendar event each show "(out of office)" in the pickers within 15 minutes and clear again;
       a 403 from Graph shows as `job=presence status=failed`.
-- [ ] Requesters' time zones: `MailboxSettings.Read` is consented; a requester who emails the shared
-      mailbox gets their Outlook mailbox zone stored (`requestertimezone`, source `mailbox`) within
-      about 5 minutes (`heartbeat job=requester-time-zones`); a sender outside the tenant gets the
-      default; a browser reports its zone on sign-in (My settings shows it).
+- [ ] Time zones: a browser reports its zone on sign-in (My settings shows it). Only if
+      `MAILBOX_TIME_ZONES_ENABLED` is turned on (off by default): `MailboxSettings.Read` is consented
+      and a requester who emails the shared mailbox gets their Outlook mailbox zone stored
+      (`requestertimezone`, source `mailbox`) within about 5 minutes
+      (`heartbeat job=requester-time-zones`); a sender outside the tenant gets the default.
 - [ ] Alerts reach `ALERT_EMAIL`; the worker heartbeat line appears in Log Analytics;
       Application Insights shows data.
 - [ ] Point-in-time restore of the database to a scratch server works.

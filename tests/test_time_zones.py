@@ -426,6 +426,7 @@ def test_the_worker_runs_the_requester_time_zone_job_only_when_graph_is_configur
     from app import jobs
 
     assert [j.every_seconds for j in JOBS if j.name == "requester-time-zones"] == [300]
+    monkeypatch.setattr(settings, "mailbox_time_zones_enabled", True)
     calls = []
     monkeypatch.setattr(jobs, "refresh_requester_zones", lambda session: calls.append(session) or RefreshResult(0, 0, ""))
     for value in ("", "x"):
@@ -434,6 +435,25 @@ def test_the_worker_runs_the_requester_time_zone_job_only_when_graph_is_configur
         monkeypatch.setattr(settings, "graph_client_secret", value)
         jobs.requester_time_zones(db_session)
     assert len(calls) == 1
+
+
+def test_the_mailbox_lookup_is_off_by_default_and_then_makes_no_graph_call(db_session, monkeypatch):
+    from app import jobs
+
+    assert type(settings).model_fields["mailbox_time_zones_enabled"].default is False
+    note_requester(db_session, "newcomer@example.com", now=NOW)  # intake still notes the address
+    db_session.commit()
+    for name in ("graph_tenant_id", "graph_client_id", "graph_client_secret"):
+        monkeypatch.setattr(settings, name, "x")  # Graph is configured; only the switch is off
+    monkeypatch.setattr(settings, "mailbox_time_zones_enabled", False)
+    calls = []
+    monkeypatch.setattr(jobs, "refresh_requester_zones", lambda session: calls.append(session))
+    monkeypatch.setattr("app.graph_client.graph_client.mailbox_time_zone", lambda email: calls.append(email))
+    jobs.requester_time_zones(db_session)
+    assert calls == []
+    assert db_session.get(RequesterTimeZone, "newcomer@example.com") is not None
+    # Falls back to the default zone: nothing was read.
+    assert zone_for_email(db_session, "newcomer@example.com") == default_zone(db_session)
 
 
 # ---- Admin settings ----------------------------------------------------------------------------------------
@@ -463,6 +483,7 @@ def test_a_run_where_every_lookup_failed_fails_the_job_but_keeps_the_retry_times
         note_requester(db_session, email, now=NOW)
     db_session.commit()
     denied = httpx.HTTPStatusError("denied", request=httpx.Request("GET", "https://x"), response=httpx.Response(403))
+    monkeypatch.setattr(settings, "mailbox_time_zones_enabled", True)
     monkeypatch.setattr(settings, "graph_tenant_id", "t")
     monkeypatch.setattr(settings, "graph_client_id", "c")
     monkeypatch.setattr(settings, "graph_client_secret", "s")
@@ -482,6 +503,7 @@ def test_one_failure_among_good_lookups_does_not_fail_the_job(db_session, monkey
     for email in ("a@example.com", "b@example.com"):
         note_requester(db_session, email, now=NOW)
     db_session.commit()
+    monkeypatch.setattr(settings, "mailbox_time_zones_enabled", True)
     monkeypatch.setattr(settings, "graph_tenant_id", "t")
     monkeypatch.setattr(settings, "graph_client_id", "c")
     monkeypatch.setattr(settings, "graph_client_secret", "s")

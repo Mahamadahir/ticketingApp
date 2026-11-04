@@ -36,6 +36,11 @@ DUE_TODAY = "due_today"
 CHASE_GIVEN_UP = "chase_given_up"
 AGENT_ROLES = (UserRole.AGENT, UserRole.SUPER_ADMIN)
 
+# Stored text names its ticket with this marker, never with the number or reference itself. The reference's
+# prefix follows the ticket's type (INC-1042, SR-1042), which can change after the notification is written,
+# so it is filled in when the text is shown (the bell, the Teams card) with `notification_text`.
+REF = "\x1fref\x1f"
+
 # @alice or @alice@example.com: letters, digits, dots, dashes and underscores.
 _MENTION = re.compile(r"(?<![\w.@])@([A-Za-z0-9][A-Za-z0-9._-]*(?:@[A-Za-z0-9][A-Za-z0-9.-]*)?)")
 
@@ -66,11 +71,29 @@ def notify(
     return notification
 
 
+def notification_text(notification: Notification, ticket: Optional[Ticket]) -> str:
+    """The text to show: the ticket's current reference (INC-1042) in place of the marker. Only the first
+    marker is replaced (it leads the ticket's part of the text, so a subject cannot supply one that counts).
+    Without the ticket the marker becomes "A ticket" rather than showing."""
+    text = notification.text
+    if REF not in text:
+        return text
+    return text.replace(REF, ticket.reference if ticket is not None else "A ticket", 1)
+
+
+def bell_references(session: Session, notifications) -> dict[int, Ticket]:
+    """The tickets of these notifications by id, for filling in the reference, whether or not the person can
+    open them (the rows themselves are already limited by `visible_to`)."""
+    ids = {n.ticket_id for n in notifications if n.ticket_id}
+    if not ids:
+        return {}
+    return {t.id: t for t in session.exec(select(Ticket).where(Ticket.id.in_(ids))).all()}
+
+
 def notify_assigned(session: Session, ticket: Ticket, assignee: User, actor_email: Optional[str]) -> Optional[Notification]:
     if not _can_open(session, assignee, ticket):
         return None  # a notification says what the ticket is, so only someone who can open it gets one
-    # The number with # rather than the reference: the prefix follows the ticket's type, which can change.
-    return notify(session, assignee, ASSIGNED, ticket, f"{ticket.tag} {ticket.subject} was assigned to you", actor_email)
+    return notify(session, assignee, ASSIGNED, ticket, f"{REF} {ticket.subject} was assigned to you", actor_email)
 
 
 def _can_open(session: Session, person: User, ticket: Ticket) -> bool:
@@ -113,7 +136,7 @@ def notify_mentions(
     for person in mentioned_in(session, ticket, note.body if text is None else text, author):
         made = notify(
             session, person, MENTIONED, ticket,
-            f"{author.display_name} mentioned you on {ticket.tag} {ticket.subject}", author.email,
+            f"{author.display_name.replace(REF, '')} mentioned you on {REF} {ticket.subject}", author.email,
         )
         if made is not None:
             notifications.append(made)
@@ -142,7 +165,7 @@ def notify_reply(session: Session, ticket: Ticket, replier_email: str) -> list[N
         if agent is None or not _can_open(session, agent, target):
             continue
         notification = notify(
-            session, agent, REPLIED, target, f"{target.tag} {target.subject}: Ticket updated by {name}", replier_email
+            session, agent, REPLIED, target, f"{REF} {target.subject}: Ticket updated by {name}", replier_email
         )
         if notification is not None:
             told.add(agent.id)
@@ -325,7 +348,7 @@ def notify_reopened(session: Session, ticket: Ticket, actor_email: Optional[str]
     if agent is None or not _can_open(session, agent, ticket):
         return None
     return notify(
-        session, agent, REOPENED, ticket, f"{ticket.tag} {ticket.subject} was reopened: {reason[:200]}", actor_email
+        session, agent, REOPENED, ticket, f"{REF} {ticket.subject} was reopened: {reason[:200]}", actor_email
     )
 
 
@@ -336,7 +359,7 @@ def notify_approval_withdrawn(session: Session, ticket: Ticket, approver: User, 
         return None  # the bell has no setting of its own: switching off approval notifications covers it
     return notify(
         session, approver, APPROVAL_WITHDRAWN, ticket,
-        f"{ticket.tag} {ticket.subject} was withdrawn by the requester, so it no longer needs your approval", actor_email,
+        f"{REF} {ticket.subject} was withdrawn by the requester, so it no longer needs your approval", actor_email,
     )
 
 
@@ -345,7 +368,7 @@ def notify_approval_waiting(session: Session, ticket: Ticket, approver: User) ->
     setting for this event only: it is shown even if they turned the approval email off, and whether they are
     an agent or can open the ticket does not matter (it opens in the portal, where they vote). Does not commit."""
     return notify(
-        session, approver, APPROVAL_WAITING, ticket, f"{ticket.tag} {ticket.subject} is waiting for your approval", None
+        session, approver, APPROVAL_WAITING, ticket, f"{REF} {ticket.subject} is waiting for your approval", None
     )
 
 
@@ -356,7 +379,7 @@ def notify_approval_overdue(session: Session, ticket: Ticket, super_admin: User,
         return None
     return notify(
         session, super_admin, APPROVAL_OVERDUE, ticket,
-        f"{ticket.tag} {ticket.subject} has waited {days} days for approval ({unanswered} had not answered)", None,
+        f"{REF} {ticket.subject} has waited {days} days for approval ({unanswered} had not answered)", None,
     )
 
 
@@ -368,7 +391,7 @@ def notify_chase_given_up(session: Session, ticket: Ticket) -> list[Notification
         people = [session.get(User, ticket.assigned_agent_id)]
     else:
         people = team_members(session, ticket.team_id)
-    text = f"{ticket.tag} {ticket.subject}: the chase email to the requester could not be sent, so it is still waiting for them"
+    text = f"{REF} {ticket.subject}: the chase email to the requester could not be sent, so it is still waiting for them"
     made = []
     for person in people:
         if person is None or not person.is_active or not _can_open(session, person, ticket):
@@ -387,4 +410,4 @@ def notify_due_today(session: Session, ticket: Ticket) -> Optional[Notification]
     agent = session.get(User, ticket.assigned_agent_id)
     if agent is None or not _can_open(session, agent, ticket):
         return None
-    return notify(session, agent, DUE_TODAY, ticket, f"{ticket.tag} {ticket.subject} is due today", None)
+    return notify(session, agent, DUE_TODAY, ticket, f"{REF} {ticket.subject} is due today", None)

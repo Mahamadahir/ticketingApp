@@ -233,7 +233,7 @@ by hand, and keep the pipeline at Contributor.
 
 ## Teams and out-of-office (phase 2)
 
-Three switches, all off unless set to `true` (environment variables in your shell,
+Four switches, all off unless set to `true` (environment variables in your shell,
 or GitHub Environment variables for the workflow; `infra/*.bicepparam` reads them):
 
 | Variable | Where it lands | What it does |
@@ -241,6 +241,7 @@ or GitHub Environment variables for the workflow; `infra/*.bicepparam` reads the
 | `TEAMS_NEW_TICKET_ENABLED` | web, public, worker, migrate job | A Teams channel post for each new ticket |
 | `TEAMS_NOTIFICATIONS_ENABLED` | web, public, worker, migrate job | Also copies an unread notification to Teams after the person's delay |
 | `PRESENCE_ENABLED` | worker only | The `presence` job marks agents who are out of office |
+| `MAILBOX_TIME_ZONES_ENABLED` | worker only | The `requester-time-zones` job reads requesters' Outlook mailbox time zones (a later feature, see below) |
 
 `TEAMS_NEW_TICKET_WEBHOOK_URL` (a Teams Workflows webhook for the support channel)
 is a secret: the template stores it in Key Vault as `teams-new-ticket-webhook-url`
@@ -263,15 +264,15 @@ behind `GRAPH_CLIENT_ID`, add the Microsoft Graph **application** permissions
 tenant, client and secret must also be set. Without the consent the job logs
 `job=presence status=failed` (a 403) and marks nobody.
 
-**Requesters' time zones need one more Graph permission.** The worker's `requester-time-zones`
-job (it runs whenever the `GRAPH_*` settings are set; there is no switch) reads each requester's
-Outlook mailbox time zone with `GET /users/{id}/mailboxSettings`. Add the Microsoft Graph
-**application** permission `MailboxSettings.Read` to the same registration and grant admin
-consent. Without it the reads are refused (403): the job carries on, each requester is shown
-times in the `default_time_zone` setting, and the lookup is retried after
-`time_zone_retry_hours`, and when every lookup in a run is refused the job logs `status=failed`. Note this reads requesters' own
-mailboxes: an application access policy that limits the registration to the shared mailbox (docs/plan.md, security item 4)
-would also refuse it, so decide the scoping before relying on it. Nothing in the Bicep changes.
+**Later feature: requesters' mailbox time zones.** Not required now. The worker's `requester-time-zones`
+job reads each requester's Outlook mailbox time zone with `GET /users/{id}/mailboxSettings`, but only when
+`MAILBOX_TIME_ZONES_ENABLED=true` (default off; with it off the job does nothing and makes no Graph call, and
+requesters use their account zone, set from the portal or browser, or the `default_time_zone` setting). To
+roll it out after a stable release: add the Microsoft Graph **application** permission `MailboxSettings.Read`
+to the same registration, grant admin consent, and set the variable. It conflicts with scoping the
+registration to the shared mailbox (an application access policy that limits it to that mailbox refuses the
+read, docs/plan.md security item 4), so decide the scoping first. Without the consent the reads are refused
+(403): requesters keep the default zone and, when every lookup in a run is refused, the job logs `status=failed`.
 
 ## Custom domain (at roll-out)
 

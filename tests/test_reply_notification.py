@@ -6,6 +6,7 @@ import pytest
 from sqlmodel import select
 
 from app.followers import add_follower
+from app.notifications import notification_text
 from app.models import Notification, NotificationPreference, Ticket, TicketSource, TicketStatus, User
 from app.ticket_service import create_ticket
 from tests.conftest import create_team, login_as
@@ -55,7 +56,7 @@ def test_a_reply_notifies_the_assignee_whatever_the_status(client, db_session, s
 
     [told] = notifications_for(db_session, "agent@example.com")
     assert (told.kind, told.ticket_id, told.actor_email, told.read_at) == ("replied", ticket.id, "jo@example.com", None)
-    assert told.text == f"{ticket.tag} Printer jam: Ticket updated by Test User"
+    assert notification_text(told, ticket) == f"{ticket.reference} Printer jam: Ticket updated by Test User"
     expected = {TicketStatus.AWAITING_USER: TicketStatus.IN_PROGRESS, TicketStatus.RESOLVED: TicketStatus.IN_PROGRESS}.get(status, status)  # a reply reopens a Resolved ticket (4E-1)
     assert db_session.get(Ticket, ticket.id).status == expected  # status behaviour is unchanged
 
@@ -92,8 +93,8 @@ def test_the_notification_names_the_replier_and_falls_back_to_their_email(client
     db_session.commit()
     client.post(f"/portal/{ticket.number}/comment", data={"body": "again"})
 
-    texts = [n.text for n in notifications_for(db_session, "agent@example.com")]
-    assert texts == [f"{ticket.tag} Printer jam: Ticket updated by Kim Lee", f"{ticket.tag} Printer jam: Ticket updated by kim@example.com"]
+    texts = [notification_text(n, ticket) for n in notifications_for(db_session, "agent@example.com")]
+    assert texts == [f"{ticket.reference} Printer jam: Ticket updated by Kim Lee", f"{ticket.reference} Printer jam: Ticket updated by kim@example.com"]
 
 
 def test_a_follower_reply_notifies(client, db_session):
