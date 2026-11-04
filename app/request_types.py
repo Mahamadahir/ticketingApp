@@ -22,6 +22,7 @@ from app.approvals import PercentError, check_percentages
 from app.audit import log_action
 from app.categories import is_selectable, path_of, team_id_for
 from app.models import ApprovalGroup, Category, RequestType, Team, Ticket, TicketSource, TicketType
+from app.request_questions import missing_required
 from app.sla import Level
 from app.triage import triage_ticket
 
@@ -124,12 +125,16 @@ def self_triage(session: Session, ticket: Ticket, request_type: RequestType) -> 
     """Triages a just-raised portal request through the real `triage_ticket` with the system as the actor, when its
     type's defaults are all set: the type becomes Service Request, the type's team (through its category) and
     priority apply, the SLA starts, and approvals start as for an agent's triage (Awaiting approval with a group,
-    else Open unassigned in the team queue). Returns whether it did. An email- or Teams-raised ticket never comes
+    else Open unassigned in the team queue). Returns whether it did. Only when the type's required form questions
+    are answered (app/request_questions.py). An email- or Teams-raised ticket never comes
     here. Records the triaged event (naming the type) and a `triaged_automatically` audit entry. Does not commit."""
     if ticket.triaged_at is not None or ticket.source != TicketSource.PORTAL:
         return False
     category = self_triage_defaults(session, request_type)
     if category is None:
+        return False
+    if missing_required(session, ticket):
+        # Cannot happen from the portal form, which enforces them; a request without its answers waits for an agent.
         return False
     triage_ticket(
         session, ticket, None, ticket_type=TicketType.SERVICE_REQUEST, category=category,

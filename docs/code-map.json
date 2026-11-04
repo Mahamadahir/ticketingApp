@@ -54,6 +54,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/a1b7e3c94d25_request_type_form_questions_and_ticket_.py",
+        "revision": "a1b7e3c94d25"
+      },
+      {
         "file": "migrations/versions/4046d214dcb1_request_type_defaults.py",
         "revision": "4046d214dcb1"
       },
@@ -68,17 +72,13 @@
       {
         "file": "migrations/versions/e7a2c4d9b136_time_zones.py",
         "revision": "e7a2c4d9b136"
-      },
-      {
-        "file": "migrations/versions/a7d3e1f60b92_single_pass_percent.py",
-        "revision": "a7d3e1f60b92"
       }
     ],
-    "count": 49,
+    "count": 50,
     "heads": [
       {
-        "file": "migrations/versions/4046d214dcb1_request_type_defaults.py",
-        "revision": "4046d214dcb1"
+        "file": "migrations/versions/a1b7e3c94d25_request_type_form_questions_and_ticket_.py",
+        "revision": "a1b7e3c94d25"
       }
     ]
   },
@@ -970,6 +970,7 @@
       "classes": [],
       "file": "app/forms.py",
       "functions": [
+        "form_answers",
         "optional_int"
       ],
       "imported_by": [
@@ -1345,6 +1346,7 @@
         "preview_email",
         "record_inbound",
         "record_notice",
+        "requester_visible_answers",
         "requester_visible_messages",
         "status_choices",
         "thread_subject"
@@ -1370,6 +1372,7 @@
         "app.models",
         "app.notifications",
         "app.outbox",
+        "app.request_questions",
         "app.sla",
         "app.splitting",
         "app.ticket_service",
@@ -1388,6 +1391,7 @@
         "tests/test_never_follow.py",
         "tests/test_outbound_mail.py",
         "tests/test_reply_notification.py",
+        "tests/test_request_questions.py",
         "tests/test_resolution.py",
         "tests/test_scheduled_status.py",
         "tests/test_split_family.py"
@@ -1420,6 +1424,7 @@
         "OutboundEmail",
         "RelatedTicket",
         "RequestType",
+        "RequestTypeQuestion",
         "RequesterTimeZone",
         "ScheduledJob",
         "Setting",
@@ -1429,6 +1434,7 @@
         "ThanksCandidate",
         "ThanksRule",
         "Ticket",
+        "TicketAnswer",
         "TicketApproval",
         "TicketEscalator",
         "TicketEvent",
@@ -1480,6 +1486,7 @@
         "app.presence",
         "app.raising",
         "app.reopening",
+        "app.request_questions",
         "app.request_types",
         "app.required_by",
         "app.resolution",
@@ -1604,6 +1611,10 @@
           "table": "requesttype"
         },
         {
+          "class": "RequestTypeQuestion",
+          "table": "requesttypequestion"
+        },
+        {
           "class": "RequesterTimeZone",
           "table": "requestertimezone"
         },
@@ -1638,6 +1649,10 @@
         {
           "class": "Ticket",
           "table": "ticket"
+        },
+        {
+          "class": "TicketAnswer",
+          "table": "ticketanswer"
         },
         {
           "class": "TicketApproval",
@@ -1718,6 +1733,7 @@
         "tests/test_raising.py",
         "tests/test_reopening.py",
         "tests/test_reply_notification.py",
+        "tests/test_request_questions.py",
         "tests/test_request_type_defaults.py",
         "tests/test_request_types.py",
         "tests/test_requester_bell.py",
@@ -2044,6 +2060,7 @@
         "app.models",
         "app.notification_settings",
         "app.outbox",
+        "app.request_questions",
         "app.request_types",
         "app.required_by",
         "app.resolution",
@@ -2130,6 +2147,51 @@
     },
     {
       "classes": [
+        "QuestionError"
+      ],
+      "file": "app/request_questions.py",
+      "functions": [
+        "add_question",
+        "all_questions_by_type",
+        "answer_rows",
+        "answered_question_ids",
+        "answers_of",
+        "clean_value",
+        "delete_question",
+        "display_value",
+        "drop_other_answers",
+        "form_rows",
+        "has_answers",
+        "missing_required",
+        "move_question",
+        "parse_options",
+        "questions_for",
+        "save_answers",
+        "update_question"
+      ],
+      "imported_by": [
+        "app.messages",
+        "app.raising",
+        "app.request_types",
+        "app.routers.admin",
+        "app.routers.portal",
+        "app.routers.tickets",
+        "app.triage"
+      ],
+      "imports": [
+        "app.models",
+        "app.ticket_service"
+      ],
+      "module": "app.request_questions",
+      "routes": [],
+      "summary": "Form questions on request types, and the answers on tickets (#118 part 1). Nothing here commits.",
+      "tables": [],
+      "tests": [
+        "tests/test_request_questions.py"
+      ]
+    },
+    {
+      "classes": [
         "RequestTypeError",
         "TypeDefaults"
       ],
@@ -2155,6 +2217,7 @@
         "app.audit",
         "app.categories",
         "app.models",
+        "app.request_questions",
         "app.sla",
         "app.triage"
       ],
@@ -2164,6 +2227,7 @@
       "tables": [],
       "tests": [
         "tests/test_approvals.py",
+        "tests/test_request_questions.py",
         "tests/test_request_type_defaults.py",
         "tests/test_request_types.py"
       ]
@@ -2320,13 +2384,16 @@
         "add_never_follow",
         "add_request_type",
         "add_thanks_rule_route",
+        "add_type_question",
         "category_review",
         "create_local_user",
         "create_team",
+        "delete_type_question",
         "dismiss_thanks_candidate",
         "edit_canned",
         "edit_request_type",
         "edit_thanks_rule",
+        "edit_type_question",
         "list_approval_groups",
         "list_canned",
         "list_categories",
@@ -2336,6 +2403,7 @@
         "list_teams",
         "list_thanks_rules",
         "list_users",
+        "move_type_question",
         "preview_email_template",
         "remove_approval_group_member",
         "remove_membership",
@@ -2382,6 +2450,7 @@
         "app.never_follow",
         "app.pagination",
         "app.permissions",
+        "app.request_questions",
         "app.request_types",
         "app.scheduled_jobs",
         "app.settings_store",
@@ -2531,9 +2600,29 @@
           "path": "/admin/request-types"
         },
         {
+          "handler": "edit_type_question",
+          "method": "POST",
+          "path": "/admin/request-types/questions/{question_id}"
+        },
+        {
+          "handler": "delete_type_question",
+          "method": "POST",
+          "path": "/admin/request-types/questions/{question_id}/delete"
+        },
+        {
+          "handler": "move_type_question",
+          "method": "POST",
+          "path": "/admin/request-types/questions/{question_id}/move"
+        },
+        {
           "handler": "edit_request_type",
           "method": "POST",
           "path": "/admin/request-types/{type_id}"
+        },
+        {
+          "handler": "add_type_question",
+          "method": "POST",
+          "path": "/admin/request-types/{type_id}/questions"
         },
         {
           "handler": "view_scheduled_jobs",
@@ -3006,6 +3095,7 @@
         "raise_new_ticket",
         "remove_ticket_follower",
         "reopen_my_ticket",
+        "request_questions",
         "set_my_required_by",
         "view_my_ticket",
         "withdraw_my_request"
@@ -3029,6 +3119,7 @@
         "app.pagination",
         "app.raising",
         "app.reopening",
+        "app.request_questions",
         "app.request_types",
         "app.required_by",
         "app.sla",
@@ -3060,6 +3151,11 @@
           "handler": "raise_new_ticket",
           "method": "POST",
           "path": "/portal/new"
+        },
+        {
+          "handler": "request_questions",
+          "method": "GET",
+          "path": "/portal/questions"
         },
         {
           "handler": "view_my_ticket",
@@ -3116,6 +3212,7 @@
         "agent_options_for_team",
         "assign_ticket",
         "backdate",
+        "change_answers",
         "change_due",
         "change_priority",
         "change_required_by",
@@ -3167,6 +3264,7 @@
         "app.presence",
         "app.raising",
         "app.reopening",
+        "app.request_questions",
         "app.request_types",
         "app.required_by",
         "app.resolution",
@@ -3217,6 +3315,11 @@
           "handler": "view_ticket",
           "method": "GET",
           "path": "/tickets/{number}"
+        },
+        {
+          "handler": "change_answers",
+          "method": "POST",
+          "path": "/tickets/{number}/answers"
         },
         {
           "handler": "waive_approval",
@@ -3888,6 +3991,7 @@
         "app.messages",
         "app.raising",
         "app.reopening",
+        "app.request_questions",
         "app.required_by",
         "app.resolution",
         "app.routers.admin",
@@ -3921,6 +4025,7 @@
         "tests/test_portal.py",
         "tests/test_reopening.py",
         "tests/test_reply_notification.py",
+        "tests/test_request_questions.py",
         "tests/test_request_type_defaults.py",
         "tests/test_requester_bell.py",
         "tests/test_resolution.py",
@@ -4010,6 +4115,7 @@
         "app.categories",
         "app.models",
         "app.notifications",
+        "app.request_questions",
         "app.required_by",
         "app.sla",
         "app.ticket_service",
@@ -4037,6 +4143,7 @@
         "has_permission",
         "is_untriaged",
         "may_add_note",
+        "may_edit_answers",
         "may_self_assign",
         "may_set_due",
         "may_set_required_by",
@@ -4486,6 +4593,7 @@
     "tests/test_raising.py",
     "tests/test_reopening.py",
     "tests/test_reply_notification.py",
+    "tests/test_request_questions.py",
     "tests/test_request_type_defaults.py",
     "tests/test_request_types.py",
     "tests/test_requester_bell.py",

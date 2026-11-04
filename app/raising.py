@@ -36,6 +36,7 @@ from app.required_by import RequiredByError, set_required_by
 from app.sla import Level
 from app.resolution import ResolveError, clean_notes, resolve_ticket
 from app.ticket_service import EVENT_REQUEST_TYPE, create_ticket, record_event
+from app.request_questions import QuestionError, save_answers
 from app.request_types import self_triage
 from app.triage import triage_ticket
 
@@ -95,6 +96,7 @@ def raise_ticket(
     request_type: Optional[RequestType] = None,
     resolution_notes: Optional[str] = None,
     required_by: Optional[date] = None,
+    answers: Optional[dict[int, str]] = None,
 ) -> Ticket:
     """Raises a ticket. With for_email an agent raises it on that person's behalf; without,
     the creator raises it for themselves. Only the agent mode can classify, assign or
@@ -156,6 +158,12 @@ def raise_ticket(
     )
     if request_type is not None:
         record_event(session, ticket, EVENT_REQUEST_TYPE, creator.email, to_value=request_type.name)
+    if request_type is not None:
+        # The form questions of the kind of request (app/request_questions.py); the required ones must be answered.
+        try:
+            save_answers(session, ticket, answers or {}, creator.email, first_time=True, require_all=True)
+        except QuestionError as error:
+            raise RaiseError(str(error))
     if required_by is not None:
         try:
             set_required_by(

@@ -27,6 +27,7 @@ from app.models import (
     TicketStatus,
     User,
 )
+from app.request_questions import answer_rows
 from app.notifications import notify_agent_emailed, notify_reply
 from app.sla import note_first_response
 from app.ticket_service import NotTriaged
@@ -316,6 +317,13 @@ def requester_visible_messages(session: Session, ticket: Ticket) -> list[Message
             select(Message).where(Message.ticket_id.in_(ids), *_PUBLIC).order_by(Message.created_at, Message.id)
         ).all()
     )
+
+
+def requester_visible_answers(session: Session, ticket: Ticket) -> list[dict]:
+    """The form answers the requester may see in the portal (label and display text), in the question order. The
+    answers are what the requester (or the agent, for them) gave about their own request, so all of them are
+    shown; nothing agent-only is stored with them. Kept here with the other requester-visible rules."""
+    return [{"label": row["label"], "display": row["display"]} for row in answer_rows(session, ticket)]
 
 
 def thread_subject(session: Session, ticket: Ticket) -> str:

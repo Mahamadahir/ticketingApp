@@ -2,7 +2,7 @@ from datetime import date, datetime, timezone
 from enum import Enum
 from typing import Optional
 
-from sqlalchemy import CheckConstraint, Index, UniqueConstraint, event, text, update
+from sqlalchemy import JSON, CheckConstraint, Column, Index, UniqueConstraint, event, text, update
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -222,6 +222,10 @@ class Ticket(SQLModel, table=True):
     # moved it, so a later change of Required by clamps it instead of recalculating it. Scheduled needs one.
     due_on: Optional[date] = Field(default=None)
     due_set_by_hand: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
+    # When an agent last changed a form answer after the first filling in (app/request_questions.py). Nothing else
+    # reacts to it yet: it is the hook for the automatic sub-requests of #118 part 2 (answers changed after they
+    # were made means a note for agents, never an automatic change).
+    answers_changed_at: Optional[datetime] = Field(default=None)
 
     # Set on a sub-ticket made by splitting another ticket (the original). One level only:
     # a sub-ticket is never split again. Separate from linked_parent_id, which is for
@@ -487,6 +491,41 @@ class RequestType(SQLModel, table=True):
     default_impact: Optional[str] = Field(default=None)  # a sla.Level value
     default_urgency: Optional[str] = Field(default=None)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class RequestTypeQuestion(SQLModel, table=True):
+    """A form question on a request type (#118 part 1, app/request_questions.py): short text, a pick list
+    (`options`), yes/no or a date, optionally required. `position` orders them. Once answered a question is switched
+    off (`is_active` false), never deleted, so tickets keep their answers; its id is stable, which is what
+    conditions on the answers (part 2) refer to."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    request_type_id: int = Field(foreign_key="requesttype.id", index=True)
+    label: str
+    kind: str  # text, choice, yes_no, date
+    options: list = Field(default_factory=list, sa_column=Column(JSON, nullable=False, server_default="[]"))
+    is_required: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
+    is_active: bool = Field(default=True, sa_column_kwargs={"server_default": "true"})
+    position: int = Field(default=0)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class TicketAnswer(SQLModel, table=True):
+    """One answer to a form question on a ticket. `value` is canonical text whatever the kind (the typed text, the
+    chosen option, "yes" or "no", an ISO date), so a condition (equals, not equals, is one of, is answered) is a
+    comparison of strings and a row's existence is "answered". A blank answer has no row. The question's label and
+    kind are copied as they were when answered (`question_label`, `question_kind`), so the ticket keeps reading
+    the same after an admin renames or retires the question; `question_id` is the stable reference."""
+
+    __table_args__ = (UniqueConstraint("ticket_id", "question_id", name="uq_ticketanswer_ticket_question"),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ticket_id: int = Field(foreign_key="ticket.id", index=True)
+    question_id: int = Field(foreign_key="requesttypequestion.id", index=True)
+    question_label: str
+    question_kind: str
+    value: str
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class TicketApproval(SQLModel, table=True):

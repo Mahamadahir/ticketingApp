@@ -385,8 +385,8 @@ def test_a_type_without_defaults_or_none_chosen_prefills_nothing(client, db_sess
     plain = make(db_session, "Plain")
     agent_in(client, db_session, team)
 
-    assert "hx-swap-oob" not in client.get(f"/tickets/triage-dates?request_type_id={plain.id}").text
-    assert "hx-swap-oob" not in client.get("/tickets/triage-dates?request_type_id=").text
+    assert client.get(f"/tickets/triage-dates?request_type_id={plain.id}").text.count("hx-swap-oob") == 1  # only the (empty) questions box
+    assert client.get("/tickets/triage-dates?request_type_id=").text.count("hx-swap-oob") == 1  # only the (empty) questions box
 
 
 def test_a_switched_off_category_is_not_prefilled(client, db_session):
@@ -397,7 +397,7 @@ def test_a_switched_off_category_is_not_prefilled(client, db_session):
     db_session.commit()
     agent_in(client, db_session, team)
 
-    assert "hx-swap-oob" not in client.get(f"/tickets/triage-dates?request_type_id={request_type.id}").text
+    assert client.get(f"/tickets/triage-dates?request_type_id={request_type.id}").text.count("hx-swap-oob") == 1  # only the (empty) questions box
 
 
 def test_the_triage_form_still_renders_its_selects(client, db_session):

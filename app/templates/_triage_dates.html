@@ -29,3 +29,7 @@
 <select name="agent_id" id="triage-agent" hx-swap-oob="true">{% with members = prefill.members, blank_label = "Leave as is" %}{% include "_agent_options.html" %}{% endwith %}</select>
 {% endif %}
 {% endif %}
+{# The chosen kind's form questions (app/request_questions.py), swapped into the triage form out of band. #}
+{% if question_rows is defined and question_rows is not none %}
+{% with div_id = "triage-questions", rows = question_rows, oob = true %}{% include "_request_questions.html" %}{% endwith %}
+{% endif %}
