@@ -360,19 +360,21 @@ REGISTRY: dict[str, TemplateDef] = {
             ),
             body_default=(
                 "Our support partner ({msp_name}) replied about your ticket {reference} without copying you, so we are "
-                "passing it on:\n\n{msp_message}\n\n"
+                "passing it on:\n\n{msp_message}\n\n{attachments}\n\n"
                 "Reply to this email and your answer is added to the ticket."
             ),
             body_placeholders={
                 **_COMMON,
                 "msp_name": "the address the support partner wrote from",
                 "msp_message": "what the support partner wrote",
+                "attachments": "which of the partner's files are attached to this email and which are too large to attach (left out if none)",
             },
             required=("msp_message",),
             sample={
                 **_COMMON_SAMPLE,
                 "msp_name": "support@msp.example",
                 "msp_message": "We have booked an engineer for Thursday morning.",
+                "attachments": "Attached to this email:\n- quote.pdf (90 KB)",
             },
         ),
         TemplateDef(

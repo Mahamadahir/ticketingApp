@@ -83,7 +83,7 @@ from app.models import (
     TicketStatus,
     User,
 )
-from app.msp import is_msp_sender, receive_mail as receive_msp_mail
+from app.msp import is_msp_sender, forward_if_out_of_hours, receive_mail as receive_msp_mail, sent_to_msp
 from app.never_follow import listed_entry
 from app.outbox import is_on, queue_acknowledgement
 from app.raising import MAX_SUBJECT_LENGTH
@@ -106,7 +106,7 @@ IGNORED_NO_SENDER = "ignored_no_sender"
 IGNORED_FLOOD = "ignored_flood"
 IGNORED_DRAFT = "ignored_draft"
 IGNORED_NEVER_FOLLOW = "ignored_never_follow"  # sent from an address on the never-follow list
-IGNORED_MSP = "ignored_msp"  # from the MSP, but on no ticket that was sent to it
+IGNORED_MSP = "ignored_msp"  # from the MSP address, but on no ticket that was sent to it, or failing the sender check
 HANDLED = (TICKET_CREATED, REPLY_ADDED)
 
 MSP_AUDIT_ACTION = "msp_mail_ignored"
@@ -285,6 +285,17 @@ def automatic_reason(mail: IncomingMail) -> Optional[str]:
         return IGNORED_AUTOMATIC  # a bounce or delivery report
     if mail.sender.partition("@")[0] in _AUTOMATIC_SENDERS:
         return IGNORED_AUTOMATIC
+    return None
+
+
+def _failed_authentication(mail: IncomingMail) -> Optional[str]:
+    """Why a mail that says it is from the MSP is not believed: the receiving server's own verdict (the
+    Authentication-Results header, when Graph returns it) says the sender check failed, so the From address was forged.
+    A mail with no verdict is believed; the guard that it must belong to a ticket sent to the MSP still applies."""
+    verdict = mail.headers.get("authentication-results", "").lower()
+    for check in ("dmarc", "spf", "dkim"):
+        if f"{check}=fail" in verdict:
+            return f"the sender's {check.upper()} check failed, so it was not believed to be from the MSP"
     return None
 
 
@@ -489,10 +500,11 @@ def ingest_mail(
     if is_msp_sender(session, sender):
         # The support partner: never a requester or a follower, and never a ticket of its own.
         ticket, how = find_ticket_for(session, mail)
-        if ticket is None or ticket.msp_sent_at is None:
+        failed = _failed_authentication(mail)
+        if failed is not None or ticket is None or not sent_to_msp(session, ticket):
             log_action(
                 session, sender, "ticket", ticket.id if ticket is not None else 0, MSP_AUDIT_ACTION,
-                f"{_subject_of(mail)}: no ticket that was sent to the MSP"[:MAX_AUDIT_DETAIL],
+                f"{_subject_of(mail)}: {failed or 'no ticket that was sent to the MSP'}"[:MAX_AUDIT_DETAIL],
             )
             return settle(IGNORED_MSP)
         message = receive_msp_mail(
@@ -502,6 +514,7 @@ def ingest_mail(
         session.flush()
         log_action(session, sender, "ticket", ticket.id, "replied_by_email", f"from the MSP, matched by {how}")
         _store_files(session, storage, ticket, message, attachments or [])
+        forward_if_out_of_hours(session, ticket, message, now)  # after the files, so they go with it
         return settle(REPLY_ADDED, ticket, message)
 
     note_requester(session, sender)  # whoever writes in gets their mailbox time zone read (app/time_zones.py)

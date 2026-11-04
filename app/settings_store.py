@@ -492,7 +492,7 @@ REGISTRY: dict[str, SettingDef] = {
         kind="count",
         description=(
             "Files on the ticket are attached to the email to the MSP up to this total; the rest are listed by name as not "
-            "attached. Graph takes about 3 MB of files in one send, so a larger value is treated as 3. Placeholder."
+            "attached. Graph takes a request of about 4 MB and files are sent base64-encoded (a third larger), so a larger value is treated as 2. Placeholder."
         ),
         default="2",
     ),

@@ -142,6 +142,8 @@ from app.settings_store import (
     DUE_DAYS_BEFORE_REQUIRED_BY,
     REQUIRED_BY_LEAD_DAYS,
     JOB_LATE_MINUTES,
+    MSP_BUSINESS_END,
+    MSP_BUSINESS_START,
     REGISTRY,
     get_setting,
     set_setting,
@@ -1600,6 +1602,10 @@ def save_setting(
         if parse_clock(value) is None:
             raise HTTPException(status_code=400, detail="Enter a time of day like 09:00 or 17:30")
         value = f"{parse_clock(value):%H:%M}"
+        other_key = {MSP_BUSINESS_START: MSP_BUSINESS_END, MSP_BUSINESS_END: MSP_BUSINESS_START}.get(key)
+        other = parse_clock(get_setting(session, other_key)) if other_key else None
+        if other is not None and ((key == MSP_BUSINESS_START and value >= f"{other:%H:%M}") or (key == MSP_BUSINESS_END and value <= f"{other:%H:%M}")):
+            raise HTTPException(status_code=400, detail="Business hours must end after they start")
     if definition.kind == "time_zone" and value and valid_zone(value) is None:
         raise HTTPException(status_code=400, detail="Enter an IANA time zone name such as Europe/London")
     if definition.kind == "flag" and value not in ("on", "off"):

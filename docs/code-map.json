@@ -1814,6 +1814,7 @@
         "compose",
         "compose_forward",
         "dismiss_forward",
+        "forward_if_out_of_hours",
         "forward_message",
         "forward_waiting_messages",
         "hand_off_due_tickets",
@@ -1825,11 +1826,13 @@
         "may_hold",
         "msp_address",
         "pending_forwards",
+        "plan_files",
         "receive_mail",
         "release_hold",
         "run_msp_forwards",
         "run_msp_handoff",
-        "send_to_msp"
+        "send_to_msp",
+        "sent_to_msp"
       ],
       "imported_by": [
         "app.escalation",
@@ -1846,6 +1849,7 @@
         "app.mail",
         "app.messages",
         "app.models",
+        "app.never_follow",
         "app.notifications",
         "app.outbox",
         "app.settings_store",
@@ -1880,6 +1884,7 @@
         "app.followers",
         "app.inbound",
         "app.mail",
+        "app.msp",
         "app.routers.admin"
       ],
       "imports": [
@@ -2063,6 +2068,7 @@
         "tests/test_closing_email.py",
         "tests/test_email_templates.py",
         "tests/test_follower_updates.py",
+        "tests/test_msp_mail.py",
         "tests/test_outbound_mail.py",
         "tests/test_resolution.py",
         "tests/test_withdraw.py"
@@ -4089,6 +4095,7 @@
       "summary": "The team activity feed: everything that happened on the tickets an agent can open,",
       "tables": [],
       "tests": [
+        "tests/test_msp_mail.py",
         "tests/test_team_activity.py"
       ]
     },
@@ -4582,7 +4589,7 @@
       {
         "detail": "select() on Message",
         "file": "app/msp.py",
-        "in": "_conversation",
+        "in": "_thread_messages",
         "rule": "messages-via-messages-module"
       },
       {

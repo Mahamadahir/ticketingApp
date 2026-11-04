@@ -126,7 +126,7 @@ class GraphClient:
             "ccRecipients": [{"emailAddress": {"address": address}} for address in (cc or [])],
         }
         if attachments:
-            # (name, content type, bytes), sent inline: Graph takes about 3 MB of files this way (app/msp.py keeps within it).
+            # (name, content type, bytes), sent inline: a request is limited to about 4 MB and base64 adds a third (app/msp.py keeps within it).
             message["attachments"] = [
                 {
                     "@odata.type": "#microsoft.graph.fileAttachment", "name": name, "contentType": content_type,

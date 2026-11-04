@@ -31,7 +31,11 @@ def all_listed(session: Session) -> list[NeverFollowAddress]:
 def is_msp(session: Session, email: str) -> bool:
     """The MSP's address (an admin setting). The MSP is a party to the ticket, never a follower or a requester
     (app/msp.py); followers.add_follower refuses it, and a copy list never includes it."""
-    address = get_setting(session, MSP_ADDRESS).strip().lower()
+    return _is_address(get_setting(session, MSP_ADDRESS), email)
+
+
+def _is_address(address: str, email: str) -> bool:
+    address = address.strip().lower()
     return bool(address) and email.strip().lower() == address
 
 
@@ -50,7 +54,8 @@ def listed_among(session: Session, emails: list[str]) -> set[str]:
     if not emails:
         return set()
     listed = set(session.exec(select(NeverFollowAddress.email).where(NeverFollowAddress.email.in_(emails))).all())
-    return listed | {email for email in emails if is_msp(session, email)}
+    address = get_setting(session, MSP_ADDRESS)  # read once, not once per address
+    return listed | {email for email in emails if _is_address(address, email)}
 
 
 def add_listed(session: Session, email: str, reason: str, added_by: str) -> NeverFollowAddress:

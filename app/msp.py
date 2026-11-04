@@ -42,6 +42,7 @@ from app.categories import path_of
 from app.email_templates import render_template, ticket_values
 from app.followers import add_follower, followers_of
 from app.mail import own_first_message
+from app.never_follow import is_msp
 from app.messages import add_note, mail_subject, record_msp_message, record_notice, requester_visible_messages
 from app.models import (
     FINISHED_STATUSES,
@@ -98,9 +99,9 @@ FORWARD_DISMISSED = "dismissed"
 BY_AGENT = "agent"
 BY_AUTOMATIC = "automatic"
 
-# Graph takes a file attachment inline in sendMail up to about 3 MB in all (the request is base64 and a request is
-# limited to about 4 MB); more needs a draft and an upload session, which is not built. The setting can lower this.
-GRAPH_INLINE_LIMIT_MB = 3
+# Files go inline in sendMail, base64-encoded (a third larger), and a request is limited to about 4 MB, so no more than
+# 2 MB of files in all; more needs a draft and an upload session, which is not built. The setting can lower this.
+GRAPH_INLINE_LIMIT_MB = 2
 
 AUDIT_ACTOR = "system"
 AUDIT_ENTITY = "msp_handoff"  # the job's own entries (a skipped day); entity_id 0
@@ -181,6 +182,8 @@ def _entry(message: Message, zone: str) -> str:
     when = format_moment(message.created_at, zone)
     if message.direction == MessageDirection.INTERNAL:
         who = f"internal note by {message.sender}"
+    elif message.msp_forward is not None:
+        who = f"the MSP ({message.sender})"
     elif message.direction == MessageDirection.OUTBOUND:
         who = f"email sent by IT ({message.sender})"
     else:
@@ -188,14 +191,13 @@ def _entry(message: Message, zone: str) -> str:
     return f"--- {when}, {who} ---\n{message.body.strip()}"
 
 
-def _conversation(session: Session, ticket: Ticket, scope: str, zone: str) -> str:
-    """The thread (the user's messages, the emails IT sent, and the comments and notes agents left), or only the
-    first message from the user. Ticket events are never part of it."""
+def _thread_messages(session: Session, ticket: Ticket, scope: str) -> list[Message]:
+    """The messages that go to the MSP: the thread (the user's messages, the emails IT sent, and the comments and notes
+    agents left), or only the first message from the user. Ticket events are never part of it, nor is an MSP message
+    the user has not been given (agents-only until forwarded)."""
     if scope == SCOPE_ORIGINAL:
         first = own_first_message(session, ticket)
-        if first is None:
-            return "The original request:\n\n(No message from the user is recorded on this ticket.)"
-        return "The original request:\n\n" + _entry(first, zone)
+        return [first] if first is not None else []
     messages = list(requester_visible_messages(session, ticket))
     seen = {m.id for m in messages}
     notes = session.exec(
@@ -203,6 +205,15 @@ def _conversation(session: Session, ticket: Ticket, scope: str, zone: str) -> st
     ).all()
     messages += [m for m in notes if m.id not in seen]
     messages.sort(key=lambda m: (m.created_at, m.id))
+    return messages
+
+
+def _conversation(session: Session, ticket: Ticket, scope: str, zone: str) -> str:
+    messages = _thread_messages(session, ticket, scope)
+    if scope == SCOPE_ORIGINAL:
+        if not messages:
+            return "The original request:\n\n(No message from the user is recorded on this ticket.)"
+        return "The original request:\n\n" + _entry(messages[0], zone)
     if not messages:
         return "The thread:\n\n(No messages are recorded on this ticket.)"
     return "The thread (internal notes are marked):\n\n" + "\n\n".join(_entry(m, zone) for m in messages)
@@ -212,13 +223,10 @@ def _budget_bytes(session: Session) -> int:
     return min(count_setting(session, MSP_ATTACH_MAX_MB), GRAPH_INLINE_LIMIT_MB) * 1024 * 1024
 
 
-def attachment_plan(session: Session, ticket: Ticket) -> tuple[str, list[int]]:
-    """Which files of the ticket go with the email to the MSP, and the text that says so. In order, each file that
-    still fits the total allowed (a setting, at most what Graph takes in one send) is attached; the rest are listed by
-    name as not attached. Pictures embedded in a message body (signature logos) are left out."""
-    files = session.exec(
-        select(Attachment).where(Attachment.ticket_id == ticket.id, Attachment.is_inline.is_(False)).order_by(Attachment.id)
-    ).all()
+def plan_files(session: Session, files: list[Attachment]) -> tuple[str, list[int]]:
+    """Which of these files are attached to an email, and the text that says so. In order, each file that still fits
+    the total allowed (a setting, at most what Graph takes in one send) is attached; the rest are listed by name as
+    not attached."""
     if not files:
         return "", []
     budget, used = _budget_bytes(session), 0
@@ -244,6 +252,19 @@ def attachment_plan(session: Session, ticket: Ticket) -> tuple[str, list[int]]:
     return "\n\n".join(parts), [f.id for f in attached]
 
 
+def attachment_plan(session: Session, ticket: Ticket, scope: str = SCOPE_THREAD) -> tuple[str, list[int]]:
+    """The files that go to the MSP with the email, by the same rule as the text: only those that arrived with a
+    message that is sent (all of the thread, or only the first message) and, for the thread, files added to the ticket
+    itself. A file on an agents-only message that is not sent (an unforwarded MSP reply) never goes. Pictures embedded
+    in a message body (signature logos) are left out."""
+    ids = [m.id for m in _thread_messages(session, ticket, scope)]
+    where = Attachment.message_id.in_(ids) if ids else Attachment.id < 0
+    if scope == SCOPE_THREAD:
+        where = or_(where, and_(Attachment.ticket_id == ticket.id, Attachment.message_id.is_(None)))
+    files = session.exec(select(Attachment).where(where, Attachment.is_inline.is_(False)).order_by(Attachment.id)).all()
+    return plan_files(session, list(files))
+
+
 def _handoff_label(session: Session) -> str:
     return f"{_handoff_hour(session):02d}:00"
 
@@ -261,7 +282,7 @@ def compose(
     requested_by = (
         _person(session, actor.email) if actor is not None else f"IT Support (the automatic {_handoff_label(session)} handoff)"
     )
-    attachment_text, attachment_ids = attachment_plan(session, ticket)
+    attachment_text, attachment_ids = attachment_plan(session, ticket, scope)
     values = {
         **ticket_values(ticket),
         "end_user": _person(session, ticket.requester_email),
@@ -511,10 +532,13 @@ def run_msp_handoff(session: Session) -> None:
 def business_hours(session: Session) -> tuple[time, time]:
     """(start, end) of business hours, from the settings (a bad stored value falls back to the default)."""
 
-    def read(key: str) -> time:
-        return parse_clock(get_setting(session, key)) or parse_clock(REGISTRY[key].default)
+    def read(key: str, fallback: bool = False) -> time:
+        return (None if fallback else parse_clock(get_setting(session, key))) or parse_clock(REGISTRY[key].default)
 
-    return read(MSP_BUSINESS_START), read(MSP_BUSINESS_END)
+    start, end = read(MSP_BUSINESS_START), read(MSP_BUSINESS_END)
+    # An end at or before the start would make every moment "out of hours" and send every MSP message to the user
+    # unseen, so a stored pair like that is read as the placeholders (the settings page refuses to save one).
+    return (start, end) if start < end else (read(MSP_BUSINESS_START, True), read(MSP_BUSINESS_END, True))
 
 
 def is_business_time(session: Session, now: Optional[datetime] = None) -> bool:
@@ -524,8 +548,17 @@ def is_business_time(session: Session, now: Optional[datetime] = None) -> bool:
 
 
 def is_msp_sender(session: Session, sender: str) -> bool:
-    address = msp_address(session)
-    return bool(address) and sender.strip().lower() == address
+    return is_msp(session, sender)
+
+
+def sent_to_msp(session: Session, ticket: Ticket) -> bool:
+    """Whether the ticket, or a part split from it, was sent to the MSP: mail about any part of a split request carries
+    the original's reference (one thread subject for the family), so it finds the original."""
+    if ticket.msp_sent_at is not None:
+        return True
+    return session.exec(
+        select(Ticket.id).where(Ticket.split_from_id == ticket.id, Ticket.msp_sent_at.is_not(None)).limit(1)
+    ).first() is not None
 
 
 def receive_mail(
@@ -534,8 +567,9 @@ def receive_mail(
     """Records a mail from the MSP on the ticket it belongs to (app/inbound.py found the ticket and checked it was
     sent to the MSP; `body` is the mail's own new text, uniqueBody). `recipients` is everyone on To and Cc. If the
     requester was one of them they already have it and it is an ordinary public message. If the MSP left them off, it
-    is agents-only until forwarded: out of business hours it is forwarded to them at once with no preview, and in
-    business hours the agent is told and previews it. Never changes the ticket's status. Does not commit."""
+    is agents-only until forwarded: out of business hours it is forwarded to them with no preview, and in
+    business hours the agent is told and previews it (`forward_if_out_of_hours` does the out-of-hours forward, once the
+    files are stored). Never changes the ticket's status. Does not commit."""
     requester = ticket.requester_email.strip().lower()
     on_it = requester in {r.strip().lower() for r in recipients}
     state = FORWARD_NOT_NEEDED if on_it else FORWARD_PENDING
@@ -546,9 +580,16 @@ def receive_mail(
         detail="The user was on it" if on_it else "The user was left off To and Cc",
     )
     log_action(session, sender, "ticket", ticket.id, "msp_mail_received", state)
-    if not on_it and is_on() and not is_business_time(session, now):
-        forward_message(session, ticket, message, None)
     return message
+
+
+def forward_if_out_of_hours(session: Session, ticket: Ticket, message: Message, now: Optional[datetime] = None) -> bool:
+    """Out of business hours (with mail on), forwards a message the MSP left the user off, at once with no preview.
+    Called once the mail's files are stored, so they go with it. True if it was forwarded."""
+    if message.msp_forward != FORWARD_PENDING or not is_on() or is_business_time(session, now):
+        return False
+    forward_message(session, ticket, message, None)
+    return True
 
 
 def pending_forwards(session: Session, ticket: Ticket) -> list[Message]:
@@ -565,10 +606,11 @@ class ForwardPreview:
     subject: str
     body: str
     mail_is_off: bool
+    attachment_ids: list[int] = field(default_factory=list)  # the MSP's files that are attached to the forward
 
     @property
     def digest(self) -> str:
-        return hashlib.sha256("\x1f".join([self.to, self.subject, self.body]).encode()).hexdigest()
+        return hashlib.sha256("\x1f".join([self.to, self.subject, self.body, str(self.attachment_ids)]).encode()).hexdigest()
 
 
 def compose_forward(session: Session, ticket: Ticket, message: Message) -> ForwardPreview:
@@ -576,10 +618,16 @@ def compose_forward(session: Session, ticket: Ticket, message: Message) -> Forwa
     step; forward_message queues this text). Changes nothing. Raises MspError."""
     if message.ticket_id != ticket.id or message.msp_forward != FORWARD_PENDING:
         raise MspError("That message from the MSP is not waiting to be forwarded")
-    values = {**ticket_values(ticket), "msp_name": message.sender, "msp_message": message.body.strip()}
+    files = session.exec(
+        select(Attachment).where(Attachment.message_id == message.id, Attachment.is_inline.is_(False)).order_by(Attachment.id)
+    ).all()
+    attachment_text, attachment_ids = plan_files(session, list(files))
+    values = {
+        **ticket_values(ticket), "msp_name": message.sender, "msp_message": message.body.strip(), "attachments": attachment_text,
+    }
     return ForwardPreview(
         to=ticket.requester_email, subject=mail_subject(session, ticket),
-        body=render_template(session, "msp_forward", values).body, mail_is_off=not is_on(),
+        body=render_template(session, "msp_forward", values).body, mail_is_off=not is_on(), attachment_ids=attachment_ids,
     )
 
 
@@ -600,7 +648,7 @@ def forward_message(
     locked.msp_forward = FORWARD_FORWARDED
     locked.visibility = MessageVisibility.PUBLIC
     session.add(locked)
-    queue_msp_forward(session, ticket, locked, preview.to, preview.subject, preview.body)
+    queue_msp_forward(session, ticket, locked, preview.to, preview.subject, preview.body, preview.attachment_ids)
     by = BY_AGENT if actor is not None else BY_AUTOMATIC
     who = actor.email if actor is not None else AUDIT_ACTOR
     record_event(

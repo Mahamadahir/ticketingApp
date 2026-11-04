@@ -331,6 +331,31 @@ def build_approval_overdue_mail(session: Session, row: OutboundEmail) -> Mail:
     )
 
 
+def _with_files(session: Session, row: OutboundEmail, ticket: Ticket) -> tuple[str, list[tuple[str, str, bytes]]]:
+    """The row's text and the files it names (`attachment_ids`, fixed when it was queued) read from storage. A file that
+    cannot be read must not stop the email: it is logged, and the text says plainly that it was not attached."""
+    body, files = row.body, []
+    ids = [int(i) for i in (row.attachment_ids or "").split(",") if i.strip().isdigit()]
+    if not ids:
+        return body, files
+    storage = get_storage()
+    missing = []
+    for item in session.exec(
+        select(Attachment).where(Attachment.id.in_(ids), Attachment.ticket_id == ticket.id).order_by(Attachment.id)
+    ).all():
+        try:
+            files.append((item.filename, item.content_type, storage.read(item.blob_key)))
+        except Exception:
+            log.exception("Email %s: attachment %s could not be read from storage", row.id, item.id)
+            missing.append(item.filename)
+    if missing:
+        body += (
+            "\n\nNOTE: these files, listed above as attached, could NOT be attached: " + ", ".join(missing)
+            + ". Ask the IT mailbox for them."
+        )
+    return body, files
+
+
 def build_msp_handoff_mail(session: Session, row: OutboundEmail) -> Mail:
     """The email to the MSP. The text was fixed when the ticket was sent (app/msp.py), so this only checks the
     ticket is still with the MSP (an agent may have taken it back before the email went) and that there is
@@ -341,18 +366,7 @@ def build_msp_handoff_mail(session: Session, row: OutboundEmail) -> Mail:
     if not row.body or not row.subject:
         raise Unsendable("The email has no text")
     _guard_recipient(row)
-    body, files = row.body, []
-    ids = [int(i) for i in (row.attachment_ids or "").split(",") if i.strip().isdigit()]
-    if ids:
-        storage = get_storage()
-        missing = []
-        for item in session.exec(select(Attachment).where(Attachment.id.in_(ids), Attachment.ticket_id == ticket.id).order_by(Attachment.id)).all():
-            try:
-                files.append((item.filename, item.content_type, storage.read(item.blob_key)))
-            except Exception:
-                missing.append(item.filename)  # a file that cannot be read must not stop the handoff
-        if missing:
-            body += "\n\n(These files could not be attached: " + ", ".join(missing) + ". Ask the IT mailbox for them.)"
+    body, files = _with_files(session, row, ticket)
     return Mail(
         to=row.to_address, cc=[a.strip() for a in (row.cc or "").split(",") if a.strip()], subject=row.subject,
         body=body, record=body, automatic=False, reference=ticket.reference, files=files,
@@ -369,9 +383,11 @@ def build_msp_forward_mail(session: Session, row: OutboundEmail) -> Mail:
     if not row.body or not row.subject:
         raise Unsendable("The email has no text")
     _guard_recipient(row)
+    body, files = _with_files(session, row, ticket)
+    # automatic: it can go with no agent having looked at it, so receiving servers are told not to auto-reply.
     return Mail(
-        to=row.to_address, cc=[], subject=row.subject, body=row.body, record=row.body, automatic=False,
-        reference=ticket.reference,
+        to=row.to_address, cc=[], subject=row.subject, body=body, record=body, automatic=True,
+        reference=ticket.reference, files=files,
     )
 
 
@@ -394,7 +410,7 @@ BUILDERS: dict[str, Callable[[Session, OutboundEmail], Mail]] = {
 
 
 # Kinds with an allowance of their own, counted per recipient (see cap_release).
-PER_RECIPIENT_ALLOWANCE = (FOLLOWER_UPDATE, APPROVAL_REMINDER)
+PER_RECIPIENT_ALLOWANCE = (FOLLOWER_UPDATE, APPROVAL_REMINDER, MSP_FORWARD)
 
 
 def automatic_cap(session: Session) -> int:

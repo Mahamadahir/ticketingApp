@@ -980,7 +980,7 @@ A template is plain text with `{placeholders}` from a fixed list per email; the 
   example 1st line triaged it, escalated it to 2nd line, and 2nd line decided it is MSP
   work. The preview step shows exactly what will be sent. The 18:00 automatic send
   uses the thread. *Built:* the preview is the function that builds the email, and the email is queued with that exact
-  text. *Built (5B):* the files are attached to the email up to a total set in Settings (2 MB placeholder, never more than the 3 MB Graph takes in one send); the rest are listed by name as too large to attach.
+  text. *Built (5B):* the files are attached to the email up to a total set in Settings (2 MB placeholder, and never more than 2 MB: Graph's request limit is about 4 MB and base64 adds a third); only the files of what is sent go, and the rest are listed by name as too large to attach.
 - Each team has an admin setting, "include in the automatic 18:00 MSP handoff"
   (a setting, not a constant). Tickets of a team with it off are never sent
   automatically; an agent can still send them by hand.

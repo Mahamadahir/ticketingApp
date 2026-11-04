@@ -190,7 +190,8 @@ def queue_msp_handoff(
 
 
 def queue_msp_forward(
-    session: Session, ticket: Ticket, message: Message, to_address: str, subject: str, body: str
+    session: Session, ticket: Ticket, message: Message, to_address: str, subject: str, body: str,
+    attachment_ids: Optional[list[int]] = None,
 ) -> Optional[OutboundEmail]:
     """Queues the user's copy of a message from the MSP that left them off, with the text built by app/msp.py (the
     one an agent previewed, or the one the out-of-hours forward sent without a preview). One per message, enforced by
@@ -200,7 +201,7 @@ def queue_msp_forward(
     session.flush()
     row = OutboundEmail(
         kind=MSP_FORWARD, ticket_id=ticket.id, about_message_id=message.id, to_address=to_address.strip().lower(),
-        subject=subject, body=body,
+        subject=subject, body=body, attachment_ids=",".join(str(i) for i in attachment_ids or []) or None,
     )
     session.add(row)
     return row

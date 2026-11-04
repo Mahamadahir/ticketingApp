@@ -26,7 +26,7 @@ any change that adds, removes or renames modules, routes, models, jobs, settings
 - `access-in-visibility` app/routers/admin.py in `list_users`: select(TeamMembership) in a route (allowed: Admin pages are behind require_super_admin and count or list memberships for the admin tables; there is no per-agent access decision to make.)
 - `access-in-visibility` app/routers/admin.py in `view_outbound_mail`: select(Ticket) in a route (allowed: Admin pages are behind require_super_admin (super admins see every ticket): team ticket counts, the category review queue and ticket lookups for the outbound mail table.)
 - `messages-via-messages-module` app/mail.py in `own_first_message`: select() on Message (allowed: own_first_message reads only the requester's PUBLIC inbound message, to quote the original in outbound mail; it never returns notes.)
-- `messages-via-messages-module` app/msp.py in `_conversation`: select() on Message
+- `messages-via-messages-module` app/msp.py in `_thread_messages`: select() on Message
 - `messages-via-messages-module` app/msp.py in `dismiss_forward`: select() on Message
 - `messages-via-messages-module` app/msp.py in `forward_message`: select() on Message
 - `messages-via-messages-module` app/msp.py in `forward_waiting_messages`: select() on Message
@@ -678,8 +678,8 @@ Sending a ticket to the MSP, putting it on hold, and the automatic handoff (phas
 File: `app/msp.py`
 
 - Classes: `ForwardPreview`, `MspError`, `MspPreview`
-- Functions: `attachment_plan`, `business_hours`, `check_can_send`, `compose`, `compose_forward`, `dismiss_forward`, `forward_message`, `forward_waiting_messages`, `hand_off_due_tickets`, `handoff_counts`, `handoff_window`, `hold_ticket`, `is_business_time`, `is_msp_sender`, `may_hold`, `msp_address`, `pending_forwards`, `receive_mail`, `release_hold`, `run_msp_forwards`, `run_msp_handoff`, `send_to_msp`
-- Imports: `app.audit`, `app.categories`, `app.config`, `app.email_templates`, `app.followers`, `app.mail`, `app.messages`, `app.models`, `app.notifications`, `app.outbox`, `app.settings_store`, `app.splitting`, `app.ticket_service`, `app.time_zones`
+- Functions: `attachment_plan`, `business_hours`, `check_can_send`, `compose`, `compose_forward`, `dismiss_forward`, `forward_if_out_of_hours`, `forward_message`, `forward_waiting_messages`, `hand_off_due_tickets`, `handoff_counts`, `handoff_window`, `hold_ticket`, `is_business_time`, `is_msp_sender`, `may_hold`, `msp_address`, `pending_forwards`, `plan_files`, `receive_mail`, `release_hold`, `run_msp_forwards`, `run_msp_handoff`, `send_to_msp`, `sent_to_msp`
+- Imports: `app.audit`, `app.categories`, `app.config`, `app.email_templates`, `app.followers`, `app.mail`, `app.messages`, `app.models`, `app.never_follow`, `app.notifications`, `app.outbox`, `app.settings_store`, `app.splitting`, `app.ticket_service`, `app.time_zones`
 - Imported by: `app.escalation`, `app.inbound`, `app.routers.tickets`, `app.scheduled_jobs`
 - Tests: `test_msp.py`, `test_msp_mail.py`
 
@@ -691,7 +691,7 @@ File: `app/never_follow.py`
 - Classes: `NeverFollowError`
 - Functions: `add_listed`, `all_listed`, `is_listed`, `is_msp`, `listed_among`, `listed_entry`, `remove_listed`
 - Imports: `app.models`, `app.settings_store`
-- Imported by: `app.followers`, `app.inbound`, `app.mail`, `app.routers.admin`
+- Imported by: `app.followers`, `app.inbound`, `app.mail`, `app.msp`, `app.routers.admin`
 - Tests: `test_msp_mail.py`, `test_never_follow.py`, `test_requester_bell.py`
 
 ### `app.notification_settings`
@@ -721,7 +721,7 @@ File: `app/outbox.py`
 - Functions: `is_on`, `queue_acknowledgement`, `queue_approval`, `queue_approval_overdue`, `queue_approval_reminder`, `queue_approval_withdrawn`, `queue_chase`, `queue_follower_update`, `queue_message`, `queue_msp_forward`, `queue_msp_handoff`, `queue_raised_for`
 - Imports: `app.config`, `app.models`, `app.notification_settings`
 - Imported by: `app.approval_reminders`, `app.approvals`, `app.auto_close_chase`, `app.follower_updates`, `app.inbound`, `app.mail`, `app.messages`, `app.msp`, `app.raising`
-- Tests: `test_acknowledgement.py`, `test_action_links.py`, `test_approval_reminders.py`, `test_auto_close_chase.py`, `test_bulk_resolve.py`, `test_closing_email.py`, `test_email_templates.py`, `test_follower_updates.py`, `test_outbound_mail.py`, `test_resolution.py`, `test_withdraw.py`
+- Tests: `test_acknowledgement.py`, `test_action_links.py`, `test_approval_reminders.py`, `test_auto_close_chase.py`, `test_bulk_resolve.py`, `test_closing_email.py`, `test_email_templates.py`, `test_follower_updates.py`, `test_msp_mail.py`, `test_outbound_mail.py`, `test_resolution.py`, `test_withdraw.py`
 
 ### `app.pagination`
 
@@ -1073,7 +1073,7 @@ File: `app/team_activity.py`
 - Functions: `describe`, `feed_query`
 - Imports: `app.models`
 - Imported by: `app.routers.tickets`
-- Tests: `test_team_activity.py`
+- Tests: `test_msp_mail.py`, `test_team_activity.py`
 
 ### `app.teams`
 

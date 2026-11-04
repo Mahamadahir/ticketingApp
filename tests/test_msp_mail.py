@@ -536,7 +536,7 @@ def test_a_file_that_cannot_be_read_is_named_and_does_not_stop_the_email(client,
     sent = []
     mailer.deliver_mail(db_session, send=sent.append)
     [handoff] = [m for m in sent if m.to == MSP]
-    assert handoff.files == [] and "These files could not be attached: jam.png" in handoff.body
+    assert handoff.files == [] and "could NOT be attached: jam.png" in handoff.body
 
 
 def test_graph_gets_the_files_inline_as_base64(monkeypatch):
@@ -584,3 +584,130 @@ def test_receive_mail_is_one_call_that_never_changes_the_status(db_session):
     db_session.commit()
     db_session.refresh(ticket)
     assert ticket.status == TicketStatus.AWAITING_USER
+
+
+# ---- Review fixes ------------------------------------------------------------------------------------------
+
+
+def note_with_file(db_session, storage, ticket, name="secret.png"):
+    note = Message(
+        ticket_id=ticket.id, sender="Agent", body="note", direction=MessageDirection.INTERNAL,
+        visibility=MessageVisibility.AGENTS_ONLY,
+    )
+    db_session.add(note)
+    db_session.commit()
+    store_attachment(db_session, storage, ticket=ticket, filename=name, data=png(500), message=note)
+    db_session.commit()
+    return note
+
+
+def test_only_the_files_of_what_is_sent_go_to_the_msp(db_session, storage):
+    ticket = with_msp(db_session, status=TicketStatus.OPEN, requester_email="jo@example.com")
+    first = Message(ticket_id=ticket.id, sender="jo@example.com", body="Help", direction=MessageDirection.INBOUND)
+    later = Message(ticket_id=ticket.id, sender="jo@example.com", body="More", direction=MessageDirection.INBOUND)
+    db_session.add(first)
+    db_session.commit()
+    db_session.add(later)
+    db_session.commit()
+    store_attachment(db_session, storage, ticket=ticket, filename="first.png", data=png(500), message=first)
+    store_attachment(db_session, storage, ticket=ticket, filename="later.png", data=png(500), message=later)
+    store_attachment(db_session, storage, ticket=ticket, filename="on-ticket.png", data=png(500))
+    # A file on an MSP message the user was left off is not part of any thread until it is forwarded.
+    pending = take(db_session, from_msp(ticket, to=("else@msp.example",)), IN_HOURS, storage=storage,
+                   attachments=[IncomingAttachment("quote.pdf", data=b"%PDF-1.7\n" + b"x" * 40)])
+    assert pending.message.msp_forward == FORWARD_PENDING
+    note_with_file(db_session, storage, ticket, "note-file.png")
+
+    def attached(scope):
+        text, ids = attachment_plan(db_session, ticket, scope)
+        return sorted(db_session.get(Attachment, i).filename for i in ids)
+
+    assert attached("thread") == ["first.png", "later.png", "note-file.png", "on-ticket.png"]  # the notes go with the thread
+    assert attached("original") == ["first.png"]  # only the first message's files
+    assert "secret" not in attachment_plan(db_session, ticket, "original")[0]
+
+
+def test_the_files_the_msp_sent_go_with_the_forward(db_session, storage):
+    ticket = with_msp(db_session, requester_email="jo@example.com")
+    result = take(
+        db_session, from_msp(ticket, to=("else@msp.example",)), AFTER_HOURS, storage=storage,
+        attachments=[IncomingAttachment("quote.pdf", data=b"%PDF-1.7\n" + b"x" * 40)],
+    )
+    assert result.message.msp_forward == FORWARD_FORWARDED  # out of hours: queued with its file, no preview
+    db_session.commit()
+    sent = []
+    mailer.deliver_mail(db_session, send=sent.append)
+    assert [name for name, _, _ in sent[0].files] == ["quote.pdf"]
+    other = with_msp(db_session, requester_email="jo@example.com")
+    waiting = take(
+        db_session, from_msp(other, to=("else@msp.example",)), IN_HOURS, storage=storage,
+        attachments=[IncomingAttachment("quote.pdf", data=b"%PDF-1.7\n" + b"x" * 40)],
+    )
+    preview = compose_forward(db_session, other, waiting.message)
+    assert "Attached to this email:\n- quote.pdf" in preview.body and len(preview.attachment_ids) == 1
+    forward_message(db_session, other, waiting.message, None)
+    db_session.commit()
+    sent.clear()
+    mailer.deliver_mail(db_session, send=sent.append)
+    [mail] = sent
+    assert [name for name, _, _ in mail.files] == ["quote.pdf"] and mail.automatic is True
+
+
+def test_a_reply_about_a_part_sent_to_the_msp_finds_the_original(db_session):
+    original = with_msp(db_session, sent=False, status=TicketStatus.IN_PROGRESS, requester_email="jo@example.com")
+    part = with_msp(db_session, status=TicketStatus.WITH_MSP, requester_email="jo@example.com", split_from_id=original.id)
+    result = take(db_session, from_msp(original), IN_HOURS)  # the family's one subject carries the original's reference
+    assert result.outcome == REPLY_ADDED and result.ticket.id == original.id
+    assert part.msp_sent_at is not None
+
+
+def test_a_mail_that_fails_the_senders_check_is_not_believed(db_session):
+    ticket = with_msp(db_session, requester_email="jo@example.com")
+    forged = from_msp(ticket, to=("else@msp.example",), headers={"authentication-results": "mx.example; spf=pass; dmarc=fail action=none"})
+    assert take(db_session, forged, AFTER_HOURS).outcome == IGNORED_MSP
+    assert messages_of(db_session, ticket) == [] and forwards(db_session) == []
+    fine = from_msp(ticket, headers={"authentication-results": "mx.example; spf=pass; dkim=pass; dmarc=pass"})
+    assert take(db_session, fine, IN_HOURS).outcome == REPLY_ADDED
+
+
+def test_business_hours_that_end_before_they_start_are_refused_and_never_used(client, db_session):
+    admin_id = login_as(client, "admin@example.com")
+    set_role(db_session, admin_id, UserRole.SUPER_ADMIN)
+    assert client.post("/admin/settings", data={"key": MSP_BUSINESS_END, "value": "09:00"}).status_code == 400  # not after 09:00
+    assert client.post("/admin/settings", data={"key": MSP_BUSINESS_START, "value": "17:30"}).status_code == 400
+    # A pair that was stored anyway is read as the placeholders: nothing is forwarded unseen because of it.
+    set_setting(db_session, MSP_BUSINESS_START, "10:00")
+    set_setting(db_session, MSP_BUSINESS_END, "08:00")
+    db_session.commit()
+    assert business_hours(db_session) == (time(9, 0), time(17, 30))
+    _, message = left_off(db_session, now=IN_HOURS)
+    assert message.msp_forward == FORWARD_PENDING
+
+
+def test_an_msp_message_is_labelled_as_the_msps_everywhere_it_is_listed(db_session):
+    from app.msp import compose
+    from app.team_activity import describe, feed_query
+
+    ticket = with_msp(db_session, status=TicketStatus.OPEN, sent=False, requester_email="jo@example.com", category_id=None)
+    ticket.msp_sent_at = IN_HOURS
+    db_session.add(ticket)
+    db_session.commit()
+    take(db_session, from_msp(ticket), IN_HOURS)
+    rows = [describe(r) for r in db_session.exec(feed_query(None)).all() if r.kind == "message"]
+    assert rows and rows[0].startswith("message from the MSP")
+    ticket.status = TicketStatus.OPEN
+    db_session.add(ticket)
+    db_session.commit()
+    body = compose(db_session, ticket, scope="thread", reason="again", actor=None).body
+    assert f"the MSP ({MSP})" in body and f"email sent by IT ({MSP})" not in body
+
+
+def test_the_forward_is_automatic_mail_and_has_an_allowance_of_its_own(db_session):
+    ticket, message = left_off(db_session)
+    forward_message(db_session, ticket, message, None)
+    db_session.commit()
+    row = forwards(db_session)[0]
+    assert mailer.cap_release(db_session, row, IN_HOURS) is None
+    from app.outbox import MSP_FORWARD
+
+    assert MSP_FORWARD in mailer.PER_RECIPIENT_ALLOWANCE and MSP_FORWARD not in mailer.AUTOMATIC_TO_REQUESTER
