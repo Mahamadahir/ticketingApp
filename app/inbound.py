@@ -32,6 +32,10 @@ Rules that live here and nowhere else:
   ticket reopens it (apply_requester_reply). A reply on a Closed ticket opens a new ticket linked to it
   (app/reopening.py), and later mail in that thread follows the link to the newest ticket. Who can see the ticket is app/visibility.py's
   business, not this module's: it never decides access.
+- Mail from the MSP address (the admin setting) is the MSP's own business (app/msp.py `receive_mail`): it is added only
+  to a ticket that was sent to the MSP, found like any other reply but trusted by reference too (the MSP is a known
+  address and keeps the reference in its subject), recorded with `uniqueBody` only, never makes a ticket and never
+  makes the MSP a requester or a follower. It changes no status. Anything else from the MSP address is set aside.
 - The people copied on the mail that opens a ticket become its followers (app/followers.py). A reply
   is passed on to the followers who were not on its To or Cc (app/follower_updates.py).
 - Files go through `store_attachment` (app/attachments.py), the only place a file is checked. A file
@@ -79,6 +83,7 @@ from app.models import (
     TicketStatus,
     User,
 )
+from app.msp import is_msp_sender, receive_mail as receive_msp_mail
 from app.never_follow import listed_entry
 from app.outbox import is_on, queue_acknowledgement
 from app.raising import MAX_SUBJECT_LENGTH
@@ -101,8 +106,10 @@ IGNORED_NO_SENDER = "ignored_no_sender"
 IGNORED_FLOOD = "ignored_flood"
 IGNORED_DRAFT = "ignored_draft"
 IGNORED_NEVER_FOLLOW = "ignored_never_follow"  # sent from an address on the never-follow list
+IGNORED_MSP = "ignored_msp"  # from the MSP, but on no ticket that was sent to it
 HANDLED = (TICKET_CREATED, REPLY_ADDED)
 
+MSP_AUDIT_ACTION = "msp_mail_ignored"
 EVENT_ATTACHMENT_SKIPPED = "attachment_skipped"
 EVENT_REFERENCE_NOT_USED = "mail_reference_not_used"
 EVENT_FOLLOWER_FROM_MAIL = "follower_added_from_mail"
@@ -478,6 +485,24 @@ def ingest_mail(
     if _flooding(session, sender, now):
         log.warning("Mail from one sender set aside: too many tickets and replies in an hour (a probable loop)")
         return settle(IGNORED_FLOOD)
+
+    if is_msp_sender(session, sender):
+        # The support partner: never a requester or a follower, and never a ticket of its own.
+        ticket, how = find_ticket_for(session, mail)
+        if ticket is None or ticket.msp_sent_at is None:
+            log_action(
+                session, sender, "ticket", ticket.id if ticket is not None else 0, MSP_AUDIT_ACTION,
+                f"{_subject_of(mail)}: no ticket that was sent to the MSP"[:MAX_AUDIT_DETAIL],
+            )
+            return settle(IGNORED_MSP)
+        message = receive_msp_mail(
+            session, ticket, sender=sender, body=_body_of(mail), recipients=mail.to + mail.cc, now=now
+        )
+        message.graph_message_id = mail.graph_message_id
+        session.flush()
+        log_action(session, sender, "ticket", ticket.id, "replied_by_email", f"from the MSP, matched by {how}")
+        _store_files(session, storage, ticket, message, attachments or [])
+        return settle(REPLY_ADDED, ticket, message)
 
     note_requester(session, sender)  # whoever writes in gets their mailbox time zone read (app/time_zones.py)
     body = _body_of(mail)

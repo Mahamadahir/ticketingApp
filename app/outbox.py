@@ -28,6 +28,7 @@ APPROVAL_WITHDRAWN = "approval_withdrawn"  # tells an approver the requester wit
 ACKNOWLEDGEMENT = "acknowledgement"  # "your issue has been logged", once, for a ticket that arrived by email
 CHASE = "chase"  # "is this still an issue?" to the requester of a ticket Awaiting user (app/auto_close_chase.py)
 MSP_HANDOFF = "msp_handoff"  # a ticket sent to the MSP (app/msp.py); the text is fixed when it is queued
+MSP_FORWARD = "msp_forward"  # an MSP message the user was left off, passed on to them (app/msp.py); the text is fixed when queued
 FOLLOWER_UPDATE = "follower_update"  # an inbound update passed to someone who was not on the mail it came in
 
 # Kinds that go to the requester without an agent having just written them. These are what the
@@ -171,7 +172,8 @@ def queue_follower_update(session: Session, ticket: Ticket, message: Message, to
 
 
 def queue_msp_handoff(
-    session: Session, ticket: Ticket, to_address: str, cc: list[str], subject: str, body: str
+    session: Session, ticket: Ticket, to_address: str, cc: list[str], subject: str, body: str,
+    attachment_ids: Optional[list[int]] = None,
 ) -> Optional[OutboundEmail]:
     """Queues the email to the MSP with the text built by app/msp.py (the one the agent previewed, or the preview is shown again): unlike
     the other kinds it is not rebuilt when sent, since the thread then would differ from what was agreed to go.
@@ -180,7 +182,25 @@ def queue_msp_handoff(
         return None
     session.flush()
     row = OutboundEmail(
-        kind=MSP_HANDOFF, ticket_id=ticket.id, to_address=to_address, cc=", ".join(cc) or None, subject=subject, body=body
+        kind=MSP_HANDOFF, ticket_id=ticket.id, to_address=to_address, cc=", ".join(cc) or None, subject=subject, body=body,
+        attachment_ids=",".join(str(i) for i in attachment_ids or []) or None,
+    )
+    session.add(row)
+    return row
+
+
+def queue_msp_forward(
+    session: Session, ticket: Ticket, message: Message, to_address: str, subject: str, body: str
+) -> Optional[OutboundEmail]:
+    """Queues the user's copy of a message from the MSP that left them off, with the text built by app/msp.py (the
+    one an agent previewed, or the one the out-of-hours forward sent without a preview). One per message, enforced by
+    the database, so a replay forwards nothing twice. None when mail is off."""
+    if not is_on():
+        return None
+    session.flush()
+    row = OutboundEmail(
+        kind=MSP_FORWARD, ticket_id=ticket.id, about_message_id=message.id, to_address=to_address.strip().lower(),
+        subject=subject, body=body,
     )
     session.add(row)
     return row

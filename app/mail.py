@@ -17,7 +17,7 @@ accepting a message and the commit, that one email goes again. Retries back off 
 """
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional
 
@@ -37,6 +37,7 @@ from app.never_follow import is_listed
 from app.approval_groups import is_member
 from app.notification_settings import APPROVAL_OVERDUE as APPROVAL_OVERDUE_EVENT, EMAIL, FOLLOWER_UPDATE as FOLLOWER_UPDATE_EVENT, is_enabled, wants_approval_email
 from app.models import (
+    Attachment,
     Message,
     MessageDirection,
     MessageVisibility,
@@ -48,9 +49,10 @@ from app.models import (
     User,
     UserRole,
 )
-from app.outbox import ACKNOWLEDGEMENT, MSP_HANDOFF, APPROVAL, APPROVAL_OVERDUE, APPROVAL_REMINDER, APPROVAL_WITHDRAWN, AUTOMATIC_TO_REQUESTER, CHASE, FOLLOWER_UPDATE, NOTICE, RAISED_FOR, REPLY
+from app.outbox import ACKNOWLEDGEMENT, MSP_FORWARD, MSP_HANDOFF, APPROVAL, APPROVAL_OVERDUE, APPROVAL_REMINDER, APPROVAL_WITHDRAWN, AUTOMATIC_TO_REQUESTER, CHASE, FOLLOWER_UPDATE, NOTICE, RAISED_FOR, REPLY
 from app.raising import should_tell_requester
 from app.settings_store import APPROVAL_LINK_MINUTES, AUTOMATIC_EMAIL_CAP, CHASE_RESOLVE_AFTER_DAYS, REGISTRY, get_int_setting
+from app.storage import get_storage
 from app.teams import MAX_ATTEMPTS, MAX_BACKOFF_MINUTES, Unsendable
 
 log = logging.getLogger("app.mail")
@@ -81,6 +83,7 @@ class Mail:
     record: str  # what is kept on the row: the same, minus anything secret
     automatic: bool  # true for mail nobody just wrote, so receivers should not auto-reply to it
     reference: str
+    files: list[tuple[str, str, bytes]] = field(default_factory=list)  # (name, content type, bytes) attached to it
 
 
 def _ticket_of(session: Session, row: OutboundEmail) -> Ticket:
@@ -338,9 +341,37 @@ def build_msp_handoff_mail(session: Session, row: OutboundEmail) -> Mail:
     if not row.body or not row.subject:
         raise Unsendable("The email has no text")
     _guard_recipient(row)
+    body, files = row.body, []
+    ids = [int(i) for i in (row.attachment_ids or "").split(",") if i.strip().isdigit()]
+    if ids:
+        storage = get_storage()
+        missing = []
+        for item in session.exec(select(Attachment).where(Attachment.id.in_(ids), Attachment.ticket_id == ticket.id).order_by(Attachment.id)).all():
+            try:
+                files.append((item.filename, item.content_type, storage.read(item.blob_key)))
+            except Exception:
+                missing.append(item.filename)  # a file that cannot be read must not stop the handoff
+        if missing:
+            body += "\n\n(These files could not be attached: " + ", ".join(missing) + ". Ask the IT mailbox for them.)"
     return Mail(
         to=row.to_address, cc=[a.strip() for a in (row.cc or "").split(",") if a.strip()], subject=row.subject,
-        body=row.body, record=row.body, automatic=False, reference=ticket.reference,
+        body=body, record=body, automatic=False, reference=ticket.reference, files=files,
+    )
+
+
+def build_msp_forward_mail(session: Session, row: OutboundEmail) -> Mail:
+    """An MSP message passed on to the user it left off. The text was fixed when it was queued (app/msp.py); this
+    only checks the message is still one that was forwarded (it is public then) and that there is someone to send to."""
+    ticket = _ticket_of(session, row)
+    message = session.get(Message, row.about_message_id) if row.about_message_id else None
+    if message is None or message.msp_forward != "forwarded" or message.visibility != MessageVisibility.PUBLIC:
+        raise Unsendable("The message from the MSP is no longer one to pass on")
+    if not row.body or not row.subject:
+        raise Unsendable("The email has no text")
+    _guard_recipient(row)
+    return Mail(
+        to=row.to_address, cc=[], subject=row.subject, body=row.body, record=row.body, automatic=False,
+        reference=ticket.reference,
     )
 
 
@@ -357,6 +388,7 @@ BUILDERS: dict[str, Callable[[Session, OutboundEmail], Mail]] = {
     ACKNOWLEDGEMENT: build_acknowledgement_mail,
     CHASE: build_chase_mail,
     MSP_HANDOFF: build_msp_handoff_mail,
+    MSP_FORWARD: build_msp_forward_mail,
     FOLLOWER_UPDATE: build_follower_update_mail,
 }
 
@@ -413,7 +445,8 @@ def send_through_graph(mail: Mail) -> None:
     headers = {"X-Ticket-Reference": mail.reference}
     if mail.automatic:
         headers["X-Auto-Response-Suppress"] = "All"  # tell the receiving Exchange not to auto-reply
-    graph_client.send_mail(mail.to, mail.subject, mail.body, cc=mail.cc, headers=headers)
+    extra = {"attachments": mail.files} if mail.files else {}  # only an MSP handoff carries files
+    graph_client.send_mail(mail.to, mail.subject, mail.body, cc=mail.cc, headers=headers, **extra)
 
 
 def record_only(mail: Mail) -> None:

@@ -8,6 +8,16 @@ by `compose`, which is also what the preview shows, and is queued with exactly t
 requester is told by an ordinary notice from the admin template `msp_sent_notice`. Where the MSP is, and when the
 handoff runs, are admin settings (app/settings_store.py); with no MSP address nothing is sent and the job records why.
 
+Mail from the MSP (phase 5B, issue #139). The MSP deals with the user directly and keeps the IT mailbox copied, so its
+replies arrive in the shared mailbox (app/inbound.py calls `receive_mail`). The MSP is never the requester or a
+follower: its mail only ever lands on a ticket that was sent to it, and never makes a ticket. A message the requester
+was on (To or Cc) is recorded as an ordinary public message; one that left them off is agents-only (`pending`) until it
+is forwarded. In business hours (settings, organisation time zone, Monday to Friday, bank holidays out) the agent is
+prompted and previews the forward (`compose_forward`, then `forward_message`, or `dismiss_forward`); out of hours it is
+forwarded to the user automatically with no preview, an accepted risk (docs/plan.md), and the recurring job
+`run_msp_forwards` forwards what was still waiting when business hours ended. A message from the MSP changes no status:
+the assigned agent is told and decides, as with any reply on a With MSP ticket.
+
 The automatic handoff. Each day from the handoff hour (in the default time zone) until the next business morning,
 the open tickets of teams that are included (`Team.msp_handoff_included`) that are due to breach before that morning
 and are not held go to the MSP; a ticket that becomes due or eligible later in the night goes at the next run. What is due is worked out from the tickets, not from the last run, so a late or
@@ -17,14 +27,14 @@ in docs/plan.md). The job does not run in business hours: a handoff missed overn
 
 import hashlib
 import logging
-from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from dataclasses import dataclass, field
+from datetime import datetime, time, timedelta, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import and_, or_
 from sqlalchemy.exc import IntegrityError
-from sqlmodel import Session, select
+from sqlmodel import Session, func, select
 
 from app.audit import log_action
 from app.config import settings
@@ -32,7 +42,7 @@ from app.categories import path_of
 from app.email_templates import render_template, ticket_values
 from app.followers import add_follower, followers_of
 from app.mail import own_first_message
-from app.messages import add_note, mail_subject, record_notice, requester_visible_messages
+from app.messages import add_note, mail_subject, record_msp_message, record_notice, requester_visible_messages
 from app.models import (
     FINISHED_STATUSES,
     Attachment,
@@ -40,26 +50,32 @@ from app.models import (
     Category,
     Message,
     MessageDirection,
+    MessageVisibility,
     Team,
     Ticket,
     TicketEscalator,
+    TicketEvent,
     TicketStatus,
     User,
 )
 from app.notifications import notify_mentions
-from app.outbox import is_on, queue_msp_handoff
+from app.outbox import is_on, queue_msp_forward, queue_msp_handoff
 from app.settings_store import (
     MSP_ADDRESS,
+    MSP_ATTACH_MAX_MB,
     MSP_BANK_HOLIDAYS,
+    MSP_BUSINESS_END,
     MSP_BUSINESS_MORNING_HOUR,
+    MSP_BUSINESS_START,
     MSP_HANDOFF_HOUR,
     REGISTRY,
+    count_setting,
     get_int_setting,
     get_setting,
 )
 from app.splitting import has_sub_tickets
 from app.ticket_service import record_event, set_status
-from app.time_zones import default_zone, format_moment, morning_of, next_business_morning, parse_dates
+from app.time_zones import default_zone, format_moment, in_business_hours, morning_of, next_business_morning, parse_clock, parse_dates
 
 log = logging.getLogger("app.worker")
 
@@ -70,6 +86,21 @@ SCOPES = (SCOPE_THREAD, SCOPE_ORIGINAL)
 EVENT_SENT_TO_MSP = "sent_to_msp"  # detail: the reason; to_value: thread, original or automatic
 EVENT_MSP_HOLD = "msp_hold"
 EVENT_MSP_HOLD_RELEASED = "msp_hold_released"
+EVENT_MSP_MAIL = "msp_mail_received"  # to_value: not_needed (the user was on it) or pending (they were left off)
+EVENT_MSP_FORWARDED = "msp_forwarded"  # to_value: agent or automatic (the reporting data: manual against automatic)
+EVENT_MSP_FORWARD_DISMISSED = "msp_forward_dismissed"
+
+# Message.msp_forward values.
+FORWARD_NOT_NEEDED = "not_needed"
+FORWARD_PENDING = "pending"
+FORWARD_FORWARDED = "forwarded"
+FORWARD_DISMISSED = "dismissed"
+BY_AGENT = "agent"
+BY_AUTOMATIC = "automatic"
+
+# Graph takes a file attachment inline in sendMail up to about 3 MB in all (the request is base64 and a request is
+# limited to about 4 MB); more needs a draft and an upload session, which is not built. The setting can lower this.
+GRAPH_INLINE_LIMIT_MB = 3
 
 AUDIT_ACTOR = "system"
 AUDIT_ENTITY = "msp_handoff"  # the job's own entries (a skipped day); entity_id 0
@@ -94,12 +125,13 @@ class MspPreview:
     scope: str
     notice: str  # what the requester is told
     mail_is_off: bool  # nothing would actually be emailed (MAIL_SENDING is off)
+    attachment_ids: list[int] = field(default_factory=list)  # the ticket's files that are attached to the email
 
     @property
     def digest(self) -> str:
         """A fingerprint of everything that would go, carried by the preview's confirm form so a thread that changed
         in between (a reply, a note) is shown again instead of being sent unseen."""
-        text = "\x1f".join([self.to, ", ".join(self.cc), self.subject, self.body, self.scope, self.notice])
+        text = "\x1f".join([self.to, ", ".join(self.cc), self.subject, self.body, self.scope, self.notice, str(self.attachment_ids)])
         return hashlib.sha256(text.encode()).hexdigest()
 
 
@@ -176,14 +208,40 @@ def _conversation(session: Session, ticket: Ticket, scope: str, zone: str) -> st
     return "The thread (internal notes are marked):\n\n" + "\n\n".join(_entry(m, zone) for m in messages)
 
 
-def _attachments(session: Session, ticket: Ticket) -> str:
+def _budget_bytes(session: Session) -> int:
+    return min(count_setting(session, MSP_ATTACH_MAX_MB), GRAPH_INLINE_LIMIT_MB) * 1024 * 1024
+
+
+def attachment_plan(session: Session, ticket: Ticket) -> tuple[str, list[int]]:
+    """Which files of the ticket go with the email to the MSP, and the text that says so. In order, each file that
+    still fits the total allowed (a setting, at most what Graph takes in one send) is attached; the rest are listed by
+    name as not attached. Pictures embedded in a message body (signature logos) are left out."""
     files = session.exec(
         select(Attachment).where(Attachment.ticket_id == ticket.id, Attachment.is_inline.is_(False)).order_by(Attachment.id)
     ).all()
     if not files:
-        return ""
-    lines = [f"- {f.filename} ({max(1, round(f.size / 1024))} KB)" for f in files]
-    return "Attachments on the ticket (names only; the files are not attached to this email):\n" + "\n".join(lines)
+        return "", []
+    budget, used = _budget_bytes(session), 0
+    attached: list[Attachment] = []
+    left: list[Attachment] = []
+    for f in files:
+        if used + f.size <= budget:
+            attached.append(f)
+            used += f.size
+        else:
+            left.append(f)
+
+    def line(f: Attachment) -> str:
+        return f"- {f.filename} ({max(1, round(f.size / 1024))} KB)"
+
+    parts = []
+    if attached:
+        parts.append("Attached to this email:\n" + "\n".join(line(f) for f in attached))
+    if left:
+        parts.append(
+            "Also on the ticket but too large to attach (ask the IT mailbox for them):\n" + "\n".join(line(f) for f in left)
+        )
+    return "\n\n".join(parts), [f.id for f in attached]
 
 
 def _handoff_label(session: Session) -> str:
@@ -203,6 +261,7 @@ def compose(
     requested_by = (
         _person(session, actor.email) if actor is not None else f"IT Support (the automatic {_handoff_label(session)} handoff)"
     )
+    attachment_text, attachment_ids = attachment_plan(session, ticket)
     values = {
         **ticket_values(ticket),
         "end_user": _person(session, ticket.requester_email),
@@ -212,7 +271,7 @@ def compose(
         "category": path_of(session, category) if category else "none",
         "reason": reason.strip(),
         "conversation": _conversation(session, ticket, scope, zone),
-        "attachments": _attachments(session, ticket),
+        "attachments": attachment_text,
     }
     cc = [f.email for f in followers_of(session, ticket) if f.is_internal and f.email != address]
     if actor is not None and actor.email not in cc:
@@ -221,7 +280,7 @@ def compose(
         to=address, cc=cc, subject=mail_subject(session, ticket),
         body=render_template(session, "msp_handoff", values).body, scope=scope,
         notice=render_template(session, "msp_sent_notice", ticket_values(ticket)).body,
-        mail_is_off=not is_on(),
+        mail_is_off=not is_on(), attachment_ids=attachment_ids,
     )
 
 
@@ -269,7 +328,7 @@ def send_to_msp(
     ticket.msp_hold = False  # the hold was about the automatic handoff; the ticket has gone
     ticket.msp_sent_at = now
     set_status(session, ticket, TicketStatus.WITH_MSP, actor_email, detail="sent to the MSP")
-    queue_msp_handoff(session, ticket, preview.to, preview.cc, preview.subject, preview.body)
+    queue_msp_handoff(session, ticket, preview.to, preview.cc, preview.subject, preview.body, preview.attachment_ids)
     record_notice(session, ticket, preview.notice)
     record_event(
         session, ticket, EVENT_SENT_TO_MSP, actor_email,
@@ -444,3 +503,175 @@ def hand_off_due_tickets(session: Session, now: Optional[datetime] = None) -> in
 def run_msp_handoff(session: Session) -> None:
     """The recurring job (registered in app/scheduled_jobs.py)."""
     hand_off_due_tickets(session)
+
+
+# ---- Mail from the MSP (5B) --------------------------------------------------------------------------------
+
+
+def business_hours(session: Session) -> tuple[time, time]:
+    """(start, end) of business hours, from the settings (a bad stored value falls back to the default)."""
+
+    def read(key: str) -> time:
+        return parse_clock(get_setting(session, key)) or parse_clock(REGISTRY[key].default)
+
+    return read(MSP_BUSINESS_START), read(MSP_BUSINESS_END)
+
+
+def is_business_time(session: Session, now: Optional[datetime] = None) -> bool:
+    """Whether now is in business hours: Monday to Friday, bank holidays out, in the organisation time zone."""
+    start, end = business_hours(session)
+    return in_business_hours(now or datetime.now(timezone.utc), default_zone(session), start, end, _holidays(session))
+
+
+def is_msp_sender(session: Session, sender: str) -> bool:
+    address = msp_address(session)
+    return bool(address) and sender.strip().lower() == address
+
+
+def receive_mail(
+    session: Session, ticket: Ticket, *, sender: str, body: str, recipients: list[str], now: Optional[datetime] = None
+) -> Message:
+    """Records a mail from the MSP on the ticket it belongs to (app/inbound.py found the ticket and checked it was
+    sent to the MSP; `body` is the mail's own new text, uniqueBody). `recipients` is everyone on To and Cc. If the
+    requester was one of them they already have it and it is an ordinary public message. If the MSP left them off, it
+    is agents-only until forwarded: out of business hours it is forwarded to them at once with no preview, and in
+    business hours the agent is told and previews it. Never changes the ticket's status. Does not commit."""
+    requester = ticket.requester_email.strip().lower()
+    on_it = requester in {r.strip().lower() for r in recipients}
+    state = FORWARD_NOT_NEEDED if on_it else FORWARD_PENDING
+    message = record_msp_message(session, ticket, sender=sender, body=body, forward=state)
+    session.flush()
+    record_event(
+        session, ticket, EVENT_MSP_MAIL, sender, to_value=state,
+        detail="The user was on it" if on_it else "The user was left off To and Cc",
+    )
+    log_action(session, sender, "ticket", ticket.id, "msp_mail_received", state)
+    if not on_it and is_on() and not is_business_time(session, now):
+        forward_message(session, ticket, message, None)
+    return message
+
+
+def pending_forwards(session: Session, ticket: Ticket) -> list[Message]:
+    return list(
+        session.exec(
+            select(Message).where(Message.ticket_id == ticket.id, Message.msp_forward == FORWARD_PENDING).order_by(Message.id)
+        ).all()
+    )
+
+
+@dataclass
+class ForwardPreview:
+    to: str
+    subject: str
+    body: str
+    mail_is_off: bool
+
+    @property
+    def digest(self) -> str:
+        return hashlib.sha256("\x1f".join([self.to, self.subject, self.body]).encode()).hexdigest()
+
+
+def compose_forward(session: Session, ticket: Ticket, message: Message) -> ForwardPreview:
+    """The email to the user passing on an MSP message they were left off, exactly as it would go (the preview
+    step; forward_message queues this text). Changes nothing. Raises MspError."""
+    if message.ticket_id != ticket.id or message.msp_forward != FORWARD_PENDING:
+        raise MspError("That message from the MSP is not waiting to be forwarded")
+    values = {**ticket_values(ticket), "msp_name": message.sender, "msp_message": message.body.strip()}
+    return ForwardPreview(
+        to=ticket.requester_email, subject=mail_subject(session, ticket),
+        body=render_template(session, "msp_forward", values).body, mail_is_off=not is_on(),
+    )
+
+
+def forward_message(
+    session: Session, ticket: Ticket, message: Message, actor: Optional[User], expect_digest: Optional[str] = None
+) -> ForwardPreview:
+    """Forwards a message the MSP left the user off to the user: queues the email, and from then on the message is
+    one the user may see. `actor` None is the automatic forward out of hours (no preview). `expect_digest` is the
+    fingerprint of the preview the agent confirmed. Raises MspError and changes nothing when it cannot be forwarded."""
+    if not is_on():
+        raise MspError("Email sending is switched off on this server, so nothing can be forwarded")
+    locked = session.exec(
+        select(Message).where(Message.id == message.id).with_for_update().execution_options(populate_existing=True)
+    ).one()  # two clicks, or a click and the job, forward it once
+    preview = compose_forward(session, ticket, locked)
+    if expect_digest is not None and preview.digest != expect_digest:
+        raise MspError("That message changed since the preview. Preview it again to see what will be sent.")
+    locked.msp_forward = FORWARD_FORWARDED
+    locked.visibility = MessageVisibility.PUBLIC
+    session.add(locked)
+    queue_msp_forward(session, ticket, locked, preview.to, preview.subject, preview.body)
+    by = BY_AGENT if actor is not None else BY_AUTOMATIC
+    who = actor.email if actor is not None else AUDIT_ACTOR
+    record_event(
+        session, ticket, EVENT_MSP_FORWARDED, who, to_value=by,
+        detail="Passed on to the user" + ("" if actor is not None else " automatically, out of business hours, with no preview"),
+    )
+    log_action(session, who, "ticket", ticket.id, "msp_forwarded", by)
+    return preview
+
+
+def dismiss_forward(session: Session, ticket: Ticket, message: Message, actor: User) -> None:
+    """The agent decides the user does not need this MSP message (it stays on the ticket, agents only)."""
+    locked = session.exec(
+        select(Message).where(Message.id == message.id).with_for_update().execution_options(populate_existing=True)
+    ).one()
+    if locked.ticket_id != ticket.id or locked.msp_forward != FORWARD_PENDING:
+        raise MspError("That message from the MSP is not waiting to be forwarded")
+    locked.msp_forward = FORWARD_DISMISSED
+    session.add(locked)
+    record_event(session, ticket, EVENT_MSP_FORWARD_DISMISSED, actor.email, detail="Not passed on to the user")
+    log_action(session, actor.email, "ticket", ticket.id, "msp_forward_dismissed", None)
+
+
+def forward_waiting_messages(session: Session, now: Optional[datetime] = None) -> int:
+    """Out of business hours, forwards every MSP message still waiting for an agent (the prompt was not answered
+    before business hours ended). In business hours, with mail off, or with nothing waiting it does nothing. Each is
+    done in a savepoint so one that cannot be does not block the rest. Returns how many went."""
+    if not is_on() or is_business_time(session, now):
+        return 0
+    rows = session.exec(
+        select(Message.id, Message.ticket_id).where(Message.msp_forward == FORWARD_PENDING).order_by(Message.id)
+    ).all()
+    sent = 0
+    for message_id, ticket_id in rows:
+        try:
+            with session.begin_nested():
+                forward_message(session, session.get(Ticket, ticket_id), session.get(Message, message_id), None)
+                sent += 1
+        except MspError:
+            continue  # taken by someone in the meantime
+        except Exception:
+            log.exception("MSP forward skipped message %s", message_id)
+    if sent:
+        log.info("MSP forwards sent %s message(s)", sent)
+    return sent
+
+
+def run_msp_forwards(session: Session) -> None:
+    """The recurring job (registered in app/scheduled_jobs.py)."""
+    forward_waiting_messages(session)
+
+
+# ---- Reporting data (the reports themselves are phase 7) --------------------------------------------------
+
+
+def handoff_counts(session: Session, since: datetime, until: datetime) -> dict[str, int]:
+    """How many tickets went to the MSP, and how many MSP messages were forwarded to users, between two moments:
+    by the system (automatic) against by an agent (manual). Data only; read from the ticket events."""
+
+    def count(event_type: str, *conditions) -> int:
+        return session.exec(
+            select(func.count()).select_from(TicketEvent).where(
+                TicketEvent.event_type == event_type, TicketEvent.created_at >= since, TicketEvent.created_at < until,
+                *conditions,
+            )
+        ).one()
+
+    return {
+        "sent_automatic": count(EVENT_SENT_TO_MSP, TicketEvent.to_value == BY_AUTOMATIC),
+        "sent_manual": count(EVENT_SENT_TO_MSP, TicketEvent.to_value != BY_AUTOMATIC),
+        "forwarded_automatic": count(EVENT_MSP_FORWARDED, TicketEvent.to_value == BY_AUTOMATIC),
+        "forwarded_manual": count(EVENT_MSP_FORWARDED, TicketEvent.to_value == BY_AGENT),
+        "forward_dismissed": count(EVENT_MSP_FORWARD_DISMISSED),
+    }

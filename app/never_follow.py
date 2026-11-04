@@ -15,6 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from app.models import NeverFollowAddress
+from app.settings_store import MSP_ADDRESS, get_setting
 
 MAX_REASON_LENGTH = 200
 
@@ -25,6 +26,13 @@ class NeverFollowError(ValueError):
 
 def all_listed(session: Session) -> list[NeverFollowAddress]:
     return list(session.exec(select(NeverFollowAddress).order_by(NeverFollowAddress.email)).all())
+
+
+def is_msp(session: Session, email: str) -> bool:
+    """The MSP's address (an admin setting). The MSP is a party to the ticket, never a follower or a requester
+    (app/msp.py); followers.add_follower refuses it, and a copy list never includes it."""
+    address = get_setting(session, MSP_ADDRESS).strip().lower()
+    return bool(address) and email.strip().lower() == address
 
 
 def is_listed(session: Session, email: str) -> bool:
@@ -41,7 +49,8 @@ def listed_among(session: Session, emails: list[str]) -> set[str]:
     """Which of these (lower-case) addresses are on the list, in one query."""
     if not emails:
         return set()
-    return set(session.exec(select(NeverFollowAddress.email).where(NeverFollowAddress.email.in_(emails))).all())
+    listed = set(session.exec(select(NeverFollowAddress.email).where(NeverFollowAddress.email.in_(emails))).all())
+    return listed | {email for email in emails if is_msp(session, email)}
 
 
 def add_listed(session: Session, email: str, reason: str, added_by: str) -> NeverFollowAddress:

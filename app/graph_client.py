@@ -10,6 +10,7 @@ Everything below is stubbed pending the actual app registration. Fill in
 GRAPH_* values in .env and flesh out the TODOs when that's ready.
 """
 
+import base64
 import time
 from datetime import datetime, timezone
 from urllib.parse import quote
@@ -111,6 +112,7 @@ class GraphClient:
         body: str,
         cc: list[str] | None = None,
         headers: dict[str, str] | None = None,
+        attachments: list[tuple[str, str, bytes]] | None = None,
     ) -> None:
         """Sends a plain-text email from the shared mailbox: POST /users/{mailbox}/sendMail (Mail.Send,
         application, limited to that mailbox). Graph answers 202 and the message goes to Sent Items.
@@ -123,6 +125,15 @@ class GraphClient:
             "toRecipients": [{"emailAddress": {"address": to_address}}],
             "ccRecipients": [{"emailAddress": {"address": address}} for address in (cc or [])],
         }
+        if attachments:
+            # (name, content type, bytes), sent inline: Graph takes about 3 MB of files this way (app/msp.py keeps within it).
+            message["attachments"] = [
+                {
+                    "@odata.type": "#microsoft.graph.fileAttachment", "name": name, "contentType": content_type,
+                    "contentBytes": base64.b64encode(data).decode("ascii"),
+                }
+                for name, content_type, data in attachments
+            ]
         if headers:
             message["internetMessageHeaders"] = [{"name": name, "value": value} for name, value in headers.items()]
         response = httpx.post(

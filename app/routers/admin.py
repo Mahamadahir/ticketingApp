@@ -149,7 +149,7 @@ from app.settings_store import (
 from app.inbound import IGNORED_FLOOD
 from app.subscriptions import health_warnings, mail_folder, subscription_resource
 from app.teams import MAX_ATTEMPTS
-from app.time_zones import parse_dates, valid_zone
+from app.time_zones import parse_clock, parse_dates, valid_zone
 from app.ticket_service import EVENT_CATEGORY_REVIEWED, get_by_number, record_event
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -1596,6 +1596,10 @@ def save_setting(
     if definition.kind == "hour":
         if not (value.isascii() and value.isdigit()) or not 0 <= int(value) <= 23:
             raise HTTPException(status_code=400, detail="Enter a whole number from 0 to 23")
+    if definition.kind == "clock":
+        if parse_clock(value) is None:
+            raise HTTPException(status_code=400, detail="Enter a time of day like 09:00 or 17:30")
+        value = f"{parse_clock(value):%H:%M}"
     if definition.kind == "time_zone" and value and valid_zone(value) is None:
         raise HTTPException(status_code=400, detail="Enter an IANA time zone name such as Europe/London")
     if definition.kind == "flag" and value not in ("on", "off"):

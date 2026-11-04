@@ -155,6 +155,25 @@ def parse_dates(text: str) -> list[date]:
     return [date.fromisoformat(part) for part in re.split(r"[,;\s]+", text.strip()) if part] if text.strip() else []
 
 
+def parse_clock(text: str) -> Optional[time]:
+    """A time of day written 09:00 or 9:30, else None."""
+    match = re.fullmatch(r"\s*([0-9]{1,2}):([0-9]{2})\s*", text or "")
+    if match is None or int(match.group(1)) > 23 or int(match.group(2)) > 59:
+        return None
+    return time(int(match.group(1)), int(match.group(2)))
+
+
+def in_business_hours(
+    moment: datetime, zone_name: str, start: time, end: time, holidays: frozenset[date] = frozenset()
+) -> bool:
+    """Whether the moment is within business hours in that zone: Monday to Friday, not a listed holiday, from `start`
+    up to (not including) `end`. An end at or before the start leaves no business hours."""
+    local = _aware(moment).astimezone(ZoneInfo(valid_zone(zone_name) or "UTC"))
+    if local.weekday() >= 5 or local.date() in holidays:
+        return False
+    return start <= local.time().replace(tzinfo=None) < end
+
+
 def next_business_morning(after: datetime, zone_name: str, hour: int, holidays: frozenset[date] = frozenset()) -> datetime:
     """The first business morning (the given hour, Monday to Friday, not a listed holiday) after `after`, in that
     zone, as UTC. A moment before the hour on a business day is that day's morning; at or after it, the next one."""

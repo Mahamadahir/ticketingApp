@@ -334,7 +334,7 @@ REGISTRY: dict[str, TemplateDef] = {
                 "category": "the ticket's category",
                 "reason": "why it is being sent",
                 "conversation": "the thread, or only the original request, as the agent chose (the automatic handoff sends the thread)",
-                "attachments": "the names of the files on the ticket (left out if none)",
+                "attachments": "which files are attached to the email and which are only listed by name because they are too large (left out if none)",
             },
             required=("conversation",),
             sample={
@@ -346,7 +346,33 @@ REGISTRY: dict[str, TemplateDef] = {
                 "category": "Hardware / Printer",
                 "reason": "Needs an engineer on site.",
                 "conversation": "The thread:\n\n--- 4 Nov 09:12 GMT, from the user (sam@example.com) ---\nThe printer shows a paper jam error.",
-                "attachments": "Attachments on the ticket (names only; the files are not attached to this email):\n- jam.jpg (120 KB)",
+                "attachments": "Attached to this email:\n- jam.jpg (120 KB)",
+            },
+        ),
+        TemplateDef(
+            key="msp_forward",
+            label="Forwarded MSP message (to the user)",
+            description=(
+                "Sent to the user when the support partner replied about their ticket and left them off To and Cc: an agent "
+                "previews and forwards it in business hours, and it goes automatically, with no preview, out of hours. "
+                "{msp_message} is the partner's own new text. It goes out under the ticket's own subject, so the user's "
+                "reply finds the ticket."
+            ),
+            body_default=(
+                "Our support partner ({msp_name}) replied about your ticket {reference} without copying you, so we are "
+                "passing it on:\n\n{msp_message}\n\n"
+                "Reply to this email and your answer is added to the ticket."
+            ),
+            body_placeholders={
+                **_COMMON,
+                "msp_name": "the address the support partner wrote from",
+                "msp_message": "what the support partner wrote",
+            },
+            required=("msp_message",),
+            sample={
+                **_COMMON_SAMPLE,
+                "msp_name": "support@msp.example",
+                "msp_message": "We have booked an engineer for Thursday morning.",
             },
         ),
         TemplateDef(

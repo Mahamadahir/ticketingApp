@@ -980,7 +980,7 @@ A template is plain text with `{placeholders}` from a fixed list per email; the 
   example 1st line triaged it, escalated it to 2nd line, and 2nd line decided it is MSP
   work. The preview step shows exactly what will be sent. The 18:00 automatic send
   uses the thread. *Built:* the preview is the function that builds the email, and the email is queued with that exact
-  text. Attachments are listed by name in the email; attaching the files is 5B.
+  text. *Built (5B):* the files are attached to the email up to a total set in Settings (2 MB placeholder, never more than the 3 MB Graph takes in one send); the rest are listed by name as too large to attach.
 - Each team has an admin setting, "include in the automatic 18:00 MSP handoff"
   (a setting, not a constant). Tickets of a team with it off are never sent
   automatically; an agent can still send them by hand.
@@ -1003,7 +1003,13 @@ A template is plain text with `{placeholders}` from a fixed list per email; the 
   added to the ticket using `uniqueBody` only.
 - When an MSP email leaves the user off To and CC: during business hours the
   agent is prompted to forward it with a preview; out of hours it forwards
-  automatically.
+  automatically. *Built (5B, #139):* mail from the MSP address is added only to a ticket that was sent to the MSP, never
+  makes a ticket, and the MSP is never a requester or follower. A message the user was on is an ordinary public message;
+  one they were left off is agents-only until forwarded (the agent previews it in business hours; out of hours it goes to the
+  user at once with no preview, and what an agent left unanswered goes when business hours end, the `msp-forwards` job).
+  Business hours are admin settings (placeholder 09:00 to 17:30, Monday to Friday, organisation time zone, bank holidays
+  from the 5A setting). A message from the MSP changes no status. Handoffs (automatic against manual) and forwards are
+  ticket events, which is the reporting data for phase 7.
 
 ## Notifications
 

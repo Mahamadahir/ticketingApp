@@ -1,0 +1,15 @@
+<div class="email-preview">
+  <h3>Check before forwarding to the user</h3>
+  <p><b>To:</b> {{ preview.to }}</p>
+  <p><b>Subject:</b> {{ preview.subject }}</p>
+  <pre class="message-body">{{ preview.body }}</pre>
+  <p class="note">
+    Forwarding makes this message from the MSP visible to the user.
+    {% if preview.mail_is_off %}<b>Email sending is switched off on this server, so nothing will be emailed and it cannot be forwarded.</b>{% endif %}
+  </p>
+  <form hx-post="/tickets/{{ ticket.number }}/msp-forward/{{ message.id }}" hx-target="main" hx-swap="innerHTML" hx-disabled-elt="find button[type=submit]">
+    <input type="hidden" name="digest" value="{{ preview.digest }}" />
+    <button type="submit" class="button-destructive">Forward to the user</button>
+    <button type="button" class="button-outline" hx-on:click="document.getElementById('msp-forward-preview-{{ message.id }}').innerHTML = ''">Cancel</button>
+  </form>
+</div>

@@ -42,7 +42,7 @@ from app.auto_close_chase import run_auto_close, run_chase
 from app.database import engine
 from app.due_today import run_scheduled_due
 from app.models import ScheduledJob
-from app.msp import run_msp_handoff
+from app.msp import run_msp_forwards, run_msp_handoff
 from app.settings_store import JOB_LATE_MINUTES, JOB_LEASE_MINUTES, JOB_RETRY_MINUTES, REGISTRY, get_int_setting
 
 log = logging.getLogger("app.worker")
@@ -65,6 +65,7 @@ SCHEDULED_JOBS: list[ScheduledJobDef] = [
     ScheduledJobDef("approval-reminders", 3600, send_approval_reminders),
     ScheduledJobDef("auto-close", 3600, run_auto_close),
     ScheduledJobDef("chase", 3600, run_chase),
+    ScheduledJobDef("msp-forwards", 300, run_msp_forwards),  # MSP mail left waiting for an agent goes to the user once business hours end
     ScheduledJobDef("msp-handoff", 300, run_msp_handoff),  # every 5 minutes: the handoff starts within 5 minutes of its hour
     ScheduledJobDef("scheduled-due", 900, run_scheduled_due),
 ]
