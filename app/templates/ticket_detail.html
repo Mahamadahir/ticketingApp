@@ -151,11 +151,10 @@
   {% if ticket.triaged_at and ticket.status.value != "awaiting_approval" %}
   <form hx-post="/tickets/{{ ticket.number }}/status" hx-target="main" hx-swap="innerHTML">
     {% for s in statuses %}
-    {% if s.value == "resolved" %}<button type="button" disabled class="button-active">resolved</button>{% else %}
+    {% if s.value == "resolved" %}<button type="button" disabled class="button-active">resolved</button>
+    {% elif s.value == "closed" and can_close %}<button type="button" disabled class="button-outline" title="Use Close below: it needs notes and emails the requester">closed</button>{% else %}
     <button type="submit" name="status" value="{{ s.value }}" class="{{ 'button-active' if ticket.status == s else 'button-outline' }}">{{ s.value.replace("_", " ") }}</button>{% endif %}
     {% endfor %}
-    <label>Resolution notes, needed to close a ticket that is not resolved
-      <input type="text" name="resolution_notes" maxlength="10000" /></label>
     <label>Scheduled needs a date: Due
       <input type="date" name="due_on" value="{{ ticket.due_on.isoformat() if ticket.due_on else "" }}" /></label>
     <label>Why the date is being moved (only if you change it)
@@ -187,6 +186,31 @@
     <div id="resolve-preview"></div>
   </details>
   {% endif %}
+  {% if can_close %}
+  <details>
+    <summary>Close</summary>
+    <form hx-post="/tickets/{{ ticket.number }}/close/preview" hx-target="#close-preview" hx-swap="innerHTML"
+          hx-on:input="document.getElementById('close-preview').innerHTML = ''">
+      <label>Closing notes (why it is being closed; they go into the email to the requester)
+        <textarea name="closing_notes" rows="4" maxlength="{{ max_message_length }}" required></textarea>
+      </label>
+      {% if cc_candidates %}
+      <fieldset>
+        <legend>Copy the closed email to</legend>
+        <input type="hidden" name="cc_form" value="1" />
+        {% for f in cc_candidates %}
+        <label>
+          <input type="checkbox" name="cc" value="{{ f.email }}" checked {{ "disabled" if f.is_internal else "" }} />
+          {{ f.email }}{% if f.is_internal %} <i>(internal, always copied)</i>{% endif %}
+        </label>
+        {% endfor %}
+      </fieldset>
+      {% endif %}
+      <button type="submit">Preview closing</button>
+    </form>
+    <div id="close-preview"></div>
+  </details>
+  {% endif %}
   {% if can_reopen %}
   <details>
     <summary>Reopen</summary>
@@ -207,6 +231,7 @@
           {% for key, label in reclose_reasons.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
         </select>
       </label>
+      <p class="note">Reclosing sends no email. To tell the requester why, use Close.</p>
       <button type="submit">Reclose ticket</button>
     </form>
   </details>
@@ -318,7 +343,7 @@
 {% endif %}
 {% if ticket.resolution_notes and ticket.status.value in ("resolved", "closed") %}
 <h3>Resolution</h3>
-<p class="note">{% if resolved_by %}Resolved by {{ resolved_by.display_name or resolved_by.email }}{% else %}Resolved automatically{% endif %}{% if ticket.resolved_at %} on {{ ticket.resolved_at|local_time }}{% endif %}{% if ticket.closed_at %}; closed {{ ticket.closed_at|local_time }}{% endif %}.</p>
+<p class="note">{% if ticket.closed_at and ticket.resolved_at == ticket.closed_at %}{# closed without being resolved (the Close action): the notes say why #}Closed by {{ (resolved_by.display_name or resolved_by.email) if resolved_by else "the system" }} on {{ ticket.closed_at|local_time }}{% else %}{% if resolved_by %}Resolved by {{ resolved_by.display_name or resolved_by.email }}{% else %}Resolved automatically{% endif %}{% if ticket.resolved_at %} on {{ ticket.resolved_at|local_time }}{% endif %}{% if ticket.closed_at %}; closed {{ ticket.closed_at|local_time }}{% endif %}{% endif %}.</p>
 <pre class="message-body">{{ ticket.resolution_notes }}</pre>
 {% endif %}
 {% if feedback %}

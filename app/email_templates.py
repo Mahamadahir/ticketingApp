@@ -152,6 +152,34 @@ REGISTRY: dict[str, TemplateDef] = {
             },
         ),
         TemplateDef(
+            key="closed",
+            label="Closed email",
+            description=(
+                "Sent to the requester, copying the followers, when an agent closes a ticket that was not resolved "
+                "first (the closing notes are required). It goes out under the ticket's own subject. It has no "
+                "reopen link: only a resolved ticket can be reopened, and a reply to a closed ticket opens a new "
+                "ticket linked to this one. A ticket that was resolved first, then closed, gets no closed email: "
+                "it already had the resolution email."
+            ),
+            body_default=(
+                "Your ticket {reference} has been closed.\n\n"
+                "Why it was closed:\n{closing_notes}\n\n"
+                "If you still need help, reply to this email and we will open a new ticket linked to this one.\n"
+                "Tell us how we did: {feedback_link}"
+            ),
+            body_placeholders={
+                **_COMMON,
+                "closing_notes": "what the agent wrote when closing the ticket",
+                "feedback_link": "a personal link to rate how the ticket was handled (made when the email is sent; works once)",
+            },
+            required=("closing_notes",),
+            sample={
+                **_COMMON_SAMPLE,
+                "closing_notes": "This was a duplicate of a request we already completed.",
+                "feedback_link": "https://tickets.example.org/feedback/(a personal link, made when sent)",
+            },
+        ),
+        TemplateDef(
             key="chase",
             label="Chase: is this still an issue?",
             description=(
