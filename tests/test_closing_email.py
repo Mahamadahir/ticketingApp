@@ -196,6 +196,7 @@ def test_closing_a_resolved_ticket_by_hand_sends_no_second_email(client, db_sess
 
     assert fresh(db_session, ticket).status == TicketStatus.CLOSED and len(outbound(db_session, ticket)) == 1
     assert close(client, ticket).status_code == 400  # already closed
+    assert "Resolved by" in client.get(f"/tickets/{ticket.number}").text
 
 
 def test_the_auto_close_sends_no_closed_email(client, db_session, dev_mail):
@@ -226,9 +227,29 @@ def test_a_reclose_sends_no_closed_email(client, db_session, dev_mail):
     assert client.post(f"/tickets/{ticket.number}/reclose", data={"reason": "duplicate"}).status_code == 200
     assert fresh(db_session, ticket).status == TicketStatus.CLOSED and len(outbound(db_session, ticket)) == sent
 
+
 def test_a_split_original_cannot_be_closed_by_hand_and_sends_no_closed_email(client, db_session, dev_mail):
     original = ticket_for_email(client, db_session, "Two things")
     split(client, original, ("Keyboard", ""), ("Office", ""))
     page = client.get(f"/tickets/{original.number}").text
     assert "Preview closing" not in page  # its status follows its parts
     assert close(client, original).status_code == 400
+
+
+def test_the_preview_refuses_what_the_close_refuses(client, db_session):
+    ticket = ticket_for_email(client, db_session)
+    assert close_preview(client, ticket, cc_form="1", cc=["stranger@example.com"]).status_code == 400
+    ticket.triaged_at = None
+    ticket.status = TicketStatus.NEW
+    db_session.add(ticket)
+    db_session.commit()
+    refused = close_preview(client, ticket)
+    assert refused.status_code == 400 and "Triage the ticket" in refused.text
+    assert close(client, ticket).status_code == 400 and fresh(db_session, ticket).status == TicketStatus.NEW
+
+
+def test_a_closed_without_resolving_ticket_says_closed_by_and_not_resolved_by(client, db_session):
+    ticket = ticket_for_email(client, db_session)
+    close(client, ticket)
+    page = client.get(f"/tickets/{ticket.number}").text
+    assert "Closed by" in page and "Resolved by" not in page and NOTES in page

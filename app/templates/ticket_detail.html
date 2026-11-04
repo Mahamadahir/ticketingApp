@@ -231,6 +231,7 @@
           {% for key, label in reclose_reasons.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
         </select>
       </label>
+      <p class="note">Reclosing sends no email. To tell the requester why, use Close.</p>
       <button type="submit">Reclose ticket</button>
     </form>
   </details>
@@ -342,7 +343,7 @@
 {% endif %}
 {% if ticket.resolution_notes and ticket.status.value in ("resolved", "closed") %}
 <h3>Resolution</h3>
-<p class="note">{% if resolved_by %}Resolved by {{ resolved_by.display_name or resolved_by.email }}{% else %}Resolved automatically{% endif %}{% if ticket.resolved_at %} on {{ ticket.resolved_at|local_time }}{% endif %}{% if ticket.closed_at %}; closed {{ ticket.closed_at|local_time }}{% endif %}.</p>
+<p class="note">{% if ticket.closed_at and ticket.resolved_at == ticket.closed_at %}{# closed without being resolved (the Close action): the notes say why #}Closed by {{ (resolved_by.display_name or resolved_by.email) if resolved_by else "the system" }} on {{ ticket.closed_at|local_time }}{% else %}{% if resolved_by %}Resolved by {{ resolved_by.display_name or resolved_by.email }}{% else %}Resolved automatically{% endif %}{% if ticket.resolved_at %} on {{ ticket.resolved_at|local_time }}{% endif %}{% if ticket.closed_at %}; closed {{ ticket.closed_at|local_time }}{% endif %}{% endif %}.</p>
 <pre class="message-body">{{ ticket.resolution_notes }}</pre>
 {% endif %}
 {% if feedback %}

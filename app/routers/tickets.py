@@ -772,7 +772,7 @@ def change_status(
     if (
         status == TicketStatus.CLOSED
         and previous_status not in (TicketStatus.RESOLVED, TicketStatus.AWAITING_APPROVAL, TicketStatus.CLOSED)
-        and ticket.triaged_at is not None and not ticket.resolution_notes
+        and ticket.triaged_at is not None
     ):
         # Closing directly needs closing notes and emails the requester, with a preview first (#131).
         raise HTTPException(status_code=400, detail="Use the Close action: it needs closing notes and emails the requester")

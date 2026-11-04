@@ -148,8 +148,9 @@ def _drop_lines_with(text: str, marker: str) -> str:
 
 
 def put_links_in(session: Session, ticket: Ticket, body: str) -> str:
-    """The email text with each marker replaced by a fresh link. A link that cannot be offered (the ticket is no
-    longer Resolved, or for feedback no longer Resolved or Closed, or PUBLIC_BASE_URL is not set) loses its whole line rather than leaving a dead marker."""
+    """The email text with each marker replaced by a fresh link. A link that cannot be offered loses its whole line rather
+    than leaving a dead marker: the reopen link needs a Resolved ticket, the feedback link a Resolved or Closed one
+    (the closed email has it, #131), and both need PUBLIC_BASE_URL."""
     if FEEDBACK_MARKER not in body and REOPEN_MARKER not in body:
         return body
     base = settings.public_base_url.rstrip("/")
