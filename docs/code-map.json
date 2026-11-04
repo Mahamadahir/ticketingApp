@@ -112,6 +112,7 @@
         "submit_feedback"
       ],
       "imported_by": [
+        "app.closing",
         "app.mail",
         "app.resolution",
         "app.routers.action_links"
@@ -127,7 +128,8 @@
       "summary": "The feedback and reopen links in the resolution email (phase 4F).",
       "tables": [],
       "tests": [
-        "tests/test_action_links.py"
+        "tests/test_action_links.py",
+        "tests/test_closing_email.py"
       ]
     },
     {
@@ -348,6 +350,7 @@
         "app.approval_reminders",
         "app.approvals",
         "app.auto_close_chase",
+        "app.closing",
         "app.due_today",
         "app.escalation",
         "app.inbound",
@@ -446,7 +449,8 @@
       "summary": "Auto-close and chase (phase 4H): two recurring jobs on the database-driven scheduler",
       "tables": [],
       "tests": [
-        "tests/test_auto_close_chase.py"
+        "tests/test_auto_close_chase.py",
+        "tests/test_closing_email.py"
       ]
     },
     {
@@ -598,6 +602,40 @@
     },
     {
       "classes": [
+        "CloseError"
+      ],
+      "file": "app/closing.py",
+      "functions": [
+        "check_can_close",
+        "clean_closing_notes",
+        "close_ticket",
+        "closed_email_body",
+        "preview_closing"
+      ],
+      "imported_by": [
+        "app.routers.tickets"
+      ],
+      "imports": [
+        "app.action_links",
+        "app.audit",
+        "app.email_templates",
+        "app.forms",
+        "app.messages",
+        "app.models",
+        "app.notifications",
+        "app.splitting",
+        "app.ticket_service"
+      ],
+      "module": "app.closing",
+      "routes": [],
+      "summary": "Closing a ticket that was not resolved first (#131). The agent's Close action.",
+      "tables": [],
+      "tests": [
+        "tests/test_closing_email.py"
+      ]
+    },
+    {
+      "classes": [
         "Settings"
       ],
       "file": "app/config.py",
@@ -644,6 +682,7 @@
         "tests/test_attachments.py",
         "tests/test_auto_close_chase.py",
         "tests/test_bulk_resolve.py",
+        "tests/test_closing_email.py",
         "tests/test_follower_updates.py",
         "tests/test_inbound_mail.py",
         "tests/test_mail_subscriptions.py",
@@ -769,6 +808,7 @@
       ],
       "imported_by": [
         "app.approvals",
+        "app.closing",
         "app.mail",
         "app.resolution",
         "app.routers.admin"
@@ -784,6 +824,7 @@
         "tests/test_acknowledgement.py",
         "tests/test_action_links.py",
         "tests/test_auto_close_chase.py",
+        "tests/test_closing_email.py",
         "tests/test_email_templates.py",
         "tests/test_follower_updates.py",
         "tests/test_resolution.py"
@@ -929,6 +970,7 @@
       ],
       "imported_by": [
         "app.canned",
+        "app.closing",
         "app.inbound",
         "app.resolution",
         "app.routers.admin",
@@ -1214,6 +1256,7 @@
         "tests/test_action_links.py",
         "tests/test_approval_reminders.py",
         "tests/test_auto_close_chase.py",
+        "tests/test_closing_email.py",
         "tests/test_email_templates.py",
         "tests/test_follower_updates.py",
         "tests/test_outbound_mail.py",
@@ -1305,6 +1348,7 @@
       "imported_by": [
         "app.approvals",
         "app.bulk_resolve",
+        "app.closing",
         "app.escalation",
         "app.inbound",
         "app.mail",
@@ -1410,6 +1454,7 @@
         "app.bulk_resolve",
         "app.canned",
         "app.categories",
+        "app.closing",
         "app.due_today",
         "app.email_templates",
         "app.escalation",
@@ -1631,6 +1676,7 @@
         "tests/test_bulk_resolve.py",
         "tests/test_canned.py",
         "tests/test_category_admin.py",
+        "tests/test_closing_email.py",
         "tests/test_due_date.py",
         "tests/test_due_date_review.py",
         "tests/test_email_preview.py",
@@ -1753,6 +1799,7 @@
       "tests": [
         "tests/test_approval_bell.py",
         "tests/test_approval_reminders.py",
+        "tests/test_closing_email.py",
         "tests/test_notification_followup.py",
         "tests/test_notification_settings.py",
         "tests/test_requester_bell.py",
@@ -1795,6 +1842,7 @@
         "app.approval_reminders",
         "app.approvals",
         "app.auto_close_chase",
+        "app.closing",
         "app.due_today",
         "app.escalation",
         "app.jobs",
@@ -1824,6 +1872,7 @@
       "tables": [],
       "tests": [
         "tests/test_bell_access.py",
+        "tests/test_closing_email.py",
         "tests/test_due_date.py",
         "tests/test_due_date_review.py",
         "tests/test_inbound_mail.py",
@@ -1874,6 +1923,7 @@
         "tests/test_approval_reminders.py",
         "tests/test_auto_close_chase.py",
         "tests/test_bulk_resolve.py",
+        "tests/test_closing_email.py",
         "tests/test_email_templates.py",
         "tests/test_follower_updates.py",
         "tests/test_outbound_mail.py",
@@ -2037,6 +2087,7 @@
       "tables": [],
       "tests": [
         "tests/test_auto_close_chase.py",
+        "tests/test_closing_email.py",
         "tests/test_reopening.py",
         "tests/test_thanks_rules.py"
       ]
@@ -3016,11 +3067,13 @@
         "change_priority",
         "change_required_by",
         "change_status",
+        "close",
         "email_user",
         "escalate_ticket",
         "fill_from_canned",
         "link",
         "list_tickets",
+        "preview_close",
         "preview_email_user",
         "preview_resolve",
         "reassign",
@@ -3047,6 +3100,7 @@
         "app.backdating",
         "app.canned",
         "app.categories",
+        "app.closing",
         "app.database",
         "app.escalation",
         "app.feedback",
@@ -3130,6 +3184,16 @@
           "handler": "fill_from_canned",
           "method": "GET",
           "path": "/tickets/{number}/canned"
+        },
+        {
+          "handler": "close",
+          "method": "POST",
+          "path": "/tickets/{number}/close"
+        },
+        {
+          "handler": "preview_close",
+          "method": "POST",
+          "path": "/tickets/{number}/close/preview"
         },
         {
           "handler": "change_due",
@@ -3374,6 +3438,7 @@
         "tests/test_backdating.py",
         "tests/test_bulk_resolve.py",
         "tests/test_category_admin.py",
+        "tests/test_closing_email.py",
         "tests/test_due_date.py",
         "tests/test_due_date_review.py",
         "tests/test_follower_updates.py",
@@ -3466,6 +3531,7 @@
       "imported_by": [
         "app.auto_close_chase",
         "app.bulk_resolve",
+        "app.closing",
         "app.due_today",
         "app.inbound",
         "app.messages",
@@ -3754,6 +3820,7 @@
         "app.auto_close_chase",
         "app.backdating",
         "app.bulk_resolve",
+        "app.closing",
         "app.due_today",
         "app.followers",
         "app.inbound",
@@ -4318,6 +4385,7 @@
     "tests/test_bulk_resolve.py",
     "tests/test_canned.py",
     "tests/test_category_admin.py",
+    "tests/test_closing_email.py",
     "tests/test_code_map.py",
     "tests/test_due_date.py",
     "tests/test_due_date_review.py",
