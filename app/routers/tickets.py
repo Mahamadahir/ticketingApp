@@ -25,7 +25,19 @@ from app.followers import (
 )
 from app.backdating import FORMAT as MOMENT_FORMAT, BackdateError, backdate_ticket, may_backdate, parse_moment
 from app.categories import CategoryError, create_category, is_selectable, path_of, selectable, team_id_for
-from app.msp import MspError, compose as compose_msp, check_can_send, hold_ticket, may_hold, release_hold, send_to_msp
+from app.msp import (
+    MspError,
+    check_can_send,
+    compose as compose_msp,
+    compose_forward,
+    dismiss_forward,
+    forward_message,
+    hold_ticket,
+    may_hold,
+    pending_forwards,
+    release_hold,
+    send_to_msp,
+)
 from app.escalation import EscalationError, escalate_ticket as escalate, escalation_target, escalators_of
 from app.raising import source_label
 from app.request_questions import QuestionError, answer_rows, form_rows, save_answers
@@ -70,7 +82,7 @@ from app.messages import (
     preview_email,
     status_choices,
 )
-from app.models import FINISHED_STATUSES, CannedResponse, Category, RequestType, Team, Ticket, TicketSource, TicketStatus, TicketType, User, UserRole
+from app.models import FINISHED_STATUSES, CannedResponse, Category, Message, RequestType, Team, Ticket, TicketSource, TicketStatus, TicketType, User, UserRole
 from app.pagination import paginate
 from app.team_activity import KIND_LABELS, Kind, describe as describe_activity, feed_query
 from app.sla import (
@@ -1213,6 +1225,74 @@ def msp_hold_release(
     return _render_ticket_detail(request, ticket, user, session)
 
 
+def _pending_msp_message(session: Session, ticket: Ticket, message_id: int) -> Message:
+    message = session.get(Message, message_id)
+    if message is None or message.ticket_id != ticket.id:
+        raise HTTPException(status_code=404, detail="Message not found")
+    return message
+
+
+@router.post("/{number}/msp-forward/{message_id}/preview", response_class=HTMLResponse)
+def preview_msp_forward(
+    number: int,
+    message_id: int,
+    request: Request,
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """The step before passing an MSP message on to a user it left off: the email exactly as it will go."""
+    ticket = _get_ticket(session, number, user)
+    message = _pending_msp_message(session, ticket, message_id)
+    try:
+        preview = compose_forward(session, ticket, message)
+    except MspError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    return templates.TemplateResponse(
+        request, "_msp_forward_preview.html", {"ticket": ticket, "message": message, "preview": preview}
+    )
+
+
+@router.post("/{number}/msp-forward/{message_id}", response_class=HTMLResponse)
+def msp_forward(
+    number: int,
+    message_id: int,
+    request: Request,
+    digest: Optional[str] = Form(None, max_length=64),
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    ticket = _get_ticket(session, number, user)
+    message = _pending_msp_message(session, ticket, message_id)
+    try:
+        forward_message(session, ticket, message, user, expect_digest=digest)
+    except MspError as error:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(error))
+    session.commit()
+    session.refresh(ticket)
+    return _render_ticket_detail(request, ticket, user, session)
+
+
+@router.post("/{number}/msp-forward/{message_id}/dismiss", response_class=HTMLResponse)
+def msp_forward_dismiss(
+    number: int,
+    message_id: int,
+    request: Request,
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    ticket = _get_ticket(session, number, user)
+    message = _pending_msp_message(session, ticket, message_id)
+    try:
+        dismiss_forward(session, ticket, message, user)
+    except MspError as error:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(error))
+    session.commit()
+    session.refresh(ticket)
+    return _render_ticket_detail(request, ticket, user, session)
+
+
 @router.post("/{number}/link", response_class=HTMLResponse)
 def link(
     number: int,
@@ -1439,6 +1519,7 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             "escalation_blocked": escalation_blocked,
             "escalation_is_msp": escalation_is_msp,
             "msp_blocked": msp_blocked,
+            "msp_pending": pending_forwards(session, ticket) if can_work else [],
             "can_hold": can_work and may_hold(ticket, user),
             "can_release_hold": can_work and ticket.msp_hold,
             "timeline": timeline,

@@ -336,6 +336,25 @@
   </form>
   {% endif %}
 
+  {% if msp_pending %}
+  <div class="msp-pending">
+    <h4>The MSP replied without copying the user</h4>
+    <p class="note">Check what they wrote in the timeline, then pass it on to {{ ticket.requester_email }} or leave it with the agents. In business hours nothing is forwarded until you do; out of hours it is forwarded automatically.</p>
+    {% for m in msp_pending %}
+    <div>
+      <pre class="message-body">{{ m.body }}</pre>
+      <form hx-post="/tickets/{{ ticket.number }}/msp-forward/{{ m.id }}/preview" hx-target="#msp-forward-preview-{{ m.id }}" hx-swap="innerHTML" style="display:inline">
+        <button type="submit">Preview the forward</button>
+      </form>
+      <form hx-post="/tickets/{{ ticket.number }}/msp-forward/{{ m.id }}/dismiss" hx-target="main" hx-swap="innerHTML" style="display:inline">
+        <button type="submit" class="button-outline">Do not forward</button>
+      </form>
+      <div id="msp-forward-preview-{{ m.id }}"></div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
   <details>
     <summary>Send to MSP</summary>
     {% if msp_blocked %}
@@ -491,6 +510,7 @@
     <div class="message-meta">
       {% if item.source %}<span class="note">[{{ item.source.reference }} {{ item.source.subject }}]</span>{% endif %}
       {% if message.direction.value == "internal" %}<b>Internal note</b> (agents only)
+      {% elif message.msp_forward %}<b>From the MSP</b>{% if message.msp_forward == "pending" %} (the user was not on it; agents only until forwarded){% elif message.msp_forward == "forwarded" %} (forwarded to the user){% elif message.msp_forward == "dismissed" %} (not forwarded){% endif %}
       {% elif message.direction.value == "outbound" %}<b>Email to requester</b>{% if message.cc %} (cc: {{ message.cc }}){% endif %}
       {% elif item.sender_kind == "follower" %}<b>From follower</b>
       {% else %}<b>From requester</b>{% endif %}

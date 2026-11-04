@@ -15,7 +15,7 @@ from app.models import Setting
 class SettingDef:
     key: str
     label: str
-    kind: str  # "team": a team id, empty for none; "minutes": a whole number; "percent": 1 to 99; "vote_percent": 1 to 100; "flag": on or off; "count": a whole number, 1 to 1000; "hour": a whole number, 0 to 23; "time_zone": an IANA time zone name, blank for the default; "email": one email address, blank for none; "dates": a list of dates (2026-12-25, separated by commas or spaces), blank for none
+    kind: str  # "team": a team id, empty for none; "minutes": a whole number; "percent": 1 to 99; "vote_percent": 1 to 100; "flag": on or off; "count": a whole number, 1 to 1000; "hour": a whole number, 0 to 23; "clock": a time of day written 09:00 or 17:30; "time_zone": an IANA time zone name, blank for the default; "email": one email address, blank for none; "dates": a list of dates (2026-12-25, separated by commas or spaces), blank for none
     description: str
     default: str = ""
 
@@ -60,6 +60,9 @@ MSP_ADDRESS = "msp_address"
 MSP_HANDOFF_HOUR = "msp_handoff_hour"
 MSP_BUSINESS_MORNING_HOUR = "msp_business_morning_hour"
 MSP_BANK_HOLIDAYS = "msp_bank_holidays"
+MSP_BUSINESS_START = "msp_business_start"
+MSP_BUSINESS_END = "msp_business_end"
+MSP_ATTACH_MAX_MB = "msp_attach_max_mb"
 
 # PLACEHOLDER SLA targets, in minutes on a 24/7 clock, until the real ones are agreed
 # (TBC in docs/plan.md). They are settings, changed under Admin > Settings; a blank
@@ -464,6 +467,34 @@ REGISTRY: dict[str, SettingDef] = {
             "automatic MSP handoff. Blank means none. Kept here until a holiday calendar is wired in."
         ),
         default="",
+    ),
+    MSP_BUSINESS_START: SettingDef(
+        key=MSP_BUSINESS_START,
+        label="MSP: business hours start (HH:MM)",
+        kind="clock",
+        description=(
+            "Monday to Friday (bank holidays above excluded), in the default time zone. When the MSP replies and leaves the "
+            "user off To and Cc, an agent previews and forwards it during business hours; outside them it is forwarded to the "
+            "user automatically, with no preview (an accepted risk). Placeholder: 09:00."
+        ),
+        default="09:00",
+    ),
+    MSP_BUSINESS_END: SettingDef(
+        key=MSP_BUSINESS_END,
+        label="MSP: business hours end (HH:MM)",
+        kind="clock",
+        description="See the start of business hours. Placeholder: 17:30. An end before the start makes every moment out of hours.",
+        default="17:30",
+    ),
+    MSP_ATTACH_MAX_MB: SettingDef(
+        key=MSP_ATTACH_MAX_MB,
+        label="MSP: most attachments sent with a ticket (MB in all)",
+        kind="count",
+        description=(
+            "Files on the ticket are attached to the email to the MSP up to this total; the rest are listed by name as not "
+            "attached. Graph takes a request of about 4 MB and files are sent base64-encoded (a third larger), so a larger value is treated as 2. Placeholder."
+        ),
+        default="2",
     ),
     MAX_SUB_TICKETS: SettingDef(
         key=MAX_SUB_TICKETS,

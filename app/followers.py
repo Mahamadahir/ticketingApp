@@ -20,7 +20,7 @@ from sqlmodel import Session, func, select
 
 from app.config import settings
 from app.models import Ticket, TicketFollower, User
-from app.never_follow import is_listed, listed_among
+from app.never_follow import is_listed, is_msp, listed_among
 from app.ticket_service import record_event
 
 MAX_EXTERNAL_FOLLOWERS = 20
@@ -115,7 +115,7 @@ def add_follower(
         return None
 
     # Not checked for internal_user: an agent's account address must never block escalating.
-    if internal_user is None and is_listed(session, email):
+    if internal_user is None and (is_listed(session, email) or is_msp(session, email)):
         raise NeverFollowListed(email)
 
     if internal_user is None:

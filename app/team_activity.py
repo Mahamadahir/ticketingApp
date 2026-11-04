@@ -51,7 +51,7 @@ def feed_query(visible, team_id: Optional[int] = None, kind: Optional[Kind] = No
             Message.created_at.label("at"),
             Message.id.label("row_id"),
             Message.ticket_id.label("ticket_id"),
-            cast(Message.direction, String).label("what"),
+            case((Message.msp_forward.is_not(None), "msp"), else_=cast(Message.direction, String)).label("what"),
             Message.sender.label("actor"),
             cast(null(), String).label("from_value"),
             cast(null(), String).label("to_value"),
@@ -90,6 +90,7 @@ KIND_LABELS = {
 }
 
 _MESSAGE_WHAT = {
+    "msp": "message from the MSP",
     MessageDirection.OUTBOUND.value: "emailed the requester",
     MessageDirection.INBOUND.value: "message from the requester",
     MessageDirection.INTERNAL.value: "added an internal note",

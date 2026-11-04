@@ -54,6 +54,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/e7a39c5d1b84_msp_mail_forwarding.py",
+        "revision": "e7a39c5d1b84"
+      },
+      {
         "file": "migrations/versions/b5c1e7a3d902_msp_handoff.py",
         "revision": "b5c1e7a3d902"
       },
@@ -68,17 +72,13 @@
       {
         "file": "migrations/versions/4046d214dcb1_request_type_defaults.py",
         "revision": "4046d214dcb1"
-      },
-      {
-        "file": "migrations/versions/a4c7e1b9d205_user_permissions.py",
-        "revision": "a4c7e1b9d205"
       }
     ],
-    "count": 52,
+    "count": 53,
     "heads": [
       {
-        "file": "migrations/versions/b5c1e7a3d902_msp_handoff.py",
-        "revision": "b5c1e7a3d902"
+        "file": "migrations/versions/e7a39c5d1b84_msp_mail_forwarding.py",
+        "revision": "e7a39c5d1b84"
       }
     ]
   },
@@ -339,7 +339,8 @@
       "tables": [],
       "tests": [
         "tests/test_attachments.py",
-        "tests/test_inbound_mail.py"
+        "tests/test_inbound_mail.py",
+        "tests/test_msp_mail.py"
       ]
     },
     {
@@ -698,6 +699,7 @@
         "tests/test_inbound_mail.py",
         "tests/test_mail_subscriptions.py",
         "tests/test_msp.py",
+        "tests/test_msp_mail.py",
         "tests/test_outbound_mail.py",
         "tests/test_presence.py",
         "tests/test_public_surface.py",
@@ -970,6 +972,7 @@
         "tests/test_follower_updates.py",
         "tests/test_followers.py",
         "tests/test_inbound_mail.py",
+        "tests/test_msp_mail.py",
         "tests/test_never_follow.py",
         "tests/test_reopening.py",
         "tests/test_reply_notification.py",
@@ -1031,6 +1034,7 @@
       "tests": [
         "tests/test_inbound_mail.py",
         "tests/test_mail_subscriptions.py",
+        "tests/test_msp_mail.py",
         "tests/test_outbound_mail.py",
         "tests/test_presence.py",
         "tests/test_time_zones.py"
@@ -1096,6 +1100,7 @@
         "app.mail",
         "app.messages",
         "app.models",
+        "app.msp",
         "app.never_follow",
         "app.outbox",
         "app.raising",
@@ -1115,6 +1120,7 @@
         "tests/test_acknowledgement.py",
         "tests/test_follower_updates.py",
         "tests/test_inbound_mail.py",
+        "tests/test_msp_mail.py",
         "tests/test_never_follow.py",
         "tests/test_reopening.py",
         "tests/test_thanks_rules.py",
@@ -1230,6 +1236,7 @@
         "build_chase_mail",
         "build_follower_update_mail",
         "build_message_mail",
+        "build_msp_forward_mail",
         "build_msp_handoff_mail",
         "build_raised_for_mail",
         "cap_release",
@@ -1264,6 +1271,7 @@
         "app.outbox",
         "app.raising",
         "app.settings_store",
+        "app.storage",
         "app.teams"
       ],
       "module": "app.mail",
@@ -1279,6 +1287,7 @@
         "tests/test_email_templates.py",
         "tests/test_follower_updates.py",
         "tests/test_msp.py",
+        "tests/test_msp_mail.py",
         "tests/test_outbound_mail.py",
         "tests/test_reopening.py",
         "tests/test_resolution.py",
@@ -1360,6 +1369,7 @@
         "mail_subject",
         "preview_email",
         "record_inbound",
+        "record_msp_message",
         "record_notice",
         "requester_visible_answers",
         "requester_visible_messages",
@@ -1404,6 +1414,7 @@
         "tests/test_follower_updates.py",
         "tests/test_inbound_mail.py",
         "tests/test_messages.py",
+        "tests/test_msp_mail.py",
         "tests/test_never_follow.py",
         "tests/test_outbound_mail.py",
         "tests/test_reply_notification.py",
@@ -1744,6 +1755,7 @@
         "tests/test_mail_subscriptions.py",
         "tests/test_messages.py",
         "tests/test_msp.py",
+        "tests/test_msp_mail.py",
         "tests/test_never_follow.py",
         "tests/test_notification_followup.py",
         "tests/test_notification_settings.py",
@@ -1790,24 +1802,41 @@
     },
     {
       "classes": [
+        "ForwardPreview",
         "MspError",
         "MspPreview"
       ],
       "file": "app/msp.py",
       "functions": [
+        "attachment_plan",
+        "business_hours",
         "check_can_send",
         "compose",
+        "compose_forward",
+        "dismiss_forward",
+        "forward_if_out_of_hours",
+        "forward_message",
+        "forward_waiting_messages",
         "hand_off_due_tickets",
+        "handoff_counts",
         "handoff_window",
         "hold_ticket",
+        "is_business_time",
+        "is_msp_sender",
         "may_hold",
         "msp_address",
+        "pending_forwards",
+        "plan_files",
+        "receive_mail",
         "release_hold",
+        "run_msp_forwards",
         "run_msp_handoff",
-        "send_to_msp"
+        "send_to_msp",
+        "sent_to_msp"
       ],
       "imported_by": [
         "app.escalation",
+        "app.inbound",
         "app.routers.tickets",
         "app.scheduled_jobs"
       ],
@@ -1820,6 +1849,7 @@
         "app.mail",
         "app.messages",
         "app.models",
+        "app.never_follow",
         "app.notifications",
         "app.outbox",
         "app.settings_store",
@@ -1832,7 +1862,8 @@
       "summary": "Sending a ticket to the MSP, putting it on hold, and the automatic handoff (phase 5A, issue #138). Nothing",
       "tables": [],
       "tests": [
-        "tests/test_msp.py"
+        "tests/test_msp.py",
+        "tests/test_msp_mail.py"
       ]
     },
     {
@@ -1844,6 +1875,7 @@
         "add_listed",
         "all_listed",
         "is_listed",
+        "is_msp",
         "listed_among",
         "listed_entry",
         "remove_listed"
@@ -1852,16 +1884,19 @@
         "app.followers",
         "app.inbound",
         "app.mail",
+        "app.msp",
         "app.routers.admin"
       ],
       "imports": [
-        "app.models"
+        "app.models",
+        "app.settings_store"
       ],
       "module": "app.never_follow",
       "routes": [],
       "summary": "The never-follow list: addresses that must never become followers (4B-2).",
       "tables": [],
       "tests": [
+        "tests/test_msp_mail.py",
         "tests/test_never_follow.py",
         "tests/test_requester_bell.py"
       ]
@@ -2000,6 +2035,7 @@
         "queue_chase",
         "queue_follower_update",
         "queue_message",
+        "queue_msp_forward",
         "queue_msp_handoff",
         "queue_raised_for"
       ],
@@ -2032,6 +2068,7 @@
         "tests/test_closing_email.py",
         "tests/test_email_templates.py",
         "tests/test_follower_updates.py",
+        "tests/test_msp_mail.py",
         "tests/test_outbound_mail.py",
         "tests/test_resolution.py",
         "tests/test_withdraw.py"
@@ -3341,10 +3378,13 @@
         "fill_from_canned",
         "link",
         "list_tickets",
+        "msp_forward",
+        "msp_forward_dismiss",
         "msp_hold",
         "msp_hold_release",
         "preview_close",
         "preview_email_user",
+        "preview_msp_forward",
         "preview_resolve",
         "preview_send_to_msp",
         "reassign",
@@ -3517,6 +3557,21 @@
           "path": "/tickets/{number}/link"
         },
         {
+          "handler": "msp_forward",
+          "method": "POST",
+          "path": "/tickets/{number}/msp-forward/{message_id}"
+        },
+        {
+          "handler": "msp_forward_dismiss",
+          "method": "POST",
+          "path": "/tickets/{number}/msp-forward/{message_id}/dismiss"
+        },
+        {
+          "handler": "preview_msp_forward",
+          "method": "POST",
+          "path": "/tickets/{number}/msp-forward/{message_id}/preview"
+        },
+        {
           "handler": "msp_hold",
           "method": "POST",
           "path": "/tickets/{number}/msp-hold"
@@ -3670,6 +3725,7 @@
         "tests/test_auto_close_chase.py",
         "tests/test_due_date.py",
         "tests/test_msp.py",
+        "tests/test_msp_mail.py",
         "tests/test_scheduled_jobs.py"
       ]
     },
@@ -3717,6 +3773,7 @@
         "app.inbound",
         "app.mail",
         "app.msp",
+        "app.never_follow",
         "app.notifications",
         "app.presence",
         "app.raising",
@@ -3755,6 +3812,7 @@
         "tests/test_inbound_mail.py",
         "tests/test_mail_subscriptions.py",
         "tests/test_msp.py",
+        "tests/test_msp_mail.py",
         "tests/test_never_follow.py",
         "tests/test_notification_followup.py",
         "tests/test_outbound_mail.py",
@@ -3901,6 +3959,7 @@
       "imported_by": [
         "app.attachments",
         "app.inbound",
+        "app.mail",
         "app.routers.attachments"
       ],
       "imports": [
@@ -3913,6 +3972,7 @@
       "tests": [
         "tests/test_attachments.py",
         "tests/test_inbound_mail.py",
+        "tests/test_msp_mail.py",
         "tests/test_storage.py"
       ]
     },
@@ -4035,6 +4095,7 @@
       "summary": "The team activity feed: everything that happened on the tickets an agent can open,",
       "tables": [],
       "tests": [
+        "tests/test_msp_mail.py",
         "tests/test_team_activity.py"
       ]
     },
@@ -4247,6 +4308,7 @@
         "tests/test_category_admin.py",
         "tests/test_due_date.py",
         "tests/test_email_preview.py",
+        "tests/test_msp_mail.py",
         "tests/test_portal.py",
         "tests/test_reopening.py",
         "tests/test_reply_notification.py",
@@ -4275,9 +4337,11 @@
         "end_of_day_utc",
         "format_date",
         "format_moment",
+        "in_business_hours",
         "morning_of",
         "next_business_morning",
         "note_requester",
+        "parse_clock",
         "parse_dates",
         "refresh_requester_zones",
         "scheduled_morning_hour",
@@ -4318,6 +4382,7 @@
       "tests": [
         "tests/test_due_date.py",
         "tests/test_msp.py",
+        "tests/test_msp_mail.py",
         "tests/test_time_zones.py"
       ]
     },
@@ -4416,6 +4481,7 @@
         "tests/test_access_context.py",
         "tests/test_escalation.py",
         "tests/test_messages.py",
+        "tests/test_msp_mail.py",
         "tests/test_permissions.py",
         "tests/test_visibility.py"
       ]
@@ -4523,7 +4589,31 @@
       {
         "detail": "select() on Message",
         "file": "app/msp.py",
-        "in": "_conversation",
+        "in": "_thread_messages",
+        "rule": "messages-via-messages-module"
+      },
+      {
+        "detail": "select() on Message",
+        "file": "app/msp.py",
+        "in": "dismiss_forward",
+        "rule": "messages-via-messages-module"
+      },
+      {
+        "detail": "select() on Message",
+        "file": "app/msp.py",
+        "in": "forward_message",
+        "rule": "messages-via-messages-module"
+      },
+      {
+        "detail": "select() on Message",
+        "file": "app/msp.py",
+        "in": "forward_waiting_messages",
+        "rule": "messages-via-messages-module"
+      },
+      {
+        "detail": "select() on Message",
+        "file": "app/msp.py",
+        "in": "pending_forwards",
         "rule": "messages-via-messages-module"
       },
       {
@@ -4826,6 +4916,7 @@
     "tests/test_messages.py",
     "tests/test_migrations_env.py",
     "tests/test_msp.py",
+    "tests/test_msp_mail.py",
     "tests/test_never_follow.py",
     "tests/test_notification_followup.py",
     "tests/test_notification_settings.py",

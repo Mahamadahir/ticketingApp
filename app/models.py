@@ -302,6 +302,9 @@ class Message(SQLModel, table=True):
     # The Graph id of the mail this message arrived as (app/inbound.py); blank for notes, portal
     # comments and outgoing mail, whose id sendMail does not return. A reply can be threaded onto it.
     graph_message_id: Optional[str] = Field(default=None, index=True)
+    # Set only on a message that came from the MSP (app/msp.py): "not_needed" (the requester was on the mail),
+    # "pending" (the MSP left them off; agents-only until forwarded), "forwarded" or "dismissed".
+    msp_forward: Optional[str] = Field(default=None)
     author_user_id: Optional[int] = Field(default=None, foreign_key="user.id")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -722,7 +725,7 @@ class OutboundEmail(SQLModel, table=True):
     )
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    kind: str  # reply, notice, raised_for_you, approval, approval_reminder, approval_withdrawn, approval_overdue, acknowledgement, follower_update, chase
+    kind: str  # reply, notice, raised_for_you, approval, approval_reminder, approval_withdrawn, approval_overdue, acknowledgement, follower_update, chase, msp_handoff, msp_forward
     ticket_id: int = Field(foreign_key="ticket.id", index=True)
     # For a reply or notice: the message it carries. Unique, so one message can never be emailed twice.
     message_id: Optional[int] = Field(default=None, foreign_key="message.id", unique=True)
@@ -741,6 +744,8 @@ class OutboundEmail(SQLModel, table=True):
     subject: Optional[str] = Field(default=None)
     cc: Optional[str] = Field(default=None)
     body: Optional[str] = Field(default=None)
+    # An email to the MSP: the ids of the ticket's attachments sent with it (comma separated), fixed when it was queued.
+    attachment_ids: Optional[str] = Field(default=None)
 
 
 class ScheduledJob(SQLModel, table=True):

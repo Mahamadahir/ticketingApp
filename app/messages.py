@@ -273,6 +273,24 @@ def record_inbound(
     return message
 
 
+def record_msp_message(
+    session: Session, ticket: Ticket, *, sender: str, body: str, forward: str
+) -> Message:
+    """A message from the MSP (app/msp.py decides `forward`: "not_needed" when the requester was on the mail, so they
+    already have it, or "pending" when the MSP left them off). One that the requester has is public, like any message
+    they may see; one they were left off is agents-only until it is forwarded (app/msp.forward_message flips it). It
+    is not an agent's email, so it is never queued as mail, and not a first response. The assigned agent is told, as
+    for any update from outside."""
+    visible = forward != "pending"
+    message = _record(
+        session, ticket, sender=sender, body=body, direction=MessageDirection.OUTBOUND,
+        visibility=MessageVisibility.PUBLIC if visible else MessageVisibility.AGENTS_ONLY,
+    )
+    message.msp_forward = forward
+    notify_reply(session, ticket, sender)
+    return message
+
+
 def _sub_tickets(session: Session, ticket: Ticket, viewer=None) -> list[Ticket]:
     """The sub-tickets of this ticket, oldest first. With a viewer (user, access context) only
     those they could open; without one, all of them (the requester's own conversation)."""
@@ -424,6 +442,8 @@ def agent_timeline(session: Session, ticket: Ticket, viewer=None) -> list[Timeli
     )
 
     def kind(message: Message) -> Optional[str]:
+        if message.msp_forward is not None:
+            return "msp"
         if message.direction != MessageDirection.INBOUND:
             return None
         author = emails.get(message.author_user_id)
