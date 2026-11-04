@@ -6,16 +6,19 @@
 
 <h2>Categories</h2>
 <p class="note">
-  The category chosen at triage decides which team gets the ticket. A main category belongs to a team;
-  a sub-category uses its parent's team. "Other" is for tickets nothing fits: they are worked normally,
-  then reviewed under Category review after they are resolved. Switching a category off hides it from
-  triage; tickets already in it are untouched.
+  The category chosen at triage fills in the team, and the triager can pick another team if the
+  ticket belongs elsewhere (each change is recorded as "team overridden" on the ticket). A main
+  category has a team, or no team for work anyone can do (a password reset, say): those tickets go
+  to the default triage team set under Settings. A sub-category uses its parent's team. "Other" is
+  for tickets nothing fits: they are worked normally, then reviewed under Category review after they
+  are resolved. Switching a category off hides it, and its sub-categories, from triage; tickets
+  already in it are untouched. "Other" is always on.
 </p>
 <p class="note">
-  "Escalates to" is where the Escalate button sends a triaged ticket in that category. Every category
-  starts on the MSP; a sub-category follows its main category unless you pick something else. Escalating to the MSP is
-  Send to MSP: the ticket stays in its team with the status With MSP (set the MSP address under Settings first). If the
-  ticket is already with the chosen team, the next step is the MSP.
+  "Escalates to" is where the Escalate button sends a triaged ticket in that category. Every main
+  category starts on the MSP; a sub-category follows its main category unless you pick something else. Escalating to
+  the MSP is Send to MSP: the ticket stays in its team with the status With MSP (set the MSP address under Settings
+  first). If the ticket is already with the chosen team (or one of its sub-teams), the next step is the MSP.
 </p>
 
 <table>
@@ -29,7 +32,7 @@
         <td><b>{{ main.name }}</b>{% if main.is_other %} <i>(for tickets nothing fits)</i>{% endif %}</td>
         <td>
           <select name="team_id">
-            <option value="">{{ "No team yet (uses the default triage team)" if main.is_other else "Choose a team" }}</option>
+            <option value="">No team (the default triage team)</option>
             {% for t in teams %}
             <option value="{{ t.id }}" {{ "selected" if main.team_id == t.id else "" }}>{{ t.name }}</option>
             {% endfor %}
@@ -51,7 +54,7 @@
     <tr>
       <form method="post" action="/admin/categories/{{ sub.id }}">
         <td>&nbsp;&nbsp;&rarr; {{ sub.name }}</td>
-        <td>{{ teams_by_id[main.team_id].name if main.team_id else "" }} <i>(from {{ main.name }})</i></td>
+        <td>{{ teams_by_id[main.team_id].name if main.team_id else "Default triage team" }} <i>(from {{ main.name }})</i></td>
         <td>
           <select name="escalation">
             <option value="inherit" {{ "selected" if sub.escalation_inherits else "" }}>Same as {{ main.name }}</option>
@@ -74,8 +77,8 @@
 <form method="post" action="/admin/categories">
   <label>Name <input type="text" name="name" maxlength="80" required /></label>
   <label>Team
-    <select name="team_id" required>
-      <option value="">Choose a team</option>
+    <select name="team_id">
+      <option value="">No team (the default triage team)</option>
       {% for t in teams %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
     </select>
   </label>

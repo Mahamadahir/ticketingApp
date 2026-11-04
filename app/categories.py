@@ -1,5 +1,6 @@
-"""Ticket categories: a main category (owned by a team) with optional
-sub-categories. The category chosen at triage decides which team gets the ticket.
+"""Ticket categories: a main category (with a team, or none) with optional
+sub-categories. The category chosen at triage suggests the team: its own, else its
+parent's, else the default triage team. The triager may pick another team.
 
 "Other" is a seeded main category for tickets nothing fits. The ticket is worked
 and resolved normally; afterwards a super admin gives it a proper category (see
@@ -61,17 +62,16 @@ def ensure_other(session: Session) -> Category:
 
 
 def team_id_for(session: Session, category: Category) -> Optional[int]:
-    """The team that works tickets in this category: its own, else its parent's,
-    else (for Other only) the default triage team."""
+    """The team triage suggests for this category: its own, else its parent's, else the
+    default triage team (a category anyone can work, such as a password reset, or Other).
+    None only when that setting is not set either."""
     if category.team_id is not None:
         return category.team_id
     if category.parent_id is not None:
         parent = session.get(Category, category.parent_id)
         if parent is not None and parent.team_id is not None:
             return parent.team_id
-    if category.is_other:
-        return get_int_setting(session, DEFAULT_TRIAGE_TEAM)
-    return None
+    return get_int_setting(session, DEFAULT_TRIAGE_TEAM)
 
 
 def escalation_team_id_for(session: Session, category: Category) -> Optional[int]:
@@ -129,8 +129,8 @@ def create_category(
     session: Session, name: str, parent_id: Optional[int] = None, team_id: Optional[int] = None,
     escalation: Optional[str] = None,
 ) -> Category:
-    """Creates a main category (needs a team) or a sub-category (inherits the
-    parent's team). `escalation` says where escalating a ticket in it goes ("inherit" for
+    """Creates a main category (with a team, or none to use the default triage team) or a
+    sub-category (inherits the parent's team). `escalation` says where escalating a ticket in it goes ("inherit" for
     a sub-category, "msp", or a team id); left out it is the default: a sub-category follows
     its parent, a main category goes to the MSP. Does not commit."""
     _lock_categories(session)  # taken first, so the duplicate check below cannot race
@@ -150,8 +150,8 @@ def create_category(
             raise CategoryError("'Other' cannot have sub-categories")
         team_id = None
     else:
-        if team_id is None or session.get(Team, team_id) is None:
-            raise CategoryError("A main category needs a team")
+        if team_id is not None and session.get(Team, team_id) is None:
+            raise CategoryError("That team does not exist")
 
     siblings = session.exec(select(Category).where(Category.parent_id == parent_id)).all()
     if any(s.name.lower() == name.lower() for s in siblings):

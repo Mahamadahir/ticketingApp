@@ -1,9 +1,10 @@
 """Triage and re-assignment. Neither commits: the caller does, so the change, its
 events and its audit entry land together.
 
-Triage classifies a ticket (type, category, and so team) and is a separate act
-from assignment: a triager may assign the ticket in the same step, or leave it
-for the team. Re-assignment moves a triaged ticket to a team and an agent in it,
+Triage classifies a ticket (type, category, team) and is a separate act from
+assignment. The category suggests the team; the triager may choose another, which is
+recorded as an override. A triager may assign the ticket in the same step, or leave it for
+the team. Re-assignment moves a triaged ticket to a team and an agent in it,
 or leaves it unassigned in that team; it is not an escalation."""
 
 from datetime import datetime, timezone
@@ -30,6 +31,7 @@ from app.ticket_service import (
     EVENT_ESCALATED,
     EVENT_REQUEST_TYPE,
     EVENT_TEAM_CHANGED,
+    EVENT_TEAM_OVERRIDDEN,
     EVENT_TRIAGED,
     EVENT_TYPE_CHANGED,
     record_event,
@@ -102,9 +104,12 @@ def triage_ticket(
     answers: Optional[dict[int, str]] = None,
     approval_covered: bool = False,
     answers_required: bool = True,
+    team: Optional[Team] = None,
 ) -> None:
     """Classifies an untriaged ticket and moves it from New to Open. The category
-    decides the team; the type may change (the number does not); impact and urgency give the priority and start the SLA deadlines.
+    suggests the team (app.categories.team_id_for); `team` overrides it, and a team other than
+    the suggested one is recorded as an override, so a category whose team is often changed
+    shows up. None takes the suggestion. The type may change (the number does not); impact and urgency give the priority and start the SLA deadlines.
     Assigning is optional and independent. `request_type` is the kind of request chosen for a service request
     (None leaves it as it was); it is set before the approvers are looked up, so it decides whether approval is needed.
     `actor` None is the system: a portal request whose type has all its defaults triages itself (`automatic_from` is that
@@ -121,11 +126,12 @@ def triage_ticket(
         raise TriageError("This ticket has already been triaged")
     if not is_selectable(session, category):
         raise TriageError("That category is no longer in use")
-    team_id = team_id_for(session, category)
+    suggested_id = team_id_for(session, category)
+    team_id = team.id if team is not None else suggested_id
     if team_id is None:
         raise TriageError(
-            "That category has no team yet. Ask a super admin to give it one "
-            "(for 'Other', set a default triage team under Settings)."
+            "That category has no team and no default triage team is set. Choose a team, "
+            "or ask a super admin to give the category a team or set the default triage team under Settings."
         )
     assignee = _assignee_for(session, team_id, assignee)
 
@@ -173,6 +179,13 @@ def triage_ticket(
         record_event(
             session, ticket, EVENT_TEAM_CHANGED, actor_email,
             from_value=previous_team.name if previous_team else None, to_value=new_team.name,
+        )
+    if team_id != suggested_id:
+        suggested = session.get(Team, suggested_id) if suggested_id is not None else None
+        record_event(
+            session, ticket, EVENT_TEAM_OVERRIDDEN, actor.email,
+            from_value=suggested.name if suggested else None, to_value=new_team.name,
+            detail=path_of(session, category),
         )
     # Triaged is what lets it leave New. Set after triaged_at so set_status allows it.
     # A catalogue request with approvers waits for them (Awaiting approval) instead of opening.

@@ -594,7 +594,7 @@ def update_category(
     admin: User = Depends(require_super_admin),
     session: Session = Depends(get_session),
 ):
-    """Sets a main category's team and where it escalates to, or a sub-category's
+    """Sets a main category's team (none: the default triage team) and where it escalates to, or a sub-category's
     escalation (inherit, MSP or a team), or switches a category on or off. Switching
     off hides it from triage; tickets already in it are untouched."""
     category = session.get(Category, category_id)
@@ -608,8 +608,6 @@ def update_category(
         new_team = optional_int(team_id)
         if new_team is not None and session.get(Team, new_team) is None:
             raise HTTPException(status_code=400, detail="That team does not exist")
-        if new_team is None and not category.is_other:
-            raise HTTPException(status_code=400, detail="A main category needs a team")
         if new_team != category.team_id:
             log_action(session, admin.email, "category", category.id, "team_changed", f"{category.team_id} -> {new_team}")
             category.team_id = new_team

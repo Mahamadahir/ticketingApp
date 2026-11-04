@@ -33,7 +33,7 @@
       </label>
       <label>Team (main category only)
         <select name="new_category_team_id">
-          <option value="">Choose a team</option>
+          <option value="">No team (the default triage team)</option>
           {% for t in teams %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
         </select>
       </label>

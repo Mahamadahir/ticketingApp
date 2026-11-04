@@ -366,7 +366,9 @@ def test_picking_a_kind_prefills_the_types_defaults_out_of_band(client, db_sessi
     assert 'name="impact" id="triage-impact"' in html and 'value="high" selected' in html
     assert 'value="low" selected' in html
     assert f'value="{category.id}" selected' in html
-    assert 'id="triage-agent" hx-swap-oob="true"' in html and "Ann" in html
+    # The Team box is redrawn with the category's team chosen, and Assign to lists that team's agents.
+    assert '<div id="triage-team" hx-swap-oob="true">' in html and "Ann" in html
+    assert f'<option value="{team.id}" selected>' in html
 
 
 def test_a_type_with_some_defaults_prefills_only_those(client, db_session):
@@ -412,7 +414,7 @@ def test_the_triage_form_still_renders_its_selects(client, db_session):
     html = client.get(f"/tickets/{ticket.number}").text
 
     assert 'name="impact" id="triage-impact" required' in html
-    assert 'name="category_id" id="triage-category"' in html and 'hx-get="/tickets/agents-for-category"' in html
+    assert 'name="category_id" id="triage-category"' in html and 'hx-get="/tickets/triage-team"' in html
     assert 'hx-swap-oob' not in html
 
 

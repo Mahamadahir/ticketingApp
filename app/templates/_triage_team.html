@@ -1,0 +1,18 @@
+{# The triage form's Team and Assign to boxes. Needs: teams, suggested_id (the category's team, or none), needs_team
+   (a category is chosen and it has no team anywhere), members (Assign to choices), blank_label; oob (optional) when
+   sent out of band by /tickets/triage-dates for a kind of request's default category. #}
+<div id="triage-team"{% if oob %} hx-swap-oob="true"{% endif %}>
+  <label>Team
+    <select name="team_id" hx-get="/tickets/triage-agents" hx-trigger="change" hx-target="#triage-agent" hx-include="closest form">
+      <option value="">{{ "Choose a team (the category has none and no default triage team is set)" if needs_team else "The category's team" }}</option>
+      {% for t in teams|sort(attribute="name") %}
+      <option value="{{ t.id }}" {{ "selected" if t.id == suggested_id else "" }}>{{ t.name }}{{ " (the category's team)" if t.id == suggested_id else "" }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Assign to
+    <select name="agent_id" id="triage-agent">
+      {% with members = members, blank_label = blank_label %}{% include "_agent_options.html" %}{% endwith %}
+    </select>
+  </label>
+</div>
