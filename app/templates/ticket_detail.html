@@ -73,6 +73,22 @@
 {% endif %}
 {% endif %}
 
+{% if answers or can_edit_answers %}
+<h3>Request details</h3>
+{% if answers %}
+<dl>
+  {% for a in answers %}<dt>{{ a.label }}</dt><dd>{{ a.display }}</dd>{% endfor %}
+</dl>
+{% endif %}
+{% if answers_changed_at %}<p class="note">Answers were changed on {{ answers_changed_at|local_time }} after they were first given.</p>{% endif %}
+{% if can_edit_answers and not can_triage and edit_questions %}
+<form hx-post="/tickets/{{ ticket.number }}/answers" hx-target="main" hx-swap="innerHTML">
+  {% with div_id = "edit-answers", rows = edit_questions, oob = false %}{% include "_request_questions.html" %}{% endwith %}
+  <button type="submit">Save answers</button>
+</form>
+{% endif %}
+{% endif %}
+
 {% if can_triage %}
 <h3>Triage</h3>
 <p class="note">Classify this ticket. The category decides the team. Assigning is optional: leave it as is and the team can pick it up.</p>
@@ -93,7 +109,7 @@
   {% if request_types %}
   <label>Kind of request (service requests)
     <select name="request_type_id"
-      hx-get="/tickets/triage-dates" hx-trigger="change" hx-target="#triage-dates" hx-swap="outerHTML"
+      hx-get="/tickets/triage-dates?number={{ ticket.number }}" hx-trigger="change" hx-target="#triage-dates" hx-swap="outerHTML"
       hx-include="closest form">
       <option value="">Leave as is{{ " (" ~ request_info[0].name ~ ")" if request_info else " (none)" }}</option>
       {% for rt in request_types %}<option value="{{ rt.id }}">{{ rt.name }}</option>{% endfor %}
@@ -101,6 +117,7 @@
   </label>
   {% endif %}
   {% with offers = offers_required_by, required_by = ticket.required_by.isoformat() if ticket.required_by else "", due_on = ticket.due_on.isoformat() if ticket.due_on else "", due_reason = "", has_due = ticket.due_on is not none %}{% include "_triage_dates.html" %}{% endwith %}
+  {% with div_id = "triage-questions", rows = triage_questions, oob = false %}{% include "_request_questions.html" %}{% endwith %}
   <label>Category
     {{ category_select(category_options, none) }}
   </label>

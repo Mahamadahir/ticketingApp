@@ -35,6 +35,7 @@ from app.ticket_service import (
     record_event,
     set_status,
 )
+from app.request_questions import QuestionError, save_answers
 from app.visibility import team_members
 
 
@@ -96,13 +97,16 @@ def triage_ticket(
     assignee: Optional[User] = None,
     request_type: Optional[RequestType] = None,
     automatic_from: Optional[RequestType] = None,
+    answers: Optional[dict[int, str]] = None,
 ) -> None:
     """Classifies an untriaged ticket and moves it from New to Open. The category
     decides the team; the type may change (the number does not); impact and urgency give the priority and start the SLA deadlines.
     Assigning is optional and independent. `request_type` is the kind of request chosen for a service request
     (None leaves it as it was); it is set before the approvers are looked up, so it decides whether approval is needed.
     `actor` None is the system: a portal request whose type has all its defaults triages itself (`automatic_from` is that
-    type, named on the triaged event; app/request_types.py `self_triage`). The system assigns no one."""
+    type, named on the triaged event; app/request_types.py `self_triage`). The system assigns no one.
+    `answers` are the form answers typed on the triage form (question id -> text, app/request_questions.py): a kind
+    of request with required questions cannot be triaged until each is answered, here or earlier."""
     actor_email = actor.email if actor is not None else "system"
     if actor is None and assignee is not None:
         raise TriageError("The system does not assign tickets")
@@ -133,6 +137,11 @@ def triage_ticket(
             from_value=previous.name if previous else None, to_value=request_type.name, detail="chosen at triage",
         )
         refresh_default_due(session, ticket, actor_email)
+    if ticket.request_type_id is not None:
+        try:
+            save_answers(session, ticket, answers or {}, actor_email, first_time=True, require_all=True)
+        except QuestionError as error:
+            raise TriageError(str(error))
 
     previous_team = session.get(Team, ticket.team_id) if ticket.team_id else None
     new_team = session.get(Team, team_id)

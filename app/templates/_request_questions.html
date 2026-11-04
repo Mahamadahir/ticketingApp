@@ -1,0 +1,25 @@
+{# The form questions of a kind of request, as form fields named q_<id> (app/request_questions.py). Needs: rows (a list of
+   (question, current answer text)), div_id (the box to swap), oob (true when swapped in out of band, as the
+   triage form does when the kind of request changes). With no rows only the empty box is drawn. #}
+<div id="{{ div_id }}"{% if oob %} hx-swap-oob="true"{% endif %}>
+{% for q, value in rows %}
+  <label>{{ q.label }}{{ " (required)" if q.is_required else "" }}
+    {% if q.kind == "choice" %}
+    <select name="q_{{ q.id }}" {{ "required" if q.is_required else "" }}>
+      <option value="">-</option>
+      {% for option in q.options %}<option value="{{ option }}" {{ "selected" if option == value else "" }}>{{ option }}</option>{% endfor %}
+    </select>
+    {% elif q.kind == "yes_no" %}
+    <select name="q_{{ q.id }}" {{ "required" if q.is_required else "" }}>
+      <option value="">-</option>
+      <option value="yes" {{ "selected" if value == "yes" else "" }}>Yes</option>
+      <option value="no" {{ "selected" if value == "no" else "" }}>No</option>
+    </select>
+    {% elif q.kind == "date" %}
+    <input type="date" name="q_{{ q.id }}" value="{{ value }}" {{ "required" if q.is_required else "" }} />
+    {% else %}
+    <input type="text" name="q_{{ q.id }}" value="{{ value }}" maxlength="500" {{ "required" if q.is_required else "" }} />
+    {% endif %}
+  </label>
+{% endfor %}
+</div>

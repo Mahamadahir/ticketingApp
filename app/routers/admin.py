@@ -42,6 +42,16 @@ from app.approval_groups import (
     rename_group,
     types_using,
 )
+from app.request_questions import (
+    KINDS as QUESTION_KINDS,
+    QuestionError,
+    add_question,
+    delete_question,
+    has_answers,
+    move_question,
+    questions_for,
+    update_question,
+)
 from app.request_types import (
     MAX_DESCRIPTION_LENGTH as MAX_REQUEST_DESCRIPTION_LENGTH,
     MAX_NAME_LENGTH as MAX_REQUEST_NAME_LENGTH,
@@ -105,6 +115,7 @@ from app.models import (
     MailSyncState,
     OutboundEmail,
     RequestType,
+    RequestTypeQuestion,
     ScheduledJob,
     MembershipLevel,
     Team,
@@ -1091,6 +1102,11 @@ def list_request_types(
             "urgency_options": urgency_options(),
             "stale_categories": _stale_default_categories(session, types),
             "self_triages": {t.id for t in types if self_triage_defaults(session, t) is not None},
+            "questions": {t.id: questions_for(session, t.id, include_inactive=True) for t in types},
+            "answered_questions": {
+                q.id for t in types for q in questions_for(session, t.id, include_inactive=True) if has_answers(session, q)
+            },
+            "question_kinds": QUESTION_KINDS,
             "user": user,
         },
     )
@@ -1186,6 +1202,99 @@ def edit_request_type(
             session, admin.email, "request_type", request_type.id,
             "activated" if request_type.is_active else "deactivated", request_type.name,
         )
+    session.commit()
+    return RedirectResponse("/admin/request-types", status_code=303)
+
+
+def _get_question(session: Session, question_id: int) -> RequestTypeQuestion:
+    question = session.get(RequestTypeQuestion, question_id)
+    if question is None:
+        raise HTTPException(status_code=404, detail="Question not found")
+    return question
+
+
+@router.post("/request-types/{type_id}/questions")
+def add_type_question(
+    type_id: int,
+    label: str = Form("", max_length=1000),
+    kind: str = Form(..., max_length=20),
+    options: str = Form("", max_length=5000),
+    is_required: Optional[str] = Form(None),
+    admin: User = Depends(require_request_templates),
+    session: Session = Depends(get_session),
+):
+    request_type = session.get(RequestType, type_id)
+    if request_type is None:
+        raise HTTPException(status_code=404, detail="Request type not found")
+    try:
+        question = add_question(session, request_type, label, kind, options, is_required == "on")
+    except QuestionError as error:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(error))
+    log_action(
+        session, admin.email, "request_type", request_type.id, "question_added",
+        f"{question.label} ({QUESTION_KINDS[question.kind]}{', required' if question.is_required else ''})",
+    )
+    session.commit()
+    return RedirectResponse("/admin/request-types", status_code=303)
+
+
+@router.post("/request-types/questions/{question_id}")
+def edit_type_question(
+    question_id: int,
+    label: str = Form("", max_length=1000),
+    options: str = Form("", max_length=5000),
+    is_required: Optional[str] = Form(None),
+    is_active: Optional[str] = Form(None),
+    admin: User = Depends(require_request_templates),
+    session: Session = Depends(get_session),
+):
+    question = _get_question(session, question_id)
+    before = (question.label, list(question.options), question.is_required, question.is_active)
+    try:
+        update_question(session, question, label, options, is_required == "on", is_active == "on")
+    except QuestionError as error:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(error))
+    if before != (question.label, list(question.options), question.is_required, question.is_active):
+        log_action(
+            session, admin.email, "request_type", question.request_type_id, "question_edited",
+            f"{before[0]!r} -> {question.label!r}, required {question.is_required}, available {question.is_active}",
+        )
+    session.commit()
+    return RedirectResponse("/admin/request-types", status_code=303)
+
+
+@router.post("/request-types/questions/{question_id}/move")
+def move_type_question(
+    question_id: int,
+    direction: str = Form(..., max_length=10),
+    admin: User = Depends(require_request_templates),
+    session: Session = Depends(get_session),
+):
+    question = _get_question(session, question_id)
+    if direction not in ("up", "down"):
+        raise HTTPException(status_code=400, detail="Choose up or down")
+    if move_question(session, question, direction == "up"):
+        log_action(session, admin.email, "request_type", question.request_type_id, "question_moved", f"{question.label} {direction}")
+    session.commit()
+    return RedirectResponse("/admin/request-types", status_code=303)
+
+
+@router.post("/request-types/questions/{question_id}/delete")
+def delete_type_question(
+    question_id: int,
+    admin: User = Depends(require_request_templates),
+    session: Session = Depends(get_session),
+):
+    question = _get_question(session, question_id)
+    label, type_id = question.label, question.request_type_id
+    try:
+        delete_question(session, question)
+    except QuestionError as error:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(error))
+    log_action(session, admin.email, "request_type", type_id, "question_deleted", label)
     session.commit()
     return RedirectResponse("/admin/request-types", status_code=303)
 

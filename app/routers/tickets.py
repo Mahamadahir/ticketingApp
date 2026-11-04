@@ -12,7 +12,7 @@ from app.audit import log_action
 from app.auth import require_roles
 from app.database import get_session
 from app.feedback import feedback_for_ticket
-from app.forms import MAX_MESSAGE_LENGTH, optional_int
+from app.forms import MAX_MESSAGE_LENGTH, form_answers, optional_int
 from app.followers import (
     MAX_EXTERNAL_FOLLOWERS,
     InvalidEmail,
@@ -27,6 +27,7 @@ from app.backdating import FORMAT as MOMENT_FORMAT, BackdateError, backdate_tick
 from app.categories import CategoryError, create_category, is_selectable, path_of, selectable, team_id_for
 from app.escalation import EscalationError, escalate_ticket as escalate, escalation_target, escalators_of
 from app.raising import source_label
+from app.request_questions import QuestionError, answer_rows, form_rows, save_answers
 from app.request_types import active_request_types, request_type_of
 from app.required_by import (
     RequiredByError,
@@ -102,6 +103,7 @@ from app.visibility import (
     may_add_note,
     may_self_assign,
     may_set_due,
+    may_edit_answers,
     may_set_required_by,
     may_triage,
     team_members,
@@ -279,6 +281,7 @@ def triage_dates(
     impact: str = "",
     urgency: str = "",
     category_id: str = "",
+    number: Optional[int] = None,
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
@@ -287,8 +290,13 @@ def triage_dates(
     chosen = optional_int(request_type_id)
     request_type = session.get(RequestType, chosen) if chosen is not None else None
     prefill = _type_defaults(session, request_type, impact, urgency, category_id) if request_type is not None else None
+    # The kind's form questions go with it; "Leave as is" shows the ticket's own kind with the answers it has.
+    ticket = _get_ticket(session, number, user, Access.READ) if number is not None else None
+    type_id = request_type.id if request_type is not None else (ticket.request_type_id if ticket is not None else None)
+    question_rows = form_rows(session, type_id, ticket if ticket is not None and type_id == ticket.request_type_id else None)
     return _triage_dates(
-        request, request_type is not None and request_type.offers_required_by, required_by, due_on, due_reason, has_due, prefill
+        request, request_type is not None and request_type.offers_required_by, required_by, due_on, due_reason, has_due,
+        prefill, question_rows,
     )
 
 
@@ -316,14 +324,15 @@ def _type_defaults(
 
 
 def _triage_dates(
-    request: Request, offers: bool, required_by: str, due_on: str, due_reason: str, has_due: bool, prefill: Optional[dict] = None
+    request: Request, offers: bool, required_by: str, due_on: str, due_reason: str, has_due: bool,
+    prefill: Optional[dict] = None, question_rows: Optional[list] = None,
 ):
     return templates.TemplateResponse(
         request,
         "_triage_dates.html",
         {
             "offers": offers, "required_by": required_by, "due_on": due_on, "due_reason": due_reason,
-            "has_due": has_due, "prefill": prefill,
+            "has_due": has_due, "prefill": prefill, "question_rows": question_rows,
         },
     )
 
@@ -344,6 +353,7 @@ def triage(
     required_by: Optional[str] = Form(None, max_length=20),
     due_on: Optional[str] = Form(None, max_length=20),
     due_reason: Optional[str] = Form(None, max_length=600),
+    answers: dict[int, str] = Depends(form_answers),
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
@@ -383,7 +393,7 @@ def triage(
             raise HTTPException(status_code=400, detail="Choose a kind of request from the list")
         triage_ticket(
             session, ticket, user, ticket_type=ticket_type, category=category,
-            impact=impact, urgency=urgency, assignee=assignee, request_type=request_type,
+            impact=impact, urgency=urgency, assignee=assignee, request_type=request_type, answers=answers,
         )
         # The dates after triage, as it may have changed the kind of request; the boxes are optional.
         apply_form_dates(session, ticket, user.email, required_by, due_on, due_reason)
@@ -451,6 +461,32 @@ def backdate(
             for what, before, after in changes
         )
         log_action(session, user.email, "ticket", ticket.id, "backdated", detail)
+        session.commit()
+        session.refresh(ticket)
+    return _render_ticket_detail(request, ticket, user, session)
+
+
+@router.post("/{number}/answers", response_class=HTMLResponse)
+def change_answers(
+    number: int,
+    request: Request,
+    answers: dict[int, str] = Depends(form_answers),
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """An agent who works the ticket changes the answers to its request type's form questions. Each change is a
+    ticket event and an audit entry; nothing else follows from it (it only marks the answers as changed, for the
+    automatic sub-requests of #118 part 2)."""
+    ticket = _get_ticket(session, number, user, Access.READ)
+    if not may_edit_answers(user, ticket, access_context(session, user)):
+        raise HTTPException(status_code=403, detail="You cannot change the answers on this ticket")
+    try:
+        changed = save_answers(session, ticket, answers, user.email)
+    except QuestionError as error:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(error))
+    if changed:
+        log_action(session, user.email, "ticket", ticket.id, "answers_changed", "; ".join(changed))
         session.commit()
         session.refresh(ticket)
     return _render_ticket_detail(request, ticket, user, session)
@@ -1228,6 +1264,7 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
     can_self_assign = may_self_assign(user, ticket, levels)
     can_claim = not can_work and can_self_assign
     can_triage = may_triage(user, ticket, levels)
+    can_edit_answers = may_edit_answers(user, ticket, levels)
     can_reassign = can_work and not can_triage and ticket.triaged_at is not None
     category = session.get(Category, ticket.category_id) if ticket.category_id else None
     options = selectable(session) if can_triage else []
@@ -1338,6 +1375,11 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             "requester_zone": zone_for_email(session, ticket.requester_email),
             "source_label": source_label(session, ticket),
             "request_info": request_type_of(session, ticket),
+            "answers": answer_rows(session, ticket),
+            "triage_questions": form_rows(session, ticket.request_type_id, ticket) if can_triage else [],
+            "edit_questions": form_rows(session, ticket.request_type_id, ticket) if can_edit_answers else [],
+            "can_edit_answers": can_edit_answers,
+            "answers_changed_at": ticket.answers_changed_at,
             "approvals": ticket_votes,
             "approval_rule": describe_rule(ticket_approval) if ticket_approval else None,
             "approval_status": ticket_approval.status if ticket_approval else None,

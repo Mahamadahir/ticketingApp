@@ -47,6 +47,10 @@
   goes to Awaiting approval (with an approval group) or to Open in the team queue, without waiting for an agent. With some
   missing it waits in New as before. Email and Teams requests are always triaged by an agent; the defaults are then
   filled in on the triage form when the agent picks the kind of request, and can be changed.
+  Form questions (short text, pick list, yes/no, date; each can be required) are asked on the request form and, for an email
+  or Teams request, filled in by the agent at triage; a required one must be answered before triage completes. The answers
+  show on the ticket. A question that has been answered cannot be deleted, only switched off (it then stays on the tickets
+  that were answered). Save a type's questions before leaving the page; a new type gets its questions after it is created.
   An available type needs a group with at least one member. Switching a type off hides it from the form; tickets already raised keep it.
 </p>
 
@@ -73,6 +77,40 @@
     <button type="submit">Save</button>
   </fieldset>
 </form>
+<fieldset>
+  <legend>Form questions for {{ t.name }}</legend>
+  {% for q in questions[t.id] %}
+  <form method="post" action="/admin/request-types/questions/{{ q.id }}">
+    <label>Question <input type="text" name="label" value="{{ q.label }}" maxlength="200" required /></label>
+    <span class="note">{{ question_kinds[q.kind] }}</span>
+    {% if q.kind == "choice" %}<label>Options (one per line)<textarea name="options" rows="3">{{ q.options|join("\n") }}</textarea></label>{% endif %}
+    <label><input type="checkbox" name="is_required" {{ "checked" if q.is_required else "" }} /> Required</label>
+    <label><input type="checkbox" name="is_active" {{ "checked" if q.is_active else "" }} /> Asked on the form</label>
+    <button type="submit">Save question</button>
+  </form>
+  <form method="post" action="/admin/request-types/questions/{{ q.id }}/move" class="inline-form">
+    <button type="submit" name="direction" value="up">Move up</button>
+    <button type="submit" name="direction" value="down">Move down</button>
+  </form>
+  {% if q.id in answered_questions %}
+  <p class="note">Answered on tickets: switch it off (untick "Asked on the form") rather than delete it.</p>
+  {% else %}
+  <form method="post" action="/admin/request-types/questions/{{ q.id }}/delete" class="inline-form"><button type="submit">Delete question</button></form>
+  {% endif %}
+  {% else %}
+  <p class="note">No questions. The requester gives the request's details in the description.</p>
+  {% endfor %}
+  <h4>Add a question</h4>
+  <form method="post" action="/admin/request-types/{{ t.id }}/questions">
+    <label>Question <input type="text" name="label" maxlength="200" required /></label>
+    <label>Answer is
+      <select name="kind">{% for value, name in question_kinds.items() %}<option value="{{ value }}">{{ name }}</option>{% endfor %}</select>
+    </label>
+    <label>Options (pick list only, one per line)<textarea name="options" rows="3"></textarea></label>
+    <label><input type="checkbox" name="is_required" /> Required</label>
+    <button type="submit">Add question</button>
+  </form>
+</fieldset>
 {% else %}
 <p>No request types yet.</p>
 {% endfor %}

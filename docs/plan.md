@@ -779,6 +779,7 @@ a Service Request in that category and team with that priority, the SLA starts, 
 and every email- or Teams-raised ticket, still goes to New for an agent. The triaged event says "triaged automatically from
 request type X" and the audit log has an entry. When an agent picks a kind of request on the triage form its defaults are
 prefilled and can be changed.
+*Form questions (#118 part 1, built 4 Nov 2026):* an admin can add questions to a request type (short text, pick list, yes/no, date; each optionally required, in an order they set, switched off rather than deleted once answered). The requester answers them on the portal raise form and the required ones must be filled in; for an email or Teams request an agent fills them in on the triage form when picking the kind of request, and triage will not complete while a required one is missing. A portal request self-triages only when its required answers are present. Answers show on the ticket for agents and in the portal for the requester; agents who work the ticket can change them (a ticket event and an audit entry), which marks the ticket's answers as changed without changing anything else. Sub-request templates that use the answers are part 2 (#118).
 *Built in 1H-ii (14 Oct 2026, decisions confirmed that day):*
 - **A new status, Awaiting approval.** Reached only through triage; it is the one place the plan's
   status list grew. While in it the ticket cannot be moved by hand by anyone (no status buttons;

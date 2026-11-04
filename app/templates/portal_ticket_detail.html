@@ -8,6 +8,12 @@
   &middot; <span class="note">{{ source_label }}</span>
   {% if request_info %}&middot; <span class="note">Request: {{ request_info[0].name }}</span>{% endif %}</p>
 
+{% if answers %}
+<h3>Your answers</h3>
+<dl>
+  {% for a in answers %}<dt>{{ a.label }}</dt><dd>{{ a.display }}</dd>{% endfor %}
+</dl>
+{% endif %}
 {% if ticket.required_by %}<p class="note">Required by: {{ ticket.required_by.isoformat() }}</p>{% endif %}
 {% if can_set_required_by %}
 <form method="post" action="/portal/{{ ticket.number }}/required-by" class="inline-form">

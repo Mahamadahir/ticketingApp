@@ -31,7 +31,7 @@ from app.approvals import (
 )
 from app.backdating import FORMAT as MOMENT_FORMAT, BackdateError, parse_moment
 from app.categories import CategoryError, selectable
-from app.forms import MAX_MESSAGE_LENGTH, optional_int
+from app.forms import MAX_MESSAGE_LENGTH, form_answers, optional_int
 from app.raising import (
     MAX_SUBJECT_LENGTH,
     RaiseError,
@@ -43,10 +43,11 @@ from app.raising import (
 from app.sla import IMPACT_LABELS, URGENCY_LABELS, Level
 from app.triage import TriageError
 from app.visibility import Access, access_context, may_set_required_by, ticket_access
-from app.messages import about_labels, record_inbound, requester_visible_messages
+from app.messages import about_labels, record_inbound, requester_visible_answers, requester_visible_messages
 from app.follower_updates import queue_follower_updates
 from app.reopening import ReopenError, latest_follow_on, open_follow_on_ticket, related_tickets, reopen_ticket
 from app.splitting import apply_requester_reply
+from app.request_questions import form_rows
 from app.request_types import active_request_types, request_type_of
 from app.required_by import RequiredByError, offers_required_by, parse_required_by, set_required_by
 from app.models import Category, RequestType, Ticket, TicketSource, TicketStatus, TicketType, User, UserRole
@@ -144,6 +145,7 @@ def _render_ticket(request: Request, ticket: Ticket, user: User, session: Sessio
             "about": about_labels(session, visible),
             "source_label": source_label(session, ticket),
             "request_info": request_type_of(session, ticket),
+            "answers": requester_visible_answers(session, ticket),
             "my_approval": _my_pending_approval(session, ticket, user),
             "is_approver": vote_for(session, ticket, user) is not None,
             "approval_rule": _approval_rule(session, ticket),
@@ -196,6 +198,22 @@ def new_ticket_form(
     return _render_new_form(request, user, session)
 
 
+@router.get("/questions", response_class=HTMLResponse)
+def request_questions(
+    request: Request,
+    request_type_id: Optional[str] = None,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """The form questions of the chosen kind of request, swapped into the raise form when the choice changes."""
+    chosen = optional_int(request_type_id)
+    request_type = session.get(RequestType, chosen) if chosen is not None else None
+    rows = form_rows(session, request_type.id) if request_type is not None and request_type.is_active else []
+    return templates.TemplateResponse(
+        request, "_request_questions.html", {"div_id": "request-questions", "rows": rows, "oob": False}
+    )
+
+
 @router.post("/new")
 def raise_new_ticket(
     request: Request,
@@ -212,6 +230,7 @@ def raise_new_ticket(
     resolved_at: Optional[str] = Form(None, max_length=40),
     required_by: Optional[str] = Form(None, max_length=20),
     resolution_notes: Optional[str] = Form(None, max_length=MAX_MESSAGE_LENGTH + 1000),
+    answers: dict[int, str] = Depends(form_answers),
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
@@ -246,7 +265,7 @@ def raise_new_ticket(
             session, user, subject=subject, description=description, for_email=for_email,
             ticket_type=ticket_type, category=chosen_category, impact=level_impact, urgency=level_urgency,
             assignee=assignee, reported_at=moments[0], resolved_at=moments[1], request_type=chosen_request_type,
-            resolution_notes=resolution_notes, required_by=day,
+            resolution_notes=resolution_notes, required_by=day, answers=answers,
         )
         log_action(session, user.email, "ticket", ticket.id, "raised", ticket.source.value)
         session.flush()
