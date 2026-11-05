@@ -12,6 +12,46 @@ has passed the checks at the end of this page.
 `rg-ticketing-production`). Secrets are typed into your shell or the GitHub Environment,
 never into a file in the repo.
 
+## Who does what
+
+The person running the deploy (the **deployer**) has **Contributor** on `rg-ticketing-staging`
+only. Contributor creates and changes every resource in the group but **cannot create role
+assignments**, and has no rights on the subscription itself. The steps below are marked:
+
+- **[Contributor]**: the deployer can do it with Contributor on the group.
+- **[Owner]**: needs someone with Owner (or User Access Administrator) on the subscription or
+  the group.
+- **[Entra admin]**, **[Global admin]**, **[Exchange admin]**: needs that Microsoft 365 role, not
+  an Azure role.
+- **[GitHub admin]**: needs admin on the repository.
+
+| Step | Who | Status (Nov 2026) |
+|---|---|---|
+| 1.2 Register resource providers | [Owner] (subscription) | done: all nine registered |
+| 1.3 Create the resource group | [Owner] | done, with tags |
+| 1.4 The deployer's own rights on the group | [Owner] | Contributor granted; the restricted role-assignment role below is still needed |
+| 1.5 Check quota | [Owner] or anyone with Reader on the subscription | |
+| 2 `what-if` | [Contributor] | |
+| 2 Platform deploy | [Contributor] **plus** the restricted role-assignment role (1.4), or an [Owner] runs it | |
+| 3 App registrations and secrets | [Entra admin] (or Application Developer for creating them) | |
+| 3 Admin consent for the Graph permissions | [Global admin] or Privileged Role Administrator | |
+| 4 Shared mailbox, scoping, sender restriction | [Exchange admin] | |
+| 5.1 Federated credential on the GitHub app registration | [Entra admin] or the registration's owner | |
+| 5.2 Contributor and the restricted role for the GitHub identity | [Owner] | |
+| 5.2 AcrPush for the GitHub identity | [Owner], or the deployer once they hold the restricted role (AcrPush is in its list) | |
+| 6 GitHub Environments, variables and secrets | [GitHub admin] | |
+| 7 Teams Workflows webhook | the Teams channel owner | |
+| 8 Run the Deploy workflow | [GitHub admin] (the workflow uses the GitHub identity) | |
+| 9 Checks | the deployer, with the MSP for the end-to-end mail checks | |
+| 10 Budget alert on the group | [Contributor] | |
+| 10 Delete the group | [Contributor] (on the group) | |
+
+**What to ask the Owner for, once:** on `rg-ticketing-staging`, give the deployer **Role Based
+Access Control Administrator** with a condition limiting it to assigning **AcrPull, AcrPush,
+Key Vault Secrets User, Storage Blob Data Contributor and Storage Blob Delegator**; and, once the
+GitHub app registration exists (step 3), give that registration **Contributor** and the same
+restricted role. With that, every other Azure step here is [Contributor].
+
 ## 0. Decide first (one line each, write the answers down)
 
 | Decision | Needed for |
@@ -27,8 +67,9 @@ never into a file in the repo.
 You have a subscription; this app has no resource group yet.
 
 1. Sign in: `az login` then `az account set --subscription <subscription id>`.
-2. Register the resource providers once per subscription (needs Owner or Contributor on the
-   subscription; skip any already registered):
+2. **[Owner]** Register the resource providers once per subscription (needs Owner or Contributor
+   on the subscription, not the group; skip any already registered; check with
+   `az provider show --namespace <name> --query registrationState -o tsv`):
 
    ```powershell
    foreach ($p in 'Microsoft.App','Microsoft.ContainerRegistry','Microsoft.DBforPostgreSQL',
@@ -38,22 +79,27 @@ You have a subscription; this app has no resource group yet.
    }
    az provider show --namespace Microsoft.App --query registrationState   # wait for Registered
    ```
-3. Create the group:
+3. **[Owner]** Create the group:
 
    ```powershell
    az group create -n rg-ticketing-staging -l uksouth
    ```
-4. Give **your own** account Owner on that group (the templates create role assignments, so
-   Contributor alone fails):
+4. **[Owner]** Give the deployer rights on the group. The templates create role assignments, so
+   Contributor alone fails at those steps. Either Owner on the group, or (preferred) Contributor
+   plus the restricted **Role Based Access Control Administrator** described in "Who does what":
 
    ```powershell
    az role assignment create --assignee <your user object id> --role Owner `
      --scope /subscriptions/<subscription id>/resourceGroups/rg-ticketing-staging
    ```
-5. Check the quota for Container Apps and PostgreSQL Flexible Server (burstable `Standard_B1ms`)
+5. **[Owner or subscription Reader]** Check the quota for Container Apps and PostgreSQL Flexible Server (burstable `Standard_B1ms`)
    in UK South. If the first deploy fails with a quota or SKU error, that is the place to look.
 
 ## 2. Platform-only deploy (no apps yet)
+
+**[Contributor]** for `what-if`. The `create` needs the restricted role-assignment role as well
+(step 1.4); with Contributor alone it creates the resources and then fails at the four role
+assignments (registry pull, Key Vault secrets, storage data and delegation).
 
 Leave `IMAGE` unset so only the platform (network, monitoring, registry, Postgres, storage,
 Key Vault, Container Apps environment, alerts) is created. Full text is in `infra/README.md`,
@@ -79,6 +125,8 @@ name, the storage account name).
 
 ## 3. Entra app registrations (three, all in the same tenant)
 
+**[Entra admin]** for the registrations and secrets; **[Global admin]** for admin consent.
+
 | App registration | Purpose | Permissions (application unless noted) | Redirect URI |
 |---|---|---|---|
 | **ticketing-sso-staging** | Agents sign in with Microsoft | delegated `openid`, `profile`, `email` | `https://<staging web address>/auth/callback` |
@@ -102,6 +150,13 @@ Notes:
 
 ## 4. The shared mailbox
 
+**[Exchange admin]** for all of this step.
+
+Staging uses its **own** shared mailbox (for example `itsupport-staging@vardags.com`; a shared
+mailbox needs no licence) with **no forwarding rule**. Do not point staging at
+`ITSupport@vardags.com`: that address forwards to the MSP today, and at go-live the app takes it
+over (see "Go-live: the IT support mailbox" below).
+
 1. Create the shared mailbox in Exchange Online (the decision from step 0).
 2. Apply the mailbox scoping from step 3 to the Graph app.
 3. Mimecast sits in front of Exchange Online as the mail gateway. Nothing in the app talks to
@@ -113,6 +168,8 @@ Phase 3 (Graph mail) is not built yet; this step can wait until 3B/3D are merged
 mailbox and the app registration take time to approve, so start early.
 
 ## 5. GitHub Actions can deploy
+
+**[Entra admin]** for the federated credential; **[Owner]** for the role assignments on the group.
 
 Described in `infra/README.md`, "GitHub Actions identity". In short:
 
@@ -127,6 +184,8 @@ Described in `infra/README.md`, "GitHub Actions identity". In short:
    - **AcrPush** on the registry created in step 2.
 
 ## 6. GitHub Environments
+
+**[GitHub admin]**.
 
 Settings > Environments > `staging` (and later `production`, with **required reviewers**; that
 is the approval gate; optionally restrict both to the `main` branch).
@@ -197,3 +256,23 @@ Staging is sized small (burstable Postgres, 1 to 2 replicas, 30-day logs capped 
 To remove staging entirely: `az group delete -n rg-ticketing-staging` (this deletes the
 database; take a backup first if anything matters). Key Vault purge protection is off in
 staging so a deleted vault can be recreated with the same name.
+
+**[Contributor]** can add a budget with an email alert on the group (Cost Management, Budgets)
+and can delete the group.
+
+## Go-live: the IT support mailbox
+
+Today `ITSupport@vardags.com` forwards every email to the MSP (Kocho), who log it in their own
+system. At go-live the app owns that mailbox:
+
+1. **Before go-live:** end-to-end tests on staging with the MSP, using the staging shared mailbox:
+   a handoff, the MSP's "has been received" acknowledgement (their ticket number is learned
+   from it), a "has been updated" mail, a reply that leaves the user off, and a ticket resolved
+   by IT while with the MSP.
+2. **[Exchange admin]** Remove the forward from `ITSupport@vardags.com` to the MSP. Leaving it
+   in place sends every email to both the MSP and the app, and the MSP opens a duplicate ticket
+   for each.
+3. **[Exchange admin]** Scope the production Graph app to `ITSupport@vardags.com` (step 3) and set
+   `GRAPH_SHARED_MAILBOX` to it.
+4. Tell the MSP: from that date tickets come from `ITSupport@vardags.com` with an `[INC-n]`
+   reference in the subject; their acknowledgements and updates go back to that address.
