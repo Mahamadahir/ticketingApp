@@ -79,7 +79,7 @@ def preview_closing(
 
 def close_ticket(
     session: Session, ticket: Ticket, actor: User, notes: str, *, cc_emails: Optional[list[str]] = None,
-    tell_msp: bool = False, take_back_linked: bool = False,
+    tell_msp: Optional[bool] = None, take_back_linked: bool = False,
 ) -> None:
     """Closes the ticket: stores the notes and who closed it, moves it to Closed, writes the status event
     and the audit entry, and queues the closed email (an agent's email, so it counts as a response). tell_msp and take_back_linked are the

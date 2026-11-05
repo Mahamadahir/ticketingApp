@@ -672,7 +672,6 @@
         "app.mail",
         "app.main",
         "app.msp",
-        "app.msp_actions",
         "app.outbox",
         "app.rate_limit",
         "app.routers.admin",
@@ -959,7 +958,6 @@
         "app.mail",
         "app.messages",
         "app.msp",
-        "app.msp_actions",
         "app.notifications",
         "app.raising",
         "app.reopening",
@@ -1858,6 +1856,7 @@
         "link_unmatched",
         "may_hold",
         "msp_address",
+        "msp_cc",
         "park_unmatched",
         "parse_subject",
         "pending_forwards",
@@ -1872,7 +1871,8 @@
         "sent_to_msp",
         "ticket_by_msp_number",
         "ticket_of_acknowledgement",
-        "unmatched_query"
+        "unmatched_query",
+        "usable_msp_address"
       ],
       "imported_by": [
         "app.escalation",
@@ -1921,6 +1921,7 @@
         "check_can_take_back",
         "compose_release",
         "finish_with_msp",
+        "ids_digest",
         "linked_to_mark",
         "linked_with_msp_through",
         "mark_linked",
@@ -1938,9 +1939,7 @@
       ],
       "imports": [
         "app.audit",
-        "app.config",
         "app.email_templates",
-        "app.followers",
         "app.linking",
         "app.messages",
         "app.models",
@@ -1954,7 +1953,9 @@
       "routes": [],
       "summary": "What an agent does about the MSP besides sending a ticket (issue #150). Nothing here commits.",
       "tables": [],
-      "tests": []
+      "tests": [
+        "tests/test_msp_actions.py"
+      ]
     },
     {
       "classes": [

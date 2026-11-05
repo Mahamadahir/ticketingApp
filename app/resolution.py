@@ -95,7 +95,7 @@ def resolve_ticket(
     cc_emails: Optional[list[str]] = None,
     send_email: bool = True,
     detail: Optional[str] = None,
-    tell_msp: bool = False,
+    tell_msp: Optional[bool] = None,
     take_back_linked: bool = False,
 ) -> None:
     """Resolves the ticket: stores the notes and who resolved it, moves it to Resolved (which stops

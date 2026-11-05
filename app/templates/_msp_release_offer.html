@@ -2,6 +2,7 @@
    linked tickets that went With MSP with this one. Included inside the confirm form, so the boxes are submitted with it. #}
 {% if msp_release %}
 <div class="msp-offer">
+  <input type="hidden" name="msp_offered" value="1" />
   <p><b>The MSP</b></p>
   <label><input type="checkbox" name="tell_msp" value="1" checked /> Tell the MSP it is no longer needed (untick if the MSP resolved it themselves)</label>
   <p><b>To:</b> {{ msp_release.to }}</p>

@@ -107,10 +107,14 @@ def check_batch(session: Session, numbers: list[int], notes: str) -> str:
 
 
 
-def _run(session: Session, user: User, levels: AccessContext, numbers: list[int], notes: str, dry_run: bool) -> BulkPlan:
+def _run(
+    session: Session, user: User, levels: AccessContext, numbers: list[int], notes: str, dry_run: bool,
+    tell_msp_for: Optional[list[int]] = None,
+) -> BulkPlan:
     """Walks the batch in lock order, resolving each ticket in its own savepoint. A dry run does the
     same work (so a split original whose parts are in the batch is judged after its parts, exactly as
-    the real run will) and rolls it all back at the end, keeping each ticket's email preview."""
+    the real run will) and rolls it all back at the end, keeping each ticket's email preview. `tell_msp_for` is the numbers whose
+    "tell the MSP" box was left ticked in the preview (None: the box was never shown, so nobody is told or recorded as not told)."""
     notes = check_batch(session, numbers, notes)
     plan = BulkPlan()
     for number, ticket in _load(session, user, levels, numbers):
@@ -123,8 +127,9 @@ def _run(session: Session, user: User, levels: AccessContext, numbers: list[int]
         item.tells_msp = compose_release(session, ticket, OUTCOME_RESOLVED, user) is not None
         savepoint = session.begin_nested()
         try:
-            # A ticket the MSP may still hold has them told it is no longer needed (the one preview lists which).
-            resolve_ticket(session, ticket, user, notes, detail="Resolved in a bulk resolve", tell_msp=True)
+            # A ticket the MSP may still hold has them told it is no longer needed unless its box was unticked in the preview.
+            tell = True if dry_run else (None if tell_msp_for is None else number in tell_msp_for)
+            resolve_ticket(session, ticket, user, notes, detail="Resolved in a bulk resolve", tell_msp=tell)
             if dry_run:
                 # The recipients of the email the real run queues (the ticket's status no longer matters to it).
                 item.preview = preview_email(session, ticket, resolution_email_body(session, ticket, notes))
@@ -145,7 +150,9 @@ def preview_bulk(session: Session, user: User, levels: AccessContext, numbers: l
     return _run(session, user, levels, numbers, notes, dry_run=True)
 
 
-def resolve_bulk(session: Session, user: User, levels: AccessContext, numbers: list[int], notes: str) -> BulkPlan:
+def resolve_bulk(
+    session: Session, user: User, levels: AccessContext, numbers: list[int], notes: str, tell_msp_for: Optional[list[int]] = None
+) -> BulkPlan:
     """Resolves every ticket that still can be, each in its own savepoint; the rest are reported with
     their reason. The caller commits. Raises BulkError only for a bad batch or note."""
-    return _run(session, user, levels, numbers, notes, dry_run=False)
+    return _run(session, user, levels, numbers, notes, dry_run=False, tell_msp_for=tell_msp_for)

@@ -918,6 +918,11 @@ def change_status(
     return _render_ticket_detail(request, ticket, user, session)
 
 
+def _tell_msp(ticked: Optional[str], offered: Optional[str]) -> Optional[bool]:
+    """The tick box about telling the MSP: True ticked, False shown and unticked (the form says it was shown), None never shown."""
+    return True if ticked else (False if offered else None)
+
+
 def _msp_offer(session: Session, ticket: Ticket, user: User, outcome: str) -> dict:
     """What a resolve, close or take-back preview offers about the MSP (app/msp_actions.py): the "no longer needed" email, and the
     linked tickets that are With MSP through this one. Each is ticked by default in the preview."""
@@ -969,6 +974,7 @@ def resolve(
     cc_form: Optional[str] = Form(None),
     cc: list[str] = Form(default=[]),
     tell_msp: Optional[str] = Form(None),
+    msp_offered: Optional[str] = Form(None),
     take_back_linked: Optional[str] = Form(None),
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
@@ -980,7 +986,7 @@ def resolve(
     try:
         resolve_ticket(
             session, ticket, user, resolution_notes, cc_emails=cc if cc_form else None,
-            tell_msp=bool(tell_msp), take_back_linked=bool(take_back_linked),
+            tell_msp=_tell_msp(tell_msp, msp_offered), take_back_linked=bool(take_back_linked),
         )
     except ResolveError as error:
         session.rollback()
@@ -1030,6 +1036,7 @@ def close(
     cc_form: Optional[str] = Form(None),
     cc: list[str] = Form(default=[]),
     tell_msp: Optional[str] = Form(None),
+    msp_offered: Optional[str] = Form(None),
     take_back_linked: Optional[str] = Form(None),
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
@@ -1040,7 +1047,7 @@ def close(
     try:
         close_ticket(
             session, ticket, user, closing_notes, cc_emails=cc if cc_form else None,
-            tell_msp=bool(tell_msp), take_back_linked=bool(take_back_linked),
+            tell_msp=_tell_msp(tell_msp, msp_offered), take_back_linked=bool(take_back_linked),
         )
     except CloseError as error:
         session.rollback()
@@ -1213,22 +1220,18 @@ def send_ticket_to_msp(
     digest: Optional[str] = Form(None, max_length=64),
     mark_linked: Optional[str] = Form(None),
     tell_linked_requesters: Optional[str] = Form(None),
-    linked_ids: Optional[str] = Form(None, max_length=2000),
+    linked_digest: Optional[str] = Form(None, max_length=64),
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
     """Sends the ticket to the MSP (the same action as escalating to an MSP-target category), with a reason.
     The ticket stays in its team, With MSP. For a Major Incident or Problem the preview's two boxes mark the linked tickets
-    With MSP and tell their requesters (app/msp_actions.py); `linked_ids` is the list the preview showed."""
+    With MSP and tell their requesters (app/msp_actions.py); `linked_digest` fingerprints the list the preview showed."""
     ticket = _get_ticket(session, number, user)
-    try:
-        expected = [int(i) for i in (linked_ids or "").split(",") if i.strip()] if linked_ids is not None else None
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Preview it again to see which linked tickets will be marked")
     try:
         send_with_linked(
             session, ticket, user, reason, scope, expect_digest=digest, mark_linked_too=bool(mark_linked),
-            tell_requesters=bool(tell_linked_requesters), expect_linked_ids=expected,
+            tell_requesters=bool(tell_linked_requesters), expect_linked_digest=linked_digest,
         )
     except MspError as error:
         session.rollback()
@@ -1266,6 +1269,7 @@ def take_back_from_msp_route(
     number: int,
     request: Request,
     tell_msp: Optional[str] = Form(None),
+    msp_offered: Optional[str] = Form(None),
     take_back_linked: Optional[str] = Form(None),
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
@@ -1274,7 +1278,9 @@ def take_back_from_msp_route(
     needed and takes back the linked tickets that went With MSP with it."""
     ticket = _get_ticket(session, number, user)
     try:
-        take_back_from_msp(session, ticket, user, tell_msp=bool(tell_msp), take_back_linked_too=bool(take_back_linked))
+        take_back_from_msp(
+            session, ticket, user, tell_msp=_tell_msp(tell_msp, msp_offered), take_back_linked_too=bool(take_back_linked)
+        )
     except MspError as error:
         session.rollback()
         raise HTTPException(status_code=400, detail=str(error))

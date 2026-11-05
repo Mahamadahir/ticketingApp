@@ -15,7 +15,7 @@
     <td>{{ item.preview.to }}</td>
     <td>{{ item.preview.cc | join(", ") if item.preview.cc else "no one" }}</td>
     <td>{{ item.preview.subject }}</td>
-    <td>{{ "told it is no longer needed" if item.tells_msp else "" }}</td>
+    <td>{% if item.tells_msp %}<label><input type="checkbox" form="bulk-confirm" name="tell_msp_for" value="{{ item.number }}" checked /> tell the MSP it is no longer needed</label>{% endif %}</td>
   </tr>
   {% endfor %}
   </tbody>
@@ -29,9 +29,10 @@
 </ul>
 {% endif %}
 {% if plan.ready %}
-<form hx-post="/bulk-resolve" hx-target="main" hx-swap="innerHTML" hx-disabled-elt="find button[type=submit]">
+<form id="bulk-confirm" hx-post="/bulk-resolve" hx-target="main" hx-swap="innerHTML" hx-disabled-elt="find button[type=submit]">
   <textarea name="resolution_notes" hidden>
 {{ notes }}</textarea>
+  <input type="hidden" name="msp_offered" value="1" />
   {% for item in plan.ready %}<input type="hidden" name="number" value="{{ item.number }}" />{% endfor %}
   <button type="submit">Resolve {{ plan.ready | length }} and send emails</button>
   <a href="/tickets">Cancel</a>

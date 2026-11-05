@@ -25,28 +25,35 @@ through it (`linked_with_msp_through`) are offered back to Open or In progress, 
 what it already was: the existing bulk resolve of a parent and its linked tickets (app/bulk_resolve.py).
 """
 
+import hashlib
 from dataclasses import dataclass
 from typing import Optional
 
 from sqlmodel import Session, select
 
 from app.audit import log_action
-from app.config import settings
 from app.email_templates import render_template, ticket_values
-from app.followers import followers_of
 from app.linking import PARENT_TYPES
 from app.messages import mail_subject, record_notice
-from app.models import FINISHED_STATUSES, Ticket, TicketEvent, TicketStatus, User
-from app.msp import EVENT_SENT_TO_MSP, SCOPE_THREAD, MspError, MspPreview, msp_address, send_to_msp
-from app.outbox import is_on, queue_msp_release
-from app.splitting import SplitError, check_manual_status, has_sub_tickets
+from app.models import FINISHED_STATUSES, OutboundEmail, Ticket, TicketEvent, TicketStatus, User
+from app.msp import (
+    EVENT_MSP_NOT_TOLD,
+    EVENT_MSP_TOLD,
+    EVENT_SENT_TO_MSP,
+    SCOPE_THREAD,
+    MspError,
+    MspPreview,
+    msp_cc,
+    send_to_msp,
+    usable_msp_address,
+)
+from app.outbox import MSP_HANDOFF, is_on, queue_msp_release
+from app.splitting import SplitError, check_manual_status, has_sub_tickets, lock_ticket
 from app.ticket_service import record_event, set_status
 from app.visibility import Access, access_context, ticket_access
 
 EVENT_WITH_MSP_THROUGH = "with_msp_through"  # on a linked ticket: to_value is the parent's reference
 EVENT_TAKEN_BACK = "taken_back_from_msp"  # to_value: the status it went to; detail says why (a parent's, say)
-EVENT_MSP_TOLD = "msp_told_no_longer_needed"  # to_value: resolved, closed or taken_back
-EVENT_MSP_NOT_TOLD = "msp_not_told"  # the agent left the box unticked (the MSP may have finished it themselves)
 EVENT_LINKED_TAKEN_BACK = "linked_taken_back_from_msp"  # on the parent: to_value is how many
 
 AUDIT_TAKEN_BACK = "msp_taken_back"
@@ -73,6 +80,21 @@ class LinkedPlan:
     @property
     def ids(self) -> list[int]:
         return [t.id for t in self.tickets]
+
+    @property
+    def digest(self) -> str:
+        return ids_digest(self.ids)
+
+
+def ids_digest(ids: list[int]) -> str:
+    """A short fingerprint of the linked tickets a preview showed (a parent can have hundreds), carried by the confirm form."""
+    return hashlib.sha256(",".join(str(i) for i in sorted(ids)).encode()).hexdigest()
+
+
+def _lock_originals(session: Session, tickets: list[Ticket]) -> None:
+    """The original of every split part first, in id order, as resolving does, so two requests cannot wait on each other."""
+    for original_id in sorted({t.split_from_id for t in tickets if t.split_from_id is not None}):
+        lock_ticket(session, original_id)
 
 
 def _can_take_msp(session: Session, child: Ticket) -> bool:
@@ -109,13 +131,14 @@ def linked_to_mark(session: Session, parent: Ticket, actor: User, lock: bool = F
 
 
 def mark_linked(
-    session: Session, parent: Ticket, actor: User, *, tell_requesters: bool, expect_ids: Optional[list[int]] = None
+    session: Session, parent: Ticket, actor: User, *, tell_requesters: bool, expect_digest: Optional[str] = None
 ) -> list[Ticket]:
     """Marks the linked tickets With MSP through the parent (call it with the parent already sent). Each changes status only:
-    nothing is emailed to the MSP for it. `expect_ids` is the list the preview showed: if it is not the list now, nothing is
+    nothing is emailed to the MSP for it. `expect_digest` is the fingerprint of the list the preview showed: if it is not the list now, nothing is
     changed and MspError says to preview again."""
+    _lock_originals(session, _linked_children(session, parent))
     plan = linked_to_mark(session, parent, actor, lock=True)
-    if expect_ids is not None and sorted(plan.ids) != sorted(expect_ids):
+    if expect_digest is not None and plan.digest != expect_digest:
         raise MspError("The linked tickets changed since the preview. Preview it again to see which will be marked.")
     for child in plan.tickets:
         set_status(session, child, TicketStatus.WITH_MSP, actor.email, detail=f"with the MSP through {parent.reference}")
@@ -128,13 +151,13 @@ def mark_linked(
 
 def send_with_linked(
     session: Session, ticket: Ticket, actor: User, reason: str, scope: str = SCOPE_THREAD, expect_digest: Optional[str] = None,
-    *, mark_linked_too: bool = False, tell_requesters: bool = False, expect_linked_ids: Optional[list[int]] = None,
+    *, mark_linked_too: bool = False, tell_requesters: bool = False, expect_linked_digest: Optional[str] = None,
 ) -> MspPreview:
     """The Send to MSP button: `send_to_msp`, and as ticked in the panel the linked tickets of a Major Incident or Problem
     marked With MSP with it. All or nothing: a refusal raises MspError before anything is changed."""
     preview = send_to_msp(session, ticket, actor, reason, scope, expect_digest=expect_digest)
     if mark_linked_too:
-        mark_linked(session, ticket, actor, tell_requesters=tell_requesters, expect_ids=expect_linked_ids)
+        mark_linked(session, ticket, actor, tell_requesters=tell_requesters, expect_digest=expect_linked_digest)
     return preview
 
 
@@ -177,14 +200,18 @@ def _take_back_one(session: Session, ticket: Ticket, actor: User, why: str) -> N
 
 def take_back_linked(session: Session, parent: Ticket, actor: User, why: str) -> list[Ticket]:
     """Takes the linked tickets that are With MSP through the parent back to In progress or Open."""
-    taken = linked_with_msp_through(session, parent, actor)
-    if taken:
-        session.exec(select(Ticket.id).where(Ticket.id.in_([t.id for t in taken])).order_by(Ticket.id).with_for_update()).all()
-        for child in taken:
+    candidates = linked_with_msp_through(session, parent, actor)
+    taken: list[Ticket] = []
+    if candidates:
+        _lock_originals(session, candidates)
+        session.exec(select(Ticket.id).where(Ticket.id.in_([t.id for t in candidates])).order_by(Ticket.id).with_for_update()).all()
+        for child in candidates:
             session.refresh(child)
             if child.status == TicketStatus.WITH_MSP:
                 _take_back_one(session, child, actor, f"{why} ({parent.reference})")
-        record_event(session, parent, EVENT_LINKED_TAKEN_BACK, actor.email, to_value=str(len(taken)))
+                taken.append(child)
+        if taken:
+            record_event(session, parent, EVENT_LINKED_TAKEN_BACK, actor.email, to_value=str(len(taken)))
     return taken
 
 
@@ -199,11 +226,13 @@ def check_can_take_back(session: Session, ticket: Ticket) -> None:
 
 
 def take_back(
-    session: Session, ticket: Ticket, actor: User, *, tell_msp: bool = False, take_back_linked_too: bool = False
+    session: Session, ticket: Ticket, actor: User, *, tell_msp: Optional[bool] = None, take_back_linked_too: bool = False
 ) -> None:
     """Moves a With MSP ticket to In progress (assigned) or Open, recording an event and an audit entry, and (as ticked in
     the preview) tells the MSP it is no longer needed and takes back the linked tickets that went with it."""
     session.flush()
+    if ticket.split_from_id is not None:
+        lock_ticket(session, ticket.split_from_id)  # the original first, like everything in a family
     session.refresh(ticket, with_for_update=True)
     check_can_take_back(session, ticket)
     release_msp(session, ticket, actor, OUTCOME_TAKEN_BACK, tell_msp)
@@ -237,10 +266,20 @@ def _settled(session: Session, ticket: Ticket) -> bool:
     return latest is not None
 
 
+def _last_handoff(session: Session, ticket: Ticket) -> Optional[OutboundEmail]:
+    return session.exec(
+        select(OutboundEmail).where(OutboundEmail.ticket_id == ticket.id, OutboundEmail.kind == MSP_HANDOFF).order_by(OutboundEmail.id.desc()).limit(1)
+    ).first()
+
+
 def msp_may_hold(session: Session, ticket: Ticket) -> bool:
-    """Whether the MSP may still be working on this ticket as far as we know: it was sent to them (a ticket merely set to
-    With MSP by hand, or marked through its parent, was never emailed to them) and nobody has settled it since."""
-    return ticket.msp_sent_at is not None and ticket.status not in FINISHED_STATUSES and not _settled(session, ticket)
+    """Whether the MSP may still be working on this ticket as far as we know: its handoff email was actually sent (a ticket merely
+    set to With MSP by hand, marked through its parent, or whose handoff has not gone yet or was never queued, is not one they
+    know of) and nobody has settled it since."""
+    if ticket.msp_sent_at is None or ticket.status in FINISHED_STATUSES or _settled(session, ticket):
+        return False
+    handoff = _last_handoff(session, ticket)
+    return handoff is not None and handoff.sent_at is not None
 
 
 def compose_release(session: Session, ticket: Ticket, outcome: str, actor: User) -> Optional[ReleasePreview]:
@@ -249,23 +288,24 @@ def compose_release(session: Session, ticket: Ticket, outcome: str, actor: User)
     the MSP's own system find the ticket."""
     if outcome not in OUTCOME_TEXT or not is_on() or not msp_may_hold(session, ticket):
         return None
-    address = msp_address(session)
-    if not address or address == settings.graph_shared_mailbox.strip().lower():
-        return None
+    handoff = _last_handoff(session, ticket)
+    address = (handoff.to_address.strip().lower() if handoff is not None else "") or usable_msp_address(session)
+    if not address or not usable_msp_address(session):
+        return None  # the MSP they were sent to is told even if the setting was changed since; no MSP set at all, nothing is offered
     number = ticket.msp_ticket_number
     body = render_template(session, "msp_no_longer_needed", {
         **ticket_values(ticket), "outcome": OUTCOME_TEXT[outcome], "msp_ticket_text": f" (MSP ticket #{number})" if number else "",
     }).body
-    cc = [f.email for f in followers_of(session, ticket) if f.is_internal and f.email != address]
-    if actor.email not in cc:
-        cc.append(actor.email)
-    return ReleasePreview(to=address, cc=cc, subject=mail_subject(session, ticket), body=body, outcome=outcome)
+    return ReleasePreview(to=address, cc=msp_cc(session, ticket, address, actor), subject=mail_subject(session, ticket), body=body, outcome=outcome)
 
 
-def release_msp(session: Session, ticket: Ticket, actor: User, outcome: str, tell: bool) -> bool:
+def release_msp(session: Session, ticket: Ticket, actor: User, outcome: str, tell: Optional[bool]) -> bool:
     """The agent's answer to the tick box, for a ticket they are resolving, closing or taking back (call it before the status
-    changes). Ticked: queues the email and records it. Unticked: records that the MSP was not told, so the ticket is not
-    offered again. Nothing when there was nothing to offer. True when the MSP was told."""
+    changes). `tell` True is a ticked box: queues the email and records it. False is a box that was shown and unticked: records that
+    the MSP was not told, so the ticket is not offered again. None is a caller that never showed the box: nothing happens. Nothing
+    either when there was nothing to offer. True when the MSP was told."""
+    if tell is None:
+        return False
     preview = compose_release(session, ticket, outcome, actor)
     if preview is None:
         return False
@@ -279,7 +319,7 @@ def release_msp(session: Session, ticket: Ticket, actor: User, outcome: str, tel
 
 
 def finish_with_msp(
-    session: Session, ticket: Ticket, actor: Optional[User], outcome: str, *, tell_msp: bool, take_back_linked_too: bool
+    session: Session, ticket: Ticket, actor: Optional[User], outcome: str, *, tell_msp: Optional[bool], take_back_linked_too: bool
 ) -> None:
     """What resolving or closing does about the MSP, as ticked in the preview (call it before the status changes). No
     agent (an automatic resolve) does nothing: the MSP is told by people, never by a job."""

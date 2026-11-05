@@ -489,7 +489,7 @@ File: `app/config.py`
 - Classes: `Settings`
 - Functions: `mail_sync_errors`, `unsafe_setting_errors`
 - Imports: none
-- Imported by: `app.action_links`, `app.approval_links`, `app.attachments`, `app.auth`, `app.check_settings`, `app.database`, `app.followers`, `app.graph_client`, `app.inbound`, `app.jobs`, `app.mail`, `app.main`, `app.msp`, `app.msp_actions`, `app.outbox`, `app.rate_limit`, `app.routers.admin`, `app.routers.auth`, `app.routers.dev_tools`, `app.routers.my_settings`, `app.routers.webhooks`, `app.storage`, `app.subscriptions`, `app.teams`, `app.telemetry`, `app.worker`
+- Imported by: `app.action_links`, `app.approval_links`, `app.attachments`, `app.auth`, `app.check_settings`, `app.database`, `app.followers`, `app.graph_client`, `app.inbound`, `app.jobs`, `app.mail`, `app.main`, `app.msp`, `app.outbox`, `app.rate_limit`, `app.routers.admin`, `app.routers.auth`, `app.routers.dev_tools`, `app.routers.my_settings`, `app.routers.webhooks`, `app.storage`, `app.subscriptions`, `app.teams`, `app.telemetry`, `app.worker`
 - Tests: `test_acknowledgement.py`, `test_action_links.py`, `test_activity_log.py`, `test_approval_reminders.py`, `test_attachments.py`, `test_auto_close_chase.py`, `test_bulk_resolve.py`, `test_closing_email.py`, `test_follower_updates.py`, `test_inbound_mail.py`, `test_mail_subscriptions.py`, `test_msp.py`, `test_msp_actions.py`, `test_msp_mail.py`, `test_msp_real_mail.py`, `test_outbound_mail.py`, `test_presence.py`, `test_public_surface.py`, `test_resolution.py`, `test_security.py`, `test_teams.py`, `test_teams_copy_sending.py`, `test_time_zones.py`, `test_visibility.py`, `test_wiring_3f.py`, `test_worker.py`
 
 ### `app.database`
@@ -558,7 +558,7 @@ File: `app/followers.py`
 - Classes: `InvalidEmail`, `NeverFollowListed`, `TooManyFollowers`
 - Functions: `add_follower`, `bare_address`, `cc_list`, `copyable_followers`, `followers_of`, `is_follower`, `normalise_email`, `portal_audience`, `remove_follower`, `uncopied_recipients`
 - Imports: `app.config`, `app.models`, `app.never_follow`, `app.ticket_service`
-- Imported by: `app.approval_groups`, `app.escalation`, `app.follower_updates`, `app.inbound`, `app.mail`, `app.messages`, `app.msp`, `app.msp_actions`, `app.notifications`, `app.raising`, `app.reopening`, `app.routers.admin`, `app.routers.portal`, `app.routers.tickets`, `app.visibility`
+- Imported by: `app.approval_groups`, `app.escalation`, `app.follower_updates`, `app.inbound`, `app.mail`, `app.messages`, `app.msp`, `app.notifications`, `app.raising`, `app.reopening`, `app.routers.admin`, `app.routers.portal`, `app.routers.tickets`, `app.visibility`
 - Tests: `test_bell_access.py`, `test_follower_updates.py`, `test_followers.py`, `test_inbound_mail.py`, `test_msp_mail.py`, `test_never_follow.py`, `test_reopening.py`, `test_reply_notification.py`, `test_requester_bell.py`, `test_withdraw.py`
 
 ### `app.forms`
@@ -684,7 +684,7 @@ Sending a ticket to the MSP, putting it on hold, and the automatic handoff (phas
 File: `app/msp.py`
 
 - Classes: `ForwardPreview`, `MspError`, `MspPreview`, `MspSubject`
-- Functions: `alert_unacknowledged`, `attachment_plan`, `business_hours`, `check_can_send`, `compile_subject_pattern`, `compose`, `compose_forward`, `dismiss_forward`, `dismiss_unmatched`, `forward_if_out_of_hours`, `forward_message`, `forward_waiting_messages`, `hand_off_due_tickets`, `handoff_counts`, `handoff_window`, `hold_ticket`, `is_business_time`, `is_msp_sender`, `link_unmatched`, `may_hold`, `msp_address`, `park_unmatched`, `parse_subject`, `pending_forwards`, `plan_files`, `receive_acknowledgement`, `receive_mail`, `release_hold`, `run_msp_ack_alerts`, `run_msp_forwards`, `run_msp_handoff`, `send_to_msp`, `sent_to_msp`, `ticket_by_msp_number`, `ticket_of_acknowledgement`, `unmatched_query`
+- Functions: `alert_unacknowledged`, `attachment_plan`, `business_hours`, `check_can_send`, `compile_subject_pattern`, `compose`, `compose_forward`, `dismiss_forward`, `dismiss_unmatched`, `forward_if_out_of_hours`, `forward_message`, `forward_waiting_messages`, `hand_off_due_tickets`, `handoff_counts`, `handoff_window`, `hold_ticket`, `is_business_time`, `is_msp_sender`, `link_unmatched`, `may_hold`, `msp_address`, `msp_cc`, `park_unmatched`, `parse_subject`, `pending_forwards`, `plan_files`, `receive_acknowledgement`, `receive_mail`, `release_hold`, `run_msp_ack_alerts`, `run_msp_forwards`, `run_msp_handoff`, `send_to_msp`, `sent_to_msp`, `ticket_by_msp_number`, `ticket_of_acknowledgement`, `unmatched_query`, `usable_msp_address`
 - Imports: `app.audit`, `app.categories`, `app.config`, `app.email_templates`, `app.followers`, `app.mail`, `app.messages`, `app.models`, `app.never_follow`, `app.notifications`, `app.outbox`, `app.settings_store`, `app.splitting`, `app.ticket_service`, `app.time_zones`
 - Imported by: `app.escalation`, `app.inbound`, `app.msp_actions`, `app.routers.admin`, `app.routers.msp_mail`, `app.routers.tickets`, `app.scheduled_jobs`
 - Tests: `test_msp.py`, `test_msp_actions.py`, `test_msp_mail.py`, `test_msp_real_mail.py`
@@ -695,10 +695,10 @@ What an agent does about the MSP besides sending a ticket (issue #150). Nothing 
 File: `app/msp_actions.py`
 
 - Classes: `LinkedPlan`, `ReleasePreview`
-- Functions: `check_can_take_back`, `compose_release`, `finish_with_msp`, `linked_to_mark`, `linked_with_msp_through`, `mark_linked`, `msp_may_hold`, `release_msp`, `send_with_linked`, `take_back`, `take_back_linked`
-- Imports: `app.audit`, `app.config`, `app.email_templates`, `app.followers`, `app.linking`, `app.messages`, `app.models`, `app.msp`, `app.outbox`, `app.splitting`, `app.ticket_service`, `app.visibility`
+- Functions: `check_can_take_back`, `compose_release`, `finish_with_msp`, `ids_digest`, `linked_to_mark`, `linked_with_msp_through`, `mark_linked`, `msp_may_hold`, `release_msp`, `send_with_linked`, `take_back`, `take_back_linked`
+- Imports: `app.audit`, `app.email_templates`, `app.linking`, `app.messages`, `app.models`, `app.msp`, `app.outbox`, `app.splitting`, `app.ticket_service`, `app.visibility`
 - Imported by: `app.bulk_resolve`, `app.closing`, `app.resolution`, `app.routers.tickets`
-- Tests: none
+- Tests: `test_msp_actions.py`
 
 ### `app.never_follow`
 

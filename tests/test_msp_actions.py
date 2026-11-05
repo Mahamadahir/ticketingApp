@@ -9,6 +9,7 @@ from sqlmodel import select
 from app.config import settings
 from app.models import AuditLog, Message, OutboundEmail, Ticket, TicketEvent, TicketStatus, TicketType
 from app.msp import hand_off_due_tickets
+from app.msp_actions import ids_digest
 from app.settings_store import MSP_ADDRESS, set_setting
 from tests.conftest import create_team
 from tests.test_visibility import agent_in, make_ticket
@@ -46,12 +47,21 @@ def sent_to_msp(client, ticket, **extra):
     return client.post(f"/tickets/{ticket.number}/send-to-msp", data=data)
 
 
+def delivered(db_session, ticket):
+    """The worker has sent the ticket's handoff email (until it has, the MSP knows nothing of the ticket)."""
+    for row in db_session.exec(select(OutboundEmail).where(OutboundEmail.ticket_id == ticket.id, OutboundEmail.kind == "msp_handoff")).all():
+        row.sent_at = NOW
+        db_session.add(row)
+    db_session.commit()
+
+
 def with_msp(client, db_session, team, **fields):
-    """A ticket really sent to the MSP through the button (so it has msp_sent_at and the handoff email)."""
+    """A ticket really sent to the MSP through the button (so it has msp_sent_at and the handoff email, which has been sent)."""
     ticket = triaged(db_session, team, **fields)
     assert sent_to_msp(client, ticket).status_code == 200
     db_session.refresh(ticket)
     assert ticket.status == TicketStatus.WITH_MSP
+    delivered(db_session, ticket)
     return ticket
 
 
@@ -96,9 +106,9 @@ def test_sending_the_parent_marks_the_eligible_linked_tickets_and_tells_their_re
     team, other = create_team(db_session, "Support"), create_team(db_session, "Other")
     agent_in(client, db_session, member_of=[team])
     parent, kids = parent_with_children(db_session, team, other)
-    ids = f"{kids['open'].id},{kids['progress'].id}"
+    ids = ids_digest([kids["open"].id, kids["progress"].id])
 
-    assert sent_to_msp(client, parent, mark_linked="1", tell_linked_requesters="1", linked_ids=ids).status_code == 200
+    assert sent_to_msp(client, parent, mark_linked="1", tell_linked_requesters="1", linked_digest=ids).status_code == 200
 
     for name in ("open", "progress"):
         db_session.refresh(kids[name])
@@ -123,13 +133,13 @@ def test_the_second_box_off_tells_no_requester_and_the_first_box_off_marks_nothi
     team = create_team(db_session, "Support")
     agent_in(client, db_session, member_of=[team])
     parent, kids = parent_with_children(db_session, team)
-    sent_to_msp(client, parent, mark_linked="1", linked_ids=f"{kids['open'].id},{kids['progress'].id}")
+    sent_to_msp(client, parent, mark_linked="1", linked_digest=ids_digest([kids["open"].id, kids["progress"].id]))
     db_session.refresh(kids["open"])
     assert kids["open"].status == TicketStatus.WITH_MSP
     assert not [m for m in db_session.exec(select(Message).where(Message.ticket_id == kids["open"].id)).all() if "support partner" in m.body]
 
     parent2, kids2 = parent_with_children(db_session, team)
-    sent_to_msp(client, parent2, linked_ids="1,2")
+    sent_to_msp(client, parent2, linked_digest=ids_digest([kids2["open"].id, kids2["progress"].id]))
     db_session.refresh(kids2["open"])
     assert kids2["open"].status == TicketStatus.OPEN
 
@@ -139,7 +149,7 @@ def test_linked_tickets_that_changed_since_the_preview_refuse_the_whole_send(cli
     team = create_team(db_session, "Support")
     agent_in(client, db_session, member_of=[team])
     parent, kids = parent_with_children(db_session, team)
-    response = sent_to_msp(client, parent, mark_linked="1", linked_ids=str(kids["open"].id))  # the preview showed one, there are two
+    response = sent_to_msp(client, parent, mark_linked="1", linked_digest=ids_digest([kids["open"].id]))  # the preview showed one, there are two
     assert response.status_code == 400 and "changed since the preview" in response.text
     db_session.refresh(parent)
     db_session.refresh(kids["open"])
@@ -215,7 +225,7 @@ def test_unticking_the_box_sends_nothing_and_it_is_not_offered_again(client, db_
     team = create_team(db_session, "Support")
     agent_in(client, db_session, member_of=[team])
     ticket = with_msp(client, db_session, team)
-    resolve(client, ticket)  # no tell_msp: the box was unticked (the MSP resolved it themselves)
+    resolve(client, ticket, msp_offered="1")  # the box was shown and unticked (the MSP resolved it themselves)
     assert mail_of(db_session, "msp_release") == []
     assert len(events(db_session, ticket, "msp_not_told")) == 1
     # Reopened and worked again, then closed: the decision stands until it goes to the MSP again.
@@ -309,8 +319,8 @@ def test_bulk_resolve_tells_the_msp_and_says_so_in_the_preview(client, db_sessio
     ticket = with_msp(client, db_session, team)
     plain = triaged(db_session, team, subject="Plain")
     page = client.post("/bulk-resolve/preview", data={"number": [ticket.number, plain.number], "resolution_notes": "Fixed"}).text
-    assert page.count("told it is no longer needed") == 1
-    client.post("/bulk-resolve", data={"number": [ticket.number, plain.number], "resolution_notes": "Fixed"})
+    assert page.count("tell the MSP it is no longer needed") == 1
+    client.post("/bulk-resolve", data={"number": [ticket.number, plain.number], "resolution_notes": "Fixed", "msp_offered": "1", "tell_msp_for": [ticket.number]})
     (release,) = mail_of(db_session, "msp_release")
     assert release.ticket_id == ticket.id
 
@@ -343,7 +353,7 @@ def test_taking_back_an_assigned_ticket_goes_to_in_progress_and_an_unassigned_on
     page = client.post(f"/tickets/{assigned.number}/take-back-from-msp/preview").text
     assert "In progress" in page and 'name="tell_msp"' in page
     assert take_back(client, assigned, tell_msp="1").status_code == 200
-    assert take_back(client, loose).status_code == 200
+    assert take_back(client, loose, msp_offered="1").status_code == 200
     db_session.refresh(assigned)
     db_session.refresh(loose)
     assert assigned.status == TicketStatus.IN_PROGRESS and loose.status == TicketStatus.OPEN
@@ -373,6 +383,7 @@ def test_sending_again_after_a_take_back_offers_the_email_again(client, db_sessi
     ticket = with_msp(client, db_session, team)
     take_back(client, ticket, tell_msp="1")
     assert sent_to_msp(client, ticket).status_code == 200
+    delivered(db_session, ticket)
     assert 'name="tell_msp"' in client.post(f"/tickets/{ticket.number}/resolve/preview", data={"resolution_notes": "x"}).text
 
 
@@ -391,9 +402,9 @@ def test_someone_who_cannot_work_the_ticket_cannot_take_it_back(client, db_sessi
 
 def sent_parent(client, db_session, team):
     parent, kids = parent_with_children(db_session, team)
-    ids = ",".join(str(k.id) for k in (kids["open"], kids["progress"]))
-    sent_to_msp(client, parent, mark_linked="1", linked_ids=ids)
+    sent_to_msp(client, parent, mark_linked="1", linked_digest=ids_digest([kids["open"].id, kids["progress"].id]))
     db_session.refresh(parent)
+    delivered(db_session, parent)
     return parent, kids
 
 
@@ -406,6 +417,7 @@ def test_finishing_the_parent_offers_to_take_its_linked_tickets_back(client, db_
     # A linked ticket sent to the MSP on its own is not "through" the parent and is left alone.
     solo = triaged(db_session, team, linked_parent_id=parent.id, subject="Solo")
     sent_to_msp(client, solo)
+    delivered(db_session, solo)
 
     ticked = {"take_back_linked": "1", "tell_msp": "1"}
     if action == "resolve":
@@ -455,3 +467,71 @@ def test_the_no_longer_needed_template_is_an_admin_template():
 
     defn = REGISTRY["msp_no_longer_needed"]
     assert "outcome" in defn.required and "msp_ticket_text" in defn.body_placeholders
+
+
+# ---- Found in review --------------------------------------------------------------------------------------------
+
+
+def test_a_form_that_never_showed_the_box_records_nothing_and_offers_again(client, db_session, mail_on):
+    set_msp(db_session)
+    team = create_team(db_session, "Support")
+    agent_in(client, db_session, member_of=[team])
+    ticket = with_msp(client, db_session, team)
+    client.post(f"/tickets/{ticket.number}/status", data={"status": "open"})
+    resolve(client, ticket)  # no tell_msp and no msp_offered: not an unticked box
+    assert events(db_session, ticket, "msp_not_told") == [] and mail_of(db_session, "msp_release") == []
+
+
+def test_nothing_is_offered_until_the_handoff_has_gone(client, db_session, mail_on):
+    set_msp(db_session)
+    team = create_team(db_session, "Support")
+    agent_in(client, db_session, member_of=[team])
+    ticket = triaged(db_session, team)
+    sent_to_msp(client, ticket)  # queued, not yet sent by the worker: the MSP knows nothing of it
+    assert 'name="tell_msp"' not in client.post(f"/tickets/{ticket.number}/resolve/preview", data={"resolution_notes": "x"}).text
+    delivered(db_session, ticket)
+    assert 'name="tell_msp"' in client.post(f"/tickets/{ticket.number}/resolve/preview", data={"resolution_notes": "x"}).text
+
+
+def test_the_email_goes_to_the_address_the_handoff_went_to(client, db_session, mail_on):
+    set_msp(db_session)
+    team = create_team(db_session, "Support")
+    agent_in(client, db_session, member_of=[team])
+    ticket = with_msp(client, db_session, team)
+    set_msp(db_session, "new@msp.example")
+    resolve(client, ticket, tell_msp="1")
+    (release,) = mail_of(db_session, "msp_release")
+    assert release.to_address == MSP
+
+
+def test_a_taken_back_ticket_is_not_chased_for_an_acknowledgement(client, db_session, mail_on):
+    from app.msp import alert_unacknowledged
+
+    set_msp(db_session)
+    team = create_team(db_session, "Support")
+    agent_in(client, db_session, member_of=[team])
+    ticket = with_msp(client, db_session, team)
+    take_back(client, ticket, tell_msp="1")
+    assert alert_unacknowledged(db_session, NOW + timedelta(hours=2)) == 0
+
+
+def test_bulk_resolve_can_leave_one_msp_ticket_unticked(client, db_session, mail_on):
+    set_msp(db_session)
+    team = create_team(db_session, "Support")
+    agent_in(client, db_session, member_of=[team])
+    a, b = with_msp(client, db_session, team), with_msp(client, db_session, team)
+    client.post("/bulk-resolve", data={"number": [a.number, b.number], "resolution_notes": "Fixed", "msp_offered": "1", "tell_msp_for": [a.number]})
+    (release,) = mail_of(db_session, "msp_release")
+    assert release.ticket_id == a.id
+    assert len(events(db_session, b, "msp_not_told")) == 1
+
+
+def test_a_split_part_taken_back_locks_its_original_first(client, db_session, mail_on):
+    set_msp(db_session)
+    team = create_team(db_session, "Support")
+    agent_in(client, db_session, member_of=[team])
+    original = triaged(db_session, team)
+    part = triaged(db_session, team, TicketStatus.WITH_MSP, split_from_id=original.id, msp_sent_at=NOW)
+    assert take_back(client, part).status_code == 200
+    db_session.refresh(part)
+    assert part.status == TicketStatus.OPEN

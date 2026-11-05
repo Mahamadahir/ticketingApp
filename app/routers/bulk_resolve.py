@@ -80,12 +80,17 @@ def confirm(
     request: Request,
     number: list[int] = Form(default=[]),
     resolution_notes: str = Form("", max_length=MAX_MESSAGE_LENGTH + 1000),
+    msp_offered: Optional[str] = Form(None),
+    tell_msp_for: list[int] = Form(default=[]),
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
     """Resolves what can be resolved and reports each ticket: resolved, or skipped with the reason."""
     try:
-        plan = resolve_bulk(session, user, access_context(session, user), number, resolution_notes)
+        plan = resolve_bulk(
+            session, user, access_context(session, user), number, resolution_notes,
+            tell_msp_for=tell_msp_for if msp_offered else None,
+        )
     except BulkError as error:
         session.rollback()
         raise HTTPException(status_code=400, detail=str(error))
