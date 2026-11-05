@@ -15,7 +15,7 @@ from app.models import Setting
 class SettingDef:
     key: str
     label: str
-    kind: str  # "team": a team id, empty for none; "minutes": a whole number; "percent": 1 to 99; "vote_percent": 1 to 100; "flag": on or off; "count": a whole number, 1 to 1000; "hour": a whole number, 0 to 23; "clock": a time of day written 09:00 or 17:30; "time_zone": an IANA time zone name, blank for the default; "email": one email address, blank for none; "dates": a list of dates (2026-12-25, separated by commas or spaces), blank for none
+    kind: str  # "team": a team id, empty for none; "minutes": a whole number; "percent": 1 to 99; "vote_percent": 1 to 100; "flag": on or off; "count": a whole number, 1 to 1000; "hour": a whole number, 0 to 23; "clock": a time of day written 09:00 or 17:30; "time_zone": an IANA time zone name, blank for the default; "email": one email address, blank for none; "dates": a list of dates (2026-12-25, separated by commas or spaces), blank for none; "off_minutes": a whole number of minutes, 0 is off; "regex": a regular expression with the named groups the setting says
     description: str
     default: str = ""
 
@@ -56,6 +56,9 @@ SCHEDULED_MORNING_HOUR = "scheduled_morning_hour"
 DEFAULT_TIME_ZONE = "default_time_zone"
 TIME_ZONE_REFRESH_DAYS = "time_zone_refresh_days"
 TIME_ZONE_RETRY_HOURS = "time_zone_retry_hours"
+MSP_SUBJECT_PATTERN_DEFAULT = (
+    r"(?i)^\s*(?:(?:re|fw|fwd)\s*:\s*)*Ticket\s?#(?P<number>\d+)\s*/\s*(?P<title>.+?)\s+--\s+has been\s+(?P<action>[a-z][a-z ]*?)\s*$"
+)
 MSP_ADDRESS = "msp_address"
 MSP_HANDOFF_HOUR = "msp_handoff_hour"
 MSP_BUSINESS_MORNING_HOUR = "msp_business_morning_hour"
@@ -63,6 +66,9 @@ MSP_BANK_HOLIDAYS = "msp_bank_holidays"
 MSP_BUSINESS_START = "msp_business_start"
 MSP_BUSINESS_END = "msp_business_end"
 MSP_ATTACH_MAX_MB = "msp_attach_max_mb"
+MSP_SUBJECT_PATTERN = "msp_subject_pattern"
+MSP_ACK_MATCH_DAYS = "msp_ack_match_days"
+MSP_ACK_ALERT_MINUTES = "msp_ack_alert_minutes"
 
 # PLACEHOLDER SLA targets, in minutes on a 24/7 clock, until the real ones are agreed
 # (TBC in docs/plan.md). They are settings, changed under Admin > Settings; a blank
@@ -495,6 +501,38 @@ REGISTRY: dict[str, SettingDef] = {
             "attached. Graph takes a request of about 4 MB and files are sent base64-encoded (a third larger), so a larger value is treated as 2. Placeholder."
         ),
         default="2",
+    ),
+    MSP_SUBJECT_PATTERN: SettingDef(
+        key=MSP_SUBJECT_PATTERN,
+        label="MSP: the pattern of the subject of the MSP's mail",
+        kind="regex",
+        description=(
+            "A regular expression (Python syntax) for the subject of the MSP's own mail, such as "
+            "\"Ticket#7000237/Printer offline -- has been received\". The named group number is the MSP's ticket number and "
+            "title is the rest of the subject; the optional group action is the word after \"has been\" (\"received\" marks the "
+            "acknowledgement). The default accepts Ticket#123 and Ticket #123. Changing it is only needed if the MSP changes its wording."
+        ),
+        default=MSP_SUBJECT_PATTERN_DEFAULT,
+    ),
+    MSP_ACK_MATCH_DAYS: SettingDef(
+        key=MSP_ACK_MATCH_DAYS,
+        label="MSP: how many days back an acknowledgement is matched by its title",
+        kind="count",
+        description=(
+            "An acknowledgement without our [INC-n] reference is matched to the one ticket whose email to the MSP, sent in this "
+            "many days, has exactly the same subject as its title. Placeholder."
+        ),
+        default="7",
+    ),
+    MSP_ACK_ALERT_MINUTES: SettingDef(
+        key=MSP_ACK_ALERT_MINUTES,
+        label="MSP: tell the assignee when it has not confirmed a ticket after (minutes)",
+        kind="off_minutes",
+        description=(
+            "When a ticket sent to the MSP has no acknowledgement this many minutes after the email to the MSP was sent, the "
+            "assignee (or the team's members when nobody is assigned) gets one bell entry. 0 turns it off. Placeholder."
+        ),
+        default="30",
     ),
     MAX_SUB_TICKETS: SettingDef(
         key=MAX_SUB_TICKETS,

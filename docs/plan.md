@@ -1010,6 +1010,21 @@ A template is plain text with `{placeholders}` from a fixed list per email; the 
   Business hours are admin settings (placeholder 09:00 to 17:30, Monday to Friday, organisation time zone, bank holidays
   from the 5A setting). A message from the MSP changes no status. Handoffs (automatic against manual) and forwards are
   ticket events, which is the reporting data for phase 7.
+- *Real MSP mail (#149, decided by the owner from real mail, built):* the MSP's mail is believed by Microsoft's combined
+  verdict only, `compauth` in the header literally named `Authentication-Results` whose authserv-id starts `mx.microsoft.com`
+  (the first such header; `Authentication-Results-Original` and `ARC-*` are never read; `dkim=fail` is normal through Mimecast and
+  is ignored). `compauth=pass` is trusted (out of hours it may be forwarded automatically); `compauth=fail` is set aside and
+  audited; anything else (softpass, none, no header) is recorded on the ticket but never forwarded automatically and waits for
+  an agent, with the preview, whatever the time. This replaces the old forged-mail open question. The MSP's address is checked
+  before the automatic-mail filter (its relay adds List-Unsubscribe), though it still goes through the trust check. The MSP does
+  not reply in-thread and uses its own subject, so the ticket is found by the MSP's own ticket number: learned from its
+  acknowledgement ("Ticket#7000237/<our subject> -- has been received", read by the admin setting `msp_subject_pattern`),
+  which is matched by our `[INC-n]` reference in its title or body, else by the exact title against the subject of an email we
+  sent the MSP in the last `msp_ack_match_days` days (only if exactly one matches), and stored as `Ticket.msp_ticket_number`
+  (unique). The acknowledgement is an internal note, never forwarded. Later MSP mail carrying the number matches by it first.
+  Trusted mail that matches nothing is kept in an agent-only list (`/msp-mail`, "MSP mail" in the agent menu) where an agent
+  links it to a ticket or dismisses it. If a ticket sent to the MSP has no acknowledgement `msp_ack_alert_minutes` after its
+  handoff email was sent, the assignee (or the team's working members) is told once in the bell: "The MSP hasn't confirmed INC-1042".
 
 ## Notifications
 

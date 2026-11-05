@@ -267,8 +267,9 @@ system. At go-live the app owns that mailbox:
 
 1. **Before go-live:** end-to-end tests on staging with the MSP, using the staging shared mailbox:
    a handoff, the MSP's "has been received" acknowledgement (their ticket number is learned
-   from it), a "has been updated" mail, a reply that leaves the user off, and a ticket resolved
-   by IT while with the MSP.
+   from it; it is believed by Microsoft's `compauth=pass` in the `Authentication-Results` header
+   Graph returns, so check that header on the staging mailbox), a "has been updated" mail, a reply
+   that leaves the user off, and a ticket resolved by IT while with the MSP.
 2. **[Exchange admin]** Remove the forward from `ITSupport@vardags.com` to the MSP. Leaving it
    in place sends every email to both the MSP and the app, and the MSP opens a duplicate ticket
    for each.

@@ -32,10 +32,12 @@ Rules that live here and nowhere else:
   ticket reopens it (apply_requester_reply). A reply on a Closed ticket opens a new ticket linked to it
   (app/reopening.py), and later mail in that thread follows the link to the newest ticket. Who can see the ticket is app/visibility.py's
   business, not this module's: it never decides access.
-- Mail from the MSP address (the admin setting) is the MSP's own business (app/msp.py `receive_mail`): it is added only
-  to a ticket that was sent to the MSP, found like any other reply but trusted by reference too (the MSP is a known
-  address and keeps the reference in its subject), recorded with `uniqueBody` only, never makes a ticket and never
-  makes the MSP a requester or a follower. It changes no status. Anything else from the MSP address is set aside.
+- Mail from the MSP address (the admin setting) is the MSP's own business (app/msp.py) and is checked BEFORE the automatic-mail
+  filter (its relay adds List-Unsubscribe). It is believed by Microsoft's `compauth` verdict only (`msp_trust`): fail is set aside
+  and audited, pass is trusted, anything else is recorded but never forwarded automatically. It is added only to a ticket that was
+  sent to the MSP, found by the MSP's own ticket number (learned from its acknowledgement), then by our reference, the exact
+  title of what we sent, or the usual thread matching. It is recorded with `uniqueBody` only, never makes a ticket and never makes
+  the MSP a requester or a follower, and changes no status. Mail that matches nothing is kept for an agent (the unmatched list).
 - The people copied on the mail that opens a ticket become its followers (app/followers.py). A reply
   is passed on to the followers who were not on its To or Cc (app/follower_updates.py).
 - Files go through `store_attachment` (app/attachments.py), the only place a file is checked. A file
@@ -83,7 +85,17 @@ from app.models import (
     TicketStatus,
     User,
 )
-from app.msp import is_msp_sender, forward_if_out_of_hours, receive_mail as receive_msp_mail, sent_to_msp
+from app.msp import (
+    forward_if_out_of_hours,
+    is_msp_sender,
+    park_unmatched,
+    parse_subject as parse_msp_subject,
+    receive_acknowledgement as receive_msp_acknowledgement,
+    receive_mail as receive_msp_mail,
+    sent_to_msp,
+    ticket_by_msp_number,
+    ticket_of_acknowledgement,
+)
 from app.never_follow import listed_entry
 from app.outbox import is_on, queue_acknowledgement
 from app.raising import MAX_SUBJECT_LENGTH
@@ -154,7 +166,10 @@ class IncomingMail:
     conversation_id: Optional[str] = None
     cc: list[str] = field(default_factory=list)
     to: list[str] = field(default_factory=list)  # with cc: who the mail was sent to, so who already has it
-    headers: dict[str, str] = field(default_factory=dict)  # names lower case
+    headers: dict[str, str] = field(default_factory=dict)  # names lower case; of a repeated name, the first
+    # Every header literally named Authentication-Results, in Graph's order (headers keeps only the first of a name, which
+    # may not be the receiving server's own). Empty when built by hand: `headers` is then read instead.
+    auth_results: list[str] = field(default_factory=list)
     in_reply_to: list[str] = field(default_factory=list)  # normalised Message-IDs, nearest first
     is_draft: bool = False
     has_attachments: bool = False
@@ -206,8 +221,11 @@ def parse_graph_message(raw: dict) -> IncomingMail:
     body = raw.get("uniqueBody") or raw.get("body") or {}
     content = body.get("content") if isinstance(body, dict) else None
     headers: dict[str, str] = {}
+    auth_results: list[str] = []
     for header in raw.get("internetMessageHeaders") or []:
         if isinstance(header, dict) and isinstance(header.get("name"), str):
+            if header["name"].strip().lower() == "authentication-results":
+                auth_results.append(_text(header.get("value")).strip())
             # The first of a repeated header is the nearest one to us.
             headers.setdefault(header["name"].strip().lower(), _text(header.get("value")).strip())
     references = re.findall(r"<[^<>\s]+>", headers.get("in-reply-to", ""))
@@ -224,6 +242,7 @@ def parse_graph_message(raw: dict) -> IncomingMail:
         cc=[a for a in (_address(e) for e in raw.get("ccRecipients") or []) if a],
         to=[a for a in (_address(e) for e in raw.get("toRecipients") or []) if a],
         headers=headers,
+        auth_results=auth_results,
         in_reply_to=[m for m in (_message_id(r) for r in references) if m],
         is_draft=bool(raw.get("isDraft")),
         has_attachments=bool(raw.get("hasAttachments")),
@@ -288,15 +307,30 @@ def automatic_reason(mail: IncomingMail) -> Optional[str]:
     return None
 
 
-def _failed_authentication(mail: IncomingMail) -> Optional[str]:
-    """Why a mail that says it is from the MSP is not believed: the receiving server's own verdict (the
-    Authentication-Results header, when Graph returns it) says the sender check failed, so the From address was forged.
-    A mail with no verdict is believed; the guard that it must belong to a ticket sent to the MSP still applies."""
-    verdict = mail.headers.get("authentication-results", "").lower()
-    for check in ("dmarc", "spf", "dkim"):
-        if f"{check}=fail" in verdict:
-            return f"the sender's {check.upper()} check failed, so it was not believed to be from the MSP"
-    return None
+TRUST_PASS = "pass"  # Microsoft's compauth verdict: the From address is believed
+TRUST_FAIL = "fail"  # compauth=fail: forged, set aside
+TRUST_UNVERIFIED = "unverified"  # softpass, none, or no verdict at all: recorded, but never forwarded automatically
+
+_COMPAUTH = re.compile(r"\bcompauth\s*=\s*([a-z0-9]+)", re.IGNORECASE)
+_RECEIVER = "mx.microsoft.com"  # the authserv-id of Exchange Online's own verdict
+
+
+def msp_trust(mail: IncomingMail) -> str:
+    """How far a mail that says it is from the MSP is believed, by Microsoft's combined verdict (`compauth`) only. SPF, DKIM
+    and DMARC are not read: mail through Mimecast always shows dkim=fail because it rewrites the body, and compauth already
+    folds in the verdicts that count. Only the header literally named Authentication-Results counts, and only one whose
+    authserv-id starts mx.microsoft.com (Exchange's own; an upstream verdict is renamed Authentication-Results-Original and the
+    ARC-* headers have other names, none are read). If several appear, the first in Graph's order is the one: a forger's
+    own header further down never counts."""
+    values = mail.auth_results or ([mail.headers["authentication-results"]] if mail.headers.get("authentication-results") else [])
+    for value in values:
+        words = value.split(";", 1)[0].split()
+        if not words or not words[0].lower().startswith(_RECEIVER):
+            continue
+        found = _COMPAUTH.search(value)
+        verdict = found.group(1).lower() if found else ""
+        return TRUST_PASS if verdict == "pass" else TRUST_FAIL if verdict == "fail" else TRUST_UNVERIFIED
+    return TRUST_UNVERIFIED
 
 
 def _ticket_of_conversation(session: Session, conversation_id: Optional[str]) -> Optional[Ticket]:
@@ -446,6 +480,70 @@ def _claim(session: Session, mail: IncomingMail) -> Optional[InboundMail]:
     return row
 
 
+def _msp_ticket_for(session: Session, mail: IncomingMail, parsed) -> tuple[Optional[Ticket], Optional[str]]:
+    """The ticket a mail from the MSP belongs to. The MSP's own number first (learned from its acknowledgement), then, for
+    an acknowledgement, our reference in its title or body and the exact title against what we sent, then the usual thread,
+    Message-ID and subject-reference matching. Only a ticket that was sent to the MSP counts, except by number."""
+    if parsed is not None:
+        ticket = ticket_by_msp_number(session, parsed.number)
+        if ticket is not None:
+            return ticket, "msp-number"
+        if parsed.is_acknowledgement:
+            ticket, how = ticket_of_acknowledgement(session, parsed.title, mail.body, referenced_ticket)
+            if ticket is not None:
+                return ticket, how
+    ticket, how = find_ticket_for(session, mail)
+    if ticket is not None and sent_to_msp(session, ticket):
+        return ticket, how
+    return None, None
+
+
+def _ingest_msp_mail(session, mail, sender, attachments, storage, now, settle) -> Handled:
+    """Mail from the MSP address: never a requester or a follower, never a ticket of its own. Believed only by Microsoft's
+    compauth verdict (msp_trust): a fail is set aside and audited; a pass is trusted; anything else is recorded but never
+    forwarded automatically. Mail that matches no ticket sent to the MSP is kept for an agent (app/msp.py park_unmatched)."""
+    trust = msp_trust(mail)
+    if trust == TRUST_FAIL:
+        log_action(
+            session, sender, "ticket", 0, MSP_AUDIT_ACTION,
+            f"{_subject_of(mail)}: Microsoft's sender check (compauth) failed, so it was not believed to be from the MSP"[:MAX_AUDIT_DETAIL],
+        )
+        return settle(IGNORED_MSP)
+    verified = trust == TRUST_PASS
+    parsed = parse_msp_subject(session, mail.subject)
+    ticket, how = _msp_ticket_for(session, mail, parsed)
+    if ticket is None:
+        park_unmatched(
+            session, graph_message_id=mail.graph_message_id, sender=sender, subject=_subject_of(mail), body=_body_of(mail),
+            to=mail.to, cc=mail.cc, parsed=parsed, verified=verified,
+        )
+        log_action(
+            session, sender, "ticket", 0, MSP_AUDIT_ACTION,
+            f"{_subject_of(mail)}: no ticket that was sent to the MSP, kept for an agent to link"[:MAX_AUDIT_DETAIL],
+        )
+        return settle(IGNORED_MSP)
+    if parsed is not None and parsed.is_acknowledgement and how != "msp-number":
+        message = receive_msp_acknowledgement(
+            session, ticket, sender=sender, body=_body_of(mail), number=parsed.number, learn=verified
+        )
+        if message is None:  # its number is already another ticket's: an agent decides
+            park_unmatched(
+                session, graph_message_id=mail.graph_message_id, sender=sender, subject=_subject_of(mail), body=_body_of(mail),
+                to=mail.to, cc=mail.cc, parsed=parsed, verified=verified,
+            )
+            return settle(IGNORED_MSP)
+    else:
+        message = receive_msp_mail(
+            session, ticket, sender=sender, body=_body_of(mail), recipients=mail.to + mail.cc, now=now, verified=verified
+        )
+    message.graph_message_id = mail.graph_message_id
+    session.flush()
+    log_action(session, sender, "ticket", ticket.id, "replied_by_email", f"from the MSP, matched by {how}")
+    _store_files(session, storage, ticket, message, attachments or [])
+    forward_if_out_of_hours(session, ticket, message, now)  # after the files, so they go with it; not an unverified one
+    return settle(REPLY_ADDED, ticket, message)
+
+
 def ingest_mail(
     session: Session,
     mail: IncomingMail,
@@ -468,14 +566,20 @@ def ingest_mail(
         session.add(claim)
         return Handled(outcome, ticket, message)
 
-    reason = automatic_reason(mail)
-    if reason is not None:
-        return settle(reason)
     try:
         sender = normalise_email(mail.sender)
     except InvalidEmail:
-        return settle(IGNORED_NO_SENDER)
-    listed = listed_entry(session, sender)
+        sender = None
+    # The MSP's own mail is checked before the automatic-mail filter: its ticketing system sends through a relay, so its
+    # mail carries List-Unsubscribe and would be thrown away as a mailing list. It still goes through the trust check.
+    from_msp = sender is not None and not mail.is_draft and is_msp_sender(session, sender)
+    if not from_msp:
+        reason = automatic_reason(mail)
+        if reason is not None:
+            return settle(reason)
+        if sender is None:
+            return settle(IGNORED_NO_SENDER)
+    listed = None if from_msp else listed_entry(session, sender)
     if listed is not None:
         # Mail from a listed address (a list, the mailbox's alias, a no-reply) is ignored whole: no ticket, nothing
         # added to a ticket. The audit log keeps who and what, so an admin can see what was dropped.
@@ -497,25 +601,8 @@ def ingest_mail(
         log.warning("Mail from one sender set aside: too many tickets and replies in an hour (a probable loop)")
         return settle(IGNORED_FLOOD)
 
-    if is_msp_sender(session, sender):
-        # The support partner: never a requester or a follower, and never a ticket of its own.
-        ticket, how = find_ticket_for(session, mail)
-        failed = _failed_authentication(mail)
-        if failed is not None or ticket is None or not sent_to_msp(session, ticket):
-            log_action(
-                session, sender, "ticket", ticket.id if ticket is not None else 0, MSP_AUDIT_ACTION,
-                f"{_subject_of(mail)}: {failed or 'no ticket that was sent to the MSP'}"[:MAX_AUDIT_DETAIL],
-            )
-            return settle(IGNORED_MSP)
-        message = receive_msp_mail(
-            session, ticket, sender=sender, body=_body_of(mail), recipients=mail.to + mail.cc, now=now
-        )
-        message.graph_message_id = mail.graph_message_id
-        session.flush()
-        log_action(session, sender, "ticket", ticket.id, "replied_by_email", f"from the MSP, matched by {how}")
-        _store_files(session, storage, ticket, message, attachments or [])
-        forward_if_out_of_hours(session, ticket, message, now)  # after the files, so they go with it
-        return settle(REPLY_ADDED, ticket, message)
+    if from_msp:
+        return _ingest_msp_mail(session, mail, sender, attachments, storage, now, settle)
 
     note_requester(session, sender)  # whoever writes in gets their mailbox time zone read (app/time_zones.py)
     body = _body_of(mail)
@@ -603,7 +690,8 @@ def process_message(
     mail = parse_graph_message(raw)
     mail.graph_message_id = graph_message_id  # the id we asked for is the one we dedupe on
     files: list[IncomingAttachment] = []
-    if mail.has_attachments and automatic_reason(mail) is None and not _flooding(session, mail.sender, datetime.now(timezone.utc)):
+    from_msp = bool(mail.sender) and not mail.is_draft and is_msp_sender(session, mail.sender)  # its List-Unsubscribe is not automatic
+    if mail.has_attachments and (from_msp or automatic_reason(mail) is None) and not _flooding(session, mail.sender, datetime.now(timezone.utc)):
         files = load_attachments(session, client, graph_message_id)  # before any ticket is made: no lock is held while Graph answers
     return ingest_mail(session, mail, files, storage)
 

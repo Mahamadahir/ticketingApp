@@ -23,6 +23,7 @@
   &middot; Assigned: {{ assigned_agent.display_name if assigned_agent else "Unassigned" }}
   &middot;
   <span class="status status-{{ ticket.status.value }}">{{ ticket.status.value }}</span>{% if ticket.msp_hold %} <span class="badge">on MSP hold</span>{% endif %}
+  {% if ticket.msp_ticket_number %}&middot; With MSP as MSP ticket #{{ ticket.msp_ticket_number }}{% endif %}
 </p>
 
 {% if ticket.status.value == "awaiting_approval" %}
@@ -510,7 +511,7 @@
     <div class="message-meta">
       {% if item.source %}<span class="note">[{{ item.source.reference }} {{ item.source.subject }}]</span>{% endif %}
       {% if message.direction.value == "internal" %}<b>Internal note</b> (agents only)
-      {% elif message.msp_forward %}<b>From the MSP</b>{% if message.msp_forward == "pending" %} (the user was not on it; agents only until forwarded){% elif message.msp_forward == "forwarded" %} (forwarded to the user){% elif message.msp_forward == "dismissed" %} (not forwarded){% endif %}
+      {% elif message.msp_forward %}<b>From the MSP</b>{% if message.msp_forward == "pending" %} (the user was not on it; agents only until forwarded){% elif message.msp_forward == "forwarded" %} (forwarded to the user){% elif message.msp_forward == "dismissed" %} (not forwarded){% elif message.msp_forward == "internal" %} (acknowledgement; agents only){% endif %}{% if message.msp_unverified %} <span class="badge">sender not verified</span>{% endif %}
       {% elif message.direction.value == "outbound" %}<b>Email to requester</b>{% if message.cc %} (cc: {{ message.cc }}){% endif %}
       {% elif item.sender_kind == "follower" %}<b>From follower</b>
       {% else %}<b>From requester</b>{% endif %}

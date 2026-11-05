@@ -82,6 +82,12 @@ EVENT_TYPES: tuple[EventType, ...] = (
         AGENT_ROLES, (IN_APP, TEAMS), (IN_APP, TEAMS),
     ),
     EventType(
+        "msp_unacknowledged", "The MSP has not confirmed a ticket you sent it",
+        "A bell entry when a ticket sent to the MSP has no acknowledgement after the time set under Settings. It goes to the "
+        "assigned agent, or to the team's members while nobody is assigned.",
+        AGENT_ROLES, (IN_APP,), (IN_APP,),
+    ),
+    EventType(
         "agent_emailed", "IT Support emails you about your ticket",
         "A bell entry when an agent writes to you on a ticket you raised, or follow from outside the team. "
         "The email is sent as well; this is in addition. You are not told about your own emails.",
