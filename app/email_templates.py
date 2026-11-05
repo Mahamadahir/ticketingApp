@@ -350,6 +350,27 @@ REGISTRY: dict[str, TemplateDef] = {
             },
         ),
         TemplateDef(
+            key="msp_no_longer_needed",
+            label="MSP: no longer needed (to the MSP)",
+            description=(
+                "Sent to the support partner when IT resolves or closes a ticket that is with them, or takes it back "
+                "from them, so they can stop work. It goes out under the ticket's own subject, the same as the handoff, so "
+                "their system files it on their ticket. {msp_ticket_text} is their own ticket number when we know it."
+            ),
+            body_default=(
+                "{reference}{msp_ticket_text}: {outcome}, no action needed.\n\n"
+                "Please close it on your side and do not contact the end user about it. If work has already been done, "
+                "reply to this email and keep {reference} in the subject."
+            ),
+            body_placeholders={
+                **_COMMON,
+                "outcome": "what IT did: resolved by IT, closed by IT or taken back by IT",
+                "msp_ticket_text": "the MSP's own ticket number, worded ' (MSP ticket #7000237)' (empty if not known)",
+            },
+            required=("outcome",),
+            sample={**_COMMON_SAMPLE, "outcome": "resolved by IT", "msp_ticket_text": " (MSP ticket #7000237)"},
+        ),
+        TemplateDef(
             key="msp_forward",
             label="Forwarded MSP message (to the user)",
             description=(

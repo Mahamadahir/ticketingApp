@@ -966,6 +966,7 @@ A template is plain text with `{placeholders}` from a fixed list per email; the 
 - Single MSP. Its address is an admin setting (`msp_address`, blank until set; decided 4 Nov 2026, so the build was not
   waiting for it). With no address, Send to MSP is refused with a clear message and the 18:00 job does nothing and
   records why. Built in phase 5A (#138); MSP mail handling and forwarding is 5B (#139).
+- *Built (5D, #150):* sending a Major Incident or Problem can also mark its linked tickets With MSP (status only; their requesters told) and tell the MSP when IT resolves, closes or takes back a ticket that was sent to them (admin template `msp_no_longer_needed`, in the handoff's thread); a With MSP ticket has a Take back from MSP button. Details and decisions: `docs/build-plan.md`.
 - Escalating to the MSP was blocked until this handoff was built (decided 22 Oct 2026); testing will use nuisance tickets with the MSP. Not a risk.
 - "Send to MSP" button on any ticket. It is the same action as escalating to the MSP
   and the button may carry either label.

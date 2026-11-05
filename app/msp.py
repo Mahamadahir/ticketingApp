@@ -97,6 +97,8 @@ EVENT_MSP_HOLD_RELEASED = "msp_hold_released"
 EVENT_MSP_MAIL = "msp_mail_received"  # to_value: not_needed (the user was on it) or pending (they were left off)
 EVENT_MSP_FORWARDED = "msp_forwarded"  # to_value: agent or automatic (the reporting data: manual against automatic)
 EVENT_MSP_FORWARD_DISMISSED = "msp_forward_dismissed"
+EVENT_MSP_TOLD = "msp_told_no_longer_needed"  # to_value: resolved, closed or taken_back (app/msp_actions.py)
+EVENT_MSP_NOT_TOLD = "msp_not_told"  # the agent unticked the box: the MSP may have finished it themselves (app/msp_actions.py)
 EVENT_MSP_ACKNOWLEDGED = "msp_acknowledged"  # to_value: the MSP's ticket number
 
 # Message.msp_forward values.
@@ -147,6 +149,20 @@ class MspPreview:
 
 def msp_address(session: Session) -> str:
     return get_setting(session, MSP_ADDRESS).strip().lower()
+
+
+def usable_msp_address(session: Session) -> str:
+    """The MSP address, or "" when there is none or it is the shared mailbox itself (an email to it would loop)."""
+    address = msp_address(session)
+    return "" if address == settings.graph_shared_mailbox.strip().lower() else address
+
+
+def msp_cc(session: Session, ticket: Ticket, address: str, actor: Optional[User]) -> list[str]:
+    """Who is copied on an email to the MSP about this ticket: its internal followers, and whoever is acting."""
+    cc = [f.email for f in followers_of(session, ticket) if f.is_internal and f.email != address]
+    if actor is not None and actor.email not in cc:
+        cc.append(actor.email)
+    return cc
 
 
 def check_can_send(session: Session, ticket: Ticket) -> str:
@@ -303,9 +319,7 @@ def compose(
         "conversation": _conversation(session, ticket, scope, zone),
         "attachments": attachment_text,
     }
-    cc = [f.email for f in followers_of(session, ticket) if f.is_internal and f.email != address]
-    if actor is not None and actor.email not in cc:
-        cc.append(actor.email)  # whoever sends it is copied, as an escalator is on every message
+    cc = msp_cc(session, ticket, address, actor)  # whoever sends it is copied, as an escalator is on every message
     return MspPreview(
         to=address, cc=cc, subject=mail_subject(session, ticket),
         body=render_template(session, "msp_handoff", values).body, scope=scope,
@@ -955,6 +969,14 @@ def alert_unacknowledged(session: Session, now: Optional[datetime] = None) -> in
             ).limit(1)
         ).first()
         if acknowledged is not None:
+            continue
+        finished_with = session.exec(  # IT told the MSP it was no longer needed, or chose not to: nothing to chase
+            select(TicketEvent.id).where(
+                TicketEvent.ticket_id == ticket.id, TicketEvent.event_type.in_((EVENT_MSP_TOLD, EVENT_MSP_NOT_TOLD)),
+                TicketEvent.created_at >= queued_at,
+            ).limit(1)
+        ).first()
+        if finished_with is not None:
             continue
         if notify_msp_unacknowledged(session, ticket):  # nobody to tell (or all muted): try again at the next run
             ticket.msp_ack_alerted_at = now

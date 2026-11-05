@@ -731,7 +731,7 @@ class OutboundEmail(SQLModel, table=True):
     )
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    kind: str  # reply, notice, raised_for_you, approval, approval_reminder, approval_withdrawn, approval_overdue, acknowledgement, follower_update, chase, msp_handoff, msp_forward
+    kind: str  # reply, notice, raised_for_you, approval, approval_reminder, approval_withdrawn, approval_overdue, acknowledgement, follower_update, chase, msp_handoff, msp_release, msp_forward
     ticket_id: int = Field(foreign_key="ticket.id", index=True)
     # For a reply or notice: the message it carries. Unique, so one message can never be emailed twice.
     message_id: Optional[int] = Field(default=None, foreign_key="message.id", unique=True)

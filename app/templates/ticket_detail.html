@@ -373,6 +373,17 @@
     {% endif %}
   </details>
 
+  {% if can_take_back_from_msp %}
+  <details>
+    <summary>Take back from MSP</summary>
+    <form hx-post="/tickets/{{ ticket.number }}/take-back-from-msp/preview" hx-target="#take-back-preview" hx-swap="innerHTML">
+      <p class="note">Moves the ticket to In progress (or Open if nobody is assigned). You can tell the MSP it is no longer needed.</p>
+      <button type="submit">Preview</button>
+    </form>
+    <div id="take-back-preview"></div>
+  </details>
+  {% endif %}
+
   {% if ticket.msp_hold %}
   <form hx-post="/tickets/{{ ticket.number }}/msp-hold/release" hx-target="main" hx-swap="innerHTML">
     <p class="note"><b>On hold:</b> kept out of the automatic MSP handoff until someone releases it.</p>
@@ -524,8 +535,8 @@
   <div class="event">
     {% if item.source %}<span class="note">[{{ item.source.reference }} {{ item.source.subject }}]</span>{% endif %}
     {{ event.created_at|local_time }} &middot;
-    {{ event.event_type.replace("_", " ") }}
-    {% if event.from_value or event.to_value %}: {{ event.from_value or "none" }}{% if event.event_type == "backdated" and event.from_value %} UTC{% endif %} &rarr; {{ event.to_value or "none" }}{% if event.event_type == "backdated" and event.to_value %} UTC{% endif %}{% endif %}
+    {% if event.event_type == "with_msp_through" %}With the MSP through {{ event.to_value }}{% else %}{{ event.event_type.replace("_", " ") }}{% endif %}
+    {% if event.event_type != "with_msp_through" and (event.from_value or event.to_value) %}: {{ event.from_value or "none" }}{% if event.event_type == "backdated" and event.from_value %} UTC{% endif %} &rarr; {{ event.to_value or "none" }}{% if event.event_type == "backdated" and event.to_value %} UTC{% endif %}{% endif %}
     {% if event.detail %} ({{ event.detail }}){% endif %}
     &middot; {{ event.actor_email or "system" }}
   </div>

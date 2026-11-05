@@ -78,10 +78,12 @@ def preview_closing(
 
 
 def close_ticket(
-    session: Session, ticket: Ticket, actor: User, notes: str, *, cc_emails: Optional[list[str]] = None
+    session: Session, ticket: Ticket, actor: User, notes: str, *, cc_emails: Optional[list[str]] = None,
+    tell_msp: Optional[bool] = None, take_back_linked: bool = False,
 ) -> None:
     """Closes the ticket: stores the notes and who closed it, moves it to Closed, writes the status event
-    and the audit entry, and queues the closed email (an agent's email, so it counts as a response)."""
+    and the audit entry, and queues the closed email (an agent's email, so it counts as a response). tell_msp and take_back_linked are the
+    preview's tick boxes about the MSP (app/msp_actions.py)."""
     notes = clean_closing_notes(notes)
     # A double submit or two agents at once: the second waits, re-reads the ticket and is refused as already closed.
     if ticket.split_from_id is not None:
@@ -94,6 +96,10 @@ def close_ticket(
     preview_email(session, ticket, body, cc_emails=cc_emails)
 
     previous = ticket.status
+    # Imported here: app.msp_actions builds on app.msp, which builds on app.mail, which imports this module.
+    from app.msp_actions import OUTCOME_CLOSED, finish_with_msp
+
+    finish_with_msp(session, ticket, actor, OUTCOME_CLOSED, tell_msp=tell_msp, take_back_linked_too=take_back_linked)
     ticket.resolution_notes = notes
     ticket.resolved_by_id = actor.id
     set_status(session, ticket, TicketStatus.CLOSED, actor.email)

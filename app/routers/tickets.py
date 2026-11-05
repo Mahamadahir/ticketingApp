@@ -38,6 +38,17 @@ from app.msp import (
     release_hold,
     send_to_msp,
 )
+from app.msp_actions import (
+    OUTCOME_CLOSED,
+    OUTCOME_RESOLVED,
+    OUTCOME_TAKEN_BACK,
+    check_can_take_back,
+    compose_release,
+    linked_to_mark,
+    linked_with_msp_through,
+    send_with_linked,
+    take_back as take_back_from_msp,
+)
 from app.escalation import EscalationError, escalate_ticket as escalate, escalation_target, escalators_of
 from app.raising import source_label
 from app.request_questions import QuestionError, answer_rows, form_rows, save_answers
@@ -907,6 +918,21 @@ def change_status(
     return _render_ticket_detail(request, ticket, user, session)
 
 
+def _tell_msp(ticked: Optional[str], offered: Optional[str]) -> Optional[bool]:
+    """The tick box about telling the MSP: True ticked, False shown and unticked (the form says it was shown), None never shown."""
+    return True if ticked else (False if offered else None)
+
+
+def _msp_offer(session: Session, ticket: Ticket, user: User, outcome: str) -> dict:
+    """What a resolve, close or take-back preview offers about the MSP (app/msp_actions.py): the "no longer needed" email, and the
+    linked tickets that are With MSP through this one. Each is ticked by default in the preview."""
+    return {
+        "msp_release": compose_release(session, ticket, outcome, user),
+        "msp_linked": linked_with_msp_through(session, ticket, user),
+        "msp_outcome": outcome,
+    }
+
+
 @router.post("/{number}/resolve/preview", response_class=HTMLResponse)
 def preview_resolve(
     number: int,
@@ -935,6 +961,7 @@ def preview_resolve(
             "notes": resolution_notes.strip(),
             "cc_form": bool(cc_form),
             "ticked": cc,
+            **_msp_offer(session, ticket, user, OUTCOME_RESOLVED),
         },
     )
 
@@ -946,14 +973,21 @@ def resolve(
     resolution_notes: str = Form("", max_length=MAX_MESSAGE_LENGTH + 1000),
     cc_form: Optional[str] = Form(None),
     cc: list[str] = Form(default=[]),
+    tell_msp: Optional[str] = Form(None),
+    msp_offered: Optional[str] = Form(None),
+    take_back_linked: Optional[str] = Form(None),
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
     """Resolve the ticket with notes (required). Emails the requester, copying the followers the
-    agent left ticked, through app/resolution.py."""
+    agent left ticked, through app/resolution.py. The two MSP tick boxes of the preview (tell the MSP it is no
+    longer needed; take back the linked tickets that went With MSP with this one) are app/msp_actions.py's."""
     ticket = _get_ticket(session, number, user)
     try:
-        resolve_ticket(session, ticket, user, resolution_notes, cc_emails=cc if cc_form else None)
+        resolve_ticket(
+            session, ticket, user, resolution_notes, cc_emails=cc if cc_form else None,
+            tell_msp=_tell_msp(tell_msp, msp_offered), take_back_linked=bool(take_back_linked),
+        )
     except ResolveError as error:
         session.rollback()
         raise HTTPException(status_code=400, detail=str(error))
@@ -987,7 +1021,10 @@ def preview_close(
     return templates.TemplateResponse(
         request,
         "_close_preview.html",
-        {"ticket": ticket, "preview": preview, "notes": closing_notes.strip(), "cc_form": bool(cc_form), "ticked": cc},
+        {
+            "ticket": ticket, "preview": preview, "notes": closing_notes.strip(), "cc_form": bool(cc_form), "ticked": cc,
+            **_msp_offer(session, ticket, user, OUTCOME_CLOSED),
+        },
     )
 
 
@@ -998,14 +1035,20 @@ def close(
     closing_notes: str = Form("", max_length=MAX_MESSAGE_LENGTH + 1000),
     cc_form: Optional[str] = Form(None),
     cc: list[str] = Form(default=[]),
+    tell_msp: Optional[str] = Form(None),
+    msp_offered: Optional[str] = Form(None),
+    take_back_linked: Optional[str] = Form(None),
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
     """Close a ticket that was not resolved, with notes (required). Emails the requester, copying the
-    followers the agent left ticked, through app/closing.py."""
+    followers the agent left ticked, through app/closing.py. The MSP tick boxes are as for resolving."""
     ticket = _get_ticket(session, number, user)
     try:
-        close_ticket(session, ticket, user, closing_notes, cc_emails=cc if cc_form else None)
+        close_ticket(
+            session, ticket, user, closing_notes, cc_emails=cc if cc_form else None,
+            tell_msp=_tell_msp(tell_msp, msp_offered), take_back_linked=bool(take_back_linked),
+        )
     except CloseError as error:
         session.rollback()
         raise HTTPException(status_code=400, detail=str(error))
@@ -1162,8 +1205,9 @@ def preview_send_to_msp(
         preview = compose_msp(session, ticket, scope=scope, reason=reason, actor=user)
     except MspError as error:
         raise HTTPException(status_code=400, detail=str(error))
+    linked = linked_to_mark(session, ticket, user)
     return templates.TemplateResponse(
-        request, "_msp_preview.html", {"ticket": ticket, "preview": preview, "reason": reason.strip()}
+        request, "_msp_preview.html", {"ticket": ticket, "preview": preview, "reason": reason.strip(), "linked": linked}
     )
 
 
@@ -1174,14 +1218,69 @@ def send_ticket_to_msp(
     reason: str = Form("", max_length=MAX_MESSAGE_LENGTH),
     scope: str = Form("thread", max_length=20),
     digest: Optional[str] = Form(None, max_length=64),
+    mark_linked: Optional[str] = Form(None),
+    tell_linked_requesters: Optional[str] = Form(None),
+    linked_digest: Optional[str] = Form(None, max_length=64),
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
     """Sends the ticket to the MSP (the same action as escalating to an MSP-target category), with a reason.
-    The ticket stays in its team, With MSP."""
+    The ticket stays in its team, With MSP. For a Major Incident or Problem the preview's two boxes mark the linked tickets
+    With MSP and tell their requesters (app/msp_actions.py); `linked_digest` fingerprints the list the preview showed."""
     ticket = _get_ticket(session, number, user)
     try:
-        send_to_msp(session, ticket, user, reason, scope, expect_digest=digest)
+        send_with_linked(
+            session, ticket, user, reason, scope, expect_digest=digest, mark_linked_too=bool(mark_linked),
+            tell_requesters=bool(tell_linked_requesters), expect_linked_digest=linked_digest,
+        )
+    except MspError as error:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(error))
+    session.commit()
+    session.refresh(ticket)
+    return _render_ticket_detail(request, ticket, user, session)
+
+
+@router.post("/{number}/take-back-from-msp/preview", response_class=HTMLResponse)
+def preview_take_back(
+    number: int,
+    request: Request,
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """The step before taking a ticket back from the MSP: where it goes, the "no longer needed" email to the MSP
+    (ticked by default) and the linked tickets that went With MSP with it. Records and sends nothing."""
+    ticket = _get_ticket(session, number, user)
+    try:
+        check_can_take_back(session, ticket)
+    except MspError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    return templates.TemplateResponse(
+        request, "_msp_take_back_preview.html",
+        {
+            "ticket": ticket, "goes_to": "In progress" if ticket.assigned_agent_id is not None else "Open",
+            **_msp_offer(session, ticket, user, OUTCOME_TAKEN_BACK),
+        },
+    )
+
+
+@router.post("/{number}/take-back-from-msp", response_class=HTMLResponse)
+def take_back_from_msp_route(
+    number: int,
+    request: Request,
+    tell_msp: Optional[str] = Form(None),
+    msp_offered: Optional[str] = Form(None),
+    take_back_linked: Optional[str] = Form(None),
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """Takes a With MSP ticket back: In progress if it is assigned, else Open. As ticked, tells the MSP it is no longer
+    needed and takes back the linked tickets that went With MSP with it."""
+    ticket = _get_ticket(session, number, user)
+    try:
+        take_back_from_msp(
+            session, ticket, user, tell_msp=_tell_msp(tell_msp, msp_offered), take_back_linked_too=bool(take_back_linked)
+        )
     except MspError as error:
         session.rollback()
         raise HTTPException(status_code=400, detail=str(error))
@@ -1520,6 +1619,7 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             "escalation_is_msp": escalation_is_msp,
             "msp_blocked": msp_blocked,
             "msp_pending": pending_forwards(session, ticket) if can_work else [],
+            "can_take_back_from_msp": can_work and ticket.status == TicketStatus.WITH_MSP and not has_sub_tickets(session, ticket),
             "can_hold": can_work and may_hold(ticket, user),
             "can_release_hold": can_work and ticket.msp_hold,
             "timeline": timeline,

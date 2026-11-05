@@ -1,0 +1,11 @@
+<div class="email-preview">
+  <h3>Check before taking it back from the MSP</h3>
+  <p class="note">
+    {{ ticket.reference }} moves to {{ goes_to }}{% if goes_to == "Open" %} (nobody is assigned){% endif %}, with an event and an audit entry. It stays in its team.
+  </p>
+  <form hx-post="/tickets/{{ ticket.number }}/take-back-from-msp" hx-target="main" hx-swap="innerHTML" hx-disabled-elt="find button[type=submit]">
+    {% include "_msp_release_offer.html" %}
+    <button type="submit">Take back from the MSP</button>
+    <button type="button" class="button-outline" hx-on:click="document.getElementById('take-back-preview').innerHTML = ''">Keep editing</button>
+  </form>
+</div>

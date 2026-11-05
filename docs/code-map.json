@@ -358,6 +358,7 @@
         "app.escalation",
         "app.inbound",
         "app.msp",
+        "app.msp_actions",
         "app.notification_settings",
         "app.reopening",
         "app.request_types",
@@ -512,6 +513,7 @@
       "imports": [
         "app.messages",
         "app.models",
+        "app.msp_actions",
         "app.resolution",
         "app.settings_store",
         "app.splitting",
@@ -634,6 +636,7 @@
         "app.forms",
         "app.messages",
         "app.models",
+        "app.msp_actions",
         "app.notifications",
         "app.splitting",
         "app.ticket_service"
@@ -700,6 +703,7 @@
         "tests/test_inbound_mail.py",
         "tests/test_mail_subscriptions.py",
         "tests/test_msp.py",
+        "tests/test_msp_actions.py",
         "tests/test_msp_mail.py",
         "tests/test_msp_real_mail.py",
         "tests/test_outbound_mail.py",
@@ -828,6 +832,7 @@
         "app.closing",
         "app.mail",
         "app.msp",
+        "app.msp_actions",
         "app.resolution",
         "app.routers.admin"
       ],
@@ -845,6 +850,7 @@
         "tests/test_closing_email.py",
         "tests/test_email_templates.py",
         "tests/test_follower_updates.py",
+        "tests/test_msp_actions.py",
         "tests/test_resolution.py"
       ]
     },
@@ -1190,6 +1196,7 @@
         "unlink_ticket"
       ],
       "imported_by": [
+        "app.msp_actions",
         "app.routers.tickets"
       ],
       "imports": [
@@ -1243,6 +1250,7 @@
         "build_message_mail",
         "build_msp_forward_mail",
         "build_msp_handoff_mail",
+        "build_msp_release_mail",
         "build_raised_for_mail",
         "cap_release",
         "deliver_mail",
@@ -1292,6 +1300,7 @@
         "tests/test_email_templates.py",
         "tests/test_follower_updates.py",
         "tests/test_msp.py",
+        "tests/test_msp_actions.py",
         "tests/test_msp_mail.py",
         "tests/test_outbound_mail.py",
         "tests/test_reopening.py",
@@ -1390,6 +1399,7 @@
         "app.inbound",
         "app.mail",
         "app.msp",
+        "app.msp_actions",
         "app.raising",
         "app.reopening",
         "app.resolution",
@@ -1515,6 +1525,7 @@
         "app.main",
         "app.messages",
         "app.msp",
+        "app.msp_actions",
         "app.never_follow",
         "app.notification_settings",
         "app.notifications",
@@ -1768,6 +1779,7 @@
         "tests/test_mail_subscriptions.py",
         "tests/test_messages.py",
         "tests/test_msp.py",
+        "tests/test_msp_actions.py",
         "tests/test_msp_mail.py",
         "tests/test_msp_real_mail.py",
         "tests/test_never_follow.py",
@@ -1844,6 +1856,7 @@
         "link_unmatched",
         "may_hold",
         "msp_address",
+        "msp_cc",
         "park_unmatched",
         "parse_subject",
         "pending_forwards",
@@ -1858,11 +1871,13 @@
         "sent_to_msp",
         "ticket_by_msp_number",
         "ticket_of_acknowledgement",
-        "unmatched_query"
+        "unmatched_query",
+        "usable_msp_address"
       ],
       "imported_by": [
         "app.escalation",
         "app.inbound",
+        "app.msp_actions",
         "app.routers.admin",
         "app.routers.msp_mail",
         "app.routers.tickets",
@@ -1891,8 +1906,55 @@
       "tables": [],
       "tests": [
         "tests/test_msp.py",
+        "tests/test_msp_actions.py",
         "tests/test_msp_mail.py",
         "tests/test_msp_real_mail.py"
+      ]
+    },
+    {
+      "classes": [
+        "LinkedPlan",
+        "ReleasePreview"
+      ],
+      "file": "app/msp_actions.py",
+      "functions": [
+        "check_can_take_back",
+        "compose_release",
+        "finish_with_msp",
+        "ids_digest",
+        "linked_to_mark",
+        "linked_with_msp_through",
+        "mark_linked",
+        "msp_may_hold",
+        "release_msp",
+        "send_with_linked",
+        "take_back",
+        "take_back_linked"
+      ],
+      "imported_by": [
+        "app.bulk_resolve",
+        "app.closing",
+        "app.resolution",
+        "app.routers.tickets"
+      ],
+      "imports": [
+        "app.audit",
+        "app.email_templates",
+        "app.linking",
+        "app.messages",
+        "app.models",
+        "app.msp",
+        "app.outbox",
+        "app.splitting",
+        "app.ticket_service",
+        "app.visibility"
+      ],
+      "module": "app.msp_actions",
+      "routes": [],
+      "summary": "What an agent does about the MSP besides sending a ticket (issue #150). Nothing here commits.",
+      "tables": [],
+      "tests": [
+        "tests/test_msp_actions.py"
       ]
     },
     {
@@ -2068,6 +2130,7 @@
         "queue_message",
         "queue_msp_forward",
         "queue_msp_handoff",
+        "queue_msp_release",
         "queue_raised_for"
       ],
       "imported_by": [
@@ -2079,6 +2142,7 @@
         "app.mail",
         "app.messages",
         "app.msp",
+        "app.msp_actions",
         "app.raising"
       ],
       "imports": [
@@ -2455,6 +2519,7 @@
         "app.forms",
         "app.messages",
         "app.models",
+        "app.msp_actions",
         "app.notifications",
         "app.splitting",
         "app.ticket_service"
@@ -2467,6 +2532,7 @@
         "tests/test_auto_close_chase.py",
         "tests/test_bulk_resolve.py",
         "tests/test_msp.py",
+        "tests/test_msp_actions.py",
         "tests/test_reopening.py",
         "tests/test_resolution.py"
       ]
@@ -3464,6 +3530,7 @@
         "preview_msp_forward",
         "preview_resolve",
         "preview_send_to_msp",
+        "preview_take_back",
         "reassign",
         "reclose",
         "remove_ticket_follower",
@@ -3471,6 +3538,7 @@
         "resolve",
         "send_ticket_to_msp",
         "split",
+        "take_back_from_msp_route",
         "team_activity",
         "triage",
         "triage_dates",
@@ -3500,6 +3568,7 @@
         "app.messages",
         "app.models",
         "app.msp",
+        "app.msp_actions",
         "app.notifications",
         "app.pagination",
         "app.presence",
@@ -3719,6 +3788,16 @@
           "path": "/tickets/{number}/status"
         },
         {
+          "handler": "take_back_from_msp_route",
+          "method": "POST",
+          "path": "/tickets/{number}/take-back-from-msp"
+        },
+        {
+          "handler": "preview_take_back",
+          "method": "POST",
+          "path": "/tickets/{number}/take-back-from-msp/preview"
+        },
+        {
           "handler": "triage",
           "method": "POST",
           "path": "/tickets/{number}/triage"
@@ -3889,6 +3968,7 @@
         "tests/test_inbound_mail.py",
         "tests/test_mail_subscriptions.py",
         "tests/test_msp.py",
+        "tests/test_msp_actions.py",
         "tests/test_msp_mail.py",
         "tests/test_msp_real_mail.py",
         "tests/test_never_follow.py",
@@ -3991,6 +4071,7 @@
         "app.inbound",
         "app.messages",
         "app.msp",
+        "app.msp_actions",
         "app.reopening",
         "app.resolution",
         "app.routers.bulk_resolve",
@@ -4353,6 +4434,7 @@
         "app.linking",
         "app.messages",
         "app.msp",
+        "app.msp_actions",
         "app.raising",
         "app.reopening",
         "app.request_questions",
@@ -4537,6 +4619,7 @@
         "app.feedback",
         "app.main",
         "app.messages",
+        "app.msp_actions",
         "app.notifications",
         "app.routers.attachments",
         "app.routers.bulk_resolve",
@@ -4997,6 +5080,7 @@
     "tests/test_messages.py",
     "tests/test_migrations_env.py",
     "tests/test_msp.py",
+    "tests/test_msp_actions.py",
     "tests/test_msp_mail.py",
     "tests/test_msp_real_mail.py",
     "tests/test_never_follow.py",
