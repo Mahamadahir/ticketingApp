@@ -45,7 +45,6 @@ from app.models import (
     UserRole,
 )
 from app.notifications import notify_subrequests_created
-from app.presence import is_out_of_office
 from app.request_questions import answers_of, clean_value, display_value, questions_for, QuestionError
 from app.required_by import sub_request_due
 from app.sla import Level, recalculate_deadlines
@@ -473,13 +472,14 @@ def _make(session: Session, original: Ticket, template: RequestSubTemplate, subj
 
 
 def _assignee(session: Session, template: RequestSubTemplate, parent: Ticket, sub: Ticket) -> Optional[User]:
-    """The named agent, or the parent's assignee when the template says so, if they are active, not out of office and
-    work the sub-request's team; otherwise None, which leaves it unassigned in the team's queue."""
+    """The named agent, or the parent's assignee when the template says so, if they are active and work the
+    sub-request's team; otherwise None, which leaves it unassigned in the team's queue. Out of office is a label, never
+    a block (decision of 20 Oct 2026, confirmed in #151), so it is not asked."""
     person_id = template.assignee_id if template.assignee_id is not None else (
         parent.assigned_agent_id if template.assign_to_parent_assignee else None
     )
     person = session.get(User, person_id) if person_id is not None else None
-    if person is None or not person.is_active or is_out_of_office(person):
+    if person is None or not person.is_active:
         return None
     return person if person.id in {m.id for m in team_members(session, sub.team_id)} else None
 

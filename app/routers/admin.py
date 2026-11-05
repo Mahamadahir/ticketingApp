@@ -18,6 +18,7 @@ from app.activity import (
     REQUEST,
     SSO_FAILED,
 )
+from app.bank_holidays import REGIONS as BANK_HOLIDAY_REGIONS
 from app.audit import log_action
 from app.auth import hash_password, require_permission, require_roles
 from app.permissions import ASSIGNABLE_ROLES, MANAGE_REQUEST_TEMPLATES, PERMISSIONS
@@ -1585,6 +1586,8 @@ def save_setting(
             value = ", ".join(d.isoformat() for d in sorted(set(parse_dates(value))))
         except ValueError:
             raise HTTPException(status_code=400, detail="Enter dates like 2026-12-25, separated by commas or spaces")
+    if definition.kind == "region" and value not in BANK_HOLIDAY_REGIONS:
+        raise HTTPException(status_code=400, detail="Choose england-and-wales, scotland or northern-ireland")
     if definition.kind == "team" and value:
         if not (value.isascii() and value.isdigit()) or session.get(Team, int(value)) is None:
             raise HTTPException(status_code=400, detail="That team does not exist")

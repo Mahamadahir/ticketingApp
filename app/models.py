@@ -971,3 +971,13 @@ def _prepare_new_ticket(mapper, connection, ticket: Ticket) -> None:
         ticket.number = allocate_number(connection)
     if ticket.status != TicketStatus.NEW and ticket.triaged_at is None:
         ticket.triaged_at = datetime.now(timezone.utc)
+
+
+class BankHolidayCache(SQLModel, table=True):
+    """The gov.uk bank holidays last fetched for one region (app/bank_holidays.py), so the business-day maths reads
+    the database and never the network. `dates` is ISO dates separated by commas. A failed fetch leaves the row alone;
+    `fetched_at` is the last good fetch, and how stale it is says how long fetching has been failing."""
+
+    region: str = Field(primary_key=True)
+    dates: str = Field(default="")
+    fetched_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

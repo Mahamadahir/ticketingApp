@@ -15,7 +15,7 @@ from app.models import Setting
 class SettingDef:
     key: str
     label: str
-    kind: str  # "team": a team id, empty for none; "minutes": a whole number; "percent": 1 to 99; "vote_percent": 1 to 100; "flag": on or off; "count": a whole number, 1 to 1000; "hour": a whole number, 0 to 23; "clock": a time of day written 09:00 or 17:30; "time_zone": an IANA time zone name, blank for the default; "email": one email address, blank for none; "dates": a list of dates (2026-12-25, separated by commas or spaces), blank for none; "off_minutes": a whole number of minutes, 0 is off; "regex": a regular expression with the named groups the setting says
+    kind: str  # "team": a team id, empty for none; "minutes": a whole number; "percent": 1 to 99; "vote_percent": 1 to 100; "flag": on or off; "count": a whole number, 1 to 1000; "hour": a whole number, 0 to 23; "clock": a time of day written 09:00 or 17:30; "time_zone": an IANA time zone name, blank for the default; "email": one email address, blank for none; "region": one of england-and-wales, scotland, northern-ireland; "dates": a list of dates (2026-12-25, separated by commas or spaces), blank for none; "off_minutes": a whole number of minutes, 0 is off; "regex": a regular expression with the named groups the setting says
     description: str
     default: str = ""
 
@@ -63,6 +63,9 @@ MSP_ADDRESS = "msp_address"
 MSP_HANDOFF_HOUR = "msp_handoff_hour"
 MSP_BUSINESS_MORNING_HOUR = "msp_business_morning_hour"
 MSP_BANK_HOLIDAYS = "msp_bank_holidays"
+BANK_HOLIDAY_REGION = "bank_holiday_region"
+BANK_HOLIDAY_FAIL_DAYS = "bank_holiday_fail_days"
+MSP_HANDOFF_WARN_MINUTES = "msp_handoff_warn_minutes"
 MSP_BUSINESS_START = "msp_business_start"
 MSP_BUSINESS_END = "msp_business_end"
 MSP_ATTACH_MAX_MB = "msp_attach_max_mb"
@@ -473,6 +476,37 @@ REGISTRY: dict[str, SettingDef] = {
             "automatic MSP handoff. Blank means none. Kept here until a holiday calendar is wired in."
         ),
         default="",
+    ),
+    BANK_HOLIDAY_REGION: SettingDef(
+        key=BANK_HOLIDAY_REGION,
+        label="Bank holidays: gov.uk region",
+        kind="region",
+        description=(
+            "Which gov.uk bank holidays count as non-business days: england-and-wales, scotland or northern-ireland. "
+            "A daily job fetches them (the business-day maths never calls gov.uk). The typed list above still adds "
+            "extra closure days."
+        ),
+        default="england-and-wales",
+    ),
+    BANK_HOLIDAY_FAIL_DAYS: SettingDef(
+        key=BANK_HOLIDAY_FAIL_DAYS,
+        label="Bank holidays: fail the fetch job after this many days without a good fetch",
+        kind="count",
+        description=(
+            "A failed fetch keeps the last good list. Once the last good fetch is older than this many days the job "
+            "shows as failed on Admin > Recurring jobs. Placeholder."
+        ),
+        default="3",
+    ),
+    MSP_HANDOFF_WARN_MINUTES: SettingDef(
+        key=MSP_HANDOFF_WARN_MINUTES,
+        label="MSP: warn the assignee this many minutes before the automatic handoff",
+        kind="off_minutes",
+        description=(
+            "On a handoff day, this long before the handoff hour each assignee of a ticket that would be handed off "
+            "tonight gets a bell entry saying so (Hold keeps it). 0 turns the warning off. Placeholder."
+        ),
+        default="30",
     ),
     MSP_BUSINESS_START: SettingDef(
         key=MSP_BUSINESS_START,

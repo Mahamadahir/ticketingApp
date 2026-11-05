@@ -62,7 +62,8 @@ from app.models import (
     TicketStatus,
     User,
 )
-from app.notifications import notify_mentions, notify_msp_unacknowledged
+from app.bank_holidays import cached_holidays
+from app.notifications import notify_mentions, notify_msp_handed_off, notify_msp_handoff_warning, notify_msp_unacknowledged
 from app.outbox import MSP_HANDOFF, is_on, queue_msp_forward, queue_msp_handoff
 from app.settings_store import (
     MSP_ACK_ALERT_MINUTES,
@@ -74,6 +75,7 @@ from app.settings_store import (
     MSP_BUSINESS_MORNING_HOUR,
     MSP_BUSINESS_START,
     MSP_HANDOFF_HOUR,
+    MSP_HANDOFF_WARN_MINUTES,
     MSP_SUBJECT_PATTERN,
     MSP_SUBJECT_PATTERN_DEFAULT,
     REGISTRY,
@@ -439,10 +441,13 @@ def _handoff_hour(session: Session) -> int:
 
 
 def _holidays(session: Session) -> frozenset:
+    """Every day with no business: the gov.uk bank holidays cached for the region (app/bank_holidays.py, never the
+    network) and the typed list of extra closure days. The one place business-day maths gets its holidays."""
     try:
-        return frozenset(parse_dates(get_setting(session, MSP_BANK_HOLIDAYS)))
+        typed = frozenset(parse_dates(get_setting(session, MSP_BANK_HOLIDAYS)))
     except ValueError:
-        return frozenset()  # a bad stored value must not stop the handoff; the settings page validates what it saves
+        typed = frozenset()  # a bad stored value must not stop the handoff; the settings page validates what it saves
+    return typed | cached_holidays(session)
 
 
 def handoff_window(session: Session, now: datetime) -> Optional[tuple[datetime, datetime]]:
@@ -506,7 +511,7 @@ def _record_skip(session: Session, start: datetime, why: str) -> None:
         log.warning("MSP handoff skipped: %s", why)
 
 
-def _hand_off_one(session: Session, ticket_id: int, start: datetime, end: datetime) -> bool:
+def _hand_off_one(session: Session, ticket_id: int, start: datetime, end: datetime, now: datetime) -> bool:
     ticket = session.exec(
         select(Ticket).where(Ticket.id == ticket_id).with_for_update(skip_locked=True).execution_options(populate_existing=True)
     ).first()
@@ -514,6 +519,7 @@ def _hand_off_one(session: Session, ticket_id: int, start: datetime, end: dateti
     if ticket is None or not _eligible(session, ticket, start, end):
         return False
     send_to_msp(session, ticket, None, "")
+    notify_msp_handed_off(session, ticket, _local_clock(session, now))
     return True
 
 
@@ -536,7 +542,7 @@ def hand_off_due_tickets(session: Session, now: Optional[datetime] = None) -> in
     for ticket_id in _handoff_candidates(session, start, end):
         try:
             with session.begin_nested():
-                sent += _hand_off_one(session, ticket_id, start, end)
+                sent += _hand_off_one(session, ticket_id, start, end, now)
         except Exception:
             log.exception("MSP handoff skipped ticket %s", ticket_id)
     if sent:
@@ -544,8 +550,40 @@ def hand_off_due_tickets(session: Session, now: Optional[datetime] = None) -> in
     return sent
 
 
+def _local_clock(session: Session, moment: datetime) -> str:
+    return moment.astimezone(ZoneInfo(default_zone(session))).strftime("%H:%M")
+
+
+def warn_before_handoff(session: Session, now: Optional[datetime] = None) -> int:
+    """Tonight's warning (#151): from the `msp_handoff_warn_minutes` setting (0 is off) before the handoff hour, each
+    assignee of a ticket that would be handed off at that hour is told, once for each ticket and person each night.
+    "Would be" is `_eligible`, the same function the job uses, asked now against the window the handoff will have
+    (nothing is warned about when no MSP address is set or mail is off, because the job would send nothing). Hold is
+    the way to cancel it. The job runs every five minutes, so a warning shorter than that may be missed. Returns how
+    many bell entries were written. Does not commit."""
+    now = now or datetime.now(timezone.utc)
+    minutes = get_int_setting(session, MSP_HANDOFF_WARN_MINUTES)
+    minutes = int(REGISTRY[MSP_HANDOFF_WARN_MINUTES].default) if minutes is None else minutes
+    if minutes <= 0 or not msp_address(session) or not is_on():
+        return 0
+    zone = default_zone(session)
+    hour = _handoff_hour(session)
+    start = morning_of(now.astimezone(ZoneInfo(zone)).date(), zone, hour)  # tonight's handoff moment
+    warn_from = start - timedelta(minutes=minutes)
+    if not warn_from <= now < start:
+        return 0
+    end = next_business_morning(start, zone, _hour(session, MSP_BUSINESS_MORNING_HOUR), _holidays(session))
+    label, told = _handoff_label(session), 0
+    for ticket_id in _handoff_candidates(session, start, end):
+        ticket = session.get(Ticket, ticket_id)
+        if ticket is not None and _eligible(session, ticket, start, end):
+            told += notify_msp_handoff_warning(session, ticket, label, warn_from) is not None
+    return told
+
+
 def run_msp_handoff(session: Session) -> None:
-    """The recurring job (registered in app/scheduled_jobs.py)."""
+    """The recurring job (registered in app/scheduled_jobs.py): the evening warning, then the handoff itself."""
+    warn_before_handoff(session)
     hand_off_due_tickets(session)
 
 
