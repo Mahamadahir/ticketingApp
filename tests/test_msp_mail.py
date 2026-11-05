@@ -244,6 +244,7 @@ def test_only_the_new_text_is_recorded_through_graph(db_session):
         body_full={},
     )
     graph.messages["g1"]["body"] = {"contentType": "text", "content": "Booked for Thursday.\n\n-----Original Message-----\nthe whole earlier thread"}
+    graph.messages["g1"]["internetMessageHeaders"] = [{"name": "Authentication-Results", "value": MSP_PASS}]
     result = process_message(db_session, "g1", graph)
     db_session.commit()
     assert result.outcome == REPLY_ADDED
