@@ -118,7 +118,7 @@ IGNORED_NO_SENDER = "ignored_no_sender"
 IGNORED_FLOOD = "ignored_flood"
 IGNORED_DRAFT = "ignored_draft"
 IGNORED_NEVER_FOLLOW = "ignored_never_follow"  # sent from an address on the never-follow list
-IGNORED_MSP = "ignored_msp"  # from the MSP address, but on no ticket that was sent to it, or failing the sender check
+IGNORED_MSP = "ignored_msp"  # from the MSP address but not added to a ticket: failed the sender check (audited), or matched none (kept in the unmatched list)
 HANDLED = (TICKET_CREATED, REPLY_ADDED)
 
 MSP_AUDIT_ACTION = "msp_mail_ignored"
@@ -512,25 +512,25 @@ def _ingest_msp_mail(session, mail, sender, attachments, storage, now, settle) -
     verified = trust == TRUST_PASS
     parsed = parse_msp_subject(session, mail.subject)
     ticket, how = _msp_ticket_for(session, mail, parsed)
-    if ticket is None:
+    def park() -> None:
         park_unmatched(
             session, graph_message_id=mail.graph_message_id, sender=sender, subject=_subject_of(mail), body=_body_of(mail),
             to=mail.to, cc=mail.cc, parsed=parsed, verified=verified,
         )
+
+    if ticket is None:
+        park()
         log_action(
             session, sender, "ticket", 0, MSP_AUDIT_ACTION,
             f"{_subject_of(mail)}: no ticket that was sent to the MSP, kept for an agent to link"[:MAX_AUDIT_DETAIL],
         )
         return settle(IGNORED_MSP)
-    if parsed is not None and parsed.is_acknowledgement and how != "msp-number":
+    if parsed is not None and parsed.is_acknowledgement:
         message = receive_msp_acknowledgement(
             session, ticket, sender=sender, body=_body_of(mail), number=parsed.number, learn=verified
         )
         if message is None:  # its number is already another ticket's: an agent decides
-            park_unmatched(
-                session, graph_message_id=mail.graph_message_id, sender=sender, subject=_subject_of(mail), body=_body_of(mail),
-                to=mail.to, cc=mail.cc, parsed=parsed, verified=verified,
-            )
+            park()
             return settle(IGNORED_MSP)
     else:
         message = receive_msp_mail(

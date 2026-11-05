@@ -1573,7 +1573,7 @@ def save_setting(
         raise HTTPException(status_code=404, detail="Unknown setting")
 
     value = value.strip()
-    if len(value) > 200 and definition.kind != "dates":
+    if len(value) > (500 if definition.kind == "regex" else 200) and definition.kind != "dates":
         raise HTTPException(status_code=400, detail="That is too long (200 characters at most)")
     if definition.kind == "email" and value:
         try:
@@ -1599,7 +1599,7 @@ def save_setting(
     if definition.kind == "off_minutes":
         if not (value.isascii() and value.isdigit()) or not 0 <= int(value) <= 525600:
             raise HTTPException(status_code=400, detail="Enter a whole number of minutes, 0 to 525600 (0 is off)")
-    if definition.kind == "regex":
+    if definition.kind == "regex" and value:  # blank means the default pattern
         try:
             compile_subject_pattern(value)
         except ValueError as error:

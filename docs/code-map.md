@@ -682,7 +682,7 @@ Sending a ticket to the MSP, putting it on hold, and the automatic handoff (phas
 File: `app/msp.py`
 
 - Classes: `ForwardPreview`, `MspError`, `MspPreview`, `MspSubject`
-- Functions: `alert_unacknowledged`, `attachment_plan`, `business_hours`, `check_can_send`, `compile_subject_pattern`, `compose`, `compose_forward`, `dismiss_forward`, `dismiss_unmatched`, `forward_if_out_of_hours`, `forward_message`, `forward_waiting_messages`, `hand_off_due_tickets`, `handoff_counts`, `handoff_window`, `hold_ticket`, `is_business_time`, `is_msp_sender`, `link_unmatched`, `may_hold`, `msp_address`, `open_unmatched`, `park_unmatched`, `parse_subject`, `pending_forwards`, `plan_files`, `receive_acknowledgement`, `receive_mail`, `release_hold`, `run_msp_ack_alerts`, `run_msp_forwards`, `run_msp_handoff`, `send_to_msp`, `sent_to_msp`, `ticket_by_msp_number`, `ticket_of_acknowledgement`
+- Functions: `alert_unacknowledged`, `attachment_plan`, `business_hours`, `check_can_send`, `compile_subject_pattern`, `compose`, `compose_forward`, `dismiss_forward`, `dismiss_unmatched`, `forward_if_out_of_hours`, `forward_message`, `forward_waiting_messages`, `hand_off_due_tickets`, `handoff_counts`, `handoff_window`, `hold_ticket`, `is_business_time`, `is_msp_sender`, `link_unmatched`, `may_hold`, `msp_address`, `park_unmatched`, `parse_subject`, `pending_forwards`, `plan_files`, `receive_acknowledgement`, `receive_mail`, `release_hold`, `run_msp_ack_alerts`, `run_msp_forwards`, `run_msp_handoff`, `send_to_msp`, `sent_to_msp`, `ticket_by_msp_number`, `ticket_of_acknowledgement`, `unmatched_query`
 - Imports: `app.audit`, `app.categories`, `app.config`, `app.email_templates`, `app.followers`, `app.mail`, `app.messages`, `app.models`, `app.never_follow`, `app.notifications`, `app.outbox`, `app.settings_store`, `app.splitting`, `app.ticket_service`, `app.time_zones`
 - Imported by: `app.escalation`, `app.inbound`, `app.routers.admin`, `app.routers.msp_mail`, `app.routers.tickets`, `app.scheduled_jobs`
 - Tests: `test_msp.py`, `test_msp_mail.py`, `test_msp_real_mail.py`
@@ -735,7 +735,7 @@ File: `app/pagination.py`
 - Classes: `Page`
 - Functions: `paginate`
 - Imports: none
-- Imported by: `app.feedback`, `app.routers.admin`, `app.routers.notifications`, `app.routers.portal`, `app.routers.tickets`
+- Imported by: `app.feedback`, `app.routers.admin`, `app.routers.msp_mail`, `app.routers.notifications`, `app.routers.portal`, `app.routers.tickets`
 - Tests: `test_hardening.py`, `test_pagination_and_limits.py`, `test_sla.py`
 
 ### `app.permissions`
@@ -938,7 +938,7 @@ Mail from the MSP that matched no ticket (issue #149): an agent links each item 
 File: `app/routers/msp_mail.py`
 - Functions: `dismiss_item`, `link_item`, `unmatched_list`
 - Routes: GET `/msp-mail`, POST `/msp-mail/{item_id}/dismiss`, POST `/msp-mail/{item_id}/link`
-- Imports: `app.auth`, `app.database`, `app.models`, `app.msp`, `app.notifications`, `app.templating`, `app.ticket_service`, `app.visibility`
+- Imports: `app.auth`, `app.database`, `app.models`, `app.msp`, `app.notifications`, `app.pagination`, `app.templating`, `app.ticket_service`, `app.visibility`
 - Imported by: `app.main`
 - Tests: none
 

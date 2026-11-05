@@ -583,13 +583,14 @@ def receive_mail(
     waits for an agent whatever the time. Never changes the ticket's status. Does not commit."""
     requester = ticket.requester_email.strip().lower()
     on_it = requester in {r.strip().lower() for r in recipients}
-    state = FORWARD_NOT_NEEDED if on_it else FORWARD_PENDING
+    # Mail whose sender check did not pass is never shown to the user on its own say-so, even if they were on it.
+    state = FORWARD_NOT_NEEDED if on_it and verified else FORWARD_PENDING
     message = record_msp_message(session, ticket, sender=sender, body=body, forward=state)
     message.msp_unverified = not verified
     session.flush()
     record_event(
         session, ticket, EVENT_MSP_MAIL, sender, to_value=state,
-        detail="The user was on it" if on_it else "The user was left off To and Cc",
+        detail=("The user was on it" if on_it else "The user was left off To and Cc") + ("" if verified else "; the sender was not verified, so it waits for an agent"),
     )
     log_action(session, sender, "ticket", ticket.id, "msp_mail_received", state)
     return message
@@ -787,7 +788,7 @@ def ticket_of_acknowledgement(
     rows = session.exec(
         select(OutboundEmail.ticket_id, OutboundEmail.subject).where(
             OutboundEmail.kind == MSP_HANDOFF, OutboundEmail.sent_at.is_not(None), OutboundEmail.sent_at >= since,
-            OutboundEmail.subject.is_not(None),
+            func.regexp_replace(func.btrim(OutboundEmail.subject), r"\s+", " ", "g") == " ".join(title.split()),
         )
     ).all()
     ids = {ticket_id for ticket_id, subject in rows if _same_subject(subject or "", title)}
@@ -805,17 +806,24 @@ def receive_acknowledgement(
     when `learn` (the sender check passed, or an agent linked it), the MSP's number is stored on the ticket and an
     msp_acknowledged event records it. Returns None, recording nothing, if the number already belongs to another
     ticket. Does not commit."""
+    ticket = _lock(session, ticket)
     if learn and number:
         other = ticket_by_msp_number(session, number)
         if other is not None and other.id != ticket.id:
+            return None
+        previous = ticket.msp_ticket_number
+        try:
+            with session.begin_nested():  # the unique index decides a race between two tickets taking one number
+                ticket.msp_ticket_number = number
+                session.add(ticket)
+                session.flush()
+        except IntegrityError:
+            session.refresh(ticket)
             return None
     message = record_msp_message(session, ticket, sender=sender, body=body, forward=FORWARD_INTERNAL)
     message.msp_unverified = not learn
     session.flush()
     if learn and number:
-        previous = ticket.msp_ticket_number
-        ticket.msp_ticket_number = number
-        session.add(ticket)
         record_event(
             session, ticket, EVENT_MSP_ACKNOWLEDGED, sender, from_value=previous if previous != number else None, to_value=number,
             detail=f"The MSP has it as MSP ticket #{number}",
@@ -840,10 +848,10 @@ def park_unmatched(
     return item
 
 
-def open_unmatched(session: Session) -> list[MspUnmatchedMail]:
-    return list(
-        session.exec(select(MspUnmatchedMail).where(MspUnmatchedMail.status == STATUS_OPEN).order_by(MspUnmatchedMail.id)).all()
-    )
+def unmatched_query():
+    """The mail waiting for an agent, oldest first (the list pages it). It has no team, so any agent may see and link it: the
+    list is agent-only by decision (#149), and linking needs access to the ticket chosen."""
+    return select(MspUnmatchedMail).where(MspUnmatchedMail.status == STATUS_OPEN).order_by(MspUnmatchedMail.id)
 
 
 def _locked_open(session: Session, item: MspUnmatchedMail) -> MspUnmatchedMail:
@@ -872,7 +880,7 @@ def link_unmatched(session: Session, item: MspUnmatchedMail, ticket: Ticket, act
             session, ticket, sender=item.sender, body=item.body, number=item.msp_number, learn=True
         )
     else:
-        message = receive_mail(session, ticket, sender=item.sender, body=item.body, recipients=recipients, verified=False)
+        message = receive_mail(session, ticket, sender=item.sender, body=item.body, recipients=recipients, verified=item.verified)
         if item.msp_number and not ticket.msp_ticket_number:
             ticket.msp_ticket_number = item.msp_number
             session.add(ticket)
@@ -914,13 +922,16 @@ def alert_unacknowledged(session: Session, now: Optional[datetime] = None) -> in
     if minutes <= 0:
         return 0
     latest = (
-        select(OutboundEmail.ticket_id.label("ticket_id"), func.max(OutboundEmail.sent_at).label("sent_at"))
+        select(
+            OutboundEmail.ticket_id.label("ticket_id"), func.max(OutboundEmail.sent_at).label("sent_at"),
+            func.max(OutboundEmail.created_at).label("queued_at"),
+        )
         .where(OutboundEmail.kind == MSP_HANDOFF, OutboundEmail.sent_at.is_not(None))
         .group_by(OutboundEmail.ticket_id)
         .subquery()
     )
     due = session.exec(
-        select(Ticket.id, latest.c.sent_at)
+        select(Ticket.id, latest.c.sent_at, latest.c.queued_at)
         .join(latest, latest.c.ticket_id == Ticket.id)
         .where(
             latest.c.sent_at <= now - timedelta(minutes=minutes),
@@ -931,7 +942,7 @@ def alert_unacknowledged(session: Session, now: Optional[datetime] = None) -> in
         .order_by(Ticket.id)
     ).all()
     told = 0
-    for ticket_id, sent_at in due:
+    for ticket_id, sent_at, queued_at in due:
         ticket = session.exec(
             select(Ticket).where(Ticket.id == ticket_id).with_for_update(skip_locked=True).execution_options(populate_existing=True)
         ).first()
@@ -940,15 +951,15 @@ def alert_unacknowledged(session: Session, now: Optional[datetime] = None) -> in
         acknowledged = session.exec(
             select(TicketEvent.id).where(
                 TicketEvent.ticket_id == ticket.id, TicketEvent.event_type == EVENT_MSP_ACKNOWLEDGED,
-                TicketEvent.created_at >= sent_at,
+                TicketEvent.created_at >= queued_at,  # an acknowledgement can land before the send is marked done
             ).limit(1)
         ).first()
         if acknowledged is not None:
             continue
-        ticket.msp_ack_alerted_at = now
-        session.add(ticket)
-        notify_msp_unacknowledged(session, ticket)
-        told += 1
+        if notify_msp_unacknowledged(session, ticket):  # nobody to tell (or all muted): try again at the next run
+            ticket.msp_ack_alerted_at = now
+            session.add(ticket)
+            told += 1
     return told
 
 

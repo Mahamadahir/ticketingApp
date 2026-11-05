@@ -9,8 +9,9 @@ from sqlmodel import Session
 from app.auth import require_roles
 from app.database import get_session
 from app.models import MspUnmatchedMail, User
-from app.msp import MspError, dismiss_unmatched, link_unmatched, open_unmatched
+from app.msp import MspError, dismiss_unmatched, link_unmatched, unmatched_query
 from app.notifications import AGENT_ROLES
+from app.pagination import paginate
 from app.templating import templates
 from app.ticket_service import find_ticket
 from app.visibility import Access, access_context, require_access
@@ -28,10 +29,12 @@ def _item(session: Session, item_id: int) -> MspUnmatchedMail:
 @router.get("", response_class=HTMLResponse)
 def unmatched_list(
     request: Request,
+    page: int = 1,
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
-    return templates.TemplateResponse(request, "msp_unmatched.html", {"items": open_unmatched(session), "user": user})
+    entries = paginate(session, unmatched_query(), page, request.query_params)
+    return templates.TemplateResponse(request, "msp_unmatched.html", {"page": entries, "items": entries.items, "user": user})
 
 
 @router.post("/{item_id}/link")

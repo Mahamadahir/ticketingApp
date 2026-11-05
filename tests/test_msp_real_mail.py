@@ -476,3 +476,43 @@ def test_zero_turns_the_alert_off_and_a_finished_ticket_is_left_alone(client, db
     db_session.commit()
     assert alert_unacknowledged(db_session, IN_HOURS) == 0
     assert alerts(db_session) == []
+
+
+# ---- Found in code review ------------------------------------------------------------------------------------------
+
+
+def test_an_unverified_mail_the_user_was_on_is_still_agents_only_until_an_agent_forwards_it(db_session):
+    ticket = sent_ticket(db_session)
+    raw = graph_raw(f"Re: [{ticket.reference}] x", msp_headers(SOFTPASS), body="Pay us", to=("jo@example.com",))
+    take(db_session, raw)
+    [message] = messages_of(db_session, ticket)
+    assert (message.msp_forward, message.visibility) == (FORWARD_PENDING, MessageVisibility.AGENTS_ONLY)
+    assert requester_visible_messages(db_session, ticket) == []
+
+
+def test_a_repeated_acknowledgement_found_by_the_number_is_still_internal(db_session):
+    ticket = sent_ticket(db_session)
+    take(db_session, acknowledgement(ticket.reference))
+    take(db_session, acknowledgement(ticket.reference), AFTER_HOURS)  # the MSP sends it again, matched by the number
+    assert [m.msp_forward for m in messages_of(db_session, ticket)] == [FORWARD_INTERNAL, FORWARD_INTERNAL]
+    assert db_session.exec(select(OutboundEmail).where(OutboundEmail.kind == "msp_forward")).all() == []
+
+
+def test_the_pattern_setting_may_be_long_and_blank_means_the_default(client, db_session):
+    admin_id = login_as(client, "admin@example.com")
+    set_role(db_session, admin_id, UserRole.SUPER_ADMIN)
+    long = r"(?P<number>\d+)/(?P<title>.+)" + "|" + "|".join(f"alt{i}(?P<n{i}>x)" for i in range(25))
+    assert 200 < len(long) < 500
+    assert client.post("/admin/settings", data={"key": MSP_SUBJECT_PATTERN, "value": long}, follow_redirects=False).status_code == 303
+    assert client.post("/admin/settings", data={"key": MSP_SUBJECT_PATTERN, "value": ""}, follow_redirects=False).status_code == 303
+    assert parse_subject(db_session, "Ticket#9/x -- has been updated").number == "9"
+
+
+def test_the_alert_is_tried_again_when_nobody_could_be_told(client, db_session):
+    team = create_team(db_session, "Support")
+    ticket = sent_ticket(db_session, team=team)  # nobody in the team yet
+    handoff_email(db_session, ticket, sent_at=IN_HOURS - timedelta(hours=1))
+    assert alert_unacknowledged(db_session, IN_HOURS) == 0
+    db_session.commit()
+    agent_in(client, db_session, member_of=[team])
+    assert alert_unacknowledged(db_session, IN_HOURS) == 1
