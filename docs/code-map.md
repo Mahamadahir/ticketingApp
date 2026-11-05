@@ -431,7 +431,7 @@ File: `app/backdating.py`
 
 ### `app.bank_holidays`
 
-UK bank holidays from gov.uk (issue #151). A daily recurring job (`run_bank_holiday_fetch`, in app/scheduled_jobs.py)  
+UK bank holidays from gov.uk (issue #151). A recurring job (every six hours, so a failed fetch is tried again the same day) (`run_bank_holiday_fetch`, in app/scheduled_jobs.py)  
 File: `app/bank_holidays.py`
 
 - Classes: `FetchError`

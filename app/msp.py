@@ -519,7 +519,11 @@ def _hand_off_one(session: Session, ticket_id: int, start: datetime, end: dateti
     if ticket is None or not _eligible(session, ticket, start, end):
         return False
     send_to_msp(session, ticket, None, "")
-    notify_msp_handed_off(session, ticket, _local_clock(session, now))
+    try:
+        with session.begin_nested():
+            notify_msp_handed_off(session, ticket, _local_clock(session, now))
+    except Exception:
+        log.exception("MSP handoff bell entry failed for ticket %s", ticket_id)  # the ticket has gone; the bell is a side effect
     return True
 
 
@@ -568,22 +572,28 @@ def warn_before_handoff(session: Session, now: Optional[datetime] = None) -> int
         return 0
     zone = default_zone(session)
     hour = _handoff_hour(session)
-    start = morning_of(now.astimezone(ZoneInfo(zone)).date(), zone, hour)  # tonight's handoff moment
-    warn_from = start - timedelta(minutes=minutes)
-    if not warn_from <= now < start:
+    today = now.astimezone(ZoneInfo(zone)).date()
+    # The next handoff moment: tomorrow's too, so a warning that crosses midnight (an hour of 0) is found.
+    start = min((m for m in (morning_of(today, zone, hour), morning_of(today + timedelta(days=1), zone, hour)) if m > now), default=None)
+    if start is None or not start - timedelta(minutes=minutes) <= now:
         return 0
     end = next_business_morning(start, zone, _hour(session, MSP_BUSINESS_MORNING_HOUR), _holidays(session))
     label, told = _handoff_label(session), 0
     for ticket_id in _handoff_candidates(session, start, end):
         ticket = session.get(Ticket, ticket_id)
         if ticket is not None and _eligible(session, ticket, start, end):
-            told += notify_msp_handoff_warning(session, ticket, label, warn_from) is not None
+            # Once a night is keyed on the handoff moment, not on the setting: a shorter setting must not warn again.
+            told += notify_msp_handoff_warning(session, ticket, label, start - timedelta(hours=12), now) is not None
     return told
 
 
 def run_msp_handoff(session: Session) -> None:
     """The recurring job (registered in app/scheduled_jobs.py): the evening warning, then the handoff itself."""
-    warn_before_handoff(session)
+    try:
+        with session.begin_nested():
+            warn_before_handoff(session)
+    except Exception:
+        log.exception("MSP handoff warning failed")  # a bell entry must never stop the handoff itself
     hand_off_due_tickets(session)
 
 

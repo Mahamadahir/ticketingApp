@@ -139,6 +139,7 @@ from app.models import (
 from app.pagination import paginate
 from app.scheduled_jobs import SCHEDULED_JOBS, status_line, timing
 from app.settings_store import (
+    BANK_HOLIDAY_REGION,
     APPROVAL_DEFAULT_PASS_PERCENT,
     DUE_DAYS_BEFORE_REQUIRED_BY,
     REQUIRED_BY_LEAD_DAYS,
@@ -1633,6 +1634,11 @@ def save_setting(
     if previous != value:
         set_setting(session, key, value)
         log_action(session, admin.email, "setting", 0, "changed", f"{key}: {previous!r} -> {value!r}")
+        if key == BANK_HOLIDAY_REGION:  # fetch the new region at the next tick, not at the next slot
+            job = session.get(ScheduledJob, "bank-holidays")
+            if job is not None:
+                job.next_run_at = datetime.now(timezone.utc)
+                session.add(job)
     session.commit()
     return RedirectResponse("/admin/settings", status_code=303)
 

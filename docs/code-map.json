@@ -520,7 +520,7 @@
       ],
       "module": "app.bank_holidays",
       "routes": [],
-      "summary": "UK bank holidays from gov.uk (issue #151). A daily recurring job (`run_bank_holiday_fetch`, in app/scheduled_jobs.py)",
+      "summary": "UK bank holidays from gov.uk (issue #151). A recurring job (every six hours, so a failed fetch is tried again the same day) (`run_bank_holiday_fetch`, in app/scheduled_jobs.py)",
       "tables": [],
       "tests": [
         "tests/test_handoff_bells_holidays.py"

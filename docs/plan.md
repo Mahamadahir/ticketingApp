@@ -988,7 +988,7 @@ A template is plain text with `{placeholders}` from a fixed list per email; the 
 - At 18:00 daily, every ticket due to breach before the next business
   morning (08:00, Monday to Friday, UK bank holidays excluded) goes to the
   MSP, unless the assigned agent has put it on hold. A hold lasts until the
-  agent releases it. *Built (5E, #151):* UK bank holidays come from gov.uk (daily job `bank-holidays`, cached in the database, region an admin setting; the typed list stays for extra closure days), and the assignee gets a bell entry (in app and Teams) `msp_handoff_warn_minutes` before the handoff for each ticket that would go (Hold cancels) and another when the job sends it. *Built (5A):* the hour (18), the business morning (8) and the bank holidays are admin settings and
+  agent releases it. *Built (5E, #151):* UK bank holidays come from gov.uk (job `bank-holidays`, every six hours, cached in the database, region an admin setting; the typed list stays for extra closure days), and the assignee gets a bell entry (in app and Teams) `msp_handoff_warn_minutes` before the handoff for each ticket that would go (Hold cancels) and another when the job sends it. *Built (5A):* the hour (18), the business morning (8) and the bank holidays are admin settings and
   the time is in the organisation time zone. The job (`msp-handoff` in the recurring jobs table, every 5 minutes) works
   from the tickets: open (Open or In progress, triaged), in an included team, not held, not a split
   original, with an unmet first response or the resolution due before that morning (overdue counts; a ticket that arrives or becomes eligible during the night goes at the next run). It only acts between

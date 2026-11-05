@@ -267,12 +267,13 @@ def test_a_changed_list_replaces_the_dates_and_is_audited(db_session, gov_uk):
     refresh_bank_holidays(db_session, now + timedelta(days=1))
     db_session.commit()
     assert cached_holidays(db_session) == {date(2027, 1, 1)}
-    assert db_session.exec(select(AuditLog).where(AuditLog.entity_type == "bank_holidays")).one().detail == "england-and-wales: 1 dates"
+    details = [e.detail for e in db_session.exec(select(AuditLog).where(AuditLog.entity_type == "bank_holidays").order_by(AuditLog.id))]
+    assert details == ["england-and-wales: 2 dates", "england-and-wales: 1 dates"]
 
 
-def test_the_job_is_registered_daily():
+def test_the_job_is_registered_every_six_hours():
     (job,) = [j for j in SCHEDULED_JOBS if j.name == "bank-holidays"]
-    assert job.every_seconds == 86400 and job.run is run_bank_holiday_fetch
+    assert job.every_seconds == 21600 and job.run is run_bank_holiday_fetch
 
 
 def test_the_settings_page_validates_the_region_and_the_new_numbers(client, db_session):
@@ -286,3 +287,64 @@ def test_the_settings_page_validates_the_region_and_the_new_numbers(client, db_s
     assert post(BANK_HOLIDAY_REGION, "wales") == 400
     assert post(BANK_HOLIDAY_FAIL_DAYS, "0") == 400 and post(BANK_HOLIDAY_FAIL_DAYS, "5") == 303
     assert post(MSP_HANDOFF_WARN_MINUTES, "0") == 303 and post(MSP_HANDOFF_WARN_MINUTES, "abc") == 400
+
+
+# ---- From the code review -----------------------------------------------------------------------------------
+
+
+def test_a_handoff_at_midnight_is_warned_before_midnight(client, db_session, mail_on):
+    from app.settings_store import MSP_HANDOFF_HOUR
+
+    set_msp(db_session)
+    set_setting(db_session, MSP_HANDOFF_HOUR, "0")
+    db_session.commit()
+    assigned_ticket(client, db_session, included_team(db_session), due=datetime(2026, 11, 5, 3, 0, tzinfo=UTC))
+    assert warn_before_handoff(db_session, datetime(2026, 11, 4, 23, 40, tzinfo=UTC)) == 1
+
+
+def test_a_shorter_setting_later_the_same_night_does_not_warn_again(client, db_session, mail_on):
+    set_msp(db_session)
+    assigned_ticket(client, db_session, included_team(db_session))
+    assert warn_before_handoff(db_session, START - timedelta(minutes=29)) == 1
+    db_session.commit()
+    set_setting(db_session, MSP_HANDOFF_WARN_MINUTES, "10")
+    db_session.commit()
+    assert warn_before_handoff(db_session, START - timedelta(minutes=5)) == 0
+
+
+def test_a_failing_warning_never_stops_the_handoff(db_session, monkeypatch):
+    from app import msp
+
+    calls = []
+    monkeypatch.setattr(msp, "warn_before_handoff", lambda session: 1 / 0)
+    monkeypatch.setattr(msp, "hand_off_due_tickets", lambda session: calls.append("handoff") or 0)
+    msp.run_msp_handoff(db_session)
+    assert calls == ["handoff"]
+
+
+def test_a_failing_bell_entry_does_not_undo_the_handoff(client, db_session, mail_on, monkeypatch):
+    from app import msp
+
+    set_msp(db_session)
+    ticket, _ = assigned_ticket(client, db_session, included_team(db_session))
+    monkeypatch.setattr(msp, "notify_msp_handed_off", lambda *args: 1 / 0)
+    assert hand_off_due_tickets(db_session, NOW) == 1
+    db_session.commit()
+    assert db_session.get(Ticket, ticket.id).status == TicketStatus.WITH_MSP
+
+
+def test_changing_the_region_makes_the_fetch_job_due_at_once(client, db_session):
+    from app.models import ScheduledJob
+
+    db_session.add(ScheduledJob(name="bank-holidays", next_run_at=datetime(2030, 1, 1, tzinfo=UTC)))
+    admin_id = login_as(client, "root@example.com", "Root")
+    set_role(db_session, admin_id, UserRole.SUPER_ADMIN)
+    client.post("/admin/settings", data={"key": BANK_HOLIDAY_REGION, "value": "scotland"})
+    db_session.expire_all()
+    assert db_session.get(ScheduledJob, "bank-holidays").next_run_at < datetime(2029, 1, 1, tzinfo=UTC)
+
+
+def test_the_first_fetch_is_audited_too(db_session, gov_uk):
+    refresh_bank_holidays(db_session, datetime(2026, 11, 5, 6, 0, tzinfo=UTC))
+    db_session.commit()
+    assert db_session.exec(select(AuditLog).where(AuditLog.entity_type == "bank_holidays")).one().detail == "england-and-wales: 2 dates"

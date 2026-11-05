@@ -1,4 +1,4 @@
-"""UK bank holidays from gov.uk (issue #151). A daily recurring job (`run_bank_holiday_fetch`, in app/scheduled_jobs.py)
+"""UK bank holidays from gov.uk (issue #151). A recurring job (every six hours, so a failed fetch is tried again the same day) (`run_bank_holiday_fetch`, in app/scheduled_jobs.py)
 fetches https://www.gov.uk/bank-holidays.json and keeps the dates of the chosen region (the `bank_holiday_region`
 setting) in the `bankholidaycache` table. Everything that works out business days reads `cached_holidays` and
 never the network. The typed list (`msp_bank_holidays`, for extra closure days such as the Christmas shutdown) stays;
@@ -97,6 +97,7 @@ def refresh_bank_holidays(session: Session, now: Optional[datetime] = None) -> b
         return False
     text = ",".join(day.isoformat() for day in days)
     if row is None:
+        log_action(session, AUDIT_ACTOR, AUDIT_ENTITY, 0, "updated", f"{region}: {len(days)} dates")
         session.add(BankHolidayCache(region=region, dates=text, fetched_at=now))
     else:
         if row.dates != text:

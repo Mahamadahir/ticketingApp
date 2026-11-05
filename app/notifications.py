@@ -519,7 +519,9 @@ def _assignee_who_can_open(session: Session, ticket: Ticket) -> Optional[User]:
     return agent if agent is not None and agent.is_active and _can_open(session, agent, ticket) else None
 
 
-def notify_msp_handoff_warning(session: Session, ticket: Ticket, handoff_label: str, since: datetime) -> Optional[Notification]:
+def notify_msp_handoff_warning(
+    session: Session, ticket: Ticket, handoff_label: str, since: datetime, now: Optional[datetime] = None
+) -> Optional[Notification]:
     """Tells the assignee their ticket will go to the MSP at the handoff hour unless they Hold it (app/msp.py
     `warn_before_handoff`). Once for each ticket and person from `since` (the start of this night's warning), whether or
     not they have read it. Nobody assigned tells nobody. Does not commit."""
@@ -534,7 +536,10 @@ def notify_msp_handoff_warning(session: Session, ticket: Ticket, handoff_label: 
     ).first()
     if already is not None:
         return None
-    return notify(session, agent, MSP_HANDOFF_WARNING, ticket, f"{REF} will go to the MSP at {handoff_label}. Hold it to keep it.", None)
+    made = notify(session, agent, MSP_HANDOFF_WARNING, ticket, f"{REF} will go to the MSP at {handoff_label}. Hold it to keep it.", None)
+    if made is not None and now is not None:
+        made.created_at = now  # the job's clock, so the once-a-night check compares like with like
+    return made
 
 
 def notify_msp_handed_off(session: Session, ticket: Ticket, sent_label: str) -> Optional[Notification]:
