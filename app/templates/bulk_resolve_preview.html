@@ -7,7 +7,7 @@
 {% if plan.ready %}
 <p><b>{{ plan.ready | length }} ticket{{ "" if plan.ready | length == 1 else "s" }} will be resolved and emailed</b></p>
 <table>
-  <thead><tr><th>Ticket</th><th>To</th><th>Copied</th><th>Subject</th></tr></thead>
+  <thead><tr><th>Ticket</th><th>To</th><th>Copied</th><th>Subject</th><th>MSP</th></tr></thead>
   <tbody>
   {% for item in plan.ready %}
   <tr>
@@ -15,6 +15,7 @@
     <td>{{ item.preview.to }}</td>
     <td>{{ item.preview.cc | join(", ") if item.preview.cc else "no one" }}</td>
     <td>{{ item.preview.subject }}</td>
+    <td>{{ "told it is no longer needed" if item.tells_msp else "" }}</td>
   </tr>
   {% endfor %}
   </tbody>

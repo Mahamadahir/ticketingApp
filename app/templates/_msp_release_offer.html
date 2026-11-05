@@ -1,0 +1,18 @@
+{# The MSP part of the resolve, close and take-back previews (app/msp_actions.py): the "no longer needed" email, and the
+   linked tickets that went With MSP with this one. Included inside the confirm form, so the boxes are submitted with it. #}
+{% if msp_release %}
+<div class="msp-offer">
+  <p><b>The MSP</b></p>
+  <label><input type="checkbox" name="tell_msp" value="1" checked /> Tell the MSP it is no longer needed (untick if the MSP resolved it themselves)</label>
+  <p><b>To:</b> {{ msp_release.to }}</p>
+  <p><b>Copied:</b> {{ msp_release.cc | join(", ") if msp_release.cc else "no one" }}</p>
+  <p><b>Subject:</b> {{ msp_release.subject }}</p>
+  <pre class="message-body">{{ msp_release.body }}</pre>
+</div>
+{% endif %}
+{% if msp_linked %}
+<div class="msp-offer">
+  <label><input type="checkbox" name="take_back_linked" value="1" checked /> Also take the {{ msp_linked | length }} linked ticket{{ "" if msp_linked | length == 1 else "s" }} that went With MSP with this one back to Open or In progress</label>
+  <ul>{% for t in msp_linked %}<li>{{ t.reference }} {{ t.subject }}</li>{% endfor %}</ul>
+</div>
+{% endif %}

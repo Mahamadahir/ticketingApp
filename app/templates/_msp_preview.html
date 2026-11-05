@@ -17,6 +17,13 @@
 {{ reason }}</textarea>
     <input type="hidden" name="scope" value="{{ preview.scope }}" />
     <input type="hidden" name="digest" value="{{ preview.digest }}" />
+    {% if linked and linked.tickets %}
+    <input type="hidden" name="linked_ids" value="{{ linked.ids | join(',') }}" />
+    <label><input type="checkbox" name="mark_linked" value="1" checked /> Also mark the {{ linked.tickets | length }} linked ticket{{ "" if linked.tickets | length == 1 else "s" }} as With MSP (status only: nothing more is sent to the MSP for them)</label>
+    <ul>{% for t in linked.tickets %}<li>{{ t.reference }} {{ t.subject }}</li>{% endfor %}</ul>
+    <label><input type="checkbox" name="tell_linked_requesters" value="1" checked /> Tell their requesters it is with our support partner</label>
+    {% endif %}
+    {% if linked and linked.left_alone %}<p class="note">{{ linked.left_alone }} other linked ticket{{ "" if linked.left_alone == 1 else "s" }} cannot be marked (in a team you cannot work, awaiting approval or split) and stay as they are.</p>{% endif %}
     <button type="submit" class="button-destructive">Send to the MSP</button>
     <button type="button" class="button-outline" hx-on:click="document.getElementById('msp-preview').innerHTML = ''">Keep editing</button>
   </form>

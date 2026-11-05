@@ -95,13 +95,17 @@ def resolve_ticket(
     cc_emails: Optional[list[str]] = None,
     send_email: bool = True,
     detail: Optional[str] = None,
+    tell_msp: bool = False,
+    take_back_linked: bool = False,
 ) -> None:
     """Resolves the ticket: stores the notes and who resolved it, moves it to Resolved (which stops
     its SLA clock and re-derives a split original's status), writes the status event and the audit
     entry, and queues the resolution email unless send_email is False.
 
     actor is the agent, or None for an automatic resolve. cc_emails is the addresses to copy
-    (None: every follower, the same rule as an agent's email). detail is added to the status event."""
+    (None: every follower, the same rule as an agent's email). detail is added to the status event.
+    tell_msp and take_back_linked are the tick boxes of an agent's preview about the MSP (app/msp_actions.py): tell the MSP
+    it is no longer needed, and take the linked tickets that are With MSP through this one back from it."""
     notes = clean_notes(notes)
     # Two agents (or a double submit) resolving at once: the second waits here, re-reads the ticket as
     # the first left it and is refused as already resolved, so there is one email and one set of notes.
@@ -116,6 +120,10 @@ def resolve_ticket(
         preview_email(session, ticket, body, cc_emails=cc_emails)
 
     actor_email = actor.email if actor else None
+    # Imported here: app.msp_actions builds on app.msp, which builds on app.mail, which imports this module.
+    from app.msp_actions import OUTCOME_RESOLVED, finish_with_msp
+
+    finish_with_msp(session, ticket, actor, OUTCOME_RESOLVED, tell_msp=tell_msp, take_back_linked_too=take_back_linked)
     set_status(session, ticket, TicketStatus.RESOLVED, actor_email, detail=detail, by_resolution=True)
     ticket.resolution_notes = notes
     ticket.resolved_by_id = actor.id if actor else None

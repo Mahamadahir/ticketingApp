@@ -28,6 +28,7 @@ APPROVAL_WITHDRAWN = "approval_withdrawn"  # tells an approver the requester wit
 ACKNOWLEDGEMENT = "acknowledgement"  # "your issue has been logged", once, for a ticket that arrived by email
 CHASE = "chase"  # "is this still an issue?" to the requester of a ticket Awaiting user (app/auto_close_chase.py)
 MSP_HANDOFF = "msp_handoff"  # a ticket sent to the MSP (app/msp.py); the text is fixed when it is queued
+MSP_RELEASE = "msp_release"  # "no longer needed", to the MSP, when IT resolved, closed or took back a ticket (app/msp_actions.py); the text is fixed when queued
 MSP_FORWARD = "msp_forward"  # an MSP message the user was left off, passed on to them (app/msp.py); the text is fixed when queued
 FOLLOWER_UPDATE = "follower_update"  # an inbound update passed to someone who was not on the mail it came in
 
@@ -184,6 +185,22 @@ def queue_msp_handoff(
     row = OutboundEmail(
         kind=MSP_HANDOFF, ticket_id=ticket.id, to_address=to_address, cc=", ".join(cc) or None, subject=subject, body=body,
         attachment_ids=",".join(str(i) for i in attachment_ids or []) or None,
+    )
+    session.add(row)
+    return row
+
+
+def queue_msp_release(
+    session: Session, ticket: Ticket, to_address: str, cc: list[str], subject: str, body: str
+) -> Optional[OutboundEmail]:
+    """Queues the "no longer needed" email to the MSP with the text built by app/msp_actions.py (the one the agent
+    previewed), under the same subject as the handoff so their system files it on their ticket. Unlike the handoff it
+    is sent whatever the ticket's status is now (it is about the ticket having left the MSP). None when mail is off."""
+    if not is_on():
+        return None
+    session.flush()
+    row = OutboundEmail(
+        kind=MSP_RELEASE, ticket_id=ticket.id, to_address=to_address, cc=", ".join(cc) or None, subject=subject, body=body,
     )
     session.add(row)
     return row

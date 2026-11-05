@@ -21,6 +21,7 @@ from sqlmodel import Session, select
 
 from app.messages import EmailPreview, UnknownRecipient, preview_email
 from app.models import Ticket, User
+from app.msp_actions import OUTCOME_RESOLVED, compose_release
 from app.resolution import ResolveError, clean_notes, resolution_email_body, resolve_ticket
 from app.settings_store import BULK_RESOLVE_MAX, count_setting
 from app.splitting import SplitError
@@ -42,6 +43,7 @@ class BulkItem:
     preview: Optional[EmailPreview] = None  # set when the ticket can be resolved
     skipped: Optional[str] = None  # the reason, when it cannot
     resolved: bool = False
+    tells_msp: bool = False  # the ticket was sent to the MSP and they are told it is no longer needed
 
 
 @dataclass
@@ -118,9 +120,11 @@ def _run(session: Session, user: User, levels: AccessContext, numbers: list[int]
             item.skipped = NOT_WORKABLE
             continue
         item.reference, item.subject = ticket.reference, ticket.subject
+        item.tells_msp = compose_release(session, ticket, OUTCOME_RESOLVED, user) is not None
         savepoint = session.begin_nested()
         try:
-            resolve_ticket(session, ticket, user, notes, detail="Resolved in a bulk resolve")
+            # A ticket the MSP may still hold has them told it is no longer needed (the one preview lists which).
+            resolve_ticket(session, ticket, user, notes, detail="Resolved in a bulk resolve", tell_msp=True)
             if dry_run:
                 # The recipients of the email the real run queues (the ticket's status no longer matters to it).
                 item.preview = preview_email(session, ticket, resolution_email_body(session, ticket, notes))

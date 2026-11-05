@@ -49,7 +49,7 @@ from app.models import (
     User,
     UserRole,
 )
-from app.outbox import ACKNOWLEDGEMENT, MSP_FORWARD, MSP_HANDOFF, APPROVAL, APPROVAL_OVERDUE, APPROVAL_REMINDER, APPROVAL_WITHDRAWN, AUTOMATIC_TO_REQUESTER, CHASE, FOLLOWER_UPDATE, NOTICE, RAISED_FOR, REPLY
+from app.outbox import ACKNOWLEDGEMENT, MSP_FORWARD, MSP_HANDOFF, MSP_RELEASE, APPROVAL, APPROVAL_OVERDUE, APPROVAL_REMINDER, APPROVAL_WITHDRAWN, AUTOMATIC_TO_REQUESTER, CHASE, FOLLOWER_UPDATE, NOTICE, RAISED_FOR, REPLY
 from app.raising import should_tell_requester
 from app.settings_store import APPROVAL_LINK_MINUTES, AUTOMATIC_EMAIL_CAP, CHASE_RESOLVE_AFTER_DAYS, REGISTRY, get_int_setting
 from app.storage import get_storage
@@ -373,6 +373,19 @@ def build_msp_handoff_mail(session: Session, row: OutboundEmail) -> Mail:
     )
 
 
+def build_msp_release_mail(session: Session, row: OutboundEmail) -> Mail:
+    """The "no longer needed" email to the MSP. The text was fixed when it was queued (app/msp_actions.py); the ticket
+    is no longer with the MSP by then, so only the text and the address are checked."""
+    ticket = _ticket_of(session, row)
+    if not row.body or not row.subject:
+        raise Unsendable("The email has no text")
+    _guard_recipient(row)
+    return Mail(
+        to=row.to_address, cc=[a.strip() for a in (row.cc or "").split(",") if a.strip()], subject=row.subject,
+        body=row.body, record=row.body, automatic=False, reference=ticket.reference,
+    )
+
+
 def build_msp_forward_mail(session: Session, row: OutboundEmail) -> Mail:
     """An MSP message passed on to the user it left off. The text was fixed when it was queued (app/msp.py); this
     only checks the message is still one that was forwarded (it is public then) and that there is someone to send to."""
@@ -404,6 +417,7 @@ BUILDERS: dict[str, Callable[[Session, OutboundEmail], Mail]] = {
     ACKNOWLEDGEMENT: build_acknowledgement_mail,
     CHASE: build_chase_mail,
     MSP_HANDOFF: build_msp_handoff_mail,
+    MSP_RELEASE: build_msp_release_mail,
     MSP_FORWARD: build_msp_forward_mail,
     FOLLOWER_UPDATE: build_follower_update_mail,
 }
