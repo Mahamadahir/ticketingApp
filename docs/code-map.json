@@ -54,6 +54,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/edf905001a2e_bank_holiday_cache.py",
+        "revision": "edf905001a2e"
+      },
+      {
         "file": "migrations/versions/ac2ff6b52e5c_msp_ticket_number_and_unmatched_mail.py",
         "revision": "ac2ff6b52e5c"
       },
@@ -68,17 +72,13 @@
       {
         "file": "migrations/versions/c4e8a1d7b362_sub_request_templates.py",
         "revision": "c4e8a1d7b362"
-      },
-      {
-        "file": "migrations/versions/a1b7e3c94d25_request_type_form_questions_and_ticket_.py",
-        "revision": "a1b7e3c94d25"
       }
     ],
-    "count": 54,
+    "count": 55,
     "heads": [
       {
-        "file": "migrations/versions/ac2ff6b52e5c_msp_ticket_number_and_unmatched_mail.py",
-        "revision": "ac2ff6b52e5c"
+        "file": "migrations/versions/edf905001a2e_bank_holiday_cache.py",
+        "revision": "edf905001a2e"
       }
     ]
   },
@@ -353,6 +353,7 @@
         "app.approval_reminders",
         "app.approvals",
         "app.auto_close_chase",
+        "app.bank_holidays",
         "app.closing",
         "app.due_today",
         "app.escalation",
@@ -492,6 +493,37 @@
       "tests": [
         "tests/test_backdating.py",
         "tests/test_time_zones.py"
+      ]
+    },
+    {
+      "classes": [
+        "FetchError"
+      ],
+      "file": "app/bank_holidays.py",
+      "functions": [
+        "cached_holidays",
+        "fetch_feed",
+        "parse_feed",
+        "refresh_bank_holidays",
+        "region_setting",
+        "run_bank_holiday_fetch"
+      ],
+      "imported_by": [
+        "app.msp",
+        "app.routers.admin",
+        "app.scheduled_jobs"
+      ],
+      "imports": [
+        "app.audit",
+        "app.models",
+        "app.settings_store"
+      ],
+      "module": "app.bank_holidays",
+      "routes": [],
+      "summary": "UK bank holidays from gov.uk (issue #151). A daily recurring job (`run_bank_holiday_fetch`, in app/scheduled_jobs.py)",
+      "tables": [],
+      "tests": [
+        "tests/test_handoff_bells_holidays.py"
       ]
     },
     {
@@ -700,6 +732,7 @@
         "tests/test_bulk_resolve.py",
         "tests/test_closing_email.py",
         "tests/test_follower_updates.py",
+        "tests/test_handoff_bells_holidays.py",
         "tests/test_inbound_mail.py",
         "tests/test_mail_subscriptions.py",
         "tests/test_msp.py",
@@ -1450,6 +1483,7 @@
         "ApprovalVote",
         "Attachment",
         "AuditLog",
+        "BankHolidayCache",
         "CannedResponse",
         "Category",
         "EmailTemplate",
@@ -1508,6 +1542,7 @@
         "app.auth",
         "app.auto_close_chase",
         "app.backdating",
+        "app.bank_holidays",
         "app.bulk_resolve",
         "app.canned",
         "app.categories",
@@ -1599,6 +1634,10 @@
         {
           "class": "AuditLog",
           "table": "auditlog"
+        },
+        {
+          "class": "BankHolidayCache",
+          "table": "bankholidaycache"
         },
         {
           "class": "CannedResponse",
@@ -1770,6 +1809,7 @@
         "tests/test_feedback_views.py",
         "tests/test_follower_updates.py",
         "tests/test_followers.py",
+        "tests/test_handoff_bells_holidays.py",
         "tests/test_hardening.py",
         "tests/test_htmx_errors.py",
         "tests/test_htmx_partials.py",
@@ -1872,7 +1912,8 @@
         "ticket_by_msp_number",
         "ticket_of_acknowledgement",
         "unmatched_query",
-        "usable_msp_address"
+        "usable_msp_address",
+        "warn_before_handoff"
       ],
       "imported_by": [
         "app.escalation",
@@ -1885,6 +1926,7 @@
       ],
       "imports": [
         "app.audit",
+        "app.bank_holidays",
         "app.categories",
         "app.config",
         "app.email_templates",
@@ -1905,6 +1947,7 @@
       "summary": "Sending a ticket to the MSP, putting it on hold, and the automatic handoff (phase 5A, issue #138). Nothing",
       "tables": [],
       "tests": [
+        "tests/test_handoff_bells_holidays.py",
         "tests/test_msp.py",
         "tests/test_msp_actions.py",
         "tests/test_msp_mail.py",
@@ -2027,6 +2070,7 @@
         "tests/test_approval_bell.py",
         "tests/test_approval_reminders.py",
         "tests/test_closing_email.py",
+        "tests/test_handoff_bells_holidays.py",
         "tests/test_notification_followup.py",
         "tests/test_notification_settings.py",
         "tests/test_requester_bell.py",
@@ -2058,6 +2102,8 @@
         "notify_chase_given_up",
         "notify_due_today",
         "notify_mentions",
+        "notify_msp_handed_off",
+        "notify_msp_handoff_warning",
         "notify_msp_unacknowledged",
         "notify_reopened",
         "notify_reply",
@@ -2230,7 +2276,6 @@
       "imported_by": [
         "app.jobs",
         "app.routers.tickets",
-        "app.subrequests",
         "app.templating"
       ],
       "imports": [
@@ -2664,6 +2709,7 @@
         "app.approval_groups",
         "app.audit",
         "app.auth",
+        "app.bank_holidays",
         "app.canned",
         "app.categories",
         "app.config",
@@ -3866,6 +3912,7 @@
         "app.approval_reminders",
         "app.audit",
         "app.auto_close_chase",
+        "app.bank_holidays",
         "app.database",
         "app.due_today",
         "app.models",
@@ -3880,6 +3927,7 @@
         "tests/test_approval_reminders.py",
         "tests/test_auto_close_chase.py",
         "tests/test_due_date.py",
+        "tests/test_handoff_bells_holidays.py",
         "tests/test_msp.py",
         "tests/test_msp_mail.py",
         "tests/test_scheduled_jobs.py"
@@ -3924,6 +3972,7 @@
         "app.action_links",
         "app.approval_reminders",
         "app.auto_close_chase",
+        "app.bank_holidays",
         "app.bulk_resolve",
         "app.categories",
         "app.inbound",
@@ -3965,6 +4014,7 @@
         "tests/test_due_date.py",
         "tests/test_due_date_review.py",
         "tests/test_follower_updates.py",
+        "tests/test_handoff_bells_holidays.py",
         "tests/test_inbound_mail.py",
         "tests/test_mail_subscriptions.py",
         "tests/test_msp.py",
@@ -4178,7 +4228,6 @@
         "app.categories",
         "app.models",
         "app.notifications",
-        "app.presence",
         "app.request_questions",
         "app.required_by",
         "app.sla",
@@ -5069,6 +5118,7 @@
     "tests/test_feedback_views.py",
     "tests/test_follower_updates.py",
     "tests/test_followers.py",
+    "tests/test_handoff_bells_holidays.py",
     "tests/test_hardening.py",
     "tests/test_health.py",
     "tests/test_htmx_errors.py",

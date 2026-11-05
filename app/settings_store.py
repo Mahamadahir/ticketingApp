@@ -469,11 +469,12 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     MSP_BANK_HOLIDAYS: SettingDef(
         key=MSP_BANK_HOLIDAYS,
-        label="MSP: bank holidays, when there is no business morning",
+        label="MSP: extra closure days, when there is no business morning",
         kind="dates",
         description=(
             "Dates (such as 2026-12-25 and 2026-12-28, separated by commas or spaces) that count as a weekend for the "
-            "automatic MSP handoff. Blank means none. Kept here until a holiday calendar is wired in."
+            "automatic MSP handoff, on top of the gov.uk bank holidays fetched for the region below (use this for extra "
+            "closure days such as the Christmas shutdown). Blank means none."
         ),
         default="",
     ),

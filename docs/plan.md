@@ -988,7 +988,7 @@ A template is plain text with `{placeholders}` from a fixed list per email; the 
 - At 18:00 daily, every ticket due to breach before the next business
   morning (08:00, Monday to Friday, UK bank holidays excluded) goes to the
   MSP, unless the assigned agent has put it on hold. A hold lasts until the
-  agent releases it. *Built (5A):* the hour (18), the business morning (8) and the bank holidays are admin settings and
+  agent releases it. *Built (5E, #151):* UK bank holidays come from gov.uk (daily job `bank-holidays`, cached in the database, region an admin setting; the typed list stays for extra closure days), and the assignee gets a bell entry (in app and Teams) `msp_handoff_warn_minutes` before the handoff for each ticket that would go (Hold cancels) and another when the job sends it. *Built (5A):* the hour (18), the business morning (8) and the bank holidays are admin settings and
   the time is in the organisation time zone. The job (`msp-handoff` in the recurring jobs table, every 5 minutes) works
   from the tickets: open (Open or In progress, triaged), in an included team, not held, not a split
   original, with an unmet first response or the resolution due before that morning (overdue counts; a ticket that arrives or becomes eligible during the night goes at the next run). It only acts between
@@ -1137,7 +1137,7 @@ A template is plain text with `{placeholders}` from a fixed list per email; the 
   GRAPH_* credentials) looks each agent up in the directory once by email (cached as `User.entra_object_id`; an agent Graph
   does not know is never marked), then reads everyone's presence in batches of 650 and stores `out_of_office` and when it was
   read. Readers use `is_out_of_office`, which ignores a reading older than three hours, so a stopped job or an outage never
-  leaves anyone out of office for good. *Built in 4B-4:* a person Graph does not know, or who gets no reading, is left alone until the `presence_retry_minutes` setting has passed (`User.last_presence_lookup_at`), and `User.is_active = false` stops polling them (the rest of `is_active` is phase 6). What it changes: an out-of-office agent is labelled "(out of office)" in the assign,
+  leaves anyone out of office for good. *Built in 4B-4:* a person Graph does not know, or who gets no reading, is left alone until the `presence_retry_minutes` setting has passed (`User.last_presence_lookup_at`), and `User.is_active = false` stops polling them (the rest of `is_active` is phase 6). What it changes (sub-request assignment too, since #151: an out-of-office agent still gets the sub-request): an out-of-office agent is labelled "(out of office)" in the assign,
   re-assign and triage pickers (always selectable), and `notifiable_members`
   drops them from any message to a whole team. Nothing sends to a whole team yet (the team an escalation lands in and the agent
   a team change unassigns are still not notified), so that helper is the hook for those. A notification meant for one person
