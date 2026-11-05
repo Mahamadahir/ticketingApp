@@ -18,6 +18,7 @@ from app.activity import (
     REQUEST,
     SSO_FAILED,
 )
+from app.bank_holidays import REGIONS as BANK_HOLIDAY_REGIONS
 from app.audit import log_action
 from app.auth import hash_password, require_permission, require_roles
 from app.permissions import ASSIGNABLE_ROLES, MANAGE_REQUEST_TEMPLATES, PERMISSIONS
@@ -138,6 +139,7 @@ from app.models import (
 from app.pagination import paginate
 from app.scheduled_jobs import SCHEDULED_JOBS, status_line, timing
 from app.settings_store import (
+    BANK_HOLIDAY_REGION,
     APPROVAL_DEFAULT_PASS_PERCENT,
     DUE_DAYS_BEFORE_REQUIRED_BY,
     REQUIRED_BY_LEAD_DAYS,
@@ -1585,6 +1587,8 @@ def save_setting(
             value = ", ".join(d.isoformat() for d in sorted(set(parse_dates(value))))
         except ValueError:
             raise HTTPException(status_code=400, detail="Enter dates like 2026-12-25, separated by commas or spaces")
+    if definition.kind == "region" and value not in BANK_HOLIDAY_REGIONS:
+        raise HTTPException(status_code=400, detail="Choose england-and-wales, scotland or northern-ireland")
     if definition.kind == "team" and value:
         if not (value.isascii() and value.isdigit()) or session.get(Team, int(value)) is None:
             raise HTTPException(status_code=400, detail="That team does not exist")
@@ -1630,6 +1634,11 @@ def save_setting(
     if previous != value:
         set_setting(session, key, value)
         log_action(session, admin.email, "setting", 0, "changed", f"{key}: {previous!r} -> {value!r}")
+        if key == BANK_HOLIDAY_REGION:  # fetch the new region at the next tick, not at the next slot
+            job = session.get(ScheduledJob, "bank-holidays")
+            if job is not None:
+                job.next_run_at = datetime.now(timezone.utc)
+                session.add(job)
     session.commit()
     return RedirectResponse("/admin/settings", status_code=303)
 

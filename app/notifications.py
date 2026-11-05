@@ -38,6 +38,8 @@ APPROVAL_WAITING = "approval_waiting"
 DUE_TODAY = "due_today"
 CHASE_GIVEN_UP = "chase_given_up"
 MSP_UNACKNOWLEDGED = "msp_unacknowledged"
+MSP_HANDOFF_WARNING = "msp_handoff_warning"  # #151: a ticket of yours goes to the MSP tonight unless held
+MSP_HANDED_OFF = "msp_handed_off"  # #151: the automatic handoff sent a ticket of yours
 # The bell entries for the requester and the external followers of a ticket (#130). They open in the portal.
 AGENT_EMAILED = "agent_emailed"
 AWAITING_YOU = "awaiting_you"
@@ -508,6 +510,44 @@ def notify_msp_unacknowledged(session: Session, ticket: Ticket) -> list[Notifica
         if notification is not None:
             made.append(notification)
     return made
+
+
+def _assignee_who_can_open(session: Session, ticket: Ticket) -> Optional[User]:
+    if ticket.assigned_agent_id is None:
+        return None
+    agent = session.get(User, ticket.assigned_agent_id)
+    return agent if agent is not None and agent.is_active and _can_open(session, agent, ticket) else None
+
+
+def notify_msp_handoff_warning(
+    session: Session, ticket: Ticket, handoff_label: str, since: datetime, now: Optional[datetime] = None
+) -> Optional[Notification]:
+    """Tells the assignee their ticket will go to the MSP at the handoff hour unless they Hold it (app/msp.py
+    `warn_before_handoff`). Once for each ticket and person from `since` (the start of this night's warning), whether or
+    not they have read it. Nobody assigned tells nobody. Does not commit."""
+    agent = _assignee_who_can_open(session, ticket)
+    if agent is None:
+        return None
+    already = session.exec(
+        select(Notification.id).where(
+            Notification.kind == MSP_HANDOFF_WARNING, Notification.ticket_id == ticket.id,
+            Notification.user_id == agent.id, Notification.created_at >= since,
+        ).limit(1)
+    ).first()
+    if already is not None:
+        return None
+    made = notify(session, agent, MSP_HANDOFF_WARNING, ticket, f"{REF} will go to the MSP at {handoff_label}. Hold it to keep it.", None)
+    if made is not None and now is not None:
+        made.created_at = now  # the job's clock, so the once-a-night check compares like with like
+    return made
+
+
+def notify_msp_handed_off(session: Session, ticket: Ticket, sent_label: str) -> Optional[Notification]:
+    """Tells the assignee the automatic handoff has just sent their ticket. Does not commit."""
+    agent = _assignee_who_can_open(session, ticket)
+    if agent is None:
+        return None
+    return notify(session, agent, MSP_HANDED_OFF, ticket, f"{REF} was sent to the MSP at {sent_label}", None)
 
 
 def notify_due_today(session: Session, ticket: Ticket) -> Optional[Notification]:

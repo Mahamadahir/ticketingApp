@@ -546,7 +546,7 @@ def test_a_named_agent_is_assigned_if_available_else_the_team_queue(client, db_s
     assert db_session.exec(select(Notification).where(Notification.kind == "assigned")).first().user_id == pat
 
 
-@pytest.mark.parametrize("change", ["out_of_office", "inactive", "left_the_team"])
+@pytest.mark.parametrize("change", ["inactive", "left_the_team"])
 def test_an_unavailable_named_agent_leaves_the_sub_request_with_the_team(client, db_session, change):
     from app.models import TeamMembership
 
@@ -554,9 +554,7 @@ def test_an_unavailable_named_agent_leaves_the_sub_request_with_the_team(client,
     pat = agent(client, db_session, it, "pat@example.com")
     template(db_session, request_type, it, laptops, assignee_id=pat)
     user = db_session.get(User, pat)
-    if change == "out_of_office":
-        user.out_of_office, user.out_of_office_checked_at = True, datetime.now(timezone.utc)
-    elif change == "inactive":
+    if change == "inactive":
         user.is_active = False
     else:
         db_session.delete(db_session.exec(select(TeamMembership).where(TeamMembership.user_id == pat)).one())
@@ -564,6 +562,18 @@ def test_an_unavailable_named_agent_leaves_the_sub_request_with_the_team(client,
     db_session.commit()
     sub = one_sub(client, db_session, request_type, name)
     assert sub.assigned_agent_id is None and sub.status == TicketStatus.OPEN and sub.team_id == it.id
+
+
+def test_an_out_of_office_named_agent_still_gets_the_sub_request(client, db_session):
+    request_type, name, _, _, it, laptops = starter(db_session)
+    pat = agent(client, db_session, it, "pat@example.com")
+    template(db_session, request_type, it, laptops, assignee_id=pat)
+    user = db_session.get(User, pat)
+    user.out_of_office, user.out_of_office_checked_at = True, datetime.now(timezone.utc)
+    db_session.add(user)
+    db_session.commit()
+    sub = one_sub(client, db_session, request_type, name)
+    assert sub.assigned_agent_id == pat  # a label, never a block (#151)
 
 
 def test_the_parents_assignee_takes_the_sub_request_when_they_work_its_team(client, db_session):

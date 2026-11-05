@@ -39,6 +39,7 @@ from sqlmodel import Session, select
 from app.approval_reminders import send_approval_reminders
 from app.audit import log_action
 from app.auto_close_chase import run_auto_close, run_chase
+from app.bank_holidays import run_bank_holiday_fetch
 from app.database import engine
 from app.due_today import run_scheduled_due
 from app.models import ScheduledJob
@@ -64,6 +65,7 @@ class ScheduledJobDef:
 SCHEDULED_JOBS: list[ScheduledJobDef] = [
     ScheduledJobDef("approval-reminders", 3600, send_approval_reminders),
     ScheduledJobDef("auto-close", 3600, run_auto_close),
+    ScheduledJobDef("bank-holidays", 21600, run_bank_holiday_fetch),  # gov.uk bank holidays, cached in the database; every 6 hours so a failed fetch is retried the same day
     ScheduledJobDef("chase", 3600, run_chase),
     ScheduledJobDef("msp-ack-alerts", 300, run_msp_ack_alerts),  # a ticket sent to the MSP that it has not confirmed in time
     ScheduledJobDef("msp-forwards", 300, run_msp_forwards),  # MSP mail left waiting for an agent goes to the user once business hours end

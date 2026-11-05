@@ -88,6 +88,17 @@ EVENT_TYPES: tuple[EventType, ...] = (
         AGENT_ROLES, (IN_APP,), (IN_APP,),
     ),
     EventType(
+        "msp_handoff_warning", "A ticket of yours will go to the MSP tonight",
+        "A bell entry (and Teams) shortly before the automatic MSP handoff, for each ticket assigned to you that would be "
+        "handed over. Hold the ticket to keep it. How long before is set under Settings.",
+        AGENT_ROLES, (IN_APP, TEAMS), (IN_APP, TEAMS),
+    ),
+    EventType(
+        "msp_handed_off", "A ticket of yours was sent to the MSP",
+        "A bell entry (and Teams) when the automatic handoff sends a ticket assigned to you.",
+        AGENT_ROLES, (IN_APP, TEAMS), (IN_APP, TEAMS),
+    ),
+    EventType(
         "agent_emailed", "IT Support emails you about your ticket",
         "A bell entry when an agent writes to you on a ticket you raised, or follow from outside the team. "
         "The email is sent as well; this is in addition. You are not told about your own emails.",
