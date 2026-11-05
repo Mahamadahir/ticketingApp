@@ -54,6 +54,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/ac2ff6b52e5c_msp_ticket_number_and_unmatched_mail.py",
+        "revision": "ac2ff6b52e5c"
+      },
+      {
         "file": "migrations/versions/e7a39c5d1b84_msp_mail_forwarding.py",
         "revision": "e7a39c5d1b84"
       },
@@ -68,17 +72,13 @@
       {
         "file": "migrations/versions/a1b7e3c94d25_request_type_form_questions_and_ticket_.py",
         "revision": "a1b7e3c94d25"
-      },
-      {
-        "file": "migrations/versions/4046d214dcb1_request_type_defaults.py",
-        "revision": "4046d214dcb1"
       }
     ],
-    "count": 53,
+    "count": 54,
     "heads": [
       {
-        "file": "migrations/versions/e7a39c5d1b84_msp_mail_forwarding.py",
-        "revision": "e7a39c5d1b84"
+        "file": "migrations/versions/ac2ff6b52e5c_msp_ticket_number_and_unmatched_mail.py",
+        "revision": "ac2ff6b52e5c"
       }
     ]
   },
@@ -401,6 +401,7 @@
         "app.routers.auth",
         "app.routers.bulk_resolve",
         "app.routers.feedback",
+        "app.routers.msp_mail",
         "app.routers.my_settings",
         "app.routers.notifications",
         "app.routers.portal",
@@ -700,6 +701,7 @@
         "tests/test_mail_subscriptions.py",
         "tests/test_msp.py",
         "tests/test_msp_mail.py",
+        "tests/test_msp_real_mail.py",
         "tests/test_outbound_mail.py",
         "tests/test_presence.py",
         "tests/test_public_surface.py",
@@ -731,6 +733,7 @@
         "app.routers.dev_tools",
         "app.routers.feedback",
         "app.routers.health",
+        "app.routers.msp_mail",
         "app.routers.my_settings",
         "app.routers.notifications",
         "app.routers.portal",
@@ -1079,6 +1082,7 @@
         "ingest_mail",
         "load_attachments",
         "may_reply",
+        "msp_trust",
         "parse_graph_message",
         "process_message",
         "process_notifications",
@@ -1121,6 +1125,7 @@
         "tests/test_follower_updates.py",
         "tests/test_inbound_mail.py",
         "tests/test_msp_mail.py",
+        "tests/test_msp_real_mail.py",
         "tests/test_never_follow.py",
         "tests/test_reopening.py",
         "tests/test_thanks_rules.py",
@@ -1324,6 +1329,7 @@
         "app.routers.dev_tools",
         "app.routers.feedback",
         "app.routers.health",
+        "app.routers.msp_mail",
         "app.routers.my_settings",
         "app.routers.notifications",
         "app.routers.portal",
@@ -1415,6 +1421,7 @@
         "tests/test_inbound_mail.py",
         "tests/test_messages.py",
         "tests/test_msp_mail.py",
+        "tests/test_msp_real_mail.py",
         "tests/test_never_follow.py",
         "tests/test_outbound_mail.py",
         "tests/test_reply_notification.py",
@@ -1444,6 +1451,7 @@
         "Message",
         "MessageDirection",
         "MessageVisibility",
+        "MspUnmatchedMail",
         "NeverFollowAddress",
         "Notification",
         "NotificationPreference",
@@ -1526,6 +1534,7 @@
         "app.routers.auth",
         "app.routers.bulk_resolve",
         "app.routers.feedback",
+        "app.routers.msp_mail",
         "app.routers.my_settings",
         "app.routers.notifications",
         "app.routers.portal",
@@ -1611,6 +1620,10 @@
         {
           "class": "Message",
           "table": "message"
+        },
+        {
+          "class": "MspUnmatchedMail",
+          "table": "mspunmatchedmail"
         },
         {
           "class": "NeverFollowAddress",
@@ -1756,6 +1769,7 @@
         "tests/test_messages.py",
         "tests/test_msp.py",
         "tests/test_msp_mail.py",
+        "tests/test_msp_real_mail.py",
         "tests/test_never_follow.py",
         "tests/test_notification_followup.py",
         "tests/test_notification_settings.py",
@@ -1804,16 +1818,20 @@
       "classes": [
         "ForwardPreview",
         "MspError",
-        "MspPreview"
+        "MspPreview",
+        "MspSubject"
       ],
       "file": "app/msp.py",
       "functions": [
+        "alert_unacknowledged",
         "attachment_plan",
         "business_hours",
         "check_can_send",
+        "compile_subject_pattern",
         "compose",
         "compose_forward",
         "dismiss_forward",
+        "dismiss_unmatched",
         "forward_if_out_of_hours",
         "forward_message",
         "forward_waiting_messages",
@@ -1823,20 +1841,30 @@
         "hold_ticket",
         "is_business_time",
         "is_msp_sender",
+        "link_unmatched",
         "may_hold",
         "msp_address",
+        "park_unmatched",
+        "parse_subject",
         "pending_forwards",
         "plan_files",
+        "receive_acknowledgement",
         "receive_mail",
         "release_hold",
+        "run_msp_ack_alerts",
         "run_msp_forwards",
         "run_msp_handoff",
         "send_to_msp",
-        "sent_to_msp"
+        "sent_to_msp",
+        "ticket_by_msp_number",
+        "ticket_of_acknowledgement",
+        "unmatched_query"
       ],
       "imported_by": [
         "app.escalation",
         "app.inbound",
+        "app.routers.admin",
+        "app.routers.msp_mail",
         "app.routers.tickets",
         "app.scheduled_jobs"
       ],
@@ -1863,7 +1891,8 @@
       "tables": [],
       "tests": [
         "tests/test_msp.py",
-        "tests/test_msp_mail.py"
+        "tests/test_msp_mail.py",
+        "tests/test_msp_real_mail.py"
       ]
     },
     {
@@ -1967,6 +1996,7 @@
         "notify_chase_given_up",
         "notify_due_today",
         "notify_mentions",
+        "notify_msp_unacknowledged",
         "notify_reopened",
         "notify_reply",
         "notify_requesters",
@@ -1989,6 +2019,7 @@
         "app.resolution",
         "app.routers.bulk_resolve",
         "app.routers.feedback",
+        "app.routers.msp_mail",
         "app.routers.my_settings",
         "app.routers.notifications",
         "app.routers.tickets",
@@ -2085,6 +2116,7 @@
       "imported_by": [
         "app.feedback",
         "app.routers.admin",
+        "app.routers.msp_mail",
         "app.routers.notifications",
         "app.routers.portal",
         "app.routers.tickets"
@@ -2576,6 +2608,7 @@
         "app.forms",
         "app.inbound",
         "app.models",
+        "app.msp",
         "app.never_follow",
         "app.pagination",
         "app.permissions",
@@ -3138,6 +3171,50 @@
         }
       ],
       "summary": "",
+      "tables": [],
+      "tests": []
+    },
+    {
+      "classes": [],
+      "file": "app/routers/msp_mail.py",
+      "functions": [
+        "dismiss_item",
+        "link_item",
+        "unmatched_list"
+      ],
+      "imported_by": [
+        "app.main"
+      ],
+      "imports": [
+        "app.auth",
+        "app.database",
+        "app.models",
+        "app.msp",
+        "app.notifications",
+        "app.pagination",
+        "app.templating",
+        "app.ticket_service",
+        "app.visibility"
+      ],
+      "module": "app.routers.msp_mail",
+      "routes": [
+        {
+          "handler": "unmatched_list",
+          "method": "GET",
+          "path": "/msp-mail"
+        },
+        {
+          "handler": "dismiss_item",
+          "method": "POST",
+          "path": "/msp-mail/{item_id}/dismiss"
+        },
+        {
+          "handler": "link_item",
+          "method": "POST",
+          "path": "/msp-mail/{item_id}/link"
+        }
+      ],
+      "summary": "Mail from the MSP that matched no ticket (issue #149): an agent links each item to a ticket, or dismisses it. Agents",
       "tables": [],
       "tests": []
     },
@@ -3813,6 +3890,7 @@
         "tests/test_mail_subscriptions.py",
         "tests/test_msp.py",
         "tests/test_msp_mail.py",
+        "tests/test_msp_real_mail.py",
         "tests/test_never_follow.py",
         "tests/test_notification_followup.py",
         "tests/test_outbound_mail.py",
@@ -4186,6 +4264,7 @@
         "app.routers.auth",
         "app.routers.bulk_resolve",
         "app.routers.feedback",
+        "app.routers.msp_mail",
         "app.routers.my_settings",
         "app.routers.notifications",
         "app.routers.portal",
@@ -4281,6 +4360,7 @@
         "app.resolution",
         "app.routers.admin",
         "app.routers.bulk_resolve",
+        "app.routers.msp_mail",
         "app.routers.portal",
         "app.routers.tickets",
         "app.search",
@@ -4460,6 +4540,7 @@
         "app.notifications",
         "app.routers.attachments",
         "app.routers.bulk_resolve",
+        "app.routers.msp_mail",
         "app.routers.portal",
         "app.routers.tickets",
         "app.subrequests",
@@ -4917,6 +4998,7 @@
     "tests/test_migrations_env.py",
     "tests/test_msp.py",
     "tests/test_msp_mail.py",
+    "tests/test_msp_real_mail.py",
     "tests/test_never_follow.py",
     "tests/test_notification_followup.py",
     "tests/test_notification_settings.py",

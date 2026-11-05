@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Mail from the MSP that matched no ticket{% endblock %}
+{% block content %}
+<h2>Mail from the MSP that matched no ticket</h2>
+<p class="note">
+  These came from the MSP's address and could not be matched to a ticket sent to it: no known MSP ticket number, no
+  [INC-n] reference, no thread. Link each to a ticket (type its number), which records it there as if it had matched and,
+  when the subject carries the MSP's ticket number, remembers it for that ticket. Or dismiss it.
+  Mail that is not verified (Microsoft's check did not say pass) is marked and is never forwarded to the user automatically. Only the text is kept here, not any files.
+</p>
+{% for item in items %}
+<div class="review-item">
+  <p><b>{{ item.subject }}</b>
+    {% if item.msp_number %}&middot; MSP ticket #{{ item.msp_number }}{% endif %}
+    {% if item.is_acknowledgement %}&middot; acknowledgement{% endif %}
+    {% if not item.verified %}<span class="badge">sender not verified</span>{% endif %}
+    &middot; {{ item.created_at|local_time }}</p>
+  <details>
+    <summary>Show the mail</summary>
+    <p class="note">From {{ item.sender }}{% if item.to_addresses %}, to {{ item.to_addresses }}{% endif %}{% if item.cc_addresses %}, cc {{ item.cc_addresses }}{% endif %}</p>
+    <pre>{{ item.body }}</pre>
+  </details>
+  <form method="post" action="/msp-mail/{{ item.id }}/link" class="inline-form">
+    <label>Ticket <input type="text" name="ticket" maxlength="40" placeholder="INC-1042" required /></label>
+    <button type="submit">Link to ticket</button>
+  </form>
+  <form method="post" action="/msp-mail/{{ item.id }}/dismiss" class="inline-form">
+    <button type="submit">Dismiss</button>
+  </form>
+</div>
+{% else %}
+<p>Nothing waiting.</p>
+{% endfor %}
+{% include "_pagination.html" %}
+{% endblock %}

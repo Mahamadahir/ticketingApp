@@ -37,6 +37,7 @@ APPROVAL_OVERDUE = "approval_overdue"
 APPROVAL_WAITING = "approval_waiting"
 DUE_TODAY = "due_today"
 CHASE_GIVEN_UP = "chase_given_up"
+MSP_UNACKNOWLEDGED = "msp_unacknowledged"
 # The bell entries for the requester and the external followers of a ticket (#130). They open in the portal.
 AGENT_EMAILED = "agent_emailed"
 AWAITING_YOU = "awaiting_you"
@@ -486,6 +487,24 @@ def notify_chase_given_up(session: Session, ticket: Ticket) -> list[Notification
         if person is None or not person.is_active or not _can_open(session, person, ticket):
             continue
         notification = notify(session, person, CHASE_GIVEN_UP, ticket, text, None)
+        if notification is not None:
+            made.append(notification)
+    return made
+
+
+def notify_msp_unacknowledged(session: Session, ticket: Ticket) -> list[Notification]:
+    """Tells whoever owns a ticket that the MSP has not confirmed it (app/msp.py `alert_unacknowledged`): the assigned
+    agent, or the team's working members while nobody is assigned. Only people who can open the ticket. Does not commit."""
+    if ticket.assigned_agent_id is not None:
+        people = [session.get(User, ticket.assigned_agent_id)]
+    else:
+        people = team_members(session, ticket.team_id)
+    text = f"The MSP hasn't confirmed {REF}"
+    made = []
+    for person in people:
+        if person is None or not person.is_active or not _can_open(session, person, ticket):
+            continue
+        notification = notify(session, person, MSP_UNACKNOWLEDGED, ticket, text, None)
         if notification is not None:
             made.append(notification)
     return made

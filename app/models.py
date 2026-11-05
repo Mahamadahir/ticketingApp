@@ -280,6 +280,10 @@ class Ticket(SQLModel, table=True):
     # it; msp_sent_at is when it last went to the MSP (by hand or by the 18:00 job).
     msp_hold: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
     msp_sent_at: Optional[datetime] = Field(default=None)
+    # The MSP's own number for this ticket, learned from its acknowledgement (app/msp.py). Unique: one MSP ticket is
+    # one of ours. msp_ack_alerted_at is when the "MSP has not confirmed" alert was last raised (once per handoff).
+    msp_ticket_number: Optional[str] = Field(default=None, unique=True, index=True)
+    msp_ack_alerted_at: Optional[datetime] = Field(default=None)
 
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -305,6 +309,8 @@ class Message(SQLModel, table=True):
     # Set only on a message that came from the MSP (app/msp.py): "not_needed" (the requester was on the mail),
     # "pending" (the MSP left them off; agents-only until forwarded), "forwarded" or "dismissed".
     msp_forward: Optional[str] = Field(default=None)
+    # An MSP message whose sender check did not pass (Microsoft's compauth was not "pass"): never forwarded automatically.
+    msp_unverified: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
     author_user_id: Optional[int] = Field(default=None, foreign_key="user.id")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -815,6 +821,27 @@ class InboundMail(SQLModel, table=True):
     outcome: str  # ticket_created, reply_added or ignored_*
     ticket_id: Optional[int] = Field(default=None, foreign_key="ticket.id", index=True)
     message_id: Optional[int] = Field(default=None, foreign_key="message.id")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class MspUnmatchedMail(SQLModel, table=True):
+    """Mail from the MSP that matched no ticket (app/msp.py `park_unmatched`), kept for an agent to link to a ticket or
+    dismiss. `status` is open, linked or dismissed. `verified` is whether Microsoft's compauth verdict was pass."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    graph_message_id: str = Field(unique=True)
+    sender: str
+    subject: str
+    body: str
+    to_addresses: Optional[str] = Field(default=None)
+    cc_addresses: Optional[str] = Field(default=None)
+    msp_number: Optional[str] = Field(default=None)  # the MSP's ticket number, when the subject carried one
+    is_acknowledgement: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
+    verified: bool = Field(default=True, sa_column_kwargs={"server_default": "true"})
+    status: str = Field(default="open", index=True)
+    ticket_id: Optional[int] = Field(default=None, foreign_key="ticket.id")
+    resolved_by: Optional[str] = Field(default=None)
+    resolved_at: Optional[datetime] = Field(default=None)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

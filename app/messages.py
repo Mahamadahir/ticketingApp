@@ -281,13 +281,14 @@ def record_msp_message(
     they may see; one they were left off is agents-only until it is forwarded (app/msp.forward_message flips it). It
     is not an agent's email, so it is never queued as mail, and not a first response. The assigned agent is told, as
     for any update from outside."""
-    visible = forward != "pending"
+    visible = forward not in ("pending", "internal")
     message = _record(
         session, ticket, sender=sender, body=body, direction=MessageDirection.OUTBOUND,
         visibility=MessageVisibility.PUBLIC if visible else MessageVisibility.AGENTS_ONLY,
     )
     message.msp_forward = forward
-    notify_reply(session, ticket, sender)
+    if forward != "internal":  # an acknowledgement tells nobody
+        notify_reply(session, ticket, sender)
     return message
 
 

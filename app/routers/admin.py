@@ -148,6 +148,7 @@ from app.settings_store import (
     get_setting,
     set_setting,
 )
+from app.msp import compile_subject_pattern
 from app.inbound import IGNORED_FLOOD
 from app.subscriptions import health_warnings, mail_folder, subscription_resource
 from app.teams import MAX_ATTEMPTS
@@ -1572,7 +1573,7 @@ def save_setting(
         raise HTTPException(status_code=404, detail="Unknown setting")
 
     value = value.strip()
-    if len(value) > 200 and definition.kind != "dates":
+    if len(value) > (500 if definition.kind == "regex" else 200) and definition.kind != "dates":
         raise HTTPException(status_code=400, detail="That is too long (200 characters at most)")
     if definition.kind == "email" and value:
         try:
@@ -1595,6 +1596,14 @@ def save_setting(
     if definition.kind == "count":
         if not (value.isascii() and value.isdigit()) or not 1 <= int(value) <= 1000:
             raise HTTPException(status_code=400, detail="Enter a whole number from 1 to 1000")
+    if definition.kind == "off_minutes":
+        if not (value.isascii() and value.isdigit()) or not 0 <= int(value) <= 525600:
+            raise HTTPException(status_code=400, detail="Enter a whole number of minutes, 0 to 525600 (0 is off)")
+    if definition.kind == "regex" and value:  # blank means the default pattern
+        try:
+            compile_subject_pattern(value)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error))
     if definition.kind == "hour":
         if not (value.isascii() and value.isdigit()) or not 0 <= int(value) <= 23:
             raise HTTPException(status_code=400, detail="Enter a whole number from 0 to 23")

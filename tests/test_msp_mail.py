@@ -68,6 +68,7 @@ from tests.test_inbound_mail import FakeGraph, MAILBOX, graph_message, mail as p
 from tests.test_visibility import agent_in
 
 MSP = "support@msp.example"
+MSP_PASS = "mx.microsoft.com 1; spf=pass; dkim=fail (body hash did not verify) header.d=msp.example;dmarc=pass action=none header.from=msp.example;compauth=pass reason=100"
 UTC = timezone.utc
 # Wednesday 4 November 2026 in London (GMT): 11:00 is business hours, 20:00 is not.
 IN_HOURS = datetime(2026, 11, 4, 11, 0, tzinfo=UTC)
@@ -101,7 +102,8 @@ _ids = itertools.count(1)
 def from_msp(ticket, message_id=None, to=("jo@example.com",), cc=(MAILBOX,), body="We have booked an engineer.", **fields):
     message_id = message_id or f"msp{next(_ids)}"
     fields = {
-        "subject": f"Re: [{ticket.reference}] {ticket.subject}", "conversation_id": f"conv-{message_id}", **fields,
+        "subject": f"Re: [{ticket.reference}] {ticket.subject}", "conversation_id": f"conv-{message_id}",
+        "headers": {"authentication-results": MSP_PASS}, **fields,  # Microsoft's verdict: compauth=pass
     }
     return IncomingMail(
         graph_message_id=message_id, sender=MSP, body=body, internet_message_id=f"{message_id}@msp.example",
@@ -242,6 +244,7 @@ def test_only_the_new_text_is_recorded_through_graph(db_session):
         body_full={},
     )
     graph.messages["g1"]["body"] = {"contentType": "text", "content": "Booked for Thursday.\n\n-----Original Message-----\nthe whole earlier thread"}
+    graph.messages["g1"]["internetMessageHeaders"] = [{"name": "Authentication-Results", "value": MSP_PASS}]
     result = process_message(db_session, "g1", graph)
     db_session.commit()
     assert result.outcome == REPLY_ADDED
@@ -659,15 +662,6 @@ def test_a_reply_about_a_part_sent_to_the_msp_finds_the_original(db_session):
     result = take(db_session, from_msp(original), IN_HOURS)  # the family's one subject carries the original's reference
     assert result.outcome == REPLY_ADDED and result.ticket.id == original.id
     assert part.msp_sent_at is not None
-
-
-def test_a_mail_that_fails_the_senders_check_is_not_believed(db_session):
-    ticket = with_msp(db_session, requester_email="jo@example.com")
-    forged = from_msp(ticket, to=("else@msp.example",), headers={"authentication-results": "mx.example; spf=pass; dmarc=fail action=none"})
-    assert take(db_session, forged, AFTER_HOURS).outcome == IGNORED_MSP
-    assert messages_of(db_session, ticket) == [] and forwards(db_session) == []
-    fine = from_msp(ticket, headers={"authentication-results": "mx.example; spf=pass; dkim=pass; dmarc=pass"})
-    assert take(db_session, fine, IN_HOURS).outcome == REPLY_ADDED
 
 
 def test_business_hours_that_end_before_they_start_are_refused_and_never_used(client, db_session):

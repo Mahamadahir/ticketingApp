@@ -27,6 +27,7 @@ in docs/plan.md). The job does not run in business hours: a handoff missed overn
 
 import hashlib
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta, timezone
 from typing import Optional
@@ -52,6 +53,8 @@ from app.models import (
     Message,
     MessageDirection,
     MessageVisibility,
+    MspUnmatchedMail,
+    OutboundEmail,
     Team,
     Ticket,
     TicketEscalator,
@@ -59,9 +62,11 @@ from app.models import (
     TicketStatus,
     User,
 )
-from app.notifications import notify_mentions
-from app.outbox import is_on, queue_msp_forward, queue_msp_handoff
+from app.notifications import notify_mentions, notify_msp_unacknowledged
+from app.outbox import MSP_HANDOFF, is_on, queue_msp_forward, queue_msp_handoff
 from app.settings_store import (
+    MSP_ACK_ALERT_MINUTES,
+    MSP_ACK_MATCH_DAYS,
     MSP_ADDRESS,
     MSP_ATTACH_MAX_MB,
     MSP_BANK_HOLIDAYS,
@@ -69,6 +74,8 @@ from app.settings_store import (
     MSP_BUSINESS_MORNING_HOUR,
     MSP_BUSINESS_START,
     MSP_HANDOFF_HOUR,
+    MSP_SUBJECT_PATTERN,
+    MSP_SUBJECT_PATTERN_DEFAULT,
     REGISTRY,
     count_setting,
     get_int_setting,
@@ -90,12 +97,14 @@ EVENT_MSP_HOLD_RELEASED = "msp_hold_released"
 EVENT_MSP_MAIL = "msp_mail_received"  # to_value: not_needed (the user was on it) or pending (they were left off)
 EVENT_MSP_FORWARDED = "msp_forwarded"  # to_value: agent or automatic (the reporting data: manual against automatic)
 EVENT_MSP_FORWARD_DISMISSED = "msp_forward_dismissed"
+EVENT_MSP_ACKNOWLEDGED = "msp_acknowledged"  # to_value: the MSP's ticket number
 
 # Message.msp_forward values.
 FORWARD_NOT_NEEDED = "not_needed"
 FORWARD_PENDING = "pending"
 FORWARD_FORWARDED = "forwarded"
 FORWARD_DISMISSED = "dismissed"
+FORWARD_INTERNAL = "internal"  # the acknowledgement: agents only, never forwarded
 BY_AGENT = "agent"
 BY_AUTOMATIC = "automatic"
 
@@ -562,22 +571,26 @@ def sent_to_msp(session: Session, ticket: Ticket) -> bool:
 
 
 def receive_mail(
-    session: Session, ticket: Ticket, *, sender: str, body: str, recipients: list[str], now: Optional[datetime] = None
+    session: Session, ticket: Ticket, *, sender: str, body: str, recipients: list[str], now: Optional[datetime] = None,
+    verified: bool = True,
 ) -> Message:
     """Records a mail from the MSP on the ticket it belongs to (app/inbound.py found the ticket and checked it was
     sent to the MSP; `body` is the mail's own new text, uniqueBody). `recipients` is everyone on To and Cc. If the
     requester was one of them they already have it and it is an ordinary public message. If the MSP left them off, it
     is agents-only until forwarded: out of business hours it is forwarded to them with no preview, and in
     business hours the agent is told and previews it (`forward_if_out_of_hours` does the out-of-hours forward, once the
-    files are stored). Never changes the ticket's status. Does not commit."""
+    files are stored). A mail whose sender check did not pass (`verified` False) is never forwarded automatically: it
+    waits for an agent whatever the time. Never changes the ticket's status. Does not commit."""
     requester = ticket.requester_email.strip().lower()
     on_it = requester in {r.strip().lower() for r in recipients}
-    state = FORWARD_NOT_NEEDED if on_it else FORWARD_PENDING
+    # Mail whose sender check did not pass is never shown to the user on its own say-so, even if they were on it.
+    state = FORWARD_NOT_NEEDED if on_it and verified else FORWARD_PENDING
     message = record_msp_message(session, ticket, sender=sender, body=body, forward=state)
+    message.msp_unverified = not verified
     session.flush()
     record_event(
         session, ticket, EVENT_MSP_MAIL, sender, to_value=state,
-        detail="The user was on it" if on_it else "The user was left off To and Cc",
+        detail=("The user was on it" if on_it else "The user was left off To and Cc") + ("" if verified else "; the sender was not verified, so it waits for an agent"),
     )
     log_action(session, sender, "ticket", ticket.id, "msp_mail_received", state)
     return message
@@ -586,7 +599,7 @@ def receive_mail(
 def forward_if_out_of_hours(session: Session, ticket: Ticket, message: Message, now: Optional[datetime] = None) -> bool:
     """Out of business hours (with mail on), forwards a message the MSP left the user off, at once with no preview.
     Called once the mail's files are stored, so they go with it. True if it was forwarded."""
-    if message.msp_forward != FORWARD_PENDING or not is_on() or is_business_time(session, now):
+    if message.msp_forward != FORWARD_PENDING or message.msp_unverified or not is_on() or is_business_time(session, now):
         return False
     forward_message(session, ticket, message, None)
     return True
@@ -679,7 +692,9 @@ def forward_waiting_messages(session: Session, now: Optional[datetime] = None) -
     if not is_on() or is_business_time(session, now):
         return 0
     rows = session.exec(
-        select(Message.id, Message.ticket_id).where(Message.msp_forward == FORWARD_PENDING).order_by(Message.id)
+        select(Message.id, Message.ticket_id).where(
+            Message.msp_forward == FORWARD_PENDING, Message.msp_unverified.is_(False)  # an unverified one waits for an agent
+        ).order_by(Message.id)
     ).all()
     sent = 0
     for message_id, ticket_id in rows:
@@ -699,6 +714,260 @@ def forward_waiting_messages(session: Session, now: Optional[datetime] = None) -
 def run_msp_forwards(session: Session) -> None:
     """The recurring job (registered in app/scheduled_jobs.py)."""
     forward_waiting_messages(session)
+
+
+# ---- The MSP's own ticket number, and mail that matches nothing ---------------------------------------------
+
+STATUS_OPEN = "open"
+STATUS_LINKED = "linked"
+STATUS_DISMISSED = "dismissed"
+ACK_ALERT_WINDOW = timedelta(days=3)  # a handoff older than this is not alerted about (a newly switched-on alert must not flood)
+MAX_NUMBER = 40
+MAX_UNMATCHED_BODY = 20000
+
+
+def compile_subject_pattern(value: str) -> "re.Pattern[str]":
+    """The admin's pattern for the MSP's subject, checked: a valid regular expression with the named groups `number` and
+    `title`. Raises ValueError saying what is wrong."""
+    if len(value) > 500:
+        raise ValueError("That pattern is too long (500 characters at most)")
+    try:
+        pattern = re.compile(value)
+    except re.error as error:
+        raise ValueError(f"That is not a valid regular expression: {error}")
+    for group in ("number", "title"):
+        if group not in pattern.groupindex:
+            raise ValueError(f"The pattern needs a named group called {group}, written (?P<{group}>...)")
+    return pattern
+
+
+@dataclass(frozen=True)
+class MspSubject:
+    number: str
+    title: str
+    is_acknowledgement: bool  # the "has been received" mail
+
+
+def parse_subject(session: Session, subject: str) -> Optional[MspSubject]:
+    """What the MSP's subject says (its ticket number and our subject, or its own title), by the admin's pattern; None for a
+    subject the pattern does not match. A pattern that no longer compiles falls back to the default, so a bad edit
+    cannot stop the MSP's mail being read."""
+    try:
+        pattern = compile_subject_pattern(get_setting(session, MSP_SUBJECT_PATTERN))
+    except ValueError:
+        pattern = compile_subject_pattern(MSP_SUBJECT_PATTERN_DEFAULT)
+    match = pattern.search(" ".join(subject.split())[:500])
+    if match is None:
+        return None
+    number = (match.group("number") or "").strip()[:MAX_NUMBER]
+    if not number:
+        return None
+    action = match.groupdict().get("action") or ""
+    return MspSubject(number, (match.group("title") or "").strip(), action.strip().lower() == "received")
+
+
+def ticket_by_msp_number(session: Session, number: str) -> Optional[Ticket]:
+    return session.exec(select(Ticket).where(Ticket.msp_ticket_number == number)).first()
+
+
+def _same_subject(a: str, b: str) -> bool:
+    return " ".join(a.split()) == " ".join(b.split())
+
+
+def ticket_of_acknowledgement(
+    session: Session, title: str, body: str, reference_of, now: Optional[datetime] = None
+) -> tuple[Optional[Ticket], Optional[str]]:
+    """The ticket an acknowledgement is about: our [INC-n] reference in its title or its body (`reference_of` reads one,
+    app/inbound.py's), otherwise the one ticket whose email to the MSP, sent in the last N days (a setting), had exactly
+    this title as its subject. More than one such ticket, or none, is no match. Only a ticket that was sent to the MSP."""
+    for text in (title, body):
+        ticket = reference_of(session, text)
+        if ticket is not None and sent_to_msp(session, ticket):
+            return ticket, "reference"
+    since = (now or datetime.now(timezone.utc)) - timedelta(days=count_setting(session, MSP_ACK_MATCH_DAYS))
+    rows = session.exec(
+        select(OutboundEmail.ticket_id, OutboundEmail.subject).where(
+            OutboundEmail.kind == MSP_HANDOFF, OutboundEmail.sent_at.is_not(None), OutboundEmail.sent_at >= since,
+            func.regexp_replace(func.btrim(OutboundEmail.subject), r"\s+", " ", "g") == " ".join(title.split()),
+        )
+    ).all()
+    ids = {ticket_id for ticket_id, subject in rows if _same_subject(subject or "", title)}
+    if len(ids) == 1:
+        ticket = session.get(Ticket, ids.pop())
+        if ticket is not None:
+            return ticket, "subject"
+    return None, None
+
+
+def receive_acknowledgement(
+    session: Session, ticket: Ticket, *, sender: str, body: str, number: Optional[str], learn: bool
+) -> Optional[Message]:
+    """Records the MSP's acknowledgement on the ticket: an internal note (never forwarded to the user, nobody told), and,
+    when `learn` (the sender check passed, or an agent linked it), the MSP's number is stored on the ticket and an
+    msp_acknowledged event records it. Returns None, recording nothing, if the number already belongs to another
+    ticket. Does not commit."""
+    ticket = _lock(session, ticket)
+    if learn and number:
+        other = ticket_by_msp_number(session, number)
+        if other is not None and other.id != ticket.id:
+            return None
+        previous = ticket.msp_ticket_number
+        try:
+            with session.begin_nested():  # the unique index decides a race between two tickets taking one number
+                ticket.msp_ticket_number = number
+                session.add(ticket)
+                session.flush()
+        except IntegrityError:
+            session.refresh(ticket)
+            return None
+    message = record_msp_message(session, ticket, sender=sender, body=body, forward=FORWARD_INTERNAL)
+    message.msp_unverified = not learn
+    session.flush()
+    if learn and number:
+        record_event(
+            session, ticket, EVENT_MSP_ACKNOWLEDGED, sender, from_value=previous if previous != number else None, to_value=number,
+            detail=f"The MSP has it as MSP ticket #{number}",
+        )
+        log_action(session, sender, "ticket", ticket.id, "msp_acknowledged", number)
+    return message
+
+
+def park_unmatched(
+    session: Session, *, graph_message_id: str, sender: str, subject: str, body: str, to: list[str], cc: list[str],
+    parsed: Optional[MspSubject], verified: bool,
+) -> MspUnmatchedMail:
+    """Keeps trusted mail from the MSP that matched no ticket, for an agent to link or dismiss (the list under Tickets)."""
+    item = MspUnmatchedMail(
+        graph_message_id=graph_message_id[:998], sender=sender, subject=subject[:500], body=body[:MAX_UNMATCHED_BODY],
+        to_addresses=", ".join(to[:100]) or None, cc_addresses=", ".join(cc[:100]) or None,
+        msp_number=parsed.number if parsed else None, is_acknowledgement=bool(parsed and parsed.is_acknowledgement),
+        verified=verified,
+    )
+    session.add(item)
+    session.flush()
+    return item
+
+
+def unmatched_query():
+    """The mail waiting for an agent, oldest first (the list pages it). It has no team, so any agent may see and link it: the
+    list is agent-only by decision (#149), and linking needs access to the ticket chosen."""
+    return select(MspUnmatchedMail).where(MspUnmatchedMail.status == STATUS_OPEN).order_by(MspUnmatchedMail.id)
+
+
+def _locked_open(session: Session, item: MspUnmatchedMail) -> MspUnmatchedMail:
+    locked = session.exec(
+        select(MspUnmatchedMail).where(MspUnmatchedMail.id == item.id).with_for_update().execution_options(populate_existing=True)
+    ).one()
+    if locked.status != STATUS_OPEN:
+        raise MspError("That mail has already been linked or dismissed")
+    return locked
+
+
+def link_unmatched(session: Session, item: MspUnmatchedMail, ticket: Ticket, actor: User) -> Message:
+    """An agent says which ticket this mail belongs to: it is recorded as if it had matched (an acknowledgement as one, other
+    mail as `receive_mail` does, never forwarded automatically) and the MSP's number, when it carried one, is stored on the
+    ticket. The caller has checked the agent may work the ticket. Raises MspError and changes nothing when it cannot be
+    linked. Does not commit."""
+    item = _locked_open(session, item)
+    ticket = _lock(session, ticket)
+    if item.msp_number:
+        other = ticket_by_msp_number(session, item.msp_number)
+        if other is not None and other.id != ticket.id:
+            raise MspError(f"The MSP's ticket #{item.msp_number} already belongs to {other.reference}")
+    recipients = [a.strip() for a in ((item.to_addresses or "") + "," + (item.cc_addresses or "")).split(",") if a.strip()]
+    if item.is_acknowledgement:
+        message = receive_acknowledgement(
+            session, ticket, sender=item.sender, body=item.body, number=item.msp_number, learn=True
+        )
+    else:
+        message = receive_mail(session, ticket, sender=item.sender, body=item.body, recipients=recipients, verified=item.verified)
+        if item.msp_number and not ticket.msp_ticket_number:
+            ticket.msp_ticket_number = item.msp_number
+            session.add(ticket)
+            record_event(
+                session, ticket, EVENT_MSP_ACKNOWLEDGED, actor.email, to_value=item.msp_number,
+                detail=f"Linked by {actor.email}: the MSP has it as MSP ticket #{item.msp_number}",
+            )
+    message.graph_message_id = item.graph_message_id
+    item.status = STATUS_LINKED
+    item.ticket_id = ticket.id
+    item.resolved_by = actor.email
+    item.resolved_at = datetime.now(timezone.utc)
+    session.add(item)
+    log_action(session, actor.email, "ticket", ticket.id, "msp_mail_linked", f"unmatched mail {item.id}")
+    return message
+
+
+def dismiss_unmatched(session: Session, item: MspUnmatchedMail, actor: User) -> None:
+    item = _locked_open(session, item)
+    item.status = STATUS_DISMISSED
+    item.resolved_by = actor.email
+    item.resolved_at = datetime.now(timezone.utc)
+    session.add(item)
+    log_action(session, actor.email, "msp_unmatched_mail", item.id, "msp_mail_dismissed", item.subject[:200])
+
+
+# ---- The no-acknowledgement alert --------------------------------------------------------------------------
+
+
+def alert_unacknowledged(session: Session, now: Optional[datetime] = None) -> int:
+    """For each ticket sent to the MSP whose latest handoff email was sent more than the alert setting ago and has no
+    msp_acknowledged event since, tells the assignee (or the team's working members) once, "The MSP hasn't confirmed
+    INC-1042". Once per handoff: `msp_ack_alerted_at` is set, and a new handoff email is a new handoff. A finished ticket,
+    and a handoff older than three days (the job was off), are left alone. 0 minutes turns it off. Each ticket is locked
+    (SKIP LOCKED) so two workers do not both tell. Does not commit. Returns how many tickets were alerted."""
+    now = now or datetime.now(timezone.utc)
+    minutes = get_int_setting(session, MSP_ACK_ALERT_MINUTES)
+    minutes = int(REGISTRY[MSP_ACK_ALERT_MINUTES].default) if minutes is None else minutes
+    if minutes <= 0:
+        return 0
+    latest = (
+        select(
+            OutboundEmail.ticket_id.label("ticket_id"), func.max(OutboundEmail.sent_at).label("sent_at"),
+            func.max(OutboundEmail.created_at).label("queued_at"),
+        )
+        .where(OutboundEmail.kind == MSP_HANDOFF, OutboundEmail.sent_at.is_not(None))
+        .group_by(OutboundEmail.ticket_id)
+        .subquery()
+    )
+    due = session.exec(
+        select(Ticket.id, latest.c.sent_at, latest.c.queued_at)
+        .join(latest, latest.c.ticket_id == Ticket.id)
+        .where(
+            latest.c.sent_at <= now - timedelta(minutes=minutes),
+            latest.c.sent_at >= now - ACK_ALERT_WINDOW,
+            Ticket.status.not_in(FINISHED_STATUSES),
+            or_(Ticket.msp_ack_alerted_at.is_(None), Ticket.msp_ack_alerted_at < latest.c.sent_at),
+        )
+        .order_by(Ticket.id)
+    ).all()
+    told = 0
+    for ticket_id, sent_at, queued_at in due:
+        ticket = session.exec(
+            select(Ticket).where(Ticket.id == ticket_id).with_for_update(skip_locked=True).execution_options(populate_existing=True)
+        ).first()
+        if ticket is None or (ticket.msp_ack_alerted_at is not None and ticket.msp_ack_alerted_at >= sent_at):
+            continue  # another worker has it, or it was just done
+        acknowledged = session.exec(
+            select(TicketEvent.id).where(
+                TicketEvent.ticket_id == ticket.id, TicketEvent.event_type == EVENT_MSP_ACKNOWLEDGED,
+                TicketEvent.created_at >= queued_at,  # an acknowledgement can land before the send is marked done
+            ).limit(1)
+        ).first()
+        if acknowledged is not None:
+            continue
+        if notify_msp_unacknowledged(session, ticket):  # nobody to tell (or all muted): try again at the next run
+            ticket.msp_ack_alerted_at = now
+            session.add(ticket)
+            told += 1
+    return told
+
+
+def run_msp_ack_alerts(session: Session) -> None:
+    """The recurring job (registered in app/scheduled_jobs.py)."""
+    told = alert_unacknowledged(session)
+    if told:
+        log.info("MSP acknowledgement alerts raised for %s ticket(s)", told)
 
 
 # ---- Reporting data (the reports themselves are phase 7) --------------------------------------------------
