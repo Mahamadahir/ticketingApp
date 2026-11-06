@@ -39,6 +39,9 @@
 {% if approval_rule %}
 <p class="note">Waiting for approval ({{ approval_rule }}).</p>
 {% endif %}
+{% if self_approved %}
+<p class="note">Your own approval was recorded automatically: approvers may approve their own requests of this kind.</p>
+{% endif %}
 {% if my_approval %}
 <form hx-post="/portal/{{ ticket.number }}/approval" hx-target="main" hx-swap="innerHTML">
   <h3>Your approval</h3>

@@ -54,6 +54,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/c4e8a2b6d913_self_approval_switch.py",
+        "revision": "c4e8a2b6d913"
+      },
+      {
         "file": "migrations/versions/b8d3e1f7a642_break_glass_accounts.py",
         "revision": "b8d3e1f7a642"
       },
@@ -68,17 +72,13 @@
       {
         "file": "migrations/versions/ac2ff6b52e5c_msp_ticket_number_and_unmatched_mail.py",
         "revision": "ac2ff6b52e5c"
-      },
-      {
-        "file": "migrations/versions/e7a39c5d1b84_msp_mail_forwarding.py",
-        "revision": "e7a39c5d1b84"
       }
     ],
-    "count": 57,
+    "count": 58,
     "heads": [
       {
-        "file": "migrations/versions/b8d3e1f7a642_break_glass_accounts.py",
-        "revision": "b8d3e1f7a642"
+        "file": "migrations/versions/c4e8a2b6d913_self_approval_switch.py",
+        "revision": "c4e8a2b6d913"
       }
     ]
   },
@@ -267,6 +267,7 @@
         "drop_votes_of",
         "eligible_voters",
         "is_waiting_for_approvers",
+        "may_self_approve",
         "needs_approval",
         "outcome",
         "pending_for",
@@ -318,6 +319,7 @@
         "tests/test_email_templates.py",
         "tests/test_outbound_mail.py",
         "tests/test_requester_bell.py",
+        "tests/test_self_approval.py",
         "tests/test_subrequests.py",
         "tests/test_withdraw.py"
       ]
@@ -1980,6 +1982,7 @@
         "tests/test_scheduled_jobs.py",
         "tests/test_scheduled_status.py",
         "tests/test_search.py",
+        "tests/test_self_approval.py",
         "tests/test_sessions.py",
         "tests/test_sla.py",
         "tests/test_split_family.py",
@@ -4478,6 +4481,7 @@
       "tests": [
         "tests/test_approval_inactive.py",
         "tests/test_entra_check.py",
+        "tests/test_self_approval.py",
         "tests/test_subrequests.py"
       ]
     },
@@ -5417,6 +5421,7 @@
     "tests/test_scheduled_status.py",
     "tests/test_search.py",
     "tests/test_security.py",
+    "tests/test_self_approval.py",
     "tests/test_sessions.py",
     "tests/test_sla.py",
     "tests/test_split_family.py",

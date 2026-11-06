@@ -26,7 +26,12 @@ a catalogue request to an incident ends it). The ticket waits in Awaiting approv
 the outcome (or a super admin waiving it) moves on: approved goes to Open, declined closes it
 and tells the requester. The SLA clock keeps running meanwhile.
 
-The requester never votes on their own request: if they are in the group they are left out. A request type
+The requester never votes on their own request: if they are in the group they are left out, unless the request
+type allows self-approval (`approvers_may_self_approve`, off by default, #167). Then an active requester who is in
+the group is a voter whose approve vote is recorded when the round starts (comment SELF_APPROVED_COMMENT, event
+and audit entry `approval_self_approved`), the outcome is worked out at once (a sole approver, or 1 of 3 at 30%,
+settles it; otherwise the others vote as usual), and the vote cannot be changed. The requester can still withdraw
+while it waits, as the rules above say. A request type
 with no group at all needs no approval. One that has a group but no active member to ask (everyone left, or
 only the requester is in it) does NOT skip approval (#161): the ticket waits in Awaiting approval with no
 approval round ("waiting for approvers"), the super admins are told in the bell, and the round starts by
@@ -69,6 +74,7 @@ from app.models import (
     Setting,
     Ticket,
     TicketApproval,
+    TicketSource,
     TicketStatus,
     TicketType,
     User,
@@ -78,6 +84,7 @@ from app.ticket_service import (
     EVENT_APPROVAL_DECIDED,
     EVENT_APPROVAL_OUTCOME,
     EVENT_APPROVAL_REQUESTED,
+    EVENT_APPROVAL_SELF_APPROVED,
     EVENT_APPROVAL_VOTE_REMOVED,
     EVENT_APPROVAL_WAITING,
     EVENT_APPROVAL_WITHDRAWN,
@@ -99,6 +106,7 @@ WITHDRAWN = "withdrawn"
 SUPERSEDED = "superseded"
 AUDIT_ACTOR = "system"
 MAX_COMMENT_LENGTH = 1000
+SELF_APPROVED_COMMENT = "Self-approved (allowed for this request type)"
 
 
 class ApprovalError(ValueError):
@@ -134,13 +142,24 @@ def outcome(approved: int, declined: int, voters: int, pass_percent: int) -> Opt
     return None
 
 
+def may_self_approve(session: Session, ticket: Ticket) -> bool:
+    """Only a request the requester raised themselves in the portal (signed in as them): an agent raising on someone's
+    behalf, a mail From address or a Teams message is not proof the approver asked, so those are asked as usual."""
+    if ticket.source != TicketSource.PORTAL:
+        return False
+    request_type = session.get(RequestType, ticket.request_type_id) if ticket.request_type_id is not None else None
+    return request_type is not None and request_type.approvers_may_self_approve
+
+
 def eligible_voters(session: Session, ticket: Ticket) -> list[User]:
-    """The members of the ticket's request type's group, leaving out the requester."""
+    """The active members of the ticket's request type's group, leaving out the requester unless the request
+    type lets approvers approve their own requests (#167; an inactive requester is never a member here)."""
     group = approval_group_of(session, ticket)
     if group is None:
         return []
     requester = ticket.requester_email.lower()
-    return [u for u in members_of(session, group.id, active_only=True) if u.email.lower() != requester]
+    keep_requester = may_self_approve(session, ticket)
+    return [u for u in members_of(session, group.id, active_only=True) if keep_requester or u.email.lower() != requester]
 
 
 def approval_group_of(session: Session, ticket: Ticket) -> Optional[ApprovalGroup]:
@@ -210,16 +229,31 @@ def start_approvals(session: Session, ticket: Ticket, actor_email: str) -> Optio
     )
     session.add(approval)
     session.flush()
-    votes = [ApprovalVote(approval_id=approval.id, voter_id=u.id) for u in voters]
+    requester = ticket.requester_email.lower()
+    now = datetime.now(timezone.utc)
+    # The requester is only in `voters` when the type allows self-approval (eligible_voters): their vote is made now.
+    votes = [
+        ApprovalVote(approval_id=approval.id, voter_id=u.id, decision=APPROVED, comment=SELF_APPROVED_COMMENT, decided_at=now)
+        if u.email.lower() == requester else ApprovalVote(approval_id=approval.id, voter_id=u.id)
+        for u in voters
+    ]
     session.add_all(votes)
     session.flush()
+    approved, declined, _ = tally(votes)
+    result = outcome(approved, declined, approval.voters, approval.pass_percent)
     for vote, voter in zip(votes, voters):
-        queue_approval(session, vote, voter)
-        notify_approval_waiting(session, ticket, voter)
+        if vote.decision == PENDING and result is None:  # a request settled by the self-approval asks nobody
+            queue_approval(session, vote, voter)
+            notify_approval_waiting(session, ticket, voter)
     record_event(
         session, ticket, EVENT_APPROVAL_REQUESTED, actor_email,
         to_value=", ".join(u.email for u in voters), detail=describe_rule(approval),
     )
+    if approved:
+        record_event(session, ticket, EVENT_APPROVAL_SELF_APPROVED, ticket.requester_email, to_value=APPROVED, detail=SELF_APPROVED_COMMENT)
+        log_action(session, ticket.requester_email, "ticket", ticket.id, "approval_self_approved", request_type.name)
+    if result is not None:
+        _settle(session, ticket, approval, result, votes, actor_email)
     return approval
 
 

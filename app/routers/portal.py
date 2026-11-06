@@ -18,8 +18,10 @@ from app.followers import (
     remove_follower,
 )
 from app.approvals import (
+    APPROVED,
     MAX_COMMENT_LENGTH,
     PENDING,
+    SELF_APPROVED_COMMENT,
     ApprovalError,
     current_approval,
     withdraw,
@@ -127,6 +129,12 @@ def _my_pending_approval(session: Session, ticket: Ticket, user: User):
     return vote if vote is not None and vote.decision == PENDING else None
 
 
+def _self_approved(session: Session, ticket: Ticket, user: User) -> bool:
+    """The requester's own approval was recorded automatically (the request type allows it, #167)."""
+    vote = vote_for(session, ticket, user) if _is_requester(ticket, user) else None
+    return vote is not None and vote.decision == APPROVED and vote.comment == SELF_APPROVED_COMMENT
+
+
 def _approval_rule(session: Session, ticket: Ticket):
     if ticket.status != TicketStatus.AWAITING_APPROVAL:
         return None
@@ -149,6 +157,7 @@ def _render_ticket(request: Request, ticket: Ticket, user: User, session: Sessio
             "my_approval": _my_pending_approval(session, ticket, user),
             "is_approver": vote_for(session, ticket, user) is not None,
             "approval_rule": _approval_rule(session, ticket),
+            "self_approved": _self_approved(session, ticket, user),
             # Only the requester sees who else is copied; a follower must not learn
             # the other followers' addresses, and internal followers are never shown.
             "followers": (

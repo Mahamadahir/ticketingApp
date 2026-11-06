@@ -802,8 +802,10 @@ prefilled and can be changed.
 - **It starts at triage**, once the real type and team are known: a catalogue request with
   approvers waits for them instead of opening; an agent who retypes it to an incident ends the
   approval; an agent who raises and classifies a request for someone starts it at once. The
-  requester never approves their own request (they are left out; with no one else left, no
-  approval is needed).
+  requester never approves their own request (they are left out; with no one else left the request
+  waits for approvers, #161) unless the request type's switch "Approvers may approve their own requests"
+  is on (off by default, #167): an active requester in the group then approves at once, the usual pass
+  percentage decides whether that settles it, and the audit entry `approval_self_approved` names the type.
 - **Approvers decide in the end-user portal** ("Waiting for your approval", the request page with
   Approve / Decline and an optional comment) and need not be agents. An approver can read the
   request (the requester's public conversation) but nothing else of the agents' side.

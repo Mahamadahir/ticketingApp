@@ -543,6 +543,9 @@ class RequestType(SQLModel, table=True):
     # Off by default (#118 part 2): a sub-request of THIS kind made automatically from another type's templates is
     # covered by its parent's approval. On: it goes through this type's own approval group like any request.
     subrequests_need_own_approval: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
+    # Off by default (#167): an approver who is also the requester counts as a voter and approves their own
+    # request at once (app/approvals.py). Off: the requester is left out of the vote.
+    approvers_may_self_approve: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
