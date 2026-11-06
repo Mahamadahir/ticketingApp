@@ -147,10 +147,10 @@ def test_triaging_a_catalogue_request_with_a_group_waits_for_its_members(client,
     assert "Approvals: pending" in page
 
 
-def test_a_request_type_with_an_empty_group_opens_as_usual(client, db_session):
+def test_a_request_type_with_an_empty_group_waits_for_approvers(client, db_session):
     kind = request_type(db_session, [])
     ticket = raised_and_triaged(client, db_session, kind)
-    assert ticket.status == TicketStatus.OPEN and db_session.exec(select(TicketApproval)).all() == []
+    assert ticket.status == TicketStatus.AWAITING_APPROVAL and db_session.exec(select(TicketApproval)).all() == []  # #161
 
 
 def test_the_requester_never_votes_on_their_own_request(client, db_session):
@@ -165,11 +165,11 @@ def test_the_requester_never_votes_on_their_own_request(client, db_session):
     assert answer(client, ticket, "jo@example.com", "approved").status_code == 404
 
 
-def test_when_the_only_member_is_the_requester_no_approval_is_needed(client, db_session):
+def test_when_the_only_member_is_the_requester_the_request_waits_for_approvers(client, db_session):
     person(client, db_session, "jo@example.com")
     kind = request_type(db_session, ["jo@example.com"])
     ticket = raised_and_triaged(client, db_session, kind, requester="jo@example.com")
-    assert ticket.status == TicketStatus.OPEN and db_session.exec(select(TicketApproval)).all() == []
+    assert ticket.status == TicketStatus.AWAITING_APPROVAL and db_session.exec(select(TicketApproval)).all() == []  # #161
 
 
 def test_a_requester_vote_row_cannot_be_decided_even_if_one_existed(client, db_session):
@@ -918,7 +918,7 @@ def test_a_ticket_closed_after_an_approval_is_reopened_without_asking_again(clie
     assert status(db_session, ticket) == TicketStatus.OPEN
 
 
-def test_nobody_to_ask_means_the_ticket_just_reopens(client, db_session):
+def test_nobody_to_ask_on_a_reopen_waits_for_approvers(client, db_session):
     person(client, db_session, "boss@example.com")
     ticket = raised_and_triaged(client, db_session, request_type(db_session, ["boss@example.com"], 100))
     answer(client, ticket, "boss@example.com", "declined")
@@ -928,4 +928,4 @@ def test_nobody_to_ask_means_the_ticket_just_reopens(client, db_session):
 
     second_agent(client, db_session)
     client.post(f"/tickets/{ticket.number}/status", data={"status": "open"})
-    assert status(db_session, ticket) == TicketStatus.OPEN
+    assert status(db_session, ticket) == TicketStatus.AWAITING_APPROVAL  # #161: it waits for approvers, not skips

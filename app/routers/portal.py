@@ -131,7 +131,7 @@ def _approval_rule(session: Session, ticket: Ticket):
     if ticket.status != TicketStatus.AWAITING_APPROVAL:
         return None
     approval = current_approval(session, ticket)
-    return describe_rule(approval) if approval is not None else None
+    return describe_rule(approval) if approval is not None and approval.status == PENDING else None
 
 
 def _render_ticket(request: Request, ticket: Ticket, user: User, session: Session) -> HTMLResponse:

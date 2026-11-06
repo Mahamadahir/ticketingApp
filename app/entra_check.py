@@ -31,6 +31,7 @@ from zoneinfo import ZoneInfo
 
 from sqlmodel import Session, select
 
+from app.approvals import drop_votes_of
 from app.audit import log_action
 from app.config import settings
 from app.models import Setting, User, UserRole
@@ -155,6 +156,7 @@ def deactivate(session: Session, person: User, reason: str) -> None:
     ended = revoke_user_sessions(session, person.id)
     if ended:
         log_action(session, AUDIT_ACTOR, "user", person.id, "sessions_revoked", f"deactivated by Entra; {ended} ended")
+    drop_votes_of(session, person)  # their unanswered approval votes are dropped (#161)
     admins = session.exec(select(User).where(User.role == UserRole.SUPER_ADMIN, User.is_active)).all()
     for admin in admins:
         notify_account_deactivated(session, admin, person, reason)

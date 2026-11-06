@@ -36,6 +36,7 @@ APPROVAL_WITHDRAWN = "approval_withdrawn"
 APPROVAL_OVERDUE = "approval_overdue"
 APPROVAL_WAITING = "approval_waiting"
 DUE_TODAY = "due_today"
+NO_ACTIVE_APPROVERS = "approval_no_active_approvers"  # #161: a request waits because nobody active can approve it (not a listed event type)
 ACCOUNT_DEACTIVATED = "account_deactivated"  # #158: the nightly Entra check made someone inactive
 CHASE_GIVEN_UP = "chase_given_up"
 MSP_UNACKNOWLEDGED = "msp_unacknowledged"
@@ -475,6 +476,18 @@ def notify_approval_overdue(session: Session, ticket: Ticket, super_admin: User,
     return notify(
         session, super_admin, APPROVAL_OVERDUE, ticket,
         f"{REF} {ticket.subject} has waited {days} days for approval ({unanswered} had not answered)", None,
+    )
+
+
+def notify_no_active_approvers(
+    session: Session, super_admin: User, ticket: Ticket, request_type_name: str, group_name: str
+) -> Optional[Notification]:
+    """Tells a super admin, in the bell, that nobody active can approve a request type (app/approvals.py), so the
+    approval group needs fixing. Not a listed event type, so it is always on, like the overdue-approval bell entry
+    and the deactivation one. Does not commit."""
+    return notify(
+        session, super_admin, NO_ACTIVE_APPROVERS, ticket,
+        f"Nobody active can approve {request_type_name} requests; update the {group_name} approval group ({REF} is waiting)", None,
     )
 
 

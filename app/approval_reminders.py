@@ -30,7 +30,7 @@ from typing import Optional
 from sqlmodel import Session, select
 
 from app.approval_groups import is_member
-from app.approvals import PENDING, voters_yet_to_vote
+from app.approvals import PENDING, reconcile_approvals, voters_yet_to_vote
 from app.audit import log_action
 from app.models import ApprovalVote, OutboundEmail, Ticket, TicketApproval, TicketStatus, User, UserRole
 from app.notifications import notify_approval_overdue
@@ -58,7 +58,9 @@ def _due(vote: ApprovalVote, now: datetime, after: timedelta, every: timedelta, 
 
 
 def send_approval_reminders(session: Session, now: Optional[datetime] = None) -> None:
-    """The job. Does not commit (the runner does)."""
+    """The job. Does not commit (the runner does). Before anything else, and whether or not reminders are on, it drops
+    the votes of voters who became inactive and starts the round of requests waiting for approvers (#161)."""
+    reconcile_approvals(session)
     if not get_flag(session, APPROVAL_REMINDERS_ENABLED):
         return
     now = now or datetime.now(timezone.utc)
