@@ -69,6 +69,8 @@ def notify(
     A request waiting for someone's vote is the one kind an ordinary signed-in person (an approver who is
     not an agent) is told too, and so is the requester or follower of a ticket about their own ticket
     (REQUESTER_KINDS); everything else is for agents."""
+    if not recipient.is_active:
+        return None  # inactive people (app/entra_check.py) are told nothing; their tickets are found on Admin > Users
     if recipient.role not in AGENT_ROLES and kind not in PORTAL_KINDS:
         return None
     if actor_email and recipient.email.lower() == actor_email.lower():

@@ -17,7 +17,7 @@ from app.main import app
 from app.models import (
     AuditLog,
     Notification,
-    ScheduledJob,
+    Setting,
     Team,
     Ticket,
     TicketStatus,
@@ -173,7 +173,7 @@ def test_it_runs_once_a_night_after_the_set_time_in_the_organisation_zone(db_ses
     day = lambda hour, minute=0: datetime(2026, 11, 6, hour, minute, tzinfo=timezone.utc)
     assert not is_due(db_session, day(1, 59))
     assert is_due(db_session, day(2, 0))
-    db_session.add(ScheduledJob(name=entra_check.JOB_NAME, last_success_at=day(2, 5)))
+    db_session.add(Setting(key=entra_check.LAST_RUN_KEY, value=day(2, 5).isoformat()))
     db_session.commit()
     assert not is_due(db_session, day(9, 0))  # done tonight
     assert is_due(db_session, day(2, 0) + timedelta(days=1))
@@ -363,3 +363,88 @@ def test_a_mention_of_an_inactive_agent_tells_nobody(client, db_session):
     db_session.commit()
     author = db_session.exec(select(User).where(User.email == "admin@example.com")).one()
     assert [p.id for p in mentioned_in(db_session, ticket, "hi @gone and @active", author)] == [active.id]
+
+
+def test_switching_it_on_in_the_afternoon_still_runs_it_that_night(db_session, monkeypatch):
+    from app.models import ScheduledJob
+
+    an_agent(db_session, "a@example.com", "oid-a")
+    # the runner recorded the hourly wakes of the day on which the switch was off
+    db_session.add(ScheduledJob(name=entra_check.JOB_NAME, last_success_at=datetime(2026, 11, 7, 13, 0, tzinfo=timezone.utc)))
+    db_session.commit()
+    configure(monkeypatch)
+    assert is_due(db_session, datetime(2026, 11, 7, 14, 0, tzinfo=timezone.utc))
+    monkeypatch.setattr(GraphClient, "account_enabled", lambda self, oid: True)
+    run_entra_account_check(db_session, datetime(2026, 11, 7, 14, 0, tzinfo=timezone.utc))
+    db_session.commit()
+    assert not is_due(db_session, datetime(2026, 11, 7, 15, 0, tzinfo=timezone.utc))  # done for tonight
+    assert is_due(db_session, datetime(2026, 11, 8, 2, 0, tzinfo=timezone.utc))
+
+
+def test_a_failed_run_is_not_marked_done_so_it_is_tried_again(db_session, monkeypatch):
+    configure(monkeypatch)
+    an_agent(db_session, "a@example.com", "oid-a")
+    monkeypatch.setattr(GraphClient, "account_enabled", lambda self, oid: (_ for _ in ()).throw(TimeoutError()))
+    with pytest.raises(RuntimeError):
+        run_entra_account_check(db_session, datetime(2026, 11, 7, 3, 0, tzinfo=timezone.utc))
+    db_session.rollback()
+    assert is_due(db_session, datetime(2026, 11, 7, 4, 0, tzinfo=timezone.utc))
+
+
+def test_the_last_active_super_admin_is_never_deactivated(db_session):
+    only = an_agent(db_session, "boss@example.com", "oid-boss", role=UserRole.SUPER_ADMIN)
+    result, _ = run(db_session, {"oid-boss": False})
+    assert db_session.get(User, only.id).is_active and result.skipped == 1
+    assert audits(db_session, "entra_deactivation_skipped")
+    assert not audits(db_session, "deactivated_by_entra")
+
+
+def test_two_super_admins_both_disabled_leave_one_active(db_session):
+    first = an_agent(db_session, "a@example.com", "oid-a", role=UserRole.SUPER_ADMIN)
+    second = an_agent(db_session, "b@example.com", "oid-b", role=UserRole.SUPER_ADMIN)
+    run(db_session, {"oid-a": False, "oid-b": False})
+    assert [db_session.get(User, first.id).is_active, db_session.get(User, second.id).is_active] == [False, True]
+
+
+def test_everyone_not_found_looks_like_the_wrong_tenant_and_deactivates_nobody(db_session):
+    people = [an_agent(db_session, f"a{n}@example.com", f"oid-{n}") for n in range(3)]
+    result, _ = run(db_session, {f"oid-{n}": None for n in range(3)})
+    assert all(db_session.get(User, p.id).is_active for p in people) and result.deactivated == 0
+    assert audits(db_session, "entra_check_aborted")
+    # a couple of leavers among people who are found is the normal case
+    run(db_session, {"oid-0": None, "oid-1": True, "oid-2": True})
+    assert not db_session.get(User, people[0].id).is_active
+
+
+def test_a_run_gives_up_after_a_few_failures_with_no_answer_instead_of_waiting_on_every_timeout(db_session):
+    for n in range(9):
+        an_agent(db_session, f"a{n}@example.com", f"oid-{n}")
+    result, fake = run(db_session, {f"oid-{n}": TimeoutError() for n in range(9)})
+    assert result.gave_up and len(fake.asked) == 5
+
+
+def test_an_inactive_person_is_sent_no_notifications(client, db_session):
+    from app.notifications import notify
+
+    team, active, inactive = world(client, db_session)
+    assert notify(db_session, inactive, "assigned", None, "x", "someone@example.com") is None
+    assert notify(db_session, active, "assigned", None, "x", "someone@example.com") is not None
+
+
+def test_a_template_naming_an_agent_who_left_can_still_be_edited_otherwise(client, db_session):
+    from app.models import RequestType
+    from app.subrequests import save_template
+
+    team, active, inactive = world(client, db_session)
+    category = create_category(db_session, team)
+    request_type = RequestType(name="Starter")
+    db_session.add(request_type)
+    db_session.commit()
+    template = save_template(db_session, request_type, None, subject_pattern="Laptop", team_id=team.id,
+                             category_id=category.id, assignee_id=active.id)
+    active.is_active = False
+    db_session.add(active)
+    db_session.commit()
+    save_template(db_session, request_type, template, subject_pattern="Laptop v2", team_id=team.id,
+                  category_id=category.id, assignee_id=active.id)
+    assert template.subject_pattern == "Laptop v2"

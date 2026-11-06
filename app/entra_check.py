@@ -33,7 +33,7 @@ from sqlmodel import Session, select
 
 from app.audit import log_action
 from app.config import settings
-from app.models import ScheduledJob, User, UserRole
+from app.models import Setting, User, UserRole
 from app.notifications import notify_account_deactivated
 from app.sessions import revoke_user_sessions
 from app.settings_store import ENTRA_CHECK_TIME, REGISTRY, get_setting
@@ -42,6 +42,9 @@ from app.time_zones import default_zone, parse_clock
 logger = logging.getLogger(__name__)
 
 JOB_NAME = "entra-account-check"
+LAST_RUN_KEY = "entra_check_last_run_at"  # a plain row in `setting` (not an admin setting): when a check last finished
+GIVE_UP_AFTER = 5  # consecutive failures with no answer at all: Graph is down or refusing us, stop waiting on timeouts
+MIN_FOR_ALL_MISSING_GUARD = 3
 AUDIT_ACTOR = "system"
 CHECKED_ROLES = (UserRole.AGENT, UserRole.SUPER_ADMIN)
 
@@ -52,6 +55,8 @@ class CheckResult:
     deactivated: int = 0
     failed: int = 0
     first_error: str = ""
+    skipped: int = 0  # not deactivated because it would have locked everyone out
+    gave_up: bool = False
 
 
 def _aware(moment: datetime) -> datetime:
@@ -69,9 +74,23 @@ def is_due(session: Session, now: datetime) -> bool:
     due_at = datetime.combine(local.date(), run_time(session), tzinfo=zone)
     if local < due_at:
         return False
-    row = session.get(ScheduledJob, JOB_NAME)
-    last = row.last_success_at if row is not None else None
+    # Its own record, not the runner's `last_success_at`: the runner also records the hourly wakes in which the
+    # switch was off or it was not yet time, and switching the check on in the afternoon must run it that night.
+    row = session.get(Setting, LAST_RUN_KEY)
+    try:
+        last = datetime.fromisoformat(row.value) if row is not None else None
+    except ValueError:
+        last = None
     return last is None or _aware(last) < due_at
+
+
+def _mark_done(session: Session, now: datetime) -> None:
+    row = session.get(Setting, LAST_RUN_KEY)
+    if row is None:
+        session.add(Setting(key=LAST_RUN_KEY, value=now.isoformat()))
+    else:
+        row.value = now.isoformat()
+        session.add(row)
 
 
 def check_accounts(
@@ -90,6 +109,8 @@ def check_accounts(
         )
         .order_by(User.id)
     ).all()
+    verdicts: list[tuple[User, str]] = []
+    answered = 0
     for person in people:
         result.looked_at += 1
         try:
@@ -98,12 +119,33 @@ def check_accounts(
             result.failed += 1
             result.first_error = result.first_error or type(error).__name__
             logger.warning("entra check: could not look up an account (%s)", type(error).__name__)
+            if not answered and result.failed >= GIVE_UP_AFTER:
+                result.gave_up = True
+                break
             continue
-        if enabled is True:
+        answered += 1
+        if enabled is not True:
+            verdicts.append((person, "account disabled in Entra" if enabled is False else "account not found in Entra"))
+    # Entra says nobody exists: far more likely the wrong tenant or stale ids than everyone leaving at once.
+    if len(verdicts) == answered and answered >= MIN_FOR_ALL_MISSING_GUARD and all("not found" in r for _, r in verdicts):
+        log_action(session, AUDIT_ACTOR, "user", 0, "entra_check_aborted", f"all {answered} accounts came back not found; nobody deactivated")
+        result.skipped = len(verdicts)
+        return result
+    for person, reason in verdicts:
+        if person.role == UserRole.SUPER_ADMIN and _is_last_super_admin(session, person):
+            result.skipped += 1  # never lock out the last way to reactivate anyone
+            log_action(session, AUDIT_ACTOR, "user", person.id, "entra_deactivation_skipped", f"{reason}; the last active super admin")
             continue
-        deactivate(session, person, "account disabled in Entra" if enabled is False else "account not found in Entra")
+        deactivate(session, person, reason)
         result.deactivated += 1
     return result
+
+
+def _is_last_super_admin(session: Session, person: User) -> bool:
+    others = session.exec(
+        select(User.id).where(User.role == UserRole.SUPER_ADMIN, User.is_active, User.id != person.id).limit(1)
+    ).first()
+    return others is None
 
 
 def deactivate(session: Session, person: User, reason: str) -> None:
@@ -126,7 +168,9 @@ def run_entra_account_check(session: Session, now: Optional[datetime] = None) ->
     if not is_due(session, now or datetime.now(timezone.utc)):
         return
     result = check_accounts(session)
-    if result.looked_at and result.failed == result.looked_at:
+    if result.looked_at and (result.gave_up or result.failed == result.looked_at):
         raise RuntimeError(
-            f"every one of {result.looked_at} Entra account lookups failed ({result.first_error}); is User.Read.All granted?"
+            f"{'the first ' if result.gave_up else 'every one of '}{result.failed} of {result.looked_at} Entra account "
+            f"lookups failed ({result.first_error}); is User.Read.All granted?"
         )
+    _mark_done(session, now or datetime.now(timezone.utc))
