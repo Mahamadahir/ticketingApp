@@ -307,6 +307,23 @@ def automatic_reason(mail: IncomingMail) -> Optional[str]:
     return None
 
 
+def msp_auto_reply(mail: IncomingMail) -> Optional[str]:
+    """The only automatic-mail test mail from the MSP address still gets (its relay adds List-Unsubscribe, List-Id and bulk
+    Precedence to everything, so `automatic_reason` is skipped for it): a reply-type auto-response, such as an out-of-office,
+    which would otherwise be recorded and could be forwarded to the requester out of hours. Auto-Submitted: auto-generated is
+    not one (the MSP's own acknowledgements must be accepted). X-Auto-Response-Suppress is not read for MSP mail: it is a
+    request about replying to the mail, set by their relay on everything. Bounces are dropped for everyone, so
+    the Return-Path and multipart/report tests of `automatic_reason` are repeated here."""
+    headers = mail.headers
+    if headers.get("auto-submitted", "").split(";", 1)[0].strip().lower() == "auto-replied":  # RFC 3834 allows parameters after a ;
+        return IGNORED_AUTOMATIC
+    if "x-autoreply" in headers or "x-autorespond" in headers:
+        return IGNORED_AUTOMATIC
+    if headers.get("return-path", "").strip() == "<>" or "multipart/report" in headers.get("content-type", "").lower():
+        return IGNORED_AUTOMATIC  # a bounce or delivery report, dropped for everyone
+    return None
+
+
 TRUST_PASS = "pass"  # Microsoft's compauth verdict: the From address is believed
 TRUST_FAIL = "fail"  # compauth=fail: forged, set aside
 TRUST_UNVERIFIED = "unverified"  # softpass, none, or no verdict at all: recorded, but never forwarded automatically
@@ -573,7 +590,11 @@ def ingest_mail(
     # The MSP's own mail is checked before the automatic-mail filter: its ticketing system sends through a relay, so its
     # mail carries List-Unsubscribe and would be thrown away as a mailing list. It still goes through the trust check.
     from_msp = sender is not None and not mail.is_draft and is_msp_sender(session, sender)
-    if not from_msp:
+    if from_msp:
+        reason = msp_auto_reply(mail)
+        if reason is not None:
+            return settle(reason)
+    else:
         reason = automatic_reason(mail)
         if reason is not None:
             return settle(reason)
@@ -691,7 +712,7 @@ def process_message(
     mail.graph_message_id = graph_message_id  # the id we asked for is the one we dedupe on
     files: list[IncomingAttachment] = []
     from_msp = bool(mail.sender) and not mail.is_draft and is_msp_sender(session, mail.sender)  # its List-Unsubscribe is not automatic
-    if mail.has_attachments and (from_msp or automatic_reason(mail) is None) and not _flooding(session, mail.sender, datetime.now(timezone.utc)):
+    if mail.has_attachments and (msp_auto_reply(mail) if from_msp else automatic_reason(mail)) is None and not _flooding(session, mail.sender, datetime.now(timezone.utc)):
         files = load_attachments(session, client, graph_message_id)  # before any ticket is made: no lock is held while Graph answers
     return ingest_mail(session, mail, files, storage)
 

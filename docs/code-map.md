@@ -607,7 +607,7 @@ Inbound mail (phase 3B): turning a mail in the shared mailbox into a ticket or a
 File: `app/inbound.py`
 
 - Classes: `Handled`, `IncomingAttachment`, `IncomingMail`, `MailSource`
-- Functions: `automatic_reason`, `find_ticket_for`, `ingest_mail`, `load_attachments`, `may_reply`, `msp_trust`, `parse_graph_message`, `process_message`, `process_notifications`, `referenced_ticket`
+- Functions: `automatic_reason`, `find_ticket_for`, `ingest_mail`, `load_attachments`, `may_reply`, `msp_auto_reply`, `msp_trust`, `parse_graph_message`, `process_message`, `process_notifications`, `referenced_ticket`
 - Imports: `app.attachments`, `app.audit`, `app.config`, `app.follower_updates`, `app.followers`, `app.forms`, `app.graph_client`, `app.mail`, `app.messages`, `app.models`, `app.msp`, `app.never_follow`, `app.outbox`, `app.raising`, `app.reopening`, `app.settings_store`, `app.splitting`, `app.storage`, `app.teams`, `app.ticket_service`, `app.time_zones`
 - Imported by: `app.jobs`, `app.routers.admin`, `app.routers.dev_tools`
 - Tests: `test_acknowledgement.py`, `test_follower_updates.py`, `test_inbound_mail.py`, `test_msp_mail.py`, `test_msp_real_mail.py`, `test_never_follow.py`, `test_reopening.py`, `test_thanks_rules.py`, `test_time_zones.py`
@@ -696,7 +696,7 @@ Sending a ticket to the MSP, putting it on hold, and the automatic handoff (phas
 File: `app/msp.py`
 
 - Classes: `ForwardPreview`, `MspError`, `MspPreview`, `MspSubject`
-- Functions: `alert_unacknowledged`, `attachment_plan`, `business_hours`, `check_can_send`, `compile_subject_pattern`, `compose`, `compose_forward`, `dismiss_forward`, `dismiss_unmatched`, `forward_if_out_of_hours`, `forward_message`, `forward_waiting_messages`, `hand_off_due_tickets`, `handoff_counts`, `handoff_window`, `hold_ticket`, `is_business_time`, `is_msp_sender`, `link_unmatched`, `may_hold`, `msp_address`, `msp_cc`, `park_unmatched`, `parse_subject`, `pending_forwards`, `plan_files`, `receive_acknowledgement`, `receive_mail`, `release_hold`, `run_msp_ack_alerts`, `run_msp_forwards`, `run_msp_handoff`, `send_to_msp`, `sent_to_msp`, `ticket_by_msp_number`, `ticket_of_acknowledgement`, `unmatched_query`, `usable_msp_address`, `warn_before_handoff`
+- Functions: `alert_unacknowledged`, `attachment_plan`, `business_hours`, `check_can_send`, `compile_subject_pattern`, `compose`, `compose_forward`, `dismiss_forward`, `dismiss_unmatched`, `forward_if_out_of_hours`, `forward_message`, `forward_waiting_messages`, `hand_off_due_tickets`, `handoff_counts`, `handoff_window`, `hold_on_take_back`, `hold_ticket`, `is_business_time`, `is_msp_sender`, `link_unmatched`, `may_hold`, `msp_address`, `msp_cc`, `park_unmatched`, `parse_subject`, `pending_forwards`, `plan_files`, `receive_acknowledgement`, `receive_mail`, `release_hold`, `run_msp_ack_alerts`, `run_msp_forwards`, `run_msp_handoff`, `send_to_msp`, `sent_to_msp`, `ticket_by_msp_number`, `ticket_of_acknowledgement`, `unmatched_query`, `usable_msp_address`, `warn_before_handoff`
 - Imports: `app.audit`, `app.bank_holidays`, `app.categories`, `app.config`, `app.email_templates`, `app.followers`, `app.mail`, `app.messages`, `app.models`, `app.never_follow`, `app.notifications`, `app.outbox`, `app.settings_store`, `app.splitting`, `app.ticket_service`, `app.time_zones`
 - Imported by: `app.escalation`, `app.inbound`, `app.msp_actions`, `app.routers.admin`, `app.routers.msp_mail`, `app.routers.tickets`, `app.scheduled_jobs`
 - Tests: `test_handoff_bells_holidays.py`, `test_msp.py`, `test_msp_actions.py`, `test_msp_mail.py`, `test_msp_real_mail.py`

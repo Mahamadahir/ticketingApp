@@ -11,6 +11,7 @@ from sqlmodel import select
 
 from app.config import settings
 from app.inbound import (
+    IGNORED_AUTOMATIC,
     IGNORED_MSP,
     REPLY_ADDED,
     TICKET_CREATED,
@@ -516,3 +517,32 @@ def test_the_alert_is_tried_again_when_nobody_could_be_told(client, db_session):
     db_session.commit()
     agent_in(client, db_session, member_of=[team])
     assert alert_unacknowledged(db_session, IN_HOURS) == 1
+
+
+# ---- Real auto-replies from the MSP are still dropped (#155) -------------------------------------------------------
+
+
+def test_an_msp_out_of_office_is_dropped_but_its_other_automatic_looking_headers_are_not(db_session):
+    ticket = sent_ticket(db_session)
+    for extra in (
+        (("Auto-Submitted", "auto-replied"),),
+        (("Auto-Submitted", 'Auto-Replied; owner-email="x@msp.example"'),),
+        (("X-Autoreply", "yes"),),
+        (("X-Autorespond", "yes"),),
+        (("Return-Path", "<>"),),
+    ):
+        raw = acknowledgement(ticket.reference)
+        raw["internetMessageHeaders"] = [h for h in raw["internetMessageHeaders"] if h["name"] != "Return-Path"] + headers(*extra)
+        assert take(db_session, raw).outcome == IGNORED_AUTOMATIC
+    assert messages_of(db_session, ticket) == []
+
+
+def test_msp_mail_marked_auto_generated_or_suppress_or_bulk_is_still_accepted(db_session):
+    ticket = sent_ticket(db_session)
+    raw = acknowledgement(
+        ticket.reference,
+    )
+    raw["internetMessageHeaders"] += headers(
+        ("Auto-Submitted", "auto-generated"), ("X-Auto-Response-Suppress", "All"), ("Precedence", "bulk"), ("List-Id", "<x.msp.example>"),
+    )
+    assert take(db_session, raw).outcome == REPLY_ADDED

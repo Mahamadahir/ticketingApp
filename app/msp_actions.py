@@ -43,6 +43,7 @@ from app.msp import (
     SCOPE_THREAD,
     MspError,
     MspPreview,
+    hold_on_take_back,
     msp_cc,
     send_to_msp,
     usable_msp_address,
@@ -195,6 +196,7 @@ def _take_back_one(session: Session, ticket: Ticket, actor: User, why: str) -> N
     status = _status_after_take_back(ticket)
     set_status(session, ticket, status, actor.email, detail=why)
     record_event(session, ticket, EVENT_TAKEN_BACK, actor.email, to_value=status.value, detail=why)
+    hold_on_take_back(session, ticket, actor, why)  # so the automatic handoff does not send it straight back
     log_action(session, actor.email, "ticket", ticket.id, AUDIT_TAKEN_BACK, why[:200])
 
 

@@ -535,3 +535,59 @@ def test_a_split_part_taken_back_locks_its_original_first(client, db_session, ma
     assert take_back(client, part).status_code == 200
     db_session.refresh(part)
     assert part.status == TicketStatus.OPEN
+
+
+# ---- Take back puts the ticket on hold (#155) ---------------------------------------------------------------------
+
+
+def included(db_session, name="Support"):
+    team = create_team(db_session, name)
+    team.msp_handoff_included = True
+    db_session.add(team)
+    db_session.commit()
+    return team
+
+
+def test_a_taken_back_ticket_is_on_hold_until_released_and_the_handoff_skips_it(client, db_session, mail_on):
+    set_msp(db_session)
+    team = included(db_session)
+    agent_id = agent_in(client, db_session, member_of=[team])
+    ticket = with_msp(client, db_session, team, assigned_agent_id=agent_id)
+
+    assert "on MSP hold" in client.post(f"/tickets/{ticket.number}/take-back-from-msp/preview").text
+    assert take_back(client, ticket).status_code == 200
+    db_session.refresh(ticket)
+    assert ticket.status == TicketStatus.IN_PROGRESS and ticket.msp_hold is True
+    assert "on hold" in events(db_session, ticket, "msp_hold")[0].detail
+    assert "on MSP hold" in client.get(f"/tickets/{ticket.number}").text
+
+    ticket.resolution_due_at = NOW + timedelta(hours=4)  # due before the next business morning
+    db_session.add(ticket)
+    db_session.commit()
+    assert hand_off_due_tickets(db_session, NOW) == 0  # held: not sent straight back
+    assert client.post(f"/tickets/{ticket.number}/msp-hold/release").status_code == 200
+    assert hand_off_due_tickets(db_session, NOW) == 1
+
+
+def test_anyone_taking_back_sets_the_hold_not_only_the_assignee(client, db_session, mail_on):
+    set_msp(db_session)
+    team = create_team(db_session, "Support")
+    colleague = agent_in(client, db_session, member_of=[team], email="colleague@example.com")
+    client.get("/auth/logout")
+    me = agent_in(client, db_session, member_of=[team])
+    assert me != colleague
+    ticket = with_msp(client, db_session, team, assigned_agent_id=colleague)
+    assert take_back(client, ticket).status_code == 200
+    db_session.refresh(ticket)
+    assert ticket.assigned_agent_id == colleague and ticket.msp_hold is True
+
+
+def test_linked_tickets_taken_back_with_the_parent_are_held_too(client, db_session, mail_on):
+    set_msp(db_session)
+    team = create_team(db_session, "Support")
+    agent_in(client, db_session, member_of=[team])
+    parent, kids = sent_parent(client, db_session, team)
+    take_back(client, parent, take_back_linked="1")
+    for name in ("open", "progress"):
+        db_session.refresh(kids[name])
+        assert kids[name].status == TicketStatus.OPEN and kids[name].msp_hold is True

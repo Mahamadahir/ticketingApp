@@ -416,6 +416,18 @@ def hold_ticket(session: Session, ticket: Ticket, actor: User) -> None:
     log_action(session, actor.email, "ticket", ticket.id, "msp_hold", None)
 
 
+def hold_on_take_back(session: Session, ticket: Ticket, actor: User, why: str) -> None:
+    """Taking a ticket back from the MSP puts it on hold, whoever takes it back (unlike `hold_ticket`, which only the
+    assignee may do), so the 18:00 handoff does not send it straight back. Released as any hold is."""
+    if ticket.msp_hold:
+        return
+    ticket.msp_hold = True
+    ticket.updated_at = datetime.now(timezone.utc)
+    session.add(ticket)
+    record_event(session, ticket, EVENT_MSP_HOLD, actor.email, detail=f"{why}: on hold, kept out of the automatic MSP handoff until released")
+    log_action(session, actor.email, "ticket", ticket.id, "msp_hold", why[:200])
+
+
 def release_hold(session: Session, ticket: Ticket, actor: User) -> None:
     """Puts the ticket back in the automatic handoff. Anyone who works the ticket may release it (the caller checks
     access), so a hold left by someone who has gone is not stuck."""
