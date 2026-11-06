@@ -8,8 +8,14 @@ starting a phase, and `README.md` for how to run it.
 
 ## State of play
 
-- **Phases 0 to 3 are built; Phase 4 is next** (resolve/reopen/chase/feedback, approval groups,
-  acknowledgement email; see "Next up" in `docs/build-plan.md`). Phase 3 (Graph mail: public
+- **Phases 0 to 5 are built; Phase 6 (identity) is next** (see "Next up" in `docs/build-plan.md`
+  for the agreed order to go-live). Phase 4 (resolution, reopen/reclose, chase, auto-close,
+  feedback, approval groups and votes, acknowledgement email, follower updates, bulk resolve) and
+  Phase 5 (MSP: Send to MSP, hold, the 18:00 handoff, MSP mail handling and forwarding, the MSP's
+  own ticket number, take back) are built, plus the owner-decision rounds of Nov 2026: single pass %,
+  per-person time zones, Due date and Scheduled, the bell for everyone, closing emails, extra
+  permissions (`app/permissions.py`), request type defaults and self-triage, form questions and
+  automatic sub-requests (`app/subrequests.py`), gov.uk bank holidays. Phase 3 (Graph mail: public
   surface, inbound, subscriptions and catch-up, outbound outbox, attachments and storage, wiring)
   is built and tested locally with simulated Graph; only the Azure-only checks remain.
   Phase 0 is done (security fixes, Alembic, `/health`, lockout,
@@ -55,13 +61,16 @@ starting a phase, and `README.md` for how to run it.
   messages show where, the one thread subject and the "About:" line in `app/messages.py`).
   Only `app/raising.py` (the portal raise form, 1G-i, built) may create `source=agent` tickets
   (backdating relies on it); the backdating tests use that real path.
-- **Nothing is deployed anywhere.** No Azure resources exist, no database has
-  had migrations applied outside this laptop. Everything is developed and
-  tested locally with `docker compose` and `pytest`.
+- **Staging is partly deployed (Nov 2026); nothing else is.** In `rg-ticketing-staging` the
+  owner has deployed the network, Postgres, the Container Apps environment, monitoring,
+  identities and alerts; the registry, storage and Key Vault wait for an Owner role grant, and
+  no app has been deployed or migrated there yet. Entra app registrations, Graph consent, the
+  staging shared mailbox (`itsupport-staging@vardags.com`, mail scoped to it) and the GitHub
+  `staging` environment are done; progress is tracked in `docs/azure-setup.md`. Development and
+  tests stay local with `docker compose` and `pytest`.
 - Hosting is Azure (Container Apps, PostgreSQL Flexible Server, Blob Storage,
-  Key Vault), defined in Bicep under `infra/`. It compiles and lints but has
-  never been run against a subscription. The earlier AWS/EC2 plan is dead. A
-  deploy workflow (`.github/workflows/deploy.yml`) is written but has never run.
+  Key Vault), defined in Bicep under `infra/`. The earlier AWS/EC2 plan is dead. The deploy
+  workflow (`.github/workflows/deploy.yml`) has not run yet.
 
 ## Working rules
 

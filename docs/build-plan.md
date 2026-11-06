@@ -97,18 +97,26 @@ those. Do not record test counts or merge status here.
 
 ## Next up
 
-**Phase 3 (Graph mail) is built.** What remains is Azure-only: the staging checks (Graph webhooks and lifecycle, real send, Blob and
-managed identity, Application Insights, the public app) live in the staging checklist below and wait for a subscription.
+**Phases 0 to 5 are built**, and so are the owner-decision rounds of Nov 2026 (single pass %, time zones, Due date and
+Scheduled, the bell for everyone, closing emails, permissions, request type defaults, form questions and sub-requests, the
+MSP fixes from real mail, MSP actions, handoff bell entries, gov.uk bank holidays). Each is a row in the status table below.
 
-**5A (Send to MSP, hold and the 18:00 handoff, #138), 5B (MSP mail handling and forwarding, #139) and 5C (real MSP mail, #149) are built.** **Phase 4 is next** (`docs/plan.md`, "Build order"). Already recorded for it:
-- The resolve action with its resolution email, the reopen flow (including a reply after closure making a new ticket), chasing
-  awaiting-user tickets, and requester feedback.
-- Teams reminders to approvers (phase 8 bot; the email reminder, 4C-3, is built). Approval groups (4C-1), the approval-email preference (4C-4) and withdrawing (4C-2) are built; the helpers they use are `approvals.voters_yet_to_vote`, `approvals.current_approval` and `approvals.votes_of`.
-- The acknowledgement email, the never-follow list and the inbound limits as admin settings (the three small PRs below).
-- Out-of-office lookup bookkeeping: `User.last_presence_lookup_at` and `is_active` (built, 4B-4; see below).
-- Status dropdown on Email user and Add note: built (4B-5, `status_choices`, `chosen_status` and `default_status_after_email` in `app/messages.py`, the `next_status` form field in `app/routers/tickets.py`, `_next_status.html`; no migration).
-- Followers not copied on an emailed update are told: built (4B-6, `app/follower_updates.py`; see below).
-- Database-driven recurring jobs: built (4A, `app/scheduled_jobs.py`); see "How to add a recurring job" below. The 18:00 MSP handoff is built on it (5A, below). Moving the old APScheduler jobs (mail-in, outbound mail, Teams, presence, subscription renewal) onto it was evaluated in 5B and left (see the 5B decisions).
+**Agreed order to go-live** (owner, 4-5 Nov 2026; no fixed go-live date):
+1. **Staging deploy and checks.** Partly deployed; the registry, storage and Key Vault wait for an Owner role grant on
+   `rg-ticketing-staging` (`docs/azure-setup.md`). Then the Deploy workflow, the staging checklist below, and end-to-end
+   tests with the MSP on the staging mailbox (`itsupport-staging@vardags.com`).
+2. **Phase 6, identity (next to build):** match users on the Entra object id; server-side sessions with an idle timeout and
+   "sign out everywhere"; the nightly Entra `accountEnabled` check (inactive agents cannot sign in, leave the pickers);
+   break-glass accounts with TOTP; outage mode; linked identities. Entra app roles only if the owner decides to.
+3. **Phase 7, reporting** (CSV export, subject access export, anonymisation once retention is decided).
+4. **Phase 8, the Teams bot**: wanted before go-live.
+5. **Phase 9, the Google Stitch redesign**: wanted before go-live, once screens stop changing.
+6. **Phase 10, hardening and the go-live gate**, including the console IP decision (staging is open to all IPs; the VPN
+   is split tunnel) and the go-live mailbox handover (the app takes over `ITSupport@vardags.com`, its forward to the MSP is
+   removed; `docs/azure-setup.md`).
+
+**After go-live:** projects (#134, IT-only first version), Azure DevOps work items for the dev team (#137), the Outlook
+mailbox time-zone lookup (`MAILBOX_TIME_ZONES_ENABLED`, off).
 
 **How to add a recurring job (4A).** Jobs that must not be missed (auto-close, chase, approval reminders, later the MSP
 handoff) go in the `scheduled_job` table, not in `app/jobs`. It is a one-place change:
