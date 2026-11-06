@@ -510,7 +510,7 @@ def notify_break_glass_sign_in(session: Session, super_admin: User, person: User
     return notify(
         session, super_admin, BREAK_GLASS_SIGN_IN, None,
         f"Break-glass account {person.email} signed in{where}. If this was not planned, reset it and check the audit log.",
-        None,
+        person.email,  # the account that signed in is not told of itself
     )
 
 

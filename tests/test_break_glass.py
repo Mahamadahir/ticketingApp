@@ -320,3 +320,43 @@ def test_admin_users_marks_it_and_points_to_the_command(client, db_session, issu
     assert admin.post(f"/admin/users/{user_id}", data={"role": "agent"}).status_code == 400
     assert reload(db_session).role == UserRole.SUPER_ADMIN
     assert issued.password not in page and issued.totp_secret not in page
+
+
+# --- Code review follow-ups -----------------------------------------------------------------------------
+
+def test_the_short_name_signs_in_too(client, issued):
+    assert ok(sign_in(client, issued, username=NAME))
+
+
+def test_a_reused_code_is_refused_without_a_lockout_strike(client, db_session, issued):
+    code = totp_code(secret_of(issued), datetime.now(timezone.utc))
+    assert ok(sign_in(client, issued, code=code))
+    for _ in range(MAX_FAILED_LOGINS + 1):
+        assert not ok(sign_in(TestClient(app), issued, code=code))
+    user = reload(db_session)
+    assert user.failed_login_count == 0 and user.locked_until is None
+
+
+def test_an_unreadable_secret_is_listed_and_not_written_to_the_audit_log(client, db_session, issued, monkeypatch):
+    monkeypatch.setattr(breakglass.settings, "session_secret_key", "some-other-key")
+    for _ in range(3):
+        sign_in(client, issued)
+    assert audits(db_session, "break_glass_sign_in") == []
+    assert "TOTP SECRET UNREADABLE" in "\n".join(breakglass.describe_accounts(db_session))
+
+
+def test_the_command_refuses_where_there_is_no_session_key(db_session, monkeypatch):
+    monkeypatch.setattr(breakglass.settings, "env", "production")
+    monkeypatch.setattr(breakglass.settings, "session_secret_key", "change-me")
+    with pytest.raises(BreakGlassError, match="SESSION_SECRET_KEY"):
+        create_account(db_session, NAME)
+    assert breakglass.break_glass_accounts(db_session) == []
+
+
+def test_the_account_that_signed_in_is_not_sent_its_own_bell_entry(client, db_session, issued):
+    create_account(db_session, "breakglass2")
+    assert ok(sign_in(client, issued))
+    db_session.expire_all()
+    users = {u.email: u.id for u in db_session.exec(select(User)).all()}
+    told = {r.user_id for r in db_session.exec(select(Notification).where(Notification.kind == "break_glass_sign_in")).all()}
+    assert told == {users["breakglass2@local.invalid"]}

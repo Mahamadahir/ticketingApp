@@ -343,16 +343,15 @@ for it); paste the URI or secret into IT Glue.
 
 Other commands: `python -m app.breakglass list`, `reset <name>` (new password and secret, printed
 once; ends the account's sessions), `unlock <name>` (clears a lockout). `create` refuses a third
-account. `az containerapp exec` runs a one-off shell in the running container, so its output does not
-reach Log Analytics. If exec is not available, the migrate job can run the command instead
-(`az containerapp job start ... --args`), but a job's console output **is** collected in Log
-Analytics, so the password would be written there: if you do this, run `reset` for that account
-afterwards through exec and treat the first output as burned.
+account. Run these in the **web** app's container (`az containerapp exec`): it holds
+`SESSION_SECRET_KEY`, and the command refuses to run where that is not set. The migrate job does not hold
+it (and its console output goes to Log Analytics, which would record the password), so it cannot be used
+for this. `exec` is a one-off shell whose output does not reach Log Analytics.
 
 Sign in at `/auth/break-glass` on the web app with the username, password and the current code.
 Every use is audited (`break_glass_sign_in`) and every active super admin gets a bell entry. If
 `SESSION_SECRET_KEY` is ever rotated, the stored TOTP secrets become unreadable: run `reset` on both
-accounts afterwards and update IT Glue.
+accounts afterwards and update IT Glue (`list` shows `TOTP SECRET UNREADABLE` for an account in that state).
 
 ## 9. Check it, then add what failed to the list
 

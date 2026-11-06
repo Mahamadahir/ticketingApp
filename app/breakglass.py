@@ -40,7 +40,7 @@ from sqlmodel import Session, select
 
 from app.auth import _DUMMY_HASH, _is_locked, _record_failed_login, _verify_password, hash_password
 from app.audit import log_action
-from app.config import settings
+from app.config import INSECURE_SECRETS, settings
 from app.database import engine
 from app.models import User, UserRole
 from app.sessions import revoke_user_sessions
@@ -107,6 +107,9 @@ def otpauth_uri(email: str, secret: bytes) -> str:
 # --- Storing the secret ------------------------------------------------------------------------------
 
 def _fernet() -> Fernet:
+    if settings.session_secret_key in INSECURE_SECRETS and not settings.is_dev:
+        # e.g. the migrate job, which holds no SESSION_SECRET_KEY: a secret encrypted here could never be read by the web app.
+        raise BreakGlassError("SESSION_SECRET_KEY is not set in this container, so the TOTP secret cannot be protected. Run this in the web app's container.")
     key = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=b"ticketing break-glass totp v1").derive(
         settings.session_secret_key.encode("utf-8")
     )
@@ -129,6 +132,7 @@ def decrypt_secret(stored: str) -> Optional[bytes]:
 @dataclass
 class BreakGlassResult:
     user: Optional[User] = None
+    account: Optional[User] = None  # the break-glass account the attempt was about, if there is one
     # unknown_account, account_locked, wrong_password, wrong_code, code_reused or secret_unreadable. For the logs
     # only; the person at the form sees one message.
     failure: Optional[str] = None
@@ -139,20 +143,22 @@ def attempt_break_glass_login(
     session: Session, username: str, password: str, code: str, now: Optional[datetime] = None
 ) -> BreakGlassResult:
     now = now or datetime.now(timezone.utc)
-    user = session.exec(select(User).where(User.email == username.strip().lower(), User.is_break_glass)).first()
+    username = username.strip().lower()
+    email = username if "@" in username else f"{username}@{BREAK_GLASS_DOMAIN}"  # the short name works too
+    user = session.exec(select(User).where(User.email == email, User.is_break_glass)).first()
     if user is None or not user.password_hash or not user.totp_secret:
         _verify_password(password, _DUMMY_HASH)  # the same bcrypt time as a real check
         return BreakGlassResult(failure="unknown_account")
 
     password_ok = _verify_password(password, user.password_hash)
     if _is_locked(user, now):
-        return BreakGlassResult(failure="account_locked")  # attempts during a lock change nothing
+        return BreakGlassResult(account=user, failure="account_locked")  # attempts during a lock change nothing
 
     secret = decrypt_secret(user.totp_secret)
     if secret is None:
         # The stored secret cannot be read (SESSION_SECRET_KEY changed): not the person's fault, so no strike.
         logger.error("Break-glass TOTP secret for account %s cannot be decrypted; run `reset`", user.id)
-        return BreakGlassResult(failure="secret_unreadable")
+        return BreakGlassResult(account=user, failure="secret_unreadable")
     step = matching_step(secret, code, now)
 
     failure = None
@@ -162,16 +168,19 @@ def attempt_break_glass_login(
         failure = "wrong_code"
     elif not _claim_step(session, user, step):
         failure = "code_reused"
+    if failure == "code_reused":
+        # The password was right and the code was a real one: a double click or a retry, not a guess. Refused, no strike.
+        return BreakGlassResult(account=user, failure=failure)
     if failure is not None:
         locked_until = _record_failed_login(session, user, now)
         session.commit()
-        return BreakGlassResult(failure=failure, locked_until=locked_until)
+        return BreakGlassResult(account=user, failure=failure, locked_until=locked_until)
 
     user.failed_login_count = 0
     user.locked_until = None
     session.add(user)
     session.commit()
-    return BreakGlassResult(user=user)
+    return BreakGlassResult(user=user, account=user)
 
 
 def _claim_step(session: Session, user: User, step: int) -> bool:
@@ -272,6 +281,8 @@ def describe_accounts(session: Session) -> list[str]:
         state = ["active" if user.is_active else "INACTIVE"]
         if _is_locked(user, now):
             state.append(f"locked until {user.locked_until.isoformat()}")
+        if not user.totp_secret or decrypt_secret(user.totp_secret) is None:
+            state.append("TOTP SECRET UNREADABLE: run reset")
         lines.append(f"{user.email}  {', '.join(state)}  created {user.created_at:%Y-%m-%d}")
     return lines
 

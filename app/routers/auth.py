@@ -32,6 +32,8 @@ logger = logging.getLogger(__name__)
 
 # Failures that match no account, or an account already locked: not stored.
 NOT_WORTH_A_ROW = {"unknown_account", "account_locked"}
+# Break-glass: also not an unreadable stored secret (it can be hit without limit until someone runs `reset`).
+BREAK_GLASS_NOT_WORTH_A_ROW = NOT_WORTH_A_ROW | {"secret_unreadable"}
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -151,16 +153,16 @@ def break_glass_login(
     session: Session = Depends(get_session),
 ):
     """The emergency sign-in (app/breakglass.py): username, password and the current TOTP code. Every attempt at a
-    real break-glass account is audited as `break_glass_sign_in`; a success also tells the super admins in the bell.
+    real break-glass account (except on a locked one) is audited as `break_glass_sign_in`; a success also tells the super admins in the bell.
     Never keeps what was typed. Entra is not involved, so it works while Entra is down."""
     result = attempt_break_glass_login(session, username, password, code)
     refused = RedirectResponse("/auth/break-glass?error=Sign-in+failed", status_code=303)
     if result.user is None:
-        if result.failure in NOT_WORTH_A_ROW:
+        if result.failure in BREAK_GLASS_NOT_WORTH_A_ROW:
             # Unknown names and locked accounts can be sent without limit: application log only, as for local accounts.
             logger.warning("Rejected break-glass sign-in (%s) from %s", result.failure, client_ip(request))
             return refused
-        account = session.exec(select(User).where(User.email == username.strip().lower())).first()
+        account = result.account
         log_action(session, account.email, "user", account.id, "break_glass_sign_in", f"failed ({result.failure}) from {client_ip(request)}")
         record_activity(session, request, LOGIN_FAILED, actor_email=account.email, detail=f"break_glass: {result.failure}")
         if result.locked_until is not None:
