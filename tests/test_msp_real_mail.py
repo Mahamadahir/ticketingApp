@@ -526,6 +526,7 @@ def test_an_msp_out_of_office_is_dropped_but_its_other_automatic_looking_headers
     ticket = sent_ticket(db_session)
     for extra in (
         (("Auto-Submitted", "auto-replied"),),
+        (("Auto-Submitted", 'Auto-Replied; owner-email="x@msp.example"'),),
         (("X-Autoreply", "yes"),),
         (("X-Autorespond", "yes"),),
         (("Return-Path", "<>"),),

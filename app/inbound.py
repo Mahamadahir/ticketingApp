@@ -315,7 +315,7 @@ def msp_auto_reply(mail: IncomingMail) -> Optional[str]:
     request about replying to the mail, set by their relay on everything. Bounces are dropped for everyone, so
     the Return-Path and multipart/report tests of `automatic_reason` are repeated here."""
     headers = mail.headers
-    if headers.get("auto-submitted", "").strip().lower() == "auto-replied":
+    if headers.get("auto-submitted", "").split(";", 1)[0].strip().lower() == "auto-replied":  # RFC 3834 allows parameters after a ;
         return IGNORED_AUTOMATIC
     if "x-autoreply" in headers or "x-autorespond" in headers:
         return IGNORED_AUTOMATIC
@@ -712,7 +712,7 @@ def process_message(
     mail.graph_message_id = graph_message_id  # the id we asked for is the one we dedupe on
     files: list[IncomingAttachment] = []
     from_msp = bool(mail.sender) and not mail.is_draft and is_msp_sender(session, mail.sender)  # its List-Unsubscribe is not automatic
-    if mail.has_attachments and ((from_msp and msp_auto_reply(mail) is None) or (not from_msp and automatic_reason(mail) is None)) and not _flooding(session, mail.sender, datetime.now(timezone.utc)):
+    if mail.has_attachments and (msp_auto_reply(mail) if from_msp else automatic_reason(mail)) is None and not _flooding(session, mail.sender, datetime.now(timezone.utc)):
         files = load_attachments(session, client, graph_message_id)  # before any ticket is made: no lock is held while Graph answers
     return ingest_mail(session, mail, files, storage)
 
