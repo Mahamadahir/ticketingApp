@@ -109,7 +109,7 @@ MSP fixes from real mail, MSP actions, handoff bell entries, gov.uk bank holiday
    `rg-ticketing-staging` (`docs/azure-setup.md`). Then the Deploy workflow, the staging checklist below, and end-to-end
    tests with the MSP on the staging mailbox (`itsupport-staging@vardags.com`).
 2. **Phase 6, identity (next to build; 6A, matching on the Entra object id and server-side sessions, and 6B, the nightly Entra `accountEnabled` check, are built):**
-   break-glass accounts with TOTP; outage mode; linked identities. Entra app roles only if the owner decides to.
+   break-glass accounts with TOTP (6C, #163, in progress); outage mode; linked identities. Entra app roles only if the owner decides to.
 3. **Phase 7, reporting** (CSV export, subject access export, anonymisation once retention is decided).
 4. **Phase 8, the Teams bot**: wanted before go-live.
 5. **Phase 9, the Google Stitch redesign**: wanted before go-live, once screens stop changing.
