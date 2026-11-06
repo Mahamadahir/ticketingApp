@@ -72,6 +72,24 @@ class GraphClient:
         response.raise_for_status()
         return response.json().get("id")
 
+    def account_enabled(self, object_id: str) -> bool | None:
+        """Whether the person's Entra account is enabled (GET /users/{oid}?$select=accountEnabled; needs
+        User.Read.All, application). None when the directory has no such user (404). Any other failure raises,
+        and the nightly check then leaves that person alone (app/entra_check.py)."""
+        response = httpx.get(
+            f"{GRAPH_BASE_URL}/users/{quote(object_id, safe='')}",
+            params={"$select": "accountEnabled"},
+            headers={"Authorization": f"Bearer {self._get_access_token()}"},
+            timeout=15,
+        )
+        if response.status_code == 404:
+            return None
+        response.raise_for_status()
+        value = response.json().get("accountEnabled")
+        if not isinstance(value, bool):
+            raise ValueError("Graph did not say whether the account is enabled")
+        return value
+
     def mailbox_time_zone(self, email: str) -> str | None:
         """The time zone set on the person's Outlook mailbox, as Graph names it (a Windows name such as
         "GMT Standard Time"; app/time_zones.py turns it into an IANA name), or None when Graph has no such

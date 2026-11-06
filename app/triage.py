@@ -64,6 +64,8 @@ def change_type(session: Session, ticket: Ticket, new_type: TicketType, actor_em
 
 
 def _assignee_for(session: Session, team_id: int, assignee: Optional[User]) -> Optional[User]:
+    if assignee is not None and not assignee.is_active:
+        raise TriageError("The person you chose is inactive (their account is disabled)")
     if assignee is not None and assignee.id not in {member.id for member in team_members(session, team_id)}:
         raise TriageError("The person you chose is not a member of that team")
     return assignee
@@ -186,7 +188,8 @@ def triage_ticket(
         # Choosing no one leaves the assignment as it is (the ticket may have been handed
         # to someone to triage), unless that person is not in the team it now belongs to:
         # access follows the team, so they could no longer open it.
-        if ticket.assigned_agent_id not in {member.id for member in team_members(session, team_id)}:
+        # An inactive assignee stays (the ticket page marks them and Admin > Users lists them).
+        if ticket.assigned_agent_id not in {member.id for member in team_members(session, team_id, include_inactive=True)}:
             set_assignee(session, ticket, None, actor)
 
 

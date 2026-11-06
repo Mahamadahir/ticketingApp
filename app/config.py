@@ -55,6 +55,10 @@ class Settings(BaseSettings):
     # Out-of-office detection (phase 2E): the worker reads agents' presence from Graph
     # (Presence.Read.All) and marks those who are out of office. Needs the GRAPH_* credentials.
     presence_enabled: bool = False
+    # The nightly Entra accountEnabled check (phase 6B, app/entra_check.py): the worker makes agents whose
+    # account Entra has disabled or deleted inactive. Needs the GRAPH_* credentials and User.Read.All. OFF
+    # by default like presence; with it off the job does nothing and makes no Graph call.
+    entra_account_check_enabled: bool = False
     # Reading a requester's Outlook mailbox time zone from Graph (GET /users/{id}/mailboxSettings, application
     # permission MailboxSettings.Read), run by the worker. OFF: that permission cannot be scoped to the shared
     # mailbox, so for now requesters use their account zone or the default_time_zone setting. The code stays

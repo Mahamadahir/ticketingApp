@@ -10,6 +10,13 @@
   Agents also work every untriaged ticket. Super admins see everything and hold every extra permission.
   An <b>extra permission</b> lets an agent do one more admin job without being a super admin.
 </p>
+<p class="note">
+  {% if only_stranded %}
+  Showing inactive agents who still hold open tickets (re-assign those tickets). <a href="/admin/users">Show everyone</a>
+  {% else %}
+  <a href="/admin/users?inactive=open_tickets">Inactive agents with open tickets</a>
+  {% endif %}
+</p>
 <table>
   <thead>
     <tr>
@@ -68,6 +75,7 @@
           all (super admin)
         {% elif u.role in assignable_roles %}
         <form method="post" action="/admin/users/{{ u.id }}/permissions">
+          {% if not u.is_active %}<b>(inactive: none can be added)</b><br />{% endif %}
           {% for key, perm in permissions.items() %}
           <label title="{{ perm.description }}"><input type="checkbox" name="permissions" value="{{ key }}" {{ "checked" if key in granted.get(u.id, ()) else "" }} /> {{ perm.label }}</label><br />
           {% endfor %}

@@ -37,6 +37,7 @@ JOB_LEASE_MINUTES = "scheduled_job_lease_minutes"
 JOB_RETRY_MINUTES = "scheduled_job_retry_minutes"
 JOB_LATE_MINUTES = "scheduled_job_late_minutes"
 PRESENCE_RETRY_MINUTES = "presence_retry_minutes"
+ENTRA_CHECK_TIME = "entra_check_time"
 SESSION_IDLE_MINUTES = "session_idle_minutes"
 SESSION_MAX_DAYS = "session_max_days"
 SESSION_KEEP_DAYS = "session_keep_days"
@@ -301,6 +302,17 @@ REGISTRY: dict[str, SettingDef] = {
             "alone for this long before asking again. Default 60 (an hour; decided 3 Nov 2026)."
         ),
         default="60",
+    ),
+    ENTRA_CHECK_TIME: SettingDef(
+        key=ENTRA_CHECK_TIME,
+        label="Entra account check: time of the nightly run (HH:MM)",
+        kind="clock",
+        description=(
+            "Once a night, from this time in the default time zone, the worker asks Entra whether each agent's account is "
+            "still enabled and makes disabled or deleted ones inactive (they cannot sign in and are not offered for "
+            "assignment). Needs ENTRA_ACCOUNT_CHECK_ENABLED on the worker. Placeholder: 02:00, TBC."
+        ),
+        default="02:00",
     ),
     APPROVAL_DEFAULT_PASS_PERCENT: SettingDef(
         key=APPROVAL_DEFAULT_PASS_PERCENT,

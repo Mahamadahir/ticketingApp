@@ -117,7 +117,7 @@ def eligible_voters(session: Session, ticket: Ticket) -> list[User]:
     if request_type is None:
         return []
     requester = ticket.requester_email.lower()
-    return [u for u in members_of(session, request_type.approval_group_id) if u.email.lower() != requester]
+    return [u for u in members_of(session, request_type.approval_group_id, active_only=True) if u.email.lower() != requester]
 
 
 def needs_approval(session: Session, ticket: Ticket) -> bool:

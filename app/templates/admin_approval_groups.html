@@ -25,7 +25,7 @@
   <ul>
     {% for m in members %}
     <li>
-      {{ m.display_name or m.email }} ({{ m.email }})
+      {{ m.display_name or m.email }} ({{ m.email }}){% if not m.is_active %} (inactive: not counted as a voter){% endif %}
       <form method="post" action="/admin/approval-groups/{{ g.id }}/members/{{ m.id }}/remove" style="display:inline">
         <button type="submit" class="button-outline">Remove</button>
       </form>

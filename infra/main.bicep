@@ -94,6 +94,8 @@ param teamsNotificationsEnabled bool = false
 param presenceEnabled bool = false
 @description('Worker reads requesters\' Outlook mailbox time zones from Graph (needs the MailboxSettings.Read application permission, which cannot be scoped to the shared mailbox). Off by default; a later feature.')
 param mailboxTimeZonesEnabled bool = false
+@description('Worker runs the nightly Entra accountEnabled check (phase 6B) and makes agents whose account is disabled or deleted inactive. Needs the Graph settings and the User.Read.All application permission (already consented).')
+param entraAccountCheckEnabled bool = false
 
 // ---- Secrets (supplied at deploy time, stored in Key Vault) -----------------
 
@@ -465,6 +467,7 @@ module worker 'modules/container-app.bicep' = if (deployApps && deployWorker) {
       { name: 'APP_ROLE', value: 'worker' }
       { name: 'PRESENCE_ENABLED', value: toLower(string(presenceEnabled)) }
       { name: 'MAILBOX_TIME_ZONES_ENABLED', value: toLower(string(mailboxTimeZonesEnabled)) }
+      { name: 'ENTRA_ACCOUNT_CHECK_ENABLED', value: toLower(string(entraAccountCheckEnabled)) }
       { name: 'GRAPH_SUBSCRIPTION_ENABLED', value: toLower(string(graphSubscriptionEnabled)) }
       // Where Microsoft delivers notifications: the public app (https only). Empty when there is none.
       { name: 'GRAPH_NOTIFICATION_URL', value: !empty(publicAppUrl) ? '${publicAppUrl}/webhooks/graph/notifications' : '' }

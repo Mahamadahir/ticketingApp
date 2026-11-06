@@ -234,7 +234,7 @@ def all_templates_by_type(session: Session) -> dict[int, list[RequestSubTemplate
 def _check_template(
     session: Session, request_type: RequestType, pattern: str, team_id: Optional[int], category_id: Optional[int],
     sub_type_id: Optional[int], impact: Optional[str], urgency: Optional[str], assignee_id: Optional[int],
-    parent_assignee: bool, due_days: Optional[int],
+    parent_assignee: bool, due_days: Optional[int], keep_assignee_id: Optional[int] = None,
 ) -> str:
     pattern = (pattern or "").strip()
     if not pattern:
@@ -264,10 +264,10 @@ def _check_template(
             raise TemplateError(f"Choose the {label} from the list")
     if assignee_id is not None and parent_assignee:
         raise TemplateError("Name an agent or choose the parent's assignee, not both")
-    if assignee_id is not None:
+    if assignee_id is not None and assignee_id != keep_assignee_id:  # an assignee who has since left may stay while other things are edited
         agent = session.get(User, assignee_id)
         if agent is None or agent.role != UserRole.AGENT or agent.id not in {m.id for m in team_members(session, team.id)}:
-            raise TemplateError(f"Choose an agent who is a member of {team.name}")
+            raise TemplateError(f"Choose an active agent who is a member of {team.name}")
     if due_days is not None and not 0 <= due_days <= MAX_DUE_DAYS:
         raise TemplateError(f"Days before Required by must be from 0 to {MAX_DUE_DAYS}, or blank to use the setting")
     return pattern
@@ -284,6 +284,7 @@ def save_template(
     pattern = _check_template(
         session, request_type, subject_pattern, team_id, category_id, sub_request_type_id, impact, urgency,
         assignee_id, assign_to_parent_assignee, due_days_before,
+        keep_assignee_id=template.assignee_id if template is not None else None,
     )
     groups = parse_conditions(session, request_type.id, conditions_text)
     if template is None:

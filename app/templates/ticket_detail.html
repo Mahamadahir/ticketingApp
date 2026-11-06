@@ -20,7 +20,7 @@
   &middot; Reported: {{ ticket.reported_at|local_time }}{% if ticket.is_backdated %} <span class="badge">backdated</span>{% endif %}
   {% if ticket.resolved_at %}&middot; Resolved: {{ ticket.resolved_at|local_time }}{% endif %}
   &middot; Team: {{ team.name if team else "Unassigned" }}
-  &middot; Assigned: {{ assigned_agent.display_name if assigned_agent else "Unassigned" }}
+  &middot; Assigned: {{ assigned_agent.display_name if assigned_agent else "Unassigned" }}{% if assigned_agent and not assigned_agent.is_active %} (inactive){% endif %}
   &middot;
   <span class="status status-{{ ticket.status.value }}">{{ ticket.status.value }}</span>{% if ticket.msp_hold %} <span class="badge">on MSP hold</span>{% endif %}
   {% if ticket.msp_ticket_number %}&middot; With MSP as MSP ticket #{{ ticket.msp_ticket_number }}{% endif %}
@@ -126,7 +126,7 @@
   </label>
   <label>Assign to
     <select name="agent_id" id="triage-agent">
-      <option value="">Leave as is{{ " (" ~ assigned_agent.display_name ~ ")" if assigned_agent else " (unassigned)" }}</option>
+      <option value="">Leave as is{{ " (" ~ assigned_agent.display_name ~ (", inactive" if not assigned_agent.is_active else "") ~ ")" if assigned_agent else " (unassigned)" }}</option>
     </select>
   </label>
   {% if can_create_category %}

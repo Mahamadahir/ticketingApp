@@ -275,15 +275,22 @@ def may_view_attachment(
 
 def assignable_agents(session: Session, ticket: Ticket) -> list[User]:
     """Who a super admin may assign the ticket to: the team's members, or any
-    agent while the ticket has no team yet."""
+    agent while the ticket has no team yet. Inactive agents (app/entra_check.py) are never offered."""
     if ticket.team_id is None:
-        return list(session.exec(select(User).where(User.role == UserRole.AGENT).order_by(User.display_name)).all())
+        return list(
+            session.exec(
+                select(User).where(User.role == UserRole.AGENT, User.is_active).order_by(User.display_name)
+            ).all()
+        )
     return team_members(session, ticket.team_id)
 
 
-def team_members(session: Session, team_id: int | None) -> list[User]:
+def team_members(session: Session, team_id: int | None, include_inactive: bool = False) -> list[User]:
     """Agents who can work a team's tickets (members, not viewers), including the members of
-    its parent team, who work its tickets too (see access_context)."""
+    its parent team, who work its tickets too (see access_context). Inactive agents (a leaver, or an
+    account Entra disabled) are left out: every picker, notification and automatic assignment reads
+    this, so they are never offered or told anything. `include_inactive` is for checks about an
+    assignee who already holds a ticket."""
     if team_id is None:
         return []
     parent_id = session.exec(select(Team.parent_team_id).where(Team.id == team_id)).first()
@@ -296,6 +303,7 @@ def team_members(session: Session, team_id: int | None) -> list[User]:
                 TeamMembership.team_id.in_(team_ids),
                 TeamMembership.level == MembershipLevel.MEMBER,
                 User.role == UserRole.AGENT,
+                User.is_active | include_inactive,
             )
             .order_by(User.display_name)
         ).all()
