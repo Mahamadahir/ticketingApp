@@ -370,8 +370,15 @@ Request types and nothing else under Admin). Super admins hold every permission;
 one; approval groups stay super-admin only. Granting is on Admin > Users and audited. The check is one
 function (`visibility.has_permission`), so phase 6 can feed it from an Entra app-role claim instead.
 
-**Break-glass.** Two local super admin accounts not tied to anyone's UPN,
-with long passwords and TOTP. Always able to sign in.
+**Break-glass** (built, 6C #163). Two local super admin accounts not tied to anyone's UPN
+(`<name>@local.invalid`, no Entra id), with a generated 32 character password and TOTP (RFC 6238).
+Always able to sign in: Entra is never consulted, and the nightly Entra check skips them. Created and
+reissued only by `python -m app.breakglass create|reset|unlock|list`, run in the web container; the
+password and TOTP secret are printed once and kept in IT Glue, never shown on a web page. The password is
+hashed, the TOTP secret is stored encrypted under a key derived from `SESSION_SECRET_KEY`. Sign in at
+`/auth/break-glass` on the web app only (username, password, current code; a code works once); lockout
+and rate limiting as for local accounts; shorter idle timeout (`break_glass_idle_minutes`); every use
+is audited and rings the super admins' bell. Decisions are in `docs/build-plan.md`.
 
 **Outage mode** for Entra outages:
 

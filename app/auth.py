@@ -73,6 +73,11 @@ def attempt_local_login(session: Session, email: str, password: str) -> LoginRes
     caller can record it in the activity log.
     """
     user = session.exec(select(User).where(User.email == email.lower())).first()
+    if user is not None and user.is_break_glass:
+        # A break-glass account needs its TOTP code too and signs in only on /auth/break-glass
+        # (app/breakglass.py); this form must never be a password-only way in, so it looks unknown.
+        _verify_password(password, _DUMMY_HASH)
+        return LoginResult(failure="unknown_account")
     if not user or not user.password_hash:
         # Spend the same bcrypt time as a real check so response timing
         # doesn't reveal whether the account exists.
@@ -192,7 +197,7 @@ def get_current_user(request: Request, session: Session = Depends(get_session)) 
             own.commit()
         request.session.pop(sessions.COOKIE_KEY, None)
         raise NotAuthenticated(sessions.INACTIVE_MESSAGE)
-    sessions.touch(row, now, sessions.idle_limit(session))
+    sessions.touch(row, now, sessions.idle_limit(session, row.break_glass))
     # Lets error pages (such as "no access") show the signed-in user's navigation.
     request.state.user = user
     # Every page shows times in this person's zone (app/templating.py); worked out here with the request's

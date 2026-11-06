@@ -448,3 +448,13 @@ def test_a_template_naming_an_agent_who_left_can_still_be_edited_otherwise(clien
     save_template(db_session, request_type, template, subject_pattern="Laptop v2", team_id=team.id,
                   category_id=category.id, assignee_id=active.id)
     assert template.subject_pattern == "Laptop v2"
+
+
+def test_break_glass_accounts_are_never_looked_up_or_deactivated(db_session):
+    from app.breakglass import create_account
+
+    create_account(db_session, "breakglass1")
+    an_agent(db_session, "agent@example.com", "oid-a")
+    result, fake = run(db_session, {"oid-a": True})
+    assert fake.asked == ["oid-a"] and result.looked_at == 1
+    assert db_session.exec(select(User).where(User.is_break_glass)).one().is_active

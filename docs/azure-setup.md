@@ -321,6 +321,39 @@ the apps and probes `/health`. Details and the known limits are in `infra/README
 (`infra/README.md`, "The three apps"). With the mail and Teams switches unset the worker idles,
 so the first deploy can leave them all unset.
 
+## 8a. Create the break-glass accounts (once, after the first deploy)
+
+Two local super admins that are not anyone's Entra account, so there is always a way in when
+Entra is down or the admins are locked out. They are made by a command, never from a web page, so
+no secret crosses the web app. Run it once per account, after the first deploy has migrated the
+database (the `web` app must be running: its `SESSION_SECRET_KEY` protects the stored TOTP secret).
+
+```bash
+# <webAppName> is the deployment output `webAppName`. Run it where you can read the output:
+# it is shown once and goes nowhere else.
+az containerapp exec -g rg-ticketing-staging -n <webAppName> --command "python -m app.breakglass create breakglass1"
+az containerapp exec -g rg-ticketing-staging -n <webAppName> --command "python -m app.breakglass create breakglass2"
+```
+
+Each prints the account (`breakglass1@local.invalid`), a 32 character password, the TOTP secret (base32,
+SHA-1, 6 digits, 30 seconds) and an `otpauth://` URI. **Store the password and the TOTP secret in IT
+Glue straight away** (IT Glue holds the live code; or add the secret to an authenticator app). They
+cannot be shown again. If one is lost, `reset` replaces both. There is no QR code (no dependency
+for it); paste the URI or secret into IT Glue.
+
+Other commands: `python -m app.breakglass list`, `reset <name>` (new password and secret, printed
+once; ends the account's sessions), `unlock <name>` (clears a lockout). `create` refuses a third
+account. `az containerapp exec` runs a one-off shell in the running container, so its output does not
+reach Log Analytics. If exec is not available, the migrate job can run the command instead
+(`az containerapp job start ... --args`), but a job's console output **is** collected in Log
+Analytics, so the password would be written there: if you do this, run `reset` for that account
+afterwards through exec and treat the first output as burned.
+
+Sign in at `/auth/break-glass` on the web app with the username, password and the current code.
+Every use is audited (`break_glass_sign_in`) and every active super admin gets a bell entry. If
+`SESSION_SECRET_KEY` is ever rotated, the stored TOTP secrets become unreadable: run `reset` on both
+accounts afterwards and update IT Glue.
+
 ## 9. Check it, then add what failed to the list
 
 Everything below can only be proved here. Tick each, note the date, and say what you saw.
@@ -348,6 +381,12 @@ Everything below can only be proved here. Tick each, note the date, and say what
       and a requester who emails the shared mailbox gets their Outlook mailbox zone stored
       (`requestertimezone`, source `mailbox`) within about 5 minutes
       (`heartbeat job=requester-time-zones`); a sender outside the tenant gets the default.
+- [ ] Break-glass (6C, step 8a): create both accounts with `az containerapp exec`, store the password
+      and TOTP in IT Glue, then sign in at `/auth/break-glass` with each using IT Glue's current
+      code. Check the audit log (`break_glass_sign_in`, a success and a deliberate failure), the bell
+      entry for the other super admins, that the session ends after `break_glass_idle_minutes`, that
+      `az containerapp exec` output does not appear in Log Analytics, and that `/auth/break-glass` is
+      a 404 on the public app.
 - [ ] Alerts reach `ALERT_EMAIL`; the worker heartbeat line appears in Log Analytics;
       Application Insights shows data.
 - [ ] Point-in-time restore of the database to a scratch server works.

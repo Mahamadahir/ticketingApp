@@ -47,7 +47,7 @@ def test_the_public_app_serves_only_the_webhook_the_approval_link_and_health():
     public = paths(build_app("public"))
 
     assert {"/health", WEBHOOK, "/approvals/{token}"} <= public
-    for agent_route in ("/", "/tickets", "/portal", "/admin/users", "/auth/dev-login", "/webhooks/dev/simulate-inbound"):
+    for agent_route in ("/", "/tickets", "/portal", "/admin/users", "/auth/dev-login", "/auth/break-glass", "/webhooks/dev/simulate-inbound"):
         assert agent_route not in public, agent_route
     assert not {p for p in public if p.startswith(("/tickets", "/admin", "/portal", "/auth", "/notifications", "/settings"))}
 
@@ -55,7 +55,7 @@ def test_the_public_app_serves_only_the_webhook_the_approval_link_and_health():
 def test_the_web_app_serves_the_console_but_not_the_internet_facing_routes():
     web = paths(build_app("web"))
 
-    assert {"/", "/health", "/tickets", "/portal", "/auth/dev-login"} <= web
+    assert {"/", "/health", "/tickets", "/portal", "/auth/dev-login", "/auth/break-glass"} <= web
     assert WEBHOOK not in web and "/approvals/{token}" not in web
 
 

@@ -94,6 +94,8 @@ class Settings(BaseSettings):
     rate_limit_approvals_per_minute: int = 30
     rate_limit_action_links_per_minute: int = 30
     rate_limit_webhook_per_minute: int = 600
+    # The break-glass sign-in form on the web app (#163), per caller address per minute, per replica.
+    rate_limit_break_glass_per_minute: int = 10
     # Attachments (phase 3E, app/storage.py). STORAGE_BACKEND is "local" (a directory, for development
     # and tests) or "blob" (Azure Blob Storage through the app's managed identity: no account keys).
     # Left blank it is blob when STORAGE_ACCOUNT_NAME is set (the Bicep sets it) and local otherwise.

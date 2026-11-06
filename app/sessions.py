@@ -24,7 +24,7 @@ from sqlmodel import Session, select
 
 from app.database import engine
 from app.models import User, UserSession
-from app.settings_store import SESSION_IDLE_MINUTES, SESSION_KEEP_DAYS, SESSION_MAX_DAYS, count_setting
+from app.settings_store import BREAK_GLASS_IDLE_MINUTES, SESSION_IDLE_MINUTES, SESSION_KEEP_DAYS, SESSION_MAX_DAYS, count_setting
 
 COOKIE_KEY = "sid"
 # last_seen_at moves at most this often: a busy page does not write a row on every request.
@@ -70,6 +70,7 @@ def start_session(session: Session, request: Request, user: User) -> UserSession
         expires_at=now + timedelta(days=max_days),
         ip=request.client.host if request.client else None,  # same address the activity log keeps
         user_agent=(request.headers.get("user-agent") or "")[:MAX_USER_AGENT] or None,
+        break_glass=user.is_break_glass,
     )
     session.add(row)
     return row
@@ -83,13 +84,14 @@ def ended_reason(session: Session, row: Optional[UserSession], now: datetime) ->
         return "revoked"
     if _utc(row.expires_at) <= now:
         return "expired"
-    if _utc(row.last_seen_at) + idle_limit(session) <= now:
+    if _utc(row.last_seen_at) + idle_limit(session, row.break_glass) <= now:
         return "idle"
     return None
 
 
-def idle_limit(session: Session) -> timedelta:
-    return timedelta(minutes=count_setting(session, SESSION_IDLE_MINUTES))
+def idle_limit(session: Session, break_glass: bool = False) -> timedelta:
+    """Break-glass sessions (#163) have their own, shorter idle timeout."""
+    return timedelta(minutes=count_setting(session, BREAK_GLASS_IDLE_MINUTES if break_glass else SESSION_IDLE_MINUTES))
 
 
 def current_row(session: Session, request: Request) -> Optional[UserSession]:
@@ -137,14 +139,18 @@ def live_session_counts(session: Session, user_ids: list[int]) -> dict[int, int]
     if not user_ids:
         return {}
     now = _now()
-    idle = timedelta(minutes=count_setting(session, SESSION_IDLE_MINUTES))
+    idle = idle_limit(session)
+    idle_break_glass = idle_limit(session, True)
     rows = session.exec(
         select(UserSession.user_id, func.count())
         .where(
             UserSession.user_id.in_(user_ids),
             UserSession.revoked_at.is_(None),
             UserSession.expires_at > now,
-            UserSession.last_seen_at > now - idle,
+            or_(
+                (UserSession.break_glass.is_(False)) & (UserSession.last_seen_at > now - idle),
+                (UserSession.break_glass.is_(True)) & (UserSession.last_seen_at > now - idle_break_glass),
+            ),
         )
         .group_by(UserSession.user_id)
     ).all()

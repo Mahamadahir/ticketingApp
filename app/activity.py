@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 STATE_CHANGING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 # These have their own, more informative events (login_success, login_failed, logout).
-HAS_DEDICATED_EVENT = {"/auth/local-login", "/auth/dev-login", "/auth/logout"}
+HAS_DEDICATED_EVENT = {"/auth/local-login", "/auth/break-glass", "/auth/dev-login", "/auth/logout"}
 MAX_USER_AGENT = 300
 MAX_DETAIL = 500
 MAX_EMAIL = 254

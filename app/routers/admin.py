@@ -231,6 +231,8 @@ def update_user(
     if target is None:
         raise HTTPException(status_code=404, detail="User not found")
 
+    if target.is_break_glass and role != UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=400, detail="A break-glass account stays a super admin; deactivate it instead")
     if target.role != role:
         log_action(session, admin.email, "user", target.id, "role_changed", f"{target.role.value} -> {role.value}")
         target.role = role

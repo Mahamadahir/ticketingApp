@@ -40,6 +40,7 @@ PRESENCE_RETRY_MINUTES = "presence_retry_minutes"
 ENTRA_CHECK_TIME = "entra_check_time"
 SESSION_IDLE_MINUTES = "session_idle_minutes"
 SESSION_MAX_DAYS = "session_max_days"
+BREAK_GLASS_IDLE_MINUTES = "break_glass_idle_minutes"
 SESSION_KEEP_DAYS = "session_keep_days"
 APPROVAL_DEFAULT_PASS_PERCENT = "approval_default_pass_percent"
 APPROVAL_REMINDERS_ENABLED = "approval_reminders_enabled"
@@ -278,6 +279,16 @@ REGISTRY: dict[str, SettingDef] = {
             "(8 hours), TBC. Blank uses the placeholder."
         ),
         default="480",
+    ),
+    BREAK_GLASS_IDLE_MINUTES: SettingDef(
+        key=BREAK_GLASS_IDLE_MINUTES,
+        label="Break-glass sign-in: idle timeout (minutes)",
+        kind="minutes",
+        description=(
+            "A break-glass session (the emergency local super admins) that makes no request for this long is "
+            "signed out. Shorter than the normal idle timeout on purpose. Placeholder 30, TBC. Blank uses the placeholder."
+        ),
+        default="30",
     ),
     SESSION_MAX_DAYS: SettingDef(
         key=SESSION_MAX_DAYS,
