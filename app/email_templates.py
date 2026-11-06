@@ -296,6 +296,24 @@ REGISTRY: dict[str, TemplateDef] = {
             sample={**_COMMON_SAMPLE, "days_waiting": "5", "unanswered": "2", "ticket_link": "https://tickets.example.org/tickets/1042"},
         ),
         TemplateDef(
+            key="emergency_password_reset",
+            label="Emergency password cleared",
+            description=(
+                "Sent to each agent whose emergency password was used during an outage when outage mode is switched "
+                "off. The password was cleared, so they are asked to set a new one. It is about no ticket, so it has "
+                "no reference."
+            ),
+            subject_default="Outage mode has ended: set a new emergency password",
+            body_default=(
+                "Hello {name},\n\nOutage mode has ended. The emergency password you used during it has been "
+                "cleared and you have been signed out of any emergency session.\n\n"
+                "Please set a new one now, so you have it ready for the next outage: {settings_link}"
+            ),
+            body_placeholders={"name": "the agent's name", "settings_link": "the link to the emergency password page"},
+            required=("settings_link",),
+            sample={"name": "Alex Agent", "settings_link": "https://tickets.example.org/settings/emergency-password"},
+        ),
+        TemplateDef(
             key="approval_withdrawn",
             label="Approval withdrawn",
             description="Sent to each approver who had not answered when the requester withdrew the request.",

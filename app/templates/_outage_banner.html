@@ -1,0 +1,9 @@
+{# The one place the outage mode banner is written (#164); base.html and the sign-in pages include it. #}
+{% set outage = outage_status() %}
+{% if outage %}
+<div class="outage-banner" role="alert">
+  <strong>Outage mode is on.</strong>
+  Microsoft sign-in may be unavailable. Agents can sign in with their emergency password on the <a href="/auth/login">sign-in page</a>.
+  {% if user and user.role.value == "super_admin" %}<a href="/admin/outage">Outage mode</a>{% endif %}
+</div>
+{% endif %}

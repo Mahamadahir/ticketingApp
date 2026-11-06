@@ -74,6 +74,7 @@ def fresh_rate_limits():
     rate_limit.ACTION_LINKS.reset()
     rate_limit.WEBHOOK.reset()
     rate_limit.BREAK_GLASS.reset()
+    rate_limit.EMERGENCY.reset()
     yield
 
 

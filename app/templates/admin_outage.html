@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Admin: Outage mode{% endblock %}
+{% block content %}
+{% set active = "/admin/outage" %}
+{% include "_admin_tabs.html" %}
+
+<h2>Outage mode</h2>
+<p class="note">
+  For when Microsoft (Entra) sign-in is down. While it is on, agents can sign in on the sign-in page with the emergency
+  password they set in advance, and every page shows a banner. Only a break-glass account can switch it on; any super
+  admin can switch it off. Switching it off ends every emergency session, clears every emergency password that was used
+  during the outage and emails those agents asking for a new one. Every switch is audited and tells the super admins.
+</p>
+{% if message %}<p role="status">{{ message }}</p>{% endif %}
+
+{% if status %}
+<p><strong>Outage mode is ON</strong>{% if status.since %} since {{ status.since|local_time }}{% endif %}{% if status.by %}, switched on by {{ status.by }}{% endif %}.</p>
+<form method="post" action="/admin/outage/off"><button type="submit">Switch outage mode off</button></form>
+{% else %}
+<p><strong>Outage mode is off.</strong></p>
+{% if user.is_break_glass %}
+<form method="post" action="/admin/outage/on"><button type="submit">Switch outage mode on</button></form>
+{% else %}
+<p class="note">You are signed in with an ordinary account, so you cannot switch it on. Sign in with a break-glass account at /auth/break-glass.</p>
+{% endif %}
+{% endif %}
+
+<h3>Who is ready</h3>
+<p>{{ with_count }} active agent(s) have an emergency password.{% if without %} {{ without|length }} do not:{% endif %}</p>
+{% if without %}
+<ul>
+  {% for person in without %}<li>{{ person.display_name }} ({{ person.email }})</li>{% endfor %}
+</ul>
+{% endif %}
+{% endblock %}

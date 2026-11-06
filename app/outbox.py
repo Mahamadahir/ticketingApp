@@ -30,6 +30,7 @@ CHASE = "chase"  # "is this still an issue?" to the requester of a ticket Awaiti
 MSP_HANDOFF = "msp_handoff"  # a ticket sent to the MSP (app/msp.py); the text is fixed when it is queued
 MSP_RELEASE = "msp_release"  # "no longer needed", to the MSP, when IT resolved, closed or took back a ticket (app/msp_actions.py); the text is fixed when queued
 MSP_FORWARD = "msp_forward"  # an MSP message the user was left off, passed on to them (app/msp.py); the text is fixed when queued
+EMERGENCY_RESET = "emergency_reset"  # tells an agent their emergency password was cleared when outage mode ended (app/outage.py); about no ticket
 FOLLOWER_UPDATE = "follower_update"  # an inbound update passed to someone who was not on the mail it came in
 
 # Kinds that go to the requester without an agent having just written them. These are what the
@@ -138,6 +139,17 @@ def queue_acknowledgement(session: Session, ticket: Ticket) -> Optional[Outbound
     if already is not None:
         return None
     row = OutboundEmail(kind=ACKNOWLEDGEMENT, ticket_id=ticket.id, to_address=ticket.requester_email)
+    session.add(row)
+    return row
+
+
+def queue_emergency_reset(session: Session, user: User) -> Optional[OutboundEmail]:
+    """Queues "outage mode has ended, set a new emergency password" for one agent. Whether it is still wanted
+    is asked again when it is sent (mail.build_emergency_reset_mail)."""
+    if not is_on():
+        return None
+    session.flush()
+    row = OutboundEmail(kind=EMERGENCY_RESET, ticket_id=None, to_address=user.email)
     session.add(row)
     return row
 

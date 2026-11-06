@@ -151,6 +151,12 @@ class User(SQLModel, table=True):
     is_break_glass: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
     totp_secret: Optional[str] = Field(default=None)
     totp_last_step: Optional[int] = Field(default=None)
+    # The emergency password (#164, app/outage.py): set in advance by an agent, stored hashed, and accepted
+    # only while outage mode is on. `used_at` is set by a sign-in with it; switching outage mode off clears
+    # the hash of everyone who used theirs.
+    emergency_password_hash: Optional[str] = Field(default=None)
+    emergency_password_set_at: Optional[datetime] = Field(default=None)
+    emergency_password_used_at: Optional[datetime] = Field(default=None)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -174,6 +180,8 @@ class UserSession(SQLModel, table=True):
     user_agent: Optional[str] = Field(default=None)
     # Started by a break-glass sign-in: these sessions use their own, shorter idle timeout (#163).
     break_glass: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
+    # Started by an emergency password sign-in during outage mode (#164): switching outage mode off ends these.
+    emergency: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
 
 
 class RequesterTimeZone(SQLModel, table=True):
@@ -763,8 +771,9 @@ class OutboundEmail(SQLModel, table=True):
     )
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    kind: str  # reply, notice, raised_for_you, approval, approval_reminder, approval_withdrawn, approval_overdue, acknowledgement, follower_update, chase, msp_handoff, msp_release, msp_forward
-    ticket_id: int = Field(foreign_key="ticket.id", index=True)
+    kind: str  # reply, notice, raised_for_you, approval, approval_reminder, approval_withdrawn, approval_overdue, acknowledgement, follower_update, chase, msp_handoff, msp_release, msp_forward, emergency_reset
+    # Empty only for an email that is not about a ticket (emergency_reset, #164).
+    ticket_id: Optional[int] = Field(default=None, foreign_key="ticket.id", index=True)
     # For a reply or notice: the message it carries. Unique, so one message can never be emailed twice.
     message_id: Optional[int] = Field(default=None, foreign_key="message.id", unique=True)
     # For an approval email: the vote it asks for. The link is made when the email is sent.

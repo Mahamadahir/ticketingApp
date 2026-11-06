@@ -236,3 +236,5 @@ textarea {
 .sla-at_risk { color: #b45309; }
 .sla-breached { color: #b91c1c; font-weight: bold; }
 .sla-paused { color: #6b7280; }
+
+.outage-banner { background: #fde68a; border-bottom: 2px solid #b45309; padding: 0.5rem 1rem; }

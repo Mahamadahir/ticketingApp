@@ -8,7 +8,7 @@ from fastapi import Depends, HTTPException, Request
 from sqlalchemy import func, update
 from sqlmodel import Session, select
 
-from app import sessions
+from app import outage, sessions
 from app.audit import log_action
 from app.config import settings
 from app.database import engine, get_session
@@ -197,6 +197,10 @@ def get_current_user(request: Request, session: Session = Depends(get_session)) 
             own.commit()
         request.session.pop(sessions.COOKIE_KEY, None)
         raise NotAuthenticated(sessions.INACTIVE_MESSAGE)
+    if row.emergency and not outage.is_on(session):
+        # Switching outage mode off ends these sessions; this catches any path that did not.
+        request.session.pop(sessions.COOKIE_KEY, None)
+        raise NotAuthenticated(sessions.SIGNED_OUT_MESSAGE)
     sessions.touch(row, now, sessions.idle_limit(session, row.break_glass))
     # Lets error pages (such as "no access") show the signed-in user's navigation.
     request.state.user = user

@@ -13,6 +13,7 @@ from app.backdating import FORMAT as MOMENT_FORMAT
 from app.database import engine
 from app.forms import MAX_MESSAGE_LENGTH
 from app.models import UserRole
+from app import outage
 from app.permissions import ASSIGNABLE_ROLES
 from app.presence import agent_label
 from app.visibility import has_permission
@@ -50,6 +51,29 @@ def _can(user, key: str) -> bool:
 
 
 templates.env.globals["can"] = _can
+
+
+@pass_context
+def _outage(context):
+    """{% set outage = outage_status() %}: when outage mode is on, who switched it on and since when, else None. Read
+    once per request (cached on it). Used only by _outage_banner.html, which base.html and the sign-in page include."""
+    request = context.get("request")
+    state = getattr(request, "state", None)
+    if state is not None and hasattr(state, "outage_status"):
+        return state.outage_status
+    user = context.get("user") or getattr(state, "user", None)
+    session = object_session(user) if user is not None else None
+    if session is not None:
+        found = outage.status(session)
+    else:  # no one signed in (the sign-in page), or detached (an error page)
+        with Session(engine) as own:
+            found = outage.status(own)
+    if state is not None:
+        state.outage_status = found
+    return found
+
+
+templates.env.globals["outage_status"] = _outage
 
 
 @pass_context

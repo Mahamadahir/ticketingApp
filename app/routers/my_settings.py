@@ -9,6 +9,7 @@ from sqlmodel import Session
 from app.audit import log_action
 from app.auth import get_current_user
 from app.sessions import revoke_user_sessions
+from app import emergency
 from app.database import get_session
 from app.models import User
 from app.config import settings
@@ -23,6 +24,7 @@ from app.notification_settings import (
     save_teams_delay,
 )
 from app.notifications import AGENT_ROLES, default_teams_delay
+from app.settings_store import EMERGENCY_PASSWORD_MIN_LENGTH, count_setting
 from app.time_zones import clear_manual_zone, set_browser_zone, set_manual_zone, zone_choices, zone_for_user
 
 router = APIRouter(prefix="/settings", tags=["settings"])
@@ -119,3 +121,49 @@ def sign_out_everywhere(
     session.commit()
     request.session.clear()
     return RedirectResponse("/auth/login", status_code=303)
+
+
+def _emergency_page(request: Request, user: User, session: Session, first: bool = False, error: str = "", saved: bool = False, status_code: int = 200):
+    return templates.TemplateResponse(
+        request,
+        "my_emergency_password.html",
+        {
+            "user": user, "first": first, "error": error, "saved": saved,
+            "has_password": bool(user.emergency_password_hash), "set_at": user.emergency_password_set_at,
+            "min_length": count_setting(session, EMERGENCY_PASSWORD_MIN_LENGTH),
+        },
+        status_code=status_code,
+    )
+
+
+@router.get("/emergency-password", response_class=HTMLResponse)
+def emergency_password_page(
+    request: Request, first: int = 0, saved: int = 0,
+    user: User = Depends(get_current_user), session: Session = Depends(get_session),
+):
+    """Set or change the emergency password (#164): what an agent signs in with while outage mode is on. Agents
+    are sent here at Entra sign-in until they have one."""
+    if not emergency.may_hold_one(user):
+        raise HTTPException(status_code=403, detail="Emergency passwords are for agents.")
+    return _emergency_page(request, user, session, first=bool(first), saved=bool(saved))
+
+
+@router.post("/emergency-password")
+def save_emergency_password(
+    request: Request,
+    password: str = Form(..., max_length=1000),
+    confirm: str = Form(..., max_length=1000),
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    if not emergency.may_hold_one(user):
+        raise HTTPException(status_code=403, detail="Emergency passwords are for agents.")
+    try:
+        if password != confirm:
+            raise emergency.PasswordRefused("The two passwords are not the same.")
+        emergency.set_password(session, user, password)
+    except emergency.PasswordRefused as refusal:
+        session.rollback()
+        return _emergency_page(request, user, session, error=str(refusal), status_code=400)
+    session.commit()
+    return RedirectResponse("/settings/emergency-password?saved=1", status_code=303)
