@@ -37,6 +37,7 @@ APPROVAL_OVERDUE = "approval_overdue"
 APPROVAL_WAITING = "approval_waiting"
 DUE_TODAY = "due_today"
 NO_ACTIVE_APPROVERS = "approval_no_active_approvers"  # #161: a request waits because nobody active can approve it (not a listed event type)
+BREAK_GLASS_SIGN_IN = "break_glass_sign_in"  # #163: a break-glass account signed in (not a listed event type)
 ACCOUNT_DEACTIVATED = "account_deactivated"  # #158: the nightly Entra check made someone inactive
 CHASE_GIVEN_UP = "chase_given_up"
 MSP_UNACKNOWLEDGED = "msp_unacknowledged"
@@ -499,6 +500,17 @@ def notify_account_deactivated(session: Session, super_admin: User, person: User
         session, super_admin, ACCOUNT_DEACTIVATED, None,
         f"{person.display_name or person.email} ({person.email}) was made inactive: {reason}. Re-assign their open tickets on Admin > Users.",
         None,
+    )
+
+
+def notify_break_glass_sign_in(session: Session, super_admin: User, person: User, ip: Optional[str]) -> Optional[Notification]:
+    """Tells a super admin, in the bell, that a break-glass account signed in (app/routers/auth.py), so its use is
+    always visible. Not a listed event type, so it is always on, like the deactivation entry. Does not commit."""
+    where = f" from {ip}" if ip else ""
+    return notify(
+        session, super_admin, BREAK_GLASS_SIGN_IN, None,
+        f"Break-glass account {person.email} signed in{where}. If this was not planned, reset it and check the audit log.",
+        person.email,  # the account that signed in is not told of itself
     )
 
 

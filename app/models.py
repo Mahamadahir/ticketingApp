@@ -144,6 +144,13 @@ class User(SQLModel, table=True):
     # their settings page; the browser no longer overwrites it until they clear it). None: not known yet.
     time_zone: Optional[str] = Field(default=None)
     time_zone_source: Optional[str] = Field(default=None)
+    # A break-glass account (#163, app/breakglass.py): a local super admin that is not anyone's Entra
+    # account. It signs in only on /auth/break-glass with password and TOTP code. The TOTP secret is stored
+    # encrypted (never plain); totp_last_step is the newest 30-second step already accepted, so a code is
+    # never accepted twice.
+    is_break_glass: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
+    totp_secret: Optional[str] = Field(default=None)
+    totp_last_step: Optional[int] = Field(default=None)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -165,6 +172,8 @@ class UserSession(SQLModel, table=True):
     revoked_at: Optional[datetime] = Field(default=None)
     ip: Optional[str] = Field(default=None)
     user_agent: Optional[str] = Field(default=None)
+    # Started by a break-glass sign-in: these sessions use their own, shorter idle timeout (#163).
+    break_glass: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
 
 
 class RequesterTimeZone(SQLModel, table=True):

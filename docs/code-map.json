@@ -54,6 +54,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/b8d3e1f7a642_break_glass_accounts.py",
+        "revision": "b8d3e1f7a642"
+      },
+      {
         "file": "migrations/versions/a7c1d4e9f258_server_side_sessions.py",
         "revision": "a7c1d4e9f258"
       },
@@ -68,17 +72,13 @@
       {
         "file": "migrations/versions/e7a39c5d1b84_msp_mail_forwarding.py",
         "revision": "e7a39c5d1b84"
-      },
-      {
-        "file": "migrations/versions/b5c1e7a3d902_msp_handoff.py",
-        "revision": "b5c1e7a3d902"
       }
     ],
-    "count": 56,
+    "count": 57,
     "heads": [
       {
-        "file": "migrations/versions/a7c1d4e9f258_server_side_sessions.py",
-        "revision": "a7c1d4e9f258"
+        "file": "migrations/versions/b8d3e1f7a642_break_glass_accounts.py",
+        "revision": "b8d3e1f7a642"
       }
     ]
   },
@@ -367,6 +367,7 @@
         "app.auth",
         "app.auto_close_chase",
         "app.bank_holidays",
+        "app.breakglass",
         "app.closing",
         "app.due_today",
         "app.entra_check",
@@ -414,6 +415,7 @@
         "require_roles"
       ],
       "imported_by": [
+        "app.breakglass",
         "app.main",
         "app.routers.admin",
         "app.routers.attachments",
@@ -442,6 +444,7 @@
       "tests": [
         "tests/test_activity_log.py",
         "tests/test_auth.py",
+        "tests/test_break_glass.py",
         "tests/test_hardening.py",
         "tests/test_login_lockout.py",
         "tests/test_sessions.py",
@@ -544,6 +547,51 @@
       "tables": [],
       "tests": [
         "tests/test_handoff_bells_holidays.py"
+      ]
+    },
+    {
+      "classes": [
+        "BreakGlassError",
+        "BreakGlassResult",
+        "Issued"
+      ],
+      "file": "app/breakglass.py",
+      "functions": [
+        "attempt_break_glass_login",
+        "break_glass_accounts",
+        "create_account",
+        "decrypt_secret",
+        "describe_accounts",
+        "email_for",
+        "encode_secret",
+        "encrypt_secret",
+        "hotp",
+        "main",
+        "matching_step",
+        "otpauth_uri",
+        "reset_account",
+        "time_step",
+        "totp_code",
+        "unlock_account"
+      ],
+      "imported_by": [
+        "app.routers.auth"
+      ],
+      "imports": [
+        "app.audit",
+        "app.auth",
+        "app.config",
+        "app.database",
+        "app.models",
+        "app.sessions"
+      ],
+      "module": "app.breakglass",
+      "routes": [],
+      "summary": "Break-glass accounts (#163): two local super admins that are not anyone's Entra account, so there is",
+      "tables": [],
+      "tests": [
+        "tests/test_break_glass.py",
+        "tests/test_entra_check.py"
       ]
     },
     {
@@ -715,6 +763,7 @@
         "app.approval_links",
         "app.attachments",
         "app.auth",
+        "app.breakglass",
         "app.check_settings",
         "app.database",
         "app.entra_check",
@@ -751,6 +800,7 @@
         "tests/test_approval_reminders.py",
         "tests/test_attachments.py",
         "tests/test_auto_close_chase.py",
+        "tests/test_break_glass.py",
         "tests/test_bulk_resolve.py",
         "tests/test_closing_email.py",
         "tests/test_entra_check.py",
@@ -785,6 +835,7 @@
       "imported_by": [
         "app.activity",
         "app.auth",
+        "app.breakglass",
         "app.routers.action_links",
         "app.routers.admin",
         "app.routers.approvals",
@@ -1460,6 +1511,7 @@
         "tests/conftest.py",
         "tests/test_action_links.py",
         "tests/test_attachments.py",
+        "tests/test_break_glass.py",
         "tests/test_entra_check.py",
         "tests/test_health.py",
         "tests/test_htmx_errors.py",
@@ -1617,6 +1669,7 @@
         "app.auto_close_chase",
         "app.backdating",
         "app.bank_holidays",
+        "app.breakglass",
         "app.bulk_resolve",
         "app.canned",
         "app.categories",
@@ -1877,6 +1930,7 @@
         "tests/test_auto_close_chase.py",
         "tests/test_backdating.py",
         "tests/test_bell_access.py",
+        "tests/test_break_glass.py",
         "tests/test_bulk_resolve.py",
         "tests/test_canned.py",
         "tests/test_category_admin.py",
@@ -2184,6 +2238,7 @@
         "notify_approval_waiting",
         "notify_approval_withdrawn",
         "notify_assigned",
+        "notify_break_glass_sign_in",
         "notify_chase_given_up",
         "notify_due_today",
         "notify_mentions",
@@ -2212,6 +2267,7 @@
         "app.msp",
         "app.reopening",
         "app.resolution",
+        "app.routers.auth",
         "app.routers.bulk_resolve",
         "app.routers.feedback",
         "app.routers.msp_mail",
@@ -2434,6 +2490,7 @@
       "imported_by": [
         "app.routers.action_links",
         "app.routers.approvals",
+        "app.routers.auth",
         "app.routers.webhooks"
       ],
       "imports": [
@@ -3196,6 +3253,8 @@
       "classes": [],
       "file": "app/routers/auth.py",
       "functions": [
+        "break_glass_login",
+        "break_glass_page",
         "callback",
         "dev_login_form",
         "dev_login_submit",
@@ -3211,15 +3270,28 @@
         "app.activity",
         "app.audit",
         "app.auth",
+        "app.breakglass",
         "app.config",
         "app.database",
         "app.identity",
         "app.models",
+        "app.notifications",
+        "app.rate_limit",
         "app.sessions",
         "app.templating"
       ],
       "module": "app.routers.auth",
       "routes": [
+        {
+          "handler": "break_glass_page",
+          "method": "GET",
+          "path": "/auth/break-glass"
+        },
+        {
+          "handler": "break_glass_login",
+          "method": "POST",
+          "path": "/auth/break-glass"
+        },
         {
           "handler": "callback",
           "method": "GET",
@@ -4091,6 +4163,7 @@
       "imported_by": [
         "app.activity",
         "app.auth",
+        "app.breakglass",
         "app.entra_check",
         "app.main",
         "app.routers.admin",
@@ -4167,6 +4240,7 @@
         "tests/test_approvals.py",
         "tests/test_auto_close_chase.py",
         "tests/test_backdating.py",
+        "tests/test_break_glass.py",
         "tests/test_bulk_resolve.py",
         "tests/test_category_admin.py",
         "tests/test_closing_email.py",
@@ -5169,6 +5243,12 @@
       "type": "int"
     },
     {
+      "default": "10",
+      "env": "RATE_LIMIT_BREAK_GLASS_PER_MINUTE",
+      "name": "rate_limit_break_glass_per_minute",
+      "type": "int"
+    },
+    {
       "default": "600",
       "env": "RATE_LIMIT_WEBHOOK_PER_MINUTE",
       "name": "rate_limit_webhook_per_minute",
@@ -5283,6 +5363,7 @@
     "tests/test_auto_close_chase.py",
     "tests/test_backdating.py",
     "tests/test_bell_access.py",
+    "tests/test_break_glass.py",
     "tests/test_bulk_resolve.py",
     "tests/test_canned.py",
     "tests/test_category_admin.py",

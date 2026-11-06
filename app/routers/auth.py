@@ -18,16 +18,22 @@ from app.activity import (
 )
 from app import sessions
 from app.audit import log_action
+from app.breakglass import attempt_break_glass_login
 from app.auth import acquire_token_by_auth_code, attempt_local_login, build_auth_url, get_or_create_user
 from app.config import settings
 from app.database import get_session
 from app.identity import SsoRefused, resolve_sso_user
-from app.models import User
+from app.models import User, UserRole
+from app.notifications import notify_break_glass_sign_in
+from app.rate_limit import BREAK_GLASS, rate_limited
+from sqlmodel import select
 
 logger = logging.getLogger(__name__)
 
 # Failures that match no account, or an account already locked: not stored.
 NOT_WORTH_A_ROW = {"unknown_account", "account_locked"}
+# Break-glass: also not an unreadable stored secret (it can be hit without limit until someone runs `reset`).
+BREAK_GLASS_NOT_WORTH_A_ROW = NOT_WORTH_A_ROW | {"secret_unreadable"}
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -129,6 +135,53 @@ def local_login(
     record_activity(
         session, request, LOGIN_SUCCESS, actor_email=result.user.email, actor_user_id=result.user.id, detail="local"
     )
+    session.commit()
+    return RedirectResponse("/", status_code=303)
+
+
+@router.get("/break-glass", response_class=HTMLResponse)
+def break_glass_page(request: Request, error: str | None = None):
+    return templates.TemplateResponse(request, "break_glass.html", {"error": error})
+
+
+@router.post("/break-glass", dependencies=[Depends(rate_limited(BREAK_GLASS))])
+def break_glass_login(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    code: str = Form(...),
+    session: Session = Depends(get_session),
+):
+    """The emergency sign-in (app/breakglass.py): username, password and the current TOTP code. Every attempt at a
+    real break-glass account (except on a locked one) is audited as `break_glass_sign_in`; a success also tells the super admins in the bell.
+    Never keeps what was typed. Entra is not involved, so it works while Entra is down."""
+    result = attempt_break_glass_login(session, username, password, code)
+    refused = RedirectResponse("/auth/break-glass?error=Sign-in+failed", status_code=303)
+    if result.user is None:
+        if result.failure in BREAK_GLASS_NOT_WORTH_A_ROW:
+            # Unknown names and locked accounts can be sent without limit: application log only, as for local accounts.
+            logger.warning("Rejected break-glass sign-in (%s) from %s", result.failure, client_ip(request))
+            return refused
+        account = result.account
+        log_action(session, account.email, "user", account.id, "break_glass_sign_in", f"failed ({result.failure}) from {client_ip(request)}")
+        record_activity(session, request, LOGIN_FAILED, actor_email=account.email, detail=f"break_glass: {result.failure}")
+        if result.locked_until is not None:
+            record_activity(
+                session, request, ACCOUNT_LOCKED, actor_email=account.email,
+                detail=f"locked until {result.locked_until.isoformat()}",
+            )
+        session.commit()
+        return refused
+
+    user = result.user
+    if not user.is_active:
+        log_action(session, user.email, "user", user.id, "break_glass_sign_in", f"refused (inactive) from {client_ip(request)}")
+        return _refuse_inactive(session, request, user, "break_glass")
+    sessions.start_session(session, request, user)
+    log_action(session, user.email, "user", user.id, "break_glass_sign_in", f"succeeded from {client_ip(request)}")
+    record_activity(session, request, LOGIN_SUCCESS, actor_email=user.email, actor_user_id=user.id, detail="break_glass")
+    for admin in session.exec(select(User).where(User.role == UserRole.SUPER_ADMIN, User.is_active)).all():
+        notify_break_glass_sign_in(session, admin, user, client_ip(request))
     session.commit()
     return RedirectResponse("/", status_code=303)
 

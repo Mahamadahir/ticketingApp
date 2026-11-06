@@ -33,7 +33,7 @@
   <tbody>
     {% for u in page.items %}
     <tr>
-      <td>{{ u.email }}</td>
+      <td>{{ u.email }}{% if u.is_break_glass %} <b>(break-glass)</b>{% endif %}</td>
       <td>{{ u.display_name }}</td>
       <td>
         <form method="post" action="/admin/users/{{ u.id }}">
@@ -103,6 +103,9 @@
             <form method="post" action="/admin/users/{{ u.id }}/unlock">
               <button type="submit">Unlock</button>
             </form>
+          {% endif %}
+          {% if u.is_break_glass %}
+            <br />password and authenticator code; reissue only with <code>python -m app.breakglass reset {{ u.email.split("@")[0] }}</code> in the container (never from this page)
           {% endif %}
         {% else %}
           no (SSO)
