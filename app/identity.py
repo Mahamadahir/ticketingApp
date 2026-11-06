@@ -109,8 +109,8 @@ def resolve_sso_user(session: Session, oid: Optional[str], email: str, display_n
         user.entra_object_id = oid
         user.display_name = display_name or user.display_name
         session.add(user)
-        log_action(session, email, "user", user.id, "oid_bound", f"Entra object id {oid} stored on first matching sign-in")
         _flush_or_refuse(session, "oid_in_use")
+        log_action(session, email, "user", user.id, "oid_bound", f"Entra object id {oid} stored on first matching sign-in")
         return user
 
     role = UserRole.SUPER_ADMIN if email in settings.super_admin_email_list else UserRole.END_USER
@@ -129,9 +129,6 @@ def resolve_sso_user(session: Session, oid: Optional[str], email: str, display_n
 
 
 def _refresh_from_claims(session: Session, user: User, email: str, display_name: str) -> None:
-    if display_name and user.display_name != display_name:
-        user.display_name = display_name
-        session.add(user)
     if email and user.email != email:
         taken = session.exec(select(User.id).where(User.email == email, User.id != user.id)).first()
         if taken is not None:
@@ -145,6 +142,9 @@ def _refresh_from_claims(session: Session, user: User, email: str, display_name:
             )
         log_action(session, email, "user", user.id, "email_changed", f"{user.email} -> {email} (from the Entra sign-in)")
         user.email = email
+        session.add(user)
+    if display_name and user.display_name != display_name:
+        user.display_name = display_name
         session.add(user)
     session.flush()
 

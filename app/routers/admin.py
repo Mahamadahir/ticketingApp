@@ -151,7 +151,7 @@ from app.settings_store import (
     set_setting,
 )
 from app.msp import compile_subject_pattern
-from app.sessions import live_session_count, revoke_user_sessions
+from app.sessions import live_session_counts, revoke_user_sessions
 from app.inbound import IGNORED_FLOOD
 from app.subscriptions import health_warnings, mail_folder, subscription_resource
 from app.teams import MAX_ATTEMPTS
@@ -201,7 +201,7 @@ def list_users(
             "levels": list(MembershipLevel),
             "roles": list(UserRole),
             "now": datetime.now(timezone.utc),
-            "live_sessions": {u.id: live_session_count(session, u.id) for u in users_page.items},
+            "live_sessions": live_session_counts(session, user_ids),
             "user": user,
         },
     )
@@ -221,7 +221,7 @@ def update_user(
     if target.role != role:
         log_action(session, admin.email, "user", target.id, "role_changed", f"{target.role.value} -> {role.value}")
         target.role = role
-        # What a session may do was decided at sign-in; a changed role ends them all (they sign in again).
+        # A changed role (including losing the agent role) ends every session of that person, so they sign in again.
         ended = revoke_user_sessions(session, target.id)
         if ended:
             log_action(session, admin.email, "user", target.id, "sessions_revoked", f"role changed; {ended} ended")

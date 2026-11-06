@@ -19,7 +19,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import Request
-from sqlalchemy import delete, or_, update
+from sqlalchemy import delete, func, or_, update
 from sqlmodel import Session, select
 
 from app.database import engine
@@ -83,10 +83,13 @@ def ended_reason(session: Session, row: Optional[UserSession], now: datetime) ->
         return "revoked"
     if _utc(row.expires_at) <= now:
         return "expired"
-    idle = timedelta(minutes=count_setting(session, SESSION_IDLE_MINUTES))
-    if _utc(row.last_seen_at) + idle <= now:
+    if _utc(row.last_seen_at) + idle_limit(session) <= now:
         return "idle"
     return None
+
+
+def idle_limit(session: Session) -> timedelta:
+    return timedelta(minutes=count_setting(session, SESSION_IDLE_MINUTES))
 
 
 def current_row(session: Session, request: Request) -> Optional[UserSession]:
@@ -96,14 +99,16 @@ def current_row(session: Session, request: Request) -> Optional[UserSession]:
     return session.get(UserSession, hash_token(token))
 
 
-def touch(row: UserSession, now: datetime) -> None:
-    """Moves last_seen_at on, at most once a minute, in its own transaction."""
-    if _utc(row.last_seen_at) > now - TOUCH_EVERY:
+def touch(row: UserSession, now: datetime, idle: timedelta) -> None:
+    """Moves last_seen_at on, at most once a minute (less for a very short idle timeout, so an active
+    session is always touched well before it would count as idle), in its own transaction."""
+    every = min(TOUCH_EVERY, idle / 4)
+    if _utc(row.last_seen_at) > now - every:
         return
     with Session(engine) as own:
         own.exec(
             update(UserSession)
-            .where(UserSession.id == row.id, UserSession.revoked_at.is_(None), UserSession.last_seen_at <= now - TOUCH_EVERY)
+            .where(UserSession.id == row.id, UserSession.revoked_at.is_(None), UserSession.last_seen_at <= now - every)
             .values(last_seen_at=now)
         )
         own.commit()
@@ -127,13 +132,23 @@ def revoke_user_sessions(session: Session, user_id: int) -> int:
     return result.rowcount or 0
 
 
-def live_session_count(session: Session, user_id: int) -> int:
+def live_session_counts(session: Session, user_ids: list[int]) -> dict[int, int]:
+    """How many valid sessions each of these people has (for Admin > Users), in one query."""
+    if not user_ids:
+        return {}
     now = _now()
-    rows = session.exec(
-        select(UserSession).where(UserSession.user_id == user_id, UserSession.revoked_at.is_(None), UserSession.expires_at > now)
-    ).all()
     idle = timedelta(minutes=count_setting(session, SESSION_IDLE_MINUTES))
-    return sum(1 for row in rows if _utc(row.last_seen_at) + idle > now)
+    rows = session.exec(
+        select(UserSession.user_id, func.count())
+        .where(
+            UserSession.user_id.in_(user_ids),
+            UserSession.revoked_at.is_(None),
+            UserSession.expires_at > now,
+            UserSession.last_seen_at > now - idle,
+        )
+        .group_by(UserSession.user_id)
+    ).all()
+    return {user_id: count for user_id, count in rows}
 
 
 def purge_ended_sessions(session: Session) -> None:

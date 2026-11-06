@@ -1047,7 +1047,7 @@ File: `app/search.py`
 
 Server-side sign-in sessions (#157).  
 File: `app/sessions.py`
-- Functions: `current_row`, `ended_reason`, `hash_token`, `live_session_count`, `purge_ended_sessions`, `revoke_token`, `revoke_user_sessions`, `start_session`, `touch`
+- Functions: `current_row`, `ended_reason`, `hash_token`, `idle_limit`, `live_session_counts`, `purge_ended_sessions`, `revoke_token`, `revoke_user_sessions`, `start_session`, `touch`
 - Imports: `app.database`, `app.models`, `app.settings_store`
 - Imported by: `app.activity`, `app.auth`, `app.main`, `app.routers.admin`, `app.routers.auth`, `app.routers.my_settings`, `app.scheduled_jobs`
 - Tests: `test_sessions.py`

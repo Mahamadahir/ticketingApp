@@ -400,3 +400,25 @@ def test_the_admin_users_page_shows_the_oid_and_session_count(client, db_session
     login_as(client, "admin@example.com")
     text = client.get("/admin/users").text
     assert OID in text and "Sign out everywhere" in text and "1 signed-in session" in text
+
+
+def test_a_very_short_idle_timeout_still_keeps_an_active_session_alive(client, db_session):
+    login_as(client, "a@example.com")
+    set_setting(db_session, SESSION_IDLE_MINUTES, "1")
+    db_session.commit()
+    [row] = session_rows(db_session)
+    row.last_seen_at = datetime.now(timezone.utc) - timedelta(seconds=40)
+    db_session.add(row)
+    db_session.commit()
+    assert signed_in(client)
+    assert session_rows(db_session)[0].last_seen_at > datetime.now(timezone.utc) - timedelta(seconds=10)
+
+
+def test_a_refused_entra_sign_in_changes_nothing_on_the_account(client, db_session, monkeypatch):
+    db_session.add(User(email="mine@example.com", display_name="Mine", entra_object_id=OID))
+    db_session.add(User(email="theirs@example.com", display_name="Theirs"))
+    db_session.commit()
+    seen = sso_setup(monkeypatch)
+    sso_sign_in(client, seen, preferred_username="theirs@example.com", name="Renamed", oid=OID)
+    mine = db_session.exec(select(User).where(User.entra_object_id == OID)).one()
+    assert (mine.email, mine.display_name) == ("mine@example.com", "Mine")

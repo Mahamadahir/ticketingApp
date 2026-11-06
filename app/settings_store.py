@@ -282,7 +282,7 @@ REGISTRY: dict[str, SettingDef] = {
         key=SESSION_MAX_DAYS,
         label="Sign-in: longest a session can last (days)",
         kind="count",
-        description="Even an active session ends this long after sign-in, and the person signs in again. Placeholder 14, TBC.",
+        description="Even an active session ends this long after sign-in, and the person signs in again. Placeholder 14, TBC. More than 365 counts as 365.",
         default="14",
     ),
     SESSION_KEEP_DAYS: SettingDef(
