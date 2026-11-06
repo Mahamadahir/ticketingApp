@@ -1,7 +1,7 @@
 <div class="email-preview">
   <h3>Check before taking it back from the MSP</h3>
   <p class="note">
-    {{ ticket.reference }} moves to {{ goes_to }}{% if goes_to == "Open" %} (nobody is assigned){% endif %}, with an event and an audit entry. It stays in its team.
+    {{ ticket.reference }} moves to {{ goes_to }}{% if goes_to == "Open" %} (nobody is assigned){% endif %}, with an event and an audit entry. It stays in its team and is put on MSP hold, so the automatic handoff does not send it back; release the hold when it may go again.
   </p>
   <form hx-post="/tickets/{{ ticket.number }}/take-back-from-msp" hx-target="main" hx-swap="innerHTML" hx-disabled-elt="find button[type=submit]">
     {% include "_msp_release_offer.html" %}

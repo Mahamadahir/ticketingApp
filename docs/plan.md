@@ -1017,7 +1017,7 @@ A template is plain text with `{placeholders}` from a fixed list per email; the 
   is ignored). `compauth=pass` is trusted (out of hours it may be forwarded automatically); `compauth=fail` is set aside and
   audited; anything else (softpass, none, no header) is recorded on the ticket but never forwarded automatically and waits for
   an agent, with the preview, whatever the time. This replaces the old forged-mail open question. The MSP's address is checked
-  before the automatic-mail filter (its relay adds List-Unsubscribe), though it still goes through the trust check. The MSP does
+  before the automatic-mail filter (its relay adds List-Unsubscribe), though it still goes through the trust check and drops a real auto-reply (`Auto-Submitted: auto-replied`, `X-Autoreply`, `X-Autorespond`) or bounce; `auto-generated` is accepted and `X-Auto-Response-Suppress` is not read. Taking a ticket back from the MSP puts it on hold (#155) so the handoff does not send it straight back. The MSP does
   not reply in-thread and uses its own subject, so the ticket is found by the MSP's own ticket number: learned from its
   acknowledgement ("Ticket#7000237/<our subject> -- has been received", read by the admin setting `msp_subject_pattern`),
   which is matched by our `[INC-n]` reference in its title or body, else by the exact title against the subject of an email we
