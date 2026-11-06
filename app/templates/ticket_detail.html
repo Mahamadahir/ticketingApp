@@ -26,8 +26,8 @@
   {% if ticket.msp_ticket_number %}&middot; With MSP as MSP ticket #{{ ticket.msp_ticket_number }}{% endif %}
 </p>
 
-{% if approval_waiting_group %}
-<p class="note"><b>Waiting: no active approvers in {{ approval_waiting_group.name }}.</b> The approval starts by itself once an active member is added to the group or reactivated. Its status cannot be changed by hand until then. The SLA clock is running.</p>
+{% if approval_waiting %}
+<p class="note"><b>Waiting: no active approvers{% if approval_waiting_group %} in {{ approval_waiting_group.name }}{% endif %}.</b> The approval starts by itself once an active member is added to the group or reactivated. Its status cannot be changed by hand until then. The SLA clock is running.</p>
 {% if can_waive %}
 <form hx-post="/tickets/{{ ticket.number }}/approval/waive" hx-target="main" hx-swap="innerHTML">
   <p class="note">Super admin: let this request through without waiting for approvers.</p>
@@ -39,7 +39,7 @@
 {% endif %}
 {% if approvals %}
 <details {{ "open" if ticket.status.value == "awaiting_approval" else "" }}>
-  <summary>Approvals: {{ approval_status }} ({{ approval_rule }})</summary>
+  <summary>Approvals: {{ approval_status }}{% if approval_rule %} ({{ approval_rule }}){% endif %}</summary>
   <table>
     <thead><tr><th>Voter</th><th>Answer</th><th>Comment</th><th>When</th></tr></thead>
     <tbody>

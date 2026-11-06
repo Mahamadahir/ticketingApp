@@ -47,6 +47,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import func
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlmodel import Session, select
 
 from app.approval_groups import is_member, members_of
@@ -135,13 +136,11 @@ def outcome(approved: int, declined: int, voters: int, pass_percent: int) -> Opt
 
 def eligible_voters(session: Session, ticket: Ticket) -> list[User]:
     """The members of the ticket's request type's group, leaving out the requester."""
-    if ticket.request_type_id is None or ticket.type != TicketType.SERVICE_REQUEST:
-        return []
-    request_type = session.get(RequestType, ticket.request_type_id)
-    if request_type is None:
+    group = approval_group_of(session, ticket)
+    if group is None:
         return []
     requester = ticket.requester_email.lower()
-    return [u for u in members_of(session, request_type.approval_group_id, active_only=True) if u.email.lower() != requester]
+    return [u for u in members_of(session, group.id, active_only=True) if u.email.lower() != requester]
 
 
 def approval_group_of(session: Session, ticket: Ticket) -> Optional[ApprovalGroup]:
@@ -191,7 +190,10 @@ def _enter_waiting(session: Session, ticket: Ticket, actor_email: str) -> None:
     admins = session.exec(select(User).where(User.role == UserRole.SUPER_ADMIN, User.is_active)).all()
     told = [a for a in admins if notify_no_active_approvers(session, a, ticket, request_type.name, name) is not None]
     if told:  # with no super admin to tell, it is tried again for the next ticket
-        session.add(Setting(key=_blocked_key(group.id), value=datetime.now(timezone.utc).isoformat()))
+        # Two requests triaged at once must not collide on the key.
+        session.execute(
+            pg_insert(Setting).values(key=_blocked_key(group.id), value=datetime.now(timezone.utc).isoformat()).on_conflict_do_nothing()
+        )
 
 
 def start_approvals(session: Session, ticket: Ticket, actor_email: str) -> Optional[TicketApproval]:
@@ -221,27 +223,37 @@ def start_approvals(session: Session, ticket: Ticket, actor_email: str) -> Optio
     return approval
 
 
-def start_waiting_rounds(session: Session, actor_email: str = AUDIT_ACTOR) -> int:
+def _lock_ticket(session: Session, ticket_id: int, skip_locked: bool) -> bool:
+    """Locks the ticket row and re-reads it. With `skip_locked`, False when someone else holds it."""
+    query = select(Ticket).where(Ticket.id == ticket_id).with_for_update(skip_locked=skip_locked).execution_options(populate_existing=True)
+    return session.exec(query).first() is not None
+
+
+def start_waiting_rounds(session: Session, actor_email: str = AUDIT_ACTOR, skip_locked: bool = False) -> int:
     """Starts the round of every ticket waiting for approvers whose group now has an active member (one was
     added or reactivated, or the request type got another group). Called at once from those admin actions and
     from the reminder job as the safety net. Also forgets the "told the super admins" mark of a group that has
-    an active member again. Returns how many rounds started. Does not commit."""
+    an active member again. `skip_locked` (the reminder job) leaves a ticket someone is working on to the next run.
+    Returns how many rounds started. Does not commit."""
     for mark in session.exec(select(Setting).where(Setting.key.like("approval_group_no_active_approvers:%"))).all():
         group_id = int(mark.key.rsplit(":", 1)[1])
         if members_of(session, group_id, active_only=True):
             session.delete(mark)
     started = 0
+    pending_round = select(TicketApproval.id).where(TicketApproval.ticket_id == Ticket.id, TicketApproval.status == PENDING).exists()
     ids = session.exec(
-        select(Ticket.id).where(Ticket.status == TicketStatus.AWAITING_APPROVAL, Ticket.type == TicketType.SERVICE_REQUEST).order_by(Ticket.id)
+        select(Ticket.id)
+        .where(Ticket.status == TicketStatus.AWAITING_APPROVAL, Ticket.type == TicketType.SERVICE_REQUEST, ~pending_round)
+        .order_by(Ticket.id)
     ).all()
     for ticket_id in ids:
         ticket = session.get(Ticket, ticket_id)
-        # Looked at without a lock first: most requests in Awaiting approval have a round going and are left alone.
-        if not is_waiting_for_approvers(session, ticket) or not eligible_voters(session, ticket):
+        # Looked at without a lock first.
+        if not eligible_voters(session, ticket):
             continue
-        session.refresh(ticket, with_for_update=True)
-        if not is_waiting_for_approvers(session, ticket):
+        if not _lock_ticket(session, ticket_id, skip_locked) or not is_waiting_for_approvers(session, session.get(Ticket, ticket_id)):
             continue
+        ticket = session.get(Ticket, ticket_id)
         start_approvals(session, ticket, actor_email)
         log_action(session, actor_email, "ticket", ticket.id, "approval_round_started", "an active approver is available")
         started += 1
@@ -472,8 +484,15 @@ def withdraw(session: Session, ticket: Ticket, requester_email: str) -> None:
     approval = current_approval(session, ticket)
     if approval is not None:
         session.refresh(approval, with_for_update=True)
-    if ticket.status != TicketStatus.AWAITING_APPROVAL or approval is None or approval.status != PENDING:
+    if ticket.status != TicketStatus.AWAITING_APPROVAL:
         raise ApprovalError("This request is no longer waiting for approval, so it cannot be withdrawn")
+    if approval is None or approval.status != PENDING:
+        # Waiting for approvers (#161): no round to end and nobody to tell; the requester can still take it back.
+        record_event(session, ticket, EVENT_APPROVAL_WITHDRAWN, requester_email, detail="no approval round had started")
+        set_status(session, ticket, TicketStatus.CLOSED, requester_email, detail="withdrawn", by_approval=True)
+        log_action(session, requester_email, "ticket", ticket.id, "approval_withdrawn", ticket.tag)
+        notify_approval_outcome(session, ticket, "withdrawn", requester_email)
+        return
     # Re-read the votes under the lock: one decided since this session loaded them must not be overwritten.
     for vote, _ in votes_of(session, approval):
         session.refresh(vote)
@@ -561,5 +580,7 @@ def reconcile_approvals(session: Session) -> None:
         .order_by(TicketApproval.ticket_id)
     ).all()
     for ticket_id in ticket_ids:
-        drop_inactive_votes(session, session.get(Ticket, ticket_id))
-    start_waiting_rounds(session)
+        # Never waits for a lock (like the job's own loop): a ticket someone is working on is left to the next run.
+        if _lock_ticket(session, ticket_id, True):
+            drop_inactive_votes(session, session.get(Ticket, ticket_id))
+    start_waiting_rounds(session, skip_locked=True)

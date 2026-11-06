@@ -293,3 +293,26 @@ def test_dropping_votes_of_someone_with_nothing_pending_does_nothing(client, db_
     user = set_active(db_session, a, False)
     assert drop_votes_of(db_session, user) == 0
     assert approvals(db_session, ticket)[a] == APPROVED and current_approval(db_session, ticket).voters == 3
+
+
+def test_the_requester_can_withdraw_a_request_that_waits_for_approvers_and_sees_no_rule(client, db_session):
+    admin, _, _, ticket = waiting_ticket(client, db_session)
+    client.post("/auth/logout")
+    login_as(client, "jo@example.com")
+    page = client.get(f"/portal/{ticket.number}").text
+    assert "Withdraw" in page and "must approve" not in page
+
+    assert client.post(f"/portal/{ticket.number}/withdraw", follow_redirects=False).status_code == 303
+    assert status(db_session, ticket) == TicketStatus.CLOSED
+    assert [e.actor_email for e in events(db_session, ticket, "approval_withdrawn")] == ["jo@example.com"]
+
+
+def test_a_superseded_round_shows_no_rule_to_the_requester(client, db_session):
+    admin, (a, b, c), ticket = three_voters(client, db_session)
+    for email in (a, b, c):
+        deactivate_in_admin(client, db_session, admin, email)
+    client.post("/auth/logout")
+    login_as(client, "jo@example.com")
+    assert "0 of 0" not in client.get(f"/portal/{ticket.number}").text
+    login_as(client, admin.email)
+    assert "0 of 0" not in client.get(f"/tickets/{ticket.number}").text

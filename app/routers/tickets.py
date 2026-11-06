@@ -66,7 +66,7 @@ from app.required_by import (
 )
 from app.settings_store import REQUIRED_BY_LEAD_DAYS, count_setting
 from app.canned import active_canned, fill as fill_canned
-from app.approvals import ApprovalError, approval_group_of, current_approval, describe_rule, is_waiting_for_approvers, votes_of, waive
+from app.approvals import SUPERSEDED, ApprovalError, approval_group_of, current_approval, describe_rule, is_waiting_for_approvers, votes_of, waive
 from app.notifications import AWAITING_YOU, notify_agent_emailed, notify_assigned, notify_mentions
 from app.presence import agent_label
 from app.search import normalise, search_condition
@@ -1688,8 +1688,9 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             "can_edit_answers": can_edit_answers,
             "answers_changed_at": ticket.answers_changed_at,
             "approvals": ticket_votes,
+            "approval_waiting": is_waiting_for_approvers(session, ticket),
             "approval_waiting_group": (approval_group_of(session, ticket) if is_waiting_for_approvers(session, ticket) else None),
-            "approval_rule": describe_rule(ticket_approval) if ticket_approval else None,
+            "approval_rule": describe_rule(ticket_approval) if ticket_approval and ticket_approval.status != SUPERSEDED else None,
             "approval_status": ticket_approval.status if ticket_approval else None,
             "can_waive": user.role == UserRole.SUPER_ADMIN and ticket.status == TicketStatus.AWAITING_APPROVAL,
             "can_set_priority": can_work and ticket.triaged_at is not None and ticket.status not in FINISHED_STATUSES,
