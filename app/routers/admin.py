@@ -151,6 +151,7 @@ from app.settings_store import (
     set_setting,
 )
 from app.msp import compile_subject_pattern
+from app.approvals import drop_votes_of, start_waiting_rounds
 from app.sessions import live_session_counts, revoke_user_sessions
 from app.inbound import IGNORED_FLOOD
 from app.subscriptions import health_warnings, mail_folder, subscription_resource
@@ -359,6 +360,9 @@ def set_user_active(
             ended = revoke_user_sessions(session, target.id)
             if ended:
                 log_action(session, admin.email, "user", target.id, "sessions_revoked", f"deactivated; {ended} ended")
+            drop_votes_of(session, target, admin.email)  # their unanswered approval votes are dropped (#161)
+        else:
+            start_waiting_rounds(session, admin.email)  # a request waiting for approvers may now have one (#161)
         session.commit()
     return RedirectResponse("/admin/users", status_code=303)
 
@@ -1114,6 +1118,7 @@ def add_approval_group_member(
         session.rollback()
         raise HTTPException(status_code=400, detail=str(error))
     log_action(session, admin.email, "approval_group", group.id, "member_added", member.email)
+    start_waiting_rounds(session, admin.email)  # a request waiting for approvers starts its round at once (#161)
     session.commit()
     return RedirectResponse("/admin/approval-groups", status_code=303)
 
@@ -1282,6 +1287,7 @@ def edit_request_type(
         session.rollback()
         raise HTTPException(status_code=400, detail=str(error))
     session.flush()
+    start_waiting_rounds(session, admin.email)  # a request waiting for approvers may have a group with someone to ask now (#161)
     after = _type_snapshot(session, request_type)
     if before != after:
         changes = []
