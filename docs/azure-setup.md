@@ -247,6 +247,13 @@ Everything below can only be proved here. Tick each, note the date, and say what
 - [ ] Alerts reach `ALERT_EMAIL`; the worker heartbeat line appears in Log Analytics;
       Application Insights shows data.
 - [ ] Point-in-time restore of the database to a scratch server works.
+- [ ] Decide the console IP approach before production. Staging runs with `WEB_ALLOWED_CIDRS`
+      `0.0.0.0/0` (open to everyone, test data only) because the VPN is split tunnel: remote
+      staff reach the app from home or mobile addresses, so there is no VPN range to allow.
+      Options: IT routes the Container Apps environment's IP through the VPN; office only; or
+      Entra Conditional Access instead of IP filtering. The office line is `5.148.5.52` (its full
+      static range is still to get from IT). The "console is refused from an other address"
+      check above cannot pass until this is narrowed.
 - [ ] Phase 3 when built: subscription validation handshake, webhook delivery to the public URL,
       renewal and lifecycle events, mail in and out through Mimecast.
 
