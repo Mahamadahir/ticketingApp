@@ -267,7 +267,7 @@ def _check_template(
     if assignee_id is not None:
         agent = session.get(User, assignee_id)
         if agent is None or agent.role != UserRole.AGENT or agent.id not in {m.id for m in team_members(session, team.id)}:
-            raise TemplateError(f"Choose an agent who is a member of {team.name}")
+            raise TemplateError(f"Choose an active agent who is a member of {team.name}")
     if due_days is not None and not 0 <= due_days <= MAX_DUE_DAYS:
         raise TemplateError(f"Days before Required by must be from 0 to {MAX_DUE_DAYS}, or blank to use the setting")
     return pattern

@@ -72,17 +72,20 @@ def all_groups(session: Session) -> list[ApprovalGroup]:
     return list(session.exec(select(ApprovalGroup).order_by(func.lower(ApprovalGroup.name))).all())
 
 
-def members_of(session: Session, group_id: Optional[int]) -> list[User]:
+def members_of(session: Session, group_id: Optional[int], active_only: bool = False) -> list[User]:
+    """The group's members. `active_only` leaves out inactive accounts (app/entra_check.py): the voters
+    an approval counts, and the people a request type needs. The admin page lists everyone."""
     if group_id is None:
         return []
-    return list(
-        session.exec(
-            select(User)
-            .join(ApprovalGroupMember, ApprovalGroupMember.user_id == User.id)
-            .where(ApprovalGroupMember.group_id == group_id)
-            .order_by(User.email)
-        ).all()
+    query = (
+        select(User)
+        .join(ApprovalGroupMember, ApprovalGroupMember.user_id == User.id)
+        .where(ApprovalGroupMember.group_id == group_id)
+        .order_by(User.email)
     )
+    if active_only:
+        query = query.where(User.is_active)
+    return list(session.exec(query).all())
 
 
 def is_member(session: Session, group_id: int, user_id: int) -> bool:
@@ -103,6 +106,8 @@ def add_member(session: Session, group: ApprovalGroup, email: str) -> User:
     user = session.exec(select(User).where(User.email == email)).first()
     if user is None:
         raise ApprovalGroupError(f"{email} has no account yet: they need to sign in once first")
+    if not user.is_active:
+        raise ApprovalGroupError(f"{email} is inactive, so cannot be an approver")
     if is_member(session, group.id, user.id):
         raise ApprovalGroupError(f"{email} is already in this group")
     session.add(ApprovalGroupMember(group_id=group.id, user_id=user.id))

@@ -59,7 +59,7 @@ def _checked(session: Session, group_id: Optional[int], pass_percent: int, is_ac
         check_percentages(pass_percent)
     except PercentError as error:
         raise RequestTypeError(str(error))
-    if is_active and not members_of(session, group_id):
+    if is_active and not members_of(session, group_id, active_only=True):
         raise RequestTypeError(
             "An active request type needs an approval group with at least one member (switch it off to save it without one)"
         )

@@ -92,6 +92,7 @@ jobs:
       TEAMS_NOTIFICATIONS_ENABLED: ${{ vars.TEAMS_NOTIFICATIONS_ENABLED }}
       PRESENCE_ENABLED: ${{ vars.PRESENCE_ENABLED }}
       MAILBOX_TIME_ZONES_ENABLED: ${{ vars.MAILBOX_TIME_ZONES_ENABLED }}
+      ENTRA_ACCOUNT_CHECK_ENABLED: ${{ vars.ENTRA_ACCOUNT_CHECK_ENABLED }}
       DEPLOY_PUBLIC_APP: ${{ vars.DEPLOY_PUBLIC_APP }}
       DEPLOY_WORKER: ${{ vars.DEPLOY_WORKER }}
       MAIL_SENDING: ${{ vars.MAIL_SENDING }}
@@ -154,7 +155,7 @@ jobs:
           set -euo pipefail
           fail=0
           # Read the way the param files read them: any case, spaces around are ignored.
-          for name in TEAMS_NEW_TICKET_ENABLED TEAMS_NOTIFICATIONS_ENABLED PRESENCE_ENABLED MAILBOX_TIME_ZONES_ENABLED GRAPH_SUBSCRIPTION_ENABLED MAIL_CATCH_UP_ENABLED INBOUND_ENABLED DEPLOY_PUBLIC_APP DEPLOY_WORKER MAIL_SENDING; do
+          for name in TEAMS_NEW_TICKET_ENABLED TEAMS_NOTIFICATIONS_ENABLED PRESENCE_ENABLED MAILBOX_TIME_ZONES_ENABLED ENTRA_ACCOUNT_CHECK_ENABLED GRAPH_SUBSCRIPTION_ENABLED MAIL_CATCH_UP_ENABLED INBOUND_ENABLED DEPLOY_PUBLIC_APP DEPLOY_WORKER MAIL_SENDING; do
             value="$(printf '%s' "${!name:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
             case "$name:$value" in
               MAIL_SENDING:"" | MAIL_SENDING:off | MAIL_SENDING:graph) printf -v "$name" '%s' "$value" ;;
@@ -171,8 +172,8 @@ jobs:
           if { [ "${MAIL_SENDING:-}" = graph ] || [ "${GRAPH_SUBSCRIPTION_ENABLED:-}" = true ]; } && [ "$public_on" != true ]; then
             echo "::warning::Mail sending or the Graph subscription is on but the public app is not deployed (DEPLOY_PUBLIC_APP): approval links and Graph notifications have nowhere to go."
           fi
-          if { [ "${TEAMS_NEW_TICKET_ENABLED:-}" = true ] || [ "${TEAMS_NOTIFICATIONS_ENABLED:-}" = true ] || [ "${PRESENCE_ENABLED:-}" = true ] || [ "${MAILBOX_TIME_ZONES_ENABLED:-}" = true ] || [ "${MAIL_SENDING:-}" = graph ] || [ "${GRAPH_SUBSCRIPTION_ENABLED:-}" = true ] || [ "${MAIL_CATCH_UP_ENABLED:-}" = true ] || [ "${INBOUND_ENABLED:-}" = true ]; } && [ "$worker_on" != true ]; then
-            echo "::warning::A Teams, presence, mailbox time zone or mail switch is on but the worker is not deployed (DEPLOY_WORKER), and the worker does the sending and the presence checks. Posts and emails will queue and nothing will send them."
+          if { [ "${TEAMS_NEW_TICKET_ENABLED:-}" = true ] || [ "${TEAMS_NOTIFICATIONS_ENABLED:-}" = true ] || [ "${PRESENCE_ENABLED:-}" = true ] || [ "${MAILBOX_TIME_ZONES_ENABLED:-}" = true ] || [ "${ENTRA_ACCOUNT_CHECK_ENABLED:-}" = true ] || [ "${MAIL_SENDING:-}" = graph ] || [ "${GRAPH_SUBSCRIPTION_ENABLED:-}" = true ] || [ "${MAIL_CATCH_UP_ENABLED:-}" = true ] || [ "${INBOUND_ENABLED:-}" = true ]; } && [ "$worker_on" != true ]; then
+            echo "::warning::A Teams, presence, Entra account check, mailbox time zone or mail switch is on but the worker is not deployed (DEPLOY_WORKER), and the worker does the sending and the presence checks. Posts and emails will queue and nothing will send them."
           fi
           if [ "${TEAMS_NEW_TICKET_ENABLED:-}" = true ] || [ "${TEAMS_NOTIFICATIONS_ENABLED:-}" = true ]; then
             if [ -z "$TEAMS_NEW_TICKET_WEBHOOK_URL" ]; then
@@ -180,9 +181,9 @@ jobs:
               fail=1
             fi
           fi
-          if [ "${PRESENCE_ENABLED:-}" = true ] || [ "${MAILBOX_TIME_ZONES_ENABLED:-}" = true ] || [ "${MAIL_SENDING:-}" = graph ] || [ "${GRAPH_SUBSCRIPTION_ENABLED:-}" = true ] || [ "${MAIL_CATCH_UP_ENABLED:-}" = true ] || [ "${INBOUND_ENABLED:-}" = true ]; then
+          if [ "${PRESENCE_ENABLED:-}" = true ] || [ "${MAILBOX_TIME_ZONES_ENABLED:-}" = true ] || [ "${ENTRA_ACCOUNT_CHECK_ENABLED:-}" = true ] || [ "${MAIL_SENDING:-}" = graph ] || [ "${GRAPH_SUBSCRIPTION_ENABLED:-}" = true ] || [ "${MAIL_CATCH_UP_ENABLED:-}" = true ] || [ "${INBOUND_ENABLED:-}" = true ]; then
             if [ -z "$GRAPH_TENANT_ID" ] || [ -z "$GRAPH_CLIENT_ID" ] || [ -z "$GRAPH_CLIENT_SECRET" ]; then
-              echo "::error::Presence, mailbox time zones (which also need MailboxSettings.Read), mail sending and the inbound mail switches need GRAPH_TENANT_ID, GRAPH_CLIENT_ID and GRAPH_CLIENT_SECRET." >&2
+              echo "::error::Presence, the Entra account check, mailbox time zones (which also need MailboxSettings.Read), mail sending and the inbound mail switches need GRAPH_TENANT_ID, GRAPH_CLIENT_ID and GRAPH_CLIENT_SECRET." >&2
               fail=1
             fi
           fi

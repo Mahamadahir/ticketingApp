@@ -200,7 +200,7 @@ The subject must match the GitHub Environment name exactly.
 | Variable | `AZURE_RESOURCE_GROUP` | e.g. `rg-ticketing-staging` |
 | Variable | `ALERT_EMAIL`, `WEB_ALLOWED_CIDRS` | required, as in "First deploy" |
 | Variable | `SSO_TENANT_ID`, `SSO_CLIENT_ID`, `GRAPH_TENANT_ID`, `GRAPH_CLIENT_ID`, `GRAPH_SHARED_MAILBOX`, `SUPER_ADMIN_EMAILS` | optional; empty if unset |
-| Variable | `TEAMS_NEW_TICKET_ENABLED`, `TEAMS_NOTIFICATIONS_ENABLED`, `PRESENCE_ENABLED` | optional; `true` switches the feature on, unset means off (see "Teams and out-of-office") |
+| Variable | `TEAMS_NEW_TICKET_ENABLED`, `TEAMS_NOTIFICATIONS_ENABLED`, `PRESENCE_ENABLED`, `ENTRA_ACCOUNT_CHECK_ENABLED` | optional; `true` switches the feature on, unset means off (see "Teams and out-of-office") |
 | Variable | `DEPLOY_PUBLIC_APP`, `DEPLOY_WORKER` | optional; `true`/`false`. Empty: staging `true`, production `false` |
 | Variable | `MAIL_SENDING` | optional; `off` (default) or `graph` (needs the `GRAPH_*` values and `GRAPH_SHARED_MAILBOX`) |
 | Variable | `GRAPH_SUBSCRIPTION_ENABLED`, `MAIL_CATCH_UP_ENABLED`, `INBOUND_ENABLED` | optional; `true` turns on, on the worker only (phases 3B/3C: the Graph subscription pointing at the public app's `/webhooks/graph/notifications`, the missed-mail sweep, and turning fetched mail into replies and tickets). Off by default |
@@ -242,6 +242,7 @@ or GitHub Environment variables for the workflow; `infra/*.bicepparam` reads the
 | `TEAMS_NOTIFICATIONS_ENABLED` | web, public, worker, migrate job | Also copies an unread notification to Teams after the person's delay |
 | `PRESENCE_ENABLED` | worker only | The `presence` job marks agents who are out of office |
 | `MAILBOX_TIME_ZONES_ENABLED` | worker only | The `requester-time-zones` job reads requesters' Outlook mailbox time zones (a later feature, see below) |
+| `ENTRA_ACCOUNT_CHECK_ENABLED` | worker only | The nightly `entra-account-check` job makes agents whose Entra account is disabled or deleted inactive (needs `User.Read.All`, already consented; run time is the `entra_check_time` setting, 02:00) |
 
 `TEAMS_NEW_TICKET_WEBHOOK_URL` (a Teams Workflows webhook for the support channel)
 is a secret: the template stores it in Key Vault as `teams-new-ticket-webhook-url`

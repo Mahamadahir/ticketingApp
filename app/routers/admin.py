@@ -168,10 +168,21 @@ require_request_templates = require_permission(MANAGE_REQUEST_TEMPLATES)
 def list_users(
     request: Request,
     page: int = 1,
+    inactive: Optional[str] = None,
     user: User = Depends(require_super_admin),
     session: Session = Depends(get_session),
 ):
-    users_page = paginate(session, select(User).order_by(User.email), page, request.query_params)
+    query = select(User).order_by(User.email)
+    # Inactive agents who still hold open tickets: the tickets need a new assignee (#158).
+    only_stranded = inactive == "open_tickets"
+    if only_stranded:
+        query = query.where(
+            User.is_active.is_(False),
+            select(Ticket.id)
+            .where(Ticket.assigned_agent_id == User.id, Ticket.status.not_in(FINISHED_STATUSES))
+            .exists(),
+        )
+    users_page = paginate(session, query, page, request.query_params)
     teams = session.exec(select(Team).order_by(Team.name)).all()
     teams_by_id = {team.id: team for team in teams}
 
@@ -191,6 +202,7 @@ def list_users(
         request,
         "admin_users.html",
         {
+            "only_stranded": only_stranded,
             "permissions": PERMISSIONS,
             "assignable_roles": ASSIGNABLE_ROLES,
             "granted": granted,
@@ -255,6 +267,8 @@ def set_user_permissions(
         raise HTTPException(status_code=400, detail="Only agents can be given extra permissions")
     rows = session.exec(select(UserPermission).where(UserPermission.user_id == target.id)).all()
     held = {row.permission: row for row in rows}
+    if not target.is_active and wanted - set(held):
+        raise HTTPException(status_code=400, detail="An inactive account cannot be given extra permissions")
     for key in sorted(wanted - set(held)):
         try:
             with session.begin_nested():  # a double submit may have added it already: not an error

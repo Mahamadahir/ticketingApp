@@ -194,6 +194,7 @@
         "tests/test_approval_groups.py",
         "tests/test_approval_reminders.py",
         "tests/test_approvals.py",
+        "tests/test_entra_check.py",
         "tests/test_outbound_mail.py",
         "tests/test_request_types.py"
       ]
@@ -358,6 +359,7 @@
         "app.bank_holidays",
         "app.closing",
         "app.due_today",
+        "app.entra_check",
         "app.escalation",
         "app.identity",
         "app.inbound",
@@ -705,6 +707,7 @@
         "app.auth",
         "app.check_settings",
         "app.database",
+        "app.entra_check",
         "app.followers",
         "app.graph_client",
         "app.identity",
@@ -740,6 +743,7 @@
         "tests/test_auto_close_chase.py",
         "tests/test_bulk_resolve.py",
         "tests/test_closing_email.py",
+        "tests/test_entra_check.py",
         "tests/test_follower_updates.py",
         "tests/test_handoff_bells_holidays.py",
         "tests/test_inbound_mail.py",
@@ -896,6 +900,39 @@
         "tests/test_follower_updates.py",
         "tests/test_msp_actions.py",
         "tests/test_resolution.py"
+      ]
+    },
+    {
+      "classes": [
+        "CheckResult"
+      ],
+      "file": "app/entra_check.py",
+      "functions": [
+        "check_accounts",
+        "deactivate",
+        "is_due",
+        "run_entra_account_check",
+        "run_time"
+      ],
+      "imported_by": [
+        "app.scheduled_jobs"
+      ],
+      "imports": [
+        "app.audit",
+        "app.config",
+        "app.graph_client",
+        "app.models",
+        "app.notifications",
+        "app.sessions",
+        "app.settings_store",
+        "app.time_zones"
+      ],
+      "module": "app.entra_check",
+      "routes": [],
+      "summary": "The nightly Entra account check (phase 6B, #158).",
+      "tables": [],
+      "tests": [
+        "tests/test_entra_check.py"
       ]
     },
     {
@@ -1071,6 +1108,7 @@
       "file": "app/graph_client.py",
       "functions": [],
       "imported_by": [
+        "app.entra_check",
         "app.inbound",
         "app.mail",
         "app.presence",
@@ -1085,6 +1123,7 @@
       "summary": "Microsoft Graph client for the shared IT support mailbox.",
       "tables": [],
       "tests": [
+        "tests/test_entra_check.py",
         "tests/test_inbound_mail.py",
         "tests/test_mail_subscriptions.py",
         "tests/test_msp_mail.py",
@@ -1409,6 +1448,7 @@
         "tests/conftest.py",
         "tests/test_action_links.py",
         "tests/test_attachments.py",
+        "tests/test_entra_check.py",
         "tests/test_health.py",
         "tests/test_htmx_errors.py",
         "tests/test_public_surface.py",
@@ -1571,6 +1611,7 @@
         "app.closing",
         "app.due_today",
         "app.email_templates",
+        "app.entra_check",
         "app.escalation",
         "app.feedback",
         "app.follower_updates",
@@ -1831,6 +1872,7 @@
         "tests/test_due_date_review.py",
         "tests/test_email_preview.py",
         "tests/test_email_templates.py",
+        "tests/test_entra_check.py",
         "tests/test_escalation.py",
         "tests/test_escalation_tidy.py",
         "tests/test_feedback_views.py",
@@ -2122,6 +2164,7 @@
         "mentioned_in",
         "notification_text",
         "notify",
+        "notify_account_deactivated",
         "notify_agent_emailed",
         "notify_approval_outcome",
         "notify_approval_overdue",
@@ -2148,6 +2191,7 @@
         "app.auto_close_chase",
         "app.closing",
         "app.due_today",
+        "app.entra_check",
         "app.escalation",
         "app.jobs",
         "app.messages",
@@ -2182,6 +2226,7 @@
         "tests/test_closing_email.py",
         "tests/test_due_date.py",
         "tests/test_due_date_review.py",
+        "tests/test_entra_check.py",
         "tests/test_inbound_mail.py",
         "tests/test_notifications.py",
         "tests/test_reply_notification.py",
@@ -3969,6 +4014,7 @@
         "app.bank_holidays",
         "app.database",
         "app.due_today",
+        "app.entra_check",
         "app.models",
         "app.msp",
         "app.sessions",
@@ -3982,6 +4028,7 @@
         "tests/test_approval_reminders.py",
         "tests/test_auto_close_chase.py",
         "tests/test_due_date.py",
+        "tests/test_entra_check.py",
         "tests/test_handoff_bells_holidays.py",
         "tests/test_msp.py",
         "tests/test_msp_mail.py",
@@ -4029,6 +4076,7 @@
       "imported_by": [
         "app.activity",
         "app.auth",
+        "app.entra_check",
         "app.main",
         "app.routers.admin",
         "app.routers.auth",
@@ -4068,6 +4116,7 @@
         "app.bank_holidays",
         "app.bulk_resolve",
         "app.categories",
+        "app.entra_check",
         "app.inbound",
         "app.mail",
         "app.msp",
@@ -4107,6 +4156,7 @@
         "tests/test_closing_email.py",
         "tests/test_due_date.py",
         "tests/test_due_date_review.py",
+        "tests/test_entra_check.py",
         "tests/test_follower_updates.py",
         "tests/test_handoff_bells_holidays.py",
         "tests/test_inbound_mail.py",
@@ -4336,6 +4386,7 @@
       "summary": "Automatic sub-requests: templates on a request type (#118 part 2). Nothing here commits.",
       "tables": [],
       "tests": [
+        "tests/test_entra_check.py",
         "tests/test_subrequests.py"
       ]
     },
@@ -4663,6 +4714,7 @@
         "app.auth",
         "app.backdating",
         "app.due_today",
+        "app.entra_check",
         "app.inbound",
         "app.jobs",
         "app.msp",
@@ -4729,6 +4781,7 @@
       "summary": "Triage and re-assignment. Neither commits: the caller does, so the change, its",
       "tables": [],
       "tests": [
+        "tests/test_entra_check.py",
         "tests/test_escalation_tidy.py"
       ]
     },
@@ -4787,6 +4840,7 @@
       "tables": [],
       "tests": [
         "tests/test_access_context.py",
+        "tests/test_entra_check.py",
         "tests/test_escalation.py",
         "tests/test_messages.py",
         "tests/test_msp_mail.py",
@@ -4876,6 +4930,12 @@
       {
         "allowed": "Admin pages are behind require_super_admin and count or list memberships for the admin tables; there is no per-agent access decision to make.",
         "detail": "select(TeamMembership) in a route",
+        "file": "app/routers/admin.py",
+        "in": "list_users",
+        "rule": "access-in-visibility"
+      },
+      {
+        "detail": "select(Ticket) in a route",
         "file": "app/routers/admin.py",
         "in": "list_users",
         "rule": "access-in-visibility"
@@ -4988,6 +5048,12 @@
       "env": "DATABASE_URL",
       "name": "database_url",
       "type": "str"
+    },
+    {
+      "default": "False",
+      "env": "ENTRA_ACCOUNT_CHECK_ENABLED",
+      "name": "entra_account_check_enabled",
+      "type": "bool"
     },
     {
       "default": "'production'",
@@ -5208,6 +5274,7 @@
     "tests/test_due_date_review.py",
     "tests/test_email_preview.py",
     "tests/test_email_templates.py",
+    "tests/test_entra_check.py",
     "tests/test_escalation.py",
     "tests/test_escalation_tidy.py",
     "tests/test_feedback_views.py",

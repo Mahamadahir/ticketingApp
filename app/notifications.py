@@ -36,6 +36,7 @@ APPROVAL_WITHDRAWN = "approval_withdrawn"
 APPROVAL_OVERDUE = "approval_overdue"
 APPROVAL_WAITING = "approval_waiting"
 DUE_TODAY = "due_today"
+ACCOUNT_DEACTIVATED = "account_deactivated"  # #158: the nightly Entra check made someone inactive
 CHASE_GIVEN_UP = "chase_given_up"
 MSP_UNACKNOWLEDGED = "msp_unacknowledged"
 MSP_HANDOFF_WARNING = "msp_handoff_warning"  # #151: a ticket of yours goes to the MSP tonight unless held
@@ -125,7 +126,7 @@ def mentioned_in(session: Session, ticket: Ticket, body: str, author: User) -> l
     tokens.discard("")
     if not tokens:
         return []
-    agents = session.exec(select(User).where(User.role.in_(AGENT_ROLES))).all()
+    agents = session.exec(select(User).where(User.role.in_(AGENT_ROLES), User.is_active)).all()
     levels_cache: dict[int, object] = {}
     found: list[User] = []
     for token in sorted(tokens):
@@ -472,6 +473,17 @@ def notify_approval_overdue(session: Session, ticket: Ticket, super_admin: User,
     return notify(
         session, super_admin, APPROVAL_OVERDUE, ticket,
         f"{REF} {ticket.subject} has waited {days} days for approval ({unanswered} had not answered)", None,
+    )
+
+
+def notify_account_deactivated(session: Session, super_admin: User, person: User, reason: str) -> Optional[Notification]:
+    """Tells a super admin, in the bell, that the nightly Entra check made someone inactive (app/entra_check.py), so
+    their open tickets can be re-assigned. Not a listed event type, so it is always on, like the overdue-approval bell
+    entry. Does not commit."""
+    return notify(
+        session, super_admin, ACCOUNT_DEACTIVATED, None,
+        f"{person.display_name or person.email} ({person.email}) was made inactive: {reason}. Re-assign their open tickets on Admin > Users.",
+        None,
     )
 
 

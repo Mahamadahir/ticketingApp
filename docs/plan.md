@@ -347,7 +347,7 @@ sync and no auto-delete of end-user accounts: Entra disabling a person already s
 reference users. "My requests" matches tickets by lower-cased email through one helper (`requester_emails` in
 `app/identity.py`) and also lists tickets the person follows. For agents, a nightly Entra `accountEnabled` check sets an `is_active`
 flag (the same flag as the out-of-office item under Notifications, and the leaver step of the session work in "Security
-hardening phase"); it is built in phase 6, alongside matching users on the Entra object id. An admin-managed **never-follow
+hardening phase"); it is built in phase 6 (6B, `app/entra_check.py`): an account that is disabled or no longer in Entra becomes inactive, and one that is enabled again is reactivated by a super admin, never automatically. An admin-managed **never-follow
 list** (the shared mailbox, distribution lists; built in 4B-2, `app/never_follow.py`) keeps those addresses from being added as followers, by an inbound Cc or by hand. Mail **sent from** a listed address is ignored whole (no ticket, nothing added to a ticket) and logged in the audit log with the sender and subject (#122).
 
 **Linked identities** (decided 22 Oct 2026; phase 6; manual, super admin only). One person can have two Entra accounts on the

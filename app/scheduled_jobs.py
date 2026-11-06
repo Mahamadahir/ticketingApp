@@ -42,6 +42,7 @@ from app.auto_close_chase import run_auto_close, run_chase
 from app.bank_holidays import run_bank_holiday_fetch
 from app.database import engine
 from app.due_today import run_scheduled_due
+from app.entra_check import JOB_NAME as ENTRA_CHECK_JOB, run_entra_account_check
 from app.models import ScheduledJob
 from app.msp import run_msp_ack_alerts, run_msp_forwards, run_msp_handoff
 from app.sessions import purge_ended_sessions
@@ -68,6 +69,7 @@ SCHEDULED_JOBS: list[ScheduledJobDef] = [
     ScheduledJobDef("auto-close", 3600, run_auto_close),
     ScheduledJobDef("bank-holidays", 21600, run_bank_holiday_fetch),  # gov.uk bank holidays, cached in the database; every 6 hours so a failed fetch is retried the same day
     ScheduledJobDef("chase", 3600, run_chase),
+    ScheduledJobDef(ENTRA_CHECK_JOB, 3600, run_entra_account_check),  # wakes hourly; runs once a night after the entra_check_time setting
     ScheduledJobDef("msp-ack-alerts", 300, run_msp_ack_alerts),  # a ticket sent to the MSP that it has not confirmed in time
     ScheduledJobDef("msp-forwards", 300, run_msp_forwards),  # MSP mail left waiting for an agent goes to the user once business hours end
     ScheduledJobDef("msp-handoff", 300, run_msp_handoff),  # every 5 minutes: the handoff starts within 5 minutes of its hour
