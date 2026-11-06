@@ -343,7 +343,8 @@ def set_user_active(
         session.add(target)
         if not is_active:
             ended = revoke_user_sessions(session, target.id)
-            log_action(session, admin.email, "user", target.id, "sessions_revoked", f"deactivated; {ended} ended")
+            if ended:
+                log_action(session, admin.email, "user", target.id, "sessions_revoked", f"deactivated; {ended} ended")
         session.commit()
     return RedirectResponse("/admin/users", status_code=303)
 
