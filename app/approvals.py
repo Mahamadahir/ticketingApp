@@ -74,6 +74,7 @@ from app.models import (
     Setting,
     Ticket,
     TicketApproval,
+    TicketSource,
     TicketStatus,
     TicketType,
     User,
@@ -142,6 +143,10 @@ def outcome(approved: int, declined: int, voters: int, pass_percent: int) -> Opt
 
 
 def may_self_approve(session: Session, ticket: Ticket) -> bool:
+    """Only a request the requester raised themselves in the portal (signed in as them): an agent raising on someone's
+    behalf, a mail From address or a Teams message is not proof the approver asked, so those are asked as usual."""
+    if ticket.source != TicketSource.PORTAL:
+        return False
     request_type = session.get(RequestType, ticket.request_type_id) if ticket.request_type_id is not None else None
     return request_type is not None and request_type.approvers_may_self_approve
 

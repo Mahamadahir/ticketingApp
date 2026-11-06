@@ -176,3 +176,20 @@ def test_the_portal_and_the_ticket_page_show_the_self_approval(client, db_sessio
     client.post("/auth/logout")
     login_as(client, "agent@example.com")
     assert SELF_APPROVED_COMMENT in client.get(f"/tickets/{ticket.number}").text
+
+
+def test_a_request_not_raised_by_the_requester_in_the_portal_is_asked_as_usual(client, db_session):
+    """An agent raising for an approver, or a mail from their address, must not approve in their name."""
+    from app.models import TicketSource
+
+    person(client, db_session, REQUESTER)
+    kind = self_type(db_session, ["x@example.com"], 50)
+    ticket = raised_and_triaged(client, db_session, kind)  # a portal request: self-approved
+    assert events(db_session, ticket, "approval_self_approved")
+    for source in (TicketSource.AGENT, TicketSource.EMAIL, TicketSource.TEAMS):
+        ticket = db_session.get(Ticket, ticket.id)
+        ticket.source = source
+        db_session.add(ticket)
+        db_session.flush()
+        assert REQUESTER not in [u.email for u in eligible_voters(db_session, ticket)]
+    db_session.rollback()
