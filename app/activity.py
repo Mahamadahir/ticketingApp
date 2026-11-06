@@ -23,7 +23,8 @@ from starlette.concurrency import run_in_threadpool
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.database import engine
-from app.models import ActivityLog, User
+from app.models import ActivityLog, User, UserSession
+from app.sessions import COOKIE_KEY, hash_token
 
 logger = logging.getLogger(__name__)
 
@@ -89,12 +90,14 @@ def _write_request_row(
     template: str,
     status_code: int,
     event_type: str,
-    user_id: Optional[int],
+    session_token: Optional[str],
     ip: Optional[str],
     user_agent: Optional[str],
 ) -> None:
     with Session(engine) as session:
-        user = session.get(User, user_id) if user_id is not None else None
+        # Who made the request: the person behind the server-side session, even one that has just ended.
+        row = session.get(UserSession, hash_token(session_token)) if session_token else None
+        user = session.get(User, row.user_id) if row is not None else None
         session.add(
             ActivityLog(
                 event_type=event_type,
@@ -117,6 +120,8 @@ class ActivityMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         crashed: Optional[Exception] = None
+        # Read before the route runs: sign out and logout clear the cookie.
+        token = (request.scope.get("session") or {}).get(COOKIE_KEY)
         try:
             response = await call_next(request)
             status_code = response.status_code
@@ -134,14 +139,13 @@ class ActivityMiddleware(BaseHTTPMiddleware):
                 # something a bot can send for free, so it is not stored.
                 has_own_row = template in HAS_DEDICATED_EVENT and status_code < 500
                 if template is not None and (denied or not has_own_row):
-                    session_data = request.scope.get("session") or {}
                     await run_in_threadpool(
                         _write_request_row,
                         request.method,
                         template,
                         status_code,
                         ACCESS_DENIED if denied else REQUEST,
-                        session_data.get("user_id"),
+                        token if isinstance(token, str) else None,
                         client_ip(request),
                         request.headers.get("user-agent"),
                     )

@@ -136,7 +136,7 @@ class User(SQLModel, table=True):
     # When the presence job last failed to read this person (no directory match, or Graph returned no
     # reading); cleared by the next good reading. The job skips them until the retry setting has passed.
     last_presence_lookup_at: Optional[datetime] = Field(default=None)
-    # Phase 4: only stops presence polling. Hiding from pickers, refusing sign-in and the nightly Entra
+    # Stops presence polling, ends the person's sessions and refuses sign-in (#157). Hiding from pickers and the nightly Entra
     # check that sets this for leavers are phase 6.
     is_active: bool = Field(default=True, sa_column_kwargs={"server_default": "true"})
     # The person's own time zone (an IANA name), what every page shows them times in (app/time_zones.py).
@@ -145,6 +145,26 @@ class User(SQLModel, table=True):
     time_zone: Optional[str] = Field(default=None)
     time_zone_source: Optional[str] = Field(default=None)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class UserSession(SQLModel, table=True):
+    """A signed-in browser session, kept on the server (app/sessions.py). The cookie holds a random
+    token; this row's id is the SHA-256 of that token, so reading the table gives nobody a usable
+    session. A session ends when it is revoked, when it has been idle too long, or at its absolute
+    expiry; nothing here is ever extended past `expires_at`. Rows are deleted by a recurring job
+    some days after they ended."""
+
+    __tablename__ = "user_session"
+
+    id: str = Field(primary_key=True)
+    user_id: int = Field(foreign_key="user.id", index=True, ondelete="CASCADE")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    # Updated at most once a minute (app/sessions.py), not on every request.
+    last_seen_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    expires_at: datetime
+    revoked_at: Optional[datetime] = Field(default=None)
+    ip: Optional[str] = Field(default=None)
+    user_agent: Optional[str] = Field(default=None)
 
 
 class RequesterTimeZone(SQLModel, table=True):

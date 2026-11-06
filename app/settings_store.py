@@ -37,6 +37,9 @@ JOB_LEASE_MINUTES = "scheduled_job_lease_minutes"
 JOB_RETRY_MINUTES = "scheduled_job_retry_minutes"
 JOB_LATE_MINUTES = "scheduled_job_late_minutes"
 PRESENCE_RETRY_MINUTES = "presence_retry_minutes"
+SESSION_IDLE_MINUTES = "session_idle_minutes"
+SESSION_MAX_DAYS = "session_max_days"
+SESSION_KEEP_DAYS = "session_keep_days"
 APPROVAL_DEFAULT_PASS_PERCENT = "approval_default_pass_percent"
 APPROVAL_REMINDERS_ENABLED = "approval_reminders_enabled"
 APPROVAL_REMIND_AFTER_DAYS = "approval_remind_after_days"
@@ -264,6 +267,30 @@ REGISTRY: dict[str, SettingDef] = {
             "runs once, and the audit log records that it was late."
         ),
         default="3",
+    ),
+    SESSION_IDLE_MINUTES: SettingDef(
+        key=SESSION_IDLE_MINUTES,
+        label="Sign-in: idle timeout (minutes)",
+        kind="minutes",
+        description=(
+            "A signed-in browser that makes no request for this long is signed out. Placeholder 480 "
+            "(8 hours), TBC. Blank uses the placeholder."
+        ),
+        default="480",
+    ),
+    SESSION_MAX_DAYS: SettingDef(
+        key=SESSION_MAX_DAYS,
+        label="Sign-in: longest a session can last (days)",
+        kind="count",
+        description="Even an active session ends this long after sign-in, and the person signs in again. Placeholder 14, TBC. More than 365 counts as 365.",
+        default="14",
+    ),
+    SESSION_KEEP_DAYS: SettingDef(
+        key=SESSION_KEEP_DAYS,
+        label="Sign-in: days to keep ended sessions (days)",
+        kind="count",
+        description="A daily job deletes the record of a session this long after it expired or was signed out. Placeholder 30, TBC.",
+        default="30",
     ),
     PRESENCE_RETRY_MINUTES: SettingDef(
         key=PRESENCE_RETRY_MINUTES,

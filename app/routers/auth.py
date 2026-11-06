@@ -1,5 +1,6 @@
 import logging
 import secrets
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -15,9 +16,12 @@ from app.activity import (
     client_ip,
     record_activity,
 )
+from app import sessions
+from app.audit import log_action
 from app.auth import acquire_token_by_auth_code, attempt_local_login, build_auth_url, get_or_create_user
 from app.config import settings
 from app.database import get_session
+from app.identity import SsoRefused, resolve_sso_user
 from app.models import User
 
 logger = logging.getLogger(__name__)
@@ -76,12 +80,18 @@ def callback(request: Request, code: str, state: str, session: Session = Depends
         raise HTTPException(status_code=400, detail="Sign-in did not return an email claim")
 
     try:
-        user = get_or_create_user(session, email, display_name)
+        user = resolve_sso_user(session, claims.get("oid"), email, display_name)
+    except SsoRefused as refused:
+        # The audit line the refusal wrote is kept, and so is the activity row.
+        _sso_failed(session, request, refused.reason)
+        return RedirectResponse("/auth/login?" + urlencode({"error": refused.message}), status_code=303)
     except Exception:
         session.rollback()
         _sso_failed(session, request, "account_error")
         raise
-    request.session["user_id"] = user.id
+    if not user.is_active:
+        return _refuse_inactive(session, request, user, "sso")
+    sessions.start_session(session, request, user)
     record_activity(session, request, LOGIN_SUCCESS, actor_email=user.email, actor_user_id=user.id, detail="sso")
     session.commit()
     return RedirectResponse("/", status_code=303)
@@ -113,7 +123,9 @@ def local_login(
         session.commit()
         return RedirectResponse("/auth/login?error=Invalid+email+or+password", status_code=303)
 
-    request.session["user_id"] = result.user.id
+    if not result.user.is_active:
+        return _refuse_inactive(session, request, result.user, "local")
+    sessions.start_session(session, request, result.user)
     record_activity(
         session, request, LOGIN_SUCCESS, actor_email=result.user.email, actor_user_id=result.user.id, detail="local"
     )
@@ -139,7 +151,9 @@ def dev_login_submit(
         raise HTTPException(status_code=404)
 
     user = get_or_create_user(session, email, display_name)
-    request.session["user_id"] = user.id
+    if not user.is_active:
+        return _refuse_inactive(session, request, user, "dev")
+    sessions.start_session(session, request, user)
     record_activity(session, request, LOGIN_SUCCESS, actor_email=user.email, actor_user_id=user.id, detail="dev")
     session.commit()
     return RedirectResponse("/", status_code=303)
@@ -148,12 +162,26 @@ def dev_login_submit(
 @router.post("/logout")
 def logout(request: Request, session: Session = Depends(get_session)):
     # A POST, so another site cannot sign someone out with an image tag.
-    user = session.get(User, request.session.get("user_id")) if request.session.get("user_id") else None
+    row = sessions.current_row(session, request)
+    user = session.get(User, row.user_id) if row is not None else None
     if user is not None:
         record_activity(session, request, LOGOUT, actor_email=user.email, actor_user_id=user.id)
-        session.commit()
+    token = request.session.get(sessions.COOKIE_KEY)
+    if isinstance(token, str):
+        sessions.revoke_token(session, token)  # the server-side session ends, not only the cookie
+    session.commit()
     request.session.clear()
     return RedirectResponse("/auth/login", status_code=303)
+
+
+def _refuse_inactive(session: Session, request: Request, user: User, how: str) -> RedirectResponse:
+    """A deactivated person who got through the sign-in itself: no session is started."""
+    log_action(session, user.email, "user", user.id, "sign_in_refused", f"inactive user ({how})")
+    record_activity(
+        session, request, LOGIN_FAILED, actor_email=user.email, actor_user_id=user.id, detail="inactive_account"
+    )
+    session.commit()
+    return RedirectResponse("/auth/login?" + urlencode({"error": sessions.INACTIVE_MESSAGE}), status_code=303)
 
 
 def _sso_failed(session: Session, request: Request, reason: str) -> None:

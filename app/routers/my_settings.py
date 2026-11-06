@@ -6,7 +6,9 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from app.templating import templates
 from sqlmodel import Session
 
+from app.audit import log_action
 from app.auth import get_current_user
+from app.sessions import revoke_user_sessions
 from app.database import get_session
 from app.models import User
 from app.config import settings
@@ -103,3 +105,17 @@ def save_time_zone(
     session.add(user)
     session.commit()
     return RedirectResponse("/settings/notifications?saved=1", status_code=303)
+
+
+@router.post("/sign-out-everywhere")
+def sign_out_everywhere(
+    request: Request,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """Ends every browser this person is signed in on, this one included (#157)."""
+    ended = revoke_user_sessions(session, user.id)
+    log_action(session, user.email, "user", user.id, "signed_out_everywhere", f"by themselves; {ended} ended")
+    session.commit()
+    request.session.clear()
+    return RedirectResponse("/auth/login", status_code=303)
