@@ -136,7 +136,7 @@ class User(SQLModel, table=True):
     # When the presence job last failed to read this person (no directory match, or Graph returned no
     # reading); cleared by the next good reading. The job skips them until the retry setting has passed.
     last_presence_lookup_at: Optional[datetime] = Field(default=None)
-    # Phase 4: only stops presence polling. Hiding from pickers, refusing sign-in and the nightly Entra
+    # Stops presence polling, ends the person's sessions and refuses sign-in (#157). Hiding from pickers and the nightly Entra
     # check that sets this for leavers are phase 6.
     is_active: bool = Field(default=True, sa_column_kwargs={"server_default": "true"})
     # The person's own time zone (an IANA name), what every page shows them times in (app/time_zones.py).

@@ -1274,14 +1274,14 @@ here; this list is what the go-live review checks.
    confirmation page; the action (reopen, rate) happens on POST, with a CSRF-safe form. Mail
    scanners that prefetch links then neither reopen tickets nor use up single-use tokens.
    Test: a GET never changes state.
-2. **Session revocation.** Sessions are signed cookies (Starlette `SessionMiddleware`, default
+2. **Session revocation (built, 6A, #157: `user_session`, `app/sessions.py`).** Sessions were signed cookies (Starlette `SessionMiddleware`, default
    14-day lifetime, no server-side record). Nothing can end one early. Move to a server-side
    session (a `user_session` table: id in the cookie, user, created, last seen, expiry, revoked
    flag) or add a per-user `session_version` checked on every request, plus a short idle
    timeout. Needed for: outage mode ending password sessions, lockout, role removal, a leaver
    disabled in Entra, and a "sign out everywhere" button. Also add `User.is_active`, which does not
    exist yet, and check it in `get_current_user`.
-3. **Match users on the Entra object id (`oid`)** before any real users sign in. Not urgent while
+3. **Match users on the Entra object id (`oid`)** before any real users sign in (built, 6A, #157: `app.identity.resolve_sso_user`). Not urgent while
    the app is only run in development; it is a go-live gate item, and may be built with Entra
    app roles in phase 6.
 4. **Graph mailbox scoping.** (The by-hand steps are in `docs/azure-setup.md`, section 3; this item is the go-live check that it was done and tested.) Application permissions such as `Mail.ReadWrite` cover every

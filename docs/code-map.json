@@ -54,6 +54,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/a7c1d4e9f258_server_side_sessions.py",
+        "revision": "a7c1d4e9f258"
+      },
+      {
         "file": "migrations/versions/edf905001a2e_bank_holiday_cache.py",
         "revision": "edf905001a2e"
       },
@@ -68,17 +72,13 @@
       {
         "file": "migrations/versions/b5c1e7a3d902_msp_handoff.py",
         "revision": "b5c1e7a3d902"
-      },
-      {
-        "file": "migrations/versions/c4e8a1d7b362_sub_request_templates.py",
-        "revision": "c4e8a1d7b362"
       }
     ],
-    "count": 55,
+    "count": 56,
     "heads": [
       {
-        "file": "migrations/versions/edf905001a2e_bank_holiday_cache.py",
-        "revision": "edf905001a2e"
+        "file": "migrations/versions/a7c1d4e9f258_server_side_sessions.py",
+        "revision": "a7c1d4e9f258"
       }
     ]
   },
@@ -148,7 +148,8 @@
       ],
       "imports": [
         "app.database",
-        "app.models"
+        "app.models",
+        "app.sessions"
       ],
       "module": "app.activity",
       "routes": [],
@@ -352,11 +353,13 @@
       "imported_by": [
         "app.approval_reminders",
         "app.approvals",
+        "app.auth",
         "app.auto_close_chase",
         "app.bank_holidays",
         "app.closing",
         "app.due_today",
         "app.escalation",
+        "app.identity",
         "app.inbound",
         "app.msp",
         "app.msp_actions",
@@ -366,6 +369,8 @@
         "app.required_by",
         "app.resolution",
         "app.routers.admin",
+        "app.routers.auth",
+        "app.routers.my_settings",
         "app.routers.portal",
         "app.routers.tickets",
         "app.scheduled_jobs",
@@ -410,9 +415,11 @@
         "app.routers.tickets"
       ],
       "imports": [
+        "app.audit",
         "app.config",
         "app.database",
         "app.models",
+        "app.sessions",
         "app.time_zones",
         "app.visibility"
       ],
@@ -425,6 +432,7 @@
         "tests/test_auth.py",
         "tests/test_hardening.py",
         "tests/test_login_lockout.py",
+        "tests/test_sessions.py",
         "tests/test_visibility.py"
       ]
     },
@@ -699,6 +707,7 @@
         "app.database",
         "app.followers",
         "app.graph_client",
+        "app.identity",
         "app.inbound",
         "app.jobs",
         "app.mail",
@@ -744,6 +753,7 @@
         "tests/test_public_surface.py",
         "tests/test_resolution.py",
         "tests/test_security.py",
+        "tests/test_sessions.py",
         "tests/test_teams.py",
         "tests/test_teams_copy_sending.py",
         "tests/test_time_zones.py",
@@ -777,6 +787,7 @@
         "app.routers.tickets",
         "app.routers.webhooks",
         "app.scheduled_jobs",
+        "app.sessions",
         "app.templating",
         "app.worker"
       ],
@@ -1083,20 +1094,27 @@
       ]
     },
     {
-      "classes": [],
+      "classes": [
+        "SsoRefused"
+      ],
       "file": "app/identity.py",
       "functions": [
         "is_follower_of",
         "is_requester",
         "my_ticket_condition",
         "my_tickets_query",
-        "requester_emails"
+        "normal_oid",
+        "requester_emails",
+        "resolve_sso_user"
       ],
       "imported_by": [
         "app.notifications",
+        "app.routers.auth",
         "app.routers.portal"
       ],
       "imports": [
+        "app.audit",
+        "app.config",
         "app.models"
       ],
       "module": "app.identity",
@@ -1378,6 +1396,7 @@
         "app.routers.portal",
         "app.routers.tickets",
         "app.routers.webhooks",
+        "app.sessions",
         "app.telemetry",
         "app.templating",
         "app.visibility"
@@ -1393,6 +1412,7 @@
         "tests/test_health.py",
         "tests/test_htmx_errors.py",
         "tests/test_public_surface.py",
+        "tests/test_sessions.py",
         "tests/test_triage.py"
       ]
     },
@@ -1526,7 +1546,8 @@
         "TicketType",
         "User",
         "UserPermission",
-        "UserRole"
+        "UserRole",
+        "UserSession"
       ],
       "file": "app/models.py",
       "functions": [
@@ -1589,6 +1610,7 @@
         "app.routers.webhooks",
         "app.scheduled_jobs",
         "app.search",
+        "app.sessions",
         "app.settings_store",
         "app.sla",
         "app.splitting",
@@ -1779,6 +1801,10 @@
         {
           "class": "UserPermission",
           "table": "userpermission"
+        },
+        {
+          "class": "UserSession",
+          "table": "user_session"
         }
       ],
       "tests": [
@@ -1845,6 +1871,7 @@
         "tests/test_scheduled_jobs.py",
         "tests/test_scheduled_status.py",
         "tests/test_search.py",
+        "tests/test_sessions.py",
         "tests/test_sla.py",
         "tests/test_split_family.py",
         "tests/test_splitting.py",
@@ -2656,6 +2683,7 @@
         "add_thanks_rule_route",
         "add_type_question",
         "category_review",
+        "clear_user_object_id",
         "create_local_user",
         "create_team",
         "delete_subrequest_template",
@@ -2690,6 +2718,7 @@
         "set_team_msp_handoff",
         "set_user_active",
         "set_user_permissions",
+        "sign_out_user_everywhere",
         "thanks_candidate_to_rule",
         "toggle_thanks_rule",
         "unlock_user",
@@ -2729,6 +2758,7 @@
         "app.request_questions",
         "app.request_types",
         "app.scheduled_jobs",
+        "app.sessions",
         "app.settings_store",
         "app.sla",
         "app.subrequests",
@@ -3002,6 +3032,11 @@
           "path": "/admin/users/{user_id}/active"
         },
         {
+          "handler": "clear_user_object_id",
+          "method": "POST",
+          "path": "/admin/users/{user_id}/clear-oid"
+        },
+        {
           "handler": "set_membership",
           "method": "POST",
           "path": "/admin/users/{user_id}/memberships"
@@ -3015,6 +3050,11 @@
           "handler": "set_user_permissions",
           "method": "POST",
           "path": "/admin/users/{user_id}/permissions"
+        },
+        {
+          "handler": "sign_out_user_everywhere",
+          "method": "POST",
+          "path": "/admin/users/{user_id}/sign-out"
         },
         {
           "handler": "unlock_user",
@@ -3109,10 +3149,13 @@
       ],
       "imports": [
         "app.activity",
+        "app.audit",
         "app.auth",
         "app.config",
         "app.database",
+        "app.identity",
         "app.models",
+        "app.sessions",
         "app.templating"
       ],
       "module": "app.routers.auth",
@@ -3157,6 +3200,7 @@
       "tables": [],
       "tests": [
         "tests/test_activity_log.py",
+        "tests/test_sessions.py",
         "tests/test_visibility.py"
       ]
     },
@@ -3339,18 +3383,21 @@
         "notification_settings",
         "report_browser_time_zone",
         "save_notification_settings",
-        "save_time_zone"
+        "save_time_zone",
+        "sign_out_everywhere"
       ],
       "imported_by": [
         "app.main"
       ],
       "imports": [
+        "app.audit",
         "app.auth",
         "app.config",
         "app.database",
         "app.models",
         "app.notification_settings",
         "app.notifications",
+        "app.sessions",
         "app.templating",
         "app.time_zones"
       ],
@@ -3365,6 +3412,11 @@
           "handler": "save_notification_settings",
           "method": "POST",
           "path": "/settings/notifications"
+        },
+        {
+          "handler": "sign_out_everywhere",
+          "method": "POST",
+          "path": "/settings/sign-out-everywhere"
         },
         {
           "handler": "save_time_zone",
@@ -3919,6 +3971,7 @@
         "app.due_today",
         "app.models",
         "app.msp",
+        "app.sessions",
         "app.settings_store"
       ],
       "module": "app.scheduled_jobs",
@@ -3932,7 +3985,8 @@
         "tests/test_handoff_bells_holidays.py",
         "tests/test_msp.py",
         "tests/test_msp_mail.py",
-        "tests/test_scheduled_jobs.py"
+        "tests/test_scheduled_jobs.py",
+        "tests/test_sessions.py"
       ]
     },
     {
@@ -3955,6 +4009,42 @@
       "tables": [],
       "tests": [
         "tests/test_search.py"
+      ]
+    },
+    {
+      "classes": [],
+      "file": "app/sessions.py",
+      "functions": [
+        "current_row",
+        "ended_reason",
+        "hash_token",
+        "live_session_count",
+        "purge_ended_sessions",
+        "revoke_token",
+        "revoke_user_sessions",
+        "start_session",
+        "touch"
+      ],
+      "imported_by": [
+        "app.activity",
+        "app.auth",
+        "app.main",
+        "app.routers.admin",
+        "app.routers.auth",
+        "app.routers.my_settings",
+        "app.scheduled_jobs"
+      ],
+      "imports": [
+        "app.database",
+        "app.models",
+        "app.settings_store"
+      ],
+      "module": "app.sessions",
+      "routes": [],
+      "summary": "Server-side sign-in sessions (#157).",
+      "tables": [],
+      "tests": [
+        "tests/test_sessions.py"
       ]
     },
     {
@@ -3990,6 +4080,7 @@
         "app.routers.bulk_resolve",
         "app.routers.tickets",
         "app.scheduled_jobs",
+        "app.sessions",
         "app.sla",
         "app.splitting",
         "app.subscriptions",
@@ -4032,6 +4123,7 @@
         "tests/test_required_by.py",
         "tests/test_resolution.py",
         "tests/test_scheduled_jobs.py",
+        "tests/test_sessions.py",
         "tests/test_sla.py",
         "tests/test_subrequests.py",
         "tests/test_teams_copy.py",
@@ -5158,6 +5250,7 @@
     "tests/test_scheduled_status.py",
     "tests/test_search.py",
     "tests/test_security.py",
+    "tests/test_sessions.py",
     "tests/test_sla.py",
     "tests/test_split_family.py",
     "tests/test_splitting.py",
