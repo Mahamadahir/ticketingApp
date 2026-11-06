@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from html import escape
+from urllib.parse import urlencode
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.exception_handlers import http_exception_handler, request_validation_exception_handler
@@ -15,6 +16,7 @@ from app.auth import NotAuthenticated, get_current_user
 from app.visibility import NoTicketAccess
 from app.config import settings, unsafe_setting_errors
 from app.log_redaction import redact_approval_tokens
+from app.sessions import COOKIE_MAX_AGE_SECONDS
 from app.telemetry import start_telemetry
 from app.models import User, UserRole
 from app.routers import action_links, admin, approvals, attachments, auth, bulk_resolve, dev_tools, feedback, health, msp_mail, my_settings, notifications, portal, tickets, webhooks
@@ -72,6 +74,8 @@ def handle_no_ticket_access(request: Request, exc: NoTicketAccess):
 
 
 def handle_not_authenticated(request: Request, exc: NotAuthenticated):
+    if exc.message:
+        return RedirectResponse(url="/auth/login?" + urlencode({"error": exc.message}))
     return RedirectResponse(url="/auth/login")
 
 
@@ -115,6 +119,9 @@ def build_app(role: str) -> FastAPI:
             SessionMiddleware,
             secret_key=settings.session_secret_key,
             https_only=not settings.is_dev,
+            # The cookie only carries a random session token; the server-side row decides how long a
+            # sign-in lasts (app/sessions.py), so the cookie must not run out first.
+            max_age=COOKIE_MAX_AGE_SECONDS,
             same_site="lax",
         )
     app.mount("/static", AppStaticFiles(directory="app/static"), name="static")

@@ -140,7 +140,7 @@ def sso_setup(monkeypatch, claims):
 
 
 def test_single_sign_on_success_and_each_failure_are_recorded_without_the_one_time_code(client, db_session, monkeypatch):
-    seen = sso_setup(monkeypatch, {"id_token_claims": {"preferred_username": "sso-user@example.com", "name": "SSO User"}})
+    seen = sso_setup(monkeypatch, {"id_token_claims": {"preferred_username": "sso-user@example.com", "name": "SSO User", "oid": "11111111-1111-1111-1111-111111111111"}})
     client.get("/auth/sso/start", follow_redirects=False)
     client.get(f"/auth/callback?code=ONE-TIME-CODE-1&state={seen['state']}", follow_redirects=False)
     [ok] = rows(db_session, "login_success")

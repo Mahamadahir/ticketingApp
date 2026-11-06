@@ -44,6 +44,7 @@ from app.database import engine
 from app.due_today import run_scheduled_due
 from app.models import ScheduledJob
 from app.msp import run_msp_ack_alerts, run_msp_forwards, run_msp_handoff
+from app.sessions import purge_ended_sessions
 from app.settings_store import JOB_LATE_MINUTES, JOB_LEASE_MINUTES, JOB_RETRY_MINUTES, REGISTRY, get_int_setting
 
 log = logging.getLogger("app.worker")
@@ -71,6 +72,7 @@ SCHEDULED_JOBS: list[ScheduledJobDef] = [
     ScheduledJobDef("msp-forwards", 300, run_msp_forwards),  # MSP mail left waiting for an agent goes to the user once business hours end
     ScheduledJobDef("msp-handoff", 300, run_msp_handoff),  # every 5 minutes: the handoff starts within 5 minutes of its hour
     ScheduledJobDef("scheduled-due", 900, run_scheduled_due),
+    ScheduledJobDef("session-cleanup", 86400, purge_ended_sessions),  # deletes sign-in sessions that ended `session_keep_days` ago
 ]
 
 

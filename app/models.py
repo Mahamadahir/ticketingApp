@@ -147,6 +147,26 @@ class User(SQLModel, table=True):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class UserSession(SQLModel, table=True):
+    """A signed-in browser session, kept on the server (app/sessions.py). The cookie holds a random
+    token; this row's id is the SHA-256 of that token, so reading the table gives nobody a usable
+    session. A session ends when it is revoked, when it has been idle too long, or at its absolute
+    expiry; nothing here is ever extended past `expires_at`. Rows are deleted by a recurring job
+    some days after they ended."""
+
+    __tablename__ = "user_session"
+
+    id: str = Field(primary_key=True)
+    user_id: int = Field(foreign_key="user.id", index=True, ondelete="CASCADE")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    # Updated at most once a minute (app/sessions.py), not on every request.
+    last_seen_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    expires_at: datetime
+    revoked_at: Optional[datetime] = Field(default=None)
+    ip: Optional[str] = Field(default=None)
+    user_agent: Optional[str] = Field(default=None)
+
+
 class RequesterTimeZone(SQLModel, table=True):
     """The time zone of someone who writes in by email, read from their Outlook mailbox through Graph
     (mailboxSettings.timeZone, app/time_zones.py). Keyed by lower-cased address, the way a ticket stores its

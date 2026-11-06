@@ -151,6 +151,7 @@ from app.settings_store import (
     set_setting,
 )
 from app.msp import compile_subject_pattern
+from app.sessions import live_session_count, revoke_user_sessions
 from app.inbound import IGNORED_FLOOD
 from app.subscriptions import health_warnings, mail_folder, subscription_resource
 from app.teams import MAX_ATTEMPTS
@@ -200,6 +201,7 @@ def list_users(
             "levels": list(MembershipLevel),
             "roles": list(UserRole),
             "now": datetime.now(timezone.utc),
+            "live_sessions": {u.id: live_session_count(session, u.id) for u in users_page.items},
             "user": user,
         },
     )
@@ -219,6 +221,10 @@ def update_user(
     if target.role != role:
         log_action(session, admin.email, "user", target.id, "role_changed", f"{target.role.value} -> {role.value}")
         target.role = role
+        # What a session may do was decided at sign-in; a changed role ends them all (they sign in again).
+        ended = revoke_user_sessions(session, target.id)
+        if ended:
+            log_action(session, admin.email, "user", target.id, "sessions_revoked", f"role changed; {ended} ended")
         if role not in ASSIGNABLE_ROLES:
             # Grants only mean something for a role that may hold them; drop them rather than leave them dormant.
             for row in session.exec(select(UserPermission).where(UserPermission.user_id == target.id)).all():
@@ -326,7 +332,8 @@ def set_user_active(
     admin: User = Depends(require_super_admin),
     session: Session = Depends(get_session),
 ):
-    """Phase 4: an inactive person is no longer polled for out-of-office. Nothing else changes yet."""
+    """An inactive person is no longer polled for out-of-office, cannot sign in, and every session of theirs
+    ends at once (#157)."""
     target = session.get(User, user_id)
     if target is None:
         raise HTTPException(status_code=404, detail="User not found")
@@ -334,7 +341,47 @@ def set_user_active(
         log_action(session, admin.email, "user", target.id, "activated" if is_active else "deactivated", "")
         target.is_active = is_active
         session.add(target)
+        if not is_active:
+            ended = revoke_user_sessions(session, target.id)
+            log_action(session, admin.email, "user", target.id, "sessions_revoked", f"deactivated; {ended} ended")
         session.commit()
+    return RedirectResponse("/admin/users", status_code=303)
+
+
+@router.post("/users/{user_id}/sign-out")
+def sign_out_user_everywhere(
+    user_id: int,
+    admin: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    """Ends every signed-in session of this person (a lost laptop, a leaver). They can sign in again."""
+    target = session.get(User, user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    ended = revoke_user_sessions(session, target.id)
+    log_action(session, admin.email, "user", target.id, "signed_out_everywhere", f"by a super admin; {ended} ended")
+    session.commit()
+    return RedirectResponse("/admin/users", status_code=303)
+
+
+@router.post("/users/{user_id}/clear-oid")
+def clear_user_object_id(
+    user_id: int,
+    admin: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    """Un-binds the Entra object id, so the next Entra sign-in with this email binds the new directory
+    account (a re-hire, a recreated account). Their sessions end too. Never automatic (#157)."""
+    target = session.get(User, user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    if target.entra_object_id is None:
+        raise HTTPException(status_code=400, detail="This user has no stored object id")
+    log_action(session, admin.email, "user", target.id, "oid_cleared", f"was {target.entra_object_id}")
+    target.entra_object_id = None
+    session.add(target)
+    revoke_user_sessions(session, target.id)
+    session.commit()
     return RedirectResponse("/admin/users", status_code=303)
 
 

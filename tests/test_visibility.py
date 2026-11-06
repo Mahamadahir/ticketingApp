@@ -392,7 +392,7 @@ def test_oauth_state_works_once(client, monkeypatch):
     monkeypatch.setattr(
         auth_router,
         "acquire_token_by_auth_code",
-        lambda code: {"id_token_claims": {"preferred_username": "sso-user@example.com", "name": "SSO User"}},
+        lambda code: {"id_token_claims": {"preferred_username": "sso-user@example.com", "name": "SSO User", "oid": "11111111-1111-1111-1111-111111111111"}},
     )
 
     client.get("/auth/sso/start", follow_redirects=False)

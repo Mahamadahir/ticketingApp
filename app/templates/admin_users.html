@@ -20,6 +20,7 @@
       <th>Extra permissions</th>
       <th>Active</th>
       <th>Local account</th>
+      <th>Sign-in</th>
     </tr>
   </thead>
   <tbody>
@@ -98,6 +99,20 @@
         {% else %}
           no (SSO)
         {% endif %}
+      </td>
+      <td>
+        {% if u.entra_object_id %}
+        Entra id <code>{{ u.entra_object_id }}</code>
+        <form method="post" action="/admin/users/{{ u.id }}/clear-oid">
+          <button type="submit" title="For a re-hire or a recreated account: the next Entra sign-in with this email binds the new directory account">Clear Entra id</button>
+        </form>
+        {% else %}
+        no Entra id yet
+        {% endif %}
+        <br />{{ live_sessions.get(u.id, 0) }} signed-in session{{ "" if live_sessions.get(u.id, 0) == 1 else "s" }}
+        <form method="post" action="/admin/users/{{ u.id }}/sign-out">
+          <button type="submit">Sign out everywhere</button>
+        </form>
       </td>
     </tr>
     {% endfor %}

@@ -8,8 +8,10 @@ from fastapi import Depends, HTTPException, Request
 from sqlalchemy import func, update
 from sqlmodel import Session, select
 
+from app import sessions
+from app.audit import log_action
 from app.config import settings
-from app.database import get_session
+from app.database import engine, get_session
 from app.models import User, UserRole
 from app.time_zones import zone_for_user
 from app.visibility import has_permission
@@ -26,7 +28,11 @@ BCRYPT_MAX_BYTES = 72
 
 
 class NotAuthenticated(Exception):
-    pass
+    """Not signed in (or the session ended). `message`, if any, is shown on the sign-in page."""
+
+    def __init__(self, message: Optional[str] = None):
+        super().__init__(message)
+        self.message = message
 
 
 def _password_bytes(password: str) -> bytes:
@@ -166,13 +172,27 @@ def get_or_create_user(session: Session, email: str, display_name: str) -> User:
 
 
 def get_current_user(request: Request, session: Session = Depends(get_session)) -> User:
-    user_id = request.session.get("user_id")
-    if not user_id:
-        raise NotAuthenticated()
+    """The signed-in person, from the server-side session behind the cookie (app/sessions.py). A session
+    that is missing, revoked, expired or idle, or whose person has been deactivated, is not signed in."""
+    now = datetime.now(timezone.utc)
+    row = sessions.current_row(session, request)
+    reason = sessions.ended_reason(session, row, now)
+    if reason is not None:
+        request.session.pop(sessions.COOKIE_KEY, None)
+        raise NotAuthenticated(None if reason == "missing" else sessions.SIGNED_OUT_MESSAGE)
 
-    user = session.get(User, user_id)
+    user = session.get(User, row.user_id)
     if not user:
         raise NotAuthenticated()
+    if not user.is_active:
+        # Deactivating someone already ends their sessions; this catches any path that did not.
+        with Session(engine) as own:
+            sessions.revoke_user_sessions(own, user.id)
+            log_action(own, user.email, "user", user.id, "session_refused", "inactive user")
+            own.commit()
+        request.session.pop(sessions.COOKIE_KEY, None)
+        raise NotAuthenticated(sessions.INACTIVE_MESSAGE)
+    sessions.touch(row, now)
     # Lets error pages (such as "no access") show the signed-in user's navigation.
     request.state.user = user
     # Every page shows times in this person's zone (app/templating.py); worked out here with the request's
