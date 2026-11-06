@@ -127,6 +127,7 @@
     <label>Due: days before Required by (blank: {{ default_due_days }}) <input type="number" name="due_days_before" value="{{ t.due_days_before if t.due_days_before is not none else "" }}" min="0" max="365" /></label>
     <label>Queue lead time in days (blank: {{ default_queue_days }}) <input type="number" name="queue_lead_days" value="{{ t.queue_lead_days if t.queue_lead_days is not none else "" }}" min="0" max="365" /></label>
     <label><input type="checkbox" name="subrequests_need_own_approval" {{ "checked" if t.subrequests_need_own_approval else "" }} /> Sub-requests of this kind need their own approval (otherwise the request they come from covers them)</label>
+    <label><input type="checkbox" name="approvers_may_self_approve" {{ "checked" if t.approvers_may_self_approve else "" }} /> Approvers may approve their own requests (an active member of the approval group who raises one of these has their approval recorded at once)</label>
     {{ defaults_fields(t) }}
     <p class="note">{{ "Raised in the portal, this request triages itself." if t.id in self_triages else "Not self-triaging: it needs all four defaults, and the category in use and in that team." }}</p>
     <button type="submit">Save</button>
@@ -210,6 +211,7 @@
   <label>Due: days before Required by (blank: {{ default_due_days }}) <input type="number" name="due_days_before" min="0" max="365" /></label>
   <label>Queue lead time in days (blank: {{ default_queue_days }}) <input type="number" name="queue_lead_days" min="0" max="365" /></label>
   <label><input type="checkbox" name="subrequests_need_own_approval" /> Sub-requests of this kind need their own approval (otherwise the request they come from covers them)</label>
+  <label><input type="checkbox" name="approvers_may_self_approve" /> Approvers may approve their own requests (an active member of the approval group who raises one of these has their approval recorded at once)</label>
   {{ defaults_fields(none) }}
   <button type="submit">Create</button>
 </form>

@@ -35,6 +35,7 @@ EVENT_APPROVAL_DECIDED = "approval_decided"  # actor: the approver, to_value: ap
 EVENT_APPROVAL_OUTCOME = "approval_outcome"  # to_value: approved, declined or waived
 EVENT_APPROVAL_WAITING = "approval_waiting"  # nobody active could be asked, so it waits for approvers (#161; detail: the group)
 EVENT_APPROVAL_VOTE_REMOVED = "approval_vote_removed"  # an inactive voter's unanswered vote was dropped (#161; to_value: their email)
+EVENT_APPROVAL_SELF_APPROVED = "approval_self_approved"  # the requester is an approver and the request type lets them approve their own request (#167)
 EVENT_APPROVAL_WITHDRAWN = "approval_withdrawn"  # the requester withdrew the request while it waited (detail: how many had not answered)
 EVENT_REQUIRED_BY_CHANGED = "required_by_changed"  # a service request's Required by date was set, changed or cleared
 EVENT_DUE_CHANGED = "due_changed"  # the Due date was set, moved or cleared (detail: the reason)

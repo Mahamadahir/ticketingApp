@@ -174,6 +174,7 @@ def create_request_type(
     pass_percent: int, is_active: bool = True, offers_required_by: bool = False,
     due_days_before: Optional[int] = None, queue_lead_days: Optional[int] = None,
     defaults: Optional[TypeDefaults] = None, subrequests_need_own_approval: bool = False,
+    approvers_may_self_approve: bool = False,
 ) -> RequestType:
     name, description = _clean(name, description)
     _check_days(due_days_before, queue_lead_days)
@@ -188,7 +189,7 @@ def create_request_type(
         due_days_before=due_days_before, queue_lead_days=queue_lead_days,
         default_team_id=defaults.team_id, default_category_id=defaults.category_id,
         default_impact=defaults.impact, default_urgency=defaults.urgency,
-        subrequests_need_own_approval=subrequests_need_own_approval,
+        subrequests_need_own_approval=subrequests_need_own_approval, approvers_may_self_approve=approvers_may_self_approve,
     )
     session.add(request_type)
     _flush(session)
@@ -200,6 +201,7 @@ def update_request_type(
     pass_percent: int, is_active: bool, offers_required_by: Optional[bool] = None,
     due_days_before: Optional[int] = None, queue_lead_days: Optional[int] = None,
     defaults: Optional[TypeDefaults] = None, subrequests_need_own_approval: Optional[bool] = None,
+    approvers_may_self_approve: Optional[bool] = None,
 ) -> RequestType:
     """Blank (None) day counts mean "use the setting". `defaults` None leaves the type's defaults as they are, and so
     does `subrequests_need_own_approval` None."""
@@ -218,6 +220,8 @@ def update_request_type(
     request_type.due_days_before, request_type.queue_lead_days = due_days_before, queue_lead_days
     if subrequests_need_own_approval is not None:
         request_type.subrequests_need_own_approval = subrequests_need_own_approval
+    if approvers_may_self_approve is not None:
+        request_type.approvers_may_self_approve = approvers_may_self_approve
     if defaults is not None:
         request_type.default_team_id, request_type.default_category_id = defaults.team_id, defaults.category_id
         request_type.default_impact, request_type.default_urgency = defaults.impact, defaults.urgency
