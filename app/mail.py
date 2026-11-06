@@ -33,7 +33,7 @@ from app.email_templates import LINK_LEFT_OUT, REQUEST_BLOCK, current_text, rend
 from app.followers import is_follower
 from app.graph_client import graph_client
 from app.messages import about_text, in_a_split, is_triaged, mail_subject, requester_visible_messages
-from app import outage
+from app import emergency, outage
 from app.never_follow import is_listed
 from app.approval_groups import is_member
 from app.notification_settings import APPROVAL_OVERDUE as APPROVAL_OVERDUE_EVENT, EMAIL, FOLLOWER_UPDATE as FOLLOWER_UPDATE_EVENT, is_enabled, wants_approval_email
@@ -336,12 +336,12 @@ def build_emergency_reset_mail(session: Session, row: OutboundEmail) -> Mail:
     """Tells an agent their emergency password was cleared. Asked again now: they are still an active agent, outage
     mode is off and they have not already set a new one."""
     person = session.exec(select(User).where(func.lower(User.email) == row.to_address.strip().lower())).first()
-    if person is None or not person.is_active or person.role not in (UserRole.AGENT, UserRole.SUPER_ADMIN):
+    if person is None or not person.is_active or not emergency.may_hold_one(person):
         raise Unsendable("The person is not an active agent")
     if person.emergency_password_hash:
         raise Unsendable("They have already set a new emergency password")
     if outage.is_on(session):
-        raise Unsendable("Outage mode is on again")
+        raise NotReady("Outage mode is on again; the email waits until it is off")  # not given up on: the reset is still owed
     _guard_recipient(row)
     base = settings.public_base_url.rstrip("/")
     values = {

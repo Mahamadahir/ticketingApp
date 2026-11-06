@@ -457,3 +457,42 @@ def test_a_setting_row_that_cannot_be_read_still_counts_as_on(db_session):
     db_session.add(Setting(key=outage.OUTAGE_KEY, value="not json"))
     db_session.commit()
     assert outage.is_on(db_session) and outage.status(db_session).since is None
+
+
+def test_promoting_an_agent_to_super_admin_keeps_the_password(client, db_session):
+    user_id = make_agent(client, db_session)
+    admin = new_client()
+    login_as(admin, "admin@example.com")
+    admin.post(f"/admin/users/{user_id}", data={"role": "super_admin"})
+    assert reload(db_session, user_id).emergency_password_hash is not None
+    assert audits(db_session, "emergency_password_invalidated") == []
+
+
+def test_a_break_glass_account_is_not_offered_the_emergency_password_page(client, db_session, break_glass):
+    glass = new_client()
+    break_glass_sign_in(glass, break_glass)
+    assert "/settings/emergency-password" not in glass.get("/settings/notifications").text
+    assert glass.get("/settings/emergency-password").status_code == 403
+    agent = new_client()
+    make_agent(agent, db_session)
+    assert "/settings/emergency-password" in agent.get("/settings/notifications").text
+
+
+def test_the_reset_email_waits_while_outage_mode_is_on_again(client, db_session, break_glass, monkeypatch):
+    monkeypatch.setattr(settings, "mail_sending", "dev")
+    make_agent(client, db_session)
+    glass = new_client()
+    break_glass_sign_in(glass, break_glass)
+    glass.post("/admin/outage/on")
+    emergency_sign_in(new_client())
+    glass.post("/admin/outage/off")
+    glass.post("/admin/outage/on")  # a second outage before the email went
+    assert mail.deliver_mail(db_session) == (0, 0)
+    db_session.expire_all()
+    [row] = db_session.exec(select(OutboundEmail).where(OutboundEmail.kind == "emergency_reset")).all()
+    assert row.sent_at is None and row.attempts == 0 and "on again" in row.last_error
+    glass.post("/admin/outage/off")
+    row.next_attempt_at = None
+    db_session.add(row)
+    db_session.commit()
+    assert mail.deliver_mail(db_session) == (1, 0)

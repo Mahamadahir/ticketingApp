@@ -987,6 +987,8 @@
         "start_emergency_session"
       ],
       "imported_by": [
+        "app.mail",
+        "app.routers.admin",
         "app.routers.auth",
         "app.routers.my_settings"
       ],
@@ -1474,6 +1476,7 @@
         "app.approvals",
         "app.config",
         "app.email_templates",
+        "app.emergency",
         "app.followers",
         "app.graph_client",
         "app.messages",
@@ -2958,6 +2961,7 @@
         "app.config",
         "app.database",
         "app.email_templates",
+        "app.emergency",
         "app.feedback",
         "app.followers",
         "app.forms",

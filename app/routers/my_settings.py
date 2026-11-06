@@ -50,7 +50,7 @@ def notification_settings(
         "my_notification_settings.html",
         {
             "user": user, "choices": choices_for(session, user), "channels": _channels(), "saved": saved,
-            "is_agent": user.role in AGENT_ROLES, "default_delay": default_teams_delay(session),
+            "is_agent": user.role in AGENT_ROLES, "can_have_emergency_password": emergency.may_hold_one(user), "default_delay": default_teams_delay(session),
             "max_delay": MAX_TEAMS_DELAY_MINUTES,
             "zone": zone_for_user(session, user), "zone_choices": zone_choices(),
         },

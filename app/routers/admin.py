@@ -20,7 +20,7 @@ from app.activity import (
     SSO_FAILED,
 )
 from app.bank_holidays import REGIONS as BANK_HOLIDAY_REGIONS
-from app import outage
+from app import emergency, outage
 from app.audit import log_action
 from app.auth import hash_password, require_permission, require_roles
 from app.permissions import ASSIGNABLE_ROLES, MANAGE_REQUEST_TEMPLATES, PERMISSIONS
@@ -242,7 +242,7 @@ def update_user(
         ended = revoke_user_sessions(session, target.id)
         if ended:
             log_action(session, admin.email, "user", target.id, "sessions_revoked", f"role changed; {ended} ended")
-        if role not in ASSIGNABLE_ROLES and target.emergency_password_hash:
+        if not emergency.may_hold_one(target) and target.emergency_password_hash:
             # End users get no outage-mode fallback (#164); the sign-in refuses them anyway, this leaves no hash behind.
             target.emergency_password_hash = target.emergency_password_set_at = target.emergency_password_used_at = None
             log_action(session, admin.email, "user", target.id, "emergency_password_invalidated", "role changed")
