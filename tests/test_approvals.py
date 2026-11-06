@@ -915,7 +915,7 @@ def test_a_ticket_closed_after_an_approval_is_reopened_without_asking_again(clie
     assert status(db_session, ticket) == TicketStatus.CLOSED
 
     client.post(f"/tickets/{ticket.number}/status", data={"status": "open"})
-    assert status(db_session, ticket) == TicketStatus.AWAITING_APPROVAL  # #161: it waits for approvers, not skips
+    assert status(db_session, ticket) == TicketStatus.OPEN
 
 
 def test_nobody_to_ask_on_a_reopen_waits_for_approvers(client, db_session):
