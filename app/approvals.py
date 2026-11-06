@@ -235,10 +235,12 @@ def start_waiting_rounds(session: Session, actor_email: str = AUDIT_ACTOR) -> in
         select(Ticket.id).where(Ticket.status == TicketStatus.AWAITING_APPROVAL, Ticket.type == TicketType.SERVICE_REQUEST).order_by(Ticket.id)
     ).all()
     for ticket_id in ids:
-        ticket = session.exec(
-            select(Ticket).where(Ticket.id == ticket_id).with_for_update().execution_options(populate_existing=True)
-        ).first()
-        if ticket is None or not is_waiting_for_approvers(session, ticket) or not eligible_voters(session, ticket):
+        ticket = session.get(Ticket, ticket_id)
+        # Looked at without a lock first: most requests in Awaiting approval have a round going and are left alone.
+        if not is_waiting_for_approvers(session, ticket) or not eligible_voters(session, ticket):
+            continue
+        session.refresh(ticket, with_for_update=True)
+        if not is_waiting_for_approvers(session, ticket):
             continue
         start_approvals(session, ticket, actor_email)
         log_action(session, actor_email, "ticket", ticket.id, "approval_round_started", "an active approver is available")
