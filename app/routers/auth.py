@@ -19,13 +19,14 @@ from app.activity import (
 from app import sessions
 from app.audit import log_action
 from app.breakglass import attempt_break_glass_login
+from app.emergency import attempt_emergency_login, needs_one, start_emergency_session
 from app.auth import acquire_token_by_auth_code, attempt_local_login, build_auth_url, get_or_create_user
 from app.config import settings
 from app.database import get_session
 from app.identity import SsoRefused, resolve_sso_user
 from app.models import User, UserRole
 from app.notifications import notify_break_glass_sign_in
-from app.rate_limit import BREAK_GLASS, rate_limited
+from app.rate_limit import BREAK_GLASS, EMERGENCY, rate_limited
 from sqlmodel import select
 
 logger = logging.getLogger(__name__)
@@ -100,6 +101,9 @@ def callback(request: Request, code: str, state: str, session: Session = Depends
     sessions.start_session(session, request, user)
     record_activity(session, request, LOGIN_SUCCESS, actor_email=user.email, actor_user_id=user.id, detail="sso")
     session.commit()
+    if needs_one(user):
+        # An agent with no emergency password is asked for one (outage mode, #164); they can skip it, and are asked again next time.
+        return RedirectResponse("/settings/emergency-password?first=1", status_code=303)
     return RedirectResponse("/", status_code=303)
 
 
@@ -182,6 +186,45 @@ def break_glass_login(
     record_activity(session, request, LOGIN_SUCCESS, actor_email=user.email, actor_user_id=user.id, detail="break_glass")
     for admin in session.exec(select(User).where(User.role == UserRole.SUPER_ADMIN, User.is_active)).all():
         notify_break_glass_sign_in(session, admin, user, client_ip(request))
+    session.commit()
+    return RedirectResponse("/", status_code=303)
+
+
+@router.post("/emergency-login", dependencies=[Depends(rate_limited(EMERGENCY))])
+def emergency_login(
+    request: Request,
+    upn: str = Form(...),
+    password: str = Form(...),
+    session: Session = Depends(get_session),
+):
+    """The agents' sign-in while Entra is down (app/emergency.py): works only while outage mode is on. One message
+    whatever went wrong. Attempts at a real agent's account are recorded in the activity log, marked "emergency";
+    unknown names, a mode that is off and locked accounts can be sent without limit, so they go to the application
+    log only. Never keeps what was typed."""
+    result = attempt_emergency_login(session, upn, password)
+    refused = RedirectResponse("/auth/login?error=Sign-in+failed", status_code=303)
+    if result.user is None:
+        if result.failure in NOT_WORTH_A_ROW | {"outage_off", "no_emergency_password"}:
+            logger.warning("Rejected emergency sign-in (%s) from %s", result.failure, client_ip(request))
+            return refused
+        record_activity(session, request, LOGIN_FAILED, actor_email=result.account.email, detail=f"emergency: {result.failure}")
+        if result.locked_until is not None:
+            record_activity(
+                session, request, ACCOUNT_LOCKED, actor_email=result.account.email,
+                detail=f"locked until {result.locked_until.isoformat()}",
+            )
+        session.commit()
+        return refused
+
+    user = result.user
+    if not user.is_active:
+        return _refuse_inactive(session, request, user, "emergency")
+    if start_emergency_session(session, request, user) is None:
+        session.rollback()  # outage mode was switched off while the password was being checked
+        logger.warning("Rejected emergency sign-in (outage_off) from %s", client_ip(request))
+        return refused
+    log_action(session, user.email, "user", user.id, "emergency_sign_in", f"outage mode, from {client_ip(request)}")
+    record_activity(session, request, LOGIN_SUCCESS, actor_email=user.email, actor_user_id=user.id, detail="emergency")
     session.commit()
     return RedirectResponse("/", status_code=303)
 

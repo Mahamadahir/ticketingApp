@@ -54,6 +54,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/d5f1b7c3a928_outage_mode.py",
+        "revision": "d5f1b7c3a928"
+      },
+      {
         "file": "migrations/versions/c4e8a2b6d913_self_approval_switch.py",
         "revision": "c4e8a2b6d913"
       },
@@ -68,17 +72,13 @@
       {
         "file": "migrations/versions/edf905001a2e_bank_holiday_cache.py",
         "revision": "edf905001a2e"
-      },
-      {
-        "file": "migrations/versions/ac2ff6b52e5c_msp_ticket_number_and_unmatched_mail.py",
-        "revision": "ac2ff6b52e5c"
       }
     ],
-    "count": 58,
+    "count": 59,
     "heads": [
       {
-        "file": "migrations/versions/c4e8a2b6d913_self_approval_switch.py",
-        "revision": "c4e8a2b6d913"
+        "file": "migrations/versions/d5f1b7c3a928_outage_mode.py",
+        "revision": "d5f1b7c3a928"
       }
     ]
   },
@@ -372,6 +372,7 @@
         "app.breakglass",
         "app.closing",
         "app.due_today",
+        "app.emergency",
         "app.entra_check",
         "app.escalation",
         "app.identity",
@@ -379,6 +380,7 @@
         "app.msp",
         "app.msp_actions",
         "app.notification_settings",
+        "app.outage",
         "app.reopening",
         "app.request_types",
         "app.required_by",
@@ -418,6 +420,7 @@
       ],
       "imported_by": [
         "app.breakglass",
+        "app.emergency",
         "app.main",
         "app.routers.admin",
         "app.routers.attachments",
@@ -435,6 +438,7 @@
         "app.config",
         "app.database",
         "app.models",
+        "app.outage",
         "app.sessions",
         "app.time_zones",
         "app.visibility"
@@ -449,6 +453,7 @@
         "tests/test_break_glass.py",
         "tests/test_hardening.py",
         "tests/test_login_lockout.py",
+        "tests/test_outage_mode.py",
         "tests/test_sessions.py",
         "tests/test_visibility.py"
       ]
@@ -593,7 +598,8 @@
       "tables": [],
       "tests": [
         "tests/test_break_glass.py",
-        "tests/test_entra_check.py"
+        "tests/test_entra_check.py",
+        "tests/test_outage_mode.py"
       ]
     },
     {
@@ -814,6 +820,7 @@
         "tests/test_msp_actions.py",
         "tests/test_msp_mail.py",
         "tests/test_msp_real_mail.py",
+        "tests/test_outage_mode.py",
         "tests/test_outbound_mail.py",
         "tests/test_presence.py",
         "tests/test_public_surface.py",
@@ -963,6 +970,43 @@
         "tests/test_follower_updates.py",
         "tests/test_msp_actions.py",
         "tests/test_resolution.py"
+      ]
+    },
+    {
+      "classes": [
+        "EmergencyResult",
+        "PasswordRefused"
+      ],
+      "file": "app/emergency.py",
+      "functions": [
+        "attempt_emergency_login",
+        "check_new_password",
+        "may_hold_one",
+        "needs_one",
+        "set_password",
+        "start_emergency_session"
+      ],
+      "imported_by": [
+        "app.mail",
+        "app.routers.admin",
+        "app.routers.auth",
+        "app.routers.my_settings"
+      ],
+      "imports": [
+        "app.audit",
+        "app.auth",
+        "app.models",
+        "app.notifications",
+        "app.outage",
+        "app.sessions",
+        "app.settings_store"
+      ],
+      "module": "app.emergency",
+      "routes": [],
+      "summary": "Emergency passwords (#164): what an agent sets in advance and uses only while outage mode is on",
+      "tables": [],
+      "tests": [
+        "tests/test_outage_mode.py"
       ]
     },
     {
@@ -1402,6 +1446,7 @@
         "build_approval_reminder_mail",
         "build_approval_withdrawn_mail",
         "build_chase_mail",
+        "build_emergency_reset_mail",
         "build_follower_update_mail",
         "build_message_mail",
         "build_msp_forward_mail",
@@ -1431,12 +1476,14 @@
         "app.approvals",
         "app.config",
         "app.email_templates",
+        "app.emergency",
         "app.followers",
         "app.graph_client",
         "app.messages",
         "app.models",
         "app.never_follow",
         "app.notification_settings",
+        "app.outage",
         "app.outbox",
         "app.raising",
         "app.settings_store",
@@ -1458,6 +1505,7 @@
         "tests/test_msp.py",
         "tests/test_msp_actions.py",
         "tests/test_msp_mail.py",
+        "tests/test_outage_mode.py",
         "tests/test_outbound_mail.py",
         "tests/test_reopening.py",
         "tests/test_resolution.py",
@@ -1517,6 +1565,7 @@
         "tests/test_entra_check.py",
         "tests/test_health.py",
         "tests/test_htmx_errors.py",
+        "tests/test_outage_mode.py",
         "tests/test_public_surface.py",
         "tests/test_sessions.py",
         "tests/test_triage.py"
@@ -1678,6 +1727,7 @@
         "app.closing",
         "app.due_today",
         "app.email_templates",
+        "app.emergency",
         "app.entra_check",
         "app.escalation",
         "app.feedback",
@@ -1694,6 +1744,7 @@
         "app.never_follow",
         "app.notification_settings",
         "app.notifications",
+        "app.outage",
         "app.outbox",
         "app.permissions",
         "app.presence",
@@ -1964,6 +2015,7 @@
         "tests/test_notification_followup.py",
         "tests/test_notification_settings.py",
         "tests/test_notifications.py",
+        "tests/test_outage_mode.py",
         "tests/test_outbound_mail.py",
         "tests/test_pagination_and_limits.py",
         "tests/test_permissions.py",
@@ -2249,6 +2301,7 @@
         "notify_msp_handoff_warning",
         "notify_msp_unacknowledged",
         "notify_no_active_approvers",
+        "notify_outage_mode",
         "notify_reopened",
         "notify_reply",
         "notify_requesters",
@@ -2263,11 +2316,13 @@
         "app.auto_close_chase",
         "app.closing",
         "app.due_today",
+        "app.emergency",
         "app.entra_check",
         "app.escalation",
         "app.jobs",
         "app.messages",
         "app.msp",
+        "app.outage",
         "app.reopening",
         "app.resolution",
         "app.routers.auth",
@@ -2309,6 +2364,41 @@
       ]
     },
     {
+      "classes": [
+        "Outage",
+        "OutageError",
+        "SwitchedOff"
+      ],
+      "file": "app/outage.py",
+      "functions": [
+        "is_on",
+        "lock_on",
+        "status",
+        "turn_off",
+        "turn_on"
+      ],
+      "imported_by": [
+        "app.auth",
+        "app.emergency",
+        "app.mail",
+        "app.routers.admin",
+        "app.templating"
+      ],
+      "imports": [
+        "app.audit",
+        "app.models",
+        "app.notifications",
+        "app.outbox"
+      ],
+      "module": "app.outage",
+      "routes": [],
+      "summary": "Outage mode (#164): the switch that lets agents sign in with an emergency password while Entra is down.",
+      "tables": [],
+      "tests": [
+        "tests/test_outage_mode.py"
+      ]
+    },
+    {
       "classes": [],
       "file": "app/outbox.py",
       "functions": [
@@ -2319,6 +2409,7 @@
         "queue_approval_reminder",
         "queue_approval_withdrawn",
         "queue_chase",
+        "queue_emergency_reset",
         "queue_follower_update",
         "queue_message",
         "queue_msp_forward",
@@ -2336,6 +2427,7 @@
         "app.messages",
         "app.msp",
         "app.msp_actions",
+        "app.outage",
         "app.raising"
       ],
       "imports": [
@@ -2824,6 +2916,9 @@
         "list_users",
         "move_subrequest_template",
         "move_type_question",
+        "outage_off",
+        "outage_on",
+        "outage_page",
         "preview_email_template",
         "remove_approval_group_member",
         "remove_membership",
@@ -2866,6 +2961,7 @@
         "app.config",
         "app.database",
         "app.email_templates",
+        "app.emergency",
         "app.feedback",
         "app.followers",
         "app.forms",
@@ -2873,6 +2969,7 @@
         "app.models",
         "app.msp",
         "app.never_follow",
+        "app.outage",
         "app.pagination",
         "app.permissions",
         "app.request_questions",
@@ -3010,6 +3107,21 @@
           "handler": "remove_never_follow",
           "method": "POST",
           "path": "/admin/never-follow/{row_id}/remove"
+        },
+        {
+          "handler": "outage_page",
+          "method": "GET",
+          "path": "/admin/outage"
+        },
+        {
+          "handler": "outage_off",
+          "method": "POST",
+          "path": "/admin/outage/off"
+        },
+        {
+          "handler": "outage_on",
+          "method": "POST",
+          "path": "/admin/outage/on"
         },
         {
           "handler": "view_outbound_mail",
@@ -3261,6 +3373,7 @@
         "callback",
         "dev_login_form",
         "dev_login_submit",
+        "emergency_login",
         "local_login",
         "login_page",
         "logout",
@@ -3276,6 +3389,7 @@
         "app.breakglass",
         "app.config",
         "app.database",
+        "app.emergency",
         "app.identity",
         "app.models",
         "app.notifications",
@@ -3309,6 +3423,11 @@
           "handler": "dev_login_submit",
           "method": "POST",
           "path": "/auth/dev-login"
+        },
+        {
+          "handler": "emergency_login",
+          "method": "POST",
+          "path": "/auth/emergency-login"
         },
         {
           "handler": "local_login",
@@ -3515,8 +3634,10 @@
       "classes": [],
       "file": "app/routers/my_settings.py",
       "functions": [
+        "emergency_password_page",
         "notification_settings",
         "report_browser_time_zone",
+        "save_emergency_password",
         "save_notification_settings",
         "save_time_zone",
         "sign_out_everywhere"
@@ -3529,15 +3650,27 @@
         "app.auth",
         "app.config",
         "app.database",
+        "app.emergency",
         "app.models",
         "app.notification_settings",
         "app.notifications",
         "app.sessions",
+        "app.settings_store",
         "app.templating",
         "app.time_zones"
       ],
       "module": "app.routers.my_settings",
       "routes": [
+        {
+          "handler": "emergency_password_page",
+          "method": "GET",
+          "path": "/settings/emergency-password"
+        },
+        {
+          "handler": "save_emergency_password",
+          "method": "POST",
+          "path": "/settings/emergency-password"
+        },
         {
           "handler": "notification_settings",
           "method": "GET",
@@ -4167,6 +4300,7 @@
         "app.activity",
         "app.auth",
         "app.breakglass",
+        "app.emergency",
         "app.entra_check",
         "app.main",
         "app.routers.admin",
@@ -4207,6 +4341,7 @@
         "app.bank_holidays",
         "app.bulk_resolve",
         "app.categories",
+        "app.emergency",
         "app.entra_check",
         "app.inbound",
         "app.mail",
@@ -4219,6 +4354,7 @@
         "app.routers.admin",
         "app.routers.approvals",
         "app.routers.bulk_resolve",
+        "app.routers.my_settings",
         "app.routers.tickets",
         "app.scheduled_jobs",
         "app.sessions",
@@ -4260,6 +4396,7 @@
         "tests/test_msp_real_mail.py",
         "tests/test_never_follow.py",
         "tests/test_notification_followup.py",
+        "tests/test_outage_mode.py",
         "tests/test_outbound_mail.py",
         "tests/test_presence.py",
         "tests/test_raising.py",
@@ -4646,6 +4783,7 @@
         "app.database",
         "app.forms",
         "app.models",
+        "app.outage",
         "app.permissions",
         "app.presence",
         "app.time_zones",
@@ -5253,6 +5391,12 @@
       "type": "int"
     },
     {
+      "default": "10",
+      "env": "RATE_LIMIT_EMERGENCY_PER_MINUTE",
+      "name": "rate_limit_emergency_per_minute",
+      "type": "int"
+    },
+    {
       "default": "600",
       "env": "RATE_LIMIT_WEBHOOK_PER_MINUTE",
       "name": "rate_limit_webhook_per_minute",
@@ -5402,6 +5546,7 @@
     "tests/test_notification_followup.py",
     "tests/test_notification_settings.py",
     "tests/test_notifications.py",
+    "tests/test_outage_mode.py",
     "tests/test_outbound_mail.py",
     "tests/test_pagination_and_limits.py",
     "tests/test_permissions.py",

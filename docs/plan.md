@@ -392,6 +392,13 @@ is audited and rings the super admins' bell. Decisions are in `docs/build-plan.m
    emergency password used during the outage, and asks those agents to set
    a new one by email and at their next SSO sign-in.
 
+Built in 6D (#164, `app/outage.py`, `app/emergency.py`): the emergency password is its own hashed column, set at
+My settings > Emergency password (minimum length a setting, placeholder 14; never a break-glass password). Outage mode is
+one `setting` row so every replica sees it. It is switched on by a **break-glass account only** and off by any super
+admin, with an audit entry and a bell entry to the other super admins each time. Only the sessions an emergency sign-in
+started (`user_session.emergency`) end when it is switched off. The sign-in has its own rate limit bucket and shares the
+local account lockout; inactive agents, end users and break-glass accounts are refused. Decisions: `docs/build-plan.md`.
+
 **Visibility.** Team memberships carry a level: `member` (sees and works the
 team's tickets) or `viewer` (read-only). Agents see only tickets for teams
 they belong to, plus every untriaged ticket. Restricted work (HR, security)

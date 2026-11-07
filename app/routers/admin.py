@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -19,6 +20,7 @@ from app.activity import (
     SSO_FAILED,
 )
 from app.bank_holidays import REGIONS as BANK_HOLIDAY_REGIONS
+from app import emergency, outage
 from app.audit import log_action
 from app.auth import hash_password, require_permission, require_roles
 from app.permissions import ASSIGNABLE_ROLES, MANAGE_REQUEST_TEMPLATES, PERMISSIONS
@@ -240,6 +242,10 @@ def update_user(
         ended = revoke_user_sessions(session, target.id)
         if ended:
             log_action(session, admin.email, "user", target.id, "sessions_revoked", f"role changed; {ended} ended")
+        if not emergency.may_hold_one(target) and target.emergency_password_hash:
+            # End users get no outage-mode fallback (#164); the sign-in refuses them anyway, this leaves no hash behind.
+            target.emergency_password_hash = target.emergency_password_set_at = target.emergency_password_used_at = None
+            log_action(session, admin.email, "user", target.id, "emergency_password_invalidated", "role changed")
         if role not in ASSIGNABLE_ROLES:
             # Grants only mean something for a role that may hold them; drop them rather than leave them dormant.
             for row in session.exec(select(UserPermission).where(UserPermission.user_id == target.id)).all():
@@ -1888,3 +1894,44 @@ def view_scheduled_jobs(
         "admin_scheduled_jobs.html",
         {"rows": rows, "status": status_line(rows, now, timing(session, JOB_LATE_MINUTES), {job.name for job in SCHEDULED_JOBS}), "now": now, "user": user},
     )
+
+
+@router.get("/outage", response_class=HTMLResponse)
+def outage_page(
+    request: Request, message: str = "", user: User = Depends(require_super_admin), session: Session = Depends(get_session),
+):
+    """Outage mode (#164, app/outage.py): the state, who may switch it on, and which agents have no emergency password yet."""
+    agents = session.exec(
+        select(User).where(User.role.in_([UserRole.AGENT, UserRole.SUPER_ADMIN]), User.is_active, User.is_break_glass.is_(False)).order_by(User.email)
+    ).all()
+    return templates.TemplateResponse(
+        request,
+        "admin_outage.html",
+        {
+            "user": user, "message": message, "status": outage.status(session),
+            "without": [a for a in agents if not a.emergency_password_hash], "with_count": sum(1 for a in agents if a.emergency_password_hash),
+        },
+    )
+
+
+@router.post("/outage/on")
+def outage_on(user: User = Depends(require_super_admin), session: Session = Depends(get_session)):
+    try:
+        outage.turn_on(session, user)
+    except outage.OutageError as refusal:
+        session.rollback()
+        return RedirectResponse("/admin/outage?" + urlencode({"message": str(refusal)}), status_code=303)
+    session.commit()
+    return RedirectResponse("/admin/outage?" + urlencode({"message": "Outage mode is on."}), status_code=303)
+
+
+@router.post("/outage/off")
+def outage_off(user: User = Depends(require_super_admin), session: Session = Depends(get_session)):
+    try:
+        result = outage.turn_off(session, user)
+    except outage.OutageError as refusal:
+        session.rollback()
+        return RedirectResponse("/admin/outage?" + urlencode({"message": str(refusal)}), status_code=303)
+    session.commit()
+    message = f"Outage mode is off. {result.sessions_ended} emergency session(s) ended, {result.passwords_invalidated} emergency password(s) cleared."
+    return RedirectResponse("/admin/outage?" + urlencode({"message": message}), status_code=303)

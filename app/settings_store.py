@@ -42,6 +42,7 @@ SESSION_IDLE_MINUTES = "session_idle_minutes"
 SESSION_MAX_DAYS = "session_max_days"
 BREAK_GLASS_IDLE_MINUTES = "break_glass_idle_minutes"
 SESSION_KEEP_DAYS = "session_keep_days"
+EMERGENCY_PASSWORD_MIN_LENGTH = "emergency_password_min_length"
 APPROVAL_DEFAULT_PASS_PERCENT = "approval_default_pass_percent"
 APPROVAL_REMINDERS_ENABLED = "approval_reminders_enabled"
 APPROVAL_REMIND_AFTER_DAYS = "approval_remind_after_days"
@@ -295,6 +296,16 @@ REGISTRY: dict[str, SettingDef] = {
         label="Sign-in: longest a session can last (days)",
         kind="count",
         description="Even an active session ends this long after sign-in, and the person signs in again. Placeholder 14, TBC. More than 365 counts as 365.",
+        default="14",
+    ),
+    EMERGENCY_PASSWORD_MIN_LENGTH: SettingDef(
+        key=EMERGENCY_PASSWORD_MIN_LENGTH,
+        label="Emergency password: shortest allowed (characters)",
+        kind="count",
+        description=(
+            "The least an agent's emergency password (outage mode) may have. Placeholder 14, TBC. Applies to passwords set "
+            "from now on. The longest is 72 bytes, a limit of the hashing."
+        ),
         default="14",
     ),
     SESSION_KEEP_DAYS: SettingDef(

@@ -37,6 +37,7 @@ APPROVAL_OVERDUE = "approval_overdue"
 APPROVAL_WAITING = "approval_waiting"
 DUE_TODAY = "due_today"
 NO_ACTIVE_APPROVERS = "approval_no_active_approvers"  # #161: a request waits because nobody active can approve it (not a listed event type)
+OUTAGE_MODE = "outage_mode"  # #164: outage mode was switched on or off (not a listed event type)
 BREAK_GLASS_SIGN_IN = "break_glass_sign_in"  # #163: a break-glass account signed in (not a listed event type)
 ACCOUNT_DEACTIVATED = "account_deactivated"  # #158: the nightly Entra check made someone inactive
 CHASE_GIVEN_UP = "chase_given_up"
@@ -512,6 +513,17 @@ def notify_break_glass_sign_in(session: Session, super_admin: User, person: User
         f"Break-glass account {person.email} signed in{where}. If this was not planned, reset it and check the audit log.",
         person.email,  # the account that signed in is not told of itself
     )
+
+
+def notify_outage_mode(session: Session, super_admin: User, actor: User, on: bool) -> Optional[Notification]:
+    """Tells a super admin, in the bell, that outage mode was switched on or off (app/outage.py). Not a listed
+    event type, so it is always on. Not the person who did it. Does not commit."""
+    text = (
+        f"Outage mode was switched on by {actor.email}: agents can sign in with an emergency password. Check the audit log if this was not planned."
+        if on else
+        f"Outage mode was switched off by {actor.email}: emergency sessions ended and emergency passwords that were used have been cleared."
+    )
+    return notify(session, super_admin, OUTAGE_MODE, None, text, actor.email)
 
 
 def notify_chase_given_up(session: Session, ticket: Ticket) -> list[Notification]:

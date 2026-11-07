@@ -33,6 +33,7 @@ from app.email_templates import LINK_LEFT_OUT, REQUEST_BLOCK, current_text, rend
 from app.followers import is_follower
 from app.graph_client import graph_client
 from app.messages import about_text, in_a_split, is_triaged, mail_subject, requester_visible_messages
+from app import emergency, outage
 from app.never_follow import is_listed
 from app.approval_groups import is_member
 from app.notification_settings import APPROVAL_OVERDUE as APPROVAL_OVERDUE_EVENT, EMAIL, FOLLOWER_UPDATE as FOLLOWER_UPDATE_EVENT, is_enabled, wants_approval_email
@@ -49,7 +50,7 @@ from app.models import (
     User,
     UserRole,
 )
-from app.outbox import ACKNOWLEDGEMENT, MSP_FORWARD, MSP_HANDOFF, MSP_RELEASE, APPROVAL, APPROVAL_OVERDUE, APPROVAL_REMINDER, APPROVAL_WITHDRAWN, AUTOMATIC_TO_REQUESTER, CHASE, FOLLOWER_UPDATE, NOTICE, RAISED_FOR, REPLY
+from app.outbox import ACKNOWLEDGEMENT, EMERGENCY_RESET, MSP_FORWARD, MSP_HANDOFF, MSP_RELEASE, APPROVAL, APPROVAL_OVERDUE, APPROVAL_REMINDER, APPROVAL_WITHDRAWN, AUTOMATIC_TO_REQUESTER, CHASE, FOLLOWER_UPDATE, NOTICE, RAISED_FOR, REPLY
 from app.raising import should_tell_requester
 from app.settings_store import APPROVAL_LINK_MINUTES, AUTOMATIC_EMAIL_CAP, CHASE_RESOLVE_AFTER_DAYS, REGISTRY, get_int_setting
 from app.storage import get_storage
@@ -331,6 +332,30 @@ def build_approval_overdue_mail(session: Session, row: OutboundEmail) -> Mail:
     )
 
 
+def build_emergency_reset_mail(session: Session, row: OutboundEmail) -> Mail:
+    """Tells an agent their emergency password was cleared. Asked again now: they are still an active agent, outage
+    mode is off and they have not already set a new one."""
+    person = session.exec(select(User).where(func.lower(User.email) == row.to_address.strip().lower())).first()
+    if person is None or not person.is_active or not emergency.may_hold_one(person):
+        raise Unsendable("The person is not an active agent")
+    if person.emergency_password_hash:
+        raise Unsendable("They have already set a new emergency password")
+    if outage.is_on(session):
+        raise NotReady("Outage mode is on again; the email waits until it is off")  # not given up on: the reset is still owed
+    _guard_recipient(row)
+    base = settings.public_base_url.rstrip("/")
+    values = {
+        "name": person.display_name,
+        "settings_link": f"{base}/settings/emergency-password" if base else "(open Settings > Emergency password in the app)",
+    }
+    subject, text = current_text(session, "emergency_password_reset")
+    body = render_text(text, values)
+    return Mail(
+        to=row.to_address, cc=[], subject=render_text(subject, values),
+        body=body, record=body, automatic=True, reference="none",
+    )
+
+
 def _with_files(session: Session, row: OutboundEmail, ticket: Ticket) -> tuple[str, list[tuple[str, str, bytes]]]:
     """The row's text and the files it names (`attachment_ids`, fixed when it was queued) read from storage. A file that
     cannot be read must not stop the email: it is logged, and the text says plainly that it was not attached."""
@@ -420,6 +445,7 @@ BUILDERS: dict[str, Callable[[Session, OutboundEmail], Mail]] = {
     MSP_RELEASE: build_msp_release_mail,
     MSP_FORWARD: build_msp_forward_mail,
     FOLLOWER_UPDATE: build_follower_update_mail,
+    EMERGENCY_RESET: build_emergency_reset_mail,
 }
 
 

@@ -6,6 +6,7 @@
   Choose how you are told about each event. The bell and email work; Teams works once it is connected (see the note beside it).
 </p>
 {% if saved %}<p role="status">Saved.</p>{% endif %}
+{% if can_have_emergency_password %}<p class="note"><a href="/settings/emergency-password">Emergency password</a> (for signing in if Microsoft sign-in is down)</p>{% endif %}
 
 <form method="post" action="/settings/time-zone">
   <fieldset>

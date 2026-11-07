@@ -6,6 +6,7 @@
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
 <body>
+  {% include "_outage_banner.html" %}
   <main class="login-page">
     <h1>IT Support Ticketing</h1>
 
@@ -21,6 +22,23 @@
       Development environment.
       <a href="/auth/dev-login">Use dev sign-in</a>.
     </p>
+    {% endif %}
+
+    {% if outage_status() %}
+    <hr />
+    <h2>Emergency sign-in (agents)</h2>
+    <p class="note">Outage mode is on. Sign in with your user name (your Microsoft sign-in address) and the emergency password you set in advance.</p>
+    <form method="post" action="/auth/emergency-login">
+      <label>
+        User name (UPN)
+        <input type="text" name="upn" autocomplete="username" required />
+      </label>
+      <label>
+        Emergency password
+        <input type="password" name="password" autocomplete="current-password" required />
+      </label>
+      <button type="submit">Sign in with emergency password</button>
+    </form>
     {% endif %}
 
     <hr />
