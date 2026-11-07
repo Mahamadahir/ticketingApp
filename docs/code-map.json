@@ -54,6 +54,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/e6a1c9d4b7f2_linked_identities.py",
+        "revision": "e6a1c9d4b7f2"
+      },
+      {
         "file": "migrations/versions/d5f1b7c3a928_outage_mode.py",
         "revision": "d5f1b7c3a928"
       },
@@ -68,17 +72,13 @@
       {
         "file": "migrations/versions/a7c1d4e9f258_server_side_sessions.py",
         "revision": "a7c1d4e9f258"
-      },
-      {
-        "file": "migrations/versions/edf905001a2e_bank_holiday_cache.py",
-        "revision": "edf905001a2e"
       }
     ],
-    "count": 59,
+    "count": 60,
     "heads": [
       {
-        "file": "migrations/versions/d5f1b7c3a928_outage_mode.py",
-        "revision": "d5f1b7c3a928"
+        "file": "migrations/versions/e6a1c9d4b7f2_linked_identities.py",
+        "revision": "e6a1c9d4b7f2"
       }
     ]
   },
@@ -288,6 +288,7 @@
       "imported_by": [
         "app.approval_reminders",
         "app.entra_check",
+        "app.linked_identities",
         "app.mail",
         "app.request_types",
         "app.routers.admin",
@@ -301,6 +302,7 @@
         "app.approval_groups",
         "app.audit",
         "app.email_templates",
+        "app.identity",
         "app.messages",
         "app.models",
         "app.notifications",
@@ -317,6 +319,7 @@
         "tests/test_approval_reminders.py",
         "tests/test_approvals.py",
         "tests/test_email_templates.py",
+        "tests/test_linked_identities.py",
         "tests/test_outbound_mail.py",
         "tests/test_requester_bell.py",
         "tests/test_self_approval.py",
@@ -377,6 +380,7 @@
         "app.escalation",
         "app.identity",
         "app.inbound",
+        "app.linked_identities",
         "app.msp",
         "app.msp_actions",
         "app.notification_settings",
@@ -427,6 +431,7 @@
         "app.routers.auth",
         "app.routers.bulk_resolve",
         "app.routers.feedback",
+        "app.routers.link_account",
         "app.routers.msp_mail",
         "app.routers.my_settings",
         "app.routers.notifications",
@@ -437,6 +442,7 @@
         "app.audit",
         "app.config",
         "app.database",
+        "app.identity",
         "app.models",
         "app.outage",
         "app.sessions",
@@ -780,6 +786,7 @@
         "app.identity",
         "app.inbound",
         "app.jobs",
+        "app.linked_identities",
         "app.mail",
         "app.main",
         "app.msp",
@@ -788,6 +795,7 @@
         "app.routers.admin",
         "app.routers.auth",
         "app.routers.dev_tools",
+        "app.routers.link_account",
         "app.routers.my_settings",
         "app.routers.webhooks",
         "app.storage",
@@ -815,6 +823,7 @@
         "tests/test_follower_updates.py",
         "tests/test_handoff_bells_holidays.py",
         "tests/test_inbound_mail.py",
+        "tests/test_linked_identities.py",
         "tests/test_mail_subscriptions.py",
         "tests/test_msp.py",
         "tests/test_msp_actions.py",
@@ -854,6 +863,7 @@
         "app.routers.dev_tools",
         "app.routers.feedback",
         "app.routers.health",
+        "app.routers.link_account",
         "app.routers.msp_mail",
         "app.routers.my_settings",
         "app.routers.notifications",
@@ -1153,8 +1163,7 @@
         "app.reopening",
         "app.routers.admin",
         "app.routers.portal",
-        "app.routers.tickets",
-        "app.visibility"
+        "app.routers.tickets"
       ],
       "imports": [
         "app.config",
@@ -1247,18 +1256,32 @@
       ],
       "file": "app/identity.py",
       "functions": [
+        "addresses_of",
         "is_follower_of",
         "is_requester",
+        "keep_as_alias",
+        "merged_into",
         "my_ticket_condition",
         "my_tickets_query",
         "normal_oid",
+        "people_for_addresses",
+        "person_for_address",
         "requester_emails",
         "resolve_sso_user"
       ],
       "imported_by": [
+        "app.approvals",
+        "app.auth",
+        "app.inbound",
+        "app.linked_identities",
+        "app.mail",
+        "app.msp",
         "app.notifications",
+        "app.raising",
         "app.routers.auth",
-        "app.routers.portal"
+        "app.routers.portal",
+        "app.time_zones",
+        "app.visibility"
       ],
       "imports": [
         "app.audit",
@@ -1270,6 +1293,7 @@
       "summary": "Which tickets a signed-in person counts as their own in the portal.",
       "tables": [],
       "tests": [
+        "tests/test_linked_identities.py",
         "tests/test_portal.py"
       ]
     },
@@ -1307,6 +1331,7 @@
         "app.followers",
         "app.forms",
         "app.graph_client",
+        "app.identity",
         "app.mail",
         "app.messages",
         "app.models",
@@ -1386,6 +1411,68 @@
     },
     {
       "classes": [
+        "AccountSummary",
+        "LinkError",
+        "LinkRow",
+        "Outcome"
+      ],
+      "file": "app/linked_identities.py",
+      "functions": [
+        "apply_link",
+        "approve",
+        "check_address",
+        "check_code",
+        "check_pair",
+        "classified_keys",
+        "decline",
+        "find_account",
+        "is_privileged",
+        "link_accounts",
+        "link_address",
+        "link_by_code",
+        "link_of",
+        "may_unlink",
+        "moved_keys",
+        "needs_approval",
+        "normal_address",
+        "not_carried_over",
+        "request_code",
+        "requester_addresses",
+        "rows_for",
+        "self_service_link",
+        "settle",
+        "summarise",
+        "unlink",
+        "user_foreign_keys"
+      ],
+      "imported_by": [
+        "app.routers.admin",
+        "app.routers.link_account"
+      ],
+      "imports": [
+        "app.approvals",
+        "app.audit",
+        "app.config",
+        "app.identity",
+        "app.mail",
+        "app.models",
+        "app.never_follow",
+        "app.notifications",
+        "app.sessions",
+        "app.settings_store",
+        "app.teams",
+        "app.ticket_service"
+      ],
+      "module": "app.linked_identities",
+      "routes": [],
+      "summary": "Linked identities (phase 6E, #165): one person known by a second identity.",
+      "tables": [],
+      "tests": [
+        "tests/test_linked_identities.py"
+      ]
+    },
+    {
+      "classes": [
         "LinkError"
       ],
       "file": "app/linking.py",
@@ -1461,12 +1548,15 @@
         "own_first_message",
         "quoted",
         "record_only",
+        "send_link_code",
+        "send_now",
         "send_through_graph"
       ],
       "imported_by": [
         "app.auto_close_chase",
         "app.inbound",
         "app.jobs",
+        "app.linked_identities",
         "app.msp"
       ],
       "imports": [
@@ -1479,6 +1569,7 @@
         "app.emergency",
         "app.followers",
         "app.graph_client",
+        "app.identity",
         "app.messages",
         "app.models",
         "app.never_follow",
@@ -1502,6 +1593,7 @@
         "tests/test_closing_email.py",
         "tests/test_email_templates.py",
         "tests/test_follower_updates.py",
+        "tests/test_linked_identities.py",
         "tests/test_msp.py",
         "tests/test_msp_actions.py",
         "tests/test_msp_mail.py",
@@ -1542,6 +1634,7 @@
         "app.routers.dev_tools",
         "app.routers.feedback",
         "app.routers.health",
+        "app.routers.link_account",
         "app.routers.msp_mail",
         "app.routers.my_settings",
         "app.routers.notifications",
@@ -1666,6 +1759,8 @@
         "GraphNotification",
         "GraphSubscription",
         "InboundMail",
+        "LinkCode",
+        "LinkedIdentity",
         "MailSyncState",
         "MembershipLevel",
         "Message",
@@ -1735,6 +1830,7 @@
         "app.followers",
         "app.identity",
         "app.inbound",
+        "app.linked_identities",
         "app.linking",
         "app.mail",
         "app.main",
@@ -1761,6 +1857,7 @@
         "app.routers.auth",
         "app.routers.bulk_resolve",
         "app.routers.feedback",
+        "app.routers.link_account",
         "app.routers.msp_mail",
         "app.routers.my_settings",
         "app.routers.notifications",
@@ -1844,6 +1941,14 @@
         {
           "class": "InboundMail",
           "table": "inboundmail"
+        },
+        {
+          "class": "LinkCode",
+          "table": "link_code"
+        },
+        {
+          "class": "LinkedIdentity",
+          "table": "linked_identity"
         },
         {
           "class": "MailSyncState",
@@ -2003,6 +2108,7 @@
         "tests/test_htmx_errors.py",
         "tests/test_htmx_partials.py",
         "tests/test_inbound_mail.py",
+        "tests/test_linked_identities.py",
         "tests/test_linking.py",
         "tests/test_login_lockout.py",
         "tests/test_mail_subscriptions.py",
@@ -2124,6 +2230,7 @@
         "app.config",
         "app.email_templates",
         "app.followers",
+        "app.identity",
         "app.mail",
         "app.messages",
         "app.models",
@@ -2210,6 +2317,7 @@
       "imported_by": [
         "app.followers",
         "app.inbound",
+        "app.linked_identities",
         "app.mail",
         "app.msp",
         "app.routers.admin"
@@ -2296,6 +2404,7 @@
         "notify_break_glass_sign_in",
         "notify_chase_given_up",
         "notify_due_today",
+        "notify_link_requested",
         "notify_mentions",
         "notify_msp_handed_off",
         "notify_msp_handoff_warning",
@@ -2320,6 +2429,7 @@
         "app.entra_check",
         "app.escalation",
         "app.jobs",
+        "app.linked_identities",
         "app.messages",
         "app.msp",
         "app.outage",
@@ -2551,6 +2661,7 @@
       "imports": [
         "app.backdating",
         "app.followers",
+        "app.identity",
         "app.messages",
         "app.models",
         "app.notification_settings",
@@ -2893,10 +3004,13 @@
         "add_subrequest_template",
         "add_thanks_rule_route",
         "add_type_question",
+        "approve_link",
         "category_review",
         "clear_user_object_id",
+        "create_link",
         "create_local_user",
         "create_team",
+        "decline_link",
         "delete_subrequest_template",
         "delete_type_question",
         "dismiss_thanks_candidate",
@@ -2920,6 +3034,7 @@
         "outage_on",
         "outage_page",
         "preview_email_template",
+        "preview_link",
         "remove_approval_group_member",
         "remove_membership",
         "remove_never_follow",
@@ -2935,6 +3050,7 @@
         "sign_out_user_everywhere",
         "thanks_candidate_to_rule",
         "toggle_thanks_rule",
+        "unlink_link",
         "unlock_user",
         "update_category",
         "update_user",
@@ -2966,6 +3082,7 @@
         "app.followers",
         "app.forms",
         "app.inbound",
+        "app.linked_identities",
         "app.models",
         "app.msp",
         "app.never_follow",
@@ -3087,6 +3204,31 @@
           "handler": "view_feedback",
           "method": "GET",
           "path": "/admin/feedback"
+        },
+        {
+          "handler": "create_link",
+          "method": "POST",
+          "path": "/admin/links"
+        },
+        {
+          "handler": "preview_link",
+          "method": "GET",
+          "path": "/admin/links/preview"
+        },
+        {
+          "handler": "approve_link",
+          "method": "POST",
+          "path": "/admin/links/{link_id}/approve"
+        },
+        {
+          "handler": "decline_link",
+          "method": "POST",
+          "path": "/admin/links/{link_id}/decline"
+        },
+        {
+          "handler": "unlink_link",
+          "method": "POST",
+          "path": "/admin/links/{link_id}/unlink"
         },
         {
           "handler": "view_mail_intake",
@@ -3394,6 +3536,7 @@
         "app.models",
         "app.notifications",
         "app.rate_limit",
+        "app.routers.link_account",
         "app.sessions",
         "app.templating"
       ],
@@ -3585,6 +3728,70 @@
       "summary": "",
       "tables": [],
       "tests": []
+    },
+    {
+      "classes": [],
+      "file": "app/routers/link_account.py",
+      "functions": [
+        "cancel",
+        "complete_link_sign_in",
+        "link_account_page",
+        "send_code",
+        "start_sign_in",
+        "unlink",
+        "verify_code"
+      ],
+      "imported_by": [
+        "app.main",
+        "app.routers.auth"
+      ],
+      "imports": [
+        "app.auth",
+        "app.config",
+        "app.database",
+        "app.linked_identities",
+        "app.models",
+        "app.settings_store",
+        "app.templating"
+      ],
+      "module": "app.routers.link_account",
+      "routes": [
+        {
+          "handler": "link_account_page",
+          "method": "GET",
+          "path": "/settings/link-account"
+        },
+        {
+          "handler": "send_code",
+          "method": "POST",
+          "path": "/settings/link-account/code"
+        },
+        {
+          "handler": "start_sign_in",
+          "method": "POST",
+          "path": "/settings/link-account/sign-in"
+        },
+        {
+          "handler": "verify_code",
+          "method": "POST",
+          "path": "/settings/link-account/verify"
+        },
+        {
+          "handler": "cancel",
+          "method": "POST",
+          "path": "/settings/link-account/{link_id}/cancel"
+        },
+        {
+          "handler": "unlink",
+          "method": "POST",
+          "path": "/settings/link-account/{link_id}/unlink"
+        }
+      ],
+      "summary": "My settings > Link another account (phase 6E, #165): a signed-in person adds a second identity of their own.",
+      "tables": [],
+      "tests": [
+        "tests/test_linked_identities.py"
+      ]
     },
     {
       "classes": [],
@@ -4302,6 +4509,7 @@
         "app.breakglass",
         "app.emergency",
         "app.entra_check",
+        "app.linked_identities",
         "app.main",
         "app.routers.admin",
         "app.routers.auth",
@@ -4344,6 +4552,7 @@
         "app.emergency",
         "app.entra_check",
         "app.inbound",
+        "app.linked_identities",
         "app.mail",
         "app.msp",
         "app.never_follow",
@@ -4354,6 +4563,7 @@
         "app.routers.admin",
         "app.routers.approvals",
         "app.routers.bulk_resolve",
+        "app.routers.link_account",
         "app.routers.my_settings",
         "app.routers.tickets",
         "app.scheduled_jobs",
@@ -4389,6 +4599,7 @@
         "tests/test_follower_updates.py",
         "tests/test_handoff_bells_holidays.py",
         "tests/test_inbound_mail.py",
+        "tests/test_linked_identities.py",
         "tests/test_mail_subscriptions.py",
         "tests/test_msp.py",
         "tests/test_msp_actions.py",
@@ -4711,6 +4922,7 @@
         "app.auto_close_chase",
         "app.inbound",
         "app.jobs",
+        "app.linked_identities",
         "app.mail",
         "app.routers.admin",
         "app.ticket_service"
@@ -4729,6 +4941,7 @@
         "tests/test_approval_reminders.py",
         "tests/test_auto_close_chase.py",
         "tests/test_inbound_mail.py",
+        "tests/test_linked_identities.py",
         "tests/test_outbound_mail.py",
         "tests/test_teams.py",
         "tests/test_teams_copy_sending.py",
@@ -4772,6 +4985,7 @@
         "app.routers.auth",
         "app.routers.bulk_resolve",
         "app.routers.feedback",
+        "app.routers.link_account",
         "app.routers.msp_mail",
         "app.routers.my_settings",
         "app.routers.notifications",
@@ -4859,6 +5073,7 @@
         "app.due_today",
         "app.followers",
         "app.inbound",
+        "app.linked_identities",
         "app.linking",
         "app.messages",
         "app.msp",
@@ -4898,6 +5113,7 @@
         "tests/test_category_admin.py",
         "tests/test_due_date.py",
         "tests/test_email_preview.py",
+        "tests/test_linked_identities.py",
         "tests/test_msp_mail.py",
         "tests/test_portal.py",
         "tests/test_reopening.py",
@@ -4962,6 +5178,7 @@
       ],
       "imports": [
         "app.graph_client",
+        "app.identity",
         "app.models",
         "app.settings_store",
         "app.windows_zones"
@@ -5062,7 +5279,7 @@
         "app.triage"
       ],
       "imports": [
-        "app.followers",
+        "app.identity",
         "app.messages",
         "app.models",
         "app.permissions"
@@ -5533,6 +5750,7 @@
     "tests/test_htmx_errors.py",
     "tests/test_htmx_partials.py",
     "tests/test_inbound_mail.py",
+    "tests/test_linked_identities.py",
     "tests/test_linking.py",
     "tests/test_login_lockout.py",
     "tests/test_mail_subscriptions.py",

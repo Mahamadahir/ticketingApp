@@ -744,3 +744,13 @@ def test_the_admin_users_page_lists_links_and_marks_the_merged_away_account(clie
     page = client.get("/admin/users").text
     assert "Linked identities" in page and "merged into account" in page
     assert client.post(f"/admin/users/{other.id}/active", data={"is_active": "true"}).status_code == 400
+
+
+def test_an_account_that_became_an_agent_after_the_code_was_sent_is_still_refused(db_session, captured):
+    me, other = mk(db_session, "ann@a.example"), mk(db_session, "ann@b.example")
+    links.request_code(db_session, me, "ann@b.example", False)
+    other.role = UserRole.AGENT
+    db_session.add(other)
+    db_session.commit()
+    with pytest.raises(links.LinkError, match="emailed code"):
+        links.link_by_code(db_session, me, "ann@b.example", code_in(captured))
