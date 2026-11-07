@@ -184,6 +184,70 @@ class UserSession(SQLModel, table=True):
     emergency: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
 
 
+class LinkedIdentity(SQLModel, table=True):
+    """One person known by a second identity (phase 6E, app/linked_identities.py). The main person is
+    `main_user_id`; the second identity is an email address (`email`, lower case), its Entra object id when
+    it has signed in, and, when it was a separate account, that account (`secondary_user_id`, kept and made
+    inactive, never deleted). `requester_emails` of the main person includes every active address, and an
+    Entra sign-in with the second identity resolves to the main person.
+
+    status: pending (waiting for a super admin, because an agent or super admin is involved), active,
+    unlinked, declined. method: how the second identity was shown to be theirs: admin, sign_in, email_code,
+    or email_changed (the person's own old address after an Entra email change)."""
+
+    __tablename__ = "linked_identity"
+    __table_args__ = (
+        # An address, a directory account and a merged-away account each belong to one person at a time.
+        Index("uq_linked_identity_active_email", "email", unique=True, postgresql_where=text("status = 'active'")),
+        Index(
+            "uq_linked_identity_active_oid", "entra_object_id", unique=True,
+            postgresql_where=text("status = 'active' AND entra_object_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_linked_identity_active_secondary", "secondary_user_id", unique=True,
+            postgresql_where=text("status = 'active' AND secondary_user_id IS NOT NULL"),
+        ),
+        Index("uq_linked_identity_pending_email", "email", unique=True, postgresql_where=text("status = 'pending'")),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    main_user_id: int = Field(foreign_key="user.id", index=True)
+    secondary_user_id: Optional[int] = Field(default=None, foreign_key="user.id", index=True)
+    email: str = Field(index=True)
+    entra_object_id: Optional[str] = Field(default=None)
+    method: str
+    status: str = Field(index=True)
+    requested_by_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    approved_by_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    unlinked_by_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    # Whether the merged-away account was active when linked, so unlinking restores it as it was.
+    secondary_was_active: bool = Field(default=True, sa_column_kwargs={"server_default": "true"})
+    # What moved to the main account on linking, as text for the audit trail and the admin page.
+    moved_summary: Optional[str] = Field(default=None)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    activated_at: Optional[datetime] = Field(default=None)
+    unlinked_at: Optional[datetime] = Field(default=None)
+
+
+class LinkCode(SQLModel, table=True):
+    """An emailed 6-digit code that proves a signed-in person owns a second address (phase 6E). Only a keyed
+    hash of the code is kept. It expires, allows a few attempts and is single use; the rows also count how many
+    codes were asked for, per person and per address."""
+
+    __tablename__ = "link_code"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    address: str = Field(index=True)
+    code_hash: str
+    # Whether the address's own account (if it has one) is to be the main account, rather than the requester's.
+    other_is_main: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), index=True)
+    expires_at: datetime
+    attempts: int = Field(default=0, sa_column_kwargs={"server_default": "0"})
+    used_at: Optional[datetime] = Field(default=None)
+
+
 class RequesterTimeZone(SQLModel, table=True):
     """The time zone of someone who writes in by email, read from their Outlook mailbox through Graph
     (mailboxSettings.timeZone, app/time_zones.py). Keyed by lower-cased address, the way a ticket stores its

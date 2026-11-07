@@ -45,6 +45,7 @@ from app.followers import add_follower, followers_of
 from app.mail import own_first_message
 from app.never_follow import is_msp
 from app.messages import add_note, mail_subject, record_msp_message, record_notice, requester_visible_messages
+from app.identity import person_for_address
 from app.models import (
     FINISHED_STATUSES,
     Attachment,
@@ -191,7 +192,7 @@ def check_can_send(session: Session, ticket: Ticket) -> str:
 
 
 def _person(session: Session, email: str) -> str:
-    account = session.exec(select(User).where(User.email == email)).first()
+    account = person_for_address(session, email)
     name = (account.display_name or "").strip() if account is not None else ""
     return f"{name} ({email})" if name and name != email else email
 

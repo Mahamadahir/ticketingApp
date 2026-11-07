@@ -74,6 +74,7 @@ from app.forms import MAX_MESSAGE_LENGTH
 from app.graph_client import graph_client
 from app.mail import describe_failure
 from app.messages import record_inbound
+from app.identity import addresses_of, person_for_address
 from app.models import (
     TICKET_TYPE_PREFIXES,
     AuditLog,
@@ -399,7 +400,11 @@ def find_ticket_for(session: Session, mail: IncomingMail) -> tuple[Optional[Tick
 def may_reply(session: Session, ticket: Ticket, sender: str) -> bool:
     """Only the requester or a follower may add to a ticket by mail. An agent copied as an internal
     follower is not one: agents answer from the ticket page."""
-    return sender == ticket.requester_email.lower() or is_follower(session, ticket, sender, include_internal=False)
+    # A linked address is the same person: mail from any address of the requester (or of a follower) counts.
+    return any(
+        address == ticket.requester_email.lower() or is_follower(session, ticket, address, include_internal=False)
+        for address in addresses_of(session, sender)
+    )
 
 
 def _join_thread(session: Session, ticket: Ticket, sender: str) -> bool:
@@ -628,7 +633,7 @@ def ingest_mail(
     note_requester(session, sender)  # whoever writes in gets their mailbox time zone read (app/time_zones.py)
     body = _body_of(mail)
     files = attachments or []
-    account = session.exec(select(User).where(func.lower(User.email) == sender)).first()
+    account = person_for_address(session, sender)
     author_id = account.id if account is not None else None
 
     ticket, how = find_ticket_for(session, mail)

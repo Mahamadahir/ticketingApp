@@ -26,6 +26,7 @@ from app.database import get_session
 from app.identity import SsoRefused, resolve_sso_user
 from app.models import User, UserRole
 from app.notifications import notify_break_glass_sign_in
+from app.routers.link_account import LINK_FLOW_KEY, complete_link_sign_in
 from app.rate_limit import BREAK_GLASS, EMERGENCY, rate_limited
 from sqlmodel import select
 
@@ -60,6 +61,12 @@ def sso_start(request: Request):
 
 @router.get("/callback")
 def callback(request: Request, code: str, state: str, session: Session = Depends(get_session)):
+    # Linking a second identity (My settings > Link another account) comes back to this same redirect URI, with
+    # its own state, tied to the signed-in person. It is never a sign-in.
+    link_flow = request.session.get(LINK_FLOW_KEY)
+    if isinstance(link_flow, dict) and secrets.compare_digest(state.encode(), str(link_flow.get("state", "")).encode()):
+        request.session.pop(LINK_FLOW_KEY, None)
+        return complete_link_sign_in(request, session, code, link_flow)
     # Removed as soon as it is checked, so a state value works exactly once.
     expected_state = request.session.pop("oauth_state", None)
     # Compared as bytes: compare_digest raises on non-ASCII text, which would

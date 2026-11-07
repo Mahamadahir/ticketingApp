@@ -17,6 +17,62 @@
   <a href="/admin/users?inactive=open_tickets">Inactive agents with open tickets</a>
   {% endif %}
 </p>
+{% if link_error %}<p class="error" role="alert">{{ link_error }}</p>{% endif %}
+
+{% if pending_links %}
+<h3>Link requests waiting for you</h3>
+<p class="note">Someone asked to link a second identity and an agent or super admin account is involved, so it needs a super admin.</p>
+<table>
+  <thead><tr><th>Address</th><th>Main account</th><th>Other account</th><th>Asked by</th><th>How shown</th><th></th></tr></thead>
+  <tbody>
+    {% for row in pending_links %}
+    <tr>
+      <td>{{ row.link.email }}</td>
+      <td>{{ row.main.email }} ({{ row.main.role.value }})</td>
+      <td>{% if row.secondary %}{{ row.secondary.email }} ({{ row.secondary.role.value }}){% else %}address only{% endif %}</td>
+      <td>{{ row.requested_by.email if row.requested_by else "" }}</td>
+      <td>{{ row.link.method|replace("_", " ") }}</td>
+      <td>
+        <form method="post" action="/admin/links/{{ row.link.id }}/approve" class="inline-form"><button type="submit">Approve</button></form>
+        <form method="post" action="/admin/links/{{ row.link.id }}/decline" class="inline-form"><button type="submit">Decline</button></form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<h3>Linked identities</h3>
+<p class="note">
+  One person known by two identities. The main account keeps everything; the other account is kept, inactive, and its
+  tickets moved to the main one. Unlinking makes it its own account again (moved tickets stay where they are).
+</p>
+{% if active_links %}
+<table>
+  <thead><tr><th>Address</th><th>Main account</th><th>Other account</th><th>How</th><th>What moved</th><th></th></tr></thead>
+  <tbody>
+    {% for row in active_links %}
+    <tr>
+      <td>{{ row.link.email }}</td>
+      <td>{{ row.main.email }}</td>
+      <td>{% if row.secondary %}{{ row.secondary.email }}{% else %}address only{% endif %}</td>
+      <td>{{ row.link.method|replace("_", " ") }}</td>
+      <td>{{ row.link.moved_summary or "" }}</td>
+      <td><form method="post" action="/admin/links/{{ row.link.id }}/unlink" class="inline-form"><button type="submit">Unlink</button></form></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>None.</p>
+{% endif %}
+<form method="get" action="/admin/links/preview">
+  <label>Main account email <input type="email" name="main_email" required /></label>
+  <label>Account to link into it <input type="email" name="other_email" required /></label>
+  <button type="submit">Review the link</button>
+</form>
+
+<h3>All users</h3>
 <table>
   <thead>
     <tr>
@@ -33,7 +89,7 @@
   <tbody>
     {% for u in page.items %}
     <tr>
-      <td>{{ u.email }}{% if u.is_break_glass %} <b>(break-glass)</b>{% endif %}</td>
+      <td>{{ u.email }}{% if u.is_break_glass %} <b>(break-glass)</b>{% endif %}{% if u.id in merged_into %} <b>(linked: merged into account {{ merged_into[u.id] }})</b>{% endif %}</td>
       <td>{{ u.display_name }}</td>
       <td>
         <form method="post" action="/admin/users/{{ u.id }}">

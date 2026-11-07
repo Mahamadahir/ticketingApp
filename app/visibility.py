@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session as OrmSession
 from sqlmodel import Session, select
 
 from app.permissions import ASSIGNABLE_ROLES, PERMISSIONS
+from app.identity import is_follower_of, is_requester
 from app.models import (
     FINISHED_STATUSES,
     Attachment,
@@ -182,7 +183,7 @@ def may_set_required_by(user: User, ticket: Ticket, levels: AccessContext) -> bo
     where the date is set."""
     if ticket.status in FINISHED_STATUSES:
         return False
-    if ticket.requester_email.strip().lower() == user.email.strip().lower():
+    if is_requester(ticket, user):
         return True
     return ticket_access(user, ticket, levels) == Access.WORK or may_triage(user, ticket, levels)
 
@@ -262,11 +263,9 @@ def may_view_attachment(
     # Anyone else, including an agent who raised or follows a ticket outside their teams, is held
     # to what the requester may see.
     # Imported here: both modules import this one.
-    from app.followers import is_follower
     from app.messages import requester_visible_messages
 
-    is_requester = ticket.requester_email.lower() == user.email.lower()
-    if not (is_requester or is_follower(session, ticket, user.email, include_internal=False)):
+    if not (is_requester(ticket, user) or is_follower_of(session, ticket, user, include_internal=False)):
         return False
     if attachment.message_id is None:
         return attachment.uploaded_by_id == user.id

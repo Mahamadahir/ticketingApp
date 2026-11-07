@@ -22,7 +22,7 @@ from typing import Callable, Optional
 from sqlalchemy import and_, func, or_, update
 from sqlmodel import Session, select
 
-from app.identity import my_ticket_condition
+from app.identity import my_ticket_condition, people_for_addresses, person_for_address
 from app.models import FINISHED_STATUSES, Message, Notification, Ticket, TicketStatus, User, UserRole
 from app.notification_settings import IN_APP, TEAMS, is_enabled, offers, wants_approval_email
 from app.settings_store import TEAMS_UNREAD_MINUTES, get_int_setting
@@ -37,6 +37,7 @@ APPROVAL_OVERDUE = "approval_overdue"
 APPROVAL_WAITING = "approval_waiting"
 DUE_TODAY = "due_today"
 NO_ACTIVE_APPROVERS = "approval_no_active_approvers"  # #161: a request waits because nobody active can approve it (not a listed event type)
+LINK_REQUESTED = "link_requested"  # #165: someone asked to link two accounts and a super admin must decide (not a listed event type)
 OUTAGE_MODE = "outage_mode"  # #164: outage mode was switched on or off (not a listed event type)
 BREAK_GLASS_SIGN_IN = "break_glass_sign_in"  # #163: a break-glass account signed in (not a listed event type)
 ACCOUNT_DEACTIVATED = "account_deactivated"  # #158: the nightly Entra check made someone inactive
@@ -172,7 +173,7 @@ def notify_reply(session: Session, ticket: Ticket, replier_email: str) -> list[N
     on a split original also tells the assignees of its open parts, since each of them sees the reply.
     Each agent once; never the replier; nobody who cannot open the ticket they are told about. A ticket
     nobody is assigned to tells nobody (an open question in docs/build-plan.md). Does not commit."""
-    replier = session.exec(select(User).where(func.lower(User.email) == replier_email.lower())).first()
+    replier = person_for_address(session, replier_email)
     name = (replier.display_name or "").strip() if replier is not None else ""
     name = name or replier_email  # a follower without an account, or no name: their email
     targets = [ticket]
@@ -404,7 +405,7 @@ def notify_requesters(
     from app.followers import portal_audience  # here: followers builds on ticket_service, which imports this module
 
     emails = portal_audience(session, ticket)
-    people = session.exec(select(User).where(func.lower(User.email).in_(emails), User.is_active.is_(True))).all()
+    people = [p for p in people_for_addresses(session, emails) if p.is_active]
     made = []
     for person in sorted(people, key=lambda p: p.id):
         if skip is not None and skip(person):
@@ -513,6 +514,12 @@ def notify_break_glass_sign_in(session: Session, super_admin: User, person: User
         f"Break-glass account {person.email} signed in{where}. If this was not planned, reset it and check the audit log.",
         person.email,  # the account that signed in is not told of itself
     )
+
+
+def notify_link_requested(session: Session, super_admin: User, requester: User, text: str) -> Optional[Notification]:
+    """Tells a super admin, in the bell, that a request to link two accounts waits for them (Admin > Users). Not a
+    listed event type, so it is always on. Not the person who asked. Does not commit."""
+    return notify(session, super_admin, LINK_REQUESTED, None, text, requester.email)
 
 
 def notify_outage_mode(session: Session, super_admin: User, actor: User, on: bool) -> Optional[Notification]:

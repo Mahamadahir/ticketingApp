@@ -12,6 +12,7 @@ from app import outage, sessions
 from app.audit import log_action
 from app.config import settings
 from app.database import engine, get_session
+from app.identity import person_for_address
 from app.models import User, UserRole
 from app.time_zones import zone_for_user
 from app.visibility import has_permission
@@ -147,9 +148,12 @@ def _msal_app() -> msal.ConfidentialClientApplication:
     )
 
 
-def build_auth_url(state: str) -> str:
+def build_auth_url(state: str, prompt: str | None = None) -> str:
+    """The Microsoft sign-in URL. `prompt="select_account"` makes Microsoft ask which account, so linking a second
+    identity (app/linked_identities.py) is not answered silently by the account already signed in."""
+    extra = {"prompt": prompt} if prompt else {}
     return _msal_app().get_authorization_request_url(
-        SSO_SCOPES, state=state, redirect_uri=settings.sso_redirect_uri
+        SSO_SCOPES, state=state, redirect_uri=settings.sso_redirect_uri, **extra
     )
 
 
@@ -164,7 +168,7 @@ def acquire_token_by_auth_code(code: str) -> dict:
 
 def get_or_create_user(session: Session, email: str, display_name: str) -> User:
     email = email.lower()
-    user = session.exec(select(User).where(User.email == email)).first()
+    user = person_for_address(session, email)  # a linked address is the main person
     if user:
         return user
 

@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Admin: Link accounts{% endblock %}
+{% block content %}
+{% set active = "/admin/users" %}
+{% include "_admin_tabs.html" %}
+
+<h2>Link two accounts</h2>
+<p class="note">
+  The <b>main</b> account keeps everything and is the one the person signs in as. The <b>other</b> account is kept but made
+  inactive, signed out everywhere, and can no longer sign in as itself. Nothing is deleted. Its address becomes an address
+  of the main account, so its tickets and followed tickets show in the main account's My requests.
+</p>
+
+<table>
+  <thead>
+    <tr><th></th><th>Main account</th><th>Other account (merged into the main one)</th></tr>
+  </thead>
+  <tbody>
+    <tr><th>Email</th><td>{{ main.user.email }}</td><td>{{ secondary.user.email }}</td></tr>
+    <tr><th>Name</th><td>{{ main.user.display_name }}</td><td>{{ secondary.user.display_name }}</td></tr>
+    <tr><th>Role</th><td>{{ main.user.role.value }}</td><td>{{ secondary.user.role.value }}</td></tr>
+    <tr>
+      <th>Teams</th>
+      <td>{% for name, level in main.teams %}{{ name }} ({{ level }}){% if not loop.last %}, {% endif %}{% else %}none{% endfor %}</td>
+      <td>{% for name, level in secondary.teams %}{{ name }} ({{ level }}){% if not loop.last %}, {% endif %}{% else %}none{% endfor %}</td>
+    </tr>
+    <tr>
+      <th>Extra permissions</th>
+      <td>{{ main.permissions|join(", ") or "none" }}</td>
+      <td>{{ secondary.permissions|join(", ") or "none" }}</td>
+    </tr>
+    <tr><th>Approval groups</th><td>{{ main.approval_groups }}</td><td>{{ secondary.approval_groups }}</td></tr>
+    <tr><th>Open tickets assigned</th><td>{{ main.open_tickets }}</td><td>{{ secondary.open_tickets }}</td></tr>
+    <tr><th>All tickets assigned</th><td>{{ main.assigned_tickets }}</td><td>{{ secondary.assigned_tickets }}</td></tr>
+  </tbody>
+</table>
+
+<h3>What happens</h3>
+<ul>
+  <li>The {{ secondary.assigned_tickets }} ticket{{ "" if secondary.assigned_tickets == 1 else "s" }} assigned to {{ secondary.user.email }} move to {{ main.user.email }}, each with a ticket event. Messages, files, follows, notifications and other records that name the other account move too.</li>
+  <li>Audit and activity rows keep the original account.</li>
+  <li>Sessions of {{ secondary.user.email }} end and the account becomes inactive. Its unanswered approval votes are dropped.</li>
+  <li>You can unlink later; tickets that moved stay where they are.</li>
+</ul>
+{% if not_carried %}
+<h3>Not carried over automatically</h3>
+<p class="note">Team memberships, extra permissions and approval group memberships are not merged. Grant on Admin &gt; Users what {{ main.user.email }} needs after linking.</p>
+<ul>
+  {% for line in not_carried %}<li>{{ line }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+<form method="post" action="/admin/links">
+  <input type="hidden" name="main_id" value="{{ main.user.id }}" />
+  <input type="hidden" name="secondary_id" value="{{ secondary.user.id }}" />
+  <button type="submit">Link them</button>
+  <a href="/admin/users">Cancel</a>
+</form>
+<p>
+  Wrong way round?
+  <a href="/admin/links/preview?main_email={{ secondary.user.email|urlencode }}&amp;other_email={{ main.user.email|urlencode }}">Make {{ secondary.user.email }} the main account instead</a>.
+</p>
+{% endblock %}
