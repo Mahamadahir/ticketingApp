@@ -359,10 +359,17 @@ def test_an_entra_email_change_keeps_the_old_address_as_an_alias(db_session):
     from app.identity import my_tickets_query
 
     assert [t.id for t in db_session.exec(my_tickets_query(user)).all()] == [ticket.id]
-    # Changing back makes the alias the main address again, not both.
+    # Later sign-ins still refresh the person: a second change is noticed, and changing back retires the alias.
+    resolve_sso_user(db_session, OID_A, "newer@a.example", "Ann")
+    db_session.commit()
+    assert db_session.get(User, user.id).email == "newer@a.example"
+    assert requester_emails(db_session.get(User, user.id), db_session) == {"newer@a.example", "new@a.example", "old@a.example"}
     resolve_sso_user(db_session, OID_A, "old@a.example", "Ann")
     db_session.commit()
-    assert requester_emails(db_session.get(User, user.id), db_session) == {"old@a.example", "new@a.example"}
+    db_session.expire_all()
+    assert db_session.get(User, user.id).email == "old@a.example"
+    active = db_session.exec(select(LinkedIdentity).where(LinkedIdentity.status == "active")).all()
+    assert sorted(l.email for l in active) == ["new@a.example", "newer@a.example"]  # old@ is the main address again, not also an alias
 
 
 def test_an_email_change_to_another_persons_linked_address_is_refused(db_session):
@@ -508,8 +515,13 @@ def test_an_address_already_linked_to_someone_cannot_be_linked_again(db_session,
     first, second = mk(db_session, "ann@a.example"), mk(db_session, "bob@a.example")
     db_session.add(LinkedIdentity(main_user_id=first.id, email="shared@b.example", method="email_code", status="active"))
     db_session.commit()
-    with pytest.raises(links.LinkError, match="already linked"):
+    with pytest.raises(links.LinkError, match="cannot be linked with an emailed code") as same:
         links.request_code(db_session, second, "shared@b.example", False)
+    # Worded exactly as for an agent account, so the form cannot be used to tell which addresses are which.
+    mk(db_session, "agent@b.example", UserRole.AGENT)
+    with pytest.raises(links.LinkError) as agent:
+        links.request_code(db_session, second, "agent@b.example", False)
+    assert str(agent.value) == str(same.value)
 
 
 def test_a_failed_send_gives_a_clear_error_and_leaves_no_usable_code(db_session, monkeypatch):
@@ -754,3 +766,40 @@ def test_an_account_that_became_an_agent_after_the_code_was_sent_is_still_refuse
     db_session.commit()
     with pytest.raises(links.LinkError, match="emailed code"):
         links.link_by_code(db_session, me, "ann@b.example", code_in(captured))
+
+
+def test_asking_for_a_new_code_does_not_reset_the_guess_budget(db_session, captured):
+    me = mk(db_session, "ann@a.example")
+    links.request_code(db_session, me, "ann@b.example", False)
+    for _ in range(5):
+        with pytest.raises(links.LinkError):
+            links.check_code(db_session, me, "ann@b.example", "000000" if code_in(captured) != "000000" else "111111")
+        db_session.rollback()
+    with pytest.raises(links.LinkError, match="Too many wrong tries"):
+        links.request_code(db_session, me, "ann@b.example", False)  # no new code, no new guesses
+    assert len(captured) == 1
+    later = datetime.now(timezone.utc) + timedelta(hours=2)
+    links.request_code(db_session, me, "ann@b.example", False, now=later)  # an hour later it is allowed again
+    assert len(captured) == 2
+
+
+def test_merging_an_account_that_changed_its_email_before_keeps_everything_working(db_session):
+    admin = mk(db_session, "root@a.example", UserRole.SUPER_ADMIN)
+    main = mk(db_session, "ann@a.example", oid=OID_A)
+    other = mk(db_session, "ann@b.example", oid=OID_B)
+    resolve_sso_user(db_session, OID_B, "annie@b.example", "Ann")  # other changed its address: an alias of old ann@b
+    db_session.commit()
+    links.link_accounts(db_session, main=main, secondary=other, admin=admin)  # used to fail on the unique object id
+    db_session.commit()
+    assert requester_emails(main, db_session) == {"ann@a.example", "annie@b.example", "ann@b.example"}
+    assert resolve_sso_user(db_session, OID_B, "annie@b.example", "Ann").id == main.id
+
+
+def test_approving_a_request_whose_address_was_linked_elsewhere_meanwhile_is_a_clear_refusal(db_session):
+    admin = mk(db_session, "root@a.example", UserRole.SUPER_ADMIN)
+    one, two = mk(db_session, "one@a.example", UserRole.AGENT), mk(db_session, "two@a.example")
+    waiting = links.link_address(db_session, main=one, address="x@b.example", oid=OID_B, method="sign_in", requester=one)
+    db_session.add(LinkedIdentity(main_user_id=two.id, email="other@b.example", entra_object_id=OID_B, method="sign_in", status="active"))
+    db_session.commit()
+    with pytest.raises(links.LinkError, match="already linked"):
+        links.approve(db_session, waiting, admin)

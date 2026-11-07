@@ -220,8 +220,13 @@ def _linked_sign_in(session: Session, oid: str, email: str) -> Optional[User]:
     """The main person when this sign-in is a linked identity: by `oid` first, then by the linked email. An address
     linked without a directory id (an emailed code, an email change) takes the `oid` of its first sign-in; a later
     sign-in with that address and another `oid` is refused, since the address now belongs to someone else."""
+    # An old-address alias carries the person's own object id (to catch a recycled address); that id is matched as the
+    # person themselves, not through the alias, so their email is still refreshed from the claims.
     link = session.exec(
-        select(LinkedIdentity).where(LinkedIdentity.status == LINK_ACTIVE, func.lower(LinkedIdentity.entra_object_id) == oid)
+        select(LinkedIdentity).where(
+            LinkedIdentity.status == LINK_ACTIVE, LinkedIdentity.method != METHOD_EMAIL_CHANGED,
+            func.lower(LinkedIdentity.entra_object_id) == oid,
+        )
     ).first()
     if link is None:
         link = session.exec(
@@ -229,6 +234,9 @@ def _linked_sign_in(session: Session, oid: str, email: str) -> Optional[User]:
         ).first()
         if link is None:
             return None
+        main = session.get(User, link.main_user_id)
+        if main is not None and main.entra_object_id and main.entra_object_id.lower() == oid:
+            return None  # the person's own directory account signing in under their old address: step 1 refreshes it
         if link.entra_object_id and link.entra_object_id.lower() != oid:
             log_action(
                 session, email, "user", link.main_user_id, "sso_linked_oid_mismatch",

@@ -47,6 +47,10 @@
   One person known by two identities. The main account keeps everything; the other account is kept, inactive, and its
   tickets moved to the main one. Unlinking makes it its own account again (moved tickets stay where they are).
 </p>
+<p class="note">
+  {% if show_aliases %}Showing old addresses kept after an email change too. <a href="/admin/users">Hide them</a>
+  {% else %}Old addresses kept after an Entra email change are not listed. <a href="/admin/users?aliases=1">Show them</a>{% endif %}
+</p>
 {% if active_links %}
 <table>
   <thead><tr><th>Address</th><th>Main account</th><th>Other account</th><th>How</th><th>What moved</th><th></th></tr></thead>

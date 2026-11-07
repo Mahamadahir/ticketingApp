@@ -201,7 +201,7 @@ class LinkedIdentity(SQLModel, table=True):
         Index("uq_linked_identity_active_email", "email", unique=True, postgresql_where=text("status = 'active'")),
         Index(
             "uq_linked_identity_active_oid", "entra_object_id", unique=True,
-            postgresql_where=text("status = 'active' AND entra_object_id IS NOT NULL"),
+            postgresql_where=text("status = 'active' AND entra_object_id IS NOT NULL AND method <> 'email_changed'"),
         ),
         Index(
             "uq_linked_identity_active_secondary", "secondary_user_id", unique=True,

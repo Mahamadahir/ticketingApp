@@ -69,7 +69,7 @@ def upgrade() -> None:
         batch_op.create_index(batch_op.f('ix_linked_identity_secondary_user_id'), ['secondary_user_id'], unique=False)
         batch_op.create_index(batch_op.f('ix_linked_identity_status'), ['status'], unique=False)
         batch_op.create_index('uq_linked_identity_active_email', ['email'], unique=True, postgresql_where=sa.text("status = 'active'"))
-        batch_op.create_index('uq_linked_identity_active_oid', ['entra_object_id'], unique=True, postgresql_where=sa.text("status = 'active' AND entra_object_id IS NOT NULL"))
+        batch_op.create_index('uq_linked_identity_active_oid', ['entra_object_id'], unique=True, postgresql_where=sa.text("status = 'active' AND entra_object_id IS NOT NULL AND method <> 'email_changed'"))
         batch_op.create_index('uq_linked_identity_active_secondary', ['secondary_user_id'], unique=True, postgresql_where=sa.text("status = 'active' AND secondary_user_id IS NOT NULL"))
         batch_op.create_index('uq_linked_identity_pending_email', ['email'], unique=True, postgresql_where=sa.text("status = 'pending'"))
 
@@ -82,7 +82,7 @@ def downgrade() -> None:
     with op.batch_alter_table('linked_identity', schema=None) as batch_op:
         batch_op.drop_index('uq_linked_identity_pending_email', postgresql_where=sa.text("status = 'pending'"))
         batch_op.drop_index('uq_linked_identity_active_secondary', postgresql_where=sa.text("status = 'active' AND secondary_user_id IS NOT NULL"))
-        batch_op.drop_index('uq_linked_identity_active_oid', postgresql_where=sa.text("status = 'active' AND entra_object_id IS NOT NULL"))
+        batch_op.drop_index('uq_linked_identity_active_oid', postgresql_where=sa.text("status = 'active' AND entra_object_id IS NOT NULL AND method <> 'email_changed'"))
         batch_op.drop_index('uq_linked_identity_active_email', postgresql_where=sa.text("status = 'active'"))
         batch_op.drop_index(batch_op.f('ix_linked_identity_status'))
         batch_op.drop_index(batch_op.f('ix_linked_identity_secondary_user_id'))

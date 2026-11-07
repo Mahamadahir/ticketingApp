@@ -159,7 +159,12 @@ def link_of(session: Session, user: User, *statuses: str) -> Optional[LinkedIden
     ).first()
 
 
-def check_address(session: Session, address: str) -> None:
+CANNOT_BY_CODE = (
+    "That address cannot be linked with an emailed code. Try signing in with that account instead, or ask an administrator."
+)  # one message for 'an agent or admin account', 'break-glass' and 'already linked', so the form cannot be used to probe
+
+
+def check_address(session: Session, address: str, *, quiet: bool = False) -> None:
     """Refuses an address that can never be someone's second identity: not an address, the shared mailbox, a
     never-follow address (the app's list of mailboxes and lists), a break-glass placeholder, or one already linked
     or waiting to be."""
@@ -175,7 +180,7 @@ def check_address(session: Session, address: str) -> None:
         select(LinkedIdentity.id).where(LinkedIdentity.email == address, LinkedIdentity.status.in_([ACTIVE, PENDING]))
     ).first()
     if taken is not None:
-        raise LinkError("That address is already linked to an account, or a request to link it is waiting.")
+        raise LinkError(CANNOT_BY_CODE if quiet else "That address is already linked to an account, or a request to link it is waiting.")
 
 
 def check_pair(session: Session, main: User, secondary: User) -> None:
@@ -291,7 +296,11 @@ def apply_link(session: Session, link: LinkedIdentity, approver: Optional[User])
     link.status, link.activated_at = ACTIVE, _now()
     link.approved_by_id = approver.id if approver is not None else None
     session.add(link)
-    session.flush()
+    try:
+        with session.begin_nested():
+            session.flush()
+    except IntegrityError:
+        raise LinkError("That identity is already linked elsewhere.")
     if secondary is None:
         log_action(session, actor, "user", main.id, "identity_linked", f"{link.email} linked to {main.email} as an address ({link.method})")
         return
@@ -435,8 +444,8 @@ def self_service_link(
         address = other.email.strip().lower()
         if address in requester_addresses(session, me):
             raise LinkError("That is already one of your addresses.")
-    if method == EMAIL_CODE and is_privileged(other):
-        raise LinkError("An agent or administrator account cannot be linked with an emailed code. Link it by signing in with it.")
+    if method == EMAIL_CODE and (is_privileged(other) or (other is not None and other.is_break_glass)):
+        raise LinkError(CANNOT_BY_CODE)
     if other_is_main and other is None:
         raise LinkError("That address has no account of its own, so it cannot be the main account.")
     if other is not None:
@@ -511,6 +520,16 @@ def _hash(code_id: int, address: str, code: str) -> str:
     return hmac.new(settings.session_secret_key.encode(), f"{code_id}:{address}:{code}".encode(), hashlib.sha256).hexdigest()
 
 
+def _wrong_tries(session: Session, user_id: int, address: str, since: datetime) -> int:
+    """Wrong tries across every code sent to this address for this person lately: asking for a new code does not
+    give a new budget of guesses."""
+    return session.exec(
+        select(func.coalesce(func.sum(LinkCode.attempts), 0)).where(
+            LinkCode.user_id == user_id, LinkCode.address == address, LinkCode.created_at > since
+        )
+    ).one()
+
+
 def request_code(
     session: Session, me: User, address: str, other_is_main: bool, *,
     send: Optional[Callable] = None, now: Optional[datetime] = None,
@@ -527,11 +546,11 @@ def request_code(
         raise LinkError("A break-glass account is never linked.")
     if address in requester_addresses(session, me):
         raise LinkError("That is already one of your addresses.")
-    check_address(session, address)
+    check_address(session, address, quiet=True)
     account = session.exec(select(User).where(func.lower(User.email) == address)).first()
     if account is not None and (is_privileged(account) or account.is_break_glass):
-        # Said before any code is sent: an agent or administrator proves a second identity by signing in with it.
-        raise LinkError("An agent or administrator account cannot be linked with an emailed code. Link it by signing in with it.")
+        # Said before any code is sent, and in the same words as an address already linked.
+        raise LinkError(CANNOT_BY_CODE)
     if other_is_main and account is None:
         raise LinkError("That address has no account of its own, so it cannot be the main account.")
     hour_ago = now - timedelta(hours=1)
@@ -539,6 +558,8 @@ def request_code(
     by_address = session.exec(select(func.count()).select_from(LinkCode).where(LinkCode.address == address, LinkCode.created_at > hour_ago)).one()
     if by_person >= count_setting(session, LINK_CODE_PER_USER_HOUR) or by_address >= count_setting(session, LINK_CODE_PER_ADDRESS_HOUR):
         raise LinkError("Too many codes have been asked for lately. Try again in an hour.")
+    if _wrong_tries(session, me.id, address, hour_ago) >= count_setting(session, LINK_CODE_ATTEMPTS):
+        raise LinkError("Too many wrong tries for that address lately. Try again in an hour.")
     minutes = count_setting(session, LINK_CODE_MINUTES)
     code = f"{secrets.randbelow(10 ** CODE_DIGITS):0{CODE_DIGITS}d}"
     row = LinkCode(user_id=me.id, address=address, code_hash="", other_is_main=other_is_main, created_at=now, expires_at=now + timedelta(minutes=minutes))
@@ -578,15 +599,15 @@ def check_code(session: Session, me: User, address: str, code: str, *, now: Opti
     expires = row.expires_at if row.expires_at.tzinfo else row.expires_at.replace(tzinfo=timezone.utc)
     if expires <= now:
         raise LinkError("That code has expired. Ask for a new one.")
-    if row.attempts >= count_setting(session, LINK_CODE_ATTEMPTS):
-        raise LinkError("Too many wrong tries for that code. Ask for a new one.")
+    if _wrong_tries(session, me.id, address, now - timedelta(hours=1)) >= count_setting(session, LINK_CODE_ATTEMPTS):
+        raise LinkError("Too many wrong tries for that address. Try again in an hour.")
     row.attempts += 1
     if not hmac.compare_digest(row.code_hash, _hash(row.id, address, code)):
         session.add(row)
-        left = count_setting(session, LINK_CODE_ATTEMPTS) - row.attempts
+        left = count_setting(session, LINK_CODE_ATTEMPTS) - _wrong_tries(session, me.id, address, now - timedelta(hours=1))
         log_action(session, me.email, "user", me.id, "identity_link_code_wrong", f"for {address}")
         session.commit()
-        raise LinkError("That code is not right." + (f" You have {left} more {'try' if left == 1 else 'tries'}." if left > 0 else " Ask for a new code."))
+        raise LinkError("That code is not right." + (f" You have {left} more {'try' if left == 1 else 'tries'}." if left > 0 else " Try again in an hour."))
     row.used_at = now
     session.add(row)
     return row
@@ -610,18 +631,23 @@ class LinkRow:
     requested_by: Optional[User]
 
 
-def rows_for(session: Session, *statuses: str, user: Optional[User] = None) -> list[LinkRow]:
-    """Links in these statuses, newest first; with `user`, only those the person is the main account of or asked for."""
+def rows_for(
+    session: Session, *statuses: str, user: Optional[User] = None, aliases: bool = True, limit: Optional[int] = None
+) -> list[LinkRow]:
+    """Links in these statuses, newest first; with `user`, only those the person is the main account of or asked for.
+    `aliases=False` leaves out the old addresses kept after an email change (the system makes one for every change, so the
+    admin page lists them only when asked). The people are read in one query."""
     query = select(LinkedIdentity).where(LinkedIdentity.status.in_(statuses)).order_by(LinkedIdentity.id.desc())
     if user is not None:
         query = query.where((LinkedIdentity.main_user_id == user.id) | (LinkedIdentity.requested_by_id == user.id))
-    rows = []
-    for link in session.exec(query).all():
-        rows.append(
-            LinkRow(
-                link, session.get(User, link.main_user_id),
-                session.get(User, link.secondary_user_id) if link.secondary_user_id else None,
-                session.get(User, link.requested_by_id) if link.requested_by_id else None,
-            )
-        )
-    return rows
+    if not aliases:
+        query = query.where(LinkedIdentity.method != METHOD_EMAIL_CHANGED)
+    if limit is not None:
+        query = query.limit(limit)
+    found = session.exec(query).all()
+    ids = {i for link in found for i in (link.main_user_id, link.secondary_user_id, link.requested_by_id) if i is not None}
+    people = {u.id: u for u in session.exec(select(User).where(User.id.in_(ids))).all()} if ids else {}
+    return [
+        LinkRow(link, people.get(link.main_user_id), people.get(link.secondary_user_id), people.get(link.requested_by_id))
+        for link in found
+    ]

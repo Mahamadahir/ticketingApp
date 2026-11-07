@@ -55,15 +55,16 @@ def link_account_page(
     session: Session = Depends(get_session),
 ):
     _refuse_break_glass(user)
+    active = links.rows_for(session, links.ACTIVE, user=user)
     return templates.TemplateResponse(
         request,
         "my_link_account.html",
         {
-            "user": user, "active": links.rows_for(session, links.ACTIVE, user=user),
+            "user": user, "active": active,
             "pending": links.rows_for(session, links.PENDING, user=user), "address": address, "sent": bool(sent),
             "done": done, "error": error, "sso_configured": settings.sso_configured,
             "minutes": count_setting(session, LINK_CODE_MINUTES),
-            "unlinkable": {row.link.id for row in links.rows_for(session, links.ACTIVE, user=user) if links.may_unlink(session, user, row.link)},
+            "unlinkable": {row.link.id for row in active if links.may_unlink(session, user, row.link)},
         },
     )
 

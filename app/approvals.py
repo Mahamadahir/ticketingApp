@@ -159,7 +159,8 @@ def eligible_voters(session: Session, ticket: Ticket) -> list[User]:
     if group is None:
         return []
     keep_requester = may_self_approve(session, ticket)
-    return [u for u in members_of(session, group.id, active_only=True) if keep_requester or not is_requester(ticket, u)]
+    requester = addresses_of(session, ticket.requester_email)  # the requester's person, once
+    return [u for u in members_of(session, group.id, active_only=True) if keep_requester or u.email.lower() not in requester]
 
 
 def approval_group_of(session: Session, ticket: Ticket) -> Optional[ApprovalGroup]:
@@ -229,11 +230,12 @@ def start_approvals(session: Session, ticket: Ticket, actor_email: str) -> Optio
     )
     session.add(approval)
     session.flush()
+    requester = addresses_of(session, ticket.requester_email)
     now = datetime.now(timezone.utc)
     # The requester is only in `voters` when the type allows self-approval (eligible_voters): their vote is made now.
     votes = [
         ApprovalVote(approval_id=approval.id, voter_id=u.id, decision=APPROVED, comment=SELF_APPROVED_COMMENT, decided_at=now)
-        if is_requester(ticket, u) else ApprovalVote(approval_id=approval.id, voter_id=u.id)
+        if u.email.lower() in requester else ApprovalVote(approval_id=approval.id, voter_id=u.id)
         for u in voters
     ]
     session.add_all(votes)

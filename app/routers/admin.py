@@ -174,6 +174,7 @@ def list_users(
     page: int = 1,
     inactive: Optional[str] = None,
     link_error: str = "",
+    aliases: int = 0,
     user: User = Depends(require_super_admin),
     session: Session = Depends(get_session),
 ):
@@ -220,7 +221,8 @@ def list_users(
             "now": datetime.now(timezone.utc),
             "live_sessions": live_session_counts(session, user_ids),
             "pending_links": links.rows_for(session, links.PENDING),
-            "active_links": links.rows_for(session, links.ACTIVE),
+            "active_links": links.rows_for(session, links.ACTIVE, aliases=bool(aliases), limit=200),
+            "show_aliases": bool(aliases),
             "merged_into": {
                 link.secondary_user_id: link.main_user_id
                 for link in session.exec(
