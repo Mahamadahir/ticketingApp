@@ -264,6 +264,9 @@ class RequesterTimeZone(SQLModel, table=True):
 
 
 class Ticket(SQLModel, table=True):
+    # The reports (app/reports.py) filter on created_at.
+    __table_args__ = (Index("ix_ticket_created_at", "created_at"),)
+
     id: Optional[int] = Field(default=None, primary_key=True)
     # The ticket's identity: one number from a single counter shared by every type,
     # assigned on insert (see _prepare_new_ticket). It never changes, even when triage
@@ -1002,6 +1005,9 @@ class NumberCounter(SQLModel, table=True):
 class TicketEvent(SQLModel, table=True):
     """History of a ticket for reporting: what changed, who did it, when.
     Separate from the audit log, which covers the whole system."""
+
+    # The reports (app/reports.py) look events up by type and time.
+    __table_args__ = (Index("ix_ticketevent_type_created", "event_type", "created_at"),)
 
     id: Optional[int] = Field(default=None, primary_key=True)
     ticket_id: int = Field(foreign_key="ticket.id", index=True)

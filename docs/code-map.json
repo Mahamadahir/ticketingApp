@@ -54,6 +54,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/b12eaa1c47fe_report_indexes.py",
+        "revision": "b12eaa1c47fe"
+      },
+      {
         "file": "migrations/versions/e6a1c9d4b7f2_linked_identities.py",
         "revision": "e6a1c9d4b7f2"
       },
@@ -68,17 +72,13 @@
       {
         "file": "migrations/versions/b8d3e1f7a642_break_glass_accounts.py",
         "revision": "b8d3e1f7a642"
-      },
-      {
-        "file": "migrations/versions/a7c1d4e9f258_server_side_sessions.py",
-        "revision": "a7c1d4e9f258"
       }
     ],
-    "count": 60,
+    "count": 61,
     "heads": [
       {
-        "file": "migrations/versions/e6a1c9d4b7f2_linked_identities.py",
-        "revision": "e6a1c9d4b7f2"
+        "file": "migrations/versions/b12eaa1c47fe_report_indexes.py",
+        "revision": "b12eaa1c47fe"
       }
     ]
   },
@@ -386,6 +386,7 @@
         "app.notification_settings",
         "app.outage",
         "app.reopening",
+        "app.report_kit",
         "app.request_types",
         "app.required_by",
         "app.resolution",
@@ -436,6 +437,7 @@
         "app.routers.my_settings",
         "app.routers.notifications",
         "app.routers.portal",
+        "app.routers.reports",
         "app.routers.tickets"
       ],
       "imports": [
@@ -868,6 +870,7 @@
         "app.routers.my_settings",
         "app.routers.notifications",
         "app.routers.portal",
+        "app.routers.reports",
         "app.routers.tickets",
         "app.routers.webhooks",
         "app.scheduled_jobs",
@@ -1639,6 +1642,7 @@
         "app.routers.my_settings",
         "app.routers.notifications",
         "app.routers.portal",
+        "app.routers.reports",
         "app.routers.tickets",
         "app.routers.webhooks",
         "app.sessions",
@@ -1846,6 +1850,8 @@
         "app.presence",
         "app.raising",
         "app.reopening",
+        "app.report_kit",
+        "app.reports",
         "app.request_questions",
         "app.request_types",
         "app.required_by",
@@ -1862,6 +1868,7 @@
         "app.routers.my_settings",
         "app.routers.notifications",
         "app.routers.portal",
+        "app.routers.reports",
         "app.routers.tickets",
         "app.routers.webhooks",
         "app.scheduled_jobs",
@@ -2131,6 +2138,7 @@
         "tests/test_raising.py",
         "tests/test_reopening.py",
         "tests/test_reply_notification.py",
+        "tests/test_reports.py",
         "tests/test_request_questions.py",
         "tests/test_request_type_defaults.py",
         "tests/test_request_types.py",
@@ -2599,6 +2607,7 @@
       "functions": [],
       "imported_by": [
         "app.routers.admin",
+        "app.routers.reports",
         "app.templating",
         "app.visibility"
       ],
@@ -2610,7 +2619,8 @@
       "summary": "Extra permissions a super admin can grant (issue #132). Not RBAC: the three roles stay, and a",
       "tables": [],
       "tests": [
-        "tests/test_permissions.py"
+        "tests/test_permissions.py",
+        "tests/test_reports.py"
       ]
     },
     {
@@ -2728,6 +2738,7 @@
       "imported_by": [
         "app.action_links",
         "app.inbound",
+        "app.reports",
         "app.routers.portal",
         "app.routers.tickets",
         "app.splitting"
@@ -2751,6 +2762,74 @@
         "tests/test_closing_email.py",
         "tests/test_reopening.py",
         "tests/test_thanks_rules.py"
+      ]
+    },
+    {
+      "classes": [
+        "Report",
+        "ReportFilters",
+        "ReportInputError"
+      ],
+      "file": "app/report_kit.py",
+      "functions": [
+        "audit_download",
+        "category_choices",
+        "csv_cell",
+        "csv_text",
+        "parse_filters",
+        "percent",
+        "priority_label",
+        "priority_order",
+        "team_choices",
+        "ticket_conditions"
+      ],
+      "imported_by": [
+        "app.reports",
+        "app.routers.reports"
+      ],
+      "imports": [
+        "app.audit",
+        "app.models",
+        "app.settings_store",
+        "app.time_zones",
+        "app.visibility"
+      ],
+      "module": "app.report_kit",
+      "routes": [],
+      "summary": "What every report shares (issue #173, Phase 7): the date range in the viewer's zone, the filters, the",
+      "tables": [],
+      "tests": [
+        "tests/test_reports.py"
+      ]
+    },
+    {
+      "classes": [
+        "ReportDef"
+      ],
+      "file": "app/reports.py",
+      "functions": [
+        "backlog_age",
+        "reopen_rate",
+        "sla_compliance",
+        "times",
+        "volume"
+      ],
+      "imported_by": [
+        "app.routers.reports"
+      ],
+      "imports": [
+        "app.models",
+        "app.reopening",
+        "app.report_kit",
+        "app.ticket_service",
+        "app.visibility"
+      ],
+      "module": "app.reports",
+      "routes": [],
+      "summary": "The Phase 7A-i reports (issue #173): volume, SLA compliance, response and resolution times, backlog age and",
+      "tables": [],
+      "tests": [
+        "tests/test_reports.py"
       ]
     },
     {
@@ -4077,6 +4156,49 @@
     },
     {
       "classes": [],
+      "file": "app/routers/reports.py",
+      "functions": [
+        "download",
+        "menu",
+        "show"
+      ],
+      "imported_by": [
+        "app.main"
+      ],
+      "imports": [
+        "app.auth",
+        "app.database",
+        "app.models",
+        "app.permissions",
+        "app.report_kit",
+        "app.reports",
+        "app.templating",
+        "app.visibility"
+      ],
+      "module": "app.routers.reports",
+      "routes": [
+        {
+          "handler": "menu",
+          "method": "GET",
+          "path": "/reports"
+        },
+        {
+          "handler": "show",
+          "method": "GET",
+          "path": "/reports/{key}"
+        },
+        {
+          "handler": "download",
+          "method": "GET",
+          "path": "/reports/{key}/csv"
+        }
+      ],
+      "summary": "Reports (issue #173): a menu, one page per report with a date range and filters, and a CSV download of",
+      "tables": [],
+      "tests": []
+    },
+    {
+      "classes": [],
       "file": "app/routers/tickets.py",
       "functions": [
         "add_ticket_follower",
@@ -4559,6 +4681,7 @@
         "app.notifications",
         "app.presence",
         "app.raising",
+        "app.report_kit",
         "app.required_by",
         "app.routers.admin",
         "app.routers.approvals",
@@ -4611,6 +4734,7 @@
         "tests/test_outbound_mail.py",
         "tests/test_presence.py",
         "tests/test_raising.py",
+        "tests/test_reports.py",
         "tests/test_request_types.py",
         "tests/test_required_by.py",
         "tests/test_resolution.py",
@@ -4990,6 +5114,7 @@
         "app.routers.my_settings",
         "app.routers.notifications",
         "app.routers.portal",
+        "app.routers.reports",
         "app.routers.tickets"
       ],
       "imports": [
@@ -5080,6 +5205,7 @@
         "app.msp_actions",
         "app.raising",
         "app.reopening",
+        "app.reports",
         "app.request_questions",
         "app.required_by",
         "app.resolution",
@@ -5167,6 +5293,7 @@
         "app.inbound",
         "app.jobs",
         "app.msp",
+        "app.report_kit",
         "app.required_by",
         "app.routers.admin",
         "app.routers.my_settings",
@@ -5268,10 +5395,13 @@
         "app.messages",
         "app.msp_actions",
         "app.notifications",
+        "app.report_kit",
+        "app.reports",
         "app.routers.attachments",
         "app.routers.bulk_resolve",
         "app.routers.msp_mail",
         "app.routers.portal",
+        "app.routers.reports",
         "app.routers.tickets",
         "app.subrequests",
         "app.teams",
@@ -5295,6 +5425,7 @@
         "tests/test_messages.py",
         "tests/test_msp_mail.py",
         "tests/test_permissions.py",
+        "tests/test_reports.py",
         "tests/test_visibility.py"
       ]
     },
@@ -5774,6 +5905,7 @@
     "tests/test_raising.py",
     "tests/test_reopening.py",
     "tests/test_reply_notification.py",
+    "tests/test_reports.py",
     "tests/test_request_questions.py",
     "tests/test_request_type_defaults.py",
     "tests/test_request_types.py",

@@ -380,6 +380,7 @@ extra (registry in `app/permissions.py`; the first is `manage_request_templates`
 Request types and nothing else under Admin). Super admins hold every permission; end users cannot hold
 one; approval groups stay super-admin only. Granting is on Admin > Users and audited. The check is one
 function (`visibility.has_permission`), so phase 6 can feed it from an Entra app-role claim instead.
+The second is `view_reports` (Reports, phase 7); super admins hold it automatically.
 
 **Break-glass** (built, 6C #163). Two local super admin accounts not tied to anyone's UPN
 (`<name>@local.invalid`, no Entra id), with a generated 32 character password and TOTP (RFC 6238).
@@ -1190,6 +1191,11 @@ and resolution; backlog age; reopen rate and "user said thanks" recloses;
 satisfaction by agent, team and category; MSP handoffs split automatic and
 manual; Major Incident count and duration; incidents per Problem. CSV export
 for all of them.
+
+Built so far (7A-i, #173): volume, SLA compliance, mean and median times, backlog age and reopen rate, on the
+Reports menu (permission `view_reports`). Elapsed time, not working time (the SLA clock is 24/7). A viewer's figures
+cover only the tickets they can see (`app/visibility.py`); every CSV download is audited. The shared page, filters, CSV
+writer and audit entry are in `app/report_kit.py` for the rest (7A-ii).
 
 ## Required by date and Due date on service requests (SRP-1, issue #92; Due date, issue #121)
 

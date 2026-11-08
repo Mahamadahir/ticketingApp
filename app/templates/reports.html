@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Report: {{ definition.title }}{% endblock %}
+{% block content %}
+<p><a href="/reports">&larr; Reports</a></p>
+<h2>{{ definition.title }}</h2>
+
+<form class="filter-form" method="get" action="/reports/{{ definition.key }}">
+  {% if definition.uses_range %}
+  <label>From <input type="date" name="from" value="{{ values.get('from', '') }}"></label>
+  <label>To <input type="date" name="to" value="{{ values.get('to', '') }}"></label>
+  {% endif %}
+  <label>Team
+    <select name="team">
+      <option value="">Any</option>
+      {% for t in teams %}<option value="{{ t.id }}" {{ "selected" if values.get('team') == t.id|string else "" }}>{{ t.name }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Type
+    <select name="type">
+      <option value="">Any</option>
+      {% for t in types %}<option value="{{ t.value }}" {{ "selected" if values.get('type') == t.value else "" }}>{{ t.value|replace("_", " ")|capitalize }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Category
+    <select name="category">
+      <option value="">Any</option>
+      {% for id, label in categories %}<option value="{{ id }}" {{ "selected" if values.get('category') == id|string else "" }}>{{ label }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Priority
+    <select name="priority">
+      <option value="">Any</option>
+      {% for p in priorities %}<option value="{{ p }}" {{ "selected" if values.get('priority') == p else "" }}>{{ p|upper }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Source
+    <select name="source">
+      <option value="">Any</option>
+      {% for s in sources %}<option value="{{ s.value }}" {{ "selected" if values.get('source') == s.value else "" }}>{{ s.value|capitalize }}</option>{% endfor %}
+    </select>
+  </label>
+  <button type="submit">Run</button>
+  <a href="/reports/{{ definition.key }}">Reset</a>
+</form>
+
+{% if error %}
+<p role="alert">{{ error }}</p>
+{% else %}
+<p class="note">
+  {% if definition.uses_range %}{{ filters.from_day }} to {{ filters.to_day }} ({{ filters.zone }}).{% else %}As of now.{% endif %}
+  {{ report.description }}
+</p>
+<p><a href="{{ csv_link }}">Download CSV</a></p>
+<table>
+  <thead><tr>{% for c in report.columns %}<th>{{ c }}</th>{% endfor %}</tr></thead>
+  <tbody>
+    {% for row in report.rows %}
+    <tr>{% for cell in row %}<td>{{ "" if cell is none else cell }}</td>{% endfor %}</tr>
+    {% else %}
+    <tr><td colspan="{{ report.columns|length }}">Nothing to show.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% if report.notes %}
+<ul>
+  {% for label, value in report.notes %}<li>{{ label }}: {{ value }}</li>{% endfor %}
+</ul>
+{% endif %}
+{% endif %}
+{% endblock %}

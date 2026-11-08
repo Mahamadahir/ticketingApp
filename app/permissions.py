@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from app.models import UserRole
 
 MANAGE_REQUEST_TEMPLATES = "manage_request_templates"
+VIEW_REPORTS = "view_reports"
 
 
 @dataclass(frozen=True)
@@ -31,6 +32,10 @@ PERMISSIONS: dict[str, Permission] = {
     MANAGE_REQUEST_TEMPLATES: Permission(
         "Manage request templates",
         "Admin > Request types: the request types, their form questions and sub-request templates.",
+    ),
+    VIEW_REPORTS: Permission(
+        "View reports",
+        "Reports: volume, SLA, response and resolution times, backlog and reopen figures, limited to the teams the person can see.",
     ),
 }
 
