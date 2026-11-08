@@ -3,7 +3,8 @@ reopen rate. Built on the ticket columns and `ticket_event`, never the audit log
 SQL (grouped, counted, averaged there); Python only labels, orders and adds the totals row.
 
 Each report is a function `(session, user, levels, filters, now) -> Report` (app/report_kit.py) and is listed in
-REPORTS, which drives the menu, the page and the CSV link. #174 adds its reports as more entries.
+REPORTS, which drives the menu, the page and the CSV link. #174 added satisfaction, MSP handoffs, Major Incidents and
+incidents per Problem as more entries.
 
 What is measured and left out (stated on each page):
 - Volume counts tickets created in the range, backdated ones included.
@@ -14,9 +15,14 @@ What is measured and left out (stated on each page):
   paused time, not when it was paused).
 - Backlog age is a picture of now and ignores the date range.
 - Reopen rate: tickets resolved in the range, and how many of them were reopened afterwards.
+- Satisfaction: feedback given in the range. Who may read a row is `feedback_condition` (app/visibility.py), not ticket
+  visibility; the filters apply to the rated ticket. The requester is never shown.
+- MSP handoffs: handoffs sent in the range (a `sent_to_msp` event each), and what became of each before the next one.
+- Major Incidents: opened in the range. Problems: opened in the range, plus every Problem still open.
 """
 
 from dataclasses import dataclass
+import statistics
 from datetime import datetime, timedelta
 from typing import Callable, Optional
 from zoneinfo import ZoneInfo
@@ -25,10 +31,13 @@ from sqlalchemy import and_, case, exists, func, literal, or_, select as sa_sele
 from sqlalchemy.orm import aliased
 from sqlmodel import Session
 
-from app.models import Category, FINISHED_STATUSES, Team, Ticket, TicketEvent, TicketStatus, User
+from app.models import (
+    Category, FINISHED_STATUSES, Team, Ticket, TicketEvent, TicketFeedback, TicketStatus, TicketType, User,
+)
 from app.report_kit import (
     Report,
     ReportFilters,
+    filter_conditions,
     percent,
     priority_label,
     priority_order,
@@ -36,7 +45,10 @@ from app.report_kit import (
 )
 from app.reopening import EVENT_RECLOSED, EVENT_REOPENED
 from app.ticket_service import EVENT_STATUS_CHANGED
-from app.visibility import AccessContext
+from app.msp import BY_AUTOMATIC, EVENT_MSP_ACKNOWLEDGED, EVENT_MSP_TOLD, EVENT_SENT_TO_MSP
+from app.msp_actions import EVENT_TAKEN_BACK
+from app.time_zones import format_moment
+from app.visibility import AccessContext, feedback_condition, visible_ticket_condition
 
 NO_TEAM = "(no team)"
 NO_CATEGORY = "(not categorised)"
@@ -324,6 +336,244 @@ def reopen_rate(session: Session, user: User, levels: AccessContext, filters: Re
     )
 
 
+# ---- 6. Satisfaction -----------------------------------------------------------------------------------------
+
+MAX_COMMENTS = 200
+NO_AGENT = "(automatic resolve)"
+STAR_COLUMNS = [f"{n} star{'s' if n > 1 else ''}" for n in range(1, 6)]
+
+
+def satisfaction(session: Session, user: User, levels: AccessContext, filters: ReportFilters, now: datetime) -> Report:
+    # Feedback given in the range. Who may read a row is feedback_condition and only that (an agent: the tickets they
+    # resolved; an admin: all, automatic resolves included); the ticket's visibility adds nothing, as on the feedback
+    # pages. The filters narrow what is rated. The requester is never selected.
+    where = [
+        feedback_condition(user), *filter_conditions(filters),
+        TicketFeedback.created_at >= filters.start, TicketFeedback.created_at < filters.end,
+    ]
+    parent = aliased(Category)
+    category_label = case(
+        (Category.id.is_(None), NO_CATEGORY),
+        (parent.id.is_not(None), parent.name + " / " + Category.name),
+        else_=Category.name,
+    )
+    stars = [func.count().filter(TicketFeedback.rating == n) for n in range(1, 6)]
+    breakdowns = [
+        ("Agent", func.coalesce(User.display_name, NO_AGENT), [User.id], [(User, TicketFeedback.resolved_by_id == User.id)]),
+        ("Team", func.coalesce(Team.name, NO_TEAM), [Team.id], [(Team, Ticket.team_id == Team.id)]),
+        ("Category", category_label, [Category.id], [(Category, Ticket.category_id == Category.id), (parent, Category.parent_id == parent.id)]),
+    ]
+
+    def figures(n, average, *counts) -> list:
+        return [n, round(float(average), 2) if average is not None else None, *counts]
+
+    def rated(*columns):
+        return sa_select(*columns, func.count(), func.avg(TicketFeedback.rating), *stars).select_from(TicketFeedback).join(
+            Ticket, Ticket.id == TicketFeedback.ticket_id
+        )
+
+    overall = session.execute(rated().where(*where)).one()
+    rows: list[list] = [["Overall", "All", *figures(*overall), None]]
+    for name, label, group_ids, joins in breakdowns:
+        query = rated(label)
+        for target, on in joins:
+            query = query.outerjoin(target, on)
+        query = query.where(*where).group_by(label, *group_ids)  # by id too: two categories can share a label
+        found = sorted(session.execute(query).all(), key=lambda row: (-row[1], str(row[0])))
+        rows += [[name, value, *figures(n, average, *counts), None] for value, n, average, *counts in found]
+    # The comments the rule allows, newest first. A comment row is one rating (its own star column is 1).
+    commented = (
+        sa_select(Ticket, TicketFeedback.rating, TicketFeedback.comment)
+        .select_from(TicketFeedback).join(Ticket, Ticket.id == TicketFeedback.ticket_id)
+        .where(*where, TicketFeedback.comment != "")
+        .order_by(TicketFeedback.created_at.desc(), TicketFeedback.id.desc())
+        .limit(MAX_COMMENTS + 1)
+    )
+    found = session.execute(commented).all()
+    for ticket, rating, comment in found[:MAX_COMMENTS]:
+        rows.append(["Comment", ticket.reference, 1, float(rating), *[1 if n == rating else 0 for n in range(1, 6)], comment])
+    notes = [("Ratings in the range", str(overall[0]))]
+    if len(found) > MAX_COMMENTS:
+        notes.append(("Comments", f"only the newest {MAX_COMMENTS} are listed"))
+    return Report(
+        title="Satisfaction",
+        columns=["Breakdown", "Value", "Ratings", "Average rating", *STAR_COLUMNS, "Comment"],
+        rows=rows,
+        notes=notes,
+        description=(
+            "Ratings the requesters gave in the date range, from 1 to 5, as the average and the spread, overall and by agent "
+            "(who resolved the ticket), team and category. The filters apply to the rated ticket. You see only the feedback "
+            "you may already read: an agent sees the tickets they resolved themselves; a super admin sees everything, "
+            "including tickets resolved automatically. The requester is never shown."
+        ),
+    )
+
+
+# ---- 7. MSP handoffs -----------------------------------------------------------------------------------------
+
+
+def msp_handoffs(session: Session, user: User, levels: AccessContext, filters: ReportFilters, now: datetime) -> Report:
+    sent = aliased(TicketEvent)
+
+    def next_send():
+        later = aliased(TicketEvent)
+        return (
+            sa_select(func.min(later.created_at))
+            .where(later.ticket_id == sent.ticket_id, later.event_type == EVENT_SENT_TO_MSP, later.created_at > sent.created_at)
+            .correlate(sent).scalar_subquery()
+        )
+
+    def first_after(event_type: str, *conditions):
+        """When the first such event came for this handoff: at or after it was sent, before the next one."""
+        event = aliased(TicketEvent)
+        return (
+            sa_select(func.min(event.created_at))
+            .where(
+                event.ticket_id == sent.ticket_id, event.event_type == event_type, event.created_at >= sent.created_at,
+                or_(next_send().is_(None), event.created_at < next_send()),
+                *[condition(event) for condition in conditions],
+            )
+            .correlate(sent).scalar_subquery()
+        )
+
+    team_name = func.coalesce(Team.name, NO_TEAM)
+    handoffs = (
+        sa_select(
+            sent.id.label("id"), team_name.label("team"), (sent.to_value == BY_AUTOMATIC).label("automatic"),
+            sent.created_at.label("sent_at"),
+            first_after(EVENT_MSP_ACKNOWLEDGED).label("acked_at"),
+            first_after(EVENT_TAKEN_BACK).label("taken_back_at"),
+            # Released: the MSP was told it is no longer needed because IT resolved or closed it.
+            first_after(EVENT_MSP_TOLD, lambda e: e.to_value.in_(("resolved", "closed"))).label("released_at"),
+        )
+        .select_from(sent).join(Ticket, Ticket.id == sent.ticket_id).outerjoin(Team, Ticket.team_id == Team.id)
+        .where(
+            sent.event_type == EVENT_SENT_TO_MSP, sent.created_at >= filters.start, sent.created_at < filters.end,
+            *ticket_conditions(user, levels, filters),
+        )
+        .subquery()
+    )
+    ack_seconds = func.extract("epoch", handoffs.c.acked_at - handoffs.c.sent_at)
+    columns = [
+        func.count(), func.count().filter(handoffs.c.automatic), func.count().filter(~handoffs.c.automatic),
+        func.count().filter(handoffs.c.acked_at.is_not(None)), func.percentile_cont(0.5).within_group(ack_seconds),
+        func.count().filter(handoffs.c.taken_back_at.is_not(None)), func.count().filter(handoffs.c.released_at.is_not(None)),
+    ]
+
+    def cells(n, automatic, manual, acked, median, taken_back, released) -> list:
+        return [n, automatic, manual, acked, percent(acked, n), _minutes(median), taken_back, released]
+
+    found = session.execute(sa_select(handoffs.c.team, *columns).group_by(handoffs.c.team)).all()
+    rows = [[name, *cells(*rest)] for name, *rest in sorted(found, key=lambda row: row[0])]
+    total = session.execute(sa_select(*columns)).one()
+    rows.append(["All", *cells(*total)])
+    return Report(
+        title="MSP handoffs",
+        columns=["Team", "Sent to the MSP", "Automatic (18:00 handoff)", "Manual (Send to MSP)", "Acknowledged by the MSP",
+                 "Acknowledged %", "Median time to acknowledgement (minutes)", "Taken back", "Released"],
+        rows=rows,
+        description=(
+            "Handoffs sent in the date range, counted once per send (a ticket sent twice counts twice). Automatic is the "
+            "scheduled handoff; manual is an agent using Send to MSP. Acknowledged, taken back and released count what happened "
+            "to that handoff before the ticket was sent again: the MSP's acknowledgement email, IT taking the ticket back, "
+            "and IT telling the MSP it is no longer needed because it was resolved or closed. Times are elapsed. The type, "
+            "category, priority and source filters apply to the ticket."
+        ),
+    )
+
+
+# ---- 8 and 9. Major Incidents and Problems --------------------------------------------------------------------
+
+
+def _linked_counts(user: User, levels: AccessContext):
+    """Per parent: how many tickets are linked to it that this viewer may see, and how many of those are Incidents.
+    (Visibility as for a ticket's own linked list, app/linking.py: a viewer counts only what they could open.)"""
+    visible = visible_ticket_condition(user, levels)
+    return (
+        sa_select(
+            Ticket.linked_parent_id.label("parent_id"), func.count().label("n"),
+            func.count().filter(Ticket.type == TicketType.INCIDENT).label("incidents"),
+        )
+        .where(Ticket.linked_parent_id.is_not(None), *([visible] if visible is not None else []))
+        .group_by(Ticket.linked_parent_id)
+        .subquery()
+    )
+
+
+def _parents(session: Session, user: User, levels: AccessContext, filters: ReportFilters, ticket_type: TicketType, extra):
+    linked = _linked_counts(user, levels)
+    query = (
+        sa_select(Ticket, func.coalesce(Team.name, NO_TEAM), func.coalesce(linked.c.n, 0), func.coalesce(linked.c.incidents, 0))
+        .select_from(Ticket).outerjoin(Team, Ticket.team_id == Team.id).outerjoin(linked, linked.c.parent_id == Ticket.id)
+        .where(Ticket.type == ticket_type, *ticket_conditions(user, levels, filters), extra)
+        .order_by(Ticket.created_at, Ticket.id)
+    )
+    return session.execute(query).all()
+
+
+def major_incidents(session: Session, user: User, levels: AccessContext, filters: ReportFilters, now: datetime) -> Report:
+    found = _parents(
+        session, user, levels, filters, TicketType.MAJOR_INCIDENT,
+        and_(Ticket.created_at >= filters.start, Ticket.created_at < filters.end),
+    )
+    rows, minutes = [], []
+    for ticket, team, linked, _ in found:
+        done = ticket.status in FINISHED_STATUSES and ticket.resolved_at is not None
+        duration = _minutes((ticket.resolved_at - ticket.created_at).total_seconds()) if done else None
+        if duration is not None:
+            minutes.append(duration)
+        rows.append([
+            ticket.reference, ticket.subject, team, _type_label(ticket.status),
+            format_moment(ticket.created_at, filters.zone), format_moment(ticket.resolved_at, filters.zone) if done else None,
+            duration, linked,
+        ])
+    return Report(
+        title="Major Incidents",
+        columns=["Reference", "Subject", "Team", "Status", "Opened", "Resolved", "Duration (minutes)", "Linked tickets"],
+        rows=rows,
+        notes=[
+            ("Major Incidents opened in the range", str(len(rows))),
+            ("Resolved or closed", str(len(minutes))),
+            ("Mean duration (minutes)", str(round(statistics.fmean(minutes), 1)) if minutes else "none yet"),
+            ("Median duration (minutes)", str(round(statistics.median(minutes), 1)) if minutes else "none yet"),
+            ("Linked tickets in all", str(sum(row[-1] for row in rows))),
+        ],
+        description=(
+            "Major Incidents created in the date range. Duration is elapsed time from opened to resolved (an open one has "
+            "none yet). Linked tickets are those linked under it now that you may see. The filters apply to the Major Incident itself."
+        ),
+    )
+
+
+def problems(session: Session, user: User, levels: AccessContext, filters: ReportFilters, now: datetime) -> Report:
+    # Opened in the range, plus every Problem still open whenever it was opened: an old open Problem is the point.
+    found = _parents(
+        session, user, levels, filters, TicketType.PROBLEM,
+        or_(and_(Ticket.created_at >= filters.start, Ticket.created_at < filters.end), ~Ticket.status.in_(FINISHED_STATUSES)),
+    )
+    # Open Problems first, then the most linked (the query already ordered them oldest first, and a sort is stable).
+    found = sorted(found, key=lambda row: (row[0].status in FINISHED_STATUSES, -row[2]))
+    rows = [
+        [ticket.reference, ticket.subject, team, _type_label(ticket.status), format_moment(ticket.created_at, filters.zone), incidents, linked]
+        for ticket, team, linked, incidents in found
+    ]
+    return Report(
+        title="Incidents per Problem",
+        columns=["Reference", "Subject", "Team", "Status", "Opened", "Linked incidents", "Linked tickets"],
+        rows=rows,
+        notes=[
+            ("Problems listed", str(len(rows))),
+            ("Open", str(sum(1 for ticket, *_ in found if ticket.status not in FINISHED_STATUSES))),
+            ("Linked incidents in all", str(sum(row[5] for row in rows))),
+        ],
+        description=(
+            "Problems created in the date range, and every Problem that is still open. Open ones come first, the most linked "
+            "first. Linked incidents are the Incidents linked under the Problem now (that you may see); Linked tickets also "
+            "counts other types. The filters apply to the Problem itself."
+        ),
+    )
+
+
 # ---- The list ------------------------------------------------------------------------------------------------
 
 
@@ -344,5 +594,9 @@ REPORTS: dict[str, ReportDef] = {
         ReportDef("times", "Response and resolution times", "Mean and median time to first response and to resolution.", times),
         ReportDef("backlog", "Backlog age", "Open tickets now, by how long they have been open.", backlog_age, uses_range=False),
         ReportDef("reopen", "Reopen rate", "Resolved tickets that were reopened, and recloses where the user said thanks.", reopen_rate),
+        ReportDef("satisfaction", "Satisfaction", "Ratings from requesters: average and spread by agent, team and category.", satisfaction),
+        ReportDef("msp", "MSP handoffs", "Tickets sent to the MSP, automatic and manual, acknowledged, taken back, released.", msp_handoffs),
+        ReportDef("major-incidents", "Major Incidents", "Major Incidents with how long they ran and how many tickets were linked.", major_incidents),
+        ReportDef("problems", "Incidents per Problem", "Each Problem with the incidents linked to it, open Problems first.", problems),
     )
 }
