@@ -132,10 +132,10 @@ Blob Data Contributor and Delegator roles; the public app and migrate job have n
 app cannot serve files (no route).
 
 **Cool tier.** A lifecycle rule on the `attachments` container moves each blob to the cool access tier
-`attachmentsCoolAfterDays` days after it was created (default 365; the parameter file reads
-`ATTACHMENTS_COOL_AFTER_DAYS` if set). Nothing is deleted by it; the only delete rule removes superseded
+`attachmentsCoolAfterDays` days after it was created (default 365; the staging parameter file reads
+`ATTACHMENTS_COOL_AFTER_DAYS` if set, production fixes 365). Nothing is deleted by it; the only delete rule removes superseded
 versions after 90 days. The app never sets a tier, and cool blobs are online, so reads and
-user-delegation SAS links work unchanged (cool costs slightly more per read). The 30-day early-deletion
+user-delegation SAS links work unchanged (cool costs slightly more per read). Identical files share one blob, so a file re-attached to a new ticket after a year points at a blob that is already cool; that only costs the dearer reads. The 30-day early-deletion
 charge on cool does not matter at 365 days, and an anonymisation delete (7C) of a cool blob only pays
 the remainder of that charge. To prove the policy on staging, deploy a throwaway account with
 `ATTACHMENTS_COOL_AFTER_DAYS=1` and look at a day-old blob's tier (policies run about once a day).

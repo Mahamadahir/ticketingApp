@@ -58,5 +58,7 @@ param postgresBackupRetentionDays = 7
 param postgresHighAvailability = 'Disabled'
 param storageSku = 'Standard_ZRS'
 // Attachments move to the cool tier this many days after creation (never deleted).
-param attachmentsCoolAfterDays = int(readEnvironmentVariable('ATTACHMENTS_COOL_AFTER_DAYS', '365'))
+// Set the repository variable ATTACHMENTS_COOL_AFTER_DAYS to a small number only to prove the policy on a throwaway staging deployment.
+var attachmentsCoolAfterDaysRaw = trim(readEnvironmentVariable('ATTACHMENTS_COOL_AFTER_DAYS', ''))
+param attachmentsCoolAfterDays = empty(attachmentsCoolAfterDaysRaw) ? 365 : int(attachmentsCoolAfterDaysRaw)
 param purgeProtection = false
