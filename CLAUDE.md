@@ -8,8 +8,12 @@ starting a phase, and `README.md` for how to run it.
 
 ## State of play
 
-- **Phases 0 to 5 are built; Phase 6 (identity) is next** (see "Next up" in `docs/build-plan.md`
-  for the agreed order to go-live). Phase 4 (resolution, reopen/reclose, chase, auto-close,
+- **Phases 0 to 6 are built; Phase 7 (reporting) is next** (see "Next up" in `docs/build-plan.md`
+  for the agreed order to go-live). Phase 6 (identity) is matching on the Entra object id and
+  server-side sessions (`app/sessions.py`), the nightly Entra `accountEnabled` check
+  (`app/entra_check.py`), break-glass accounts (`app/breakglass.py`), outage mode with emergency
+  passwords (`app/outage.py`, `app/emergency.py`) and linked identities (`app/linked_identities.py`;
+  a person's addresses come from `app/identity.py`, never a direct email comparison). Phase 4 (resolution, reopen/reclose, chase, auto-close,
   feedback, approval groups and votes, acknowledgement email, follower updates, bulk resolve) and
   Phase 5 (MSP: Send to MSP, hold, the 18:00 handoff, MSP mail handling and forwarding, the MSP's
   own ticket number, take back) are built, plus the owner-decision rounds of Nov 2026: single pass %,
