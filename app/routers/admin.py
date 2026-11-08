@@ -20,7 +20,7 @@ from app.activity import (
     SSO_FAILED,
 )
 from app.bank_holidays import REGIONS as BANK_HOLIDAY_REGIONS
-from app import emergency, outage
+from app import emergency, linked_identities as links, outage
 from app.audit import log_action
 from app.auth import hash_password, require_permission, require_roles
 from app.permissions import ASSIGNABLE_ROLES, MANAGE_REQUEST_TEMPLATES, PERMISSIONS
@@ -124,6 +124,7 @@ from app.models import (
     GraphNotification,
     GraphSubscription,
     InboundMail,
+    LinkedIdentity,
     MailSyncState,
     OutboundEmail,
     RequestType,
@@ -172,6 +173,8 @@ def list_users(
     request: Request,
     page: int = 1,
     inactive: Optional[str] = None,
+    link_error: str = "",
+    aliases: int = 0,
     user: User = Depends(require_super_admin),
     session: Session = Depends(get_session),
 ):
@@ -217,9 +220,114 @@ def list_users(
             "roles": list(UserRole),
             "now": datetime.now(timezone.utc),
             "live_sessions": live_session_counts(session, user_ids),
+            "pending_links": links.rows_for(session, links.PENDING),
+            "active_links": links.rows_for(session, links.ACTIVE, aliases=bool(aliases), limit=200),
+            "show_aliases": bool(aliases),
+            "merged_into": {
+                link.secondary_user_id: link.main_user_id
+                for link in session.exec(
+                    select(LinkedIdentity).where(LinkedIdentity.status == links.ACTIVE, LinkedIdentity.secondary_user_id.in_(user_ids))
+                ).all()
+            } if user_ids else {},
+            "link_error": link_error,
             "user": user,
         },
     )
+
+
+def _users_with_link_error(message: str) -> RedirectResponse:
+    return RedirectResponse("/admin/users?" + urlencode({"link_error": message}), status_code=303)
+
+
+@router.get("/links/preview", response_class=HTMLResponse)
+def preview_link(
+    request: Request,
+    main_email: str,
+    other_email: str,
+    admin: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    """Both accounts side by side (roles, teams, open tickets) before a super admin confirms a link. The main account
+    is the one named first; the page says what is carried over and what is not."""
+    main = session.exec(select(User).where(func.lower(User.email) == main_email.strip().lower())).first()
+    secondary = session.exec(select(User).where(func.lower(User.email) == other_email.strip().lower())).first()
+    if main is None or secondary is None:
+        return _users_with_link_error("Both addresses must belong to existing accounts (an account exists once its person has signed in).")
+    try:
+        links.check_pair(session, main, secondary)
+    except links.LinkError as refusal:
+        return _users_with_link_error(str(refusal))
+    main_summary, secondary_summary = links.summarise(session, main), links.summarise(session, secondary)
+    return templates.TemplateResponse(
+        request,
+        "admin_link_confirm.html",
+        {
+            "user": admin, "main": main_summary, "secondary": secondary_summary,
+            "not_carried": links.not_carried_over(main_summary, secondary_summary),
+        },
+    )
+
+
+@router.post("/links")
+def create_link(
+    main_id: int = Form(...),
+    secondary_id: int = Form(...),
+    admin: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    main, secondary = session.get(User, main_id), session.get(User, secondary_id)
+    if main is None or secondary is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    try:
+        links.link_accounts(session, main=main, secondary=secondary, admin=admin)
+        session.commit()
+    except links.LinkError as refusal:
+        session.rollback()
+        return _users_with_link_error(str(refusal))
+    return RedirectResponse("/admin/users", status_code=303)
+
+
+def _link_or_404(session: Session, link_id: int) -> LinkedIdentity:
+    link = session.get(LinkedIdentity, link_id)
+    if link is None:
+        raise HTTPException(status_code=404, detail="Link not found")
+    return link
+
+
+@router.post("/links/{link_id}/approve")
+def approve_link(link_id: int, admin: User = Depends(require_super_admin), session: Session = Depends(get_session)):
+    link = _link_or_404(session, link_id)
+    try:
+        links.approve(session, link, admin)
+        session.commit()
+    except links.LinkError as refusal:
+        session.rollback()
+        return _users_with_link_error(str(refusal))
+    return RedirectResponse("/admin/users", status_code=303)
+
+
+@router.post("/links/{link_id}/decline")
+def decline_link(link_id: int, admin: User = Depends(require_super_admin), session: Session = Depends(get_session)):
+    link = _link_or_404(session, link_id)
+    try:
+        links.decline(session, link, admin)
+        session.commit()
+    except links.LinkError as refusal:
+        session.rollback()
+        return _users_with_link_error(str(refusal))
+    return RedirectResponse("/admin/users", status_code=303)
+
+
+@router.post("/links/{link_id}/unlink")
+def unlink_link(link_id: int, admin: User = Depends(require_super_admin), session: Session = Depends(get_session)):
+    link = _link_or_404(session, link_id)
+    try:
+        links.unlink(session, link, admin)
+        session.commit()
+    except links.LinkError as refusal:
+        session.rollback()
+        return _users_with_link_error(str(refusal))
+    return RedirectResponse("/admin/users", status_code=303)
 
 
 @router.post("/users/{user_id}")
@@ -360,6 +468,8 @@ def set_user_active(
     target = session.get(User, user_id)
     if target is None:
         raise HTTPException(status_code=404, detail="User not found")
+    if is_active and links.link_of(session, target) is not None:
+        raise HTTPException(status_code=400, detail="This account was merged into another by a link; unlink it to use it again")
     if target.is_active != is_active:
         log_action(session, admin.email, "user", target.id, "activated" if is_active else "deactivated", "")
         target.is_active = is_active

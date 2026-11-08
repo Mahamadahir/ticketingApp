@@ -350,15 +350,26 @@ flag (the same flag as the out-of-office item under Notifications, and the leave
 hardening phase"); it is built in phase 6 (6B, `app/entra_check.py`): an account that is disabled or no longer in Entra becomes inactive, and one that is enabled again is reactivated by a super admin, never automatically. An admin-managed **never-follow
 list** (the shared mailbox, distribution lists; built in 4B-2, `app/never_follow.py`) keeps those addresses from being added as followers, by an inbound Cc or by hand. Mail **sent from** a listed address is ignored whole (no ticket, nothing added to a ticket) and logged in the audit log with the sender and subject (#122).
 
-**Linked identities** (decided 22 Oct 2026; phase 6; manual, super admin only). One person can have two Entra accounts on the
-same tenant (for example upn@companyA.com and upn@companyB.com). A super admin links a secondary account to a primary person:
-- Nothing is deleted. The secondary address becomes an alias, so `requester_emails` returns both and My requests, requester
-  checks, followers and approvals treat the two as one person.
-- Signing in as either account resolves to the primary person's account and role.
+**Linked identities** (decided 22 Oct 2026, refined 6 Nov 2026; phase 6E, built). One person can have two identities, for
+example upn@companyA.com and upn@companyB.com on the same tenant, or an old address and a new one. A second identity is linked
+to a **main** account; the main account is chosen by whoever links, never assumed:
+- Nothing is deleted. A second identity is an email address, plus its Entra object id once it signs in, plus, when it was a
+  separate account, that account (kept, inactive). `requester_emails` returns the main address and every linked one, so My
+  requests, requester checks, followers, approvals ("you cannot approve your own request") and the portal treat them as one person.
+- Signing in with either identity (by object id or by linked address) resolves to the main person's account and role.
 - Audit and activity rows keep the original user ids.
-- Ticket assignments on the secondary should move to the primary (open point).
-- The link page shows both accounts' roles and team memberships before the super admin confirms.
-- Linking and unlinking are audited, and a link can be undone (unlink). Never automatic.
+- When two accounts are linked, the tickets assigned to the merged-away account, and the other records that name it as a person,
+  move to the main account (ticket events written). Team memberships, extra permissions and approval group memberships are not
+  merged: the review page shows them and the admin re-grants what is needed. Its sessions end and it can no longer sign in.
+- **Admin linking** (super admin, Admin > Users): pick both accounts and the main one on a review page that shows both accounts'
+  roles, teams, extra permissions, approval groups and open tickets, then confirm. **Self-service** (My settings > Link another
+  account): the person proves the second identity by signing in with it or by an emailed 6-digit code (15 minutes, 5 tries,
+  stored hashed, rate limited per person and per address; refused for the shared mailbox, never-follow addresses and, by code,
+  any agent or admin account) and chooses which account is the main one. Only ordinary end-user accounts apply at once; an agent
+  or super admin on either side is a request a super admin approves.
+- When a person's Entra email changes, the old address becomes an alias of the person.
+- Linking, requesting, declining and unlinking are audited. A link can be undone (unlink): the merged-away account is its own
+  account again; tickets that moved stay where they are.
 
 **Roles.** `super_admin`, `agent`, `end_user`. Moving role assignment to
 Entra app roles (the `roles` claim) comes later; assigning whole groups to an

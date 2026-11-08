@@ -20,6 +20,7 @@ from app.backdating import BackdateError, backdate_ticket
 from app.followers import InvalidEmail, normalise_email
 from app.messages import record_inbound
 from app.outbox import queue_raised_for
+from app.identity import person_for_address
 from app.models import (
     Category,
     RequestType,
@@ -61,11 +62,7 @@ def tell_requester_decision(session: Session, requester_email: Optional[str] = N
     email must ask again at send time and let a "no" win over the recorded "will be told"."""
     if not get_flag(session, TELL_REQUESTER_RAISED_FOR):
         return False, "switched off for everyone in Settings"
-    requester = (
-        session.exec(select(User).where(User.email == requester_email.strip().lower())).first()
-        if requester_email
-        else None
-    )
+    requester = person_for_address(session, requester_email) if requester_email else None
     if requester is not None and not is_enabled(session, requester, RAISED_FOR_YOU, EMAIL):
         return False, "they turned this off in their own notification settings"
     return True, "they will be told by email once mail is connected"
@@ -220,7 +217,7 @@ def raise_ticket(
 
 
 def _name_of(session: Session, email: str) -> str:
-    user = session.exec(select(User).where(User.email == email.lower())).first()
+    user = person_for_address(session, email)
     return user.display_name if user is not None else email
 
 

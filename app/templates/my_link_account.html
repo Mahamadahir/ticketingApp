@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Link another account{% endblock %}
+{% block content %}
+<h2>Link another account</h2>
+<p class="note">
+  If you have a second email address or Microsoft account (for example at another company in the group), link it to this
+  one. Tickets raised under either address then show in My requests, and signing in with either one gives you the same
+  account. Nothing is deleted. You can unlink again later.
+</p>
+{% if done == "applied" %}<p role="status">Linked.</p>{% endif %}
+{% if done == "requested" %}<p role="status">Your request was sent. Because an agent or administrator account is involved, a super admin must approve it.</p>{% endif %}
+{% if done == "unlinked" %}<p role="status">Unlinked.</p>{% endif %}
+{% if done == "cancelled" %}<p role="status">Request withdrawn.</p>{% endif %}
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+
+<h3>Linked to you</h3>
+{% if active %}
+<table>
+  <thead><tr><th>Address</th><th>Account</th><th>How</th><th></th></tr></thead>
+  <tbody>
+    {% for row in active %}
+    <tr>
+      <td>{{ row.link.email }}</td>
+      <td>{% if row.secondary %}{{ row.secondary.display_name }} (merged into {{ row.main.email }}){% else %}address only{% endif %}</td>
+      <td>{{ row.link.method|replace("_", " ") }}</td>
+      <td>
+        {% if row.link.id in unlinkable %}
+        <form method="post" action="/settings/link-account/{{ row.link.id }}/unlink" class="inline-form"><button type="submit">Unlink</button></form>
+        {% else %}Ask a super admin to unlink{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>Nothing is linked yet.</p>
+{% endif %}
+
+{% if pending %}
+<h3>Waiting for a super admin</h3>
+<ul>
+  {% for row in pending %}
+  <li>
+    {{ row.link.email }} to {{ row.main.email }} ({{ row.link.method|replace("_", " ") }})
+    <form method="post" action="/settings/link-account/{{ row.link.id }}/cancel" class="inline-form"><button type="submit">Withdraw</button></form>
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+<h3>Add a second account</h3>
+<p class="note">
+  Prove the other account is yours in one of two ways. If it is an agent or administrator account, or this one is, a super admin
+  must approve the link before it takes effect. Agent and administrator accounts can only be linked by signing in with them.
+</p>
+
+<h4>Sign in with the other account</h4>
+<form method="post" action="/settings/link-account/sign-in">
+  <label><input type="checkbox" name="other_is_main" value="true" /> Make the other account the main one (if it has an account here); this account then joins it and you sign in again</label>
+  <button type="submit" {{ "" if sso_configured else "disabled" }}>Sign in with the other account</button>
+  {% if not sso_configured %}<span class="note">Microsoft sign-in is not set up here.</span>{% endif %}
+</form>
+
+<h4>Or email a code to the other address</h4>
+{% if not sent %}
+<form method="post" action="/settings/link-account/code">
+  <label>The other email address
+    <input type="email" name="address" value="{{ address }}" required maxlength="320" />
+  </label>
+  <label><input type="checkbox" name="other_is_main" value="true" /> Make the other account the main one (if it has an account here)</label>
+  <button type="submit">Email me a code</button>
+</form>
+{% else %}
+<p>A 6-digit code was emailed to {{ address }}. It works for {{ minutes }} minutes.</p>
+<form method="post" action="/settings/link-account/verify" autocomplete="off">
+  <input type="hidden" name="address" value="{{ address }}" />
+  <label>Code
+    <input type="text" name="code" inputmode="numeric" pattern="[0-9 ]*" maxlength="12" autocomplete="one-time-code" required />
+  </label>
+  <button type="submit">Link</button>
+</form>
+<p><a href="/settings/link-account">Start again with another address</a></p>
+{% endif %}
+{% endblock %}

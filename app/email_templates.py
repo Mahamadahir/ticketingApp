@@ -314,6 +314,26 @@ REGISTRY: dict[str, TemplateDef] = {
             sample={"name": "Alex Agent", "settings_link": "https://tickets.example.org/settings/emergency-password"},
         ),
         TemplateDef(
+            key="link_code",
+            label="Link another account: code",
+            description=(
+                "Sent to a second address when a signed-in person asks to link it to their account (My settings > Link another "
+                "account). It carries the 6-digit code to type in. The code is never kept on the sent-mail record. It is "
+                "about no ticket, so it has no reference."
+            ),
+            subject_default="Your code to link this address",
+            body_default=(
+                "Hello,\n\n{name} asked to link this email address to their account in the IT support system.\n\n"
+                "The code is: {code}\n\nIt works for {minutes} minutes. If this was not you or anyone you know, ignore this "
+                "email and nothing will be linked."
+            ),
+            body_placeholders={
+                "name": "the name of the person asking", "code": "the 6-digit code", "minutes": "how long the code works",
+            },
+            required=("code",),
+            sample={"name": "Alex Agent", "code": "123456", "minutes": "15"},
+        ),
+        TemplateDef(
             key="approval_withdrawn",
             label="Approval withdrawn",
             description="Sent to each approver who had not answered when the requester withdrew the request.",

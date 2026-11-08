@@ -43,6 +43,10 @@ SESSION_MAX_DAYS = "session_max_days"
 BREAK_GLASS_IDLE_MINUTES = "break_glass_idle_minutes"
 SESSION_KEEP_DAYS = "session_keep_days"
 EMERGENCY_PASSWORD_MIN_LENGTH = "emergency_password_min_length"
+LINK_CODE_MINUTES = "link_code_minutes"
+LINK_CODE_ATTEMPTS = "link_code_attempts"
+LINK_CODE_PER_USER_HOUR = "link_code_requests_per_user_hour"
+LINK_CODE_PER_ADDRESS_HOUR = "link_code_requests_per_address_hour"
 APPROVAL_DEFAULT_PASS_PERCENT = "approval_default_pass_percent"
 APPROVAL_REMINDERS_ENABLED = "approval_reminders_enabled"
 APPROVAL_REMIND_AFTER_DAYS = "approval_remind_after_days"
@@ -307,6 +311,34 @@ REGISTRY: dict[str, SettingDef] = {
             "from now on. The longest is 72 bytes, a limit of the hashing."
         ),
         default="14",
+    ),
+    LINK_CODE_MINUTES: SettingDef(
+        key=LINK_CODE_MINUTES,
+        label="Link another account: minutes an emailed code stays valid (minutes)",
+        kind="count",
+        description="The 6-digit code emailed to prove a second address is yours (My settings > Link another account). Placeholder 15, TBC.",
+        default="15",
+    ),
+    LINK_CODE_ATTEMPTS: SettingDef(
+        key=LINK_CODE_ATTEMPTS,
+        label="Link another account: wrong tries allowed per emailed code (attempts)",
+        kind="count",
+        description="After this many wrong entries the code no longer works and a new one must be asked for. Placeholder 5, TBC.",
+        default="5",
+    ),
+    LINK_CODE_PER_USER_HOUR: SettingDef(
+        key=LINK_CODE_PER_USER_HOUR,
+        label="Link another account: codes one person may ask for per hour (codes)",
+        kind="count",
+        description="Stops anyone using the form to email many addresses. Placeholder 5, TBC.",
+        default="5",
+    ),
+    LINK_CODE_PER_ADDRESS_HOUR: SettingDef(
+        key=LINK_CODE_PER_ADDRESS_HOUR,
+        label="Link another account: codes one address may be sent per hour (codes)",
+        kind="count",
+        description="Across everyone, so one mailbox cannot be flooded. Placeholder 3, TBC.",
+        default="3",
     ),
     SESSION_KEEP_DAYS: SettingDef(
         key=SESSION_KEEP_DAYS,

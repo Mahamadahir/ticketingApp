@@ -66,6 +66,7 @@ from app.notifications import (
     notify_no_active_approvers,
 )
 from app.outbox import queue_approval, queue_approval_withdrawn
+from app.identity import addresses_of, is_requester
 from app.models import (
     ApprovalGroup,
     ApprovalGroupMember,
@@ -157,9 +158,9 @@ def eligible_voters(session: Session, ticket: Ticket) -> list[User]:
     group = approval_group_of(session, ticket)
     if group is None:
         return []
-    requester = ticket.requester_email.lower()
     keep_requester = may_self_approve(session, ticket)
-    return [u for u in members_of(session, group.id, active_only=True) if keep_requester or u.email.lower() != requester]
+    requester = addresses_of(session, ticket.requester_email)  # the requester's person, once
+    return [u for u in members_of(session, group.id, active_only=True) if keep_requester or u.email.lower() not in requester]
 
 
 def approval_group_of(session: Session, ticket: Ticket) -> Optional[ApprovalGroup]:
@@ -229,12 +230,12 @@ def start_approvals(session: Session, ticket: Ticket, actor_email: str) -> Optio
     )
     session.add(approval)
     session.flush()
-    requester = ticket.requester_email.lower()
+    requester = addresses_of(session, ticket.requester_email)
     now = datetime.now(timezone.utc)
     # The requester is only in `voters` when the type allows self-approval (eligible_voters): their vote is made now.
     votes = [
         ApprovalVote(approval_id=approval.id, voter_id=u.id, decision=APPROVED, comment=SELF_APPROVED_COMMENT, decided_at=now)
-        if u.email.lower() == requester else ApprovalVote(approval_id=approval.id, voter_id=u.id)
+        if u.email.lower() in requester else ApprovalVote(approval_id=approval.id, voter_id=u.id)
         for u in voters
     ]
     session.add_all(votes)
@@ -466,7 +467,7 @@ def decide(session: Session, vote: ApprovalVote, decision: str, comment: str) ->
     if approval.status != PENDING or ticket.status != TicketStatus.AWAITING_APPROVAL:
         raise ApprovalError("This request is no longer waiting for approval")
     voter = session.get(User, vote.voter_id)
-    if voter.email.lower() == ticket.requester_email.lower():
+    if is_requester(ticket, voter):
         raise ApprovalError("You cannot approve your own request")
     if not voter.is_active:
         raise ApprovalError("Your account is inactive, so you can no longer answer this request")
@@ -513,7 +514,7 @@ def withdraw(session: Session, ticket: Ticket, requester_email: str) -> None:
     Raises ApprovalError, changing nothing. Does not commit."""
     session.flush()
     session.refresh(ticket, with_for_update=True)
-    if ticket.requester_email.lower() != (requester_email or "").lower():
+    if (requester_email or "").lower() not in addresses_of(session, ticket.requester_email):
         raise ApprovalError("Only the person who made the request can withdraw it")
     approval = current_approval(session, ticket)
     if approval is not None:

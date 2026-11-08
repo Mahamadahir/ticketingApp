@@ -37,6 +37,7 @@ from app import emergency, outage
 from app.never_follow import is_listed
 from app.approval_groups import is_member
 from app.notification_settings import APPROVAL_OVERDUE as APPROVAL_OVERDUE_EVENT, EMAIL, FOLLOWER_UPDATE as FOLLOWER_UPDATE_EVENT, is_enabled, wants_approval_email
+from app.identity import person_for_address
 from app.models import (
     Attachment,
     Message,
@@ -221,7 +222,7 @@ def build_follower_update_mail(session: Session, row: OutboundEmail) -> Mail:
         raise Unsendable("The person no longer follows the ticket")
     if is_listed(session, to):
         raise Unsendable("The address is on the never-follow list")
-    account = session.exec(select(User).where(func.lower(User.email) == to)).first()
+    account = person_for_address(session, to)
     if account is not None and not is_enabled(session, account, FOLLOWER_UPDATE_EVENT, EMAIL):
         raise Unsendable("The person turned these updates off in their notification settings")
     rendered = render_template(session, "follower_update", {
@@ -353,6 +354,44 @@ def build_emergency_reset_mail(session: Session, row: OutboundEmail) -> Mail:
     return Mail(
         to=row.to_address, cc=[], subject=render_text(subject, values),
         body=body, record=body, automatic=True, reference="none",
+    )
+
+
+def send_now(mail: Mail, send: Optional[Callable[[Mail], None]] = None) -> None:
+    """Sends one email at once, outside the outbox. Only for an email whose secret must not be stored, so it cannot
+    be queued (the link code, 6E): a failure is raised to the caller, who tells the person. `send` is for tests."""
+    if settings.mail_sending == "off":
+        raise Unsendable("Email sending is switched off")
+    to = mail.to.strip().lower()
+    mailbox = settings.graph_shared_mailbox.strip().lower()
+    if not to or (mailbox and to == mailbox):
+        raise Unsendable("No usable address to send to")
+    if send is None:
+        if settings.mail_sending == "dev":
+            log.info("Dev mail sink: to %s, subject %r\n%s", mail.to, mail.subject, mail.body)  # the dev sink shows the text
+            send = record_only
+        elif settings.graph_configured and settings.graph_shared_mailbox:
+            send = send_through_graph
+        else:
+            raise Unsendable("Email is not configured in this process")
+    send(mail)
+
+
+def send_link_code(
+    session: Session, address: str, code: str, name: str, minutes: int, send: Optional[Callable[[Mail], None]] = None
+) -> None:
+    """Emails the 6-digit code that proves a second address is the signed-in person's (app/linked_identities.py)
+    from the shared mailbox, with the admin-managed `link_code` template. The sent-mail record is not kept: the
+    code is a secret and is stored only hashed."""
+    values = {"name": name, "code": code, "minutes": str(minutes)}
+    subject, text = current_text(session, "link_code")
+    body = render_text(text, values)
+    send_now(
+        Mail(
+            to=address, cc=[], subject=render_text(subject, values), body=body, record="(link code, not kept)",
+            automatic=True, reference="none",
+        ),
+        send,
     )
 
 
