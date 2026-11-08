@@ -8,8 +8,11 @@ starting a phase, and `README.md` for how to run it.
 
 ## State of play
 
-- **Phases 0 to 6 are built; Phase 7 (reporting) is next** (see "Next up" in `docs/build-plan.md`
-  for the agreed order to go-live). Phase 6 (identity) is matching on the Entra object id and
+- **Phases 0 to 7 are built; Phase 8 (the Teams bot) is next** (see "Next up" in `docs/build-plan.md`
+  for the agreed order to go-live). Phase 7 is the reports with CSV export (`app/report_kit.py`,
+  `app/reports.py`; a report is one entry in `REPORTS`), the subject access export
+  (`app/subject_access.py`), requester anonymisation (`app/anonymisation.py`) and the cool storage tier
+  (Bicep). Every column that holds a person's data is classified once, in `app/person_data.py`. Phase 6 (identity) is matching on the Entra object id and
   server-side sessions (`app/sessions.py`), the nightly Entra `accountEnabled` check
   (`app/entra_check.py`), break-glass accounts (`app/breakglass.py`), outage mode with emergency
   passwords (`app/outage.py`, `app/emergency.py`) and linked identities (`app/linked_identities.py`;
