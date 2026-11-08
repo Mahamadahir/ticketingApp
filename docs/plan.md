@@ -66,7 +66,7 @@ indefinitely. Raise with the data protection lead: UK GDPR's storage
 limitation principle needs a written justification. Regardless of outcome,
 build a subject access export (everything held on one person; built, Admin > Data protection, permission `data_protection`) and requester
 anonymisation (keep the ticket, remove name, email and attachments; built as a manual action, Admin > Data protection > Anonymise a requester, see `docs/build-plan.md` 7C; the automatic run after a retention period waits for the data protection lead).
-Attachments older than a year move to the cool storage tier.
+Attachments older than a year move to the cool storage tier (a Bicep lifecycle rule, `attachmentsCoolAfterDays`, default 365, counted from creation; nothing is deleted by it).
 
 **Health and monitoring.**
 
@@ -164,7 +164,7 @@ for the database is a later option.
 - Redundancy: ZRS (zone-redundant, three copies across zones in UK South) in
   both environments. GRS/GZRS if a second region is ever wanted.
 - Versioning and soft delete on; superseded versions are deleted after 90
-  days; blobs move to the cool tier after a year.
+  days; blobs move to the cool tier 365 days after creation (a parameter, `attachmentsCoolAfterDays`; still online, so reads and SAS links are unchanged).
 - Uploads go through the app (size limit and type checks in one place), not
   directly from the browser.
 - Downloads of anything that is not an image are served as attachments, never

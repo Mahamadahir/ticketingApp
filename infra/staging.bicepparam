@@ -57,4 +57,6 @@ param postgresTier = 'Burstable'
 param postgresBackupRetentionDays = 7
 param postgresHighAvailability = 'Disabled'
 param storageSku = 'Standard_ZRS'
+// Attachments move to the cool tier this many days after creation (never deleted).
+param attachmentsCoolAfterDays = int(readEnvironmentVariable('ATTACHMENTS_COOL_AFTER_DAYS', '365'))
 param purgeProtection = false
