@@ -101,6 +101,9 @@ def _guard_recipient(row: OutboundEmail) -> None:
         raise Unsendable("No address to send to")
     if mailbox and row.to_address.strip().lower() == mailbox:
         raise Unsendable("The address is the shared mailbox itself (a loop)")
+    if row.to_address.strip().lower().endswith("@invalid"):
+        # The placeholder an anonymised requester's tickets carry (app/anonymisation.py): nobody is there to tell.
+        raise Unsendable("The person was anonymised")
 
 
 def _with_about(session: Session, ticket: Ticket, body: str) -> str:

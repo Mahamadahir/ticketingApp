@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Admin: Anonymise a requester{% endblock %}
+{% block content %}
+{% set active = "/admin/data-protection" %}
+{% include "_admin_tabs.html" %}
+
+<h2>Anonymise a requester</h2>
+<p><a href="/admin/data-protection">Back to Data protection</a></p>
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+
+{% if result %}
+<h3>Done</h3>
+<p>The person was anonymised as <strong>Anonymised requester #{{ result.outcome.n }}</strong>. {{ result.outcome.tickets }} ticket(s) were kept.
+  {% if result.outcome.closed %}{{ result.outcome.closed }} open ticket(s) were closed first.{% endif %}</p>
+<ul>
+  {% for label, count in result.outcome.counts.items() %}<li>{{ label }}: {{ count }}</li>{% endfor %}
+</ul>
+<p>Stored files: {{ result.deleted }} deleted
+  {%- if result.failed %}, <strong>{{ result.failed }} could not be deleted yet</strong>. They are queued and the recurring job "blob-cleanup" retries them; the database no longer lists them either way.{% else %}.{% endif %}
+  {% if result.outcome.shared_files_kept %}{{ result.outcome.shared_files_kept }} file(s) were identical to files still used on other tickets, so the stored copy was kept for those tickets.{% endif %}
+</p>
+<p class="note">Stored files may remain recoverable inside the storage account for its soft-delete period (see the staging checklist). The audit log records that this happened, by whom and how many tickets, with a one-way hash of the address and never the address.</p>
+{% else %}
+
+{% set p = shown %}
+<h3>What will change for {{ address }}</h3>
+{% if p.earlier %}<p class="note" role="status">An address with the same hash was anonymised before, on {{ p.earlier.created_at.strftime("%Y-%m-%d") }} (Anonymised requester #{{ p.earlier.id }}). Anything held now was created since.</p>{% endif %}
+{% if p.person.addresses|length > 1 %}<p>Addresses covered: {{ p.person.addresses|sort|join(", ") }}</p>{% endif %}
+
+{% if p.refused %}
+<p class="error" role="alert">{{ p.refused }}</p>
+{% if p.open_references and not close_open %}
+<form method="post" action="/admin/data-protection/anonymise/preview">
+  <input type="hidden" name="address" value="{{ address }}" />
+  <input type="hidden" name="close_open" value="true" />
+  <button type="submit">Show again with "close open tickets first"</button>
+</form>
+{% endif %}
+{% else %}
+<p>These changes are made in one step. Nothing has been changed yet.</p>
+<table>
+  <thead><tr><th>Change</th><th>Count</th></tr></thead>
+  <tbody>
+  {% for label, count in p.outcome.counts.items() %}<tr><td>{{ label }}</td><td>{{ count }}</td></tr>{% endfor %}
+  </tbody>
+</table>
+{% if p.outcome.closed %}<p><strong>{{ p.outcome.closed }} open ticket(s) will be closed first</strong> ({{ p.open_references|join(", ") }}). No email is sent to the requester.</p>{% endif %}
+{% if p.outcome.blob_keys %}<p>{{ p.outcome.blob_keys|length }} stored file(s) will be deleted from storage after the change is saved.{% if p.outcome.shared_files_kept %} {{ p.outcome.shared_files_kept }} identical file(s) are also used on other tickets and stay.{% endif %}</p>{% endif %}
+
+<h4>Tickets kept ({{ p.tickets|length }})</h4>
+<p class="note">These keep their number, type, category, team, dates, status and events. The subject and resolution notes stay, with any email address in them replaced; read the subjects, because a name written into a subject is <strong>not</strong> found or changed. Internal notes stay too, with the same limit. Staff names, and other people on a shared ticket, are not touched.</p>
+<ul>{% for reference, status, subject in p.tickets %}<li>{{ reference }} ({{ status }}): {{ subject }}</li>{% endfor %}</ul>
+
+<h4>Also rewritten</h4>
+<p class="note">Earlier audit and activity entries, and ticket events, that contain the address have it replaced with the placeholder (anonymised-N@invalid). Later mail from the old address starts a new ticket; it does not join the anonymised ones.</p>
+
+<h4>Confirm</h4>
+<p><strong>This cannot be undone.</strong> Type the email address again to confirm.</p>
+<form method="post" action="/admin/data-protection/anonymise">
+  <input type="hidden" name="address" value="{{ address }}" />
+  {% if close_open %}<input type="hidden" name="close_open" value="true" />{% endif %}
+  <label>Type {{ address }} <input type="text" name="confirm" autocomplete="off" required /></label>
+  <button type="submit">Anonymise permanently</button>
+</form>
+{% endif %}
+{% endif %}
+{% endblock %}

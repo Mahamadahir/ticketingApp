@@ -65,7 +65,7 @@ enough.
 indefinitely. Raise with the data protection lead: UK GDPR's storage
 limitation principle needs a written justification. Regardless of outcome,
 build a subject access export (everything held on one person; built, Admin > Data protection, permission `data_protection`) and requester
-anonymisation (keep the ticket, remove name, email and attachments).
+anonymisation (keep the ticket, remove name, email and attachments; built as a manual action, Admin > Data protection > Anonymise a requester, see `docs/build-plan.md` 7C; the automatic run after a retention period waits for the data protection lead).
 Attachments older than a year move to the cool storage tier.
 
 **Health and monitoring.**

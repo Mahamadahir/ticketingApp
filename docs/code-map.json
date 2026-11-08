@@ -54,6 +54,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/e5fda8ca3a76_anonymised_requester.py",
+        "revision": "e5fda8ca3a76"
+      },
+      {
         "file": "migrations/versions/b12eaa1c47fe_report_indexes.py",
         "revision": "b12eaa1c47fe"
       },
@@ -68,17 +72,13 @@
       {
         "file": "migrations/versions/c4e8a2b6d913_self_approval_switch.py",
         "revision": "c4e8a2b6d913"
-      },
-      {
-        "file": "migrations/versions/b8d3e1f7a642_break_glass_accounts.py",
-        "revision": "b8d3e1f7a642"
       }
     ],
-    "count": 61,
+    "count": 62,
     "heads": [
       {
-        "file": "migrations/versions/b12eaa1c47fe_report_indexes.py",
-        "revision": "b12eaa1c47fe"
+        "file": "migrations/versions/e5fda8ca3a76_anonymised_requester.py",
+        "revision": "e5fda8ca3a76"
       }
     ]
   },
@@ -157,6 +157,66 @@
       "tables": [],
       "tests": [
         "tests/test_activity_log.py"
+      ]
+    },
+    {
+      "classes": [
+        "Context",
+        "Outcome",
+        "Preview",
+        "Refused"
+      ],
+      "file": "app/anonymisation.py",
+      "functions": [
+        "address_hash",
+        "anonymise",
+        "blockers_to_close",
+        "expected_step_keys",
+        "open_tickets",
+        "placeholder_address",
+        "placeholder_name",
+        "preview",
+        "purge_pending_blobs",
+        "refusal",
+        "run",
+        "run_blob_cleanup",
+        "step_accounts",
+        "step_activity_network",
+        "step_answers",
+        "step_attachments",
+        "step_expire_links",
+        "step_feedback_comment",
+        "step_followers",
+        "step_inbound_sender",
+        "step_message_body",
+        "step_message_cc",
+        "step_message_sender",
+        "step_notifications",
+        "step_outbound_body",
+        "step_outbound_to",
+        "step_thread_ids",
+        "step_ticket_requester",
+        "step_vote_comment"
+      ],
+      "imported_by": [
+        "app.routers.data_protection",
+        "app.scheduled_jobs"
+      ],
+      "imports": [
+        "app.audit",
+        "app.closing",
+        "app.config",
+        "app.models",
+        "app.person_data",
+        "app.storage",
+        "app.ticket_service"
+      ],
+      "module": "app.anonymisation",
+      "routes": [],
+      "summary": "Requester anonymisation (issue #176): keep the ticket, remove the person. Irreversible.",
+      "tables": [],
+      "tests": [
+        "tests/test_anonymisation.py"
       ]
     },
     {
@@ -356,6 +416,7 @@
       "summary": "Attachments: the one place a file is checked and stored (docs/plan.md, \"Storage decisions\").",
       "tables": [],
       "tests": [
+        "tests/test_anonymisation.py",
         "tests/test_attachments.py",
         "tests/test_inbound_mail.py",
         "tests/test_msp_mail.py",
@@ -369,6 +430,7 @@
         "log_action"
       ],
       "imported_by": [
+        "app.anonymisation",
         "app.approval_reminders",
         "app.approvals",
         "app.auth",
@@ -747,6 +809,7 @@
         "preview_closing"
       ],
       "imported_by": [
+        "app.anonymisation",
         "app.routers.tickets"
       ],
       "imports": [
@@ -780,6 +843,7 @@
       ],
       "imported_by": [
         "app.action_links",
+        "app.anonymisation",
         "app.approval_links",
         "app.attachments",
         "app.auth",
@@ -819,6 +883,7 @@
         "tests/test_acknowledgement.py",
         "tests/test_action_links.py",
         "tests/test_activity_log.py",
+        "tests/test_anonymisation.py",
         "tests/test_approval_reminders.py",
         "tests/test_attachments.py",
         "tests/test_auto_close_chase.py",
@@ -1362,6 +1427,7 @@
       "tables": [],
       "tests": [
         "tests/test_acknowledgement.py",
+        "tests/test_anonymisation.py",
         "tests/test_follower_updates.py",
         "tests/test_inbound_mail.py",
         "tests/test_msp_mail.py",
@@ -1597,6 +1663,7 @@
       "tests": [
         "tests/test_acknowledgement.py",
         "tests/test_action_links.py",
+        "tests/test_anonymisation.py",
         "tests/test_approval_reminders.py",
         "tests/test_auto_close_chase.py",
         "tests/test_closing_email.py",
@@ -1664,6 +1731,7 @@
       "tests": [
         "tests/conftest.py",
         "tests/test_action_links.py",
+        "tests/test_anonymisation.py",
         "tests/test_attachments.py",
         "tests/test_break_glass.py",
         "tests/test_entra_check.py",
@@ -1761,6 +1829,7 @@
       "classes": [
         "ActionToken",
         "ActivityLog",
+        "AnonymisedRequester",
         "ApprovalGroup",
         "ApprovalGroupMember",
         "ApprovalVote",
@@ -1786,6 +1855,7 @@
         "NotificationPreference",
         "NumberCounter",
         "OutboundEmail",
+        "PendingBlobDelete",
         "RelatedTicket",
         "RequestSubTemplate",
         "RequestType",
@@ -1820,6 +1890,7 @@
       "imported_by": [
         "app.action_links",
         "app.activity",
+        "app.anonymisation",
         "app.approval_groups",
         "app.approval_reminders",
         "app.approvals",
@@ -1915,6 +1986,10 @@
           "table": "activitylog"
         },
         {
+          "class": "AnonymisedRequester",
+          "table": "anonymised_requester"
+        },
+        {
           "class": "ApprovalGroup",
           "table": "approvalgroup"
         },
@@ -2001,6 +2076,10 @@
         {
           "class": "OutboundEmail",
           "table": "outboundemail"
+        },
+        {
+          "class": "PendingBlobDelete",
+          "table": "pending_blob_delete"
         },
         {
           "class": "RelatedTicket",
@@ -2098,6 +2177,7 @@
         "tests/test_action_links.py",
         "tests/test_activity_log.py",
         "tests/test_admin.py",
+        "tests/test_anonymisation.py",
         "tests/test_approval_bell.py",
         "tests/test_approval_groups.py",
         "tests/test_approval_inactive.py",
@@ -2639,6 +2719,7 @@
       "summary": "Extra permissions a super admin can grant (issue #132). Not RBAC: the three roles stay, and a",
       "tables": [],
       "tests": [
+        "tests/test_anonymisation.py",
         "tests/test_permissions.py",
         "tests/test_reports.py",
         "tests/test_reports_more.py",
@@ -2660,6 +2741,7 @@
         "user_id_columns"
       ],
       "imported_by": [
+        "app.anonymisation",
         "app.subject_access"
       ],
       "imports": [
@@ -2671,6 +2753,7 @@
       "summary": "Where the app holds a person's data: one lookup and one list of columns (issue #175, reused by #176).",
       "tables": [],
       "tests": [
+        "tests/test_anonymisation.py",
         "tests/test_subject_access.py"
       ]
     },
@@ -3791,6 +3874,8 @@
       "classes": [],
       "file": "app/routers/data_protection.py",
       "functions": [
+        "anonymise_confirm",
+        "anonymise_preview",
         "show",
         "subject_access"
       ],
@@ -3798,6 +3883,7 @@
         "app.main"
       ],
       "imports": [
+        "app.anonymisation",
         "app.auth",
         "app.database",
         "app.models",
@@ -3813,6 +3899,16 @@
           "handler": "show",
           "method": "GET",
           "path": "/admin/data-protection"
+        },
+        {
+          "handler": "anonymise_confirm",
+          "method": "POST",
+          "path": "/admin/data-protection/anonymise"
+        },
+        {
+          "handler": "anonymise_preview",
+          "method": "POST",
+          "path": "/admin/data-protection/anonymise/preview"
         },
         {
           "handler": "subject_access",
@@ -4657,6 +4753,7 @@
         "app.worker"
       ],
       "imports": [
+        "app.anonymisation",
         "app.approval_reminders",
         "app.audit",
         "app.auto_close_chase",
@@ -4674,6 +4771,7 @@
       "summary": "Recurring jobs driven by the database (phase 4A): the `scheduled_job` table.",
       "tables": [],
       "tests": [
+        "tests/test_anonymisation.py",
         "tests/test_approval_reminders.py",
         "tests/test_auto_close_chase.py",
         "tests/test_due_date.py",
@@ -4976,6 +5074,7 @@
         "get_storage"
       ],
       "imported_by": [
+        "app.anonymisation",
         "app.attachments",
         "app.inbound",
         "app.mail",
@@ -4991,6 +5090,7 @@
       "summary": "Where attachment bytes live (docs/plan.md, \"Storage decisions\").",
       "tables": [],
       "tests": [
+        "tests/test_anonymisation.py",
         "tests/test_attachments.py",
         "tests/test_inbound_mail.py",
         "tests/test_msp_mail.py",
@@ -5194,6 +5294,7 @@
       "summary": "Teams channel posts (phase 2D): a card in the support channel for each new ticket.",
       "tables": [],
       "tests": [
+        "tests/test_anonymisation.py",
         "tests/test_approval_reminders.py",
         "tests/test_auto_close_chase.py",
         "tests/test_inbound_mail.py",
@@ -5324,6 +5425,7 @@
         "set_status"
       ],
       "imported_by": [
+        "app.anonymisation",
         "app.approvals",
         "app.auto_close_chase",
         "app.backdating",
@@ -5665,6 +5767,24 @@
         "rule": "access-in-visibility"
       },
       {
+        "detail": "select() on Message",
+        "file": "app/anonymisation.py",
+        "in": "_agent_emails_to_them",
+        "rule": "messages-via-messages-module"
+      },
+      {
+        "detail": "select() on Message",
+        "file": "app/anonymisation.py",
+        "in": "_their_messages",
+        "rule": "messages-via-messages-module"
+      },
+      {
+        "detail": "select() on Message",
+        "file": "app/anonymisation.py",
+        "in": "step_message_body",
+        "rule": "messages-via-messages-module"
+      },
+      {
         "allowed": "own_first_message reads only the requester's PUBLIC inbound message, to quote the original in outbound mail; it never returns notes.",
         "detail": "select() on Message",
         "file": "app/mail.py",
@@ -5996,6 +6116,7 @@
     "tests/test_action_links.py",
     "tests/test_activity_log.py",
     "tests/test_admin.py",
+    "tests/test_anonymisation.py",
     "tests/test_approval_bell.py",
     "tests/test_approval_groups.py",
     "tests/test_approval_groups_migration.py",

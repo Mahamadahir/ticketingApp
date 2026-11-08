@@ -38,6 +38,9 @@ class Storage(Protocol):
     def read(self, key: str) -> bytes:
         """Raises FileNotFoundError when the blob is gone."""
 
+    def delete(self, key: str) -> None:
+        """Removes the blob (and, in Azure, every older version of it). A blob that is already gone is not an error."""
+
     def download_url(self, key: str, *, filename: str, content_type: str, inline: bool) -> Optional[str]:
         """A short-lived address the browser can be sent to, or None when the app has to stream
         the bytes itself (the local implementation)."""
@@ -83,6 +86,9 @@ class LocalStorage:
 
     def read(self, key: str) -> bytes:
         return self._path(key).read_bytes()
+
+    def delete(self, key: str) -> None:
+        self._path(key).unlink(missing_ok=True)
 
     def download_url(self, key: str, *, filename: str, content_type: str, inline: bool) -> Optional[str]:
         return None
@@ -149,6 +155,26 @@ class BlobStorage:
             return self._blob(key).download_blob().readall()
         except ResourceNotFoundError as error:
             raise FileNotFoundError(key) from error
+
+    def delete(self, key: str) -> None:
+        """Deletes the blob and then every older version of it. The account keeps versions (infra/modules/storage.bicep),
+        so deleting only the current blob would leave the file readable as a previous version; each one is deleted by
+        its version id. What Azure's soft delete then keeps for its retention days is outside the app's reach."""
+        from azure.core.exceptions import ResourceNotFoundError
+
+        blob = self._blob(key)
+        try:
+            blob.delete_blob(delete_snapshots="include")
+        except ResourceNotFoundError:
+            pass
+        container = self.service.get_container_client(self.container)
+        for item in container.list_blobs(name_starts_with=key, include=["versions"]):
+            if item.name != key or not getattr(item, "version_id", None):
+                continue
+            try:
+                blob.delete_blob(version_id=item.version_id)
+            except ResourceNotFoundError:
+                pass
 
     def _key(self, now: datetime):
         with self._key_lock:
