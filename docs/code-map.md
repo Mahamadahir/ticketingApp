@@ -35,7 +35,6 @@ any change that adds, removes or renames modules, routes, models, jobs, settings
 - `messages-via-messages-module` app/search.py in `search_condition`: select() on Message (allowed: Agent search matches message bodies inside a condition that visibility.visible_ticket_condition already narrowed; the requester never sees search.)
 - `messages-via-messages-module` app/subject_access.py in `_staff_references`: select() on Message
 - `messages-via-messages-module` app/subject_access.py in `_ticket_roles`: select() on Message
-- `messages-via-messages-module` app/subject_access.py in `_tickets`: select() on Message
 - `messages-via-messages-module` app/team_activity.py in `feed_query`: select() on Message (allowed: The agent team activity feed lists messages (including notes) of tickets the agent can open, filtered by visible_ticket_condition; the requester never sees it.)
 - `messages-via-messages-module` app/thanks_rules.py in `_reply_that_reopened`: select() on Message
 - `tickets-via-ticket-service` app/subrequests.py in `preview`: builds Ticket(...) directly
@@ -756,7 +755,7 @@ Everything about the messages on a ticket: emailing the requester, internal
 File: `app/messages.py`
 
 - Classes: `BadStatusChoice`, `EmailPreview`, `EmptyEmail`, `TimelineItem`, `UnknownRecipient`
-- Functions: `about_labels`, `about_text`, `add_note`, `agent_timeline`, `chosen_status`, `default_status_after_email`, `email_requester`, `in_a_split`, `is_triaged`, `mail_subject`, `preview_email`, `record_inbound`, `record_msp_message`, `record_notice`, `requester_visible_answers`, `requester_visible_messages`, `status_choices`, `thread_subject`
+- Functions: `about_labels`, `about_text`, `add_note`, `agent_timeline`, `chosen_status`, `default_status_after_email`, `email_requester`, `in_a_split`, `is_triaged`, `mail_subject`, `not_requester_visible_messages`, `preview_email`, `record_inbound`, `record_msp_message`, `record_notice`, `requester_visible_answers`, `requester_visible_messages`, `status_choices`, `thread_subject`
 - Imports: `app.followers`, `app.models`, `app.notifications`, `app.outbox`, `app.request_questions`, `app.sla`, `app.splitting`, `app.ticket_service`, `app.visibility`
 - Imported by: `app.approvals`, `app.bulk_resolve`, `app.closing`, `app.escalation`, `app.inbound`, `app.mail`, `app.msp`, `app.msp_actions`, `app.raising`, `app.reopening`, `app.resolution`, `app.routers.approvals`, `app.routers.portal`, `app.routers.tickets`, `app.splitting`, `app.subject_access`, `app.visibility`
 - Tests: `test_email_preview.py`, `test_escalation_tidy.py`, `test_follower_updates.py`, `test_inbound_mail.py`, `test_messages.py`, `test_msp_mail.py`, `test_msp_real_mail.py`, `test_never_follow.py`, `test_outbound_mail.py`, `test_reply_notification.py`, `test_request_questions.py`, `test_resolution.py`, `test_scheduled_status.py`, `test_split_family.py`
@@ -1256,7 +1255,7 @@ File: `app/subject_access.py`
 - Functions: `build_export`
 - Imports: `app.attachments`, `app.audit`, `app.messages`, `app.models`, `app.person_data`, `app.settings_store`, `app.storage`, `app.templating`
 - Imported by: `app.routers.data_protection`
-- Tests: none
+- Tests: `test_subject_access.py`
 
 ### `app.subrequests`
 

@@ -40,6 +40,7 @@ from app.models import (
     Attachment,
     AuditLog,
     InboundMail,
+    LinkCode,
     LinkedIdentity,
     Message,
     Notification,
@@ -57,7 +58,7 @@ from app.models import (
     UserPermission,
     UserSession,
 )
-from app.messages import requester_visible_answers, requester_visible_messages
+from app.messages import not_requester_visible_messages, requester_visible_answers, requester_visible_messages
 from app.models import MessageDirection
 from app.person_data import Person, email_matches, find_person, list_matches, mentions
 from app.settings_store import SUBJECT_ACCESS_MAX_MB, count_setting
@@ -120,6 +121,19 @@ def _in(column, values):
     return column.in_(values) if values else column.is_(None) & column.is_not(None)
 
 
+# Every table the person lookup calls the person's own data (person_data.COLUMNS, role SUBJECT) and where it goes in
+# the export. The test fails when a table is classified as the person's own but is not listed here.
+EXPORTED_TABLES = {
+    "user": "account.json", "user_session": "account.json (sessions)", "userpermission": "account.json",
+    "teammembership": "account.json", "approvalgroupmember": "account.json", "linked_identity": "account.json",
+    "link_code": "account.json (link_codes_asked)", "notificationpreference": "preferences.json",
+    "requestertimezone": "preferences.json", "activitylog": "activity.csv", "auditlog": "audit.csv",
+    "ticketevent": "ticket_events.json", "ticket": "tickets.json", "ticketfollower": "tickets.json",
+    "message": "tickets.json", "attachment": "attachments/", "approvalvote": "approvals.json",
+    "notification": "notifications.json", "outboundemail": "mail.json", "inboundmail": "mail.json",
+}
+
+
 # ---- Sections -----------------------------------------------------------------------------------------------
 
 
@@ -134,6 +148,8 @@ def _accounts(session: Session, person: Person) -> list[dict]:
                 "entra_object_id": user.entra_object_id, "is_break_glass": user.is_break_glass,
                 "out_of_office": user.out_of_office, "locked_until": user.locked_until,
                 "has_emergency_password": user.emergency_password_hash is not None,
+                "emergency_password_set_at": user.emergency_password_set_at,
+                "emergency_password_used_at": user.emergency_password_used_at,
                 "has_password": user.password_hash is not None,
                 "team_memberships": [
                     {"team": team, "level": level.value}
@@ -175,6 +191,14 @@ def _linked(session: Session, person: Person) -> list[dict]:
     ]
 
 
+def _link_codes(session: Session, person: Person) -> list[dict]:
+    """The emailed codes asked for (only a keyed hash of each is held, and it is not exported)."""
+    return [
+        {"address": c.address, "asked_at": c.created_at, "expires_at": c.expires_at}
+        for c in session.exec(select(LinkCode).where(_in(LinkCode.user_id, person.user_ids)).order_by(LinkCode.id)).all()
+    ]
+
+
 def _ticket_roles(session: Session, person: Person) -> tuple[dict[int, set[str]], set[int]]:
     """ticket id -> the ways the person is on it; and the tickets they follow only as staff (agent reference)."""
     roles: dict[int, set[str]] = {}
@@ -188,22 +212,29 @@ def _ticket_roles(session: Session, person: Person) -> tuple[dict[int, set[str]]
             staff_followed.add(ticket_id)
         else:
             roles.setdefault(ticket_id, set()).add(FOLLOWER)
-    for ticket_id, cc in session.exec(
-        select(Message.ticket_id, Message.cc).where(
+    # On copy: named in the Cc of a message the requester can see. A Cc on an internal note, or on MSP mail not
+    # yet forwarded, is not the person's to be told about, so the ticket is not theirs because of it.
+    copied: dict[int, set[int]] = {}
+    for message_id, ticket_id, cc in session.exec(
+        select(Message.id, Message.ticket_id, Message.cc).where(
             list_matches(Message.cc, person), Message.direction != MessageDirection.INTERNAL
         )
     ).all():
         if mentions(cc, person):
-            roles.setdefault(ticket_id, set()).add(COPIED)
+            copied.setdefault(ticket_id, set()).add(message_id)
+    for ticket in session.exec(select(Ticket).where(_in(Ticket.id, copied))).all():
+        if copied[ticket.id] & {m.id for m in requester_visible_messages(session, ticket)}:
+            roles.setdefault(ticket.id, set()).add(COPIED)
     staff_followed -= set(roles)
     return roles, staff_followed
 
 
 def _is_own_message(message: Message, person: Person) -> bool:
+    """Written by one of their accounts, or sent from one of their addresses. A display name alone never counts:
+    two people can share one."""
     if message.author_user_id is not None and message.author_user_id in person.user_ids:
         return True
-    sender = (message.sender or "").strip().lower()
-    return mentions(sender, person) or (person.main is not None and sender == person.main.display_name.strip().lower())
+    return mentions(message.sender, person)
 
 
 def _message_row(message: Message, own: bool) -> dict:
@@ -213,7 +244,7 @@ def _message_row(message: Message, own: bool) -> dict:
     }
 
 
-def _tickets(session: Session, person: Person, roles: dict[int, set[str]], storage: Storage, budget: int):
+def _tickets(session: Session, person: Person, roles: dict[int, set[str]], budget: int):
     """Returns (ticket sections, internal-note sections, files to add, attachments listed but not added)."""
     sections, internal_sections, files, listed = [], [], [], []
     spent = 0
@@ -228,6 +259,11 @@ def _tickets(session: Session, person: Person, roles: dict[int, set[str]], stora
             "status": ticket.status.value, "type": ticket.type.value, "created_at": ticket.created_at,
             "resolved_at": ticket.resolved_at, "closed_at": ticket.closed_at,
             "roles": sorted(roles[ticket.id]),
+            "following_since": [
+                f.created_at for f in session.exec(
+                    select(TicketFollower).where(TicketFollower.ticket_id == ticket.id, email_matches(TicketFollower.email, person))
+                ).all()
+            ],
             "messages": [_message_row(m, m.id in own_ids) for m in visible],
         }
         if is_requester:
@@ -243,22 +279,16 @@ def _tickets(session: Session, person: Person, roles: dict[int, set[str]], stora
             ]
         sections.append(section)
 
-        notes = session.exec(
-            select(Message).where(Message.ticket_id == ticket.id, ~Message.id.in_(visible_ids or {0})).order_by(Message.created_at, Message.id)
-        ).all()
+        notes = not_requester_visible_messages(session, ticket)
         note_ids = {n.id for n in notes}
-        if notes:
-            internal_sections.append(
-                {"reference": ticket.reference, "notes": [_message_row(n, False) | {"visibility": n.visibility.value} for n in notes]}
-            )
-
+        note_files = []
         for attachment in session.exec(select(Attachment).where(Attachment.ticket_id == ticket.id).order_by(Attachment.id)).all():
             row = {
                 "attachment_id": attachment.id, "ticket": ticket.reference, "filename": attachment.filename,
                 "size": attachment.size, "content_type": attachment.content_type,
             }
             if attachment.message_id in note_ids:
-                listed.append(row | {"reason": "attached to an internal note"})
+                note_files.append(row)  # named only in internal_notes.json, with the note it belongs to
                 continue
             if attachment.message_id is not None and attachment.message_id not in visible_ids:
                 continue  # another ticket's message
@@ -272,12 +302,17 @@ def _tickets(session: Session, person: Person, roles: dict[int, set[str]], stora
             if spent + attachment.size > budget:
                 listed.append(row | {"reason": "over the size limit; not added as a file"})
                 continue
-            if not storage.exists(attachment.blob_key):
-                listed.append(row | {"reason": "the file is missing from storage"})
-                continue
             spent += attachment.size
             path = f"attachments/{ticket.reference}/{attachment.id}-{_safe_part(attachment.filename)}"
-            files.append((path, attachment.blob_key, attachment.size))
+            files.append((path, attachment.blob_key, row))
+        if notes:
+            internal_sections.append(
+                {
+                    "reference": ticket.reference,
+                    "notes": [_message_row(n, False) | {"visibility": n.visibility.value} for n in notes],
+                    "files_on_notes": note_files,
+                }
+            )
     return sections, internal_sections, files, listed
 
 
@@ -403,13 +438,17 @@ def _audit(session: Session, person: Person) -> list[dict]:
         )
         .order_by(AuditLog.id)
     ).all()
+    # An entry the person made about something else is staff work (action, entity, time); its detail can name
+    # another person (an address linked, a role changed), so it is kept only on entries about the person's account.
+    about = [r.entity_type == "user" and r.entity_id in person.user_ids for r in rows]
     return [
         {
-            "time": r.created_at, "entity": f"{r.entity_type} {r.entity_id}", "action": r.action, "detail": r.detail,
+            "time": r.created_at, "entity": f"{r.entity_type} {r.entity_id}", "action": r.action,
+            "detail": r.detail if is_about else None,
             "done_by": r.actor_email if r.actor_email.strip().lower() in person.addresses else "a staff member",
-            "about_the_person": r.entity_type == "user" and r.entity_id in person.user_ids,
+            "about_the_person": is_about,
         }
-        for r in rows
+        for r, is_about in zip(rows, about)
     ]
 
 
@@ -428,8 +467,11 @@ def _ticket_events(session: Session, person: Person, in_scope: set[int]) -> list
         )
         .order_by(TicketEvent.id)
     ).all()
+    # On a ticket the person is not on, an event they caused is staff work: type, ticket and time, never the values
+    # (an assignee, a follower's address, a category), which can name someone else.
     return [
-        {"time": e.created_at, "ticket": f"#{number}", "event": e.event_type, "from": e.from_value, "to": e.to_value}
+        {"time": e.created_at, "ticket": f"#{number}", "event": e.event_type}
+        | ({"from": e.from_value, "to": e.to_value} if e.ticket_id in in_scope else {})
         for e, number in rows
         if e.ticket_id in in_scope or (e.actor_email or "").strip().lower() in person.addresses
     ]
@@ -476,7 +518,7 @@ def build_export(session: Session, storage: Storage, address: str, requested_by:
     budget = count_setting(session, SUBJECT_ACCESS_MAX_MB) * 1024 * 1024
 
     roles, staff_followed = _ticket_roles(session, person)
-    sections, internal_sections, files, listed = _tickets(session, person, roles, storage, budget)
+    sections, internal_sections, planned, listed = _tickets(session, person, roles, budget)
     in_scope = set(roles)
     staff = _staff_references(session, person)
     if staff_followed:
@@ -485,53 +527,69 @@ def build_export(session: Session, storage: Storage, address: str, requested_by:
         ]
     accounts, linked = _accounts(session, person), _linked(session, person)
     activity, audit = _activity(session, person), _audit(session, person)
-    data = {
-        "account.json": {"accounts": accounts, "linked_identities": linked, "sessions": _sessions(session, person)},
-        "tickets.json": sections,
-        "internal_notes.json": {
-            "warning": "Internal notes were written by staff for staff. They are NOT part of what the requester may see. "
-            "The data protection lead decides what, if anything, to disclose.",
-            "tickets": internal_sections,
-        },
-        "approvals.json": _approvals(session, person),
-        "notifications.json": _notifications(session, person),
-        "preferences.json": _preferences(session, person),
-        "mail.json": _mail(session, person, in_scope),
-        "ticket_events.json": _ticket_events(session, person, in_scope),
-        "staff_references.json": staff,
-        "attachments_not_added.json": listed,
-    }
-    summary = {
-        "generated_at": now, "requested_by": requested_by.email, "address_asked": person.address,
-        "addresses": sorted(person.addresses), "has_account": person.main is not None,
-        "counts": {
-            "tickets": len(sections), "tickets_as_requester": sum(REQUESTER in roles[t] for t in roles),
-            "visible_messages": sum(len(s["messages"]) for s in sections),
-            "internal_notes": sum(len(s["notes"]) for s in internal_sections),
-            "attachment_files": len(files), "attachments_listed_only": len(listed),
-            "approval_votes": len(data["approvals.json"]), "notifications": len(data["notifications.json"]),
-            "activity_rows": len(activity), "audit_entries": len(audit),
-        },
-        "attachment_bytes_added": sum(size for _, _, size in files), "attachment_limit_bytes": budget,
-        "files": sorted([*data, "activity.csv", "audit.csv", "summary.html", *(p for p, _, _ in files)]),
-        "not_included": NOT_INCLUDED,
-    }
-    data["summary.json"] = summary
 
     handle = tempfile.TemporaryFile()
     try:
-        with zipfile.ZipFile(handle, "w", zipfile.ZIP_DEFLATED) as archive:
-            for name, content in data.items():
-                archive.writestr(name, _json(content))
-            archive.writestr("activity.csv", _csv(activity, ["time", "event", "method", "path", "status", "ip", "user_agent", "detail"]))
-            archive.writestr("audit.csv", _csv(audit, ["time", "entity", "action", "detail", "done_by", "about_the_person"]))
-            archive.writestr("summary.html", templates.get_template("subject_access_summary.html").render(summary=summary, tickets=sections, internal=internal_sections, listed=listed, accounts=accounts, linked=linked))
-            for path, key, _ in files:
-                try:
-                    content = storage.read(key)
-                except FileNotFoundError:
-                    continue  # gone since it was checked a moment ago; the summary's count is then one high
-                archive.writestr(path, content)
+        archive = zipfile.ZipFile(handle, "w", zipfile.ZIP_DEFLATED)
+        # The files go first, one at a time, so the summary counts what really went in: a file that has gone
+        # missing from storage since it was listed is reported as not added.
+        files = []
+        for path, key, row in planned:
+            try:
+                content = storage.read(key)
+            except FileNotFoundError:
+                listed.append(row | {"reason": "the file is missing from storage"})
+                continue
+            archive.writestr(path, content)
+            files.append((path, row["size"]))
+            del content
+
+        data = {
+            "account.json": {
+                "accounts": accounts, "linked_identities": linked, "sessions": _sessions(session, person),
+                "link_codes_asked": _link_codes(session, person),
+            },
+            "tickets.json": sections,
+            "internal_notes.json": {
+                "warning": "Internal notes were written by staff for staff. They are NOT part of what the requester may see. "
+                "The data protection lead decides what, if anything, to disclose.",
+                "tickets": internal_sections,
+            },
+            "approvals.json": _approvals(session, person),
+            "notifications.json": _notifications(session, person),
+            "preferences.json": _preferences(session, person),
+            "mail.json": _mail(session, person, in_scope),
+            "ticket_events.json": _ticket_events(session, person, in_scope),
+            "staff_references.json": staff,
+            "attachments_not_added.json": listed,
+        }
+        summary = {
+            "generated_at": now, "requested_by": requested_by.email, "address_asked": person.address,
+            "addresses": sorted(person.addresses), "has_account": person.main is not None,
+            "counts": {
+                "tickets": len(sections), "tickets_as_requester": sum(REQUESTER in roles[t] for t in roles),
+                "visible_messages": sum(len(s["messages"]) for s in sections),
+                "internal_notes": sum(len(s["notes"]) for s in internal_sections),
+                "attachment_files": len(files), "attachments_listed_only": len(listed),
+                "approval_votes": len(data["approvals.json"]), "notifications": len(data["notifications.json"]),
+                "activity_rows": len(activity), "audit_entries": len(audit),
+            },
+            "attachment_bytes_added": sum(size for _, size in files), "attachment_limit_bytes": budget,
+            "files": sorted([*data, "summary.json", "activity.csv", "audit.csv", "summary.html", *(p for p, _ in files)]),
+            "not_included": NOT_INCLUDED,
+        }
+        data["summary.json"] = summary
+        for name, content in data.items():
+            archive.writestr(name, _json(content))
+        archive.writestr("activity.csv", _csv(activity, ["time", "event", "method", "path", "status", "ip", "user_agent", "detail"]))
+        archive.writestr("audit.csv", _csv(audit, ["time", "entity", "action", "detail", "done_by", "about_the_person"]))
+        archive.writestr(
+            "summary.html",
+            templates.get_template("subject_access_summary.html").render(
+                summary=summary, tickets=sections, internal=internal_sections, listed=listed, accounts=accounts, linked=linked
+            ),
+        )
+        archive.close()
         size = handle.tell()
         handle.seek(0)
     except BaseException:

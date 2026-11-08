@@ -1,5 +1,5 @@
 <nav class="admin-tabs">
-  {% if user and user.role.value == "super_admin" %}
+  {% if not user or user.role.value == "super_admin" %}
   {% set tabs = [("/admin/users", "Users"), ("/admin/teams", "Teams"), ("/admin/categories", "Categories"), ("/admin/category-review", "Category review"), ("/admin/canned", "Canned responses"), ("/admin/email-templates", "Email templates"), ("/admin/approval-groups", "Approval groups"), ("/admin/request-types", "Request types"), ("/admin/never-follow", "Never follow"), ("/admin/thanks-rules", "Thanks rules"), ("/admin/settings", "Settings"), ("/admin/feedback", "Feedback"), ("/admin/audit-log", "Audit log"), ("/admin/activity-log", "Activity log"), ("/admin/outbound-mail", "Outbound mail"), ("/admin/mail-intake", "Mail intake"), ("/admin/scheduled-jobs", "Recurring jobs"), ("/admin/outage", "Outage mode"), ("/admin/data-protection", "Data protection")] %}
   {% else %}
   {# An agent holding an extra permission sees only the pages that permission opens. #}

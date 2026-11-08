@@ -29,7 +29,8 @@ from app.models import (
     UserRole,
 )
 from app.permissions import DATA_PROTECTION, PERMISSIONS
-from app.person_data import COLUMNS, candidate_keys, find_person, mentions
+from app.person_data import COLUMNS, SUBJECT, candidate_keys, find_person, mentions
+from app.subject_access import EXPORTED_TABLES
 from app.settings_store import SUBJECT_ACCESS_MAX_MB, set_setting
 from app.storage import LocalStorage, get_storage
 from app.ticket_service import create_ticket
@@ -233,8 +234,12 @@ def test_only_the_persons_own_attachments_are_files(client, db_session, world):
     assert len(files) == 1 and files[0].endswith("-photo.png")
     assert archive.read(files[0]) == PNG
     listed = {a["filename"]: a["reason"] for a in part(archive, "attachments_not_added.json")}
-    assert "agent-guide.pdf" in listed and "internal note" in listed["note-file.pdf"]
+    assert "agent-guide.pdf" in listed
     assert "bob-secret.pdf" not in listed
+    # A file on an internal note is named only in the internal notes file, never in the parts handed over.
+    assert "note-file.pdf" not in listed and "note-file.pdf" not in archive.read("summary.html").decode()
+    on_notes = [f["filename"] for t in part(archive, "internal_notes.json")["tickets"] for f in t["files_on_notes"]]
+    assert on_notes == ["note-file.pdf"]
 
 
 def test_a_big_collection_is_listed_with_sizes_not_added(client, db_session, storage, world):
@@ -350,3 +355,78 @@ def test_the_classification_names_real_columns():
 
     real = {f"{t.name}.{c.name}" for t in SQLModel.metadata.tables.values() for c in t.columns}
     assert set(COLUMNS) - real == set()
+
+
+def test_every_table_classified_as_the_persons_own_is_in_the_export():
+    """A table whose columns are the person's own data must be exported (or this list consciously extended)."""
+    own = {key.split(".")[0] for key, use in COLUMNS.items() if use.role == SUBJECT}
+    assert own - set(EXPORTED_TABLES) == set()
+
+
+def test_mentions_sees_addresses_in_brackets():
+    person = type("P", (), {"addresses": {"ann@a.example"}})()
+    assert mentions("Ann (ann@a.example)", person) and mentions("[ann@a.example]", person)
+
+
+# ---- review findings ------------------------------------------------------------------------------------------
+
+
+def test_a_colleague_with_the_same_display_name_is_not_the_person(client, db_session, storage, world):
+    namesake = ticket_for(db_session, "ann@a.example", "Namesake thread")
+    other = msg(db_session, namesake, "From the other Ann", sender="Ann Able")  # same name, no address
+    attach(db_session, storage, namesake, "other-ann.png", PNG + b"\x07", message=other)
+    admin_client(client, db_session)
+    archive = export(client)
+    thread = {t["number"]: t for t in part(archive, "tickets.json")}[namesake.number]["messages"]
+    assert thread[0]["written_by_the_person"] is False
+    assert not any(n.endswith("other-ann.png") for n in archive.namelist())
+
+
+def test_a_cc_on_a_message_the_requester_cannot_see_does_not_put_the_ticket_in_scope(client, db_session, world):
+    hidden = ticket_for(db_session, "bob@x.example", "Bob's hidden cc")
+    msg(db_session, hidden, "MSP mail waiting", sender="msp@x.example", cc="ann@a.example", public=False)
+    admin_client(client, db_session)
+    numbers = {t["number"] for t in part(export(client), "tickets.json")}
+    assert hidden.number not in numbers
+
+
+def test_an_agents_events_and_audit_on_other_tickets_are_by_reference(client, db_session, world):
+    from app.models import TicketEvent
+
+    db_session.add(TicketEvent(ticket_id=world["carol"].id, event_type="follower_added", actor_email="dave@a.example", to_value="carol.friend@x.example"))
+    db_session.add(TicketEvent(ticket_id=world["carol"].id, event_type="status_changed", actor_email="carol@x.example", to_value="open"))
+    db_session.add(AuditLog(entity_type="user", entity_id=world["bob"].id, actor_email="dave@a.example", action="identity_linked", detail="bob@x.example linked"))
+    db_session.commit()
+    admin_client(client, db_session)
+    archive = export(client, "dave@a.example")
+    events = part(archive, "ticket_events.json")
+    assert [e["event"] for e in events] == ["follower_added"] and "to" not in events[0]
+    everything = b"".join(archive.read(n) for n in archive.namelist())
+    assert b"carol.friend" not in everything and b"bob@x.example linked" not in everything
+    assert b"identity_linked" in archive.read("audit.csv")
+
+
+def test_a_file_that_vanishes_is_reported_not_counted(client, db_session, storage, world):
+    storage_path = storage._path(world["own_file"].blob_key)
+    storage_path.unlink()
+    admin_client(client, db_session)
+    archive = export(client)
+    summary = part(archive, "summary.json")
+    assert summary["counts"]["attachment_files"] == 0
+    assert "summary.json" in summary["files"]
+    reasons = {a["filename"]: a["reason"] for a in part(archive, "attachments_not_added.json")}
+    assert "missing" in reasons["photo.png"]
+
+
+def test_link_codes_and_follow_dates_are_exported(client, db_session, world):
+    from app.models import LinkCode
+
+    db_session.add(LinkCode(user_id=world["ann"].id, address="ann@z.example", code_hash="secret-hash", expires_at=datetime.now(timezone.utc)))
+    db_session.commit()
+    admin_client(client, db_session)
+    archive = export(client)
+    codes = part(archive, "account.json")["link_codes_asked"]
+    assert codes[0]["address"] == "ann@z.example"
+    assert b"secret-hash" not in archive.read("account.json")
+    shared = {t["number"]: t for t in part(archive, "tickets.json")}[world["shared"].number]
+    assert len(shared["following_since"]) == 1

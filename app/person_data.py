@@ -76,12 +76,12 @@ def list_matches(column, person: Person):
     return or_(*[func.lower(column).contains(a) for a in sorted(person.addresses)])
 
 
-_ADDRESS = re.compile(r"[^\s<>,;\"']+@[^\s<>,;\"']+")
+_ADDRESS = re.compile(r"[\w.+%'-]+@[\w-]+(?:\.[\w-]+)+")
 
 
 def mentions(text: Optional[str], person: Person) -> bool:
     """Whether a list of addresses, or a 'Name <address>' sender, contains one of theirs (whole address only)."""
-    return any(found.strip(".").lower() in person.addresses for found in _ADDRESS.findall(text or ""))
+    return any(found.lower() in person.addresses for found in _ADDRESS.findall(text or ""))
 
 
 @dataclass(frozen=True)

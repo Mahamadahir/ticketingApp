@@ -1696,6 +1696,7 @@
         "in_a_split",
         "is_triaged",
         "mail_subject",
+        "not_requester_visible_messages",
         "preview_email",
         "record_inbound",
         "record_msp_message",
@@ -5022,7 +5023,9 @@
       "routes": [],
       "summary": "Subject access export (issue #175): a ZIP of everything held on one person.",
       "tables": [],
-      "tests": []
+      "tests": [
+        "tests/test_subject_access.py"
+      ]
     },
     {
       "classes": [
@@ -5715,12 +5718,6 @@
         "detail": "select() on Message",
         "file": "app/subject_access.py",
         "in": "_ticket_roles",
-        "rule": "messages-via-messages-module"
-      },
-      {
-        "detail": "select() on Message",
-        "file": "app/subject_access.py",
-        "in": "_tickets",
         "rule": "messages-via-messages-module"
       },
       {
