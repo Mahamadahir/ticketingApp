@@ -381,7 +381,8 @@ def satisfaction(session: Session, user: User, levels: AccessContext, filters: R
         query = query.where(*where).group_by(label, *group_ids)  # by id too: two categories can share a label
         found = sorted(session.execute(query).all(), key=lambda row: (-row[1], str(row[0])))
         rows += [[name, value, *figures(n, average, *counts), None] for value, n, average, *counts in found]
-    # The comments the rule allows, newest first. A comment row is one rating (its own star column is 1).
+    # The comments the rule allows, newest first. A comment row repeats a rating already counted above, so it carries
+    # the rating (in Average rating) and no counts: summing the count columns never counts a rating twice.
     commented = (
         sa_select(Ticket, TicketFeedback.rating, TicketFeedback.comment)
         .select_from(TicketFeedback).join(Ticket, Ticket.id == TicketFeedback.ticket_id)
@@ -391,7 +392,7 @@ def satisfaction(session: Session, user: User, levels: AccessContext, filters: R
     )
     found = session.execute(commented).all()
     for ticket, rating, comment in found[:MAX_COMMENTS]:
-        rows.append(["Comment", ticket.reference, 1, float(rating), *[1 if n == rating else 0 for n in range(1, 6)], comment])
+        rows.append(["Comment", ticket.reference, None, float(rating), *[None] * 5, comment])
     notes = [("Ratings in the range", str(overall[0]))]
     if len(found) > MAX_COMMENTS:
         notes.append(("Comments", f"only the newest {MAX_COMMENTS} are listed"))
@@ -413,15 +414,19 @@ def satisfaction(session: Session, user: User, levels: AccessContext, filters: R
 
 
 def msp_handoffs(session: Session, user: User, levels: AccessContext, filters: ReportFilters, now: datetime) -> Report:
-    sent = aliased(TicketEvent)
-
-    def next_send():
-        later = aliased(TicketEvent)
-        return (
-            sa_select(func.min(later.created_at))
-            .where(later.ticket_id == sent.ticket_id, later.event_type == EVENT_SENT_TO_MSP, later.created_at > sent.created_at)
-            .correlate(sent).scalar_subquery()
+    # Every send with the time of the same ticket's next send (a window over all sends, not only those in the range:
+    # the next one may be later than the range), so each lookup below is bounded by one column.
+    every = (
+        sa_select(
+            TicketEvent.id.label("id"), TicketEvent.ticket_id.label("ticket_id"), TicketEvent.created_at.label("created_at"),
+            (func.coalesce(TicketEvent.to_value, "") == BY_AUTOMATIC).label("automatic"),
+            func.lead(TicketEvent.created_at).over(
+                partition_by=TicketEvent.ticket_id, order_by=(TicketEvent.created_at, TicketEvent.id)
+            ).label("next_at"),
         )
+        .where(TicketEvent.event_type == EVENT_SENT_TO_MSP)
+        .subquery()
+    )
 
     def first_after(event_type: str, *conditions):
         """When the first such event came for this handoff: at or after it was sent, before the next one."""
@@ -429,28 +434,24 @@ def msp_handoffs(session: Session, user: User, levels: AccessContext, filters: R
         return (
             sa_select(func.min(event.created_at))
             .where(
-                event.ticket_id == sent.ticket_id, event.event_type == event_type, event.created_at >= sent.created_at,
-                or_(next_send().is_(None), event.created_at < next_send()),
+                event.ticket_id == every.c.ticket_id, event.event_type == event_type, event.created_at >= every.c.created_at,
+                or_(every.c.next_at.is_(None), event.created_at < every.c.next_at),
                 *[condition(event) for condition in conditions],
             )
-            .correlate(sent).scalar_subquery()
+            .correlate(every).scalar_subquery()
         )
 
     team_name = func.coalesce(Team.name, NO_TEAM)
     handoffs = (
         sa_select(
-            sent.id.label("id"), team_name.label("team"), (sent.to_value == BY_AUTOMATIC).label("automatic"),
-            sent.created_at.label("sent_at"),
+            team_name.label("team"), every.c.automatic.label("automatic"), every.c.created_at.label("sent_at"),
             first_after(EVENT_MSP_ACKNOWLEDGED).label("acked_at"),
             first_after(EVENT_TAKEN_BACK).label("taken_back_at"),
             # Released: the MSP was told it is no longer needed because IT resolved or closed it.
             first_after(EVENT_MSP_TOLD, lambda e: e.to_value.in_(("resolved", "closed"))).label("released_at"),
         )
-        .select_from(sent).join(Ticket, Ticket.id == sent.ticket_id).outerjoin(Team, Ticket.team_id == Team.id)
-        .where(
-            sent.event_type == EVENT_SENT_TO_MSP, sent.created_at >= filters.start, sent.created_at < filters.end,
-            *ticket_conditions(user, levels, filters),
-        )
+        .select_from(every).join(Ticket, Ticket.id == every.c.ticket_id).outerjoin(Team, Ticket.team_id == Team.id)
+        .where(every.c.created_at >= filters.start, every.c.created_at < filters.end, *ticket_conditions(user, levels, filters))
         .subquery()
     )
     ack_seconds = func.extract("epoch", handoffs.c.acked_at - handoffs.c.sent_at)
@@ -516,10 +517,12 @@ def major_incidents(session: Session, user: User, levels: AccessContext, filters
         session, user, levels, filters, TicketType.MAJOR_INCIDENT,
         and_(Ticket.created_at >= filters.start, Ticket.created_at < filters.end),
     )
-    rows, minutes = [], []
+    rows, minutes, backdated = [], [], 0
     for ticket, team, linked, _ in found:
         done = ticket.status in FINISHED_STATUSES and ticket.resolved_at is not None
-        duration = _minutes((ticket.resolved_at - ticket.created_at).total_seconds()) if done else None
+        # A backdated ticket's dates are entered, not measured (created_at is when it was logged): no duration.
+        duration = _minutes((ticket.resolved_at - ticket.created_at).total_seconds()) if done and not ticket.is_backdated else None
+        backdated += ticket.is_backdated
         if duration is not None:
             minutes.append(duration)
         rows.append([
@@ -537,6 +540,7 @@ def major_incidents(session: Session, user: User, levels: AccessContext, filters
             ("Mean duration (minutes)", str(round(statistics.fmean(minutes), 1)) if minutes else "none yet"),
             ("Median duration (minutes)", str(round(statistics.median(minutes), 1)) if minutes else "none yet"),
             ("Linked tickets in all", str(sum(row[-1] for row in rows))),
+            ("Backdated (no duration shown)", str(backdated)),
         ],
         description=(
             "Major Incidents created in the date range. Duration is elapsed time from opened to resolved (an open one has "

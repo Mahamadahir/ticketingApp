@@ -345,3 +345,32 @@ def test_problem_subjects_are_escaped_in_the_csv(client, db_session):
     make_ticket(db_session, desk, at("2026-10-05"), ticket_type=TicketType.PROBLEM, subject="@SUM(A1)")
     body = client.get("/reports/problems/csv?from=2026-10-01&to=2026-10-31").content.decode("utf-8-sig")
     assert "'@SUM(A1)" in body
+
+
+# ---- Code review fixes ---------------------------------------------------------------------------------------
+
+
+def test_automatic_and_manual_always_add_up_even_when_a_send_has_no_recorded_kind(db_session):
+    desk = create_team(db_session, "Desk")
+    a = make_ticket(db_session, desk, at("2026-10-05"))
+    sent(db_session, a, at("2026-10-06", 10), None)
+    row = run(db_session, _admin(db_session), "msp").rows[-1]
+    assert row[1:4] == [1, 0, 1]
+
+
+def test_a_backdated_major_incident_has_no_duration_and_is_counted(db_session):
+    desk = create_team(db_session, "Desk")
+    make_ticket(db_session, desk, at("2026-10-05"), ticket_type=TicketType.MAJOR_INCIDENT, status=TicketStatus.RESOLVED,
+                resolved_at=at("2026-10-02"), is_backdated=True)
+    report = run(db_session, _admin(db_session), "major-incidents")
+    assert report.rows[0][6] is None
+    facts = notes(report)
+    assert facts["Backdated (no duration shown)"] == "1" and facts["Mean duration (minutes)"] == "none yet"
+
+
+def test_comment_rows_carry_no_counts_so_the_count_columns_add_up(db_session, rated):
+    desk, net, ann, bob, admin = rated
+    report = run(db_session, admin, "satisfaction")
+    comment = [row for row in report.rows if row[0] == "Comment"][0]
+    assert comment[2] is None and comment[4:9] == [None] * 5 and comment[3] in (1.0, 2.0, 5.0)
+    assert sum(row[2] for row in report.rows if row[0] == "Team") == report.rows[0][2]

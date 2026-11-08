@@ -2,8 +2,8 @@
 visibility limit, the table a report returns, the CSV writer and the audit entry for a download.
 
 A report is a function `(session, user, levels, filters, now) -> Report` registered in `app/reports.py`;
-the page, the CSV link, the audit entry and the visibility limit all come from here, so a new report (satisfaction,
-MSP, Major Incidents, Problems: #174) is one function and one registry line.
+the page, the CSV link, the audit entry and the visibility limit all come from here, so a new report is one
+function and one registry line.
 
 Who may see which tickets is decided only by `app.visibility.visible_ticket_condition`: `ticket_conditions`
 applies it to every report, so a team lead's figures cover the teams they can see and a super admin's cover all.
