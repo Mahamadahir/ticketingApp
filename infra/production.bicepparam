@@ -60,6 +60,8 @@ param postgresStorageGb = 64
 param postgresBackupRetentionDays = 35
 param postgresHighAvailability = 'Disabled'
 param storageSku = 'Standard_ZRS'
+// Attachments move to the cool tier this many days after creation (never deleted).
+param attachmentsCoolAfterDays = 365
 param logRetentionDays = 90
 param logDailyCapGb = 2
 param purgeProtection = true

@@ -15,7 +15,7 @@ so expect a round of fixes on the first `what-if`.
 | `monitoring` | Log Analytics workspace, Application Insights, action group (email) |
 | `registry` | Container registry (Basic); each app identity can pull |
 | `postgres` | PostgreSQL 16 Flexible Server, private access only, point-in-time restore |
-| `storage` | Private blob container `attachments`, no account keys, lifecycle to cool tier after a year |
+| `storage` | Private blob container `attachments`, no account keys, lifecycle: cool tier after `attachmentsCoolAfterDays` (365), old versions dropped after 90 days |
 | `keyvault` | Key Vault (RBAC) holding the database URL, session secret and other secrets |
 | `container-apps-environment` | VNet-injected environment wired to Log Analytics |
 | `container-app` | Used for `web`, `public` and `worker` |
@@ -130,6 +130,15 @@ need checking on staging (docs/build-plan.md checklist).
 managed identity (no keys). Only web (downloads, uploads) and worker (mail attachments) hold the
 Blob Data Contributor and Delegator roles; the public app and migrate job have none, and the public
 app cannot serve files (no route).
+
+**Cool tier.** A lifecycle rule on the `attachments` container moves each blob to the cool access tier
+`attachmentsCoolAfterDays` days after it was created (default 365; the staging parameter file reads
+`ATTACHMENTS_COOL_AFTER_DAYS` if set, production fixes 365). Nothing is deleted by it; the only delete rule removes superseded
+versions after 90 days. The app never sets a tier, and cool blobs are online, so reads and
+user-delegation SAS links work unchanged (cool costs slightly more per read). Identical files share one blob, so a file re-attached to a new ticket after a year points at a blob that is already cool; that only costs the dearer reads. The 30-day early-deletion
+charge on cool does not matter at 365 days, and an anonymisation delete (7C) of a cool blob only pays
+the remainder of that charge. To prove the policy on staging, deploy a throwaway account with
+`ATTACHMENTS_COOL_AFTER_DAYS=1` and look at a day-old blob's tier (policies run about once a day).
 
 ## Every deploy after that
 

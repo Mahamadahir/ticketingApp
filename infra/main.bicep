@@ -52,6 +52,9 @@ param postgresHighAvailability string = 'Disabled'
 
 @allowed(['Standard_LRS', 'Standard_ZRS', 'Standard_GRS', 'Standard_GZRS'])
 param storageSku string = 'Standard_ZRS'
+@description('Days after creation before an attachment moves to the cool storage tier (never deleted). Set a small value in a throwaway deployment to prove the policy on staging.')
+@minValue(1)
+param attachmentsCoolAfterDays int = 365
 
 param webMinReplicas int = 1
 param webMaxReplicas int = 2
@@ -225,6 +228,7 @@ module storage 'modules/storage.bicep' = {
     name: 'st${prefix}${envShort}${take(suffix, 6)}'
     skuName: storageSku
     containerName: storageContainerName
+    coolAfterDays: attachmentsCoolAfterDays
     // Attachments are handled by the web app (uploads, viewing) and the worker
     // (mail ingestion). The public app and the migrate job never touch files.
     accessPrincipalIds: [

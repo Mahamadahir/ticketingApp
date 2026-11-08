@@ -7,6 +7,9 @@ param tags object
 param name string
 param skuName string
 param containerName string
+@description('Days after a blob is created before it moves to the cool tier. Never deleted; see the lifecycle policy below.')
+@minValue(1)
+param coolAfterDays int = 365
 @description('Principal ids of the identities that read and write attachments. Only apps that handle files belong here.')
 param accessPrincipalIds array
 
@@ -60,8 +63,10 @@ resource container 'Microsoft.Storage/storageAccounts/blobServices/containers@20
   }
 }
 
-// Attachments are kept indefinitely (plan: data retention). Move to the cool
-// tier after a year, and drop superseded versions after 90 days.
+// Attachments are kept indefinitely (plan: data retention). Two rules, both
+// scoped to the attachments container, and neither deletes a current blob:
+// the first moves blobs to the cool tier (still online, so reads and SAS links
+// work unchanged); the second drops superseded versions after 90 days.
 resource lifecycle 'Microsoft.Storage/storageAccounts/managementPolicies@2023-05-01' = {
   parent: account
   name: 'default'
@@ -69,7 +74,7 @@ resource lifecycle 'Microsoft.Storage/storageAccounts/managementPolicies@2023-05
     policy: {
       rules: [
         {
-          name: 'cool-after-a-year'
+          name: 'attachments-to-cool-tier'
           enabled: true
           type: 'Lifecycle'
           definition: {
@@ -80,9 +85,22 @@ resource lifecycle 'Microsoft.Storage/storageAccounts/managementPolicies@2023-05
             actions: {
               baseBlob: {
                 tierToCool: {
-                  daysAfterModificationGreaterThan: 365
+                  daysAfterCreationGreaterThan: coolAfterDays
                 }
               }
+            }
+          }
+        }
+        {
+          name: 'drop-old-versions-after-90-days'
+          enabled: true
+          type: 'Lifecycle'
+          definition: {
+            filters: {
+              blobTypes: ['blockBlob']
+              prefixMatch: ['${containerName}/']
+            }
+            actions: {
               version: {
                 delete: {
                   daysAfterCreationGreaterThan: 90
