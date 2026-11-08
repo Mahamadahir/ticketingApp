@@ -104,7 +104,7 @@ those. Do not record test counts or merge status here.
 
 ## Next up
 
-**Phases 0 to 5 are built**, and so are the owner-decision rounds of Nov 2026 (single pass %, time zones, Due date and
+**Phases 0 to 6 are built**, and so are the owner-decision rounds of Nov 2026 (single pass %, time zones, Due date and
 Scheduled, the bell for everyone, closing emails, permissions, request type defaults, form questions and sub-requests, the
 MSP fixes from real mail, MSP actions, handoff bell entries, gov.uk bank holidays). Each is a row in the status table below.
 
@@ -112,9 +112,11 @@ MSP fixes from real mail, MSP actions, handoff bell entries, gov.uk bank holiday
 1. **Staging deploy and checks.** Partly deployed; the registry, storage and Key Vault wait for an Owner role grant on
    `rg-ticketing-staging` (`docs/azure-setup.md`). Then the Deploy workflow, the staging checklist below, and end-to-end
    tests with the MSP on the staging mailbox (`itsupport-staging@vardags.com`).
-2. **Phase 6, identity (next to build; 6A, matching on the Entra object id and server-side sessions, 6B, the nightly Entra `accountEnabled` check, and 6C, break-glass accounts, are built):**
-   break-glass accounts with TOTP (6C, #163, built); outage mode (6D, #164, built); linked identities (6E, #165, built). Entra app roles only if the owner decides to.
-3. **Phase 7, reporting** (CSV export, subject access export, anonymisation once retention is decided).
+2. **Phase 6, identity (built, Nov 2026):** 6A matching on the Entra object id and server-side sessions (#157), 6B the
+   nightly Entra `accountEnabled` check (#158), approvals with inactive approvers (#161), 6C break-glass accounts with TOTP
+   (#163), the per-request-type self-approval switch (#167), 6D outage mode (#164), 6E linked identities (#165). Entra app
+   roles only if the owner decides to.
+3. **Phase 7, reporting (next to build)** (CSV export, subject access export, anonymisation once retention is decided).
 4. **Phase 8, the Teams bot**: wanted before go-live.
 5. **Phase 9, the Google Stitch redesign**: wanted before go-live, once screens stop changing.
 6. **Phase 10, hardening and the go-live gate**, including the console IP decision (staging is open to all IPs; the VPN
