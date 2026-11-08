@@ -55,6 +55,7 @@ from app.outbox import ACKNOWLEDGEMENT, EMERGENCY_RESET, MSP_FORWARD, MSP_HANDOF
 from app.raising import should_tell_requester
 from app.settings_store import APPROVAL_LINK_MINUTES, AUTOMATIC_EMAIL_CAP, CHASE_RESOLVE_AFTER_DAYS, REGISTRY, get_int_setting
 from app.storage import get_storage
+from app.person_data import is_placeholder_address
 from app.teams import MAX_ATTEMPTS, MAX_BACKOFF_MINUTES, Unsendable
 
 log = logging.getLogger("app.mail")
@@ -101,6 +102,9 @@ def _guard_recipient(row: OutboundEmail) -> None:
         raise Unsendable("No address to send to")
     if mailbox and row.to_address.strip().lower() == mailbox:
         raise Unsendable("The address is the shared mailbox itself (a loop)")
+    if is_placeholder_address(row.to_address):
+        # The placeholder an anonymised requester's tickets carry (app/anonymisation.py): nobody is there to tell.
+        raise Unsendable("The person was anonymised")
 
 
 def _with_about(session: Session, ticket: Ticket, body: str) -> str:

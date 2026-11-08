@@ -17,6 +17,16 @@ a decision about the subject access export and about anonymisation. A column's `
   mailbox. Never exported for this person; anonymisation leaves it unless it is the person's own address.
 - NOT_PERSON: a name or label that is not a person (a team, a category, a file name, a count).
 - TEXT: free text a person wrote. It belongs to the row's owner and is handled with that row.
+
+Each column also says what anonymisation (#176, app/anonymisation.py) does with it, in `anon`:
+
+- REPLACE: set to the placeholder name or address. SCRUB: the person's addresses inside the text become the
+  placeholder address. BLANK: the text is removed ("[removed]" or empty). NULL: cleared. REMOVE: the person's
+  addresses are taken out of a list of addresses.
+- DELETE: the row is deleted (this column is the one that finds it). WITH_ROW: goes with a deleted row.
+- KEEP: stays, because it is not the person's data once the account is anonymised (a number, a staff member, a
+  label). The note says why. NOT_PERSON and STAFF columns are KEEP unless they say otherwise.
+`tests/test_anonymisation.py` fails when a decision has no step in `app/anonymisation.py`.
 """
 
 import re
@@ -31,6 +41,20 @@ from app.models import LinkedIdentity, User
 
 SUBJECT, STAFF, OTHER, NOT_PERSON, TEXT = "subject", "staff", "other", "not_person", "text"
 EMAIL, USER_ID, NAME, NETWORK, FREE_TEXT, LABEL = "email", "user_id", "name", "network", "free_text", "label"
+REPLACE, SCRUB, BLANK, NULL, REMOVE, DELETE, WITH_ROW, KEEP = (
+    "replace", "scrub", "blank", "null", "remove", "delete", "with_row", "keep",
+)
+
+
+PLACEHOLDER_DOMAIN = "invalid"  # RFC 2606: never delivered; what an anonymised requester's address ends with
+
+
+def placeholder_address(n: int) -> str:
+    return f"anonymised-{n}@{PLACEHOLDER_DOMAIN}"
+
+
+def is_placeholder_address(address: Optional[str]) -> bool:
+    return (address or "").strip().lower().endswith("@" + PLACEHOLDER_DOMAIN)
 
 
 @dataclass(frozen=True)
@@ -89,100 +113,111 @@ class ColumnUse:
     kind: str
     role: str
     note: str = ""
+    anon: str = KEEP  # what anonymisation does with it (see the module docstring)
 
 
-def _use(role: str, kind: str, note: str = "") -> ColumnUse:
-    return ColumnUse(kind, role, note)
+def _use(role: str, kind: str, note: str = "", anon: str = KEEP) -> ColumnUse:
+    return ColumnUse(kind, role, note, anon)
 
 
 # Every column that holds an email address, a name, a user id, a network address or free text written by a person.
 COLUMNS: dict[str, ColumnUse] = {
     # the account
-    "user.email": _use(SUBJECT, EMAIL, "account record"),
-    "user.display_name": _use(SUBJECT, NAME, "account record"),
-    "user.entra_object_id": _use(SUBJECT, USER_ID, "account record"),
-    "user_session.user_id": _use(SUBJECT, USER_ID, "sign-in sessions (the session id is a secret and is never exported)"),
-    "user_session.ip": _use(SUBJECT, NETWORK, "sign-in sessions"),
-    "user_session.user_agent": _use(SUBJECT, NETWORK, "sign-in sessions"),
-    "userpermission.user_id": _use(SUBJECT, USER_ID, "account record"),
-    "userpermission.granted_by": _use(OTHER, EMAIL, "the super admin who granted it"),
-    "teammembership.user_id": _use(SUBJECT, USER_ID, "account record"),
-    "approvalgroupmember.user_id": _use(SUBJECT, USER_ID, "account record"),
-    "notificationpreference.user_id": _use(SUBJECT, USER_ID, "notification preferences"),
-    "requestertimezone.email": _use(SUBJECT, EMAIL, "time zone read from their mailbox"),
-    "linked_identity.main_user_id": _use(SUBJECT, USER_ID, "linked identities"),
-    "linked_identity.secondary_user_id": _use(SUBJECT, USER_ID, "linked identities"),
-    "linked_identity.email": _use(SUBJECT, EMAIL, "linked identities"),
-    "linked_identity.entra_object_id": _use(SUBJECT, USER_ID, "linked identities"),
+    "user.email": _use(SUBJECT, EMAIL, "account record", anon=REPLACE),
+    "user.display_name": _use(SUBJECT, NAME, "account record", anon=REPLACE),
+    "user.entra_object_id": _use(SUBJECT, USER_ID, "account record", anon=NULL),
+    "user_session.user_id": _use(SUBJECT, USER_ID, "sign-in sessions (the session id is a secret and is never exported)", anon=DELETE),
+    "user_session.ip": _use(SUBJECT, NETWORK, "sign-in sessions", anon=WITH_ROW),
+    "user_session.user_agent": _use(SUBJECT, NETWORK, "sign-in sessions", anon=WITH_ROW),
+    "userpermission.user_id": _use(SUBJECT, USER_ID, "account record", anon=DELETE),
+    "userpermission.granted_by": _use(OTHER, EMAIL, "the super admin who granted it", anon=KEEP),
+    "teammembership.user_id": _use(SUBJECT, USER_ID, "account record", anon=DELETE),
+    "approvalgroupmember.user_id": _use(SUBJECT, USER_ID, "account record", anon=DELETE),
+    "notificationpreference.user_id": _use(SUBJECT, USER_ID, "notification preferences", anon=DELETE),
+    "requestertimezone.email": _use(SUBJECT, EMAIL, "time zone read from their mailbox", anon=DELETE),
+    "linked_identity.main_user_id": _use(SUBJECT, USER_ID, "linked identities", anon=DELETE),
+    "linked_identity.secondary_user_id": _use(SUBJECT, USER_ID, "linked identities", anon=WITH_ROW),
+    "linked_identity.email": _use(SUBJECT, EMAIL, "linked identities", anon=WITH_ROW),
+    "linked_identity.entra_object_id": _use(SUBJECT, USER_ID, "linked identities", anon=WITH_ROW),
+    "linked_identity.moved_summary": _use(TEXT, FREE_TEXT, "what moved when two accounts were linked", anon=WITH_ROW),
     "linked_identity.requested_by_id": _use(STAFF, USER_ID),
     "linked_identity.approved_by_id": _use(STAFF, USER_ID),
     "linked_identity.unlinked_by_id": _use(STAFF, USER_ID),
-    "link_code.user_id": _use(SUBJECT, USER_ID, "emailed link codes (only a keyed hash of the code is held)"),
-    "link_code.address": _use(SUBJECT, EMAIL, "emailed link codes"),
+    "link_code.user_id": _use(SUBJECT, USER_ID, "emailed link codes (only a keyed hash of the code is held)", anon=DELETE),
+    "link_code.address": _use(SUBJECT, EMAIL, "emailed link codes", anon=WITH_ROW),
     # logs
-    "activitylog.actor_user_id": _use(SUBJECT, USER_ID, "sign-in and activity rows"),
-    "activitylog.actor_email": _use(SUBJECT, EMAIL, "sign-in and activity rows"),
-    "activitylog.ip": _use(SUBJECT, NETWORK, "sign-in and activity rows"),
-    "activitylog.user_agent": _use(SUBJECT, NETWORK, "sign-in and activity rows"),
-    "activitylog.detail": _use(TEXT, FREE_TEXT, "sign-in and activity rows"),
-    "auditlog.actor_email": _use(SUBJECT, EMAIL, "audit entries the person made"),
-    "auditlog.detail": _use(TEXT, FREE_TEXT, "audit entries"),
-    "ticketevent.actor_email": _use(SUBJECT, EMAIL, "ticket events the person caused"),
-    "ticketevent.from_value": _use(SUBJECT, EMAIL, "an event can name an address (a follower added)"),
-    "ticketevent.to_value": _use(SUBJECT, EMAIL, "an event can name an address (a follower added)"),
-    "ticketevent.detail": _use(TEXT, FREE_TEXT, "ticket events"),
+    "activitylog.actor_user_id": _use(SUBJECT, USER_ID, "sign-in and activity rows", anon=KEEP),
+    "activitylog.actor_email": _use(SUBJECT, EMAIL, "sign-in and activity rows", anon=SCRUB),
+    "activitylog.ip": _use(SUBJECT, NETWORK, "sign-in and activity rows", anon=NULL),
+    "activitylog.user_agent": _use(SUBJECT, NETWORK, "sign-in and activity rows", anon=NULL),
+    "activitylog.detail": _use(TEXT, FREE_TEXT, "sign-in and activity rows", anon=SCRUB),
+    "auditlog.actor_email": _use(SUBJECT, EMAIL, "audit entries the person made", anon=SCRUB),
+    "auditlog.detail": _use(TEXT, FREE_TEXT, "audit entries", anon=SCRUB),
+    "ticketevent.actor_email": _use(SUBJECT, EMAIL, "ticket events the person caused", anon=SCRUB),
+    "ticketevent.from_value": _use(SUBJECT, EMAIL, "an event can name an address (a follower added)", anon=SCRUB),
+    "ticketevent.to_value": _use(SUBJECT, EMAIL, "an event can name an address (a follower added)", anon=SCRUB),
+    "ticketevent.detail": _use(TEXT, FREE_TEXT, "ticket events", anon=SCRUB),
     # tickets
-    "ticket.requester_email": _use(SUBJECT, EMAIL, "tickets the person raised"),
-    "ticket.subject": _use(TEXT, FREE_TEXT, "tickets the person raised"),
+    "ticket.requester_email": _use(SUBJECT, EMAIL, "tickets the person raised", anon=REPLACE),
+    "ticket.subject": _use(TEXT, FREE_TEXT, "tickets the person raised", anon=SCRUB),
     "ticket.created_by_id": _use(STAFF, USER_ID),
     "ticket.assigned_agent_id": _use(STAFF, USER_ID),
     "ticket.resolved_by_id": _use(STAFF, USER_ID),
     "ticket.triaged_by_id": _use(STAFF, USER_ID),
     "ticket.escalated_by_id": _use(STAFF, USER_ID),
-    "ticket.escalation_reason": _use(TEXT, FREE_TEXT, "agent-written, internal"),
-    "ticket.resolution_notes": _use(TEXT, FREE_TEXT, "the resolution the requester is told"),
+    "ticket.escalation_reason": _use(TEXT, FREE_TEXT, "agent-written, internal", anon=SCRUB),
+    "ticket.resolution_notes": _use(TEXT, FREE_TEXT, "the resolution the requester is told", anon=SCRUB),
+    "ticket.graph_conversation_id": _use(NOT_PERSON, LABEL, "the mail thread; cleared so mail from the old address cannot join it", anon=NULL),
+    "inboundmail.conversation_id": _use(NOT_PERSON, LABEL, "the mail thread; cleared so mail from the old address cannot join it", anon=NULL),
+    "inboundmail.internet_message_id": _use(NOT_PERSON, LABEL, "the Message-ID a reply points at; cleared for the same reason", anon=NULL),
+    "anonymised_requester.address_hash": _use(NOT_PERSON, LABEL, "keyed one-way hash of an anonymised address; the only trace of it, kept so a repeat is recognised"),
     "ticket.split_from_id": _use(NOT_PERSON, LABEL, "a ticket id"),
     "ticket.required_by": _use(NOT_PERSON, LABEL, "a date"),
     "ticketescalator.user_id": _use(STAFF, USER_ID),
-    "ticketfollower.email": _use(SUBJECT, EMAIL, "tickets the person follows or is copied on"),
-    "ticketfollower.user_id": _use(SUBJECT, USER_ID, "tickets the person follows or is copied on"),
-    "ticketfollower.added_by_email": _use(OTHER, EMAIL, "whoever added the follower"),
-    "ticketanswer.value": _use(TEXT, FREE_TEXT, "the requester's form answers"),
-    "message.sender": _use(SUBJECT, NAME, "'Name' or 'Name <address>' as the mail or portal gave it"),
-    "message.cc": _use(SUBJECT, EMAIL, "a comma-separated list"),
-    "message.author_user_id": _use(SUBJECT, USER_ID, "messages written by an account (agents: listed by reference)"),
-    "message.body": _use(TEXT, FREE_TEXT, "the thread"),
-    "attachment.filename": _use(NOT_PERSON, LABEL, "a file name; the file goes with its message"),
-    "attachment.uploaded_by_id": _use(SUBJECT, USER_ID, "files the person uploaded"),
+    "ticketfollower.email": _use(SUBJECT, EMAIL, "tickets the person follows or is copied on", anon=DELETE),
+    "ticketfollower.user_id": _use(SUBJECT, USER_ID, "tickets the person follows or is copied on", anon=WITH_ROW),
+    "ticketfollower.added_by_email": _use(OTHER, EMAIL, "whoever added the follower", anon=SCRUB),
+    "ticketanswer.value": _use(TEXT, FREE_TEXT, "the requester's form answers", anon=BLANK),
+    "message.sender": _use(SUBJECT, NAME, "'Name' or 'Name <address>' as the mail or portal gave it", anon=REPLACE),
+    "message.cc": _use(SUBJECT, EMAIL, "a comma-separated list", anon=REMOVE),
+    "message.author_user_id": _use(SUBJECT, USER_ID, "messages written by an account (agents: listed by reference)", anon=KEEP),
+    "message.body": _use(TEXT, FREE_TEXT, "the thread", anon=BLANK),
+    "attachment.filename": _use(NOT_PERSON, LABEL, "a file name; the file goes with its message", anon=WITH_ROW),
+    "attachment.uploaded_by_id": _use(SUBJECT, USER_ID, "files the person uploaded", anon=DELETE),
     # approvals and feedback
-    "approvalvote.voter_id": _use(SUBJECT, USER_ID, "approval votes"),
-    "approvalvote.comment": _use(TEXT, FREE_TEXT, "approval votes"),
+    "approvalvote.voter_id": _use(SUBJECT, USER_ID, "approval votes", anon=KEEP),
+    "approvalvote.comment": _use(TEXT, FREE_TEXT, "approval votes", anon=BLANK),
     "ticketapproval.voters": _use(NOT_PERSON, LABEL, "a count"),
     "actiontoken.resolved_by_id": _use(STAFF, USER_ID, "the agent a feedback link is about"),
     "ticketfeedback.resolved_by_id": _use(STAFF, USER_ID, "the agent a rating is about"),
-    "ticketfeedback.comment": _use(TEXT, FREE_TEXT, "the requester's own words (build-plan, 22 Oct 2026)"),
+    "ticketfeedback.comment": _use(TEXT, FREE_TEXT, "the requester's own words (build-plan, 22 Oct 2026)", anon=BLANK),
     # notifications and mail
-    "notification.user_id": _use(SUBJECT, USER_ID, "the person's bell"),
-    "notification.actor_email": _use(OTHER, EMAIL, "who caused the notification"),
-    "notification.text": _use(TEXT, FREE_TEXT, "the person's bell"),
-    "outboundemail.to_address": _use(SUBJECT, EMAIL, "emails sent to the person (subject and addresses, not the body)"),
-    "outboundemail.cc": _use(SUBJECT, EMAIL, "a comma-separated list"),
-    "outboundemail.subject": _use(TEXT, FREE_TEXT, "emails sent to the person"),
-    "outboundemail.body": _use(TEXT, FREE_TEXT, "emails sent to the person; not exported (see the PR decisions)"),
-    "inboundmail.sender": _use(SUBJECT, NAME, "mail the person sent to the shared mailbox (ids and outcome only)"),
-    "inboundmail.to_addresses": _use(SUBJECT, EMAIL, "a comma-separated list"),
-    "inboundmail.cc_addresses": _use(SUBJECT, EMAIL, "a comma-separated list"),
-    "mspunmatchedmail.sender": _use(OTHER, NAME, "MSP staff"),
-    "mspunmatchedmail.to_addresses": _use(OTHER, EMAIL, "MSP mail"),
-    "mspunmatchedmail.cc_addresses": _use(OTHER, EMAIL, "MSP mail"),
+    "notification.user_id": _use(SUBJECT, USER_ID, "the person's bell", anon=DELETE),
+    "notification.actor_email": _use(OTHER, EMAIL, "who caused the notification", anon=SCRUB),
+    "notification.text": _use(TEXT, FREE_TEXT, "the person's bell", anon=SCRUB),
+    "outboundemail.to_address": _use(SUBJECT, EMAIL, "emails sent to the person (subject and addresses, not the body)", anon=REPLACE),
+    "outboundemail.cc": _use(SUBJECT, EMAIL, "a comma-separated list", anon=REMOVE),
+    "outboundemail.subject": _use(TEXT, FREE_TEXT, "emails sent to the person", anon=SCRUB),
+    "outboundemail.last_error": _use(TEXT, FREE_TEXT, "why a send failed; Graph's wording can name the recipient", anon=SCRUB),
+    "outboundemail.body": _use(TEXT, FREE_TEXT, "emails sent to the person; not exported (see the PR decisions)", anon=BLANK),
+    "inboundmail.sender": _use(SUBJECT, NAME, "mail the person sent to the shared mailbox (ids and outcome only)", anon=REPLACE),
+    "inboundmail.to_addresses": _use(SUBJECT, EMAIL, "a comma-separated list", anon=REMOVE),
+    "inboundmail.cc_addresses": _use(SUBJECT, EMAIL, "a comma-separated list", anon=REMOVE),
+    "mspunmatchedmail.sender": _use(OTHER, NAME, "MSP staff", anon=SCRUB),
+    "mspunmatchedmail.to_addresses": _use(OTHER, EMAIL, "MSP mail", anon=REMOVE),
+    "mspunmatchedmail.cc_addresses": _use(OTHER, EMAIL, "MSP mail", anon=REMOVE),
     "mspunmatchedmail.resolved_by": _use(STAFF, EMAIL),
-    "mspunmatchedmail.subject": _use(TEXT, FREE_TEXT, "MSP mail"),
-    "mspunmatchedmail.body": _use(TEXT, FREE_TEXT, "MSP mail"),
+    "mspunmatchedmail.subject": _use(TEXT, FREE_TEXT, "MSP mail", anon=SCRUB),
+    "mspunmatchedmail.body": _use(TEXT, FREE_TEXT, "MSP mail", anon=SCRUB),
     # configuration that names people or things
-    "neverfollowaddress.email": _use(OTHER, EMAIL, "shared mailboxes and lists, not people"),
+    "neverfollowaddress.email": _use(OTHER, EMAIL, "shared mailboxes and lists, not people", anon=DELETE),
     "neverfollowaddress.added_by": _use(STAFF, EMAIL),
     "thankscandidate.decided_by": _use(STAFF, EMAIL),
-    "thankscandidate.sample_text": _use(TEXT, FREE_TEXT, "a reply an agent reclosed; may quote a requester"),
+    "thankscandidate.normalised_text": _use(
+        TEXT, FREE_TEXT, "a short thanks-like reply in lower case without punctuation (an address in it is only words, "
+        "so it is not matched); one row stands for many replies, so it is kept and the readable sample is scrubbed",
+    ),
+    "thankscandidate.sample_text": _use(TEXT, FREE_TEXT, "a reply an agent reclosed; may quote a requester", anon=SCRUB),
     "thanksrule.created_by": _use(STAFF, EMAIL),
     "emailtemplate.updated_by": _use(STAFF, EMAIL),
     "requestsubtemplate.assignee_id": _use(STAFF, USER_ID),

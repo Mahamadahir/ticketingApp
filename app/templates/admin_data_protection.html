@@ -24,4 +24,18 @@
   <label>Email address <input type="email" name="address" maxlength="254" required value="{{ address or '' }}" /></label>
   <button type="submit">Download export</button>
 </form>
+
+<h3>Anonymise a requester</h3>
+<p class="note">
+  Keeps their tickets and removes the person: name, email address, files, what they wrote and what was emailed to
+  them. Enter any address they have; their linked and old addresses are included. You see exactly what will change
+  before anything does. <strong>This cannot be undone.</strong> Agents and super admins are not anonymised here.
+</p>
+{% if waiting_deletes %}<p class="note" role="status">{{ waiting_deletes|length }} stored file(s) from earlier anonymisations could not be deleted yet; the recurring job "blob-cleanup" retries them every hour. If this does not clear, the storage permission is the first thing to check.</p>
+<ul>{% for w in waiting_deletes %}<li>{{ w.blob_key }}: tried {{ w.attempts }} time(s){% if w.last_error %}, last error: {{ w.last_error }}{% endif %}</li>{% endfor %}</ul>{% endif %}
+<form method="post" action="/admin/data-protection/anonymise/preview">
+  <label>Email address <input type="email" name="address" maxlength="254" required /></label>
+  <label><input type="checkbox" name="close_open" value="true" /> Close open tickets first</label>
+  <button type="submit">Show what will change</button>
+</form>
 {% endblock %}

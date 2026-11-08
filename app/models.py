@@ -1092,3 +1092,30 @@ class BankHolidayCache(SQLModel, table=True):
     region: str = Field(primary_key=True)
     dates: str = Field(default="")
     fetched_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class AnonymisedRequester(SQLModel, table=True):
+    """One requester anonymisation (app/anonymisation.py). `id` is the number in the placeholder ("Anonymised requester
+    #7", anonymised-7@invalid). `address_hash` is a keyed one-way hash of the address that was asked about, never the
+    address, so a repeat request can be recognised ("this address was anonymised before"). Each run gets its own id, so
+    a person who comes back is not linked to the earlier placeholder."""
+
+    __tablename__ = "anonymised_requester"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    address_hash: str = Field(index=True)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class PendingBlobDelete(SQLModel, table=True):
+    """A stored file to delete from storage after the database change that removed its last attachment row committed
+    (app/anonymisation.py). Written in the same transaction as that change, so a delete that fails (storage down, no
+    permission) is never forgotten: the recurring job `blob-cleanup` retries it, and the Data protection page shows
+    how many are waiting."""
+
+    __tablename__ = "pending_blob_delete"
+
+    blob_key: str = Field(primary_key=True)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    attempts: int = Field(default=0, sa_column_kwargs={"server_default": "0"})
+    last_error: Optional[str] = Field(default=None)
