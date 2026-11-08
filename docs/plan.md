@@ -64,7 +64,7 @@ enough.
 **Data retention.** Tickets, messages, attachments and the audit log are kept
 indefinitely. Raise with the data protection lead: UK GDPR's storage
 limitation principle needs a written justification. Regardless of outcome,
-build a subject access export (everything held on one person) and requester
+build a subject access export (everything held on one person; built, Admin > Data protection, permission `data_protection`) and requester
 anonymisation (keep the ticket, remove name, email and attachments).
 Attachments older than a year move to the cool storage tier.
 

@@ -343,7 +343,8 @@
       ],
       "imported_by": [
         "app.inbound",
-        "app.routers.attachments"
+        "app.routers.attachments",
+        "app.subject_access"
       ],
       "imports": [
         "app.config",
@@ -357,7 +358,8 @@
       "tests": [
         "tests/test_attachments.py",
         "tests/test_inbound_mail.py",
-        "tests/test_msp_mail.py"
+        "tests/test_msp_mail.py",
+        "tests/test_subject_access.py"
       ]
     },
     {
@@ -396,6 +398,7 @@
         "app.routers.portal",
         "app.routers.tickets",
         "app.scheduled_jobs",
+        "app.subject_access",
         "app.subrequests"
       ],
       "imports": [
@@ -431,6 +434,7 @@
         "app.routers.attachments",
         "app.routers.auth",
         "app.routers.bulk_resolve",
+        "app.routers.data_protection",
         "app.routers.feedback",
         "app.routers.link_account",
         "app.routers.msp_mail",
@@ -862,6 +866,7 @@
         "app.routers.attachments",
         "app.routers.auth",
         "app.routers.bulk_resolve",
+        "app.routers.data_protection",
         "app.routers.dev_tools",
         "app.routers.feedback",
         "app.routers.health",
@@ -1280,6 +1285,7 @@
         "app.mail",
         "app.msp",
         "app.notifications",
+        "app.person_data",
         "app.raising",
         "app.routers.auth",
         "app.routers.portal",
@@ -1634,6 +1640,7 @@
         "app.routers.attachments",
         "app.routers.auth",
         "app.routers.bulk_resolve",
+        "app.routers.data_protection",
         "app.routers.dev_tools",
         "app.routers.feedback",
         "app.routers.health",
@@ -1665,6 +1672,7 @@
         "tests/test_outage_mode.py",
         "tests/test_public_surface.py",
         "tests/test_sessions.py",
+        "tests/test_subject_access.py",
         "tests/test_triage.py"
       ]
     },
@@ -1688,6 +1696,7 @@
         "in_a_split",
         "is_triaged",
         "mail_subject",
+        "not_requester_visible_messages",
         "preview_email",
         "record_inbound",
         "record_msp_message",
@@ -1713,6 +1722,7 @@
         "app.routers.portal",
         "app.routers.tickets",
         "app.splitting",
+        "app.subject_access",
         "app.visibility"
       ],
       "imports": [
@@ -1847,6 +1857,7 @@
         "app.outage",
         "app.outbox",
         "app.permissions",
+        "app.person_data",
         "app.presence",
         "app.raising",
         "app.reopening",
@@ -1862,6 +1873,7 @@
         "app.routers.attachments",
         "app.routers.auth",
         "app.routers.bulk_resolve",
+        "app.routers.data_protection",
         "app.routers.feedback",
         "app.routers.link_account",
         "app.routers.msp_mail",
@@ -1877,6 +1889,7 @@
         "app.settings_store",
         "app.sla",
         "app.splitting",
+        "app.subject_access",
         "app.subrequests",
         "app.subscriptions",
         "app.team_activity",
@@ -2155,6 +2168,7 @@
         "tests/test_split_family.py",
         "tests/test_splitting.py",
         "tests/test_status_follows_conversation.py",
+        "tests/test_subject_access.py",
         "tests/test_subrequests.py",
         "tests/test_team_activity.py",
         "tests/test_teams.py",
@@ -2612,6 +2626,7 @@
       "functions": [],
       "imported_by": [
         "app.routers.admin",
+        "app.routers.data_protection",
         "app.routers.reports",
         "app.templating",
         "app.visibility"
@@ -2626,7 +2641,37 @@
       "tests": [
         "tests/test_permissions.py",
         "tests/test_reports.py",
-        "tests/test_reports_more.py"
+        "tests/test_reports_more.py",
+        "tests/test_subject_access.py"
+      ]
+    },
+    {
+      "classes": [
+        "ColumnUse",
+        "Person"
+      ],
+      "file": "app/person_data.py",
+      "functions": [
+        "candidate_keys",
+        "email_matches",
+        "find_person",
+        "list_matches",
+        "mentions",
+        "user_id_columns"
+      ],
+      "imported_by": [
+        "app.subject_access"
+      ],
+      "imports": [
+        "app.identity",
+        "app.models"
+      ],
+      "module": "app.person_data",
+      "routes": [],
+      "summary": "Where the app holds a person's data: one lookup and one list of columns (issue #175, reused by #176).",
+      "tables": [],
+      "tests": [
+        "tests/test_subject_access.py"
       ]
     },
     {
@@ -3744,6 +3789,43 @@
     },
     {
       "classes": [],
+      "file": "app/routers/data_protection.py",
+      "functions": [
+        "show",
+        "subject_access"
+      ],
+      "imported_by": [
+        "app.main"
+      ],
+      "imports": [
+        "app.auth",
+        "app.database",
+        "app.models",
+        "app.permissions",
+        "app.settings_store",
+        "app.storage",
+        "app.subject_access",
+        "app.templating"
+      ],
+      "module": "app.routers.data_protection",
+      "routes": [
+        {
+          "handler": "show",
+          "method": "GET",
+          "path": "/admin/data-protection"
+        },
+        {
+          "handler": "subject_access",
+          "method": "POST",
+          "path": "/admin/data-protection/subject-access"
+        }
+      ],
+      "summary": "Admin > Data protection (issue #175): the subject access export. Opened by the `data_protection` permission",
+      "tables": [],
+      "tests": []
+    },
+    {
+      "classes": [],
       "file": "app/routers/dev_tools.py",
       "functions": [
         "simulate_inbound_email"
@@ -4701,6 +4783,7 @@
         "app.routers.admin",
         "app.routers.approvals",
         "app.routers.bulk_resolve",
+        "app.routers.data_protection",
         "app.routers.link_account",
         "app.routers.my_settings",
         "app.routers.tickets",
@@ -4708,6 +4791,7 @@
         "app.sessions",
         "app.sla",
         "app.splitting",
+        "app.subject_access",
         "app.subscriptions",
         "app.ticket_service",
         "app.time_zones"
@@ -4756,6 +4840,7 @@
         "tests/test_scheduled_jobs.py",
         "tests/test_sessions.py",
         "tests/test_sla.py",
+        "tests/test_subject_access.py",
         "tests/test_subrequests.py",
         "tests/test_teams_copy.py",
         "tests/test_time_zones.py",
@@ -4894,7 +4979,9 @@
         "app.attachments",
         "app.inbound",
         "app.mail",
-        "app.routers.attachments"
+        "app.routers.attachments",
+        "app.routers.data_protection",
+        "app.subject_access"
       ],
       "imports": [
         "app.config"
@@ -4907,7 +4994,37 @@
         "tests/test_attachments.py",
         "tests/test_inbound_mail.py",
         "tests/test_msp_mail.py",
-        "tests/test_storage.py"
+        "tests/test_storage.py",
+        "tests/test_subject_access.py"
+      ]
+    },
+    {
+      "classes": [
+        "Export"
+      ],
+      "file": "app/subject_access.py",
+      "functions": [
+        "build_export"
+      ],
+      "imported_by": [
+        "app.routers.data_protection"
+      ],
+      "imports": [
+        "app.attachments",
+        "app.audit",
+        "app.messages",
+        "app.models",
+        "app.person_data",
+        "app.settings_store",
+        "app.storage",
+        "app.templating"
+      ],
+      "module": "app.subject_access",
+      "routes": [],
+      "summary": "Subject access export (issue #175): a ZIP of everything held on one person.",
+      "tables": [],
+      "tests": [
+        "tests/test_subject_access.py"
       ]
     },
     {
@@ -5123,6 +5240,7 @@
         "app.routers.approvals",
         "app.routers.auth",
         "app.routers.bulk_resolve",
+        "app.routers.data_protection",
         "app.routers.feedback",
         "app.routers.link_account",
         "app.routers.msp_mail",
@@ -5130,7 +5248,8 @@
         "app.routers.notifications",
         "app.routers.portal",
         "app.routers.reports",
-        "app.routers.tickets"
+        "app.routers.tickets",
+        "app.subject_access"
       ],
       "imports": [
         "app.backdating",
@@ -5264,6 +5383,7 @@
         "tests/test_requester_bell.py",
         "tests/test_resolution.py",
         "tests/test_split_family.py",
+        "tests/test_subject_access.py",
         "tests/test_subrequests.py",
         "tests/test_teams.py",
         "tests/test_thanks_rules.py",
@@ -5586,6 +5706,18 @@
         "detail": "select() on Message",
         "file": "app/search.py",
         "in": "search_condition",
+        "rule": "messages-via-messages-module"
+      },
+      {
+        "detail": "select() on Message",
+        "file": "app/subject_access.py",
+        "in": "_staff_references",
+        "rule": "messages-via-messages-module"
+      },
+      {
+        "detail": "select() on Message",
+        "file": "app/subject_access.py",
+        "in": "_ticket_roles",
         "rule": "messages-via-messages-module"
       },
       {
@@ -5941,6 +6073,7 @@
     "tests/test_static.py",
     "tests/test_status_follows_conversation.py",
     "tests/test_storage.py",
+    "tests/test_subject_access.py",
     "tests/test_subrequests.py",
     "tests/test_team_activity.py",
     "tests/test_teams.py",

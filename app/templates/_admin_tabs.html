@@ -1,5 +1,11 @@
 <nav class="admin-tabs">
-  {% for href, label in ([("/admin/request-types", "Request types")] if user and user.role.value != "super_admin" and can(user, "manage_request_templates") else [("/admin/users", "Users"), ("/admin/teams", "Teams"), ("/admin/categories", "Categories"), ("/admin/category-review", "Category review"), ("/admin/canned", "Canned responses"), ("/admin/email-templates", "Email templates"), ("/admin/approval-groups", "Approval groups"), ("/admin/request-types", "Request types"), ("/admin/never-follow", "Never follow"), ("/admin/thanks-rules", "Thanks rules"), ("/admin/settings", "Settings"), ("/admin/feedback", "Feedback"), ("/admin/audit-log", "Audit log"), ("/admin/activity-log", "Activity log"), ("/admin/outbound-mail", "Outbound mail"), ("/admin/mail-intake", "Mail intake"), ("/admin/scheduled-jobs", "Recurring jobs"), ("/admin/outage", "Outage mode")]) %}
+  {% if not user or user.role.value == "super_admin" %}
+  {% set tabs = [("/admin/users", "Users"), ("/admin/teams", "Teams"), ("/admin/categories", "Categories"), ("/admin/category-review", "Category review"), ("/admin/canned", "Canned responses"), ("/admin/email-templates", "Email templates"), ("/admin/approval-groups", "Approval groups"), ("/admin/request-types", "Request types"), ("/admin/never-follow", "Never follow"), ("/admin/thanks-rules", "Thanks rules"), ("/admin/settings", "Settings"), ("/admin/feedback", "Feedback"), ("/admin/audit-log", "Audit log"), ("/admin/activity-log", "Activity log"), ("/admin/outbound-mail", "Outbound mail"), ("/admin/mail-intake", "Mail intake"), ("/admin/scheduled-jobs", "Recurring jobs"), ("/admin/outage", "Outage mode"), ("/admin/data-protection", "Data protection")] %}
+  {% else %}
+  {# An agent holding an extra permission sees only the pages that permission opens. #}
+  {% set tabs = ([("/admin/request-types", "Request types")] if user and can(user, "manage_request_templates") else []) + ([("/admin/data-protection", "Data protection")] if user and can(user, "data_protection") else []) %}
+  {% endif %}
+  {% for href, label in tabs %}
   <a href="{{ href }}" class="{{ 'active' if active == href else '' }}">{{ label }}</a>
   {% endfor %}
 </nav>

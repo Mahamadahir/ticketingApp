@@ -1,0 +1,71 @@
+"""Admin > Data protection (issue #175): the subject access export. Opened by the `data_protection` permission
+(super admins always; an agent a super admin names). What goes in the export is decided in app/subject_access.py."""
+
+import re
+from typing import Iterator
+
+from fastapi import APIRouter, Depends, Form, Request
+from fastapi.responses import HTMLResponse, StreamingResponse
+from sqlmodel import Session
+
+from app.auth import require_permission
+from app.database import get_session
+from app.models import User
+from app.permissions import DATA_PROTECTION
+from app.settings_store import SUBJECT_ACCESS_MAX_MB, count_setting
+from app.storage import Storage, get_storage
+from app.subject_access import build_export
+from app.templating import templates
+
+router = APIRouter(prefix="/admin/data-protection", tags=["data-protection"])
+require_data_protection = require_permission(DATA_PROTECTION)
+
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+CHUNK = 1024 * 1024
+
+
+def _page(request: Request, user: User, session: Session, *, address: str = "", error: str = "", status: int = 200):
+    return templates.TemplateResponse(
+        request, "admin_data_protection.html",
+        {"user": user, "max_mb": count_setting(session, SUBJECT_ACCESS_MAX_MB), "address": address, "error": error},
+        status_code=status,
+    )
+
+
+@router.get("", response_class=HTMLResponse)
+def show(request: Request, user: User = Depends(require_data_protection), session: Session = Depends(get_session)):
+    return _page(request, user, session)
+
+
+def _stream(handle) -> Iterator[bytes]:
+    """The temporary file in chunks; closing it deletes it, whether the download finished or not."""
+    try:
+        while chunk := handle.read(CHUNK):
+            yield chunk
+    finally:
+        handle.close()
+
+
+@router.post("/subject-access")
+def subject_access(
+    request: Request,
+    address: str = Form(""),
+    user: User = Depends(require_data_protection),
+    session: Session = Depends(get_session),
+    storage: Storage = Depends(get_storage),
+):
+    address = address.strip().lower()
+    if not EMAIL_RE.match(address) or len(address) > 254:
+        return _page(request, user, session, address=address, error="Enter an email address.", status=400)
+    export = build_export(session, storage, address, user)
+    session.commit()  # the audit entry: who exported whose data
+    name = "subject-access-" + re.sub(r"[^a-z0-9]+", "-", address).strip("-") + ".zip"
+    return StreamingResponse(
+        _stream(export.file),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{name}"',
+            "Content-Length": str(export.size),
+            "Cache-Control": "no-store",
+        },
+    )

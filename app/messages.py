@@ -338,6 +338,17 @@ def requester_visible_messages(session: Session, ticket: Ticket) -> list[Message
     )
 
 
+def not_requester_visible_messages(session: Session, ticket: Ticket) -> list[Message]:
+    """The ticket's own messages the requester may NOT see (internal notes, MSP mail not yet forwarded), the exact
+    complement of `requester_visible_messages` for this ticket. For the subject access export only, which lists
+    them apart for the data protection lead (app/subject_access.py); never shown or sent to a requester."""
+    visible = {m.id for m in requester_visible_messages(session, ticket)}
+    return [
+        m for m in session.exec(select(Message).where(Message.ticket_id == ticket.id).order_by(Message.created_at, Message.id)).all()
+        if m.id not in visible
+    ]
+
+
 def requester_visible_answers(session: Session, ticket: Ticket) -> list[dict]:
     """The form answers the requester may see in the portal (label and display text), in the question order. The
     answers are what the requester (or the agent, for them) gave about their own request, so all of them are
