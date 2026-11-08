@@ -245,7 +245,7 @@ docker compose run --rm app alembic stamp a575769b8ea7
 
 ```bash
 pip install --require-hashes -r requirements-dev.lock
-pytest
+pytest -n auto
 ```
 
 `requirements-dev.lock` pins every package with hashes and works on Windows and Linux;
@@ -255,15 +255,19 @@ regenerate the lock: `docs/build-plan.md`, "Dependency lock").
 Needs Python 3.14 and the compose database running (`docker compose up -d db`).
 The tests run against Postgres 16, never SQLite: they create and wipe a separate
 `ticketing_test` database (see `tests/conftest.py`), and refuse any database whose
-name does not end in `_test`. Set `TEST_DATABASE_URL` to point elsewhere. Covers
+name does not end in `_test`. The tables are built once per run and emptied before each
+test. `-n auto` runs one worker per core, each on its own database
+(`ticketing_gw0_test`, ...); plain `pytest` runs them one at a time. Set `TEST_DATABASE_URL` to point elsewhere. Covers
 role-scoped ticket visibility, ticket numbering, assignment, escalation, audit and
 ticket history, and both login paths.
 
 ## CI/CD
 
-- `.github/workflows/ci.yml` runs `pytest` and the migration drift check on
-  every push, pull request and `v*` tag. A change that only touches markdown
-  files or `docs/` does not run it. Do not make this check required in branch
+- `.github/workflows/ci.yml` runs `pytest -n auto` and the migration drift check on
+  every pull request to `main` and on `v*` tags (not on the push to `main` after a
+  merge, which the pull request's run already tested). A newer push to a pull request
+  cancels its run still in progress, and a run stops after 30 minutes. A pull request
+  that only touches markdown files or `docs/` does not run it. Do not make this check required in branch
   protection, or a docs-only pull request would wait for a run that never starts.
 - There is no deploy workflow yet. The old EC2 one was removed when hosting
   moved to Azure (see `docs/plan.md`, "Hosting on Azure", and `infra/README.md`),
