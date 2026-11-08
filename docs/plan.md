@@ -1195,7 +1195,8 @@ for all of them.
 Built so far (7A-i, #173): volume, SLA compliance, mean and median times, backlog age and reopen rate, on the
 Reports menu (permission `view_reports`). Elapsed time, not working time (the SLA clock is 24/7). A viewer's figures
 cover only the tickets they can see (`app/visibility.py`); every CSV download is audited. The shared page, filters, CSV
-writer and audit entry are in `app/report_kit.py` for the rest (7A-ii).
+writer and audit entry are in `app/report_kit.py`. 7A-ii (#174) adds satisfaction (keeping the rule that an agent reads only
+feedback on tickets they resolved), MSP handoffs, Major Incidents and incidents per Problem, so all the reports above are built.
 
 ## Required by date and Due date on service requests (SRP-1, issue #92; Due date, issue #121)
 

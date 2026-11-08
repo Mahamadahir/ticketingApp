@@ -30,7 +30,7 @@ def at(day: str, hour: int = 10, minute: int = 0) -> datetime:
 def make_ticket(db, team, created, *, priority=None, source=TicketSource.EMAIL, ticket_type=TicketType.INCIDENT,
                 status=TicketStatus.OPEN, category=None, **fields) -> Ticket:
     ticket = Ticket(
-        subject="s", requester_email="r@example.com", team_id=team.id if team else None, created_at=created,
+        subject=fields.pop("subject", "s"), requester_email="r@example.com", team_id=team.id if team else None, created_at=created,
         priority=priority, source=source, type=ticket_type, status=status,
         category_id=category.id if category else None, triaged_at=created, **fields,
     )
