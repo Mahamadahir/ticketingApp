@@ -674,7 +674,7 @@ def view_feedback(
     )
 
 
-AUDIT_ENTITY_TYPES = ["ticket", "user", "team", "category", "setting", "email_template"]
+AUDIT_ENTITY_TYPES = ["ticket", "user", "team", "category", "setting", "email_template", "report"]
 
 
 @router.get("/audit-log", response_class=HTMLResponse)

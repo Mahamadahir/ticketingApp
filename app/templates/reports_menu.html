@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Reports{% endblock %}
+{% block content %}
+<h2>Reports</h2>
+<p class="note">Figures cover the tickets in the teams you can see. Each report has a date range, filters and a CSV download.</p>
+<ul>
+  {% for r in reports %}
+  <li><a href="/reports/{{ r.key }}">{{ r.title }}</a>: {{ r.summary }}</li>
+  {% endfor %}
+</ul>
+{% endblock %}

@@ -30,6 +30,7 @@ INBOUND_MAX_PER_SENDER_HOUR = "inbound_max_per_sender_hour"
 INBOUND_MAX_ATTACHMENTS = "inbound_max_attachments"
 INBOUND_MAX_CC = "inbound_max_cc"
 SLA_AT_RISK_PERCENT = "sla_at_risk_percent"
+REPORT_MAX_DAYS = "report_max_days"
 GRAPH_SUBSCRIPTION_MINUTES = "graph_subscription_minutes"
 GRAPH_RENEW_MARGIN_MINUTES = "graph_renew_margin_minutes"
 MAIL_BACKFILL_DAYS = "mail_backfill_days"
@@ -685,6 +686,13 @@ REGISTRY: dict[str, SettingDef] = {
         kind="percent",
         description="A ticket shows amber when this share of its target time or less is left.",
         default="25",
+    ),
+    REPORT_MAX_DAYS: SettingDef(
+        key=REPORT_MAX_DAYS,
+        label="Reports: longest date range (days)",
+        kind="count",
+        description="The longest date range a report will run for (app/reports.py). A longer range is refused, to keep the queries quick. Placeholder.",
+        default="366",
     ),
 }
 
