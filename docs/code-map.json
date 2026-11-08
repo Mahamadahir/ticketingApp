@@ -2139,6 +2139,7 @@
         "tests/test_reopening.py",
         "tests/test_reply_notification.py",
         "tests/test_reports.py",
+        "tests/test_reports_more.py",
         "tests/test_request_questions.py",
         "tests/test_request_type_defaults.py",
         "tests/test_request_types.py",
@@ -2226,6 +2227,7 @@
         "app.escalation",
         "app.inbound",
         "app.msp_actions",
+        "app.reports",
         "app.routers.admin",
         "app.routers.msp_mail",
         "app.routers.tickets",
@@ -2259,7 +2261,8 @@
         "tests/test_msp.py",
         "tests/test_msp_actions.py",
         "tests/test_msp_mail.py",
-        "tests/test_msp_real_mail.py"
+        "tests/test_msp_real_mail.py",
+        "tests/test_reports_more.py"
       ]
     },
     {
@@ -2285,6 +2288,7 @@
       "imported_by": [
         "app.bulk_resolve",
         "app.closing",
+        "app.reports",
         "app.resolution",
         "app.routers.tickets"
       ],
@@ -2305,7 +2309,8 @@
       "summary": "What an agent does about the MSP besides sending a ticket (issue #150). Nothing here commits.",
       "tables": [],
       "tests": [
-        "tests/test_msp_actions.py"
+        "tests/test_msp_actions.py",
+        "tests/test_reports_more.py"
       ]
     },
     {
@@ -2620,7 +2625,8 @@
       "tables": [],
       "tests": [
         "tests/test_permissions.py",
-        "tests/test_reports.py"
+        "tests/test_reports.py",
+        "tests/test_reports_more.py"
       ]
     },
     {
@@ -2776,6 +2782,7 @@
         "category_choices",
         "csv_cell",
         "csv_text",
+        "filter_conditions",
         "parse_filters",
         "percent",
         "priority_label",
@@ -2809,7 +2816,11 @@
       "file": "app/reports.py",
       "functions": [
         "backlog_age",
+        "major_incidents",
+        "msp_handoffs",
+        "problems",
         "reopen_rate",
+        "satisfaction",
         "sla_compliance",
         "times",
         "volume"
@@ -2819,9 +2830,12 @@
       ],
       "imports": [
         "app.models",
+        "app.msp",
+        "app.msp_actions",
         "app.reopening",
         "app.report_kit",
         "app.ticket_service",
+        "app.time_zones",
         "app.visibility"
       ],
       "module": "app.reports",
@@ -2829,7 +2843,8 @@
       "summary": "The Phase 7A-i reports (issue #173): volume, SLA compliance, response and resolution times, backlog age and",
       "tables": [],
       "tests": [
-        "tests/test_reports.py"
+        "tests/test_reports.py",
+        "tests/test_reports_more.py"
       ]
     },
     {
@@ -5294,6 +5309,7 @@
         "app.jobs",
         "app.msp",
         "app.report_kit",
+        "app.reports",
         "app.required_by",
         "app.routers.admin",
         "app.routers.my_settings",
@@ -5906,6 +5922,7 @@
     "tests/test_reopening.py",
     "tests/test_reply_notification.py",
     "tests/test_reports.py",
+    "tests/test_reports_more.py",
     "tests/test_request_questions.py",
     "tests/test_request_type_defaults.py",
     "tests/test_request_types.py",

@@ -2,8 +2,8 @@
 visibility limit, the table a report returns, the CSV writer and the audit entry for a download.
 
 A report is a function `(session, user, levels, filters, now) -> Report` registered in `app/reports.py`;
-the page, the CSV link, the audit entry and the visibility limit all come from here, so a new report (satisfaction,
-MSP, Major Incidents, Problems: #174) is one function and one registry line.
+the page, the CSV link, the audit entry and the visibility limit all come from here, so a new report is one
+function and one registry line.
 
 Who may see which tickets is decided only by `app.visibility.visible_ticket_condition`: `ticket_conditions`
 applies it to every report, so a team lead's figures cover the teams they can see and a super admin's cover all.
@@ -159,10 +159,14 @@ def ticket_conditions(user: User, levels: AccessContext, filters: ReportFilters)
     """The SQL conditions on Ticket every report starts from: the tickets this person can see (the one
     rule, app/visibility.py), then the filters. The date range is not here: each report says which
     moment it measures (created, resolved, now)."""
-    conditions = []
     visible = visible_ticket_condition(user, levels)
-    if visible is not None:
-        conditions.append(visible)
+    return ([visible] if visible is not None else []) + filter_conditions(filters)
+
+
+def filter_conditions(filters: ReportFilters) -> list:
+    """Only the filters (team, type, category, priority, source) as conditions on Ticket, without the visibility
+    limit: for a report that has its own rule for who may read its rows (satisfaction: `feedback_condition`)."""
+    conditions = []
     if filters.team_id is not None:
         conditions.append(Ticket.team_id == filters.team_id)
     if filters.ticket_type is not None:
