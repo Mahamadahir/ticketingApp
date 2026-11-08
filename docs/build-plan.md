@@ -105,11 +105,11 @@ those. Do not record test counts or merge status here.
 | 7B subject access export (#175): Admin > Data protection > Subject access export (`/admin/data-protection`, permission `data_protection`): a super admin or a named agent enters an address and the ZIP is built, sent and deleted (no link, nothing kept). `summary.json` and `summary.html`, the account record and linked identities, every ticket the person raised, follows or is copied on with the requester-visible messages only, form answers and feedback on tickets they raised, approval votes, notifications, preferences, sessions, sign-in activity, audit entries, ticket events, mail sent to them, staff work by reference, internal notes in their own file, and the files they sent as attachments up to setting `subject_access_max_mb` (200, placeholder). The person lookup and the list of every column that holds a person's data are in `app/person_data.py` for #176 to reuse; the export is `app/subject_access.py`. Each export is audited (`subject_access` / `subject_access_export`). No migration | built | `app/person_data.py`, `app/subject_access.py`, `app/routers/data_protection.py`, `app/permissions.py` |
 | 7C requester anonymisation (#176): Admin > Data protection > Anonymise a requester (`/admin/data-protection/anonymise/preview` then `/anonymise`, permission `data_protection`). An address (any of the person's) gives a preview that is the real run rolled back, then a typed confirmation of the address; one transaction (`app/anonymisation.py`) keeps the tickets and replaces the requester with `anonymised-N@invalid`, anonymises and deactivates the account, deletes their attachment rows, blanks what they wrote and the agent emails to them, removes follower/copy rows and addresses from copy lists, blanks form answers, rating and approval comments, deletes their time zone, preferences, sessions, links and bell, replaces the address in kept text and in earlier audit/activity/event rows, and cuts the mail thread ids so the old address starts a fresh ticket. The stored files are deleted after the commit; a failure is queued in `pending_blob_delete` and retried by the `blob-cleanup` job. Migration `e5fda8ca3a76` (`anonymised_requester`, `pending_blob_delete`). The per-column decision is `anon` in `person_data.COLUMNS`, with a step for each in `anonymisation.STEPS` | built | `app/anonymisation.py`, `app/person_data.py`, `app/routers/data_protection.py`, `app/storage.py` |
 | 7D cool storage tier (#177): a lifecycle rule in `infra/modules/storage.bicep` on the `attachments` container moves blobs to cool `attachmentsCoolAfterDays` days after creation (default 365, parameter in `infra/main.bicep`, staging reads `ATTACHMENTS_COOL_AFTER_DAYS` from the repository variable, production fixes 365); the 90-day old-version delete is its own rule. The app never sets a tier | built, Azure-only unproved | `infra/modules/storage.bicep`, `infra/main.bicep` |
-| Phases 4 to 9 | not started | `docs/plan.md`, "Build order" |
+| Phases 8 to 10 | not started | `docs/plan.md`, "Build order" |
 
 ## Next up
 
-**Phases 0 to 6 are built**, and so are the owner-decision rounds of Nov 2026 (single pass %, time zones, Due date and
+**Phases 0 to 7 are built**, and so are the owner-decision rounds of Nov 2026 (single pass %, time zones, Due date and
 Scheduled, the bell for everyone, closing emails, permissions, request type defaults, form questions and sub-requests, the
 MSP fixes from real mail, MSP actions, handoff bell entries, gov.uk bank holidays). Each is a row in the status table below.
 
@@ -121,8 +121,8 @@ MSP fixes from real mail, MSP actions, handoff bell entries, gov.uk bank holiday
    nightly Entra `accountEnabled` check (#158), approvals with inactive approvers (#161), 6C break-glass accounts with TOTP
    (#163), the per-request-type self-approval switch (#167), 6D outage mode (#164), 6E linked identities (#165). Entra app
    roles only if the owner decides to.
-3. **Phase 7, reporting (7A reports, 7B subject access export, 7C manual anonymisation and 7D cool tier built; automatic anonymisation after a retention period waits for the data protection lead).**
-4. **Phase 8, the Teams bot**: wanted before go-live.
+3. **Phase 7, reporting (built, Nov 2026: 7A reports, 7B subject access export, 7C manual anonymisation and 7D cool tier built; automatic anonymisation after a retention period waits for the data protection lead).**
+4. **Phase 8, the Teams bot (next to build)**: wanted before go-live.
 5. **Phase 9, the Google Stitch redesign**: wanted before go-live, once screens stop changing.
 6. **Phase 10, hardening and the go-live gate**, including the console IP decision (staging is open to all IPs; the VPN
    is split tunnel) and the go-live mailbox handover (the app takes over `ITSupport@vardags.com`, its forward to the MSP is
