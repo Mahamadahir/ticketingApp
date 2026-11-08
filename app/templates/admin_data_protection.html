@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Admin: Data protection{% endblock %}
+{% block content %}
+{% set active = "/admin/data-protection" %}
+{% include "_admin_tabs.html" %}
+
+<h2>Data protection</h2>
+
+<h3>Subject access export</h3>
+<p class="note">
+  Everything held on one person, as a ZIP. Enter any address they have; their linked addresses and old addresses
+  are included. The ZIP holds the account record, the tickets they raised, follow or are copied on (the messages
+  the requester may see, plus their form answers, rating and comments), approval votes, notifications, preferences,
+  sign-in activity, audit entries, and the files they sent. Internal notes are in a separate file, to decide on
+  before anything is disclosed. Staff work is listed by reference only.
+</p>
+<p class="note">
+  The file is built when you press the button, sent to you and then deleted: it is not kept on the server and
+  there is no link to share. Each export is recorded in the audit log. Attachments are added up to
+  {{ max_mb }} MB (Admin &gt; Settings); anything over is listed with its size.
+</p>
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+<form method="post" action="/admin/data-protection/subject-access">
+  <label>Email address <input type="email" name="address" maxlength="254" required value="{{ address or '' }}" /></label>
+  <button type="submit">Download export</button>
+</form>
+{% endblock %}

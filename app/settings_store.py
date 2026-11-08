@@ -31,6 +31,7 @@ INBOUND_MAX_ATTACHMENTS = "inbound_max_attachments"
 INBOUND_MAX_CC = "inbound_max_cc"
 SLA_AT_RISK_PERCENT = "sla_at_risk_percent"
 REPORT_MAX_DAYS = "report_max_days"
+SUBJECT_ACCESS_MAX_MB = "subject_access_max_mb"
 GRAPH_SUBSCRIPTION_MINUTES = "graph_subscription_minutes"
 GRAPH_RENEW_MARGIN_MINUTES = "graph_renew_margin_minutes"
 MAIL_BACKFILL_DAYS = "mail_backfill_days"
@@ -693,6 +694,16 @@ REGISTRY: dict[str, SettingDef] = {
         kind="count",
         description="The longest date range a report will run for (app/reports.py). A longer range is refused, to keep the queries quick. Placeholder.",
         default="366",
+    ),
+    SUBJECT_ACCESS_MAX_MB: SettingDef(
+        key=SUBJECT_ACCESS_MAX_MB,
+        label="Subject access export: most attachment data in one export (MB)",
+        kind="count",
+        description=(
+            "Admin > Data protection: the attachments in one person's export are added up to this many megabytes "
+            "(oldest first); the rest are listed with their sizes and not included. Placeholder 200, TBC."
+        ),
+        default="200",
     ),
 }
 

@@ -19,7 +19,7 @@ from app.log_redaction import redact_approval_tokens
 from app.sessions import COOKIE_MAX_AGE_SECONDS
 from app.telemetry import start_telemetry
 from app.models import User, UserRole
-from app.routers import action_links, admin, approvals, attachments, auth, bulk_resolve, dev_tools, feedback, health, msp_mail, link_account, my_settings, notifications, portal, reports, tickets, webhooks
+from app.routers import action_links, admin, approvals, attachments, auth, bulk_resolve, data_protection, dev_tools, feedback, health, msp_mail, link_account, my_settings, notifications, portal, reports, tickets, webhooks
 
 
 @asynccontextmanager
@@ -93,7 +93,7 @@ PUBLIC_ROUTERS = [health.router, webhooks.router, approvals.router, action_links
 WEB_ROUTERS = [
     health.router, auth.router, tickets.router, tickets.reference_router, portal.router,
     notifications.router, my_settings.router, link_account.router, admin.router, dev_tools.router,
-    attachments.router, feedback.router, bulk_resolve.router, msp_mail.router, reports.router,
+    attachments.router, feedback.router, bulk_resolve.router, msp_mail.router, reports.router, data_protection.router,
 ]
 ROLE_ROUTERS = {
     "web": WEB_ROUTERS,

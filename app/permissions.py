@@ -20,6 +20,7 @@ from app.models import UserRole
 
 MANAGE_REQUEST_TEMPLATES = "manage_request_templates"
 VIEW_REPORTS = "view_reports"
+DATA_PROTECTION = "data_protection"
 
 
 @dataclass(frozen=True)
@@ -36,6 +37,10 @@ PERMISSIONS: dict[str, Permission] = {
     VIEW_REPORTS: Permission(
         "View reports",
         "Reports: volume, SLA, response and resolution times, backlog and reopen figures, limited to the teams the person can see.",
+    ),
+    DATA_PROTECTION: Permission(
+        "Data protection",
+        "Admin > Data protection: the subject access export (everything held on one person) and, later, requester anonymisation. For the data protection lead.",
     ),
 }
 

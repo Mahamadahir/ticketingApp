@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Subject access export</title>
+<style>body{font-family:sans-serif;max-width:60rem;margin:1rem auto;padding:0 1rem}table{border-collapse:collapse}td,th{border:1px solid #999;padding:.2rem .5rem;text-align:left;vertical-align:top}pre{white-space:pre-wrap}</style>
+</head>
+<body>
+<h1>Subject access export</h1>
+<p>Generated {{ summary.generated_at }} by {{ summary.requested_by }}. Address asked about: {{ summary.address_asked }}.</p>
+<h2>Addresses covered</h2>
+<ul>{% for a in summary.addresses %}<li>{{ a }}</li>{% endfor %}</ul>
+<p>{{ "An account exists." if summary.has_account else "No account exists for this person." }}</p>
+
+<h2>What is in this export</h2>
+<table>
+{% for name, count in summary.counts.items() %}<tr><th>{{ name.replace("_", " ") }}</th><td>{{ count }}</td></tr>{% endfor %}
+</table>
+<p>Attachment data added: {{ summary.attachment_bytes_added }} bytes (limit {{ summary.attachment_limit_bytes }}).</p>
+
+<h2>Not included</h2>
+<ul>{% for line in summary.not_included %}<li>{{ line }}</li>{% endfor %}</ul>
+
+{% for account in accounts %}
+<h2>Account: {{ account.email }}</h2>
+<table>
+<tr><th>Name</th><td>{{ account.display_name }}</td></tr>
+<tr><th>Role</th><td>{{ account.role }}</td></tr>
+<tr><th>Active</th><td>{{ account.is_active }}</td></tr>
+<tr><th>Created</th><td>{{ account.created_at }}</td></tr>
+<tr><th>Time zone</th><td>{{ account.time_zone or "not set" }}</td></tr>
+<tr><th>Teams</th><td>{% for m in account.team_memberships %}{{ m.team }} ({{ m.level }}){% if not loop.last %}, {% endif %}{% endfor %}</td></tr>
+<tr><th>Extra permissions</th><td>{{ account.permissions|join(", ") }}</td></tr>
+</table>
+{% endfor %}
+
+{% if linked %}
+<h2>Linked identities</h2>
+<table><tr><th>Address</th><th>Status</th><th>How</th><th>Linked</th></tr>
+{% for l in linked %}<tr><td>{{ l.address }}</td><td>{{ l.status }}</td><td>{{ l.method }}</td><td>{{ l.activated_at or l.created_at }}</td></tr>{% endfor %}
+</table>
+{% endif %}
+
+<h2>Tickets</h2>
+{% for t in tickets %}
+<h3>{{ t.reference }}: {{ t.subject }}</h3>
+<p>You are on this ticket as: {{ t.roles|join(", ") }}. Status {{ t.status }}, raised {{ t.created_at }}.</p>
+{% if t.form_answers %}<ul>{% for a in t.form_answers %}<li>{{ a.question }}: {{ a.answer }}</li>{% endfor %}</ul>{% endif %}
+{% for f in t.feedback or [] %}<p>Rating {{ f.rating }}/5 ({{ f.given_at }}): {{ f.comment }}</p>{% endfor %}
+{% for m in t.messages %}
+<p><strong>{{ m.sender }}</strong> ({{ m.created_at }}, {{ m.direction }}){% if m.cc %}, copied: {{ m.cc }}{% endif %}</p>
+<pre>{{ m.body }}</pre>
+{% endfor %}
+{% else %}
+<p>No tickets.</p>
+{% endfor %}
+
+{% if internal %}
+<h2>Internal notes exist on {{ internal|length }} of these tickets</h2>
+<p>They are in internal_notes.json, not here. Review them before deciding what to disclose.</p>
+{% endif %}
+
+{% if listed %}
+<h2>Attachments listed but not added as files</h2>
+<table><tr><th>Ticket</th><th>File</th><th>Size</th><th>Why</th></tr>
+{% for a in listed %}<tr><td>{{ a.ticket }}</td><td>{{ a.filename }}</td><td>{{ a.size }}</td><td>{{ a.reason }}</td></tr>{% endfor %}
+</table>
+{% endif %}
+
+<h2>Files in this ZIP</h2>
+<ul>{% for f in summary.files %}<li>{{ f }}</li>{% endfor %}</ul>
+</body>
+</html>
