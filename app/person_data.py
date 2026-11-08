@@ -46,6 +46,17 @@ REPLACE, SCRUB, BLANK, NULL, REMOVE, DELETE, WITH_ROW, KEEP = (
 )
 
 
+PLACEHOLDER_DOMAIN = "invalid"  # RFC 2606: never delivered; what an anonymised requester's address ends with
+
+
+def placeholder_address(n: int) -> str:
+    return f"anonymised-{n}@{PLACEHOLDER_DOMAIN}"
+
+
+def is_placeholder_address(address: Optional[str]) -> bool:
+    return (address or "").strip().lower().endswith("@" + PLACEHOLDER_DOMAIN)
+
+
 @dataclass(frozen=True)
 class Person:
     """Who a subject access request is about."""
@@ -128,6 +139,7 @@ COLUMNS: dict[str, ColumnUse] = {
     "linked_identity.secondary_user_id": _use(SUBJECT, USER_ID, "linked identities", anon=WITH_ROW),
     "linked_identity.email": _use(SUBJECT, EMAIL, "linked identities", anon=WITH_ROW),
     "linked_identity.entra_object_id": _use(SUBJECT, USER_ID, "linked identities", anon=WITH_ROW),
+    "linked_identity.moved_summary": _use(TEXT, FREE_TEXT, "what moved when two accounts were linked", anon=WITH_ROW),
     "linked_identity.requested_by_id": _use(STAFF, USER_ID),
     "linked_identity.approved_by_id": _use(STAFF, USER_ID),
     "linked_identity.unlinked_by_id": _use(STAFF, USER_ID),
@@ -186,6 +198,7 @@ COLUMNS: dict[str, ColumnUse] = {
     "outboundemail.to_address": _use(SUBJECT, EMAIL, "emails sent to the person (subject and addresses, not the body)", anon=REPLACE),
     "outboundemail.cc": _use(SUBJECT, EMAIL, "a comma-separated list", anon=REMOVE),
     "outboundemail.subject": _use(TEXT, FREE_TEXT, "emails sent to the person", anon=SCRUB),
+    "outboundemail.last_error": _use(TEXT, FREE_TEXT, "why a send failed; Graph's wording can name the recipient", anon=SCRUB),
     "outboundemail.body": _use(TEXT, FREE_TEXT, "emails sent to the person; not exported (see the PR decisions)", anon=BLANK),
     "inboundmail.sender": _use(SUBJECT, NAME, "mail the person sent to the shared mailbox (ids and outcome only)", anon=REPLACE),
     "inboundmail.to_addresses": _use(SUBJECT, EMAIL, "a comma-separated list", anon=REMOVE),
@@ -200,6 +213,10 @@ COLUMNS: dict[str, ColumnUse] = {
     "neverfollowaddress.email": _use(OTHER, EMAIL, "shared mailboxes and lists, not people", anon=DELETE),
     "neverfollowaddress.added_by": _use(STAFF, EMAIL),
     "thankscandidate.decided_by": _use(STAFF, EMAIL),
+    "thankscandidate.normalised_text": _use(
+        TEXT, FREE_TEXT, "a short thanks-like reply in lower case without punctuation (an address in it is only words, "
+        "so it is not matched); one row stands for many replies, so it is kept and the readable sample is scrubbed",
+    ),
     "thankscandidate.sample_text": _use(TEXT, FREE_TEXT, "a reply an agent reclosed; may quote a requester", anon=SCRUB),
     "thanksrule.created_by": _use(STAFF, EMAIL),
     "emailtemplate.updated_by": _use(STAFF, EMAIL),

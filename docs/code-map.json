@@ -173,7 +173,6 @@
         "blockers_to_close",
         "expected_step_keys",
         "open_tickets",
-        "placeholder_address",
         "placeholder_name",
         "preview",
         "purge_pending_blobs",
@@ -203,6 +202,7 @@
         "app.scheduled_jobs"
       ],
       "imports": [
+        "app.attachments",
         "app.audit",
         "app.closing",
         "app.config",
@@ -398,10 +398,13 @@
         "clean_filename",
         "detect_content_type",
         "is_inline_type",
+        "lock_blob",
         "serving_headers",
-        "store_attachment"
+        "store_attachment",
+        "try_lock_blob"
       ],
       "imported_by": [
+        "app.anonymisation",
         "app.inbound",
         "app.routers.attachments",
         "app.subject_access"
@@ -958,6 +961,7 @@
       "tests": [
         "tests/conftest.py",
         "tests/test_access_context.py",
+        "tests/test_anonymisation.py",
         "tests/test_approval_groups.py",
         "tests/test_approval_reminders.py",
         "tests/test_approvals.py",
@@ -1651,6 +1655,7 @@
         "app.notification_settings",
         "app.outage",
         "app.outbox",
+        "app.person_data",
         "app.raising",
         "app.settings_store",
         "app.storage",
@@ -2736,12 +2741,15 @@
         "candidate_keys",
         "email_matches",
         "find_person",
+        "is_placeholder_address",
         "list_matches",
         "mentions",
+        "placeholder_address",
         "user_id_columns"
       ],
       "imported_by": [
         "app.anonymisation",
+        "app.mail",
         "app.subject_access"
       ],
       "imports": [

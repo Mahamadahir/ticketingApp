@@ -58,6 +58,7 @@
 <p><strong>This cannot be undone.</strong> Type the email address again to confirm.</p>
 <form method="post" action="/admin/data-protection/anonymise">
   <input type="hidden" name="address" value="{{ address }}" />
+  <input type="hidden" name="fingerprint" value="{{ p.outcome.fingerprint }}" />
   {% if close_open %}<input type="hidden" name="close_open" value="true" />{% endif %}
   <label>Type {{ address }} <input type="text" name="confirm" autocomplete="off" required /></label>
   <button type="submit">Anonymise permanently</button>

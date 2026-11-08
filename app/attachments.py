@@ -11,6 +11,7 @@ import hashlib
 import re
 from typing import Optional
 
+from sqlalchemy import text
 from sqlmodel import Session, select
 
 from app.config import settings
@@ -88,6 +89,19 @@ def blob_key(content_hash: str) -> str:
     return f"{content_hash[:2]}/{content_hash}"
 
 
+def lock_blob(session: Session, key: str) -> None:
+    """Holds a transaction-long lock on one stored file's key. An upload takes it before asking whether the blob exists
+    and keeps it until its row is committed; the anonymisation cleanup (app/anonymisation.py) takes the same lock before
+    it checks that no row uses the blob and deletes it. So a file uploaded again while it is being deleted either has its
+    row seen by the cleanup, or finds the blob gone and writes it again."""
+    session.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"), {"key": key})
+
+
+def try_lock_blob(session: Session, key: str) -> bool:
+    """The same lock without waiting: False when an upload holds it (the cleanup then leaves the file for its next run)."""
+    return bool(session.execute(text("SELECT pg_try_advisory_xact_lock(hashtextextended(:key, 0))"), {"key": key}).scalar())
+
+
 def store_attachment(
     session: Session,
     storage: Storage,
@@ -139,6 +153,7 @@ def store_attachment(
             return existing
 
     key = blob_key(content_hash)
+    lock_blob(session, key)
     if not storage.exists(key):
         storage.put(key, data, content_type)
 

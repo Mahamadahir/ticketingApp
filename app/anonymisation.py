@@ -76,7 +76,9 @@ from app.models import (
 )
 from app.person_data import (
     BLANK, COLUMNS, DELETE, KEEP, NULL, REMOVE, REPLACE, SCRUB, WITH_ROW, Person, find_person, list_matches, mentions,
+    PLACEHOLDER_DOMAIN, placeholder_address,
 )
+from app.attachments import try_lock_blob
 from app.storage import Storage
 from app.ticket_service import set_status
 
@@ -88,10 +90,6 @@ CLOSE_NOTE = "Closed because the requester was anonymised (data protection)"
 
 def placeholder_name(n: int) -> str:
     return f"Anonymised requester #{n}"
-
-
-def placeholder_address(n: int) -> str:
-    return f"anonymised-{n}@invalid"
 
 
 def address_hash(address: str) -> str:
@@ -122,6 +120,7 @@ class Context:
     blob_keys: set[str] = field(default_factory=set)
     shared_files_kept: int = 0
     _pattern: Optional[re.Pattern] = None
+    _own_messages: Optional[list] = None
 
     @property
     def placeholder(self) -> str:
@@ -136,7 +135,9 @@ class Context:
         if not text:
             return text
         if self._pattern is None:
-            self._pattern = re.compile("|".join(re.escape(a) for a in sorted(self.person.addresses, key=len, reverse=True)), re.I)
+            # Whole addresses only: "bigbob@x.com" is someone else when the person is bob@x.com.
+            alternatives = "|".join(re.escape(a) for a in sorted(self.person.addresses, key=len, reverse=True))
+            self._pattern = re.compile(rf"(?<![\w.+%'-])(?:{alternatives})(?![\w-]|\.\w)", re.I)
         return self._pattern.sub(self.placeholder, text)
 
     def without_addresses(self, text: Optional[str]) -> Optional[str]:
@@ -186,11 +187,14 @@ def _remove_column(model, column: str, label: str) -> Callable[[Context], None]:
 
 
 def _their_messages(ctx: Context) -> list[Message]:
-    """Messages they wrote, on any ticket: by one of their accounts, or from one of their addresses."""
-    rows = ctx.session.exec(
-        select(Message).where(or_(_in(Message.author_user_id, ctx.person.user_ids), list_matches(Message.sender, ctx.person)))
-    ).all()
-    return [m for m in rows if m.author_user_id in ctx.person.user_ids or mentions(m.sender, ctx.person)]
+    """Messages they wrote, on any ticket: by one of their accounts, or from one of their addresses. Found once, before
+    any sender is replaced, and the same list is used by every step."""
+    if ctx._own_messages is None:
+        rows = ctx.session.exec(
+            select(Message).where(or_(_in(Message.author_user_id, ctx.person.user_ids), list_matches(Message.sender, ctx.person)))
+        ).all()
+        ctx._own_messages = [m for m in rows if m.author_user_id in ctx.person.user_ids or mentions(m.sender, ctx.person)]
+    return ctx._own_messages
 
 
 def _agent_emails_to_them(ctx: Context) -> list[Message]:
@@ -319,15 +323,33 @@ def step_outbound_to(ctx: Context) -> None:
     session = ctx.session
     rows = session.exec(select(OutboundEmail).where(func.lower(func.trim(OutboundEmail.to_address)).in_(ctx.person.addresses))).all()
     cancelled = replaced = 0
+    about = set()
     for row in rows:
         if row.sent_at is None:
             session.delete(row)
             cancelled += 1
         else:
-            row.to_address = ctx.placeholder
+            # One follower update per person per message is unique (message, address): two of their addresses on the
+            # same message must not both become the same placeholder.
+            if row.about_message_id is not None and row.about_message_id in about:
+                row.to_address = f"anonymised-{ctx.n}-{row.id}@{PLACEHOLDER_DOMAIN}"
+            else:
+                row.to_address = ctx.placeholder
+            about.add(row.about_message_id)
             row.body = REMOVED if row.body else row.body
             session.add(row)
             replaced += 1
+    # An email to someone else (a follower, the MSP) that carries one of their messages is cancelled too: the message
+    # is about to read "[removed]", and that is what would be sent.
+    own = [m.id for m in _their_messages(ctx)]
+    carrying = session.exec(
+        select(OutboundEmail).where(
+            OutboundEmail.sent_at.is_(None), or_(_in(OutboundEmail.message_id, own), _in(OutboundEmail.about_message_id, own))
+        )
+    ).all()
+    for row in carrying:
+        session.delete(row)
+    ctx.count("Waiting emails to others that carry their messages, cancelled", len(carrying))
     ctx.count("Emails waiting to be sent to them, cancelled", cancelled)
     ctx.count("Emails already sent to them, address replaced and body removed", replaced)
 
@@ -495,6 +517,7 @@ STEPS: dict[str, Callable[[Context], None]] = {
     "outboundemail.cc": _remove_column(OutboundEmail, "cc", "Emails sent, address taken out of Cc"),
     "outboundemail.subject": _scrub_column(OutboundEmail, "subject", "Email subjects, address replaced"),
     "outboundemail.body": step_outbound_body,
+    "outboundemail.last_error": _scrub_column(OutboundEmail, "last_error", "Email failure notes, address replaced"),
     "mspunmatchedmail.sender": _scrub_column(MspUnmatchedMail, "sender", "MSP mail, address replaced"),
     "mspunmatchedmail.to_addresses": _remove_column(MspUnmatchedMail, "to_addresses", "MSP mail, address taken out of To"),
     "mspunmatchedmail.cc_addresses": _remove_column(MspUnmatchedMail, "cc_addresses", "MSP mail, address taken out of Cc"),
@@ -648,6 +671,7 @@ class Outcome:
     shared_files_kept: int
     repeat: bool
     hash: str
+    fingerprint: str  # of what was counted; the confirm step refuses when the data changed since the preview
 
 
 def anonymise(session: Session, person: Person, actor: User, *, n: int, close_open: bool) -> Outcome:
@@ -679,7 +703,10 @@ def anonymise(session: Session, person: Person, actor: User, *, n: int, close_op
     repeat = session.exec(
         select(AnonymisedRequester.id).where(AnonymisedRequester.address_hash == digest, AnonymisedRequester.id != n)
     ).first() is not None
-    return Outcome(n, len(ctx.ticket_ids), len(still_open), ctx.counts, ctx.blob_keys, ctx.shared_files_kept, repeat, digest)
+    fingerprint = hashlib.sha256(
+        repr((sorted(ctx.ticket_ids), len(still_open), sorted(ctx.counts.items()), sorted(ctx.blob_keys))).encode()
+    ).hexdigest()
+    return Outcome(n, len(ctx.ticket_ids), len(still_open), ctx.counts, ctx.blob_keys, ctx.shared_files_kept, repeat, digest, fingerprint)
 
 
 @dataclass
@@ -717,9 +744,10 @@ def preview(session: Session, address: str, actor: User, *, close_open: bool) ->
     return Preview(person, outcome, refused, tickets, open_refs, earlier, waiting)
 
 
-def run(session: Session, address: str, actor: User, *, close_open: bool) -> Outcome:
+def run(session: Session, address: str, actor: User, *, close_open: bool, expected: Optional[str] = None) -> Outcome:
     """Anonymises for real: one transaction, committed here. The stored files are deleted afterwards by the caller
-    (`purge_pending_blobs`), once this has committed. Raises Refused with nothing changed."""
+    (`purge_pending_blobs`), once this has committed. Raises Refused with nothing changed. `expected` is the preview's
+    fingerprint: when what would change is no longer what the admin was shown, nothing is done."""
     person = find_person(session, address)
     digest = address_hash(person.address)
     record = AnonymisedRequester(address_hash=digest)
@@ -727,6 +755,8 @@ def run(session: Session, address: str, actor: User, *, close_open: bool) -> Out
     session.flush()
     try:
         outcome = anonymise(session, person, actor, n=record.id, close_open=close_open)
+        if expected is not None and outcome.fingerprint != expected:
+            raise Refused("What would change is no longer what the preview showed (the data changed). Nothing was done; look at it again.")
         # The audit entry holds the hash, never the address. Written after the earlier entries were rewritten.
         log_action(
             session, actor.email, AUDIT_ENTITY, record.id, AUDIT_ACTION,
@@ -744,26 +774,36 @@ def run(session: Session, address: str, actor: User, *, close_open: bool) -> Out
 
 
 def purge_pending_blobs(session: Session, storage: Storage, keys: Optional[set[str]] = None) -> tuple[int, int]:
-    """Deletes the stored files waiting in `pending_blob_delete` (just `keys`, or all of them). Returns (deleted,
+    """Deletes the stored files waiting in `pending_blob_delete` (just `keys`, or the oldest 500). Returns (deleted,
     failed). A file that an attachment row uses again by now (the same bytes uploaded since) is left alone and the
-    entry dropped. A failure is recorded on the entry and retried by the `blob-cleanup` job; nothing is lost, and the
-    database never points at a file that is not meant to be there. The caller commits."""
+    entry dropped. Each key is locked (`attachments.try_lock_blob`) while it is checked and deleted, the lock an upload
+    of the same bytes also takes, so an upload cannot slip between the check and the delete; a key an upload holds is
+    left for the next run. A failure is recorded on the entry and retried by the `blob-cleanup` job; nothing is lost, and
+    the database never points at a file that is not meant to be there. The caller commits (which releases the locks)."""
     query = select(PendingBlobDelete).order_by(PendingBlobDelete.created_at).limit(500)
     if keys is not None:
         query = select(PendingBlobDelete).where(PendingBlobDelete.blob_key.in_(keys))
+    # Lock every key first (the lock an upload of the same bytes also takes), then ask which are used: a row committed
+    # before the lock is seen here, and an upload that comes after waits until this transaction ends.
+    entries = [e for e in session.exec(query).all() if try_lock_blob(session, e.blob_key)]
+    used = (
+        set(session.exec(select(Attachment.blob_key).where(Attachment.blob_key.in_([e.blob_key for e in entries]))).all())
+        if entries else set()
+    )
     done = failed = 0
-    for entry in session.exec(query).all():
-        in_use = session.exec(select(Attachment.id).where(Attachment.blob_key == entry.blob_key).limit(1)).first()
-        if in_use is None:
-            try:
-                storage.delete(entry.blob_key)
-            except Exception as error:  # a storage outage, a missing permission: try again later
-                entry.attempts += 1
-                entry.last_error = f"{type(error).__name__}: {error}"[:300]
-                session.add(entry)
-                failed += 1
-                continue
-            done += 1
+    for entry in entries:
+        if entry.blob_key in used:
+            session.delete(entry)  # used again: the file stays
+            continue
+        try:
+            storage.delete(entry.blob_key)
+        except Exception as error:  # a storage outage, a missing permission: try again later
+            entry.attempts += 1
+            entry.last_error = f"{type(error).__name__}: {error}"[:300]
+            session.add(entry)
+            failed += 1
+            continue
+        done += 1
         session.delete(entry)
     return done, failed
 

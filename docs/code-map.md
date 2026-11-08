@@ -387,8 +387,8 @@ Requester anonymisation (issue #176): keep the ticket, remove the person. Irreve
 File: `app/anonymisation.py`
 
 - Classes: `Context`, `Outcome`, `Preview`, `Refused`
-- Functions: `address_hash`, `anonymise`, `blockers_to_close`, `expected_step_keys`, `open_tickets`, `placeholder_address`, `placeholder_name`, `preview`, `purge_pending_blobs`, `refusal`, `run`, `run_blob_cleanup`, `step_accounts`, `step_activity_network`, `step_answers`, `step_attachments`, `step_expire_links`, `step_feedback_comment`, `step_followers`, `step_inbound_sender`, `step_message_body`, `step_message_cc`, `step_message_sender`, `step_notifications`, `step_outbound_body`, `step_outbound_to`, `step_thread_ids`, `step_ticket_requester`, `step_vote_comment`
-- Imports: `app.audit`, `app.closing`, `app.config`, `app.models`, `app.person_data`, `app.storage`, `app.ticket_service`
+- Functions: `address_hash`, `anonymise`, `blockers_to_close`, `expected_step_keys`, `open_tickets`, `placeholder_name`, `preview`, `purge_pending_blobs`, `refusal`, `run`, `run_blob_cleanup`, `step_accounts`, `step_activity_network`, `step_answers`, `step_attachments`, `step_expire_links`, `step_feedback_comment`, `step_followers`, `step_inbound_sender`, `step_message_body`, `step_message_cc`, `step_message_sender`, `step_notifications`, `step_outbound_body`, `step_outbound_to`, `step_thread_ids`, `step_ticket_requester`, `step_vote_comment`
+- Imports: `app.attachments`, `app.audit`, `app.closing`, `app.config`, `app.models`, `app.person_data`, `app.storage`, `app.ticket_service`
 - Imported by: `app.routers.data_protection`, `app.scheduled_jobs`
 - Tests: `test_anonymisation.py`
 
@@ -438,9 +438,9 @@ Attachments: the one place a file is checked and stored (docs/plan.md, "Storage 
 File: `app/attachments.py`
 
 - Classes: `AttachmentRejected`
-- Functions: `attachments_of`, `blob_key`, `clean_filename`, `detect_content_type`, `is_inline_type`, `serving_headers`, `store_attachment`
+- Functions: `attachments_of`, `blob_key`, `clean_filename`, `detect_content_type`, `is_inline_type`, `lock_blob`, `serving_headers`, `store_attachment`, `try_lock_blob`
 - Imports: `app.config`, `app.models`, `app.storage`
-- Imported by: `app.inbound`, `app.routers.attachments`, `app.subject_access`
+- Imported by: `app.anonymisation`, `app.inbound`, `app.routers.attachments`, `app.subject_access`
 - Tests: `test_anonymisation.py`, `test_attachments.py`, `test_inbound_mail.py`, `test_msp_mail.py`, `test_subject_access.py`
 
 ### `app.audit`
@@ -576,7 +576,7 @@ File: `app/database.py`
 - Functions: `get_session`
 - Imports: `app.config`
 - Imported by: `app.activity`, `app.auth`, `app.breakglass`, `app.routers.action_links`, `app.routers.admin`, `app.routers.approvals`, `app.routers.attachments`, `app.routers.auth`, `app.routers.bulk_resolve`, `app.routers.data_protection`, `app.routers.dev_tools`, `app.routers.feedback`, `app.routers.health`, `app.routers.link_account`, `app.routers.msp_mail`, `app.routers.my_settings`, `app.routers.notifications`, `app.routers.portal`, `app.routers.reports`, `app.routers.tickets`, `app.routers.webhooks`, `app.scheduled_jobs`, `app.sessions`, `app.templating`, `app.worker`
-- Tests: `conftest.py`, `test_access_context.py`, `test_approval_groups.py`, `test_approval_reminders.py`, `test_approvals.py`, `test_auth.py`, `test_auto_close_chase.py`, `test_category_admin.py`, `test_due_date.py`, `test_followers.py`, `test_hardening.py`, `test_health.py`, `test_inbound_mail.py`, `test_linking.py`, `test_mail_subscriptions.py`, `test_notification_followup.py`, `test_outbound_mail.py`, `test_scheduled_jobs.py`, `test_split_family.py`, `test_splitting.py`, `test_teams_copy.py`, `test_teams_copy_sending.py`, `test_ticket_core.py`, `test_withdraw.py`, `test_worker.py`
+- Tests: `conftest.py`, `test_access_context.py`, `test_anonymisation.py`, `test_approval_groups.py`, `test_approval_reminders.py`, `test_approvals.py`, `test_auth.py`, `test_auto_close_chase.py`, `test_category_admin.py`, `test_due_date.py`, `test_followers.py`, `test_hardening.py`, `test_health.py`, `test_inbound_mail.py`, `test_linking.py`, `test_mail_subscriptions.py`, `test_notification_followup.py`, `test_outbound_mail.py`, `test_scheduled_jobs.py`, `test_split_family.py`, `test_splitting.py`, `test_teams_copy.py`, `test_teams_copy_sending.py`, `test_ticket_core.py`, `test_withdraw.py`, `test_worker.py`
 
 ### `app.due_today`
 
@@ -752,7 +752,7 @@ File: `app/mail.py`
 
 - Classes: `Mail`, `NotReady`
 - Functions: `automatic_cap`, `build_acknowledgement_mail`, `build_approval_mail`, `build_approval_overdue_mail`, `build_approval_reminder_mail`, `build_approval_withdrawn_mail`, `build_chase_mail`, `build_emergency_reset_mail`, `build_follower_update_mail`, `build_message_mail`, `build_msp_forward_mail`, `build_msp_handoff_mail`, `build_msp_release_mail`, `build_raised_for_mail`, `cap_release`, `deliver_mail`, `describe_failure`, `give_up`, `is_permanent`, `own_first_message`, `quoted`, `record_only`, `send_link_code`, `send_now`, `send_through_graph`
-- Imports: `app.action_links`, `app.approval_groups`, `app.approval_links`, `app.approvals`, `app.config`, `app.email_templates`, `app.emergency`, `app.followers`, `app.graph_client`, `app.identity`, `app.messages`, `app.models`, `app.never_follow`, `app.notification_settings`, `app.outage`, `app.outbox`, `app.raising`, `app.settings_store`, `app.storage`, `app.teams`
+- Imports: `app.action_links`, `app.approval_groups`, `app.approval_links`, `app.approvals`, `app.config`, `app.email_templates`, `app.emergency`, `app.followers`, `app.graph_client`, `app.identity`, `app.messages`, `app.models`, `app.never_follow`, `app.notification_settings`, `app.outage`, `app.outbox`, `app.person_data`, `app.raising`, `app.settings_store`, `app.storage`, `app.teams`
 - Imported by: `app.auto_close_chase`, `app.inbound`, `app.jobs`, `app.linked_identities`, `app.msp`
 - Tests: `test_acknowledgement.py`, `test_action_links.py`, `test_anonymisation.py`, `test_approval_reminders.py`, `test_auto_close_chase.py`, `test_closing_email.py`, `test_email_templates.py`, `test_follower_updates.py`, `test_linked_identities.py`, `test_msp.py`, `test_msp_actions.py`, `test_msp_mail.py`, `test_outage_mode.py`, `test_outbound_mail.py`, `test_reopening.py`, `test_resolution.py`, `test_withdraw.py`
 
@@ -890,9 +890,9 @@ Where the app holds a person's data: one lookup and one list of columns (issue #
 File: `app/person_data.py`
 
 - Classes: `ColumnUse`, `Person`
-- Functions: `candidate_keys`, `email_matches`, `find_person`, `list_matches`, `mentions`, `user_id_columns`
+- Functions: `candidate_keys`, `email_matches`, `find_person`, `is_placeholder_address`, `list_matches`, `mentions`, `placeholder_address`, `user_id_columns`
 - Imports: `app.identity`, `app.models`
-- Imported by: `app.anonymisation`, `app.subject_access`
+- Imported by: `app.anonymisation`, `app.mail`, `app.subject_access`
 - Tests: `test_anonymisation.py`, `test_subject_access.py`
 
 ### `app.presence`

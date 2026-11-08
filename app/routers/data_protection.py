@@ -30,7 +30,7 @@ def _page(request: Request, user: User, session: Session, *, address: str = "", 
         request, "admin_data_protection.html",
         {
             "user": user, "max_mb": count_setting(session, SUBJECT_ACCESS_MAX_MB), "address": address, "error": error,
-            "waiting_deletes": len(session.exec(select(PendingBlobDelete.blob_key)).all()),
+            "waiting_deletes": session.exec(select(PendingBlobDelete).order_by(PendingBlobDelete.created_at).limit(20)).all(),
         },
         status_code=status,
     )
@@ -107,6 +107,7 @@ def anonymise_confirm(
     request: Request,
     address: str = Form(""),
     confirm: str = Form(""),
+    fingerprint: str = Form(""),
     close_open: bool = Form(False),
     user: User = Depends(require_data_protection),
     session: Session = Depends(get_session),
@@ -122,7 +123,7 @@ def anonymise_confirm(
             error="The address typed does not match. Nothing was changed.", status=400,
         )
     try:
-        outcome = anonymisation.run(session, address, user, close_open=close_open)
+        outcome = anonymisation.run(session, address, user, close_open=close_open, expected=fingerprint or None)
     except anonymisation.Refused as error:
         shown = anonymisation.preview(session, address, user, close_open=close_open)
         return _anonymise_page(request, user, address=address, close_open=close_open, shown=shown, error=str(error), status=409)

@@ -68,12 +68,17 @@ def preview(client, address="ann@a.example", *, close=True):
     return client.post(URL + "/preview", data={"address": address, **({"close_open": "true"} if close else {})})
 
 
+def is_text(column) -> bool:
+    """sqlmodel's AutoString is a TypeDecorator, so look at what it wraps."""
+    return isinstance(getattr(column.type, "impl", column.type), (String, Text))
+
+
 def everything_text(db):
     """Every text value in every table, lower case, as (table.column, value)."""
     found = []
     for table in SQLModel.metadata.tables.values():
         for column in table.columns:
-            if isinstance(column.type, (String, Text)):
+            if is_text(column):
                 for (value,) in db.execute(select(column).where(column.is_not(None))).all():
                     found.append((f"{table.name}.{column.name}", value.lower()))
     return found
@@ -97,34 +102,43 @@ def test_decisions_are_known_words():
     assert {u.anon for u in COLUMNS.values()} <= {KEEP, REPLACE, SCRUB, BLANK, NULL, REMOVE, DELETE, WITH_ROW}
 
 
-def test_free_text_columns_the_name_pattern_misses_were_checked_by_hand():
-    """Every String column in the schema that the classification does not list is a label, a status or a hash, listed
-    here by hand (the pattern in person_data finds columns by name; this finds the rest by type)."""
-    labels = {
-        "teammembership.level", "user.role", "ticket.type", "ticket.status", "ticket.source", "message.direction",
-        "message.visibility",
-    }
+# Text columns the name pattern in person_data does not find and that were read by hand for #176: kinds, statuses, hashes,
+# ids, admin-written wording and technical errors, none holding a person's words or address.
+REVIEWED_BY_HAND = set("""
+teammembership.level user.role user.password_hash user.time_zone user.time_zone_source user.totp_secret user.emergency_password_hash
+linked_identity.method linked_identity.status link_code.code_hash requestertimezone.time_zone requestertimezone.source ticket.type
+ticket.status ticket.source ticket.impact ticket.urgency ticket.priority ticket.msp_ticket_number message.direction message.visibility
+message.graph_message_id message.msp_forward attachment.content_type attachment.content_hash attachment.blob_key cannedresponse.title
+thanksrule.match_type thanksrule.pattern thankscandidate.status userpermission.permission requesttype.description
+requesttype.default_impact requesttype.default_urgency requestsubtemplate.impact requestsubtemplate.urgency requesttypequestion.label
+requesttypequestion.kind ticketanswer.question_label ticketanswer.question_kind ticketapproval.status approvalvote.decision
+actiontoken.kind actiontoken.token_hash notification.kind notificationpreference.kind notificationpreference.channel teamspost.kind
+teamspost.last_error outboundemail.kind outboundemail.attachment_ids scheduledjob.lease_owner scheduledjob.last_error
+graphnotification.subscription_id graphnotification.change_type graphnotification.lifecycle_event graphnotification.resource
+graphnotification.resource_id graphnotification.last_error inboundmail.graph_message_id inboundmail.outcome
+mspunmatchedmail.graph_message_id mspunmatchedmail.msp_number mspunmatchedmail.status graphsubscription.resource
+graphsubscription.subscription_id graphsubscription.client_state_fingerprint graphsubscription.last_error mailsyncstate.folder
+mailsyncstate.delta_link mailsyncstate.resume_link mailsyncstate.last_error ticketevent.event_type activitylog.event_type
+activitylog.method activitylog.path auditlog.entity_type auditlog.action bankholidaycache.dates pending_blob_delete.last_error
+""".split())
+
+
+def test_text_columns_the_name_pattern_misses_were_checked_by_hand():
+    """person_data finds columns by name; this finds the rest by type. A new text column that is in neither COLUMNS nor the
+    hand-reviewed list above fails here, so it gets a decision (and a step if it holds a person's words)."""
     unlisted = set()
     for table in SQLModel.metadata.tables.values():
         for column in table.columns:
             key = f"{table.name}.{column.name}"
-            if key in COLUMNS or key in labels or column.primary_key or column.foreign_keys:
-                continue
-            if isinstance(column.type, (String, Text)):
+            if key not in COLUMNS and not column.primary_key and not column.foreign_keys and is_text(column):
                 unlisted.add(key)
-    # What is left must be on this reviewed list of non-personal columns (hashes, kinds, ids, configuration).
-    reviewed = {
-        k for k in unlisted
-        if k.split(".")[1] in {
-            "kind", "channel", "status", "name", "description", "decision", "outcome", "event_type", "method", "path", "sort", "code_hash",
-            "token_hash", "graph_message_id", "dates", "last_error", "region", "normalised_text", "label", "key", "value", "priority",
-            "question_label", "question_kind", "lease_owner", "attachment_ids", "filename", "content_type", "content_hash", "blob_key",
-            "time_zone", "source", "time_zone_source", "totp_secret", "password_hash", "emergency_password_hash", "msp_number", "msp_forward",
-            "msp_hold_reason", "message_text", "client_state", "resource", "subscription_id", "payload", "options", "condition",
-            "help_text", "scope", "tier", "hash", "reference", "title",
-        }
-    }
-    assert unlisted - reviewed == set(), f"new text columns to look at by hand: {sorted(unlisted - reviewed)}"
+    assert unlisted - REVIEWED_BY_HAND == set(), f"new text columns to look at by hand: {sorted(unlisted - REVIEWED_BY_HAND)}"
+
+
+def test_the_scan_helper_really_sees_text_columns():
+    """The type check once matched nothing (AutoString is a TypeDecorator); keep it honest."""
+    assert is_text(SQLModel.metadata.tables["ticket"].columns["subject"])
+    assert not is_text(SQLModel.metadata.tables["ticket"].columns["created_at"])
 
 
 # ---- the whole thing -------------------------------------------------------------------------------------------
@@ -214,7 +228,9 @@ def test_it_removes_the_person_and_keeps_the_tickets(client, db_session, storage
     assert db.exec(select(TicketAnswer.value)).one() == ""  # form answers blanked
     assert db.exec(select(func.count()).select_from(ActionToken).where(ActionToken.used_at.is_(None), ActionToken.ticket_id == own.id)).one() == 0
     # nothing anywhere holds her addresses or name
-    for key, value in everything_text(db):
+    scanned = everything_text(db)
+    assert len(scanned) > 100  # the scan does look at the data
+    for key, value in scanned:
         for needle in ADDRESSES + ["ann able"]:
             assert needle not in value, f"{needle} still in {key}"
 
@@ -589,3 +605,99 @@ def test_blob_delete_removes_every_version_too():
 def test_mail_to_the_placeholder_address_is_never_sent():
     with pytest.raises(Unsendable):
         _guard_recipient(OutboundEmail(kind="reply", to_address="anonymised-3@invalid"))
+
+
+# ---- review findings ---------------------------------------------------------------------------------------------
+
+
+def test_only_whole_addresses_are_replaced_in_kept_text(client, db_session, world):
+    db = db_session
+    shared = world["shared"]
+    shared.subject = "VPN for ann@b.example and bigann@b.example (not ann@b.example.com)"
+    db.add(shared)
+    db.add(AuditLog(entity_type="user", entity_id=1, actor_email="x", action="note", detail="Ann@A.example, then marian@a.example"))
+    db.commit()
+    admin_client(client, db)
+    assert anonymise(client).status_code == 200
+    db.expire_all()
+    n = db.exec(select(AnonymisedRequester.id)).one()
+    assert db.get(Ticket, shared.id).subject == (
+        f"VPN for anonymised-{n}@invalid and bigann@b.example (not ann@b.example.com)"
+    )
+    detail = db.exec(select(AuditLog.detail).where(AuditLog.action == "note")).one()
+    assert detail == f"anonymised-{n}@invalid, then marian@a.example"
+
+
+def test_two_addresses_of_one_person_on_the_same_follower_update_do_not_collide(client, db_session, world):
+    db = db_session
+    inbound = msg(db, world["shared"], "Bob asks", sender="bob@x.example")
+    for address in ("ann@a.example", "ann@b.example"):
+        db.add(OutboundEmail(kind="follower_update", ticket_id=world["shared"].id, about_message_id=inbound.id, to_address=address,
+                             sent_at=datetime.now(timezone.utc), body="Bob asks"))
+    db.commit()
+    admin_client(client, db)
+    assert anonymise(client).status_code == 200  # no IntegrityError
+    db.expire_all()
+    sent = db.exec(select(OutboundEmail.to_address).where(OutboundEmail.about_message_id == inbound.id)).all()
+    assert len(set(sent)) == 2 and all(a.endswith("@invalid") for a in sent)
+
+
+def test_waiting_emails_to_others_that_carry_her_messages_are_cancelled(client, db_session, world):
+    db = db_session
+    hers = db.exec(select(Message).where(Message.ticket_id == world["own"].id, Message.sender.like("Ann%"))).one()
+    db.add(OutboundEmail(kind="follower_update", ticket_id=world["own"].id, about_message_id=hers.id, to_address="carol@x.example"))
+    db.add(OutboundEmail(kind="chase", ticket_id=world["carol"].id, to_address="carol@x.example"))  # nothing to do with her
+    db.commit()
+    admin_client(client, db)
+    assert anonymise(client).status_code == 200
+    db.expire_all()
+    assert [e.kind for e in db.exec(select(OutboundEmail)).all()] == ["chase"]
+
+
+def test_a_send_failure_note_naming_her_is_scrubbed(client, db_session, world):
+    db = db_session
+    db.add(OutboundEmail(kind="reply", ticket_id=world["own"].id, to_address="ann@a.example", sent_at=datetime.now(timezone.utc),
+                         last_error="Graph: recipient ann@a.example not found"))
+    db.commit()
+    admin_client(client, db)
+    assert anonymise(client).status_code == 200
+    db.expire_all()
+    assert "ann@" not in db.exec(select(OutboundEmail.last_error)).one()
+
+
+def test_the_confirm_refuses_when_the_data_changed_since_the_preview(client, db_session, world):
+    admin_client(client, db_session)
+    page = preview(client)
+    fingerprint = page.text.split('name="fingerprint" value="')[1].split('"')[0]
+    ticket_for(db_session, "ann@a.example", "Arrived after the preview")
+    response = client.post(URL, data={"address": "ann@a.example", "confirm": "ann@a.example", "close_open": "true", "fingerprint": fingerprint})
+    assert response.status_code == 409 and "no longer what the preview showed" in response.text
+    db_session.expire_all()
+    assert db_session.exec(select(func.count()).select_from(AnonymisedRequester)).one() == 0
+    assert db_session.get(User, world["ann"].id).is_active
+    # and with the fingerprint of the new preview it goes through
+    fresh = preview(client).text.split('name="fingerprint" value="')[1].split('"')[0]
+    ok = client.post(URL, data={"address": "ann@a.example", "confirm": "ann@a.example", "close_open": "true", "fingerprint": fresh})
+    assert ok.status_code == 200
+
+
+def test_the_cleanup_leaves_a_file_an_upload_is_holding(db_session, world, storage, tmp_path):
+    """An upload of the same bytes takes the blob's lock until it commits; the cleanup must not delete under it."""
+    from sqlalchemy.orm import Session as OrmSession
+
+    from app.database import engine
+
+    key = world["own_file"].blob_key
+    db_session.add(PendingBlobDelete(blob_key=key))
+    db_session.exec(Attachment.__table__.delete())
+    db_session.commit()
+    with OrmSession(engine) as uploader:
+        from app.attachments import lock_blob
+
+        lock_blob(uploader, key)  # the upload has started and not committed
+        assert purge_pending_blobs(db_session, storage) == (0, 0)
+        assert storage.exists(key) and db_session.exec(select(PendingBlobDelete)).all()
+        uploader.rollback()  # the upload ends
+    db_session.rollback()
+    assert purge_pending_blobs(db_session, storage) == (1, 0)
+    assert not storage.exists(key)
