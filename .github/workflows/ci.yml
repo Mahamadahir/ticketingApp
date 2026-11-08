@@ -1,16 +1,12 @@
 name: CI
 
 on:
+  # Not on pushes to main: the pull request's run already tested the same code, and a merge
+  # to main only happens through a pull request. A release tag still gets its own run.
   push:
-    branches: [main]
     tags: ["v*"]
-    # Documentation alone cannot break the tests. Path filters are not applied to tag
-    # pushes, so a release tag always runs. Do not make this check required in branch
-    # protection: a skipped run would leave a docs-only pull request waiting forever.
-    paths-ignore:
-      - "docs/**"
-      - "**/*.md"
-      - "*.md"
+  # Documentation alone cannot break the tests. Do not make this check required in branch
+  # protection: a skipped run would leave a docs-only pull request waiting forever.
   pull_request:
     branches: [main]
     paths-ignore:
@@ -21,10 +17,19 @@ on:
 permissions:
   contents: read
 
+# A new push to a pull request cancels that pull request's run still in progress: only the
+# latest commit's result matters. Tag runs are never cancelled.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     # Pinned until a run on Ubuntu 26 (the new ubuntu-latest) has been checked.
     runs-on: ubuntu-24.04
+    # A full run takes a few minutes; without this a hung test holds the runner for GitHub's
+    # six-hour default.
+    timeout-minutes: 30
 
     services:
       postgres:
@@ -56,8 +61,10 @@ jobs:
       - name: Install dependencies
         run: pip install --require-hashes -r requirements-dev.lock
 
+      # -n auto: one pytest-xdist worker per core, each with its own database
+      # (ticketing_gw0_test, ...; see per_worker in tests/conftest.py).
       - name: Run tests (against Postgres)
-        run: pytest
+        run: pytest -n auto
 
       - name: Check migrations match the models
         env:

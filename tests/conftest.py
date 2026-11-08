@@ -10,6 +10,21 @@ TEST_DATABASE_URL = os.environ.get(
 )
 
 
+def per_worker(url: str) -> str:
+    """Under pytest-xdist (`pytest -n auto`) each worker gets its own database, so the workers never
+    wipe each other's tables: ticketing_test becomes ticketing_gw0_test, ticketing_gw1_test and so on.
+    A plain `pytest` run (no workers) uses the URL as given."""
+    worker = os.environ.get("PYTEST_XDIST_WORKER")
+    if not worker:
+        return url
+    parsed = make_url(url)
+    base = parsed.database.removesuffix("_test")
+    return parsed.set(database=f"{base}_{worker}_test").render_as_string(hide_password=False)
+
+
+TEST_DATABASE_URL = per_worker(TEST_DATABASE_URL)
+
+
 def ensure_test_database(url: str) -> None:
     """Creates the test database if it is missing. Refuses any database whose
     name does not end in _test, because the tests drop every table in it."""
@@ -57,12 +72,28 @@ from datetime import datetime, timezone
 from app.models import Category, MembershipLevel, Team, TeamMembership, TicketStatus, User, UserRole
 
 
-@pytest.fixture(autouse=True)
-def fresh_database():
+@pytest.fixture(scope="session", autouse=True)
+def schema():
+    """Builds the tables once per run (dropping first clears whatever an interrupted run left)."""
     SQLModel.metadata.drop_all(engine)
     SQLModel.metadata.create_all(engine)
     yield
     SQLModel.metadata.drop_all(engine)
+
+
+# Every table in one statement: emptying them is far cheaper than dropping and recreating the
+# schema for each test. RESTART IDENTITY puts the ids back to 1, as a fresh table would.
+_ALL_TABLES = ", ".join(f'"{table.name}"' for table in SQLModel.metadata.sorted_tables)
+
+
+@pytest.fixture(autouse=True)
+def fresh_database(schema):
+    """Each test starts with empty tables. The schema itself is shared by the whole run, so a test
+    must never change it (no DDL against the test database); use a scratch database for that, as
+    the migration tests do."""
+    with engine.begin() as connection:
+        connection.exec_driver_sql(f"TRUNCATE {_ALL_TABLES} RESTART IDENTITY CASCADE")
+    yield
 
 
 @pytest.fixture(autouse=True)

@@ -82,7 +82,7 @@ starting a phase, and `README.md` for how to run it.
   polish. The whole UI gets redesigned with Google Stitch in Phase 9 once it is
   feature-complete, so visual effort now is wasted.
 - Schema changes need an Alembic migration (CI runs `alembic check`).
-- Run `pytest` before saying work is done. Tests run against
+- Run `pytest -n auto` (parallel, one database per worker) before saying work is done. Tests run against
   Postgres 16 (compose `db` locally, a service container in CI), never SQLite.
   Start it with `docker compose up -d db`; the tests create and wipe a separate
   `ticketing_test` database. Python is 3.14. Run only one pytest process per test database
