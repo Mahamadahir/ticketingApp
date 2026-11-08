@@ -64,10 +64,11 @@ class ReportFilters:
     category_id: Optional[int] = None
     priority: Optional[str] = None
     source: Optional[TicketSource] = None
+    uses_range: bool = True  # False for a report that is a picture of now (backlog age): no dates in links or audit
 
     def as_params(self) -> dict[str, str]:
         """The filters as query parameters, so the CSV link and the audit entry carry exactly what the page used."""
-        params = {"from": self.from_day.isoformat(), "to": self.to_day.isoformat()}
+        params = {"from": self.from_day.isoformat(), "to": self.to_day.isoformat()} if self.uses_range else {}
         if self.team_id is not None:
             params["team"] = str(self.team_id)
         if self.ticket_type is not None:
@@ -81,7 +82,8 @@ class ReportFilters:
         return params
 
     def describe(self) -> str:
-        return ", ".join(f"{key}={value}" for key, value in self.as_params().items()) + f" ({self.zone})"
+        text = ", ".join(f"{key}={value}" for key, value in self.as_params().items())
+        return f"{text} ({self.zone})" if text else f"({self.zone})"
 
 
 def _optional_int(text: str, label: str) -> Optional[int]:
@@ -114,13 +116,16 @@ def _enum(enum_class, text: str, label: str):
 
 
 def parse_filters(
-    session: Session, user: User, params: Mapping[str, str], now: Optional[datetime] = None
+    session: Session, user: User, params: Mapping[str, str], now: Optional[datetime] = None, uses_range: bool = True
 ) -> ReportFilters:
     """The filters from the query string. The range is whole days in the viewer's own zone, default the last 30
-    days up to today; it is capped by the setting `report_max_days`. Raises ReportInputError."""
+    days up to today; it is capped by the setting `report_max_days`. A report that does not use the range
+    (`uses_range` False) ignores any dates given. Raises ReportInputError."""
     now = now or datetime.now(timezone.utc)
     zone = zone_for_user(session, user)
     today = now.astimezone(ZoneInfo(zone)).date()
+    if not uses_range:
+        params = {key: value for key, value in params.items() if key not in ("from", "to")}
     to_day = _day(params.get("to", ""), "To") or today
     from_day = _day(params.get("from", ""), "From") or to_day - timedelta(days=DEFAULT_RANGE_DAYS - 1)
     if from_day > to_day:
@@ -131,12 +136,17 @@ def parse_filters(
     priority = (params.get("priority") or "").strip().lower()
     if priority and priority not in PRIORITIES:
         raise ReportInputError("Priority is not valid")
+    try:
+        start, end = end_of_day_utc(from_day - timedelta(days=1), zone), end_of_day_utc(to_day, zone)
+    except OverflowError:  # a date at the very edge of what a date can hold
+        raise ReportInputError("The date is out of range")
     return ReportFilters(
         from_day=from_day,
         to_day=to_day,
         zone=zone,
-        start=end_of_day_utc(from_day - timedelta(days=1), zone),
-        end=end_of_day_utc(to_day, zone),
+        start=start,
+        end=end,
+        uses_range=uses_range,
         team_id=_optional_int(params.get("team", ""), "Team"),
         ticket_type=_enum(TicketType, params.get("type", ""), "Type"),
         category_id=_optional_int(params.get("category", ""), "Category"),

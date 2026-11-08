@@ -67,20 +67,20 @@ def volume(session: Session, user: User, levels: AccessContext, filters: ReportF
         else_=Category.name,
     )
     breakdowns = [
-        ("Category", category_label, [(Category, Ticket.category_id == Category.id), (parent, Category.parent_id == parent.id)]),
-        ("Team", func.coalesce(Team.name, NO_TEAM), [(Team, Ticket.team_id == Team.id)]),
-        ("Type", Ticket.type, []),
-        ("Source", Ticket.source, []),
+        ("Category", category_label, [Category.id], [(Category, Ticket.category_id == Category.id), (parent, Category.parent_id == parent.id)]),
+        ("Team", func.coalesce(Team.name, NO_TEAM), [Team.id], [(Team, Ticket.team_id == Team.id)]),
+        ("Type", Ticket.type, [], []),
+        ("Source", Ticket.source, [], []),
     ]
     rows: list[list] = []
-    for name, label, joins in breakdowns:
+    for name, label, group_ids, joins in breakdowns:
         query = sa_select(label.label("label"), func.count().label("n")).select_from(Ticket)
         for target, on in joins:
             query = query.outerjoin(target, on)
-        query = query.where(*where).group_by(label)
+        query = query.where(*where).group_by(label, *group_ids)  # by id too: two categories can share a label
         found = [(_type_label(value) if name in ("Type", "Source") else value, n) for value, n in session.execute(query).all()]
         rows += [[name, value, n] for value, n in sorted(found, key=lambda pair: (-pair[1], str(pair[0])))]
-    total = session.execute(sa_select(func.count()).select_from(Ticket).where(*where)).scalar_one()
+    total = sum(n for breakdown, _, n in rows if breakdown == "Type")
     return Report(
         title="Volume",
         columns=["Breakdown", "Value", "Tickets"],
@@ -97,26 +97,31 @@ def sla_compliance(session: Session, user: User, levels: AccessContext, filters:
     base = [*ticket_conditions(user, levels, filters), *_created_in_range(filters)]
     tracked = [Ticket.is_backdated.is_(False)]
     paused = Ticket.sla_paused_at.is_not(None)
+    # A Due date does not move for a pause (app/sla.py), so a paused ticket with one is not undecided.
+    resolution_paused = and_(paused, Ticket.due_on.is_(None))
+    finished = Ticket.status.in_(FINISHED_STATUSES) & Ticket.resolved_at.is_not(None)
+    # Finished with no email to the requester (closed as a duplicate, resolved by phone): judged by when it
+    # finished, so one closed before the deadline is not counted late afterwards.
+    responded = func.coalesce(Ticket.first_responded_at, case((finished, Ticket.resolved_at)))
     # First response: met if an agent emailed by the deadline; breached if emailed late, or still not emailed
     # and the deadline has passed (a paused clock is not decided yet).
     fr_has = Ticket.first_response_due_at.is_not(None)
-    fr_met = and_(fr_has, Ticket.first_responded_at.is_not(None), Ticket.first_responded_at <= Ticket.first_response_due_at)
+    fr_met = and_(fr_has, responded.is_not(None), responded <= Ticket.first_response_due_at)
     fr_breached = and_(
         fr_has,
         or_(
-            and_(Ticket.first_responded_at.is_not(None), Ticket.first_responded_at > Ticket.first_response_due_at),
-            and_(Ticket.first_responded_at.is_(None), Ticket.first_response_due_at < now, ~paused),
+            and_(responded.is_not(None), responded > Ticket.first_response_due_at),
+            and_(responded.is_(None), Ticket.first_response_due_at < now, ~paused),
         ),
     )
     # Resolution: decided when finished (on time or late), or when open and already overdue.
-    finished = Ticket.status.in_(FINISHED_STATUSES) & Ticket.resolved_at.is_not(None)
     res_has = Ticket.resolution_due_at.is_not(None)
     res_met = and_(res_has, finished, Ticket.resolved_at <= Ticket.resolution_due_at)
     res_breached = and_(
         res_has,
         or_(
             and_(finished, Ticket.resolved_at > Ticket.resolution_due_at),
-            and_(~finished, Ticket.resolution_due_at < now, ~paused),
+            and_(~finished, Ticket.resolution_due_at < now, ~resolution_paused),
         ),
     )
     team_name = func.coalesce(Team.name, NO_TEAM)
@@ -163,8 +168,9 @@ def sla_compliance(session: Session, user: User, levels: AccessContext, filters:
         ],
         description=(
             "Tickets created in the range. Met means done by the deadline; breached means done late, or not done and already "
-            "overdue; % met is met out of met plus breached. The Awaiting user pause is already in the deadlines. "
-            "A ticket with a Due date is measured against it."
+            "overdue; % met is met out of met plus breached. The Awaiting user pause is already in the deadlines (a Due date "
+            "does not move for it, so a ticket past its Due date is breached even while paused). A ticket finished without "
+            "an email to the requester is judged by when it finished."
         ),
     )
 
@@ -287,6 +293,7 @@ def reopen_rate(session: Session, user: User, levels: AccessContext, filters: Re
             conditions.append(later.to_value == to_value)
         return exists().where(*conditions)
 
+    Part = aliased(Ticket)  # a split original is left out: its parts are counted, not the family twice
     team_name = func.coalesce(Team.name, NO_TEAM)
     query = (
         sa_select(
@@ -298,7 +305,7 @@ def reopen_rate(session: Session, user: User, levels: AccessContext, filters: Re
         .select_from(resolved)
         .join(Ticket, Ticket.id == resolved.c.ticket_id)
         .outerjoin(Team, Ticket.team_id == Team.id)
-        .where(*ticket_conditions(user, levels, filters))
+        .where(*ticket_conditions(user, levels, filters), ~exists().where(Part.split_from_id == Ticket.id))
         .group_by(team_name)
     )
     found = sorted(session.execute(query).all(), key=lambda row: row[0])
@@ -310,7 +317,7 @@ def reopen_rate(session: Session, user: User, levels: AccessContext, filters: Re
         columns=["Team", "Tickets resolved", "Reopened afterwards", "Reopen rate %", "Reclosed afterwards", "Reclosed: user said thanks"],
         rows=rows,
         description=(
-            "Tickets resolved in the date range (counted once each), and how many were reopened after that, by a reply or by an "
+            "Tickets resolved in the date range (counted once each; a ticket that was split is left out and its parts counted), and how many were reopened after that, by a reply or by an "
             "agent. Reclosed is a reopened ticket closed again; 'user said thanks' is the reclose reason of that name. "
             "The priority filter applies; the rest are as on the other reports."
         ),

@@ -59,14 +59,15 @@ def show(
     }
     status = 200
     try:
-        filters = parse_filters(session, user, request.query_params)
+        filters = parse_filters(session, user, request.query_params, uses_range=definition.uses_range)
     except ReportInputError as error:
         context["error"], status = str(error), 400
     else:
         context["filters"] = filters
         context["values"] = filters.as_params()
         context["report"] = definition.build(session, user, levels, filters, datetime.now(timezone.utc))
-        context["csv_link"] = f"/reports/{key}/csv?{urlencode(filters.as_params())}"
+        query = urlencode(filters.as_params())
+        context["csv_link"] = f"/reports/{key}/csv" + (f"?{query}" if query else "")
     return templates.TemplateResponse(request, "reports.html", context, status_code=status)
 
 
@@ -80,13 +81,13 @@ def download(
     definition = _definition(key)
     levels = access_context(session, user)
     try:
-        filters = parse_filters(session, user, request.query_params)
+        filters = parse_filters(session, user, request.query_params, uses_range=definition.uses_range)
     except ReportInputError as error:
         raise HTTPException(status_code=400, detail=str(error))
     report = definition.build(session, user, levels, filters, datetime.now(timezone.utc))
     audit_download(session, user, key, filters)
     session.commit()
-    name = f"report-{key}-{filters.from_day}-{filters.to_day}.csv"
+    name = f"report-{key}-{filters.from_day}-{filters.to_day}.csv" if filters.uses_range else f"report-{key}.csv"
     return Response(
         csv_text(report, filters),
         media_type="text/csv; charset=utf-8",

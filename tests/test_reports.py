@@ -57,7 +57,7 @@ def admin_user(client, db_session, email="admin@example.com", zone="UTC") -> Use
 
 def run(db, user, key, params=None, now=NOW):
     base = {"from": "2026-10-01", "to": "2026-10-31"}
-    filters = parse_filters(db, user, {**base, **(params or {})}, now=now)
+    filters = parse_filters(db, user, {**base, **(params or {})}, now=now, uses_range=REPORTS[key].uses_range)
     return REPORTS[key].build(db, user, access_context(db, user), filters, now)
 
 
@@ -102,6 +102,15 @@ def test_volume_counts_created_tickets_four_ways(db_session, world):
     assert counts[("Source", "Email")] == 2 and counts[("Source", "Portal")] == 2
     for breakdown in ("Category", "Team", "Type", "Source"):
         assert sum(n for (b, _), n in counts.items() if b == breakdown) == 4
+
+
+def test_volume_keeps_same_named_categories_apart(db_session, world):
+    desk, net, admin = world
+    for team in (desk, net):
+        laptop = create_category(db_session, team, "Laptop", parent=create_category(db_session, team, "Hardware"))
+        make_ticket(db_session, team, at("2026-10-05"), category=laptop)
+    rows = [row for row in run(db_session, admin, "volume").rows if row[0] == "Category"]
+    assert rows == [["Category", "Hardware / Laptop", 1], ["Category", "Hardware / Laptop", 1]]
 
 
 def test_the_range_is_whole_days_in_the_viewers_zone(client, db_session, world):
@@ -150,7 +159,7 @@ def test_filters_team_type_category_priority_source(db_session, world):
 
 @pytest.mark.parametrize(
     "params",
-    [{"from": "yesterday"}, {"from": "2026-10-31", "to": "2026-10-01"}, {"team": "x"}, {"type": "nope"},
+    [{"from": "0001-01-01", "to": "0001-01-01"}, {"from": "9999-12-31", "to": "9999-12-31"}, {"from": "yesterday"}, {"from": "2026-10-31", "to": "2026-10-01"}, {"team": "x"}, {"type": "nope"},
      {"priority": "p9"}, {"source": "fax"}, {"category": "-1"}, {"from": "2025-01-01", "to": "2026-10-31"}],
 )
 def test_bad_input_is_refused(client, db_session, params):
@@ -160,6 +169,19 @@ def test_bad_input_is_refused(client, db_session, params):
     page = client.get("/reports/volume", params=params)
     assert page.status_code == 400
     assert client.get("/reports/volume/csv", params=params).status_code == 400
+
+
+def test_a_report_that_ignores_the_range_carries_no_dates(client, db_session, world):
+    admin = world[2]
+    assert client.get("/reports/backlog?from=2020-01-01").status_code == 200  # the range does not apply, so is not checked
+    link = [p for p in client.get("/reports/backlog").text.split('href="') if "/csv" in p][0].split('"')[0]
+    assert link == "/reports/backlog/csv"
+    resp = client.get("/reports/backlog/csv?from=2020-01-01&to=2020-01-02")
+    assert resp.headers["content-disposition"] == 'attachment; filename="report-backlog.csv"'
+    assert "from=" not in resp.content.decode("utf-8-sig")
+    entry = db_session.exec(select(AuditLog).where(AuditLog.entity_type == "report")).one()
+    assert entry.detail == "backlog: (UTC)"
+    assert not parse_filters(db_session, admin, {}, now=NOW, uses_range=False).as_params()
 
 
 def test_range_cap_is_a_setting(client, db_session):
@@ -218,6 +240,25 @@ def test_sla_compliance_by_team_and_priority(db_session, world):
     assert found["Left out: tickets without an SLA"] == "1"
     assert found["First response not yet decided (clock running or paused)"] == "2"
     assert found["Resolution not yet decided (clock running or paused)"] == "2"
+
+
+def test_sla_edge_cases_finished_without_an_email_due_dates_and_pauses(db_session, world):
+    desk, _, admin = world
+    # Closed with no email to the requester, before the first-response deadline: not late.
+    make_ticket(db_session, desk, at("2026-10-05"), priority="p4", status=TicketStatus.CLOSED,
+                first_response_due_at=at("2026-10-05", 12), resolved_at=at("2026-10-05", 11))
+    # Closed with no email after the deadline: late.
+    make_ticket(db_session, desk, at("2026-10-05"), priority="p4", status=TicketStatus.CLOSED,
+                first_response_due_at=at("2026-10-05", 12), resolved_at=at("2026-10-06"))
+    # Paused, past a Due date: the Due date does not move for the pause, so it is breached.
+    make_ticket(db_session, desk, at("2026-10-05"), priority="p4", status=TicketStatus.AWAITING_USER,
+                sla_paused_at=at("2026-10-06"), due_on=at("2026-10-07").date(), resolution_due_at=at("2026-10-08"))
+    # Paused, past a target (no Due date): undecided.
+    make_ticket(db_session, desk, at("2026-10-05"), priority="p4", status=TicketStatus.AWAITING_USER,
+                sla_paused_at=at("2026-10-06"), resolution_due_at=at("2026-10-08"))
+    report = run(db_session, admin, "sla")
+    assert table(report)[("Desk", "P4")] == [1, 1, 50.0, 0, 1, 0.0]
+    assert notes(report)["Resolution not yet decided (clock running or paused)"] == "1"
 
 
 def test_sla_filters_and_range_apply(db_session, world):
@@ -328,13 +369,17 @@ def test_reopen_rate_and_recloses(db_session, world):
     g = make_ticket(db_session, net, at("2026-10-01"))
     resolved_event(g, at("2026-10-12"))
     make_event(db_session, g, "reopened", at("2026-10-13"))
+    original = make_ticket(db_session, net, at("2026-10-01"))  # a split original is left out; its part counts
+    part = make_ticket(db_session, net, at("2026-10-01"), split_from_id=original.id)
+    resolved_event(original, at("2026-10-14"))
+    resolved_event(part, at("2026-10-14"))
 
     report = run(db_session, admin, "reopen")
 
     rows = {row[0]: row[1:] for row in report.rows}
     assert rows["Desk"] == [5, 2, 40.0, 2, 1]
-    assert rows["Net"] == [1, 1, 100.0, 0, 0]
-    assert rows["All"] == [6, 3, 50.0, 2, 1]
+    assert rows["Net"] == [2, 1, 50.0, 0, 0]
+    assert rows["All"] == [7, 3, 42.9, 2, 1]
     assert run(db_session, admin, "reopen", {"from": "2026-12-01", "to": "2026-12-02"}).rows == [["All", 0, 0, None, 0, 0]]
 
 
