@@ -77,7 +77,7 @@
           <label class="search-box">
             {{ icon("M11 4a7 7 0 100 14 7 7 0 000-14zM20 20l-3.5-3.5", 16, 2) }}
             <span class="sr-only">Search tickets</span>
-            <input type="search" name="q" maxlength="200" placeholder="Number, subject, requester or message text" />
+            <input type="search" name="q" maxlength="200" value="{{ request.query_params.get("q", "") if request.url.path == "/tickets" else "" }}" placeholder="Number, subject, requester or message text" />
           </label>
         </form>
         <div class="topbar-actions">

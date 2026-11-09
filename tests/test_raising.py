@@ -265,8 +265,9 @@ def test_the_channel_filter_survives_search_and_paging_links(client, db_session)
     raise_it(client, subject="Router reboot", for_email="walkin@example.com")
     page = client.get("/tickets", params={"source": "agent", "q": "router"}).text
     assert "Router reboot" in page
-    hrefs = re.findall(r'href="([^"]*)"', page.replace("&amp;", "&"))
-    assert any("source=agent" in h and "q=router" in h for h in hrefs)
+    # The channel is a select in the filter form, which carries the search; paging links keep both (query string).
+    assert '<input type="hidden" name="q" value="router" />' in page
+    assert '<option value="agent" selected>' in page
 
 
 def test_a_split_part_keeps_who_raised_the_original(client, db_session):

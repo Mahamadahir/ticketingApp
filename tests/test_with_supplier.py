@@ -54,7 +54,7 @@ def test_it_is_open_not_finished(client, db_session):
     ticket = make_ticket(db_session, team.id, SUPPLIER)
     agent_for(client, db_session, team)
     assert db_session.get(Ticket, ticket.id).resolved_at is None
-    assert "with supplier" in client.get("/tickets").text
+    assert "With supplier" in client.get("/tickets").text  # the queue capitalises the status chip
 
 
 def test_emailing_the_user_leaves_a_ticket_with_the_supplier_alone(client, db_session):

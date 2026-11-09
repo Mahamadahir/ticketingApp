@@ -307,7 +307,8 @@ def test_the_list_and_ticket_pages_show_priority_and_the_countdown(client, db_se
     listing = client.get("/tickets").text
     detail = client.get(f"/tickets/{ticket.number}").text
 
-    assert "P1" in listing and "first response due in" in listing
+    # The queue words the same clock for scanning ("42m to first response"); the ticket page keeps its own sentence.
+    assert "P1" in listing and "to first response" in listing
     assert "Priority: P1" in detail and "SLA: first response due in" in detail
 
 

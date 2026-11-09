@@ -6,6 +6,7 @@ from urllib.parse import urlencode
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from app.templating import templates
+from sqlalchemy import func, or_
 from sqlmodel import Session, select
 
 from app.audit import log_action
@@ -103,6 +104,7 @@ from app.sla import (
     at_risk_percent,
     describe_priority,
     queue_order,
+    queue_sla,
     set_impact_urgency,
     sla_view,
 )
@@ -157,23 +159,60 @@ def _list_link(q: str, source: str = ""):
     return link
 
 
+def _count(session: Session, query) -> int:
+    return session.exec(select(func.count()).select_from(query.subquery())).one()
+
+
+def _queue_figures(session: Session, user: User, visible, now: datetime, threshold: int) -> dict:
+    """The queue's header and tab counts. Every figure counts only tickets this person can see, with no search or
+    filter applied, and each tab's count is the size of the list its link opens."""
+    everything = select(Ticket.id)
+    if visible is not None:
+        everything = everything.where(visible)
+    open_tickets = everything.where(Ticket.status.notin_(FINISHED_STATUSES))
+    # Breached and at risk are the SLA view's own words for a ticket (app/sla.py), counted over open tickets that have a clock.
+    clocked = select(Ticket).where(
+        Ticket.status.notin_(FINISHED_STATUSES), Ticket.sla_paused_at.is_(None), Ticket.is_backdated.is_(False),
+        or_(Ticket.first_response_due_at.is_not(None), Ticket.resolution_due_at.is_not(None)),
+    )
+    if visible is not None:
+        clocked = clocked.where(visible)
+    states = [sla_view(t, now, threshold).state for t in session.exec(clocked).all()]
+    untriaged = _count(session, open_tickets.where(Ticket.triaged_at.is_(None)))
+    return {
+        "breached": states.count("breached"),
+        "at_risk": states.count("at_risk"),
+        "untriaged": untriaged,
+        "tab_mine": _count(session, everything.where(Ticket.assigned_agent_id == user.id)),
+        "tab_untriaged": untriaged,
+        "tab_all": _count(session, everything),
+    }
+
+
 @router.get("", response_class=HTMLResponse)
 def list_tickets(
     request: Request,
     mine: bool = False,
     untriaged: bool = False,
-    team_id: Optional[int] = None,
+    team_id: Optional[str] = None,
     q: str = "",
-    source: Optional[TicketSource] = None,
+    source: Optional[str] = None,
     page: int = 1,
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
+    # The filter form sends a blank value for "any", which is no filter, not an error.
+    try:
+        team_id = optional_int(team_id)
+        source = TicketSource(source) if source and source.strip() else None
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Unknown team or channel")
     # Untriaged first, then by time to breach, then priority (see sla.queue_order).
     query = select(Ticket).order_by(*queue_order(count_setting(session, REQUIRED_BY_LEAD_DAYS)))
 
     # Search only narrows what the agent can already see, so visibility is applied first.
-    visible = visible_ticket_condition(user, access_context(session, user))
+    levels = access_context(session, user)
+    visible = visible_ticket_condition(user, levels)
     if visible is not None:
         query = query.where(visible)
     q = normalise(q)
@@ -192,17 +231,28 @@ def list_tickets(
 
     tickets_page = paginate(session, query, page, request.query_params)
     teams_by_id = {team.id: team for team in session.exec(select(Team)).all()}
-    agents_by_id = {agent.id: agent for agent in session.exec(select(User).where(User.role == UserRole.AGENT)).all()}
-    teams = session.exec(select(Team)).all() if user.role == UserRole.SUPER_ADMIN else []
+    agents_by_id = {agent.id: agent for agent in session.exec(select(User).where(User.role.in_(AGENT_ROLES))).all()}
+    teams = sorted(
+        (t for t in teams_by_id.values() if user.role == UserRole.SUPER_ADMIN or t.id in levels), key=lambda t: t.name.lower()
+    )
     now = datetime.now(timezone.utc)
     threshold = at_risk_percent(session)
+    views = {t.id: sla_view(t, now, threshold) for t in tickets_page.items}
+    figures = _queue_figures(session, user, visible, now, threshold)
+    category_ids = {t.category_id for t in tickets_page.items if t.category_id}
+    categories_by_id = (
+        {c.id: path_of(session, c) for c in session.exec(select(Category).where(Category.id.in_(category_ids))).all()}
+        if category_ids else {}
+    )
 
     return templates.TemplateResponse(
         request,
         "tickets_list.html",
         {
             "page": tickets_page,
-            "sla": {t.id: sla_view(t, now, threshold) for t in tickets_page.items},
+            "sla": {t.id: queue_sla(t, views[t.id], now) for t in tickets_page.items},
+            "figures": figures,
+            "categories_by_id": categories_by_id,
             "teams_by_id": teams_by_id,
             "agents_by_id": agents_by_id,
             "teams": teams,

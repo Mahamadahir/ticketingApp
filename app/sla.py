@@ -233,6 +233,33 @@ def sla_view(ticket: Ticket, now: datetime, at_risk_percent: int) -> SlaView:
     return SlaView("ok", f"{label} due in {_span(remaining)}", due, which)
 
 
+@dataclass
+class QueueSla:
+    tone: str  # the chip tone: gray | blue | amber | red | green
+    text: str  # in words, so colour is never the only signal
+
+
+def queue_sla(ticket: Ticket, view: SlaView, now: datetime) -> QueueSla:
+    """The "Time to breach" cell of the agent queue: the one place its wording lives. `view` is
+    sla_view(ticket, ...) for the same moment."""
+    if ticket.is_backdated:
+        return QueueSla("gray", "No SLA · backdated")
+    if view.state == "none":
+        return QueueSla("gray", "No SLA until triaged" if ticket.triaged_at is None else "No SLA")
+    if view.state == "paused":
+        return QueueSla("blue", "Paused · waiting on requester")
+    if ticket.status in FINISHED_STATUSES:
+        return QueueSla("red", "Missed · resolved late") if view.state == "breached" else QueueSla("green", "Met · resolved in time")
+    remaining = _aware(view.due) - now
+    if view.state == "breached":
+        return QueueSla("red", f"Breached {_span(remaining)} ago")
+    dated = view.which in ("required by", "due")
+    words = f"{_span(remaining)} to first response" if view.which == "first response" else f"{_span(remaining)} left"
+    if dated:
+        words += f" · {_date_label(ticket)}"
+    return QueueSla("amber" if view.state == "at_risk" else "green", words)
+
+
 def at_risk_percent(session: Session) -> int:
     value = get_int_setting(session, SLA_AT_RISK_PERCENT)
     return value if value is not None and 0 < value < 100 else 25
