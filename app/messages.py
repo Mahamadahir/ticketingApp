@@ -16,7 +16,6 @@ from typing import Optional
 from sqlmodel import Session, select
 
 from app.followers import copyable_followers
-from app.outbox import queue_message
 from app.models import (
     FINISHED_STATUSES,
     Message,
@@ -30,7 +29,7 @@ from app.models import (
 from app.request_questions import answer_rows
 from app.notifications import notify_agent_emailed, notify_reply
 from app.sla import note_first_response
-from app.teams import queue_requester_message
+from app.reply_channel import queue_reply
 from app.ticket_service import NotTriaged
 from app.visibility import Access, is_untriaged, ticket_access, visible_ticket_condition
 
@@ -220,8 +219,7 @@ def email_requester(
         session, ticket, sender=author.display_name, body=body, author_user_id=author.id,
         direction=MessageDirection.OUTBOUND, visibility=MessageVisibility.PUBLIC, cc=cc,
     )
-    queue_message(session, message, ticket)
-    queue_requester_message(session, message, ticket)
+    queue_reply(session, message, ticket)
     if bell:
         notify_agent_emailed(session, ticket, author.email)
     return message
@@ -239,8 +237,7 @@ def record_notice(session: Session, ticket: Ticket, body: str, copy_followers: b
         session, ticket, sender="IT Support (automatic)", body=body,
         direction=MessageDirection.OUTBOUND, visibility=MessageVisibility.PUBLIC, cc=cc,
     )
-    queue_message(session, message, ticket)
-    queue_requester_message(session, message, ticket)
+    queue_reply(session, message, ticket)
     return message
 
 

@@ -60,7 +60,7 @@ from app.models import (
     UserSession,
 )
 from app.messages import not_requester_visible_messages, requester_visible_answers, requester_visible_messages
-from app.models import MessageDirection
+from app.models import MessageDirection, TeamsHeldFile, TeamsIntake
 from app.person_data import Person, email_matches, find_person, list_matches, mentions, object_ids
 from app.settings_store import SUBJECT_ACCESS_MAX_MB, count_setting
 from app.storage import Storage
@@ -417,6 +417,20 @@ def _teams_bot(session: Session, person: Person) -> list[dict]:
     ]
 
 
+def _teams_pending_files(session: Session, person: Person) -> list[dict]:
+    """Files the person sent the Teams bot that are held while it asks which request they are for (8F): the name, size and
+    when the question was asked. The files themselves are not added (they are held for at most a day, then attached to the
+    request they chose, where the export lists them with that request's other files)."""
+    rows = session.exec(
+        select(TeamsHeldFile, TeamsIntake.created_at)
+        .join(TeamsIntake, TeamsIntake.id == TeamsHeldFile.intake_id)
+        .join(Ticket, Ticket.id == TeamsIntake.ticket_id)
+        .where(email_matches(Ticket.requester_email, person), TeamsIntake.outcome == "asked")
+        .order_by(TeamsHeldFile.id)
+    ).all()
+    return [{"filename": f.filename, "size": f.size, "not_fetched": f.skipped, "question_asked_at": asked} for f, asked in rows]
+
+
 def _sessions(session: Session, person: Person) -> list[dict]:
     return [
         {
@@ -563,6 +577,7 @@ def build_export(session: Session, storage: Storage, address: str, requested_by:
             "account.json": {
                 "accounts": accounts, "linked_identities": linked, "sessions": _sessions(session, person),
                 "link_codes_asked": _link_codes(session, person), "teams_bot": _teams_bot(session, person),
+                "teams_pending_files": _teams_pending_files(session, person),
             },
             "tickets.json": sections,
             "internal_notes.json": {

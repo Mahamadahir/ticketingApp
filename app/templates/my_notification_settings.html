@@ -51,6 +51,18 @@
     </label>
   </fieldset>
   {% endif %}
+  {% if show_teams_replies %}
+  <fieldset>
+    <legend>How I get replies to my requests in Teams</legend>
+    <p class="note">
+      When you write to IT in Teams, replies to that request come back to you in Teams. Choose whether you also want them by
+      email. If Teams cannot reach you (you have not installed the app, or it could not be delivered) the reply is
+      emailed anyway, so you never miss one. This applies to the replies agents write to you and to the automatic notices.
+    </p>
+    <label><input type="radio" name="teams_replies" value="teams" {{ "" if user.teams_replies_also_email else "checked" }} /> Teams only</label>
+    <label><input type="radio" name="teams_replies" value="both" {{ "checked" if user.teams_replies_also_email else "" }} /> Teams and email</label>
+  </fieldset>
+  {% endif %}
   <button type="submit">Save</button>
 </form>
 

@@ -23,9 +23,10 @@ from app.approvals import (
     describe_rule, vote_for,
 )
 from app.messages import requester_visible_answers
-from app.models import ApprovalVote, Notification, RequestType, Ticket, TicketApproval, TicketStatus, User
+from app.models import ApprovalVote, Category, Notification, RequestType, Ticket, TicketApproval, TicketStatus, User
+from app.notification_settings import AGENT_ROLES
 from app.notifications import APPROVAL_WAITING, notification_text
-from app.teams import KIND_LABELS, Unsendable, plain, portal_link, ticket_link
+from app.teams import AUDIENCE_AGENT, AUDIENCE_REQUESTER, KIND_LABELS, Unsendable, link_for, plain
 
 SCHEMA = "http://adaptivecards.io/schemas/adaptive-card.json"
 VERSION = "1.4"
@@ -53,14 +54,22 @@ def card_shell(body: list, actions: Optional[list] = None) -> dict:
     return card
 
 
-def open_ticket_action(ticket: Optional[Ticket]) -> list:
-    """The "Open ticket" button, or nothing while the web app's address is not known or there is no ticket."""
-    link = ticket_link(ticket) if ticket is not None else None
-    return [{"type": "Action.OpenUrl", "title": "Open ticket", "url": link}] if link else []
+def open_ticket_action(ticket: Optional[Ticket], audience: str = AUDIENCE_AGENT) -> list:
+    """The button to the ticket for this audience (`teams.link_for`): "Open ticket" in the console for an agent, "Open in
+    the portal" for a requester. Nothing while the web app's address is not known or there is no ticket."""
+    link = link_for(ticket, audience) if ticket is not None else None
+    if not link:
+        return []
+    return [{"type": "Action.OpenUrl", "title": "Open ticket" if audience == AUDIENCE_AGENT else "Open in the portal", "url": link}]
 
 
-def what_happened_card(notification: Notification, ticket: Optional[Ticket]) -> dict:
-    """What happened and who did it, with an Open ticket button."""
+def audience_of(person: Optional[User]) -> str:
+    """Agents are sent to the console, everyone else to the portal."""
+    return AUDIENCE_AGENT if person is not None and person.role in AGENT_ROLES else AUDIENCE_REQUESTER
+
+
+def what_happened_card(notification: Notification, ticket: Optional[Ticket], audience: str = AUDIENCE_AGENT) -> dict:
+    """What happened and who did it, with a button to the ticket for the audience."""
     facts = [{"title": "What", "value": KIND_LABELS.get(notification.kind, plain(notification.kind))}]
     if notification.actor_email:
         facts.append({"title": "By", "value": plain(notification.actor_email)})
@@ -68,13 +77,12 @@ def what_happened_card(notification: Notification, ticket: Optional[Ticket]) -> 
         {"type": "TextBlock", "text": plain(notification_text(notification, ticket)), "wrap": True},
         {"type": "FactSet", "facts": facts},
     ]
-    return card_shell(body, open_ticket_action(ticket))
+    return card_shell(body, open_ticket_action(ticket, audience))
 
 
 def portal_action(ticket: Ticket) -> list:
     """The button to the request's page in the portal (an approver is often not an agent, so not the console)."""
-    link = portal_link(ticket)
-    return [{"type": "Action.OpenUrl", "title": "Open in the portal", "url": link}] if link else []
+    return open_ticket_action(ticket, AUDIENCE_REQUESTER)
 
 
 def request_facts(session: Session, ticket: Ticket, approval: TicketApproval) -> list:
@@ -144,31 +152,81 @@ def decided_card(session: Session, vote: ApprovalVote, note: Optional[str] = Non
 
 VERB_PICK = "intake.pick"  # 8D: add the message to this open request
 VERB_NEW = "intake.new"  # 8D: raise a new request from the message
-MAX_CHOICES = 5  # a longer list is a wall of buttons; the rest are reached by writing new: or on the site
+VERB_MORE = "intake.more"  # 8F: show another page of the person's requests on the choice card
+VERB_MOVE = "intake.move"  # 8F: "Not this one? Start a new request": move the message just added to a new request
+MAX_CHOICES = 5  # requests shown on one page of the choice card; "Show more" pages through the rest
 CHOICE_TITLE_LENGTH = 70
 
 
-def choose_ticket_card(tickets: list[Ticket], activity_id: str, text: str) -> dict:
-    """The card that asks which request a message belongs to (8D): one button per request the person has open from Teams
-    (at most MAX_CHOICES, most recently active first) and one for a new request. The card carries the message itself and
-    the id of the activity it came in, so pressing a button needs no stored copy; the press only names a request, and
-    app/teams_intake.py refuses it unless that request is one of the pressing person's own. A Resolved request is
-    marked: adding to it reopens it."""
-    buttons = []
-    for ticket in tickets[:MAX_CHOICES]:
-        title = f"{ticket.reference}: {ticket.subject}"
-        if ticket.status == TicketStatus.RESOLVED:
-            title = f"{title} (resolved, reopens)"
-        buttons.append({
-            "type": "Action.Execute", "title": " ".join(title.split())[:CHOICE_TITLE_LENGTH], "verb": VERB_PICK,  # a button title is not markdown
-            "data": {"m": activity_id, "t": text, "n": ticket.number},
-        })
-    buttons.append({"type": "Action.Execute", "title": "A new request", "verb": VERB_NEW, "data": {"m": activity_id, "t": text}, "style": "positive"})
+def category_name(session: Session, ticket: Ticket) -> str:
+    category = session.get(Category, ticket.category_id) if ticket.category_id else None
+    return plain(category.name) if category is not None else "Not categorised yet"
+
+
+def opened_on(ticket: Ticket) -> str:
+    return f"{ticket.created_at.day} {ticket.created_at.strftime('%b %Y')}"
+
+
+def ticket_facts(session: Session, ticket: Ticket, with_status: bool = False) -> list:
+    """What tells the person which request this is: reference, subject, category and the date it was opened (and, on the
+    choice card, its status)."""
+    facts = [
+        {"title": "Request", "value": ticket.reference},
+        {"title": "Subject", "value": plain(ticket.subject)},
+        {"title": "Category", "value": category_name(session, ticket)},
+        {"title": "Opened", "value": opened_on(ticket)},
+    ]
+    if with_status:
+        status = ticket.status.value.replace("_", " ").capitalize()
+        facts.append({"title": "Status", "value": status + (" (adding to it reopens it)" if ticket.status == TicketStatus.RESOLVED else "")})
+    return facts
+
+
+def choose_ticket_card(session: Session, tickets: list[Ticket], activity_id: str, text: str, page: int = 0) -> dict:
+    """The card that asks which request a message belongs to (8D, 8F): each request the person has open as requester (most
+    recently updated first) with its reference, subject, category, date opened and status, and a button to add the message to
+    it, MAX_CHOICES to a page with "Show more" (and "Show newer") to page through the rest, and one button for a new request.
+    The card carries the message itself and the id of the activity it came in, so pressing a button needs no stored copy;
+    the press only names a request (or a page), and app/teams_intake.py refuses it unless that request is one of the pressing
+    person's own. A Resolved request is marked: adding to it reopens it."""
+    last_page = max((len(tickets) - 1) // MAX_CHOICES, 0)
+    page = min(max(page, 0), last_page)
+    shown = tickets[page * MAX_CHOICES:(page + 1) * MAX_CHOICES]
     body = [{"type": "TextBlock", "text": "Which request is this message about?", "wrap": True, "weight": "Bolder"}]
     if len(tickets) > MAX_CHOICES:
-        body.append({"type": "TextBlock", "text": f"Showing {MAX_CHOICES} of your {len(tickets)} requests.", "wrap": True, "isSubtle": True})
+        first = page * MAX_CHOICES + 1
+        body.append({"type": "TextBlock", "text": f"Showing {first} to {first + len(shown) - 1} of your {len(tickets)} requests.", "wrap": True, "isSubtle": True})
     body.append({"type": "TextBlock", "text": plain(text), "wrap": True, "isSubtle": True})
-    return card_shell(body, buttons)
+    for ticket in shown:
+        body.append({
+            "type": "Container", "separator": True,
+            "items": [
+                {"type": "FactSet", "facts": ticket_facts(session, ticket, with_status=True)},
+                {"type": "ActionSet", "actions": [{
+                    "type": "Action.Execute", "title": f"Add to {ticket.reference}", "verb": VERB_PICK,
+                    "data": {"m": activity_id, "t": text, "n": ticket.number},
+                }]},
+            ],
+        })
+    actions = [{"type": "Action.Execute", "title": "A new request", "verb": VERB_NEW, "data": {"m": activity_id, "t": text}, "style": "positive"}]
+    if page < last_page:
+        actions.append({"type": "Action.Execute", "title": "Show more", "verb": VERB_MORE, "data": {"m": activity_id, "t": text, "p": page + 1}})
+    if page > 0:
+        actions.append({"type": "Action.Execute", "title": "Show newer", "verb": VERB_MORE, "data": {"m": activity_id, "t": text, "p": page - 1}})
+    return card_shell(body, actions)
+
+
+def added_card(session: Session, ticket: Ticket, activity_id: str, note: str = "") -> dict:
+    """What the bot answers when a message was added to the person's only open request without asking: it names the request
+    and offers "Not this one? Start a new request", which moves the message (and its files) to a new request."""
+    body = [
+        {"type": "TextBlock", "text": f"Added to {ticket.reference}.", "wrap": True, "weight": "Bolder"},
+        {"type": "FactSet", "facts": ticket_facts(session, ticket)},
+    ]
+    if note:
+        body.append({"type": "TextBlock", "text": note, "wrap": True, "isSubtle": True})
+    actions = [{"type": "Action.Execute", "title": "Not this one? Start a new request", "verb": VERB_MOVE, "data": {"m": activity_id}}]
+    return card_shell(body, [*actions, *open_ticket_action(ticket, AUDIENCE_REQUESTER)])
 
 
 def intake_result_card(text: str, ticket: Optional[Ticket] = None) -> dict:
@@ -183,4 +241,6 @@ CARD_FOR_KIND: dict[str, Builder] = {APPROVAL_WAITING: approval_request_card}
 
 def notification_card(session: Session, notification: Notification, ticket: Optional[Ticket]) -> dict:
     builder = CARD_FOR_KIND.get(notification.kind)
-    return builder(session, notification, ticket) if builder is not None else what_happened_card(notification, ticket)
+    if builder is not None:
+        return builder(session, notification, ticket)
+    return what_happened_card(notification, ticket, audience_of(session.get(User, notification.user_id)))

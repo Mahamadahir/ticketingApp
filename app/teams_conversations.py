@@ -13,6 +13,7 @@ ids the person has, so it works once they have signed in. `user_id` is refreshed
 Nothing here commits; the caller does.
 """
 
+import logging
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -20,13 +21,19 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from app.audit import log_action
+from app import bot_connector
 from app.bot_connector import ConversationRef
-from app.identity import normal_oid, object_ids_of, person_for_object_id
+from app.followers import InvalidEmail, normalise_email
+from app.identity import normal_oid, object_ids_of, person_for_address, person_for_object_id
+from app.person_data import is_placeholder_address
 from app.models import TeamsConversation, User
+
+log = logging.getLogger("app.teams_bot")
 
 BOT_ACTOR = "teams-bot"  # the actor in the audit log when the person has no account here yet
 INSTALLED = "teams_bot_installed"
 UNINSTALLED = "teams_bot_uninstalled"
+LINKED = "teams_bot_linked"
 ENTITY = "teams_conversation"
 MAX_FIELD = 512
 
@@ -54,7 +61,8 @@ def save_reference(
         row = TeamsConversation(entra_object_id=oid, service_url=service_url, conversation_id=conversation_id)
     row.service_url, row.conversation_id = service_url, conversation_id
     row.teams_user_id = (teams_user_id or row.teams_user_id or None)
-    row.user_id = person.id if person is not None else None
+    if person is not None:
+        row.user_id = person.id  # a person matched by address at install (`link_by_address`) stays linked until the object id matches
     row.updated_at = _now()
     session.add(row)
     if created:
@@ -99,3 +107,53 @@ def reference_for(session: Session, user: User) -> Optional[TeamsConversation]:
 
 def conversation_ref(row: TeamsConversation) -> ConversationRef:
     return ConversationRef(row.service_url, row.conversation_id)
+
+
+def forget_conversation(session: Session, conversation_id: str) -> bool:
+    """Forgets a conversation Teams refused to deliver into (403 or 404: the app was removed and the uninstall event never
+    reached us). True when there was one; that is audited as an uninstall. The person is reached again as soon as they
+    message the bot or install the app. Does not commit."""
+    row = session.exec(select(TeamsConversation).where(TeamsConversation.conversation_id == conversation_id)).first()
+    if row is None:
+        return False
+    person = session.get(User, row.user_id) if row.user_id else person_for_object_id(session, row.entra_object_id)
+    log_action(session, _actor(person), ENTITY, row.id, UNINSTALLED, "Conversation with the bot removed: Teams refused a message (the app was removed)")
+    session.delete(row)
+    session.flush()
+    return True
+
+
+def link_by_address(session: Session, oid: str) -> Optional[User]:
+    """At install (8F): the app was added for someone whose object id is not on any account here. Reads their address from
+    Teams (the bot's own token on the Bot Connector, `bot_connector.get_member`), matches it through app/identity.py
+    (`person_for_address`: their address, or a linked one) and links the conversation to that account. Never by display
+    name. Nothing is linked when Teams gives no usable address, describes a different object id, the account is inactive or
+    anonymised, or the account already belongs to another object id (the same rule as an Entra sign-in). The object id itself
+    is not written to the account: signing in does that. Returns the person linked, else None. Does not commit."""
+    oid = normal_oid(oid)
+    row = session.exec(select(TeamsConversation).where(TeamsConversation.entra_object_id == oid)).first() if oid else None
+    if row is None or row.user_id is not None or not row.teams_user_id or person_for_object_id(session, oid) is not None:
+        return None
+    try:
+        member = bot_connector.get_member(row.service_url, row.conversation_id, row.teams_user_id)
+    except Exception as error:  # httpx, the token credential or a bad address: nothing is linked, the first message tries again
+        log.warning("Teams bot: could not read the installer's address (%s)", type(error).__name__)
+        return None
+    member_oid = normal_oid(member.get("objectId") if isinstance(member.get("objectId"), str) else None)
+    if member_oid is not None and member_oid != oid:
+        return None
+    raw = next((member[k] for k in ("email", "userPrincipalName") if isinstance(member.get(k), str) and member[k].strip()), "")
+    try:
+        address = normalise_email(raw)
+    except InvalidEmail:
+        return None
+    person = person_for_address(session, address)
+    if person is None or not person.is_active or is_placeholder_address(person.email):
+        return None
+    if person.entra_object_id and normal_oid(person.entra_object_id) != oid:
+        return None
+    row.user_id = person.id
+    row.updated_at = _now()
+    session.add(row)
+    log_action(session, person.email, ENTITY, row.id, LINKED, "Conversation with the bot linked to the account with the address Teams gave")
+    return person

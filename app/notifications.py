@@ -16,16 +16,16 @@ and notify() refuses every other kind for a person who is not an agent.
 """
 
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional
 
-from sqlalchemy import and_, func, or_, update
+from sqlalchemy import and_, exists, func, or_, update
 from sqlmodel import Session, select
 
 from app.identity import my_ticket_condition, people_for_addresses, person_for_address
-from app.models import FINISHED_STATUSES, Message, Notification, Ticket, TicketStatus, User, UserRole
+from app.models import FINISHED_STATUSES, Message, Notification, Ticket, TicketStatus, User, UserRole, UserSession
 from app.notification_settings import IN_APP, TEAMS, is_enabled, offers, wants_approval_email
-from app.settings_store import TEAMS_UNREAD_MINUTES, get_int_setting
+from app.settings_store import TEAMS_HOLD_WHILE_ACTIVE_MINUTES, TEAMS_UNREAD_MINUTES, count_setting, get_int_setting
 from app.visibility import Access, access_context, team_members, ticket_access, visible_ticket_condition
 
 ASSIGNED = "assigned"
@@ -316,10 +316,22 @@ def retire_read_for_teams(session: Session, now: Optional[datetime] = None) -> i
 
 def due_for_teams(session: Session, now: Optional[datetime] = None, limit: int = TEAMS_BATCH) -> list[Notification]:
     """The notifications whose Teams copy is due, oldest first, locked so a second worker cannot take the
-    same rows. Not due: already dealt with, not wanted, read in the bell before the delay ran out."""
+    same rows. Not due: already dealt with, not wanted, read in the bell before the delay ran out, or (while the bell
+    is there to see) held because the person has been active in the web app within `teams_hold_while_active_minutes`
+    (their latest live session's `last_seen_at`). A held copy stays due and is looked at again by the next run, so it goes
+    once the person has been idle that long and it is still unread."""
     now = now or datetime.now(timezone.utc)
     delay = func.coalesce(User.teams_delay_minutes, default_teams_delay(session))
     due_after_delay = Notification.created_at + func.make_interval(0, 0, 0, 0, 0, delay, 0)
+    unread_and_idle = and_(Notification.read_at.is_(None), due_after_delay <= now)
+    hold_minutes = count_setting(session, TEAMS_HOLD_WHILE_ACTIVE_MINUTES)
+    if hold_minutes > 0:
+        active = exists().where(
+            UserSession.user_id == Notification.user_id,
+            UserSession.revoked_at.is_(None),
+            UserSession.last_seen_at > now - timedelta(minutes=hold_minutes),
+        )
+        unread_and_idle = and_(unread_and_idle, ~active)
     return list(
         session.exec(
             select(Notification)
@@ -327,10 +339,7 @@ def due_for_teams(session: Session, now: Optional[datetime] = None, limit: int =
             .where(
                 Notification.teams_wanted.is_(True),
                 Notification.teams_handled_at.is_(None),
-                or_(
-                    Notification.bell.is_(False),
-                    and_(Notification.read_at.is_(None), due_after_delay <= now),
-                ),
+                or_(Notification.bell.is_(False), unread_and_idle),
             )
             .order_by(Notification.id)
             .limit(limit)

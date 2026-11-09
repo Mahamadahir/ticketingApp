@@ -27,6 +27,7 @@ from app.messages import record_inbound
 from app.models import AuditLog, Message, Ticket
 from app.never_follow import listed_entry
 from app.raising import MAX_SUBJECT_LENGTH
+from app.reply_channel import note_requester_wrote
 from app.settings_store import INBOUND_MAX_PER_SENDER_HOUR, count_setting
 from app.splitting import apply_requester_reply
 from app.storage import Storage, get_storage
@@ -91,13 +92,15 @@ def record_first_message(
 
 def record_reply(
     session: Session, ticket: Ticket, *, sender: str, body: str, author_id: Optional[int], text: str,
-    has_attachment: bool, action: str, how: str, graph_message_id: Optional[str] = None,
+    has_attachment: bool, action: str, how: str, channel: str, graph_message_id: Optional[str] = None,
 ) -> Message:
     """A reply on an open or resolved ticket from someone who may write on it. Records it (the assignee is told), applies
     its effect on the status (`apply_requester_reply`: Awaiting user goes back to In progress; a Resolved ticket reopens
     unless the reply is a thank-you; `text` is the new words only) and writes the audit entries. The caller then keeps
-    the files and updates the followers."""
+    the files and updates the followers. `channel` (email or teams) is remembered as the one the requester last wrote in
+    when the sender is the requester (app/reply_channel.py): agent replies follow it."""
     message = record_inbound(session, ticket, sender=sender, body=body, author_user_id=author_id, reply_by=sender)
+    note_requester_wrote(session, ticket, sender, channel)
     message.graph_message_id = graph_message_id
     session.flush()
     moved = apply_requester_reply(session, ticket, sender, text=text, has_attachment=has_attachment)

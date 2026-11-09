@@ -273,3 +273,17 @@ def save_teams_delay(session: Session, user: User, delay: Optional[int]) -> bool
     user.teams_delay_minutes = delay
     session.add(user)
     return True
+
+
+def save_teams_reply_choice(session: Session, user: User, also_email: bool) -> bool:
+    """Stores how this person wants replies to their requests when they come to them in Teams (8F): False is Teams only (the
+    default), True is Teams and email. Returns whether it changed. Does not commit."""
+    if also_email == user.teams_replies_also_email:
+        return False
+    log_action(
+        session, user.email, "notification_settings", user.id, "update",
+        f"teams replies {'Teams and email' if also_email else 'Teams only'}",
+    )
+    user.teams_replies_also_email = also_email
+    session.add(user)
+    return True

@@ -147,6 +147,7 @@ COLUMNS: dict[str, ColumnUse] = {
     "user.email": _use(SUBJECT, EMAIL, "account record", anon=REPLACE),
     "user.display_name": _use(SUBJECT, NAME, "account record", anon=REPLACE),
     "user.entra_object_id": _use(SUBJECT, USER_ID, "account record", anon=NULL),
+    "user.teams_replies_also_email": _use(NOT_PERSON, LABEL, "a flag: replies to Teams requests also by email (My settings); not the person's data once the account is anonymised"),
     "user_session.user_id": _use(SUBJECT, USER_ID, "sign-in sessions (the session id is a secret and is never exported)", anon=DELETE),
     "user_session.ip": _use(SUBJECT, NETWORK, "sign-in sessions", anon=WITH_ROW),
     "user_session.user_agent": _use(SUBJECT, NETWORK, "sign-in sessions", anon=WITH_ROW),
@@ -194,6 +195,10 @@ COLUMNS: dict[str, ColumnUse] = {
     "ticket.graph_conversation_id": _use(NOT_PERSON, LABEL, "the mail thread; cleared so mail from the old address cannot join it", anon=NULL),
     "inboundmail.conversation_id": _use(NOT_PERSON, LABEL, "the mail thread; cleared so mail from the old address cannot join it", anon=NULL),
     "inboundmail.internet_message_id": _use(NOT_PERSON, LABEL, "the Message-ID a reply points at; cleared for the same reason", anon=NULL),
+    "teams_held_file.filename": _use(
+        NOT_PERSON, LABEL, "a file name held (with the file) while the Teams bot asks which request a message is for; dropped when "
+        "the question is answered or expires, and by anonymisation", anon=DELETE,
+    ),
     "teamsintake.activity_key": _use(NOT_PERSON, LABEL, "one-way hash of an object id and a Teams activity id; names no one and holds no words"),
     "anonymised_requester.address_hash": _use(NOT_PERSON, LABEL, "keyed one-way hash of an anonymised address; the only trace of it, kept so a repeat is recognised"),
     "ticket.split_from_id": _use(NOT_PERSON, LABEL, "a ticket id"),

@@ -472,6 +472,28 @@ REGISTRY: dict[str, TemplateDef] = {
             body_placeholders=dict(_COMMON),
             sample=dict(_COMMON_SAMPLE),
         ),
+        TemplateDef(
+            key="legal_privacy",
+            label="Privacy page (Teams app)",
+            description=(
+                "Not an email: the text of the privacy page at /legal/privacy, which the Teams app's manifest points at. Blank "
+                "lines separate paragraphs; plain text only. No placeholders. Until it is written it says so."
+            ),
+            body_default='This privacy page has not been written yet. Until it is, ask IT Support how your data is used when you use the IT Support Teams app.',
+            body_placeholders={},
+            sample={},
+        ),
+        TemplateDef(
+            key="legal_terms",
+            label="Terms of use page (Teams app)",
+            description=(
+                "Not an email: the text of the terms page at /legal/terms, which the Teams app's manifest points at. Blank "
+                "lines separate paragraphs; plain text only. No placeholders. Until it is written it says so."
+            ),
+            body_default='These terms of use have not been written yet. Until they are, ask IT Support how the IT Support Teams app may be used.',
+            body_placeholders={},
+            sample={},
+        ),
     )
 }
 

@@ -29,7 +29,7 @@ from sqlmodel import Session
 from app import bot_connector, teams_bot_auth
 from app.config import settings
 from app.teams_bot_auth import TokenRejected
-from app.teams_conversations import remove_reference, save_reference
+from app.teams_conversations import link_by_address, remove_reference, save_reference
 
 log = logging.getLogger("app.teams_bot")
 
@@ -116,7 +116,9 @@ def installation_update(session: Session, activity: dict) -> Optional[Handled]:
         return None
     action = _text(activity.get("action"))
     if action in ("add", "add-upgrade"):
-        _store(session, activity)
+        if _store(session, activity):
+            session.commit()  # the chat is kept whatever the address lookup does
+            link_by_address(session, _person(activity)[0])
     elif action in ("remove", "remove-upgrade"):
         remove_reference(session, _person(activity)[0])
     session.commit()

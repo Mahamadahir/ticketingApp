@@ -18,6 +18,8 @@ from tests.test_teams_copy import an_agent
 
 NOW = datetime.now(timezone.utc)
 
+pytestmark = pytest.mark.usefixtures("no_hold_while_active")  # the hold while the person is active has its own tests (test_teams_hold.py)
+
 
 @pytest.fixture(autouse=True)
 def restore_switch(monkeypatch):

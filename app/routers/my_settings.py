@@ -22,6 +22,7 @@ from app.notification_settings import (
     parse_teams_delay,
     save_choices,
     save_teams_delay,
+    save_teams_reply_choice,
 )
 from app.notifications import AGENT_ROLES, default_teams_delay
 from app.settings_store import EMERGENCY_PASSWORD_MIN_LENGTH, count_setting
@@ -60,7 +61,7 @@ def notification_settings(
         {
             "user": user, "choices": choices_for(session, user), "channels": _channels(session, user), "saved": saved,
             "is_agent": user.role in AGENT_ROLES, "can_have_emergency_password": emergency.may_hold_one(user), "default_delay": default_teams_delay(session),
-            "max_delay": MAX_TEAMS_DELAY_MINUTES,
+            "max_delay": MAX_TEAMS_DELAY_MINUTES, "show_teams_replies": settings.teams_bot_configured,
             "zone": zone_for_user(session, user), "zone_choices": zone_choices(),
         },
     )
@@ -81,6 +82,8 @@ async def save_notification_settings(
     save_choices(session, user, {str(value) for value in form.getlist("on")})
     if user.role in AGENT_ROLES:
         save_teams_delay(session, user, delay)
+    if form.get("teams_replies") in ("teams", "both"):  # absent when the bot is off: the choice is left as it was
+        save_teams_reply_choice(session, user, form.get("teams_replies") == "both")
     session.commit()
     return RedirectResponse("/settings/notifications?saved=1", status_code=303)
 

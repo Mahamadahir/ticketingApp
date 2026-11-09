@@ -126,6 +126,9 @@ class User(SQLModel, table=True):
     # How long an unread notification waits before it is also sent to Teams, for this person.
     # None means the default (the "teams_unread_minutes" setting).
     teams_delay_minutes: Optional[int] = Field(default=None)
+    # How this person wants replies to their requests when the reply goes to them in Teams (8F, app/reply_channel.py):
+    # False is "Teams only", True is "Teams and email".
+    teams_replies_also_email: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
     # Out-of-office detection (phase 2E, app/presence.py). The Entra object id is looked up once from
     # the email; the flag is what the worker last read from Graph, and when. Read it through
     # app.presence.is_out_of_office, which ignores a stale reading.
@@ -370,6 +373,9 @@ class Ticket(SQLModel, table=True):
     # until someone saves the triage panel, which sets the category (and so the
     # team), the type, who triaged it and when. Nothing else leaves New.
     category_id: Optional[int] = Field(default=None, foreign_key="category.id")
+    # The channel the requester last wrote in (email, portal or teams); agent replies go there (8F, app/reply_channel.py).
+    # None until they write again: the channel the ticket arrived by (its source) stands in.
+    last_requester_channel: Optional[str] = Field(default=None)
     triaged_at: Optional[datetime] = Field(default=None)
     triaged_by_id: Optional[int] = Field(default=None, foreign_key="user.id")
     # Set when it was triaged into "Other": after it is resolved a super admin
@@ -967,6 +973,26 @@ class TeamsIntake(SQLModel, table=True):
     outcome: str  # ticket_created, reply_added, asked (a card is waiting for the choice) or ignored_*
     ticket_id: Optional[int] = Field(default=None, foreign_key="ticket.id", index=True)
     message_id: Optional[int] = Field(default=None, foreign_key="message.id")
+    # For a reply added to the person's only open ticket: the status the reply moved it from (Awaiting user), so "Not this
+    # one?" can put it back. Empty when the reply moved nothing.
+    previous_status: Optional[str] = Field(default=None)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class TeamsHeldFile(SQLModel, table=True):
+    """A file sent to the bot with a message that needs the choice card, held until the person answers it
+    (app/teams_pending.py). Stored once under its content hash, the same key an attachment would have, so picking a ticket
+    only adds the attachment row. `intake_id` is the pending choice (the `TeamsIntake` row with outcome `asked`). Rows and
+    stored bytes are removed when the choice is answered or expires (setting `teams_pending_choice_hours`)."""
+
+    __tablename__ = "teams_held_file"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    intake_id: int = Field(foreign_key="teamsintake.id", index=True, ondelete="CASCADE")
+    filename: str
+    size: int = Field(default=0)
+    blob_key: Optional[str] = Field(default=None)  # None when the file was not fetched (see `skipped`)
+    skipped: Optional[str] = Field(default=None)  # why it was not fetched; becomes an event on the ticket chosen
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

@@ -71,6 +71,7 @@ from app.followers import (
 )
 from app.graph_client import graph_client
 from app.mail import describe_failure
+from app.reply_channel import EMAIL
 from app.intake import (
     IncomingAttachment, clean_body, clean_subject, clean_text, ignored_as_never_follow,
     record_first_message, record_reply, store_files,
@@ -598,7 +599,7 @@ def ingest_mail(
         message = record_reply(
             session, ticket, sender=sender, body=body, author_id=author_id, text=mail.body,
             has_attachment=_has_real_attachment(mail, files), action="replied_by_email", how=f"matched by {how}",
-            graph_message_id=mail.graph_message_id,
+            channel=EMAIL, graph_message_id=mail.graph_message_id,
         )
         _store_files(session, storage, ticket, message, files)
         # Whoever follows the ticket and was not on this mail hears of it (the sender and those on

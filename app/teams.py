@@ -46,6 +46,7 @@ TIMEOUT_SECONDS = 10
 # A 4xx other than these means the request itself is refused (a revoked or wrong webhook), which
 # retrying cannot fix.
 RETRYABLE_CLIENT_ERRORS = (408, 429)
+APP_REMOVED_STATUSES = (403, 404)  # a message into a chat, refused because the app was removed
 
 SOURCE_LABELS = {
     TicketSource.EMAIL: "Email",
@@ -64,18 +65,24 @@ def queue_new_ticket(session: Session, ticket: Ticket) -> Optional[TeamsPost]:
     return post
 
 
-def queue_requester_message(session: Session, message: Message, ticket: Ticket) -> Optional[TeamsPost]:
-    """Queues a public message on a ticket the requester raised in Teams (an agent's "Email user", an automatic notice) to
-    go to them in their chat with the bot as well as by email. Only when the bot is on and the person has a chat with it
-    (a person with none is not left a failed row). Which messages may go is decided again when it is sent
-    (`requester_message_post`). One post per message, enforced by the database. Does not commit."""
-    if ticket.source != TicketSource.TEAMS or not settings.teams_bot_configured:
-        return None
+def can_message_requester(session: Session, ticket: Ticket) -> bool:
+    """Whether the bot can reach the ticket's requester in their chat right now: the bot is on and they have a person
+    record with a conversation. The one question app/reply_channel.py asks before it chooses Teams for a reply."""
+    if not settings.teams_bot_configured:
+        return False
     from app.identity import person_for_address  # imported here: identity needs the models only, but keep this module light
     from app.teams_conversations import reference_for
 
     person = person_for_address(session, ticket.requester_email)
-    if person is None or reference_for(session, person) is None:
+    return person is not None and reference_for(session, person) is not None
+
+
+def queue_requester_message(session: Session, message: Message, ticket: Ticket) -> Optional[TeamsPost]:
+    """Queues a message for the requester (an agent's "Email user", an automatic notice) to go to them in their chat with
+    the bot. Only when `can_message_requester` (a person with none is not left a failed row); app/reply_channel.py decides
+    whether the reply goes to Teams at all. Which messages may go is decided again when it is sent
+    (`requester_message_post`). One post per message, enforced by the database. Does not commit."""
+    if not can_message_requester(session, ticket):
         return None
     session.flush()  # the message needs its id
     post = TeamsPost(kind=REQUESTER_MESSAGE, ticket_id=ticket.id, message_id=message.id)
@@ -104,10 +111,20 @@ def ticket_link(ticket: Ticket) -> Optional[str]:
 
 
 def portal_link(ticket: Ticket) -> Optional[str]:
-    """Where a card for someone who is not an agent (an approver) sends them: the request's page in the portal."""
+    """Where a card for someone who is not an agent (an approver, a requester) sends them: the request's page in the portal."""
     if not settings.ticket_link_base:
         return None
     return f"{settings.ticket_link_base.rstrip('/')}/portal/{ticket.number}"
+
+
+# Who a card is for. Agents are sent to the console, everyone else to the portal (8F).
+AUDIENCE_AGENT = "agent"
+AUDIENCE_REQUESTER = "requester"
+
+
+def link_for(ticket: Ticket, audience: str) -> Optional[str]:
+    """The one place that picks the link a card carries for its audience."""
+    return ticket_link(ticket) if audience == AUDIENCE_AGENT else portal_link(ticket)
 
 
 def message(card: dict) -> dict:
@@ -340,7 +357,9 @@ def requester_message_post(session: Session, post: TeamsPost) -> "BotDelivery":
     if conversation is None:
         raise Unsendable("No conversation with the bot")
     body = put_links_in(session, ticket, message.body)
-    return BotDelivery(conversation.service_url, conversation.conversation_id, text=f"{mail_subject(session, ticket)}\n\n{body}")
+    link = link_for(ticket, AUDIENCE_REQUESTER)
+    footer = f"\n\nOpen in the portal: {link}" if link else ""
+    return BotDelivery(conversation.service_url, conversation.conversation_id, text=f"{mail_subject(session, ticket)}\n\n{body}{footer}")
 
 
 # One builder per kind of post: it turns the row into the payload to send, or raises Unsendable.
@@ -433,6 +452,7 @@ def deliver_pending(
             payload = builder(session, post)
         except Unsendable as reason:
             give_up(post, str(reason))
+            gave_up(session, post)
             session.add(post)
             failed += 1
             continue
@@ -445,12 +465,27 @@ def deliver_pending(
             log.warning("Teams post %s goes to the channel but TEAMS_NEW_TICKET_WEBHOOK_URL is not set in this process", post.id)
             continue
         try:
-            if direct:
-                bot_send(payload)
-            else:
-                send(payload)
-        except Exception as error:
+            error = _transmit(payload, send, bot_send)
+            if error is not None and direct and is_app_removed(error):
+                # The person removed the app and Teams never told us. Forget the chat, then route again in this one place
+                # (route_for): the channel @mention if that is on, otherwise the builder gives up.
+                from app.teams_conversations import forget_conversation  # here: it needs bot_connector, which needs this module
+
+                forget_conversation(session, payload.conversation_id)
+                payload = builder(session, post)
+                if not isinstance(payload, BotDelivery) and not webhook:
+                    raise Unsendable("The app was removed, and the channel needs TEAMS_NEW_TICKET_WEBHOOK_URL")
+                error = _transmit(payload, send, bot_send)
+        except Unsendable as reason:
+            give_up(post, f"The app was removed from the person's Teams: {reason}")
+            gave_up(session, post)
+            session.add(post)
+            failed += 1
+            continue
+        if error is not None:
             record_failure(post, error, now)
+            if post.attempts >= MAX_ATTEMPTS:
+                gave_up(session, post)
             log.warning("Teams post %s failed (attempt %s): %s", post.id, post.attempts, post.last_error)
             failed += 1
         else:
@@ -459,3 +494,30 @@ def deliver_pending(
             sent += 1
         session.add(post)
     return sent, failed
+
+
+def _transmit(payload: "dict | BotDelivery", send: Callable[[dict], None], bot_send: Callable[["BotDelivery"], None]) -> Optional[Exception]:
+    """Sends one payload; the exception if it failed, else None."""
+    try:
+        if isinstance(payload, BotDelivery):
+            bot_send(payload)
+        else:
+            send(payload)
+    except Exception as error:
+        return error
+    return None
+
+
+def is_app_removed(error: Exception) -> bool:
+    """Teams answered 403 or 404 to a message into a chat: the person removed the app (a user, or an admin's policy; one
+    installed by an admin's setup policy cannot be removed by the user)."""
+    return isinstance(error, httpx.HTTPStatusError) and error.response.status_code in APP_REMOVED_STATUSES
+
+
+def gave_up(session: Session, post: TeamsPost) -> None:
+    """A post will not be tried again. A message for the requester then goes by email, so a reply is never lost
+    (app/reply_channel.py); every other kind is just left with its reason."""
+    if post.kind == REQUESTER_MESSAGE:
+        from app.reply_channel import email_instead
+
+        email_instead(session, post.message_id)
