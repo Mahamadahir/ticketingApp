@@ -10,7 +10,7 @@ import httpx
 import pytest
 from sqlmodel import select
 
-from app import inbound
+from app import inbound, intake
 from app.attachments import store_attachment
 from app.config import settings
 from app.settings_store import INBOUND_MAX_ATTACHMENTS, INBOUND_MAX_CC, INBOUND_MAX_PER_SENDER_HOUR, set_setting
@@ -257,7 +257,7 @@ def test_a_failure_after_the_claim_leaves_no_half_handled_mail(db_session, monke
     def boom(*args, **kwargs):
         raise RuntimeError("disk full")
 
-    monkeypatch.setattr(inbound, "record_inbound", boom)
+    monkeypatch.setattr(intake, "record_inbound", boom)
     graph = FakeGraph()
     graph.add("m1")
     with pytest.raises(RuntimeError):
@@ -635,7 +635,7 @@ def test_the_reply_notification_is_asked_for_with_the_senders_address(db_session
         return record_inbound(session, ticket, sender=sender, body=body, author_user_id=author_user_id)
 
     ticket = open_ticket(db_session)
-    monkeypatch.setattr(inbound, "record_inbound", spy)
+    monkeypatch.setattr(intake, "record_inbound", spy)
     ingest_mail(db_session, mail("r1", subject=f"[{ticket.reference}] x"))
     assert seen == {"sender": "jo@example.com", "reply_by": "jo@example.com"}
 

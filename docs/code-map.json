@@ -54,6 +54,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/f72463c9eda5_teams_intake.py",
+        "revision": "f72463c9eda5"
+      },
+      {
         "file": "migrations/versions/3f94eea4bd7c_teams_bot_conversations.py",
         "revision": "3f94eea4bd7c"
       },
@@ -68,17 +72,13 @@
       {
         "file": "migrations/versions/e6a1c9d4b7f2_linked_identities.py",
         "revision": "e6a1c9d4b7f2"
-      },
-      {
-        "file": "migrations/versions/d5f1b7c3a928_outage_mode.py",
-        "revision": "d5f1b7c3a928"
       }
     ],
-    "count": 63,
+    "count": 64,
     "heads": [
       {
-        "file": "migrations/versions/3f94eea4bd7c_teams_bot_conversations.py",
-        "revision": "3f94eea4bd7c"
+        "file": "migrations/versions/f72463c9eda5_teams_intake.py",
+        "revision": "f72463c9eda5"
       }
     ]
   },
@@ -115,7 +115,8 @@
         "app.closing",
         "app.mail",
         "app.resolution",
-        "app.routers.action_links"
+        "app.routers.action_links",
+        "app.teams"
       ],
       "imports": [
         "app.config",
@@ -413,8 +414,10 @@
       "imported_by": [
         "app.anonymisation",
         "app.inbound",
+        "app.intake",
         "app.routers.attachments",
-        "app.subject_access"
+        "app.subject_access",
+        "app.teams_intake"
       ],
       "imports": [
         "app.config",
@@ -454,6 +457,7 @@
         "app.escalation",
         "app.identity",
         "app.inbound",
+        "app.intake",
         "app.linked_identities",
         "app.msp",
         "app.msp_actions",
@@ -647,7 +651,9 @@
       "functions": [
         "approval_request_card",
         "card_shell",
+        "choose_ticket_card",
         "decided_card",
+        "intake_result_card",
         "notification_card",
         "open_ticket_action",
         "portal_action",
@@ -656,7 +662,9 @@
       ],
       "imported_by": [
         "app.teams",
-        "app.teams_approvals"
+        "app.teams_approvals",
+        "app.teams_bot",
+        "app.teams_intake"
       ],
       "imports": [
         "app.approval_groups",
@@ -681,6 +689,7 @@
         "BotAuthFailed",
         "BotNotConfigured",
         "ConversationRef",
+        "FileRefused",
         "TokenCache"
       ],
       "file": "app/bot_connector.py",
@@ -688,9 +697,13 @@
         "call",
         "client_secret_token",
         "create_conversation",
+        "fetch_file",
+        "get_member",
         "managed_identity_token",
         "new_client",
+        "new_file_client",
         "reply_to",
+        "resolve",
         "send",
         "send_card",
         "send_text",
@@ -699,7 +712,8 @@
       "imported_by": [
         "app.teams",
         "app.teams_bot",
-        "app.teams_conversations"
+        "app.teams_conversations",
+        "app.teams_intake"
       ],
       "imports": [
         "app.config",
@@ -711,7 +725,8 @@
       "tables": [],
       "tests": [
         "tests/test_teams_bot.py",
-        "tests/test_teams_dm.py"
+        "tests/test_teams_dm.py",
+        "tests/test_teams_intake.py"
       ]
     },
     {
@@ -959,6 +974,7 @@
         "app.teams",
         "app.teams_bot",
         "app.teams_bot_auth",
+        "app.teams_intake",
         "app.telemetry",
         "app.worker"
       ],
@@ -1000,6 +1016,7 @@
         "tests/test_teams_bot.py",
         "tests/test_teams_copy_sending.py",
         "tests/test_teams_dm.py",
+        "tests/test_teams_intake.py",
         "tests/test_time_zones.py",
         "tests/test_visibility.py",
         "tests/test_wiring_3f.py",
@@ -1071,6 +1088,7 @@
         "tests/test_splitting.py",
         "tests/test_teams_copy.py",
         "tests/test_teams_copy_sending.py",
+        "tests/test_teams_intake.py",
         "tests/test_ticket_core.py",
         "tests/test_withdraw.py",
         "tests/test_worker.py"
@@ -1128,7 +1146,8 @@
         "app.msp",
         "app.msp_actions",
         "app.resolution",
-        "app.routers.admin"
+        "app.routers.admin",
+        "app.teams_intake"
       ],
       "imports": [
         "app.models"
@@ -1145,7 +1164,8 @@
         "tests/test_email_templates.py",
         "tests/test_follower_updates.py",
         "tests/test_msp_actions.py",
-        "tests/test_resolution.py"
+        "tests/test_resolution.py",
+        "tests/test_teams_intake.py"
       ]
     },
     {
@@ -1282,7 +1302,8 @@
       ],
       "imported_by": [
         "app.inbound",
-        "app.routers.portal"
+        "app.routers.portal",
+        "app.teams_intake"
       ],
       "imports": [
         "app.followers",
@@ -1329,7 +1350,8 @@
         "app.reopening",
         "app.routers.admin",
         "app.routers.portal",
-        "app.routers.tickets"
+        "app.routers.tickets",
+        "app.teams_intake"
       ],
       "imports": [
         "app.config",
@@ -1365,13 +1387,14 @@
       "imported_by": [
         "app.canned",
         "app.closing",
-        "app.inbound",
+        "app.intake",
         "app.resolution",
         "app.routers.admin",
         "app.routers.bulk_resolve",
         "app.routers.feedback",
         "app.routers.portal",
         "app.routers.tickets",
+        "app.teams_intake",
         "app.templating"
       ],
       "imports": [],
@@ -1450,8 +1473,10 @@
         "app.raising",
         "app.routers.auth",
         "app.routers.portal",
+        "app.teams",
         "app.teams_approvals",
         "app.teams_conversations",
+        "app.teams_intake",
         "app.time_zones",
         "app.visibility"
       ],
@@ -1472,7 +1497,6 @@
     {
       "classes": [
         "Handled",
-        "IncomingAttachment",
         "IncomingMail",
         "MailSource"
       ],
@@ -1501,19 +1525,15 @@
         "app.config",
         "app.follower_updates",
         "app.followers",
-        "app.forms",
         "app.graph_client",
         "app.identity",
+        "app.intake",
         "app.mail",
-        "app.messages",
         "app.models",
         "app.msp",
-        "app.never_follow",
         "app.outbox",
-        "app.raising",
         "app.reopening",
         "app.settings_store",
-        "app.splitting",
         "app.storage",
         "app.teams",
         "app.ticket_service",
@@ -1534,6 +1554,46 @@
         "tests/test_reopening.py",
         "tests/test_thanks_rules.py",
         "tests/test_time_zones.py"
+      ]
+    },
+    {
+      "classes": [
+        "IncomingAttachment"
+      ],
+      "file": "app/intake.py",
+      "functions": [
+        "clean_body",
+        "clean_subject",
+        "clean_text",
+        "ignored_as_never_follow",
+        "record_first_message",
+        "record_reply",
+        "store_files"
+      ],
+      "imported_by": [
+        "app.inbound",
+        "app.teams_intake"
+      ],
+      "imports": [
+        "app.attachments",
+        "app.audit",
+        "app.forms",
+        "app.messages",
+        "app.models",
+        "app.never_follow",
+        "app.raising",
+        "app.settings_store",
+        "app.splitting",
+        "app.storage",
+        "app.ticket_service"
+      ],
+      "module": "app.intake",
+      "routes": [],
+      "summary": "The rules every way in shares when a person's words become a ticket or a reply: email (app/inbound.py) and Teams",
+      "tables": [],
+      "tests": [
+        "tests/test_inbound_mail.py",
+        "tests/test_teams_intake.py"
       ]
     },
     {
@@ -1883,7 +1943,7 @@
         "app.bulk_resolve",
         "app.closing",
         "app.escalation",
-        "app.inbound",
+        "app.intake",
         "app.mail",
         "app.msp",
         "app.msp_actions",
@@ -1895,6 +1955,7 @@
         "app.routers.tickets",
         "app.splitting",
         "app.subject_access",
+        "app.teams",
         "app.visibility"
       ],
       "imports": [
@@ -1905,6 +1966,7 @@
         "app.request_questions",
         "app.sla",
         "app.splitting",
+        "app.teams",
         "app.ticket_service",
         "app.visibility"
       ],
@@ -1926,7 +1988,8 @@
         "tests/test_request_questions.py",
         "tests/test_resolution.py",
         "tests/test_scheduled_status.py",
-        "tests/test_split_family.py"
+        "tests/test_split_family.py",
+        "tests/test_teams_intake.py"
       ]
     },
     {
@@ -1970,6 +2033,7 @@
         "Team",
         "TeamMembership",
         "TeamsConversation",
+        "TeamsIntake",
         "TeamsPost",
         "ThanksCandidate",
         "ThanksRule",
@@ -2021,6 +2085,7 @@
         "app.followers",
         "app.identity",
         "app.inbound",
+        "app.intake",
         "app.linked_identities",
         "app.linking",
         "app.mail",
@@ -2073,6 +2138,7 @@
         "app.teams",
         "app.teams_approvals",
         "app.teams_conversations",
+        "app.teams_intake",
         "app.templating",
         "app.thanks_rules",
         "app.ticket_service",
@@ -2230,6 +2296,10 @@
           "table": "teams_conversation"
         },
         {
+          "class": "TeamsIntake",
+          "table": "teamsintake"
+        },
+        {
           "class": "TeamsPost",
           "table": "teamspost"
         },
@@ -2369,6 +2439,7 @@
         "tests/test_teams_copy.py",
         "tests/test_teams_copy_sending.py",
         "tests/test_teams_dm.py",
+        "tests/test_teams_intake.py",
         "tests/test_thanks_rules.py",
         "tests/test_ticket_core.py",
         "tests/test_ticket_urls.py",
@@ -2538,7 +2609,7 @@
       ],
       "imported_by": [
         "app.followers",
-        "app.inbound",
+        "app.intake",
         "app.linked_identities",
         "app.mail",
         "app.msp",
@@ -2555,7 +2626,8 @@
       "tests": [
         "tests/test_msp_mail.py",
         "tests/test_never_follow.py",
-        "tests/test_requester_bell.py"
+        "tests/test_requester_bell.py",
+        "tests/test_teams_intake.py"
       ]
     },
     {
@@ -2870,7 +2942,9 @@
       "imported_by": [
         "app.anonymisation",
         "app.mail",
-        "app.subject_access"
+        "app.subject_access",
+        "app.teams",
+        "app.teams_intake"
       ],
       "imports": [
         "app.identity",
@@ -2925,7 +2999,7 @@
         "tell_requester_decision"
       ],
       "imported_by": [
-        "app.inbound",
+        "app.intake",
         "app.mail",
         "app.routers.portal",
         "app.routers.tickets"
@@ -2954,7 +3028,8 @@
       "tables": [],
       "tests": [
         "tests/test_email_preview.py",
-        "tests/test_notification_settings.py"
+        "tests/test_notification_settings.py",
+        "tests/test_teams_intake.py"
       ]
     },
     {
@@ -2970,7 +3045,8 @@
         "app.routers.approvals",
         "app.routers.auth",
         "app.routers.teams_bot",
-        "app.routers.webhooks"
+        "app.routers.webhooks",
+        "app.teams_intake"
       ],
       "imports": [
         "app.config"
@@ -2982,7 +3058,8 @@
       "tests": [
         "tests/conftest.py",
         "tests/test_public_surface.py",
-        "tests/test_teams_bot.py"
+        "tests/test_teams_bot.py",
+        "tests/test_teams_intake.py"
       ]
     },
     {
@@ -5028,6 +5105,7 @@
         "app.emergency",
         "app.entra_check",
         "app.inbound",
+        "app.intake",
         "app.linked_identities",
         "app.mail",
         "app.msp",
@@ -5050,6 +5128,7 @@
         "app.splitting",
         "app.subject_access",
         "app.subscriptions",
+        "app.teams_intake",
         "app.ticket_service",
         "app.time_zones"
       ],
@@ -5101,6 +5180,7 @@
         "tests/test_subrequests.py",
         "tests/test_teams_approvals.py",
         "tests/test_teams_copy.py",
+        "tests/test_teams_intake.py",
         "tests/test_time_zones.py",
         "tests/test_triage.py"
       ]
@@ -5186,7 +5266,7 @@
         "app.bulk_resolve",
         "app.closing",
         "app.due_today",
-        "app.inbound",
+        "app.intake",
         "app.messages",
         "app.msp",
         "app.msp_actions",
@@ -5237,10 +5317,12 @@
         "app.anonymisation",
         "app.attachments",
         "app.inbound",
+        "app.intake",
         "app.mail",
         "app.routers.attachments",
         "app.routers.data_protection",
-        "app.subject_access"
+        "app.subject_access",
+        "app.teams_intake"
       ],
       "imports": [
         "app.config"
@@ -5255,7 +5337,8 @@
         "tests/test_inbound_mail.py",
         "tests/test_msp_mail.py",
         "tests/test_storage.py",
-        "tests/test_subject_access.py"
+        "tests/test_subject_access.py",
+        "tests/test_teams_intake.py"
       ]
     },
     {
@@ -5438,7 +5521,9 @@
         "post_card",
         "queue_new_ticket",
         "queue_notification",
+        "queue_requester_message",
         "record_failure",
+        "requester_message_post",
         "route_for",
         "send_bot",
         "ticket_link"
@@ -5452,15 +5537,20 @@
         "app.jobs",
         "app.linked_identities",
         "app.mail",
+        "app.messages",
         "app.routers.admin",
         "app.ticket_service"
       ],
       "imports": [
+        "app.action_links",
         "app.bot_cards",
         "app.bot_connector",
         "app.config",
+        "app.identity",
+        "app.messages",
         "app.models",
         "app.notifications",
+        "app.person_data",
         "app.teams_conversations"
       ],
       "module": "app.teams",
@@ -5479,6 +5569,7 @@
         "tests/test_teams_bot.py",
         "tests/test_teams_copy_sending.py",
         "tests/test_teams_dm.py",
+        "tests/test_teams_intake.py",
         "tests/test_wiring_3f.py",
         "tests/test_withdraw.py"
       ]
@@ -5492,7 +5583,8 @@
         "message_response"
       ],
       "imported_by": [
-        "app.teams_bot"
+        "app.teams_bot",
+        "app.teams_intake"
       ],
       "imports": [
         "app.approvals",
@@ -5524,14 +5616,17 @@
       ],
       "imported_by": [
         "app.routers.teams_bot",
-        "app.teams_approvals"
+        "app.teams_approvals",
+        "app.teams_intake"
       ],
       "imports": [
+        "app.bot_cards",
         "app.bot_connector",
         "app.config",
         "app.teams_approvals",
         "app.teams_bot_auth",
-        "app.teams_conversations"
+        "app.teams_conversations",
+        "app.teams_intake"
       ],
       "module": "app.teams_bot",
       "routes": [],
@@ -5579,7 +5674,8 @@
       "imported_by": [
         "app.routers.my_settings",
         "app.teams",
-        "app.teams_bot"
+        "app.teams_bot",
+        "app.teams_intake"
       ],
       "imports": [
         "app.audit",
@@ -5593,6 +5689,57 @@
       "tables": [],
       "tests": [
         "tests/test_teams_bot.py"
+      ]
+    },
+    {
+      "classes": [
+        "Plan",
+        "Result"
+      ],
+      "file": "app/teams_intake.py",
+      "functions": [
+        "act",
+        "activity_key",
+        "answer",
+        "answer_card",
+        "clean_body_of",
+        "load_files",
+        "offered_files",
+        "plan_for",
+        "requester_of",
+        "teams_tickets"
+      ],
+      "imported_by": [
+        "app.teams_bot"
+      ],
+      "imports": [
+        "app.attachments",
+        "app.bot_cards",
+        "app.bot_connector",
+        "app.config",
+        "app.email_templates",
+        "app.follower_updates",
+        "app.followers",
+        "app.forms",
+        "app.identity",
+        "app.intake",
+        "app.models",
+        "app.person_data",
+        "app.rate_limit",
+        "app.settings_store",
+        "app.storage",
+        "app.teams_approvals",
+        "app.teams_bot",
+        "app.teams_conversations",
+        "app.thanks_rules",
+        "app.ticket_service"
+      ],
+      "module": "app.teams_intake",
+      "routes": [],
+      "summary": "Ticket intake from Teams (phase 8D): a person messages the bot and a ticket is raised or added to.",
+      "tables": [],
+      "tests": [
+        "tests/test_teams_intake.py"
       ]
     },
     {
@@ -5683,7 +5830,8 @@
       "imported_by": [
         "app.reopening",
         "app.routers.admin",
-        "app.splitting"
+        "app.splitting",
+        "app.teams_intake"
       ],
       "imports": [
         "app.models"
@@ -5693,6 +5841,7 @@
       "summary": "Thank-you rules and their review queue (phase 4E-2). Nothing here commits.",
       "tables": [],
       "tests": [
+        "tests/test_teams_intake.py",
         "tests/test_thanks_rules.py"
       ]
     },
@@ -5723,6 +5872,7 @@
         "app.due_today",
         "app.followers",
         "app.inbound",
+        "app.intake",
         "app.linked_identities",
         "app.linking",
         "app.messages",
@@ -5743,6 +5893,7 @@
         "app.sla",
         "app.splitting",
         "app.subrequests",
+        "app.teams_intake",
         "app.triage"
       ],
       "imports": [
@@ -6307,6 +6458,12 @@
       "type": "int"
     },
     {
+      "default": "20",
+      "env": "RATE_LIMIT_TEAMS_PERSON_PER_MINUTE",
+      "name": "rate_limit_teams_person_per_minute",
+      "type": "int"
+    },
+    {
       "default": "600",
       "env": "RATE_LIMIT_WEBHOOK_PER_MINUTE",
       "name": "rate_limit_webhook_per_minute",
@@ -6394,6 +6551,12 @@
       "default": "''",
       "env": "TEAMS_BOT_TENANT_ID",
       "name": "teams_bot_tenant_id",
+      "type": "str"
+    },
+    {
+      "default": "'.sharepoint.com,.sharepoint-df.com,.1drv.com'",
+      "env": "TEAMS_FILE_HOST_SUFFIXES",
+      "name": "teams_file_host_suffixes",
       "type": "str"
     },
     {
@@ -6522,6 +6685,7 @@
     "tests/test_teams_copy.py",
     "tests/test_teams_copy_sending.py",
     "tests/test_teams_dm.py",
+    "tests/test_teams_intake.py",
     "tests/test_thanks_rules.py",
     "tests/test_ticket_core.py",
     "tests/test_ticket_urls.py",

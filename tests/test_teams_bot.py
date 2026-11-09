@@ -471,6 +471,7 @@ def test_unusable_values_are_not_stored(db_session):
 
 
 def test_a_message_stores_the_conversation_and_replies(public, connector, db_session):
+    make_user(db_session)
     assert post(public, activity("message", text="hello"), token()).status_code == 200
 
     assert db_session.exec(select(TeamsConversation)).one().conversation_id == "a:conv-1"
@@ -478,12 +479,13 @@ def test_a_message_stores_the_conversation_and_replies(public, connector, db_ses
     assert str(request.url) == "https://smba.example.net/emea/v3/conversations/a%3Aconv-1/activities/act-1"
     assert request.headers["Authorization"] == "Bearer bot-token-1"
     body = connector.body()
-    assert body["type"] == "message" and body["text"] == teams_bot.MESSAGE_NOT_READ_YET
+    assert body["type"] == "message" and body["text"] == "Your issue has been logged as INC-1 with IT. We'll be in touch."
     assert body["replyToId"] == "act-1" and body["recipient"]["id"] == "29:teams-user" and body["from"]["id"] == f"28:{APP_ID}"
 
 
 def test_the_reply_is_work_for_after_the_answer_not_part_of_it(bot, connector, db_session):
     """Teams sends the activity again when the answer is late, so receive() itself never calls Teams back."""
+    make_user(db_session)
     handled = teams_bot.receive(db_session, f"Bearer {token()}", activity("message", text="hello"))
     assert connector.requests == [] and handled.after is not None and handled.body is None
     handled.after()
@@ -491,6 +493,7 @@ def test_the_reply_is_work_for_after_the_answer_not_part_of_it(bot, connector, d
 
 
 def test_a_failing_reply_does_not_fail_the_request(public, connector, db_session):
+    make_user(db_session)
     connector.script = [500, 500, 500]
     assert post(public, activity("message", text="hello"), token()).status_code == 200
     assert len(db_session.exec(select(TeamsConversation)).all()) == 1  # stored before the reply was tried

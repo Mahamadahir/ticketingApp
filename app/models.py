@@ -833,11 +833,14 @@ class TeamsPost(SQLModel, table=True):
     __table_args__ = (Index("ix_teamspost_unsent", "id", postgresql_where=text("sent_at IS NULL")),)
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    kind: str  # new_ticket, notification
+    kind: str  # new_ticket, notification, requester_message
     ticket_id: Optional[int] = Field(default=None, foreign_key="ticket.id", index=True)
     # For a "notification" post: the notification it carries. Unique, so one notification can never
     # be posted twice, whatever happens to the job that queues it.
     notification_id: Optional[int] = Field(default=None, foreign_key="notification.id", unique=True)
+    # For a "requester_message" post: the public message an agent (or the system) wrote on a ticket raised in Teams, passed
+    # on to the requester in their chat with the bot (8D). Unique, so one message is never sent to Teams twice.
+    message_id: Optional[int] = Field(default=None, foreign_key="message.id", unique=True)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     sent_at: Optional[datetime] = Field(default=None)
     attempts: int = Field(default=0, sa_column_kwargs={"server_default": "0"})
@@ -947,6 +950,21 @@ class InboundMail(SQLModel, table=True):
     to_addresses: Optional[str] = Field(default=None)
     cc_addresses: Optional[str] = Field(default=None)
     outcome: str  # ticket_created, reply_added or ignored_*
+    ticket_id: Optional[int] = Field(default=None, foreign_key="ticket.id", index=True)
+    message_id: Optional[int] = Field(default=None, foreign_key="message.id")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class TeamsIntake(SQLModel, table=True):
+    """One row for every message to the bot that the Teams intake has handled (app/teams_intake.py), the Teams twin of
+    `InboundMail`. `activity_key` is a one-way hash of the person's object id and the Teams activity id, unique, claimed
+    before anything is done in the same transaction as the ticket, so Teams sending an activity again (it does when we are
+    slow) can never make a second ticket or reply, and one person pressing a choice card twice settles it once. It holds
+    no name, address or words. The hourly limit per person counts the rows whose ticket is theirs."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    activity_key: str = Field(unique=True)
+    outcome: str  # ticket_created, reply_added, asked (a card is waiting for the choice) or ignored_*
     ticket_id: Optional[int] = Field(default=None, foreign_key="ticket.id", index=True)
     message_id: Optional[int] = Field(default=None, foreign_key="message.id")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

@@ -142,6 +142,40 @@ def decided_card(session: Session, vote: ApprovalVote, note: Optional[str] = Non
     return card_shell(body, portal_action(ticket))
 
 
+VERB_PICK = "intake.pick"  # 8D: add the message to this open request
+VERB_NEW = "intake.new"  # 8D: raise a new request from the message
+MAX_CHOICES = 5  # a longer list is a wall of buttons; the rest are reached by writing new: or on the site
+CHOICE_TITLE_LENGTH = 70
+
+
+def choose_ticket_card(tickets: list[Ticket], activity_id: str, text: str) -> dict:
+    """The card that asks which request a message belongs to (8D): one button per request the person has open from Teams
+    (at most MAX_CHOICES, most recently active first) and one for a new request. The card carries the message itself and
+    the id of the activity it came in, so pressing a button needs no stored copy; the press only names a request, and
+    app/teams_intake.py refuses it unless that request is one of the pressing person's own. A Resolved request is
+    marked: adding to it reopens it."""
+    buttons = []
+    for ticket in tickets[:MAX_CHOICES]:
+        title = f"{ticket.reference}: {ticket.subject}"
+        if ticket.status == TicketStatus.RESOLVED:
+            title = f"{title} (resolved, reopens)"
+        buttons.append({
+            "type": "Action.Execute", "title": " ".join(title.split())[:CHOICE_TITLE_LENGTH], "verb": VERB_PICK,  # a button title is not markdown
+            "data": {"m": activity_id, "t": text, "n": ticket.number},
+        })
+    buttons.append({"type": "Action.Execute", "title": "A new request", "verb": VERB_NEW, "data": {"m": activity_id, "t": text}, "style": "positive"})
+    body = [{"type": "TextBlock", "text": "Which request is this message about?", "wrap": True, "weight": "Bolder"}]
+    if len(tickets) > MAX_CHOICES:
+        body.append({"type": "TextBlock", "text": f"Showing {MAX_CHOICES} of your {len(tickets)} requests.", "wrap": True, "isSubtle": True})
+    body.append({"type": "TextBlock", "text": plain(text), "wrap": True, "isSubtle": True})
+    return card_shell(body, buttons)
+
+
+def intake_result_card(text: str, ticket: Optional[Ticket] = None) -> dict:
+    """What replaces the choice card once it is answered: what happened, with no buttons so a second press does nothing."""
+    return card_shell([{"type": "TextBlock", "text": text, "wrap": True}], portal_action(ticket) if ticket is not None else None)
+
+
 Builder = Callable[[Session, Notification, Optional[Ticket]], dict]
 # Kinds that have a card of their own.
 CARD_FOR_KIND: dict[str, Builder] = {APPROVAL_WAITING: approval_request_card}

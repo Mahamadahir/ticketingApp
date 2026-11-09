@@ -64,6 +64,13 @@ class Settings(BaseSettings):
     teams_bot_client_secret: str = ""
     # The public route, per caller address per minute, per replica. Teams sends from few addresses.
     rate_limit_teams_bot_per_minute: int = 600
+    # Messages one person may send the bot in a minute before it stops answering (app/teams_intake.py), per replica; the
+    # hourly cap on tickets and replies is the admin setting.
+    rate_limit_teams_person_per_minute: int = 20
+    # Where a file a person sent the bot may be downloaded from without the bot's token (Teams puts uploads on the
+    # sender's OneDrive/SharePoint): host name suffixes, comma separated. Anything else is refused, so a crafted
+    # activity cannot make the app fetch from inside its network. Check on staging that real uploads are on this list.
+    teams_file_host_suffixes: str = ".sharepoint.com,.sharepoint-df.com,.1drv.com"
     # Out-of-office detection (phase 2E): the worker reads agents' presence from Graph
     # (Presence.Read.All) and marks those who are out of office. Needs the GRAPH_* credentials.
     presence_enabled: bool = False
@@ -160,6 +167,10 @@ class Settings(BaseSettings):
     def teams_new_ticket_configured(self) -> bool:
         """Whether this process can send: it holds the webhook URL (the worker)."""
         return bool(self.teams_new_ticket_webhook_url)
+
+    @property
+    def teams_file_hosts(self) -> tuple[str, ...]:
+        return tuple(s.strip().lower() for s in self.teams_file_host_suffixes.split(",") if s.strip())
 
     @property
     def teams_bot_configured(self) -> bool:

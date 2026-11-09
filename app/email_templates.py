@@ -95,7 +95,8 @@ REGISTRY: dict[str, TemplateDef] = {
             key="acknowledgement",
             label="Acknowledgement",
             description=(
-                "Sent once to the person who emails IT, when their email opens a ticket. It is only a receipt: "
+                "Sent once to the person who emails IT, when their email opens a ticket; the same words are the bot's answer when a "
+                "message in Teams opens one. It is only a receipt: "
                 "keep it free of ticket content, a queue position or a promised time (an emailed ticket has no "
                 "priority until it is triaged). It goes out under the ticket's own subject."
             ),

@@ -340,8 +340,8 @@ def test_a_hidden_teams_only_row_cannot_be_opened_by_id(client, db_session):
     assert mark_read(db_session, bob, n.id) is None
 
 
-def test_both_kinds_of_post_are_built(client, db_session, on):
-    assert set(teams.CARD_BUILDERS) == {"new_ticket", "notification"}
+def test_every_kind_of_post_is_built(client, db_session, on):
+    assert set(teams.CARD_BUILDERS) == {"new_ticket", "notification", "requester_message"}
 
 
 # ---- The settings page and the schema ------------------------------------------------------------------

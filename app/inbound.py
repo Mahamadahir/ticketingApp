@@ -46,7 +46,6 @@ Rules that live here and nowhere else:
 
 import logging
 import re
-import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional, Protocol
@@ -55,7 +54,7 @@ from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, func, select
 
-from app.attachments import AttachmentRejected, clean_filename, store_attachment
+from app.attachments import clean_filename
 from app.audit import log_action
 from app.config import settings
 from app.settings_store import INBOUND_MAX_ATTACHMENTS, INBOUND_MAX_CC, INBOUND_MAX_PER_SENDER_HOUR, count_setting
@@ -70,21 +69,21 @@ from app.followers import (
     is_follower,
     normalise_email,
 )
-from app.forms import MAX_MESSAGE_LENGTH
 from app.graph_client import graph_client
 from app.mail import describe_failure
-from app.messages import record_inbound
+from app.intake import (
+    IncomingAttachment, clean_body, clean_subject, clean_text, ignored_as_never_follow,
+    record_first_message, record_reply, store_files,
+)
 from app.identity import addresses_of, person_for_address
 from app.models import (
     TICKET_TYPE_PREFIXES,
-    AuditLog,
     GraphNotification,
     InboundMail,
     Message,
     Ticket,
     TicketSource,
     TicketStatus,
-    User,
 )
 from app.msp import (
     forward_if_out_of_hours,
@@ -97,11 +96,8 @@ from app.msp import (
     ticket_by_msp_number,
     ticket_of_acknowledgement,
 )
-from app.never_follow import listed_entry
 from app.outbox import is_on, queue_acknowledgement
-from app.raising import MAX_SUBJECT_LENGTH
-from app.splitting import apply_requester_reply
-from app.storage import Storage, get_storage
+from app.storage import Storage
 from app.teams import MAX_ATTEMPTS, MAX_BACKOFF_MINUTES
 from app.ticket_service import create_ticket, get_by_number, record_event
 from app.time_zones import note_requester
@@ -123,15 +119,11 @@ IGNORED_MSP = "ignored_msp"  # from the MSP address but not added to a ticket: f
 HANDLED = (TICKET_CREATED, REPLY_ADDED)
 
 MSP_AUDIT_ACTION = "msp_mail_ignored"
-EVENT_ATTACHMENT_SKIPPED = "attachment_skipped"
 EVENT_REFERENCE_NOT_USED = "mail_reference_not_used"
 EVENT_FOLLOWER_FROM_MAIL = "follower_added_from_mail"
 STRONG_MATCHES = ("conversation", "in-reply-to")  # the thread itself, not just a reference in the subject
 
 BATCH = 25
-NO_SUBJECT = "(no subject)"
-NO_TEXT = "(no message text)"
-CUT = "\n\n[cut short]"
 MAX_STORED_RECIPIENTS = 100  # of each of To and Cc kept on the record of a mail
 MAX_AUDIT_DETAIL = 500  # of an audit entry about an ignored mail
 MAX_ID = 998  # a Message-ID header is at most a line long
@@ -145,14 +137,6 @@ _AUTOMATIC_SENDERS = ("mailer-daemon", "postmaster")
 _REFERENCE = re.compile(
     r"\[(?:" + "|".join(sorted(TICKET_TYPE_PREFIXES.values())) + r")-([1-9][0-9]{0,8})\]", re.IGNORECASE
 )
-
-
-@dataclass
-class IncomingAttachment:
-    filename: str
-    data: Optional[bytes] = None  # None when skipped
-    inline: bool = False
-    skipped: Optional[str] = None  # why it was not fetched
 
 
 @dataclass
@@ -194,12 +178,7 @@ class MailSource(Protocol):
 # ---- Reading a Graph message -------------------------------------------------------------------
 
 
-def _text(value) -> str:
-    """Text safe to store: Postgres refuses a NUL, and other control characters are only noise."""
-    if not isinstance(value, str):
-        return ""
-    # Only control characters (NUL included) and lone surrogates go; spaces such as U+00A0 and joiners stay.
-    return "".join(c for c in value if c in "\n\t\r" or unicodedata.category(c) not in ("Cc", "Cs"))
+_text = clean_text  # shared with Teams intake (app/intake.py)
 
 
 def _message_id(value) -> Optional[str]:
@@ -427,15 +406,11 @@ def _join_thread(session: Session, ticket: Ticket, sender: str) -> bool:
 
 
 def _subject_of(mail: IncomingMail) -> str:
-    subject = " ".join(mail.subject.split())
-    return subject[:MAX_SUBJECT_LENGTH] if subject else NO_SUBJECT
+    return clean_subject(mail.subject)
 
 
 def _body_of(mail: IncomingMail) -> str:
-    body = mail.body.strip()
-    if not body:
-        return NO_TEXT
-    return body if len(body) <= MAX_MESSAGE_LENGTH else body[: MAX_MESSAGE_LENGTH - len(CUT)].rstrip() + CUT
+    return clean_body(mail.body)
 
 
 def _has_real_attachment(mail: IncomingMail, files: list[IncomingAttachment]) -> bool:
@@ -446,26 +421,7 @@ def _has_real_attachment(mail: IncomingMail, files: list[IncomingAttachment]) ->
     return mail.has_attachments
 
 
-def _record_reply(session: Session, ticket: Ticket, sender: str, body: str, author_id: Optional[int]) -> Message:
-    return record_inbound(session, ticket, sender=sender, body=body, author_user_id=author_id, reply_by=sender)
-
-
-def _store_files(
-    session: Session, storage: Optional[Storage], ticket: Ticket, message: Message, files: list[IncomingAttachment]
-) -> None:
-    storage = storage or (get_storage() if any(item.data is not None for item in files) else None)
-    for item in files:
-        reason = item.skipped
-        if reason is None and item.data is not None:
-            try:
-                store_attachment(
-                    session, storage, ticket=ticket, filename=item.filename, data=item.data,
-                    message=message, inline=item.inline,
-                )
-            except AttachmentRejected as error:
-                reason = str(error)
-        if reason is not None:
-            record_event(session, ticket, EVENT_ATTACHMENT_SKIPPED, None, to_value=item.filename[:200], detail=reason)
+_store_files = store_files
 
 
 def _flooding(session: Session, sender: str, now: datetime) -> bool:
@@ -605,23 +561,10 @@ def ingest_mail(
             return settle(reason)
         if sender is None:
             return settle(IGNORED_NO_SENDER)
-    listed = None if from_msp else listed_entry(session, sender)
-    if listed is not None:
+    listed = False if from_msp else ignored_as_never_follow(session, sender, _subject_of(mail), now)
+    if listed:
         # Mail from a listed address (a list, the mailbox's alias, a no-reply) is ignored whole: no ticket, nothing
-        # added to a ticket. The audit log keeps who and what, so an admin can see what was dropped.
-        # Every such mail still gets its InboundMail row; the audit entries stop at the per-sender hourly limit so
-        # a listed address caught in an auto-reply loop cannot fill the audit log.
-        logged = session.exec(
-            select(func.count()).select_from(AuditLog).where(
-                AuditLog.entity_type == "never_follow", AuditLog.entity_id == listed.id, AuditLog.action == "mail_ignored",
-                AuditLog.created_at >= now - timedelta(hours=1),
-            )
-        ).one()
-        if logged < count_setting(session, INBOUND_MAX_PER_SENDER_HOUR):
-            log_action(
-                session, sender, "never_follow", listed.id, "mail_ignored",
-                f"{sender}: {_subject_of(mail)}"[:MAX_AUDIT_DETAIL],
-            )
+        # added to a ticket (app/intake.py audits it). Every such mail still gets its InboundMail row.
         return settle(IGNORED_NEVER_FOLLOW)
     if _flooding(session, sender, now):
         log.warning("Mail from one sender set aside: too many tickets and replies in an hour (a probable loop)")
@@ -652,15 +595,11 @@ def ingest_mail(
     if ticket is not None and not allowed and how in STRONG_MATCHES:
         allowed = joined = _join_thread(session, ticket, sender)
     if ticket is not None and allowed:
-        message = _record_reply(session, ticket, sender, body, author_id)
-        message.graph_message_id = mail.graph_message_id
-        session.flush()
-        moved = apply_requester_reply(
-            session, ticket, sender, text=mail.body, has_attachment=_has_real_attachment(mail, files)
+        message = record_reply(
+            session, ticket, sender=sender, body=body, author_id=author_id, text=mail.body,
+            has_attachment=_has_real_attachment(mail, files), action="replied_by_email", how=f"matched by {how}",
+            graph_message_id=mail.graph_message_id,
         )
-        log_action(session, sender, "ticket", ticket.id, "replied_by_email", f"matched by {how}")
-        if moved:
-            log_action(session, sender, "ticket", ticket.id, "status_changed", f"{moved[0]} -> {moved[1]}")
         _store_files(session, storage, ticket, message, files)
         # Whoever follows the ticket and was not on this mail hears of it (the sender and those on
         # the mail already have it).
@@ -679,10 +618,10 @@ def ingest_mail(
             session, new, EVENT_REFERENCE_NOT_USED, None, to_value=ticket.tag,
             detail="The subject or thread names that ticket, but the sender is not its requester or a follower",
         )
-    message = record_inbound(session, new, sender=sender, body=body, author_user_id=author_id)
-    message.graph_message_id = mail.graph_message_id
-    session.flush()
-    log_action(session, sender, "ticket", new.id, "created_by_email")
+    message = record_first_message(
+        session, new, sender=sender, body=body, author_id=author_id, action="created_by_email",
+        graph_message_id=mail.graph_message_id,
+    )
     mailbox = settings.graph_shared_mailbox.strip().lower()
     for address in mail.cc[: count_setting(session, INBOUND_MAX_CC)]:
         if address in (sender, mailbox):

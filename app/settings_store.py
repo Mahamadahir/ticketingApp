@@ -29,6 +29,7 @@ AUTOMATIC_EMAIL_CAP = "automatic_email_cap_per_ticket"
 INBOUND_MAX_PER_SENDER_HOUR = "inbound_max_per_sender_hour"
 INBOUND_MAX_ATTACHMENTS = "inbound_max_attachments"
 INBOUND_MAX_CC = "inbound_max_cc"
+TEAMS_MAX_PER_PERSON_HOUR = "teams_max_per_person_hour"
 SLA_AT_RISK_PERCENT = "sla_at_risk_percent"
 REPORT_MAX_DAYS = "report_max_days"
 SUBJECT_ACCESS_MAX_MB = "subject_access_max_mb"
@@ -215,6 +216,17 @@ REGISTRY: dict[str, SettingDef] = {
             "(the follower list has its own overall cap as well). Placeholder."
         ),
         default="10",
+    ),
+    TEAMS_MAX_PER_PERSON_HOUR: SettingDef(
+        key=TEAMS_MAX_PER_PERSON_HOUR,
+        label="Teams intake: most tickets and replies from one person in an hour",
+        kind="count",
+        description=(
+            "Once one person has made this many tickets and replies by messaging the bot in the last hour, their further "
+            "messages make nothing (the bot says so once a minute at most). Placeholder value until the real limit is agreed; "
+            "set it high rather than off."
+        ),
+        default="30",
     ),
     GRAPH_SUBSCRIPTION_MINUTES: SettingDef(
         key=GRAPH_SUBSCRIPTION_MINUTES,

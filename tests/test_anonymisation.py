@@ -121,7 +121,7 @@ mspunmatchedmail.graph_message_id mspunmatchedmail.msp_number mspunmatchedmail.s
 graphsubscription.subscription_id graphsubscription.client_state_fingerprint graphsubscription.last_error mailsyncstate.folder
 mailsyncstate.delta_link mailsyncstate.resume_link mailsyncstate.last_error ticketevent.event_type activitylog.event_type
 activitylog.method activitylog.path auditlog.entity_type auditlog.action bankholidaycache.dates pending_blob_delete.last_error
-teams_conversation.service_url teams_conversation.conversation_id
+teams_conversation.service_url teams_conversation.conversation_id teamsintake.outcome
 """.split())
 
 

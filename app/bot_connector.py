@@ -18,7 +18,9 @@ connect) is retried twice with a short wait that honours Retry-After, so a blip 
 outages are the outbox's job: the worker's rows wait 2, 4, 8 ... 60 minutes.
 """
 
+import ipaddress
 import logging
+import socket
 import threading
 import time
 from dataclasses import dataclass
@@ -228,3 +230,91 @@ def create_conversation(service_url: str, teams_user_id: str, tenant_id: Optiona
     if not conversation_id:
         raise ValueError("The Bot Connector did not return a conversation")
     return ConversationRef(service_url, conversation_id)
+
+
+def _is_ip(host: str) -> bool:
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return True
+
+
+def get_member(service_url: str, conversation_id: str, teams_user_id: str) -> dict:
+    """One member of a conversation as Teams knows them (a TeamsChannelAccount: `name`, `email`, `userPrincipalName`,
+    `objectId`). The only way to learn the address of a person who has no account here yet, from the chat they wrote in.
+    No Graph permission is needed: it is the bot's own token on the Bot Connector."""
+    ref = ConversationRef(service_url, conversation_id)
+    result = call("GET", _conversation_url(ref, "members", teams_user_id))
+    return result if isinstance(result, dict) else {}
+
+
+FILE_TIMEOUT_SECONDS = 15
+FILE_CHUNK = 64 * 1024
+
+
+def new_file_client() -> httpx.Client:
+    return httpx.Client(timeout=FILE_TIMEOUT_SECONDS, follow_redirects=False)
+
+
+class FileRefused(Exception):
+    """A file Teams offered could not be taken: not an https address, larger than the limit, or no longer there."""
+
+
+def resolve(host: str) -> list[str]:
+    """The addresses a name resolves to (a seam for tests)."""
+    return [info[4][0] for info in socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)]
+
+
+def _public_host(host: str) -> bool:
+    """Whether the name is a real, public one: not a single label (localhost, an internal service name), and every address
+    it resolves to is global (not private, loopback, link-local or reserved). The decimal and octal forms of an IP address
+    resolve to the address they spell, so this is checked on the answer and not on the spelling."""
+    if "." not in host:
+        return False
+    try:
+        addresses = resolve(host)
+    except OSError:
+        return False
+    try:
+        return bool(addresses) and all(ipaddress.ip_address(a).is_global for a in addresses)
+    except ValueError:
+        return False
+
+
+def fetch_file(url: str, max_bytes: int, *, service_url: Optional[str] = None, with_token: bool = False) -> bytes:
+    """Downloads a file a person sent the bot, never more than `max_bytes`. Raises FileRefused when it cannot be taken
+    and the httpx error for a failure of the network. Redirects are not followed.
+
+    Teams gives two kinds of address. A file download address (`file.download.info`) is pre-authenticated and is fetched
+    with no credential at all, and only from a host on TEAMS_FILE_HOST_SUFFIXES (Microsoft's file hosts). A picture pasted
+    into the chat has a `contentUrl` on the Bot Connector's own host (the activity's service address) and is fetched with
+    the bot's token (`with_token`), from that host only: the token is never sent to any other host. Both must be https and
+    a public name (not an IP address, a single label, or one that resolves to a private address)."""
+    parts = urlsplit(url or "")
+    host = (parts.hostname or "").lower()
+    if parts.scheme != "https" or not host or parts.username or parts.password or _is_ip(host):
+        raise FileRefused("The file address is not an https address")
+    headers = {}
+    if with_token:
+        if not service_url or host != (urlsplit(service_url).hostname or "").lower():
+            raise FileRefused("The file is not on the Teams service address")
+        headers["Authorization"] = f"Bearer {TOKENS.get()}"
+    elif not any(host.endswith(suffix) for suffix in settings.teams_file_hosts):
+        raise FileRefused("The file is not on a Microsoft file host")
+    if not _public_host(host):
+        raise FileRefused("The file address is not a public one")
+    data = bytearray()
+    with new_file_client() as client:
+        with client.stream("GET", url, headers=headers) as response:
+            if response.status_code in (404, 410):
+                raise FileRefused("no longer available")
+            response.raise_for_status()
+            declared = response.headers.get("Content-Length")
+            if declared and declared.isdigit() and int(declared) > max_bytes:
+                raise FileRefused("larger than the limit")
+            for chunk in response.iter_bytes(FILE_CHUNK):
+                data += chunk
+                if len(data) > max_bytes:
+                    raise FileRefused("larger than the limit")
+    return bytes(data)

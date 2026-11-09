@@ -194,6 +194,7 @@ COLUMNS: dict[str, ColumnUse] = {
     "ticket.graph_conversation_id": _use(NOT_PERSON, LABEL, "the mail thread; cleared so mail from the old address cannot join it", anon=NULL),
     "inboundmail.conversation_id": _use(NOT_PERSON, LABEL, "the mail thread; cleared so mail from the old address cannot join it", anon=NULL),
     "inboundmail.internet_message_id": _use(NOT_PERSON, LABEL, "the Message-ID a reply points at; cleared for the same reason", anon=NULL),
+    "teamsintake.activity_key": _use(NOT_PERSON, LABEL, "one-way hash of an object id and a Teams activity id; names no one and holds no words"),
     "anonymised_requester.address_hash": _use(NOT_PERSON, LABEL, "keyed one-way hash of an anonymised address; the only trace of it, kept so a repeat is recognised"),
     "ticket.split_from_id": _use(NOT_PERSON, LABEL, "a ticket id"),
     "ticket.required_by": _use(NOT_PERSON, LABEL, "a date"),
