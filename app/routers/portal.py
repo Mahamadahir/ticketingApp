@@ -48,6 +48,7 @@ from app.visibility import Access, access_context, may_set_required_by, ticket_a
 from app.messages import about_labels, record_inbound, requester_visible_answers, requester_visible_messages
 from app.follower_updates import queue_follower_updates
 from app.reopening import ReopenError, latest_follow_on, open_follow_on_ticket, related_tickets, reopen_ticket
+from app.reply_channel import PORTAL, note_requester_wrote
 from app.splitting import apply_requester_reply
 from app.request_questions import form_rows
 from app.request_types import active_request_types, request_type_of
@@ -371,6 +372,7 @@ def add_comment(
         return RedirectResponse(destination, status_code=303)
 
     message = record_inbound(session, ticket, sender=user.display_name, body=body, author_user_id=user.id, reply_by=user.email)
+    note_requester_wrote(session, ticket, user.email, PORTAL)
     log_action(session, user.email, "ticket", ticket.id, "commented", body[:200])
     queue_follower_updates(session, ticket, message, user.email)  # nobody was sent a portal comment
     moved = apply_requester_reply(session, ticket, user.email, text=body)

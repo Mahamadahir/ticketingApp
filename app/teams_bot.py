@@ -29,7 +29,7 @@ from sqlmodel import Session
 from app import bot_connector, teams_bot_auth
 from app.config import settings
 from app.teams_bot_auth import TokenRejected
-from app.teams_conversations import remove_reference, save_reference
+from app.teams_conversations import link_by_address, remove_reference, save_reference
 
 log = logging.getLogger("app.teams_bot")
 
@@ -116,11 +116,28 @@ def installation_update(session: Session, activity: dict) -> Optional[Handled]:
         return None
     action = _text(activity.get("action"))
     if action in ("add", "add-upgrade"):
-        _store(session, activity)
+        if _store(session, activity):
+            session.commit()
+            oid = _person(activity)[0]
+            # The address lookup calls Teams, so it runs after the answer, in a session of its own.
+            return Handled(after=lambda: _link_later(oid))
     elif action in ("remove", "remove-upgrade"):
         remove_reference(session, _person(activity)[0])
     session.commit()
     return None
+
+
+def _link_later(oid: str) -> None:
+    """At install, matches a person with no account on record to one through the address Teams gives (8F). Runs once the
+    answer has been sent (it calls Teams); a failure is logged and the first message from them is matched as before."""
+    from app.database import engine
+
+    try:
+        with Session(engine) as own:
+            link_by_address(own, oid)
+            own.commit()
+    except Exception as error:
+        log.warning("Teams bot: matching an installer by address failed (%s)", type(error).__name__)
 
 
 @handler("message")
@@ -140,11 +157,11 @@ def message(session: Session, activity: dict) -> Optional[Handled]:
 
 @handler("invoke")
 def invoke(session: Session, activity: dict) -> Optional[Handled]:
-    """A card button was pressed. The choice of ticket for a message (8D, app/teams_intake.py) and the approval buttons
+    """A card button was pressed. The choice of ticket for a message and the other buttons of that card (8D, 8F, app/teams_intake.py) and the approval buttons
     (8C, app/teams_approvals.py) are answered in the response itself: nothing slow is done."""
-    from app.bot_cards import VERB_NEW, VERB_PICK  # imported here: the cards need the notifications
+    from app.bot_cards import INTAKE_VERBS  # imported here: the cards need the notifications
 
-    if _text(_sub(activity, "value", "action", "verb")) in (VERB_PICK, VERB_NEW):
+    if _text(_sub(activity, "value", "action", "verb")) in INTAKE_VERBS:
         from app.teams_intake import answer_card
 
         body = answer_card(session, activity)

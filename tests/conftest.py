@@ -212,3 +212,14 @@ def escalatable(db_session: Session, ticket, target: Team | None = None, name: s
     db_session.add(ticket)
     db_session.commit()
     return target
+
+
+@pytest.fixture
+def no_hold_while_active(db_session):
+    """Switches off the hold on a Teams copy while the person is active in the app (8F, `teams_hold_while_active_minutes`).
+    A test that signs an agent in through the client has a live session, which would otherwise hold every copy it makes due;
+    the tests of the hold itself (tests/test_teams_hold.py) leave it on."""
+    from app.settings_store import TEAMS_HOLD_WHILE_ACTIVE_MINUTES, set_setting
+
+    set_setting(db_session, TEAMS_HOLD_WHILE_ACTIVE_MINUTES, "0")
+    db_session.commit()

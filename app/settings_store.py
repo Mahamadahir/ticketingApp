@@ -30,6 +30,8 @@ INBOUND_MAX_PER_SENDER_HOUR = "inbound_max_per_sender_hour"
 INBOUND_MAX_ATTACHMENTS = "inbound_max_attachments"
 INBOUND_MAX_CC = "inbound_max_cc"
 TEAMS_MAX_PER_PERSON_HOUR = "teams_max_per_person_hour"
+TEAMS_HOLD_WHILE_ACTIVE_MINUTES = "teams_hold_while_active_minutes"
+TEAMS_PENDING_CHOICE_HOURS = "teams_pending_choice_hours"
 SLA_AT_RISK_PERCENT = "sla_at_risk_percent"
 REPORT_MAX_DAYS = "report_max_days"
 SUBJECT_ACCESS_MAX_MB = "subject_access_max_mb"
@@ -157,6 +159,28 @@ REGISTRY: dict[str, SettingDef] = {
             "once Teams is connected."
         ),
         default="5",
+    ),
+    TEAMS_HOLD_WHILE_ACTIVE_MINUTES: SettingDef(
+        key=TEAMS_HOLD_WHILE_ACTIVE_MINUTES,
+        label="Teams copies wait while the person is active in the app (minutes)",
+        kind="off_minutes",
+        description=(
+            "A Teams copy of a notification (an approval request included) that is due is held back while the person has been "
+            "active in the web app within this many minutes, because they will see the bell. Once they have been idle this long "
+            "and it is still unread, it goes to Teams. Active means the latest time one of their sign-in sessions was seen. "
+            "0 turns the hold off. The person's own delay before a copy is sent still applies first."
+        ),
+        default="5",
+    ),
+    TEAMS_PENDING_CHOICE_HOURS: SettingDef(
+        key=TEAMS_PENDING_CHOICE_HOURS,
+        label="Teams intake: how long a question about which request a message is for waits (hours)",
+        kind="count",
+        description=(
+            "When the bot asks which request a message belongs to and the person never answers, the question and any files "
+            "sent with the message are dropped after this long, and the files are deleted from storage."
+        ),
+        default="24",
     ),
     APPROVAL_LINK_MINUTES: SettingDef(
         key=APPROVAL_LINK_MINUTES,

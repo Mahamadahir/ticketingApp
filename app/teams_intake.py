@@ -10,20 +10,27 @@ the address, or a new end-user account is made), so they are one person whicheve
 shared mailbox, an address on the never-follow list (their words are ignored, audited), an inactive account (an
 anonymised one is inactive and has a placeholder address). A person who cannot be matched is told so and nothing is made.
 
-Which ticket. `new:` at the start of a message always raises a new ticket. Otherwise the person's open tickets that were
-raised in Teams decide: none, a new ticket; one, the message is added to it; several, a card asks which (their open
-requests and "a new request"), and the press answers in place (`answer_card`). With none open but some Resolved, a
+Which ticket (`teams_tickets` is the one function that says which tickets the bot considers: the person's open tickets
+where they are the requester, whatever the source, email, portal or Teams; followed-only tickets, the parts of a split request
+and sub-requests are left out). `new:` at the start of a message always raises a new ticket. A message that starts with a
+ticket reference ("INC-1042: still broken") goes straight to that ticket when the person is its requester; otherwise they are
+told it is not one of theirs, with no details. Otherwise the open tickets decide: none, a new ticket; one, the message is added
+to it, and the answer is a card naming the ticket with "Not this one? Start a new request", which moves the message and its
+files to a new ticket; several, a card asks which (each with reference, subject, category, date opened and status, five to a
+page with "Show more", and "a new request"), and the press answers in place (`answer_card`). With none open but some Resolved, a
 thank-you (the same rules as email, app/thanks_rules.py) is added to the latest Resolved one and leaves it resolved; anything
 else asks, since adding to a Resolved ticket reopens it. A Closed ticket is never added to: the next message raises a
-new one. A message from Teams never joins a ticket the person did not raise.
+new one. A message from Teams never joins a ticket the person is not the requester of. Each message from the person also
+sets the ticket's last requester channel to Teams, so agent replies come back here (app/reply_channel.py).
 
 What is made. A new ticket is `source=teams`, created by `ticket_service.create_ticket` in New for triage like email, its
 subject the first line of the message and the whole message its first public message; the standard acknowledgement text
 (the admin-edited template) is the bot's answer, in the chat. A reply is recorded by `intake.record_reply`, so the
 assignee is told, the status moves and the followers are updated as for mail. Files are fetched within email's limits (how
 many, how large) and stored by `intake.store_files`; what is not kept leaves an event and is named in the answer. Files
-sent with a message that needs the choice card are not kept (the person is told to send them again): the address Teams
-gives is short-lived and there is nowhere to hold the file before there is a ticket.
+sent with a message that needs the choice card are downloaded once and held against the pending question
+(app/teams_pending.py); the press attaches them to the ticket chosen, and an unanswered question expires (setting
+`teams_pending_choice_hours`) with its files deleted through the blob delete queue.
 
 Never twice. `TeamsIntake` holds one row per message, unique on a keyed hash of the person and the activity id, claimed in the
 transaction that makes the ticket, so Teams sending an activity again after a slow answer does nothing. The same row
@@ -45,12 +52,13 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+from sqlalchemy import delete, update
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, func, select
 
 from app import bot_connector
 from app.attachments import clean_filename
-from app.bot_cards import VERB_NEW, VERB_PICK, choose_ticket_card, intake_result_card
+from app.bot_cards import VERB_MORE, VERB_MOVE, VERB_NEW, VERB_PICK, added_card, choose_ticket_card, intake_result_card
 from app.config import settings
 from app.email_templates import render_template, ticket_values
 from app.follower_updates import queue_follower_updates
@@ -60,26 +68,38 @@ from app.identity import SsoRefused, normal_oid, person_for_object_id, requester
 from app.intake import (
     IncomingAttachment, clean_body, clean_subject, clean_text, ignored_as_never_follow, record_first_message, record_reply, store_files,
 )
-from app.models import FINISHED_STATUSES, Ticket, TicketSource, TicketStatus, TeamsIntake, User
+from app.models import (
+    FINISHED_STATUSES, TICKET_TYPE_PREFIXES, Attachment, Message, OutboundEmail, TeamsHeldFile, Ticket, TicketSource, TicketStatus,
+    TeamsIntake, User,
+)
 from app.person_data import is_placeholder_address
+from app.audit import log_action
+from app.outbox import FOLLOWER_UPDATE
 from app.rate_limit import TEAMS_PERSON, TEAMS_PERSON_NOTICE
+from app.reply_channel import TEAMS_CHANNEL, is_the_requester
 from app.settings_store import INBOUND_MAX_ATTACHMENTS, TEAMS_MAX_PER_PERSON_HOUR, count_setting
 from app.storage import Storage
 from app.teams_approvals import ACTION_NAME, card_response, message_response
 from app.teams_bot import Handled, _person, _sub, _text
 from app.teams_conversations import save_reference
+from app.teams_pending import ASKED, EXPIRED, hold_files, held_rows, release, take_files
 from app.thanks_rules import is_thanks_reply
-from app.ticket_service import create_ticket
+from app.ticket_service import create_ticket, get_by_number, record_event, set_status
+
+EVENT_MESSAGE_MOVED = "message_moved"  # on both tickets when the person says "Not this one": to_value / from_value name the other
 
 log = logging.getLogger("app.teams_bot")
 
 # What came of a message.
 TICKET_CREATED = "ticket_created"
 REPLY_ADDED = "reply_added"
-ASKED = "asked"  # a card is waiting for the person to choose
+MOVED = "moved"  # the message was added to a ticket and the person then moved it to a new one ("Not this one?")
 IGNORED_NEVER_FOLLOW = "ignored_never_follow"
 
 NEW_PREFIX = re.compile(r"^\s*new\s*:\s*", re.IGNORECASE)
+_REFERENCE_PREFIXES = "|".join(re.escape(v) for v in sorted(TICKET_TYPE_PREFIXES.values()))
+# "INC-1042: still broken" (the colon is optional). Only a real prefix and a number without a leading zero count.
+REFERENCE_PREFIX = re.compile(rf"^\s*((?:{_REFERENCE_PREFIXES})-[1-9][0-9]{{0,8}})(?![\w-])\s*:?\s*", re.IGNORECASE)
 FILE_DOWNLOAD_INFO = "application/vnd.microsoft.teams.file.download.info"
 MAX_PENDING_TEXT = 3000  # the longest message that can wait inside a choice card
 MAX_CARD_BYTES = 20_000  # the card carries the message once on each button; Teams refuses an activity over about 28 KB
@@ -98,11 +118,16 @@ TOO_LONG_TO_ASK = (
     "You have more than one open request and this message is too long for me to hold while you choose. Start it with new: "
     "to raise a new request, or add to a request on the ticketing site."
 )
-FILES_NOT_KEPT_WHILE_ASKING = "Files sent with this message are not kept while you choose. Send them again once it is added."
+NOT_YOURS = (
+    "{reference} is not one of your requests that I can add to. Start your message with new: to raise a new request, "
+    "or leave the reference out and I will work out where it belongs."
+)
+NEEDS_TEXT_AFTER_REFERENCE = "Write your message after {reference}: and I will add it to that request."
 SLOW_DOWN = "You have sent a lot of messages in the last hour, so I have not added this one. Please try again later or use the ticketing site."
 FAILED = "Something went wrong and nothing was recorded. Please try again, or use the ticketing site."
 CARD_FAILED = "I could not show you the choice of request. Please send your message again, starting with new: for a new request."
 ALREADY_DONE = "This question has already been answered."
+QUESTION_EXPIRED = "This question has expired. Send your message again, starting with new: for a new request."
 NO_LONGER_OPEN = "That request is not open any more. Send your message again, starting with new: for a new request."
 
 @dataclass
@@ -112,6 +137,7 @@ class Result:
     outcome: str
     text: str
     ticket: Optional[Ticket] = None
+    card: Optional[dict] = None  # answer with this card instead of the text
 
 
 # ---- Who -----------------------------------------------------------------------------------------------
@@ -183,15 +209,16 @@ def _over_limit(session: Session, person: User, now: datetime) -> bool:
 
 
 def teams_tickets(session: Session, person: User, resolved: bool = False) -> list[Ticket]:
-    """The person's tickets that were raised in Teams and are open (or, with `resolved`, Resolved), the most recently active
-    first. A Closed ticket is never one of them."""
+    """The one place that says which tickets the bot considers for a person: those where they are the requester (any address
+    of theirs), whatever the source (email, portal or Teams), that are open (or, with `resolved`, Resolved), the most recently
+    updated first. A ticket they only follow is not one of them, nor is a Closed one, nor a part of a split request or an
+    automatic sub-request (`split_from_id` set: not a conversation of its own)."""
     status = Ticket.status == TicketStatus.RESOLVED if resolved else Ticket.status.not_in(FINISHED_STATUSES)
     return list(
         session.exec(
             select(Ticket)
             .where(
-                Ticket.source == TicketSource.TEAMS,
-                Ticket.split_from_id.is_(None),  # a part of a split request (or an automatic sub-request) is not a conversation of its own
+                Ticket.split_from_id.is_(None),
                 func.lower(func.trim(Ticket.requester_email)).in_(requester_emails(person, session)),
                 status,
             )
@@ -200,7 +227,7 @@ def teams_tickets(session: Session, person: User, resolved: bool = False) -> lis
     )
 
 
-NEW, REPLY, ASK = "new", "reply", "ask"
+NEW, REPLY, ASK, REFUSE = "new", "reply", "ask", "refuse"
 
 
 @dataclass
@@ -208,7 +235,9 @@ class Plan:
     kind: str
     ticket: Optional[Ticket] = None
     choices: Optional[list[Ticket]] = None
-    text: str = ""  # the message without a new: prefix
+    text: str = ""  # the message without a new: prefix or a reference
+    offer_move: bool = False  # added without asking: the answer offers "Not this one? Start a new request"
+    refusal: str = ""  # for REFUSE: what to tell the person
 
 
 def plan_for(session: Session, person: User, text: str, has_files: bool) -> Plan:
@@ -216,9 +245,22 @@ def plan_for(session: Session, person: User, text: str, has_files: bool) -> Plan
     if prefix:
         return Plan(NEW, text=text[prefix.end():].strip())
     text = text.strip()
+    named = REFERENCE_PREFIX.match(text)
+    if named:
+        reference = named.group(1).upper()
+        rest = text[named.end():].strip()
+        wanted = get_by_number(session, int(reference.partition("-")[2]))
+        # Only a request the person could be asked about anyway (open, or Resolved), and theirs: for anything else the
+        # answer is the same, so it tells them nothing about a ticket that is not theirs.
+        mine = next((t for t in teams_tickets(session, person) + teams_tickets(session, person, resolved=True) if wanted and t.id == wanted.id), None)
+        if mine is None:
+            return Plan(REFUSE, refusal=NOT_YOURS.format(reference=reference))
+        if not rest and not has_files:
+            return Plan(REFUSE, refusal=NEEDS_TEXT_AFTER_REFERENCE.format(reference=reference))
+        return Plan(REPLY, mine, text=rest)
     open_tickets = teams_tickets(session, person)
     if len(open_tickets) == 1:
-        return Plan(REPLY, open_tickets[0], text=text)
+        return Plan(REPLY, open_tickets[0], text=text, offer_move=True)
     if open_tickets:
         return Plan(ASK, choices=open_tickets, text=text)
     resolved = teams_tickets(session, person, resolved=True)
@@ -313,25 +355,30 @@ def _not_kept_note(not_kept: list[str]) -> str:
 
 
 def act(
-    session: Session, person: User, row: TeamsIntake, plan: Plan, files: list[IncomingAttachment], storage: Optional[Storage] = None
+    session: Session, person: User, row: TeamsIntake, plan: Plan, files: list[IncomingAttachment], storage: Optional[Storage] = None,
+    activity_id: str = "",
 ) -> Result:
     """Makes the ticket or adds the message, as the plan says, and settles the claim. Adds everything to the session; the
     caller commits, so the claim, the ticket, the message and the files stand or fall together."""
     sender = person.email.strip().lower()
     body = plan.text
+    card = None
     if plan.kind == REPLY:
         ticket = plan.ticket
         before = ticket.status
         message = record_reply(
             session, ticket, sender=sender, body=clean_body_of(body, files), author_id=person.id, text=body,
-            has_attachment=bool(files), action="replied_by_teams", how="from a message to the bot",
+            has_attachment=bool(files), action="replied_by_teams", how="from a message to the bot", channel=TEAMS_CHANNEL,
         )
         not_kept = store_files(session, storage, ticket, message, files)
         queue_follower_updates(session, ticket, message, sender)
         row.outcome = REPLY_ADDED
+        row.previous_status = before.value if before == TicketStatus.AWAITING_USER and ticket.status != before else None
         text = f"Added to {ticket.reference}."
         if before == TicketStatus.RESOLVED and ticket.status != TicketStatus.RESOLVED:
             text += " It has been reopened."
+        if plan.offer_move and activity_id:
+            card = added_card(session, ticket, activity_id, _not_kept_note(not_kept).strip())
     else:
         ticket = create_ticket(session, subject=clean_subject(_first_line(body, files)), requester_email=sender, source=TicketSource.TEAMS)
         message = record_first_message(
@@ -342,7 +389,7 @@ def act(
         text = render_template(session, "acknowledgement", ticket_values(ticket)).body
     row.ticket_id, row.message_id = ticket.id, message.id
     session.add(row)
-    return Result(row.outcome, text + _not_kept_note(not_kept), ticket)
+    return Result(row.outcome, text + _not_kept_note(not_kept), ticket, card)
 
 
 def clean_body_of(text: str, files: list[IncomingAttachment]) -> str:
@@ -398,37 +445,56 @@ def answer(session: Session, activity: dict, storage: Optional[Storage] = None) 
             session.commit()
             return _say(activity, SLOW_DOWN) if TEAMS_PERSON_NOTICE.hit(oid) is None else None
         plan = plan_for(session, person, text, bool(offered))
+        if plan.kind == REFUSE:
+            session.commit()
+            return _say(activity, plan.refusal)
         if plan.kind == NEW and not plan.text and not offered:
             session.commit()
             return _say(activity, NEW_NEEDS_TEXT)
         if plan.kind == ASK:
-            return _ask(session, activity, key, plan, bool(offered))
+            return _ask(session, activity, key, plan, offered, storage)
         files = load_files(session, activity) if offered else []  # before the claim: a slow download is not a lock
         row = _claim(session, key, "processing")
         if row is None:
             session.rollback()
             return None
-        result = act(session, person, row, plan, files, storage)
+        result = act(session, person, row, plan, files, storage, activity_id)
         session.commit()
     except Exception:
         log.exception("Teams intake: handling a message failed")
         session.rollback()
         return _say(activity, FAILED)
+    if result.card is not None:
+        text = result.text
+
+        def send() -> None:
+            if not _reply(activity, card=result.card):
+                _reply(activity, text=text)  # the card could not be shown: the plain answer still goes
+
+        return Handled(after=send)
     return _say(activity, result.text)
 
 
-def _ask(session: Session, activity: dict, key: str, plan: Plan, has_files: bool) -> Optional[Handled]:
-    card = choose_ticket_card(plan.choices, _text(activity.get("id")), plan.text)
+def _ask(
+    session: Session, activity: dict, key: str, plan: Plan, offered: list[dict], storage: Optional[Storage] = None
+) -> Optional[Handled]:
+    activity_id = _text(activity.get("id"))
+    card = choose_ticket_card(session, plan.choices, activity_id, plan.text)
     if len(plan.text) > MAX_PENDING_TEXT or len(json.dumps(card)) > MAX_CARD_BYTES:
         session.commit()
         return _say(activity, TOO_LONG_TO_ASK)
+    files = load_files(session, activity) if offered else []  # before the claim: a slow download is not a lock
     # The claim names the most recent of the tickets asked about, so the hourly cap counts the question as theirs.
-    if _claim(session, key, ASKED, plan.choices[0].id) is None:
+    row = _claim(session, key, ASKED, plan.choices[0].id)
+    if row is None:
         session.rollback()
         return None
+    held = hold_files(session, storage, row, files) if files else 0
     session.commit()
-    if has_files:
-        card["body"].append({"type": "TextBlock", "text": FILES_NOT_KEPT_WHILE_ASKING, "wrap": True, "isSubtle": True})
+    if files:
+        skipped = [f"{item.filename} ({item.skipped})" for item in files if item.data is None]
+        note = (f"{held} file{'s' if held != 1 else ''} will be added to the request you choose. " if held else "") + _not_kept_note(skipped).strip()
+        card["body"].insert(1, {"type": "TextBlock", "text": note.strip(), "wrap": True, "isSubtle": True})
 
     def send() -> None:
         if not _reply(activity, card=card):
@@ -441,9 +507,10 @@ def _ask(session: Session, activity: dict, key: str, plan: Plan, has_files: bool
 
 
 def answer_card(session: Session, activity: dict, storage: Optional[Storage] = None) -> Optional[dict]:
-    """The body to answer an invoke with when the person pressed a button on the choice card. The card names a request and
-    carries the message; the press is the pressing person's own (`from.aadObjectId`), the request must be one of theirs, and
-    the question is answered once (the claim row made when the card was sent)."""
+    """The body to answer an invoke with when the person pressed a button on the choice card or on "Added to ...". The choice
+    card names a request and carries the message; the press is the pressing person's own (`from.aadObjectId`), the request
+    must be one of theirs, and the question is answered once (the claim row made when the card was sent). "Show more" pages
+    the same card and answers nothing. "Not this one?" moves the message just added to a new request."""
     if _text(activity.get("name")) != ACTION_NAME:
         return None
     verb = _text(_sub(activity, "value", "action", "verb"))
@@ -451,7 +518,7 @@ def answer_card(session: Session, activity: dict, storage: Optional[Storage] = N
     data = data if isinstance(data, dict) else {}
     oid = normal_oid(_person(activity)[0])
     asked = _text(data.get("m"))
-    if oid is None or not asked or verb not in (VERB_PICK, VERB_NEW):
+    if oid is None or not asked or verb not in (VERB_PICK, VERB_NEW, VERB_MORE, VERB_MOVE):
         return message_response(NO_LONGER_OPEN)
     person = person_for_object_id(session, oid)
     if person is None or not person.is_active or is_placeholder_address(person.email):
@@ -459,30 +526,86 @@ def answer_card(session: Session, activity: dict, storage: Optional[Storage] = N
     now = datetime.now(timezone.utc)
     text = clean_text(data.get("t"))[:MAX_MESSAGE_LENGTH].strip()
     try:
+        row = session.exec(
+            select(TeamsIntake).where(TeamsIntake.activity_key == activity_key(oid, asked)).with_for_update()
+        ).first()
+        if verb == VERB_MOVE:
+            return _move_to_new(session, person, row, now, asked)
+        plan = None
         if verb == VERB_PICK:
             number = data.get("n")
             candidates = teams_tickets(session, person) + teams_tickets(session, person, resolved=True)
             ticket = next((t for t in candidates if isinstance(number, int) and not isinstance(number, bool) and t.number == number), None)
             if ticket is None:
+                session.rollback()
                 return message_response(NO_LONGER_OPEN)  # the card stays, so another button can be pressed
             plan = Plan(REPLY, ticket, text=text)
-        else:
-            if not text:
-                return message_response(NEW_NEEDS_TEXT)
-            plan = Plan(NEW, text=text)
-        row = session.exec(
-            select(TeamsIntake).where(TeamsIntake.activity_key == activity_key(oid, asked)).with_for_update()
-        ).first()
+        if row is not None and row.outcome == EXPIRED:
+            session.rollback()
+            return message_response(QUESTION_EXPIRED)
         if row is None or row.outcome != ASKED:
             session.rollback()
             return message_response(ALREADY_DONE)  # not a new card: it would hide the answer the first press got
+        if verb == VERB_MORE:
+            page = data.get("p")
+            page = page if isinstance(page, int) and not isinstance(page, bool) else 0
+            # The list `plan_for` asked about: the open requests, or the Resolved ones when none is open.
+            tickets = teams_tickets(session, person) or teams_tickets(session, person, resolved=True)
+            card = choose_ticket_card(session, tickets, asked, text, page) if tickets else None
+            session.rollback()
+            return card_response(card) if card is not None else message_response(NO_LONGER_OPEN)
+        if plan is None:  # a new request
+            if not text:
+                session.rollback()
+                return message_response(NEW_NEEDS_TEXT)
+            plan = Plan(NEW, text=text)
         if _over_limit(session, person, now):
             session.rollback()
             return message_response(SLOW_DOWN)
-        result = act(session, person, row, plan, [], storage)
+        files = take_files(session, storage, row.id)
+        held = held_rows(session, row.id)
+        result = act(session, person, row, plan, files, storage)
+        release(session, held)  # attached now (or named on the ticket as not kept); what nothing uses is queued for deletion
         session.commit()
     except Exception:
         log.exception("Teams intake: answering the choice card failed")
         session.rollback()
         return message_response(FAILED)
     return card_response(intake_result_card(result.text, result.ticket))
+
+
+def _move_to_new(session: Session, person: User, row: Optional[TeamsIntake], now: datetime, asked: str) -> dict:
+    """"Not this one? Start a new request": the message that was just added to the person's only open request, and any files
+    that came with it, become a new request. Only the person's own message, once. The request it left is put back to Awaiting
+    user if that reply was what moved it, and both requests carry an event. Nobody who was told of the reply is un-told, and a
+    follower update that was waiting to go for it is dropped."""
+    if row is None or row.outcome != REPLY_ADDED or row.message_id is None:
+        session.rollback()
+        return message_response(ALREADY_DONE)
+    message = session.get(Message, row.message_id)
+    old = session.get(Ticket, message.ticket_id) if message is not None else None
+    if old is None or old.id != row.ticket_id or old.status in FINISHED_STATUSES or not is_the_requester(session, old, person.email):
+        session.rollback()
+        return message_response(NO_LONGER_OPEN)
+    if _over_limit(session, person, now):
+        session.rollback()
+        return message_response(SLOW_DOWN)
+    sender = person.email.strip().lower()
+    new = create_ticket(session, subject=clean_subject(_first_line(message.body, [])), requester_email=sender, source=TicketSource.TEAMS)
+    message.ticket_id = new.id
+    session.add(message)
+    session.exec(update(Attachment).where(Attachment.message_id == message.id).values(ticket_id=new.id))
+    session.exec(delete(OutboundEmail).where(OutboundEmail.about_message_id == message.id, OutboundEmail.kind == FOLLOWER_UPDATE, OutboundEmail.sent_at.is_(None)))
+    if row.previous_status == TicketStatus.AWAITING_USER.value and old.status == TicketStatus.IN_PROGRESS:
+        set_status(session, old, TicketStatus.AWAITING_USER, sender, detail="Put back: the message was moved to a new request")
+    detail = "The requester moved a message they sent in Teams to a new request"
+    record_event(session, old, EVENT_MESSAGE_MOVED, sender, to_value=new.reference, detail=detail)
+    record_event(session, new, EVENT_MESSAGE_MOVED, sender, from_value=old.reference, detail=detail)
+    log_action(session, sender, "ticket", new.id, "message_moved_by_teams", f"from {old.reference}")
+    new.updated_at = now
+    session.add(new)
+    row.outcome, row.ticket_id = MOVED, new.id
+    session.add(row)
+    text = render_template(session, "acknowledgement", ticket_values(new)).body
+    session.commit()
+    return card_response(intake_result_card(f"Done. I started a new request from that message, and it is no longer on {old.reference}.\n\n{text}", new))

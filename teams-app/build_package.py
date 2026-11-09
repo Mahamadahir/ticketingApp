@@ -1,7 +1,12 @@
 """Builds the Teams app package (a zip of manifest.json and two icons) for staging or production.
 
     python teams-app/build_package.py --environment staging --bot-app-id <guid> \\
-        --website-url https://... --privacy-url https://... --terms-url https://... [--version 1.0.0] [--out dist]
+        --public-base-url https://... --developer-name "Vardags IT" [--version 1.0.0] [--out dist]
+
+The privacy, terms and website addresses default to pages of the environment's public base URL (PUBLIC_BASE_URL):
+`<base>/legal/privacy` and `<base>/legal/terms` (served by the app, text edited under Admin > Email templates) and
+`<base>/portal` (the portal home). Each can still be set by hand with --privacy-url, --terms-url and --website-url,
+in which case --public-base-url is not needed for it. The developer name is shown in Teams as the publisher.
 
 The bot application id is the same value as TEAMS_BOT_APP_ID and the Bicep parameter teamsBotAppId (with a managed
 identity, the identity's client id: `teamsBotAppId` in the deployment outputs). It is an identifier, not a secret, and
@@ -76,6 +81,14 @@ def fill(value, replacements: dict[str, str]):
     return value
 
 
+def default_urls(public_base_url: str) -> dict[str, str]:
+    """The website, privacy and terms addresses under the environment's public base URL."""
+    base = public_base_url.strip().rstrip("/")
+    if not base.startswith("https://"):
+        raise ValueError("The public base URL must be an https address")
+    return {"website": f"{base}/portal", "privacy": f"{base}/legal/privacy", "terms": f"{base}/legal/terms"}
+
+
 def manifest(environment: str, bot_app_id: str, version: str, developer: str, website: str, privacy: str, terms: str) -> dict:
     if environment not in NAMES:
         raise ValueError("The environment must be staging or production")
@@ -111,17 +124,27 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--environment", required=True, choices=sorted(NAMES))
     parser.add_argument("--bot-app-id", required=True)
-    parser.add_argument("--website-url", required=True)
-    parser.add_argument("--privacy-url", required=True)
-    parser.add_argument("--terms-url", required=True)
-    parser.add_argument("--developer-name", default="IT Support")
+    parser.add_argument("--public-base-url", help="the environment's public base URL; the three addresses below default to pages under it")
+    parser.add_argument("--website-url", help="default: <public base URL>/portal")
+    parser.add_argument("--privacy-url", help="default: <public base URL>/legal/privacy")
+    parser.add_argument("--terms-url", help="default: <public base URL>/legal/terms")
+    parser.add_argument("--developer-name", default="IT Support", help='the publisher shown in Teams, for example "Vardags IT"')
     parser.add_argument("--version", default="1.0.0")
     parser.add_argument("--out", default="dist")
     args = parser.parse_args(argv)
     try:
+        defaults = default_urls(args.public_base_url) if args.public_base_url else {}
+        urls = {
+            "website": args.website_url or defaults.get("website"),
+            "privacy": args.privacy_url or defaults.get("privacy"),
+            "terms": args.terms_url or defaults.get("terms"),
+        }
+        missing = [name for name, url in urls.items() if not url]
+        if missing:
+            raise ValueError(f"Give --public-base-url, or the address of: {', '.join(missing)}")
         path = build(
             Path(args.out), args.environment, bot_app_id=args.bot_app_id, version=args.version, developer=args.developer_name,
-            website=args.website_url, privacy=args.privacy_url, terms=args.terms_url,
+            website=urls["website"], privacy=urls["privacy"], terms=urls["terms"],
         )
     except ValueError as error:
         print(f"error: {error}", file=sys.stderr)

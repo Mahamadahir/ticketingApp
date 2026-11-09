@@ -23,6 +23,8 @@ from tests.test_teams_copy_sending import NOW, due_notification, posts
 SERVICE = "https://smba.example.net/emea/"
 CONVERSATION = "a:1conversation"
 
+pytestmark = pytest.mark.usefixtures("no_hold_while_active")  # the hold while the person is active has its own tests (test_teams_hold.py)
+
 
 @pytest.fixture(autouse=True)
 def restore(monkeypatch):

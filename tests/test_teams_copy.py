@@ -32,6 +32,8 @@ def post_settings(client, *ticked, teams_delay=None):
         data["teams_delay"] = teams_delay
     return client.post("/settings/notifications", data=data)  # follows the redirect: 200 when saved
 
+pytestmark = pytest.mark.usefixtures("no_hold_while_active")  # the hold while the person is active has its own tests (test_teams_hold.py)
+
 
 ALL_ON = {"assigned:in_app", "assigned:teams", "mentioned:in_app", "mentioned:teams", "replied:in_app", "replied:teams", "reopened:in_app", "reopened:teams", "raised_for_you:email", "follower_update:email", "approval_request:email", "approval_waiting:in_app", "approval_waiting:teams", "agent_emailed:in_app", "awaiting_you:in_app", "ticket_resolved:in_app", "ticket_closed:in_app", "approval_outcome:in_app", "subrequest_created:in_app", "due_today:in_app", "due_today:teams", "msp_unacknowledged:in_app", "msp_handoff_warning:in_app", "msp_handoff_warning:teams", "msp_handed_off:in_app", "msp_handed_off:teams"}
 

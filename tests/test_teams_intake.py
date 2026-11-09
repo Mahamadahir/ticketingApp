@@ -71,7 +71,21 @@ def last_text(connector):
 
 
 def card_buttons(card):
-    return {a["title"]: a for a in card.get("actions", [])}
+    """Every Action.Execute button of a card by title, in its actions or inside its body (the choice card has one per request)."""
+    found = {}
+
+    def walk(node):
+        if isinstance(node, dict):
+            if node.get("type") == "Action.Execute":
+                found[node["title"]] = node
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                walk(value)
+
+    walk(card)
+    return found
 
 
 def press(public, button, oid=OID, **overrides):
@@ -182,7 +196,7 @@ def test_a_message_while_a_ticket_is_open_is_added_to_it(public, connector, db_s
 
     [ticket] = tickets(db_session)
     assert [m.body for m in messages_of(db_session, ticket)] == ["Printer is jammed", "It is the one on floor 3"]
-    assert last_text(connector) == f"Added to {ticket.reference}."
+    assert f"Added to {ticket.reference}." in json.dumps(card_of(connector))  # a card that names it (tests/test_teams_followups.py)
     assert db_session.exec(select(AuditLog).where(AuditLog.action == "replied_by_teams")).one().entity_id == ticket.id
     told = db_session.exec(select(Notification).where(Notification.user_id == agent.id)).all()
     assert [n.kind for n in told] == ["replied"]  # the assignee hears of it, as for mail
@@ -200,12 +214,12 @@ def test_a_reply_on_a_ticket_waiting_for_the_requester_hands_it_back(public, db_
     assert tickets(db_session)[0].status == TicketStatus.IN_PROGRESS
 
 
-def test_a_ticket_raised_another_way_is_never_added_to(public, db_session, ann):
+def test_a_ticket_raised_by_email_is_added_to_when_the_person_is_its_requester(public, db_session, ann):
     other = Ticket(subject="By email", requester_email="ann@example.com", source=TicketSource.EMAIL)
     db_session.add(other)
     db_session.commit()
-    say(public, "A brand new thing")
-    assert len(tickets(db_session)) == 2 and messages_of(db_session, other) == []
+    say(public, "More about that")
+    assert len(tickets(db_session)) == 1 and [m.body for m in messages_of(db_session, other)] == ["More about that"]
 
 
 def test_someone_elses_ticket_is_never_added_to(public, db_session, ann):
@@ -251,7 +265,7 @@ def test_with_two_open_tickets_a_card_asks_which(public, connector, db_session, 
     assert len(tickets(db_session)) == 2 and messages_of(db_session, first) != [] and len(messages_of(db_session, first)) == 1
     card = card_of(connector)
     buttons = card_buttons(card)
-    assert set(buttons) == {f"{first.reference}: Printer is jammed", f"{second.reference}: laptop will not boot", "A new request"}
+    assert set(buttons) == {f"Add to {first.reference}", f"Add to {second.reference}", "A new request"}
     assert "It is on floor 3" in json.dumps(card)
     assert db_session.exec(select(TeamsIntake).order_by(TeamsIntake.id.desc())).first().outcome == "asked"
 
@@ -261,7 +275,7 @@ def test_choosing_a_ticket_adds_the_message_to_it_and_replaces_the_card(public, 
     say(public, "It is on floor 3", id="q1")
     buttons = card_buttons(card_of(connector))
 
-    answer = press(public, buttons[f"{second.reference}: laptop will not boot"])
+    answer = press(public, buttons[f"Add to {second.reference}"])
 
     assert answer["statusCode"] == 200 and answer["type"] == "application/vnd.microsoft.card.adaptive"
     assert f"Added to {second.reference}." in json.dumps(answer["value"]) and "Action.Execute" not in json.dumps(answer["value"])
@@ -286,7 +300,7 @@ def test_a_card_is_answered_once(public, connector, db_session, ann):
     buttons = card_buttons(card_of(connector))
 
     press(public, buttons["A new request"])
-    again = press(public, buttons[f"{first.reference}: Printer is jammed"])
+    again = press(public, buttons[f"Add to {first.reference}"])
 
     assert again["type"] == "application/vnd.microsoft.activity.message" and again["value"] == teams_intake.ALREADY_DONE
     assert len(tickets(db_session)) == 3 and len(messages_of(db_session, first)) == 1
@@ -299,7 +313,7 @@ def test_a_card_cannot_be_used_by_someone_else(public, connector, db_session, an
     buttons = card_buttons(card_of(connector))
 
     # Bob presses Ann's forwarded card: it names Ann's ticket, which is not his; nothing changes.
-    named = press(public, buttons[f"{first.reference}: Printer is jammed"], oid=OTHER_OID)
+    named = press(public, buttons[f"Add to {first.reference}"], oid=OTHER_OID)
     assert named["value"] == teams_intake.NO_LONGER_OPEN
     # Bob presses "a new request": the question was Ann's, not his, so there is nothing for him to answer.
     new = press(public, buttons["A new request"], oid=OTHER_OID)
@@ -318,34 +332,27 @@ def test_a_press_naming_a_ticket_that_is_not_open_is_refused_and_the_card_stays(
     db_session.add(first)
     db_session.commit()
 
-    answer = press(public, buttons[f"{first.reference}: Printer is jammed"])
+    answer = press(public, buttons[f"Add to {first.reference}"])
 
     assert answer["value"] == teams_intake.NO_LONGER_OPEN
     assert press(public, buttons["A new request"])["type"] == "application/vnd.microsoft.card.adaptive"  # the other buttons still work
 
 
-def test_more_than_five_open_tickets_offer_the_five_latest(public, connector, db_session, ann):
+def test_more_than_five_open_tickets_offer_the_five_latest_first(public, connector, db_session, ann):
     for number in range(7):
         say(public, f"new: request {number}")
     say(public, "and more", id="q1")
 
     card = card_of(connector)
-    titles = [t for t in card_buttons(card) if t != "A new request"]
-    assert len(titles) == 5 and "Showing 5 of your 7" in json.dumps(card)
-    assert any("request 6" in t for t in titles) and not any("request 0" in t for t in titles)
+    titles = [t for t in card_buttons(card) if t.startswith("Add to")]
+    assert len(titles) == 5 and "Showing 1 to 5 of your 7" in json.dumps(card) and "Show more" in card_buttons(card)
+    assert "request 6" in json.dumps(card) and "request 0" not in json.dumps(card)
 
 
 def test_a_message_too_long_to_hold_while_asking_says_what_to_do(public, connector, db_session, ann):
     two_open(public, db_session)
     say(public, "z" * 4000)
     assert last_text(connector) == teams_intake.TOO_LONG_TO_ASK and len(tickets(db_session)) == 2
-
-
-def test_files_sent_while_a_card_asks_are_not_fetched_and_the_person_is_told(public, connector, db_session, ann, monkeypatch):
-    two_open(public, db_session)
-    monkeypatch.setattr(bot_connector, "fetch_file", lambda *a, **k: pytest.fail("fetched"))
-    say(public, "Photo of the error", attachments=[file_info("err.png")])
-    assert teams_intake.FILES_NOT_KEPT_WHILE_ASKING in json.dumps(card_of(connector))
 
 
 # ---- Resolved and closed tickets -------------------------------------------------------------------------
@@ -377,10 +384,11 @@ def test_anything_else_after_resolution_asks_and_choosing_the_ticket_reopens_it(
     ticket = resolved_ticket(public, db_session)
 
     say(public, "It is jammed again")
-    buttons = card_buttons(card_of(connector))
-    assert f"{ticket.reference}: Printer is jammed (resolved, reopens)" in buttons
+    card = card_of(connector)
+    buttons = card_buttons(card)
+    assert "adding to it reopens it" in json.dumps(card)
     assert tickets(db_session)[0].status == TicketStatus.RESOLVED  # nothing yet
-    answer = press(public, buttons[f"{ticket.reference}: Printer is jammed (resolved, reopens)"])
+    answer = press(public, buttons[f"Add to {ticket.reference}"])
 
     assert "It has been reopened." in json.dumps(answer["value"])
     assert tickets(db_session)[0].status in (TicketStatus.OPEN, TicketStatus.IN_PROGRESS)
@@ -432,14 +440,14 @@ def test_an_agents_email_to_a_teams_requester_goes_to_teams_and_by_email_and_is_
     sent_message = messages.email_requester(db_session, ticket, agent, "Please power it off and on")
     db_session.commit()
 
-    assert [r.kind for r in db_session.exec(select(OutboundEmail)).all()] == ["reply"]  # the email still goes
+    assert db_session.exec(select(OutboundEmail)).all() == []  # Teams only, the default: the email does not go (tests/test_teams_followups.py)
     [post_row] = db_session.exec(select(TeamsPost)).all()
     assert (post_row.kind, post_row.message_id, post_row.ticket_id) == ("requester_message", sent_message.id, ticket.id)
     sent = Sent()
     assert sent.deliver(db_session) == (1, 0)
     [delivery] = sent.direct
     assert (delivery.service_url, delivery.conversation_id, delivery.card) == (SERVICE, "a:conv-1", None)
-    assert delivery.text == f"[{ticket.reference}] Printer is jammed\n\nPlease power it off and on"
+    assert delivery.text == f"[{ticket.reference}] Printer is jammed\n\nPlease power it off and on\n\nOpen in the portal: https://tickets.example.org/portal/{ticket.number}"
     assert db_session.get(Ticket, ticket.id).first_responded_at is not None
     assert db_session.exec(select(TeamsPost)).one().sent_at is not None
 
@@ -456,7 +464,7 @@ def test_the_text_is_sent_as_a_plain_message_into_the_persons_chat(public, conne
     request = connector.requests[0]
     assert str(request.url) == "https://smba.example.net/emea/v3/conversations/a%3Aconv-1/activities"
     body = json.loads(request.content)
-    assert body["textFormat"] == "plain" and body["text"].endswith("See *this* [link](https://x.example)")
+    assert body["textFormat"] == "plain" and "See *this* [link](https://x.example)" in body["text"]
 
 
 def test_with_mail_off_the_teams_message_still_goes(public, db_session, ann):
@@ -930,7 +938,7 @@ def test_the_parts_of_a_split_request_are_not_conversations_of_their_own(public,
 
     say(public, "It is on floor 3")
 
-    assert replies(connector)[-1] == ("text", f"Added to {original.reference}.")  # no card: one conversation
+    assert f"Added to {original.reference}." in json.dumps(card_of(connector)) and "Action.Execute" in json.dumps(card_of(connector))  # no question: one conversation
     assert len(messages_of(db_session, original)) == 2
 
 

@@ -64,6 +64,7 @@ class Settings(BaseSettings):
     teams_bot_client_secret: str = ""
     # The public route, per caller address per minute, per replica. Teams sends from few addresses.
     rate_limit_teams_bot_per_minute: int = 600
+    rate_limit_legal_per_minute: int = 60
     # Messages one person may send the bot in a minute before it stops answering (app/teams_intake.py), per replica; the
     # hourly cap on tickets and replies is the admin setting.
     rate_limit_teams_person_per_minute: int = 20

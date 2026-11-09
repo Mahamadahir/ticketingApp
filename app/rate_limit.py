@@ -72,6 +72,7 @@ ACTION_LINKS = RateLimiter(lambda: settings.rate_limit_action_links_per_minute)
 WEBHOOK = RateLimiter(lambda: settings.rate_limit_webhook_per_minute)
 BREAK_GLASS = RateLimiter(lambda: settings.rate_limit_break_glass_per_minute)
 EMERGENCY = RateLimiter(lambda: settings.rate_limit_emergency_per_minute)
+LEGAL = RateLimiter(lambda: settings.rate_limit_legal_per_minute)  # the privacy and terms pages (app/routers/legal.py)
 TEAMS_BOT = RateLimiter(lambda: settings.rate_limit_teams_bot_per_minute)
 TEAMS_PERSON = RateLimiter(lambda: settings.rate_limit_teams_person_per_minute)  # one person's messages to the bot (app/teams_intake.py)
 TEAMS_PERSON_NOTICE = RateLimiter(lambda: 1)  # and the "slow down" answer to them: at most one a minute
