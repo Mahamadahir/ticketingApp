@@ -4235,6 +4235,7 @@
         "app.notifications",
         "app.sessions",
         "app.settings_store",
+        "app.teams_conversations",
         "app.templating",
         "app.time_zones"
       ],
@@ -5388,6 +5389,7 @@
       "file": "app/teams.py",
       "functions": [
         "backoff_minutes",
+        "can_deliver",
         "deliver_pending",
         "describe_failure",
         "give_up",
@@ -5513,6 +5515,7 @@
         "save_reference"
       ],
       "imported_by": [
+        "app.routers.my_settings",
         "app.teams",
         "app.teams_bot"
       ],

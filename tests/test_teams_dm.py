@@ -168,8 +168,16 @@ def test_with_no_conversation_and_the_channel_off_the_copy_is_dropped_when_hande
 
     assert posts(db_session) == []  # no failed row left in the outbox for a person who was never reachable
     assert db_session.get(type(n), n.id).teams_handled_at is not None
-    teams_copies(db_session)  # the job passes can_deliver itself
-    assert posts(db_session) == []
+
+
+def test_the_job_drops_copies_for_people_who_cannot_be_reached(client, db_session, bot):
+    bob, _ = an_agent(client, db_session)
+    n = due_notification(db_session, bob)
+
+    teams_copies(db_session)
+    db_session.commit()
+
+    assert posts(db_session) == [] and db_session.get(type(n), n.id).teams_handled_at is not None
 
 
 def test_a_queued_copy_whose_route_has_gone_is_given_up_with_its_reason(client, db_session, bot):

@@ -1164,7 +1164,7 @@ A person's own settings (phase 2B): which channels they want for which events. A
 File: `app/routers/my_settings.py`
 - Functions: `emergency_password_page`, `notification_settings`, `report_browser_time_zone`, `save_emergency_password`, `save_notification_settings`, `save_time_zone`, `sign_out_everywhere`
 - Routes: GET `/settings/emergency-password`, POST `/settings/emergency-password`, GET `/settings/notifications`, POST `/settings/notifications`, POST `/settings/sign-out-everywhere`, POST `/settings/time-zone`, POST `/settings/time-zone/browser`
-- Imports: `app.audit`, `app.auth`, `app.config`, `app.database`, `app.emergency`, `app.models`, `app.notification_settings`, `app.notifications`, `app.sessions`, `app.settings_store`, `app.templating`, `app.time_zones`
+- Imports: `app.audit`, `app.auth`, `app.config`, `app.database`, `app.emergency`, `app.models`, `app.notification_settings`, `app.notifications`, `app.sessions`, `app.settings_store`, `app.teams_conversations`, `app.templating`, `app.time_zones`
 - Imported by: `app.main`
 - Tests: none
 
@@ -1351,7 +1351,7 @@ Teams channel posts (phase 2D): a card in the support channel for each new ticke
 File: `app/teams.py`
 
 - Classes: `BotDelivery`, `Unsendable`
-- Functions: `backoff_minutes`, `deliver_pending`, `describe_failure`, `give_up`, `is_permanent`, `mention_name`, `message`, `new_ticket_card`, `new_ticket_post`, `notification_card`, `notification_post`, `notifications_on`, `plain`, `post_card`, `queue_new_ticket`, `queue_notification`, `record_failure`, `route_for`, `send_bot`, `ticket_link`
+- Functions: `backoff_minutes`, `can_deliver`, `deliver_pending`, `describe_failure`, `give_up`, `is_permanent`, `mention_name`, `message`, `new_ticket_card`, `new_ticket_post`, `notification_card`, `notification_post`, `notifications_on`, `plain`, `post_card`, `queue_new_ticket`, `queue_notification`, `record_failure`, `route_for`, `send_bot`, `ticket_link`
 - Imports: `app.bot_cards`, `app.bot_connector`, `app.config`, `app.models`, `app.notifications`, `app.teams_conversations`, `app.visibility`
 - Imported by: `app.approval_reminders`, `app.auto_close_chase`, `app.bot_cards`, `app.bot_connector`, `app.inbound`, `app.jobs`, `app.linked_identities`, `app.mail`, `app.routers.admin`, `app.ticket_service`
 - Tests: `test_anonymisation.py`, `test_approval_reminders.py`, `test_auto_close_chase.py`, `test_inbound_mail.py`, `test_linked_identities.py`, `test_outbound_mail.py`, `test_teams.py`, `test_teams_bot.py`, `test_teams_copy_sending.py`, `test_teams_dm.py`, `test_wiring_3f.py`, `test_withdraw.py`
@@ -1384,7 +1384,7 @@ The Teams bot's conversation store (phase 8A): where to reach each person as the
 File: `app/teams_conversations.py`
 - Functions: `conversation_ref`, `reference_for`, `remove_reference`, `save_reference`
 - Imports: `app.audit`, `app.bot_connector`, `app.identity`, `app.models`
-- Imported by: `app.teams`, `app.teams_bot`
+- Imported by: `app.routers.my_settings`, `app.teams`, `app.teams_bot`
 - Tests: `test_teams_bot.py`
 
 ### `app.telemetry`
