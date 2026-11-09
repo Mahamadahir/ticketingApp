@@ -18,6 +18,7 @@ connect) is retried twice with a short wait that honours Retry-After, so a blip 
 outages are the outbox's job: the worker's rows wait 2, 4, 8 ... 60 minutes.
 """
 
+import ipaddress
 import logging
 import threading
 import time
@@ -228,3 +229,59 @@ def create_conversation(service_url: str, teams_user_id: str, tenant_id: Optiona
     if not conversation_id:
         raise ValueError("The Bot Connector did not return a conversation")
     return ConversationRef(service_url, conversation_id)
+
+
+def _is_ip(host: str) -> bool:
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return True
+
+
+def get_member(service_url: str, conversation_id: str, teams_user_id: str) -> dict:
+    """One member of a conversation as Teams knows them (a TeamsChannelAccount: `name`, `email`, `userPrincipalName`,
+    `objectId`). The only way to learn the address of a person who has no account here yet, from the chat they wrote in.
+    No Graph permission is needed: it is the bot's own token on the Bot Connector."""
+    ref = ConversationRef(service_url, conversation_id)
+    result = call("GET", _conversation_url(ref, "members", teams_user_id))
+    return result if isinstance(result, dict) else {}
+
+
+class FileRefused(Exception):
+    """A file Teams offered could not be taken: not an https address, larger than the limit, or no longer there."""
+
+
+FILE_TIMEOUT_SECONDS = 30
+FILE_CHUNK = 64 * 1024
+
+
+def fetch_file(url: str, max_bytes: int, *, service_url: Optional[str] = None) -> bytes:
+    """Downloads a file a person sent the bot, never more than `max_bytes`. Raises FileRefused when it cannot be taken
+    and the httpx error for a failure of the network. Redirects are not followed.
+
+    Teams gives two kinds of address. A file download address (`file.download.info`) is pre-authenticated and is fetched
+    with no credential at all. A picture pasted into the chat has a `contentUrl` on the Bot Connector's own host (the
+    activity's service address), and only that one is fetched with the bot's token: the token is never sent to any other
+    host. Both must be https and a name, not an IP address."""
+    parts = urlsplit(url or "")
+    host = (parts.hostname or "").lower()
+    if parts.scheme != "https" or not host or parts.username or parts.password or _is_ip(host):
+        raise FileRefused("The file address is not an https address")
+    headers = {}
+    if service_url and host == (urlsplit(service_url).hostname or "").lower():
+        headers["Authorization"] = f"Bearer {TOKENS.get()}"
+    data = bytearray()
+    with httpx.Client(timeout=FILE_TIMEOUT_SECONDS, follow_redirects=False) as client:
+        with client.stream("GET", url, headers=headers) as response:
+            if response.status_code in (404, 410):
+                raise FileRefused("no longer available")
+            response.raise_for_status()
+            declared = response.headers.get("Content-Length")
+            if declared and declared.isdigit() and int(declared) > max_bytes:
+                raise FileRefused("larger than the limit")
+            for chunk in response.iter_bytes(FILE_CHUNK):
+                data += chunk
+                if len(data) > max_bytes:
+                    raise FileRefused("larger than the limit")
+    return bytes(data)

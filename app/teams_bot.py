@@ -7,7 +7,7 @@ a handler and nothing else:
 
     @handler("invoke")          # 8C: the Approve / Reject buttons on a card
     def approval_buttons(session, activity): ...
-    @handler("message")         # 8D: intake from a direct message (this module's handler for it replies politely)
+    @handler("message")         # 8D: intake from a direct message (app/teams_intake.py)
 
 A handler gets the database session and the activity (already authenticated, from our tenant) and returns the
 body to answer with, or None. It commits its own work before it calls Teams (a reply is a slow call that must not
@@ -15,9 +15,9 @@ hold a transaction open). Types with no handler are accepted and ignored: Teams 
 anything but a 2xx makes it retry. A handler that calls Teams back (a reply) does it in `Handled.after`, which runs once the answer has been sent. Sending out is app/bot_connector.py; who is reachable is
 app/teams_conversations.py.
 
-What 8A handles: `installationUpdate` (the app was added to a person's personal scope, or removed: store or forget
-their conversation) and `message` (store the conversation, answer that nothing is read yet). Only the personal
-scope is served; teams and group chats are ignored.
+What it handles: `installationUpdate` (the app was added to a person's personal scope, or removed: store or forget
+their conversation), `message` (store the conversation, then intake: app/teams_intake.py) and `invoke` (a card button).
+Only the personal scope is served; teams and group chats are ignored.
 """
 
 import logging
@@ -49,7 +49,6 @@ Handler = Callable[[Session, dict], Optional[Handled]]
 HANDLERS: dict[str, Handler] = {}
 
 PERSONAL = "personal"
-MESSAGE_NOT_READ_YET = "I send you ticket updates here. I can't read replies yet, so please use the ticketing site for now."
 
 
 def handler(activity_type: str) -> Callable[[Handler], Handler]:
@@ -126,19 +125,33 @@ def installation_update(session: Session, activity: dict) -> Optional[Handled]:
 
 @handler("message")
 def message(session: Session, activity: dict) -> Optional[Handled]:
+    """A direct message to the bot (8D, app/teams_intake.py): the conversation is stored, then the message raises a ticket,
+    is added to one, or asks which."""
     if not _is_personal(activity):
         return None
     stored = _store(session, activity)
     session.commit()
-    return Handled(after=lambda: _reply(activity, MESSAGE_NOT_READ_YET)) if stored else None
+    if not stored:
+        return None
+    from app.teams_intake import answer  # imported here: it needs the cards and the ticket code, which need this module
+
+    return answer(session, activity)
 
 
 @handler("invoke")
 def invoke(session: Session, activity: dict) -> Optional[Handled]:
-    """A card button was pressed (8C, app/teams_approvals.py). Answered in the response itself: nothing slow is done."""
-    from app.teams_approvals import answer  # imported here: it needs the cards, which need the notifications
+    """A card button was pressed. The choice of ticket for a message (8D, app/teams_intake.py) and the approval buttons
+    (8C, app/teams_approvals.py) are answered in the response itself: nothing slow is done."""
+    from app.bot_cards import VERB_NEW, VERB_PICK  # imported here: the cards need the notifications
 
-    body = answer(session, activity)
+    if _text(_sub(activity, "value", "action", "verb")) in (VERB_PICK, VERB_NEW):
+        from app.teams_intake import answer_card
+
+        body = answer_card(session, activity)
+    else:
+        from app.teams_approvals import answer
+
+        body = answer(session, activity)
     return Handled(body=body) if body is not None else None
 
 

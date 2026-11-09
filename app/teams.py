@@ -26,12 +26,13 @@ from sqlalchemy import or_
 from sqlmodel import Session, select
 
 from app.config import settings
-from app.models import Notification, TeamsPost, Ticket, TicketSource, User
+from app.models import Message, Notification, TeamsPost, Ticket, TicketSource, User
 from app.notifications import PORTAL_KINDS, can_be_told_about, notification_text
 
 log = logging.getLogger("app.teams")
 
 NEW_TICKET = "new_ticket"
+REQUESTER_MESSAGE = "requester_message"  # a public message on a ticket raised in Teams, passed to the requester's chat with the bot (8D)
 NOTIFICATION = "notification"  # a person's unread notification: a direct message from the bot, else a post that @mentions them
 DIRECT = "direct"
 CHANNEL = "channel"
@@ -59,6 +60,25 @@ def queue_new_ticket(session: Session, ticket: Ticket) -> Optional[TeamsPost]:
     if not settings.teams_new_ticket_enabled:
         return None
     post = TeamsPost(kind=NEW_TICKET, ticket_id=ticket.id)
+    session.add(post)
+    return post
+
+
+def queue_requester_message(session: Session, message: Message, ticket: Ticket) -> Optional[TeamsPost]:
+    """Queues a public message on a ticket the requester raised in Teams (an agent's "Email user", an automatic notice) to
+    go to them in their chat with the bot as well as by email. Only when the bot is on and the person has a chat with it
+    (a person with none is not left a failed row). Which messages may go is decided again when it is sent
+    (`requester_message_post`). One post per message, enforced by the database. Does not commit."""
+    if ticket.source != TicketSource.TEAMS or not settings.teams_bot_configured:
+        return None
+    from app.identity import person_for_address  # imported here: identity needs the models only, but keep this module light
+    from app.teams_conversations import reference_for
+
+    person = person_for_address(session, ticket.requester_email)
+    if person is None or reference_for(session, person) is None:
+        return None
+    session.flush()  # the message needs its id
+    post = TeamsPost(kind=REQUESTER_MESSAGE, ticket_id=ticket.id, message_id=message.id)
     session.add(post)
     return post
 
@@ -216,11 +236,13 @@ def notification_card(notification: Notification, person: User, ticket: Optional
 @dataclass(frozen=True)
 class BotDelivery:
     """What a builder returns when the post goes to a person as a direct message from the bot, rather than to the
-    channel webhook: where the conversation is, and the Adaptive Card itself (not the Workflows payload)."""
+    channel webhook: where the conversation is, and the Adaptive Card itself (not the Workflows payload) or, for a
+    message written by a person, plain text."""
 
     service_url: str
     conversation_id: str
-    card: dict
+    card: Optional[dict] = None
+    text: Optional[str] = None  # a plain text message instead of a card (an agent's reply to a requester, 8D)
 
 
 def notifications_on() -> bool:
@@ -288,11 +310,45 @@ def notification_post(session: Session, post: TeamsPost):
     raise Unsendable("No Teams conversation with the bot, and notifications to the channel are switched off")
 
 
+def requester_message_post(session: Session, post: TeamsPost) -> "BotDelivery":
+    """The text of a message for the requester, under the ticket's reference so they can tell which request it is about.
+    The same rules as the email (app/mail.py build_message_mail): the ticket is triaged and the message is one the
+    requester may see (`requester_visible_messages`, so an internal note can never go); and the person is a real, active
+    one with a chat. Only their own chat: never the channel."""
+    from app.action_links import put_links_in
+    from app.identity import person_for_address
+    from app.messages import is_triaged, mail_subject, requester_visible_messages
+    from app.person_data import is_placeholder_address
+    from app.teams_conversations import reference_for
+
+    if not settings.teams_bot_configured:
+        raise Unsendable("The Teams bot is switched off")
+    message = session.get(Message, post.message_id) if post.message_id else None
+    ticket = session.get(Ticket, post.ticket_id) if post.ticket_id else None
+    if message is None or ticket is None or message.ticket_id != ticket.id:
+        raise Unsendable("Message not found")
+    if not is_triaged(ticket):
+        raise Unsendable("The ticket has not been triaged yet")
+    if message.id not in {m.id for m in requester_visible_messages(session, ticket)}:
+        raise Unsendable("The requester may not see this message")
+    if is_placeholder_address(ticket.requester_email):
+        raise Unsendable("The person was anonymised")
+    person = person_for_address(session, ticket.requester_email)
+    if person is None or not person.is_active:
+        raise Unsendable("The person is not active")
+    conversation = reference_for(session, person)
+    if conversation is None:
+        raise Unsendable("No conversation with the bot")
+    body = put_links_in(session, ticket, message.body)
+    return BotDelivery(conversation.service_url, conversation.conversation_id, text=f"{mail_subject(session, ticket)}\n\n{body}")
+
+
 # One builder per kind of post: it turns the row into the payload to send, or raises Unsendable.
 # A new kind of post is one builder and one entry here; sending, backoff and giving up are shared.
 CARD_BUILDERS: dict[str, Callable[[Session, TeamsPost], "dict | BotDelivery"]] = {
     NEW_TICKET: new_ticket_post,
     NOTIFICATION: notification_post,
+    REQUESTER_MESSAGE: requester_message_post,
 }
 
 
@@ -320,9 +376,13 @@ def give_up(post: TeamsPost, reason: str) -> None:
 def send_bot(delivery: BotDelivery) -> None:
     """Sends one direct message through the Bot Connector (app/bot_connector.py). Raises on any failure; the outbox
     records it like a webhook failure (never the token or the address)."""
-    from app.bot_connector import ConversationRef, send_card  # imported here: bot_connector imports this module
+    from app.bot_connector import ConversationRef, send_card, send_text  # imported here: bot_connector imports this module
 
-    send_card(ConversationRef(delivery.service_url, delivery.conversation_id), delivery.card)
+    ref = ConversationRef(delivery.service_url, delivery.conversation_id)
+    if delivery.text is not None:
+        send_text(ref, delivery.text)
+    else:
+        send_card(ref, delivery.card)
 
 
 def deliver_pending(

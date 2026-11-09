@@ -30,6 +30,7 @@ from app.models import (
 from app.request_questions import answer_rows
 from app.notifications import notify_agent_emailed, notify_reply
 from app.sla import note_first_response
+from app.teams import queue_requester_message
 from app.ticket_service import NotTriaged
 from app.visibility import Access, is_untriaged, ticket_access, visible_ticket_condition
 
@@ -220,6 +221,7 @@ def email_requester(
         direction=MessageDirection.OUTBOUND, visibility=MessageVisibility.PUBLIC, cc=cc,
     )
     queue_message(session, message, ticket)
+    queue_requester_message(session, message, ticket)
     if bell:
         notify_agent_emailed(session, ticket, author.email)
     return message
@@ -238,6 +240,7 @@ def record_notice(session: Session, ticket: Ticket, body: str, copy_followers: b
         direction=MessageDirection.OUTBOUND, visibility=MessageVisibility.PUBLIC, cc=cc,
     )
     queue_message(session, message, ticket)
+    queue_requester_message(session, message, ticket)
     return message
 
 
