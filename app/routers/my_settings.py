@@ -31,9 +31,12 @@ router = APIRouter(prefix="/settings", tags=["settings"])
 
 
 def _channels() -> dict:
-    """The channel labels, with Teams no longer marked "not connected yet" once sending to Teams is on."""
+    """The channel labels, with Teams no longer marked "not connected yet" once sending to Teams is on, and called
+    "Teams (direct message)" when the bot is on (it sends to the person's chat with the bot)."""
     channels = dict(CHANNELS)
-    if settings.teams_notifications_enabled:
+    if settings.teams_bot_configured:
+        channels[TEAMS] = ("Teams (direct message)", None)
+    elif settings.teams_notifications_enabled:
         channels[TEAMS] = (CHANNELS[TEAMS][0], None)
     return channels
 

@@ -335,7 +335,7 @@ def hand_to_teams(
     limit: int = TEAMS_BATCH,
 ) -> tuple[int, int]:
     """Hands each due notification to `enqueue` (which writes the Teams post) and marks it dealt with.
-    A notification is dropped, not sent, if the person has since turned Teams off for that event or can
+    A notification is dropped, not sent, if the person has since become inactive, turned Teams off for that event or can
     no longer open its ticket (a Teams message would say what the ticket is). Returns (handed, dropped).
     Does not commit; the worker commits after the job. If `enqueue` raises, nothing from this run is kept."""
     now = now or datetime.now(timezone.utc)
@@ -344,7 +344,7 @@ def hand_to_teams(
     for notification in due_for_teams(session, now, limit):
         person = session.get(User, notification.user_id)
         ticket = session.get(Ticket, notification.ticket_id) if notification.ticket_id else None
-        still_wanted = offers(notification.kind, TEAMS) and is_enabled(session, person, notification.kind, TEAMS)
+        still_wanted = person.is_active and offers(notification.kind, TEAMS) and is_enabled(session, person, notification.kind, TEAMS)
         can_open = notification.ticket_id is None or (ticket is not None and _can_open(session, person, ticket))
         if still_wanted and can_open:
             enqueue(session, notification)
