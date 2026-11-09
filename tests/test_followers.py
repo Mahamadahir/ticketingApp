@@ -472,8 +472,9 @@ def test_a_follower_reply_reaches_the_agents_labelled_as_from_a_follower(client,
     agent_for(client, db_session, team)
     page = client.get(f"/tickets/{ticket.number}").text
     assert page.index("From the requester") < page.index("From the boss")
-    requester_part = page.split("From the requester")[0].rsplit("<b>", 1)[1]
-    follower_part = page.split("From the boss")[0].rsplit("<b>", 1)[1]
+    # The label is the kind chip of the message card the body sits in.
+    requester_part = page.split("From the requester")[0].rsplit('<span class="chip', 1)[1].split(">", 1)[1].strip()
+    follower_part = page.split("From the boss")[0].rsplit('<span class="chip', 1)[1].split(">", 1)[1].strip()
     assert requester_part.startswith("From requester") and follower_part.startswith("From follower")
     db_session.expire_all()
     assert db_session.get(Ticket, ticket.id).updated_at > before

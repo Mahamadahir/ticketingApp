@@ -230,6 +230,123 @@ label { cursor: pointer; }
 .subj:hover { color: var(--accent); text-decoration: underline; }
 .queue-bulk { margin: 12px 0 0; }
 
+/* The agent ticket page (9C). Page-specific classes are all .tp-*, scoped under .tp. */
+.tp { display: flex; flex-direction: column; gap: 16px; }
+.tp-crumbs { margin: 0; font-size: 13px; }
+.tp-head { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
+.tp-title { flex: 1 1 420px; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.tp-title h1 { margin: 0; overflow-wrap: anywhere; }
+.tp-title p { margin: 0; }
+.tp-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.tp-banner { margin: 0; padding: 10px 14px; background: var(--raised); border: 1px solid var(--border); border-radius: var(--radius); }
+
+.tp-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
+.tp-actions > form { margin: 0; }
+.tp-action { position: relative; }
+.tp-action > summary { list-style: none; user-select: none; }
+.tp-action > summary::-webkit-details-marker { display: none; }
+.tp-action[open] > summary:not(.btn-primary) { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.tp-panel {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; width: min(400px, calc(100vw - 32px));
+  max-height: min(75vh, 720px); overflow: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+.tp-panel-wide { width: min(480px, calc(100vw - 32px)); }
+.tp-panel p { margin: 0; }
+
+.tp-menu { display: flex; flex-direction: column; gap: 4px; margin: -6px; }
+.tp-item { border-radius: var(--radius); }
+.tp-item > summary { cursor: pointer; padding: 8px 10px; border-radius: var(--radius); font-weight: 600; list-style: none; display: flex; justify-content: space-between; align-items: center; }
+.tp-item > summary::-webkit-details-marker { display: none; }
+.tp-item > summary::after { content: "+"; color: var(--muted); font-weight: 400; }
+.tp-item[open] > summary::after { content: "\2212"; }
+.tp-item > summary:hover { background: var(--raised); }
+.tp-item-body { padding: 4px 10px 12px; display: flex; flex-direction: column; gap: 10px; }
+.tp-status-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.tp-form { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+.tp-form > *, .tp-form .tp-item-body { max-width: 100%; }
+.tp-form label {
+  display: flex; flex-direction: column; gap: 4px; width: 100%; font-size: 12px; font-weight: 600; color: var(--muted);
+}
+.tp-form label:has(> input[type="checkbox"]), .tp-form label:has(> input[type="radio"]) {
+  flex-direction: row; align-items: flex-start; gap: 8px; font-size: 14px; font-weight: 400; color: var(--text);
+}
+.tp-form label > input:not([type="checkbox"]):not([type="radio"]), .tp-form label > select, .tp-form label > textarea,
+.tp-form > input, .tp-form > select { font-size: 14px; font-weight: 500; color: var(--text); width: 100%; }
+.tp-form fieldset, .tp-form > .tp-item { width: 100%; margin: 0; }
+.tp-form fieldset label { margin: 0; }
+.tp-form > div { width: 100%; }
+.tp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; width: 100%; }
+
+.tp-body { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
+.tp-main { flex: 999 1 520px; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+.tp-side { flex: 1 1 300px; max-width: 380px; min-width: 260px; display: flex; flex-direction: column; gap: 14px; }
+.tp-card h2, .tp-triage h2, .tp-main > .card h2 {
+  margin: 0 0 12px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-weight: 700;
+}
+.tp-card .note { margin: 0 0 10px; }
+.tp-sub { margin: 14px 0 8px; font-size: 13px; color: var(--muted); }
+.tp-dl { grid-template-columns: minmax(0, 84px) minmax(0, 1fr); gap: 10px 12px; font-size: 13px; }
+.tp-dl dd { font-weight: 500; }
+.tp-rows { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.tp-rows li { display: flex; justify-content: space-between; gap: 8px; align-items: center; overflow-wrap: anywhere; }
+.tp-rows .btn { min-height: 28px; padding: 0 10px; flex: none; white-space: nowrap; }
+.tp-rows li > span:first-child { min-width: 0; }
+.tp-list { margin: 8px 0; padding-left: 18px; }
+.tp-inline-add { flex-direction: row; flex-wrap: wrap; align-items: stretch; }
+.tp-inline-add > input { flex: 1 1 160px; width: auto; }
+.tp-approvals { min-width: 0; font-size: 13px; }
+.tp-card .sla { margin: 10px 0 0; font-size: 13px; }
+
+/* The composer: two radios (visually hidden, keyboard-usable) pick which panel shows. */
+.tp-composer { display: flex; flex-direction: column; gap: 12px; padding: 14px; position: relative; }
+.tp-segmented { align-self: flex-start; }
+.tp-segmented label {
+  min-height: 32px; padding: 0 14px; border-radius: 6px; color: var(--muted); font-weight: 600; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+#mode-email:checked ~ .tp-segmented label[for="mode-email"], #mode-note:checked ~ .tp-segmented label[for="mode-note"] {
+  background: var(--accent-soft); color: var(--accent);
+}
+#mode-email:focus-visible ~ .tp-segmented label[for="mode-email"], #mode-note:focus-visible ~ .tp-segmented label[for="mode-note"] {
+  outline: 2px solid var(--focus); outline-offset: 2px;
+}
+#mode-note:checked ~ .tp-compose-email, #mode-email:checked ~ .tp-compose-note { display: none; }
+.tp-composer .sr-only { top: 0; left: 0; }
+.tp-hint { margin: 0; font-size: 13px; color: var(--muted); }
+.tp-compose-note textarea { background: var(--note-bg); border-color: var(--note-border); }
+.tp-compose-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+.tp-compose-row .btn-primary { margin-left: auto; }
+.tp-compose-row label { width: auto; }
+.tp-canned select, .tp-status select { height: 38px; }
+/* The Due date boxes matter only for Scheduled, so they show once it is picked (they are always in the form). */
+.tp-due { display: none; width: 100%; gap: 10px; flex-wrap: wrap; }
+.tp-compose-row:has(select[name="next_status"] option[value="scheduled"]:checked) .tp-due { display: flex; }
+.tp-due label { flex: 1 1 200px; }
+
+/* The timeline */
+.tp-thread { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.tp-msg { border: 1px solid var(--border); background: var(--surface); border-radius: var(--radius-lg); padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
+.tp-msg-note { background: var(--note-bg); border-color: var(--note-border); border-left: 4px solid var(--amber); }
+.tp-msg-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.tp-avatar { width: 30px; height: 30px; font-size: 12px; }
+.tp-who { font-weight: 600; overflow-wrap: anywhere; }
+.tp-when { margin-left: auto; color: var(--muted); font-size: 13px; white-space: nowrap; }
+.tp-msg-body { line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.tp-files { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.tp-event { display: flex; gap: 10px; align-items: center; padding: 2px 6px; margin: 0; color: var(--muted); font-size: 13px; }
+.tp-dot { flex: none; width: 8px; height: 8px; border-radius: 999px; background: var(--border); }
+
+/* Where the header can wrap, a floating panel could open off the left edge, so it opens in the flow instead. */
+@media (max-width: 1280px) {
+  .tp-panel, .tp-panel-wide { position: static; width: 100%; max-height: none; margin-top: 6px; box-shadow: none; }
+  .tp-action[open] { flex: 1 1 100%; }
+}
+@media (max-width: 720px) {
+  .tp-side { max-width: none; }
+}
+
 /* ---- Older page classes, mapped onto the tokens (restyled page by page in 9B onwards) ----------------------- */
 
 .user-chip { color: var(--muted); font-size: 0.85rem; }

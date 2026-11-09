@@ -409,6 +409,7 @@
         "blob_key",
         "clean_filename",
         "detect_content_type",
+        "files_by_message",
         "is_inline_type",
         "lock_blob",
         "serving_headers",
@@ -420,6 +421,7 @@
         "app.inbound",
         "app.intake",
         "app.routers.attachments",
+        "app.routers.tickets",
         "app.subject_access",
         "app.teams_intake",
         "app.teams_pending"
@@ -427,7 +429,8 @@
       "imports": [
         "app.config",
         "app.models",
-        "app.storage"
+        "app.storage",
+        "app.visibility"
       ],
       "module": "app.attachments",
       "routes": [],
@@ -2488,6 +2491,7 @@
         "tests/test_teams_intake.py",
         "tests/test_thanks_rules.py",
         "tests/test_ticket_core.py",
+        "tests/test_ticket_page.py",
         "tests/test_ticket_urls.py",
         "tests/test_tickets_rbac.py",
         "tests/test_time_zones.py",
@@ -4836,6 +4840,7 @@
       ],
       "imports": [
         "app.approvals",
+        "app.attachments",
         "app.audit",
         "app.auth",
         "app.backdating",
@@ -5353,6 +5358,7 @@
         "Level",
         "Priority",
         "QueueSla",
+        "SlaRow",
         "SlaView"
       ],
       "file": "app/sla.py",
@@ -5368,6 +5374,7 @@
         "queue_sla",
         "recalculate_deadlines",
         "set_impact_urgency",
+        "sla_rows",
         "sla_view",
         "target_minutes",
         "urgency_options"
@@ -5403,6 +5410,7 @@
         "tests/test_resolution.py",
         "tests/test_scheduled_status.py",
         "tests/test_sla.py",
+        "tests/test_ticket_page.py",
         "tests/test_with_supplier.py"
       ]
     },
@@ -6024,7 +6032,9 @@
       "routes": [],
       "summary": "The one place the Jinja2 environment is built, so every router renders the same way.",
       "tables": [],
-      "tests": []
+      "tests": [
+        "tests/test_ticket_page.py"
+      ]
     },
     {
       "classes": [
@@ -6312,6 +6322,7 @@
         "visible_ticket_condition"
       ],
       "imported_by": [
+        "app.attachments",
         "app.auth",
         "app.bulk_resolve",
         "app.feedback",
@@ -6957,6 +6968,7 @@
     "tests/test_teams_intake.py",
     "tests/test_thanks_rules.py",
     "tests/test_ticket_core.py",
+    "tests/test_ticket_page.py",
     "tests/test_ticket_urls.py",
     "tests/test_tickets_rbac.py",
     "tests/test_time_zones.py",

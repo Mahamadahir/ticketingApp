@@ -95,6 +95,7 @@ from app.messages import (
     status_choices,
 )
 from app.models import FINISHED_STATUSES, CannedResponse, Category, Message, RequestType, Team, Ticket, TicketSource, TicketStatus, TicketType, User, UserRole
+from app.attachments import files_by_message
 from app.pagination import paginate
 from app.team_activity import KIND_LABELS, Kind, describe as describe_activity, feed_query
 from app.sla import (
@@ -105,6 +106,7 @@ from app.sla import (
     describe_priority,
     queue_order,
     queue_sla,
+    sla_rows,
     set_impact_urgency,
     sla_view,
 )
@@ -1647,6 +1649,10 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
         else sub_tickets_summary(session, ticket, visible_ticket_condition(user, levels))
     )
 
+    now = datetime.now(timezone.utc)
+    at_risk = at_risk_percent(session)
+    sla_now = sla_view(ticket, now, at_risk)
+
     return templates.TemplateResponse(
         request,
         "ticket_detail.html",
@@ -1720,7 +1726,10 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             "can_link": can_work and ticket.triaged_at is not None and linked_total == 0,
             "impact_options": impact_options(),
             "urgency_options": urgency_options(),
-            "sla": sla_view(ticket, datetime.now(timezone.utc), at_risk_percent(session)),
+            "sla": sla_now,
+            "sla_chip": queue_sla(ticket, sla_now, now),
+            "sla_rows": sla_rows(ticket, now, at_risk),
+            "message_files": files_by_message(session, user, levels, [i.message for i in timeline if i.message is not None]),
             "moment_format": MOMENT_FORMAT,
             "can_backdate": may_backdate(ticket),
             "can_set_required_by": (offers_required_by(session, ticket) or ticket.required_by is not None)

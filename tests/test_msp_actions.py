@@ -559,7 +559,7 @@ def test_a_taken_back_ticket_is_on_hold_until_released_and_the_handoff_skips_it(
     db_session.refresh(ticket)
     assert ticket.status == TicketStatus.IN_PROGRESS and ticket.msp_hold is True
     assert "on hold" in events(db_session, ticket, "msp_hold")[0].detail
-    assert "on MSP hold" in client.get(f"/tickets/{ticket.number}").text
+    assert "On MSP hold" in client.get(f"/tickets/{ticket.number}").text
 
     ticket.resolution_due_at = NOW + timedelta(hours=4)  # due before the next business morning
     db_session.add(ticket)

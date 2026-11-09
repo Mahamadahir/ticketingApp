@@ -228,10 +228,10 @@ def test_the_triage_panel_is_only_offered_on_untriaged_tickets(client, db_sessio
     agent(client, db_session, member_of=[desk])
     category = create_category(db_session, desk)
 
-    assert "<h3>Triage</h3>" in client.get(f"/tickets/{ticket.number}").text
+    assert 'id="triage-heading">Triage</h2>' in client.get(f"/tickets/{ticket.number}").text
     triage(client, ticket, category)
     page = client.get(f"/tickets/{ticket.number}").text
-    assert "<h3>Triage</h3>" not in page and "Category: Hardware" in page
+    assert 'id="triage-heading"' not in page and "<dt>Category</dt><dd>Hardware</dd>" in page
 
 
 def test_other_goes_to_the_default_triage_team_and_waits_for_review(client, db_session):
@@ -563,7 +563,7 @@ def test_a_super_admin_can_assign_an_untriaged_ticket_without_triaging_it(client
     login_as(client, "admin@example.com")
 
     page = client.get(f"/tickets/{ticket.number}").text
-    assert "Assign to (without triaging)" in page and "<h3>Triage</h3>" in page
+    assert "Assign to (without triaging)" in page and 'id="triage-heading">Triage</h2>' in page
 
     assert client.post(f"/tickets/{ticket.number}/assign", data={"agent_id": member_id}).status_code == 200
     db_session.refresh(ticket)

@@ -248,13 +248,13 @@ def ticket_in_a_team(client, db_session, zone=None, source="browser"):
 def test_the_ticket_page_shows_times_in_the_viewers_zone_with_the_label(client, db_session):
     ticket = ticket_in_a_team(client, db_session, zone="Asia/Tokyo")
     page = client.get(f"/tickets/{ticket.number}").text
-    assert "Reported: 26 Oct" in page and "01:00 JST" in page
-    assert "UTC" not in page.split("Reported:")[1].split("</p>")[0]
+    assert "<dt>Reported</dt><dd>26 Oct" in page and "01:00 JST" in page
+    assert "UTC" not in page.split("<dt>Reported</dt>")[1].split("</dd>")[0]
 
 
 def test_someone_with_no_zone_yet_sees_the_default(client, db_session):
     ticket = ticket_in_a_team(client, db_session)
-    assert "Reported: 25 Oct" in client.get(f"/tickets/{ticket.number}").text
+    assert "<dt>Reported</dt><dd>25 Oct" in client.get(f"/tickets/{ticket.number}").text
     assert "16:00 GMT" in client.get(f"/tickets/{ticket.number}").text
     set_setting(db_session, DEFAULT_TIME_ZONE, "Asia/Tokyo")
     db_session.commit()

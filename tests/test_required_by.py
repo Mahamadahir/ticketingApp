@@ -412,7 +412,7 @@ def test_the_countdown_and_pages_say_required_by(client, db_session):
     db_session.commit()
 
     detail = client.get(f"/tickets/{ticket.number}").text
-    assert f"Required by: {day(5)}" in detail and f"SLA: required by {day(5)}, due in" in detail
+    assert f"<dt>Required by</dt><dd>{day(5)}</dd>" in detail and f"SLA: required by {day(5)}, due in" in detail
     assert f"left · required by {day(5)}" in client.get("/tickets").text  # the queue's own wording (app/sla.py queue_sla)
 
 

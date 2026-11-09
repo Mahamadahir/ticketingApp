@@ -1,9 +1,9 @@
 {# The next-status dropdown on Email user and Add note. Needs: message_statuses, blank_label, ticket.
    The first option sends nothing, so the server applies its default at send time and a ticket that
    changed since the page loaded is not overwritten by a stale choice. The Due date boxes are used only when
-   Scheduled is chosen (the status needs a date). #}
+   Scheduled is chosen (the status needs a date), so the page shows them only once Scheduled is picked (the boxes are always in the form; see .tp-due in styles.css). #}
 {% if message_statuses %}
-<label>Ticket status after this
+<label class="tp-status">Ticket status after this
   <select name="next_status">
     <option value="" selected>{{ blank_label }}</option>
     {% for s in message_statuses %}
@@ -11,8 +11,10 @@
     {% endfor %}
   </select>
 </label>
-<label>Due date, needed for Scheduled
-  <input type="date" name="due_on" value="{{ ticket.due_on.isoformat() if ticket.due_on else "" }}" /></label>
-<label>Why the date is being moved (only if you change it)
-  <input type="text" name="due_reason" maxlength="500" /></label>
+<div class="tp-due">
+  <label>Due date, needed for Scheduled
+    <input type="date" name="due_on" value="{{ ticket.due_on.isoformat() if ticket.due_on else "" }}" /></label>
+  <label>Why the date is being moved (only if you change it)
+    <input type="text" name="due_reason" maxlength="500" /></label>
+</div>
 {% endif %}

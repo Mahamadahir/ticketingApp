@@ -119,6 +119,22 @@ def _local_input(context, moment) -> str:
     return (moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)).astimezone(zone).strftime(MOMENT_FORMAT)
 
 
+def _initials(sender: str) -> str:
+    """{{ message.sender|initials }}: up to two letters for a message's avatar, from a name or an address."""
+    sender = (sender or "").strip()
+    name = sender.split("<")[0].strip().strip('"')
+    if "," in name:  # "Smith, John"
+        last, _, first = name.partition(",")
+        name = f"{first.strip()} {last.strip()}"
+    if not name:  # "<j.smith@example.com>": the address is all there is
+        name = sender.strip("<>")
+    name = name.split("@")[0]
+    words = [w for w in name.replace(".", " ").replace("_", " ").replace("-", " ").split() if w[:1].isalnum()]
+    letters = (words[0][0] + words[-1][0]) if len(words) > 1 else (words[0][:2] if words else "?")
+    return letters.upper()
+
+
+templates.env.filters["initials"] = _initials
 templates.env.filters["local_time"] = _local_time
 templates.env.filters["local_input"] = _local_input
 templates.env.filters["local_date"] = _local_date
