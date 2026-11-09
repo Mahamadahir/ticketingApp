@@ -432,17 +432,27 @@ def _settle(session: Session, ticket: Ticket, approval: TicketApproval, result: 
         notify_approval_outcome(session, ticket, DECLINED, actor_email)
 
 
-def record_decision(session: Session, vote: ApprovalVote, decision: str, comment: str) -> Optional[str]:
+def _with_channel(via: Optional[str], comment: str) -> str:
+    """The detail kept with a vote: the comment, led by "via Teams" when the vote came from somewhere other than the
+    portal or the emailed link."""
+    comment = (comment or "").strip()[:200]
+    if not via:
+        return comment
+    return f"via {via}: {comment}" if comment else f"via {via}"
+
+
+def record_decision(session: Session, vote: ApprovalVote, decision: str, comment: str, via: Optional[str] = None) -> Optional[str]:
     """decide() plus its audit entry: the one way a person's answer is recorded, whether it came
-    from the portal or the emailed link. Does not commit."""
-    result = decide(session, vote, decision, comment)
+    from the portal, the emailed link or the Teams card (`via`, named in the audit detail and the
+    ticket event). Does not commit."""
+    result = decide(session, vote, decision, comment, via)
     voter = session.get(User, vote.voter_id)
     approval = session.get(TicketApproval, vote.approval_id)
-    log_action(session, voter.email, "ticket", approval.ticket_id, f"approval_{decision}", (comment or "").strip()[:200])
+    log_action(session, voter.email, "ticket", approval.ticket_id, f"approval_{decision}", _with_channel(via, comment))
     return result
 
 
-def decide(session: Session, vote: ApprovalVote, decision: str, comment: str) -> Optional[str]:
+def decide(session: Session, vote: ApprovalVote, decision: str, comment: str, via: Optional[str] = None) -> Optional[str]:
     """Records a voter's decision and settles the ticket if that decides it. Returns the outcome
     (APPROVED, DECLINED) when this settled the ticket, else None. Does not commit."""
     if decision not in (APPROVED, DECLINED):
@@ -477,7 +487,7 @@ def decide(session: Session, vote: ApprovalVote, decision: str, comment: str) ->
     vote.decision, vote.comment, vote.decided_at = decision, comment, datetime.now(timezone.utc)
     session.add(vote)
     session.flush()
-    record_event(session, ticket, EVENT_APPROVAL_DECIDED, voter.email, to_value=decision, detail=comment[:200] or None)
+    record_event(session, ticket, EVENT_APPROVAL_DECIDED, voter.email, to_value=decision, detail=_with_channel(via, comment) or None)
 
     votes = [v for v, _ in votes_of(session, approval)]
     approved, declined, _ = tally(votes)

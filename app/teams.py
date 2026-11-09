@@ -27,8 +27,7 @@ from sqlmodel import Session, select
 
 from app.config import settings
 from app.models import Notification, TeamsPost, Ticket, TicketSource, User
-from app.notifications import notification_text
-from app.visibility import Access, access_context, ticket_access
+from app.notifications import PORTAL_KINDS, can_be_told_about, notification_text
 
 log = logging.getLogger("app.teams")
 
@@ -82,6 +81,13 @@ def ticket_link(ticket: Ticket) -> Optional[str]:
     if not settings.ticket_link_base:
         return None
     return f"{settings.ticket_link_base.rstrip('/')}/tickets/{ticket.number}"
+
+
+def portal_link(ticket: Ticket) -> Optional[str]:
+    """Where a card for someone who is not an agent (an approver) sends them: the request's page in the portal."""
+    if not settings.ticket_link_base:
+        return None
+    return f"{settings.ticket_link_base.rstrip('/')}/portal/{ticket.number}"
 
 
 def message(card: dict) -> dict:
@@ -223,27 +229,35 @@ def notifications_on() -> bool:
     return settings.teams_notifications_enabled or settings.teams_bot_configured
 
 
-def route_for(session: Session, person: User):
+def route_for(session: Session, person: User, direct_only: bool = False):
     """The one place that decides how a person's Teams copy travels, worked out when it is sent (so a person who
     installs the app after the copy was queued still gets it in the chat): a direct message from the bot when the bot
     is on and the person has a conversation with it, else the channel @mention when that is switched on, else None
-    (the copy is dropped). Returns (DIRECT, conversation row), (CHANNEL, None) or (None, None)."""
+    (the copy is dropped). `direct_only` is for a copy that must never go to a shared channel (a request waiting for
+    someone's vote: it names the request and carries the buttons): the channel is then not an option. Returns
+    (DIRECT, conversation row), (CHANNEL, None) or (None, None)."""
     if settings.teams_bot_configured:
         from app.teams_conversations import reference_for  # imported here: it needs bot_connector, which needs this module
 
         conversation = reference_for(session, person)
         if conversation is not None:
             return DIRECT, conversation
-    if settings.teams_notifications_enabled:
+    if settings.teams_notifications_enabled and not direct_only:
         return CHANNEL, None
     return None, None
 
 
-def can_deliver(session: Session, person: User) -> bool:
-    """Whether a Teams copy for this person has anywhere to go right now. Asked when the copy is handed over, so a
+def has_chat_with_bot(session: Session, person: User) -> bool:
+    """Whether the person would be messaged by the bot right now (the bot is on and they have a conversation with it).
+    What the approval reminders ask: they go to Teams only as a direct message, not to the channel."""
+    return route_for(session, person)[0] == DIRECT
+
+
+def can_deliver(session: Session, person: User, direct_only: bool = False) -> bool:
+    """Whether a Teams copy for this person has anywhere to go right now (`direct_only`: in their chat with the bot). Asked when the copy is handed over, so a
     person with no conversation (and no channel fallback) is dropped there, counted with the other drops, rather
     than leaving a failed row in the outbox for every notification."""
-    return route_for(session, person)[0] is not None
+    return route_for(session, person, direct_only)[0] is not None
 
 
 def notification_post(session: Session, post: TeamsPost):
@@ -260,14 +274,15 @@ def notification_post(session: Session, post: TeamsPost):
         # Inactive and anonymised people (an anonymised account is made inactive) are never messaged.
         raise Unsendable("The person is no longer active")
     ticket = session.get(Ticket, notification.ticket_id) if notification.ticket_id else None
-    if ticket is not None and ticket_access(person, ticket, access_context(session, person)) < Access.READ:
-        # Checked again at send time: the ticket may have moved team since the copy was queued.
+    if ticket is not None and not can_be_told_about(session, person, notification, ticket):
+        # Checked again at send time: the ticket may have moved team since the copy was queued, or the person
+        # may no longer be asked to vote on it.
         raise Unsendable("The person can no longer open the ticket")
-    route, conversation = route_for(session, person)
+    route, conversation = route_for(session, person, direct_only=notification.kind in PORTAL_KINDS)
     if route == DIRECT:
         from app.bot_cards import notification_card as direct_card  # the bot's cards live in one module (8C extends it)
 
-        return BotDelivery(conversation.service_url, conversation.conversation_id, direct_card(notification, ticket))
+        return BotDelivery(conversation.service_url, conversation.conversation_id, direct_card(session, notification, ticket))
     if route == CHANNEL:
         return notification_card(notification, person, ticket)
     raise Unsendable("No Teams conversation with the bot, and notifications to the channel are switched off")

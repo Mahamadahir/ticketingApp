@@ -134,10 +134,10 @@ def test_words_from_a_requester_cannot_make_markup_or_links_in_the_direct_card(c
 def test_the_direct_card_is_built_in_one_module_with_a_slot_per_kind(client, db_session):
     bob, _ = an_agent(client, db_session)
     n = due_notification(db_session, bob)
-    assert bot_cards.notification_card(n, None) == bot_cards.what_happened_card(n, None)
-    bot_cards.CARD_FOR_KIND["mentioned"] = lambda notification, ticket: {"custom": True}
+    assert bot_cards.notification_card(db_session, n, None) == bot_cards.what_happened_card(n, None)
+    bot_cards.CARD_FOR_KIND["mentioned"] = lambda session, notification, ticket: {"custom": True}
     try:
-        assert bot_cards.notification_card(n, None) == {"custom": True}
+        assert bot_cards.notification_card(db_session, n, None) == {"custom": True}
     finally:
         del bot_cards.CARD_FOR_KIND["mentioned"]
 

@@ -149,10 +149,11 @@ EVENT_TYPES: tuple[EventType, ...] = (
         EVERYONE, (EMAIL,), (EMAIL,),
     ),
     EventType(
-        APPROVAL_WAITING, "A request is waiting for your approval (the bell)",
-        "A bell entry when a request is waiting for your vote. It is independent of the approval email: it still "
-        "shows if you switched the email off.",
-        EVERYONE, (IN_APP,), (IN_APP,),
+        APPROVAL_WAITING, "A request is waiting for your approval (the bell and Teams)",
+        "A bell entry when a request is waiting for your vote, and a message from the bot in Teams with Approve and "
+        "Decline buttons (also as a reminder) if you have the Teams app. It is independent of the approval email: it "
+        "still shows if you switched the email off.",
+        EVERYONE, (IN_APP, TEAMS), (IN_APP, TEAMS),
     ),
     EventType(
         APPROVAL_OVERDUE, "A request has waited too long for approval (email)",

@@ -133,6 +133,15 @@ def message(session: Session, activity: dict) -> Optional[Handled]:
     return Handled(after=lambda: _reply(activity, MESSAGE_NOT_READ_YET)) if stored else None
 
 
+@handler("invoke")
+def invoke(session: Session, activity: dict) -> Optional[Handled]:
+    """A card button was pressed (8C, app/teams_approvals.py). Answered in the response itself: nothing slow is done."""
+    from app.teams_approvals import answer  # imported here: it needs the cards, which need the notifications
+
+    body = answer(session, activity)
+    return Handled(body=body) if body is not None else None
+
+
 def _reply(activity: dict, text: str) -> None:
     try:
         bot_connector.reply_to(activity, text=text)

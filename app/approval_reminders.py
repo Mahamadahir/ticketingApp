@@ -18,8 +18,11 @@ Run late, a vote gets one reminder (not one per missed slot); run twice, the sec
 Escalation: when a pending approval is `approval_escalate_after_days` old, each super admin who can open
 the ticket gets one bell notification and one email (`escalated_at` makes it once per approval; the email is
 the `approval_overdue` template, on by default, and a super admin can switch it off in their notification
-settings, #122). Teams reminders to
-approvers wait for the phase 8 bot.
+settings, #122).
+
+Teams (8C): an approver who has a chat with the bot (and has Teams on for the "waiting for your approval" event) gets the
+same reminder as a direct message with Approve and Decline buttons, on the same schedule and counted with the email: a
+reminder counts if the email or the Teams message was queued. Mail being off no longer stops reminders to such a person.
 
 Off by default (`approval_reminders_enabled`) until mail is proved on staging.
 """
@@ -33,9 +36,9 @@ from app.approval_groups import is_member
 from app.approvals import PENDING, reconcile_approvals, voters_yet_to_vote
 from app.audit import log_action
 from app.models import ApprovalVote, OutboundEmail, Ticket, TicketApproval, TicketStatus, User, UserRole
-from app.notifications import notify_approval_overdue
+from app.notifications import notify_approval_overdue, notify_approval_reminder
 from app.outbox import APPROVAL, APPROVAL_REMINDER, is_on, queue_approval_overdue, queue_approval_reminder
-from app.teams import MAX_ATTEMPTS
+from app.teams import MAX_ATTEMPTS, has_chat_with_bot
 from app.settings_store import (
     APPROVAL_ESCALATE_AFTER_DAYS,
     APPROVAL_MAX_REMINDERS,
@@ -96,12 +99,18 @@ def send_approval_reminders(session: Session, now: Optional[datetime] = None) ->
             (vote, voter) for vote, voter in voters_yet_to_vote(session, approval)
             if voter.is_active and is_member(session, approval.group_id, voter.id)
         ]
-        if is_on():
-            for vote, voter in waiting:
-                if _due(vote, now, after, every, maximum) and not _still_queued(session, vote) and queue_approval_reminder(session, vote, voter) is not None:
-                    vote.reminder_count += 1
-                    vote.last_reminded_at = now
-                    session.add(vote)
+        for vote, voter in waiting:
+            if not _due(vote, now, after, every, maximum):
+                continue
+            # The email (when mail is on) and the Teams message (when the approver has the bot's chat and wants it)
+            # are separate copies of one reminder; it counts if either went. The Teams one is a notification, so
+            # it follows the approver's own settings and is sent by the same worker job as any other copy.
+            emailed = is_on() and not _still_queued(session, vote) and queue_approval_reminder(session, vote, voter) is not None
+            in_teams = has_chat_with_bot(session, voter) and notify_approval_reminder(session, ticket, voter) is not None
+            if emailed or in_teams:
+                vote.reminder_count += 1
+                vote.last_reminded_at = now
+                session.add(vote)
         if approval.escalated_at is None and waiting and now >= approval.created_at + escalate_after:
             _escalate(session, ticket, approval, now, len(waiting))
 

@@ -238,6 +238,7 @@
       "imported_by": [
         "app.approval_reminders",
         "app.approvals",
+        "app.bot_cards",
         "app.mail",
         "app.request_types",
         "app.routers.admin"
@@ -256,7 +257,8 @@
         "tests/test_approvals.py",
         "tests/test_entra_check.py",
         "tests/test_outbound_mail.py",
-        "tests/test_request_types.py"
+        "tests/test_request_types.py",
+        "tests/test_teams_approvals.py"
       ]
     },
     {
@@ -307,7 +309,8 @@
       "tables": [],
       "tests": [
         "tests/test_approval_inactive.py",
-        "tests/test_approval_reminders.py"
+        "tests/test_approval_reminders.py",
+        "tests/test_teams_approvals.py"
       ]
     },
     {
@@ -347,14 +350,17 @@
       ],
       "imported_by": [
         "app.approval_reminders",
+        "app.bot_cards",
         "app.entra_check",
         "app.linked_identities",
         "app.mail",
+        "app.notifications",
         "app.request_types",
         "app.routers.admin",
         "app.routers.approvals",
         "app.routers.portal",
         "app.routers.tickets",
+        "app.teams_approvals",
         "app.ticket_service",
         "app.triage"
       ],
@@ -384,6 +390,7 @@
         "tests/test_requester_bell.py",
         "tests/test_self_approval.py",
         "tests/test_subrequests.py",
+        "tests/test_teams_approvals.py",
         "tests/test_withdraw.py"
       ]
     },
@@ -638,24 +645,34 @@
       "classes": [],
       "file": "app/bot_cards.py",
       "functions": [
+        "approval_request_card",
         "card_shell",
+        "decided_card",
         "notification_card",
         "open_ticket_action",
+        "portal_action",
+        "request_facts",
         "what_happened_card"
       ],
       "imported_by": [
-        "app.teams"
+        "app.teams",
+        "app.teams_approvals"
       ],
       "imports": [
+        "app.approval_groups",
+        "app.approvals",
+        "app.identity",
+        "app.messages",
         "app.models",
         "app.notifications",
         "app.teams"
       ],
       "module": "app.bot_cards",
       "routes": [],
-      "summary": "The Adaptive Cards the Teams bot sends to a person in their own chat (phase 8B), built in this one module.",
+      "summary": "The Adaptive Cards the Teams bot sends to a person in their own chat (phase 8B, 8C), built in this one module.",
       "tables": [],
       "tests": [
+        "tests/test_teams_approvals.py",
         "tests/test_teams_dm.py"
       ]
     },
@@ -979,6 +996,7 @@
         "tests/test_security.py",
         "tests/test_sessions.py",
         "tests/test_teams.py",
+        "tests/test_teams_approvals.py",
         "tests/test_teams_bot.py",
         "tests/test_teams_copy_sending.py",
         "tests/test_teams_dm.py",
@@ -1422,6 +1440,7 @@
       "imported_by": [
         "app.approvals",
         "app.auth",
+        "app.bot_cards",
         "app.inbound",
         "app.linked_identities",
         "app.mail",
@@ -1431,6 +1450,7 @@
         "app.raising",
         "app.routers.auth",
         "app.routers.portal",
+        "app.teams_approvals",
         "app.teams_conversations",
         "app.time_zones",
         "app.visibility"
@@ -1557,6 +1577,7 @@
         "tests/test_presence.py",
         "tests/test_scheduled_jobs.py",
         "tests/test_teams.py",
+        "tests/test_teams_approvals.py",
         "tests/test_teams_copy_sending.py",
         "tests/test_teams_dm.py",
         "tests/test_time_zones.py",
@@ -1858,6 +1879,7 @@
       ],
       "imported_by": [
         "app.approvals",
+        "app.bot_cards",
         "app.bulk_resolve",
         "app.closing",
         "app.escalation",
@@ -2049,6 +2071,7 @@
         "app.subscriptions",
         "app.team_activity",
         "app.teams",
+        "app.teams_approvals",
         "app.teams_conversations",
         "app.templating",
         "app.thanks_rules",
@@ -2341,6 +2364,7 @@
         "tests/test_subrequests.py",
         "tests/test_team_activity.py",
         "tests/test_teams.py",
+        "tests/test_teams_approvals.py",
         "tests/test_teams_bot.py",
         "tests/test_teams_copy.py",
         "tests/test_teams_copy_sending.py",
@@ -2573,6 +2597,7 @@
         "tests/test_notification_followup.py",
         "tests/test_notification_settings.py",
         "tests/test_requester_bell.py",
+        "tests/test_teams_approvals.py",
         "tests/test_teams_copy.py",
         "tests/test_teams_dm.py"
       ]
@@ -2583,6 +2608,7 @@
       "functions": [
         "bell_references",
         "bell_tickets",
+        "can_be_told_about",
         "count_unread",
         "default_teams_delay",
         "drop_due_for_teams",
@@ -2597,6 +2623,7 @@
         "notify_agent_emailed",
         "notify_approval_outcome",
         "notify_approval_overdue",
+        "notify_approval_reminder",
         "notify_approval_waiting",
         "notify_approval_withdrawn",
         "notify_assigned",
@@ -2648,6 +2675,7 @@
         "app.triage"
       ],
       "imports": [
+        "app.approvals",
         "app.followers",
         "app.identity",
         "app.models",
@@ -2669,6 +2697,7 @@
         "tests/test_notifications.py",
         "tests/test_reply_notification.py",
         "tests/test_requester_bell.py",
+        "tests/test_teams_approvals.py",
         "tests/test_teams_copy.py",
         "tests/test_teams_copy_sending.py",
         "tests/test_teams_dm.py"
@@ -2762,6 +2791,7 @@
         "tests/test_msp_mail.py",
         "tests/test_outbound_mail.py",
         "tests/test_resolution.py",
+        "tests/test_teams_approvals.py",
         "tests/test_withdraw.py"
       ]
     },
@@ -5069,6 +5099,7 @@
         "tests/test_sla.py",
         "tests/test_subject_access.py",
         "tests/test_subrequests.py",
+        "tests/test_teams_approvals.py",
         "tests/test_teams_copy.py",
         "tests/test_time_zones.py",
         "tests/test_triage.py"
@@ -5393,6 +5424,7 @@
         "deliver_pending",
         "describe_failure",
         "give_up",
+        "has_chat_with_bot",
         "is_permanent",
         "mention_name",
         "message",
@@ -5402,6 +5434,7 @@
         "notification_post",
         "notifications_on",
         "plain",
+        "portal_link",
         "post_card",
         "queue_new_ticket",
         "queue_notification",
@@ -5428,8 +5461,7 @@
         "app.config",
         "app.models",
         "app.notifications",
-        "app.teams_conversations",
-        "app.visibility"
+        "app.teams_conversations"
       ],
       "module": "app.teams",
       "routes": [],
@@ -5443,11 +5475,38 @@
         "tests/test_linked_identities.py",
         "tests/test_outbound_mail.py",
         "tests/test_teams.py",
+        "tests/test_teams_approvals.py",
         "tests/test_teams_bot.py",
         "tests/test_teams_copy_sending.py",
         "tests/test_teams_dm.py",
         "tests/test_wiring_3f.py",
         "tests/test_withdraw.py"
+      ]
+    },
+    {
+      "classes": [],
+      "file": "app/teams_approvals.py",
+      "functions": [
+        "answer",
+        "card_response",
+        "message_response"
+      ],
+      "imported_by": [
+        "app.teams_bot"
+      ],
+      "imports": [
+        "app.approvals",
+        "app.bot_cards",
+        "app.identity",
+        "app.models",
+        "app.teams_bot"
+      ],
+      "module": "app.teams_approvals",
+      "routes": [],
+      "summary": "Approving or declining from the bot's card (phase 8C): the answer to an `adaptiveCard/action` invoke.",
+      "tables": [],
+      "tests": [
+        "tests/test_teams_approvals.py"
       ]
     },
     {
@@ -5459,15 +5518,18 @@
         "activity_tenant",
         "handler",
         "installation_update",
+        "invoke",
         "message",
         "receive"
       ],
       "imported_by": [
-        "app.routers.teams_bot"
+        "app.routers.teams_bot",
+        "app.teams_approvals"
       ],
       "imports": [
         "app.bot_connector",
         "app.config",
+        "app.teams_approvals",
         "app.teams_bot_auth",
         "app.teams_conversations"
       ],
@@ -5869,7 +5931,6 @@
         "app.routers.reports",
         "app.routers.tickets",
         "app.subrequests",
-        "app.teams",
         "app.templating",
         "app.triage"
       ],
@@ -6456,6 +6517,7 @@
     "tests/test_team_activity.py",
     "tests/test_teams.py",
     "tests/test_teams_app_package.py",
+    "tests/test_teams_approvals.py",
     "tests/test_teams_bot.py",
     "tests/test_teams_copy.py",
     "tests/test_teams_copy_sending.py",

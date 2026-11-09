@@ -353,13 +353,13 @@ def test_types_with_no_handler_are_accepted_and_ignored(public, db_session):
 def test_a_handler_is_one_registration_per_type_and_its_answer_is_returned(public, monkeypatch):
     monkeypatch.setattr(teams_bot, "HANDLERS", dict(teams_bot.HANDLERS))
 
-    @teams_bot.handler("invoke")
+    @teams_bot.handler("conversationUpdate")
     def answer(session, act):
         return teams_bot.Handled(body={"status": 200, "seen": act["type"]})
 
-    assert post(public, activity("invoke"), token()).json() == {"status": 200, "seen": "invoke"}
+    assert post(public, activity("conversationUpdate"), token()).json() == {"status": 200, "seen": "conversationUpdate"}
     with pytest.raises(RuntimeError):
-        teams_bot.handler("invoke")(lambda session, act: None)
+        teams_bot.handler("conversationUpdate")(lambda session, act: None)
 
 
 # ---- Install, uninstall and the store --------------------------------------------------------------------
