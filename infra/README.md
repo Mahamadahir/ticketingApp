@@ -303,8 +303,11 @@ Who the bot is, `TEAMS_BOT_IDENTITY`:
   `teams-bot-client-secret` and only the public app and worker identities may read it. Supply it on every deploy once set.
 
 Build the Teams app package with the application id (`python teams-app/build_package.py --environment staging --bot-app-id
-<teamsBotAppId> --website-url ... --privacy-url ... --terms-url ...`), upload it in the Teams admin center (Manage apps) and
-install it for a test user. The deploy workflow refuses the switch on without the public app, or `clientSecret` without its id
+<teamsBotAppId> --public-base-url https://<public app> --developer-name "Vardags IT"`: the privacy, terms and website addresses
+default to `<base>/legal/privacy`, `<base>/legal/terms` and `<base>/portal`, and each can be set by hand), upload it in the Teams
+admin center (Manage apps) and install it for a test user. An app installed for people by an admin setup policy cannot be
+uninstalled by them (Microsoft's documentation); if someone removes it themselves, the next message to them is refused with a 403
+or 404 and the bot falls back to the channel mention, where that is switched on. The deploy workflow refuses the switch on without the public app, or `clientSecret` without its id
 and secret.
 
 ## Custom domain (at roll-out)

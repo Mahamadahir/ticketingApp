@@ -142,11 +142,11 @@ def message(session: Session, activity: dict) -> Optional[Handled]:
 
 @handler("invoke")
 def invoke(session: Session, activity: dict) -> Optional[Handled]:
-    """A card button was pressed. The choice of ticket for a message (8D, app/teams_intake.py) and the approval buttons
+    """A card button was pressed. The choice of ticket for a message and the other buttons of that card (8D, 8F, app/teams_intake.py) and the approval buttons
     (8C, app/teams_approvals.py) are answered in the response itself: nothing slow is done."""
-    from app.bot_cards import VERB_NEW, VERB_PICK  # imported here: the cards need the notifications
+    from app.bot_cards import INTAKE_VERBS  # imported here: the cards need the notifications
 
-    if _text(_sub(activity, "value", "action", "verb")) in (VERB_PICK, VERB_NEW):
+    if _text(_sub(activity, "value", "action", "verb")) in INTAKE_VERBS:
         from app.teams_intake import answer_card
 
         body = answer_card(session, activity)

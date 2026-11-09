@@ -154,6 +154,7 @@ VERB_PICK = "intake.pick"  # 8D: add the message to this open request
 VERB_NEW = "intake.new"  # 8D: raise a new request from the message
 VERB_MORE = "intake.more"  # 8F: show another page of the person's requests on the choice card
 VERB_MOVE = "intake.move"  # 8F: "Not this one? Start a new request": move the message just added to a new request
+INTAKE_VERBS = (VERB_PICK, VERB_NEW, VERB_MORE, VERB_MOVE)  # the buttons app/teams_intake.py answers; the approval buttons are app/teams_approvals.py
 MAX_CHOICES = 5  # requests shown on one page of the choice card; "Show more" pages through the rest
 CHOICE_TITLE_LENGTH = 70
 

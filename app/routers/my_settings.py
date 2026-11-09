@@ -82,7 +82,7 @@ async def save_notification_settings(
     save_choices(session, user, {str(value) for value in form.getlist("on")})
     if user.role in AGENT_ROLES:
         save_teams_delay(session, user, delay)
-    if form.get("teams_replies") in ("teams", "both"):  # absent when the bot is off: the choice is left as it was
+    if settings.teams_bot_configured and form.get("teams_replies") in ("teams", "both"):  # with the bot off there is nothing to choose
         save_teams_reply_choice(session, user, form.get("teams_replies") == "both")
     session.commit()
     return RedirectResponse("/settings/notifications?saved=1", status_code=303)

@@ -108,6 +108,10 @@ def email_instead(session: Session, message_id: Optional[int]) -> Optional[Outbo
     ticket = session.get(Ticket, message.ticket_id) if message is not None else None
     if message is None or ticket is None:
         return None
+    from app.messages import requester_visible_messages  # here: messages.py imports this module
+
+    if message.id not in {m.id for m in requester_visible_messages(session, ticket)}:
+        return None  # an internal note is never emailed (mail.build_message_mail would refuse it as well)
     if session.exec(select(OutboundEmail.id).where(OutboundEmail.message_id == message.id).limit(1)).first() is not None:
         return None
     return queue_message(session, message, ticket)

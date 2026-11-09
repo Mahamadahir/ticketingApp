@@ -54,6 +54,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/8f193a5c2d17_teams_follow_ups.py",
+        "revision": "8f193a5c2d17"
+      },
+      {
         "file": "migrations/versions/f72463c9eda5_teams_intake.py",
         "revision": "f72463c9eda5"
       },
@@ -68,17 +72,13 @@
       {
         "file": "migrations/versions/b12eaa1c47fe_report_indexes.py",
         "revision": "b12eaa1c47fe"
-      },
-      {
-        "file": "migrations/versions/e6a1c9d4b7f2_linked_identities.py",
-        "revision": "e6a1c9d4b7f2"
       }
     ],
-    "count": 64,
+    "count": 65,
     "heads": [
       {
-        "file": "migrations/versions/f72463c9eda5_teams_intake.py",
-        "revision": "f72463c9eda5"
+        "file": "migrations/versions/8f193a5c2d17_teams_follow_ups.py",
+        "revision": "8f193a5c2d17"
       }
     ]
   },
@@ -187,6 +187,7 @@
         "step_expire_links",
         "step_feedback_comment",
         "step_followers",
+        "step_held_files",
         "step_inbound_sender",
         "step_message_body",
         "step_message_cc",
@@ -210,6 +211,7 @@
         "app.models",
         "app.person_data",
         "app.storage",
+        "app.teams_pending",
         "app.ticket_service"
       ],
       "module": "app.anonymisation",
@@ -217,7 +219,8 @@
       "summary": "Requester anonymisation (issue #176): keep the ticket, remove the person. Irreversible.",
       "tables": [],
       "tests": [
-        "tests/test_anonymisation.py"
+        "tests/test_anonymisation.py",
+        "tests/test_teams_followups.py"
       ]
     },
     {
@@ -417,7 +420,8 @@
         "app.intake",
         "app.routers.attachments",
         "app.subject_access",
-        "app.teams_intake"
+        "app.teams_intake",
+        "app.teams_pending"
       ],
       "imports": [
         "app.config",
@@ -476,7 +480,8 @@
         "app.scheduled_jobs",
         "app.subject_access",
         "app.subrequests",
-        "app.teams_conversations"
+        "app.teams_conversations",
+        "app.teams_intake"
       ],
       "imports": [
         "app.models"
@@ -649,15 +654,20 @@
       "classes": [],
       "file": "app/bot_cards.py",
       "functions": [
+        "added_card",
         "approval_request_card",
+        "audience_of",
         "card_shell",
+        "category_name",
         "choose_ticket_card",
         "decided_card",
         "intake_result_card",
         "notification_card",
         "open_ticket_action",
+        "opened_on",
         "portal_action",
         "request_facts",
+        "ticket_facts",
         "what_happened_card"
       ],
       "imported_by": [
@@ -672,6 +682,7 @@
         "app.identity",
         "app.messages",
         "app.models",
+        "app.notification_settings",
         "app.notifications",
         "app.teams"
       ],
@@ -681,7 +692,8 @@
       "tables": [],
       "tests": [
         "tests/test_teams_approvals.py",
-        "tests/test_teams_dm.py"
+        "tests/test_teams_dm.py",
+        "tests/test_teams_followups.py"
       ]
     },
     {
@@ -726,6 +738,7 @@
       "tests": [
         "tests/test_teams_bot.py",
         "tests/test_teams_dm.py",
+        "tests/test_teams_followups.py",
         "tests/test_teams_intake.py"
       ]
     },
@@ -1016,6 +1029,8 @@
         "tests/test_teams_bot.py",
         "tests/test_teams_copy_sending.py",
         "tests/test_teams_dm.py",
+        "tests/test_teams_followups.py",
+        "tests/test_teams_hold.py",
         "tests/test_teams_intake.py",
         "tests/test_time_zones.py",
         "tests/test_visibility.py",
@@ -1043,6 +1058,7 @@
         "app.routers.dev_tools",
         "app.routers.feedback",
         "app.routers.health",
+        "app.routers.legal",
         "app.routers.link_account",
         "app.routers.msp_mail",
         "app.routers.my_settings",
@@ -1147,6 +1163,7 @@
         "app.msp_actions",
         "app.resolution",
         "app.routers.admin",
+        "app.routers.legal",
         "app.teams_intake"
       ],
       "imports": [
@@ -1165,6 +1182,7 @@
         "tests/test_follower_updates.py",
         "tests/test_msp_actions.py",
         "tests/test_resolution.py",
+        "tests/test_teams_hold.py",
         "tests/test_teams_intake.py"
       ]
     },
@@ -1351,6 +1369,7 @@
         "app.routers.admin",
         "app.routers.portal",
         "app.routers.tickets",
+        "app.teams_conversations",
         "app.teams_intake"
       ],
       "imports": [
@@ -1471,6 +1490,7 @@
         "app.notifications",
         "app.person_data",
         "app.raising",
+        "app.reply_channel",
         "app.routers.auth",
         "app.routers.portal",
         "app.teams",
@@ -1533,6 +1553,7 @@
         "app.msp",
         "app.outbox",
         "app.reopening",
+        "app.reply_channel",
         "app.settings_store",
         "app.storage",
         "app.teams",
@@ -1572,7 +1593,8 @@
       ],
       "imported_by": [
         "app.inbound",
-        "app.teams_intake"
+        "app.teams_intake",
+        "app.teams_pending"
       ],
       "imports": [
         "app.attachments",
@@ -1582,6 +1604,7 @@
         "app.models",
         "app.never_follow",
         "app.raising",
+        "app.reply_channel",
         "app.settings_store",
         "app.splitting",
         "app.storage",
@@ -1593,6 +1616,7 @@
       "tables": [],
       "tests": [
         "tests/test_inbound_mail.py",
+        "tests/test_teams_followups.py",
         "tests/test_teams_intake.py"
       ]
     },
@@ -1640,6 +1664,7 @@
         "tests/test_teams_approvals.py",
         "tests/test_teams_copy_sending.py",
         "tests/test_teams_dm.py",
+        "tests/test_teams_hold.py",
         "tests/test_time_zones.py",
         "tests/test_worker.py"
       ]
@@ -1872,6 +1897,7 @@
         "app.routers.dev_tools",
         "app.routers.feedback",
         "app.routers.health",
+        "app.routers.legal",
         "app.routers.link_account",
         "app.routers.msp_mail",
         "app.routers.my_settings",
@@ -1904,6 +1930,7 @@
         "tests/test_sessions.py",
         "tests/test_subject_access.py",
         "tests/test_teams_bot.py",
+        "tests/test_teams_hold.py",
         "tests/test_triage.py"
       ]
     },
@@ -1949,6 +1976,7 @@
         "app.msp_actions",
         "app.raising",
         "app.reopening",
+        "app.reply_channel",
         "app.resolution",
         "app.routers.approvals",
         "app.routers.portal",
@@ -1962,11 +1990,10 @@
         "app.followers",
         "app.models",
         "app.notifications",
-        "app.outbox",
+        "app.reply_channel",
         "app.request_questions",
         "app.sla",
         "app.splitting",
-        "app.teams",
         "app.ticket_service",
         "app.visibility"
       ],
@@ -1989,6 +2016,7 @@
         "tests/test_resolution.py",
         "tests/test_scheduled_status.py",
         "tests/test_split_family.py",
+        "tests/test_teams_followups.py",
         "tests/test_teams_intake.py"
       ]
     },
@@ -2033,6 +2061,7 @@
         "Team",
         "TeamMembership",
         "TeamsConversation",
+        "TeamsHeldFile",
         "TeamsIntake",
         "TeamsPost",
         "ThanksCandidate",
@@ -2103,6 +2132,7 @@
         "app.presence",
         "app.raising",
         "app.reopening",
+        "app.reply_channel",
         "app.report_kit",
         "app.reports",
         "app.request_questions",
@@ -2139,6 +2169,7 @@
         "app.teams_approvals",
         "app.teams_conversations",
         "app.teams_intake",
+        "app.teams_pending",
         "app.templating",
         "app.thanks_rules",
         "app.ticket_service",
@@ -2296,6 +2327,10 @@
           "table": "teams_conversation"
         },
         {
+          "class": "TeamsHeldFile",
+          "table": "teams_held_file"
+        },
+        {
           "class": "TeamsIntake",
           "table": "teamsintake"
         },
@@ -2439,6 +2474,8 @@
         "tests/test_teams_copy.py",
         "tests/test_teams_copy_sending.py",
         "tests/test_teams_dm.py",
+        "tests/test_teams_followups.py",
+        "tests/test_teams_hold.py",
         "tests/test_teams_intake.py",
         "tests/test_thanks_rules.py",
         "tests/test_ticket_core.py",
@@ -2644,9 +2681,11 @@
         "parse_teams_delay",
         "save_choices",
         "save_teams_delay",
+        "save_teams_reply_choice",
         "wants_approval_email"
       ],
       "imported_by": [
+        "app.bot_cards",
         "app.mail",
         "app.notifications",
         "app.outbox",
@@ -2772,7 +2811,8 @@
         "tests/test_teams_approvals.py",
         "tests/test_teams_copy.py",
         "tests/test_teams_copy_sending.py",
-        "tests/test_teams_dm.py"
+        "tests/test_teams_dm.py",
+        "tests/test_teams_hold.py"
       ]
     },
     {
@@ -2836,11 +2876,12 @@
         "app.follower_updates",
         "app.inbound",
         "app.mail",
-        "app.messages",
         "app.msp",
         "app.msp_actions",
         "app.outage",
-        "app.raising"
+        "app.raising",
+        "app.reply_channel",
+        "app.teams_intake"
       ],
       "imports": [
         "app.config",
@@ -2944,6 +2985,7 @@
         "app.mail",
         "app.subject_access",
         "app.teams",
+        "app.teams_conversations",
         "app.teams_intake"
       ],
       "imports": [
@@ -2956,7 +2998,8 @@
       "tables": [],
       "tests": [
         "tests/test_anonymisation.py",
-        "tests/test_subject_access.py"
+        "tests/test_subject_access.py",
+        "tests/test_teams_followups.py"
       ]
     },
     {
@@ -3044,6 +3087,7 @@
         "app.routers.action_links",
         "app.routers.approvals",
         "app.routers.auth",
+        "app.routers.legal",
         "app.routers.teams_bot",
         "app.routers.webhooks",
         "app.teams_intake"
@@ -3059,6 +3103,7 @@
         "tests/conftest.py",
         "tests/test_public_surface.py",
         "tests/test_teams_bot.py",
+        "tests/test_teams_hold.py",
         "tests/test_teams_intake.py"
       ]
     },
@@ -3103,6 +3148,42 @@
         "tests/test_closing_email.py",
         "tests/test_reopening.py",
         "tests/test_thanks_rules.py"
+      ]
+    },
+    {
+      "classes": [
+        "ReplyRoute"
+      ],
+      "file": "app/reply_channel.py",
+      "functions": [
+        "email_instead",
+        "is_the_requester",
+        "note_requester_wrote",
+        "queue_reply",
+        "reply_route",
+        "requester_channel"
+      ],
+      "imported_by": [
+        "app.inbound",
+        "app.intake",
+        "app.messages",
+        "app.routers.portal",
+        "app.teams",
+        "app.teams_intake"
+      ],
+      "imports": [
+        "app.identity",
+        "app.messages",
+        "app.models",
+        "app.outbox",
+        "app.teams"
+      ],
+      "module": "app.reply_channel",
+      "routes": [],
+      "summary": "Which channel an agent's reply (or an automatic notice) to the requester travels by (phase 8F, #193).",
+      "tables": [],
+      "tests": [
+        "tests/test_teams_followups.py"
       ]
     },
     {
@@ -4210,6 +4291,34 @@
     },
     {
       "classes": [],
+      "file": "app/routers/legal.py",
+      "functions": [
+        "legal_page",
+        "paragraphs"
+      ],
+      "imported_by": [
+        "app.main"
+      ],
+      "imports": [
+        "app.database",
+        "app.email_templates",
+        "app.rate_limit",
+        "app.templating"
+      ],
+      "module": "app.routers.legal",
+      "routes": [
+        {
+          "handler": "legal_page",
+          "method": "GET",
+          "path": "/legal/{page}"
+        }
+      ],
+      "summary": "The privacy and terms pages the Teams app manifest points at (phase 8F). No sign-in: anyone with the address can read them.",
+      "tables": [],
+      "tests": []
+    },
+    {
+      "classes": [],
       "file": "app/routers/link_account.py",
       "functions": [
         "cancel",
@@ -4472,6 +4581,7 @@
         "app.pagination",
         "app.raising",
         "app.reopening",
+        "app.reply_channel",
         "app.request_questions",
         "app.request_types",
         "app.required_by",
@@ -5000,7 +5110,8 @@
         "app.models",
         "app.msp",
         "app.sessions",
-        "app.settings_store"
+        "app.settings_store",
+        "app.teams_pending"
       ],
       "module": "app.scheduled_jobs",
       "routes": [],
@@ -5016,7 +5127,8 @@
         "tests/test_msp.py",
         "tests/test_msp_mail.py",
         "tests/test_scheduled_jobs.py",
-        "tests/test_sessions.py"
+        "tests/test_sessions.py",
+        "tests/test_teams_followups.py"
       ]
     },
     {
@@ -5129,6 +5241,7 @@
         "app.subject_access",
         "app.subscriptions",
         "app.teams_intake",
+        "app.teams_pending",
         "app.ticket_service",
         "app.time_zones"
       ],
@@ -5140,6 +5253,7 @@
       "summary": "Admin-editable settings. Values are stored as text in the setting table; this",
       "tables": [],
       "tests": [
+        "tests/conftest.py",
         "tests/test_acknowledgement.py",
         "tests/test_action_links.py",
         "tests/test_approval_inactive.py",
@@ -5180,6 +5294,8 @@
         "tests/test_subrequests.py",
         "tests/test_teams_approvals.py",
         "tests/test_teams_copy.py",
+        "tests/test_teams_followups.py",
+        "tests/test_teams_hold.py",
         "tests/test_teams_intake.py",
         "tests/test_time_zones.py",
         "tests/test_triage.py"
@@ -5322,7 +5438,8 @@
         "app.routers.attachments",
         "app.routers.data_protection",
         "app.subject_access",
-        "app.teams_intake"
+        "app.teams_intake",
+        "app.teams_pending"
       ],
       "imports": [
         "app.config"
@@ -5338,6 +5455,7 @@
         "tests/test_msp_mail.py",
         "tests/test_storage.py",
         "tests/test_subject_access.py",
+        "tests/test_teams_followups.py",
         "tests/test_teams_intake.py"
       ]
     },
@@ -5367,7 +5485,8 @@
       "summary": "Subject access export (issue #175): a ZIP of everything held on one person.",
       "tables": [],
       "tests": [
-        "tests/test_subject_access.py"
+        "tests/test_subject_access.py",
+        "tests/test_teams_followups.py"
       ]
     },
     {
@@ -5504,11 +5623,15 @@
       "functions": [
         "backoff_minutes",
         "can_deliver",
+        "can_message_requester",
         "deliver_pending",
         "describe_failure",
+        "gave_up",
         "give_up",
         "has_chat_with_bot",
+        "is_app_removed",
         "is_permanent",
+        "link_for",
         "mention_name",
         "message",
         "new_ticket_card",
@@ -5537,7 +5660,7 @@
         "app.jobs",
         "app.linked_identities",
         "app.mail",
-        "app.messages",
+        "app.reply_channel",
         "app.routers.admin",
         "app.ticket_service"
       ],
@@ -5551,6 +5674,7 @@
         "app.models",
         "app.notifications",
         "app.person_data",
+        "app.reply_channel",
         "app.teams_conversations"
       ],
       "module": "app.teams",
@@ -5569,6 +5693,8 @@
         "tests/test_teams_bot.py",
         "tests/test_teams_copy_sending.py",
         "tests/test_teams_dm.py",
+        "tests/test_teams_followups.py",
+        "tests/test_teams_hold.py",
         "tests/test_teams_intake.py",
         "tests/test_wiring_3f.py",
         "tests/test_withdraw.py"
@@ -5667,6 +5793,8 @@
       "file": "app/teams_conversations.py",
       "functions": [
         "conversation_ref",
+        "forget_conversation",
+        "link_by_address",
         "reference_for",
         "remove_reference",
         "save_reference"
@@ -5680,15 +5808,19 @@
       "imports": [
         "app.audit",
         "app.bot_connector",
+        "app.followers",
         "app.identity",
-        "app.models"
+        "app.models",
+        "app.person_data"
       ],
       "module": "app.teams_conversations",
       "routes": [],
       "summary": "The Teams bot's conversation store (phase 8A): where to reach each person as the bot.",
       "tables": [],
       "tests": [
-        "tests/test_teams_bot.py"
+        "tests/test_teams_bot.py",
+        "tests/test_teams_followups.py",
+        "tests/test_teams_hold.py"
       ]
     },
     {
@@ -5714,6 +5846,7 @@
       ],
       "imports": [
         "app.attachments",
+        "app.audit",
         "app.bot_cards",
         "app.bot_connector",
         "app.config",
@@ -5724,13 +5857,16 @@
         "app.identity",
         "app.intake",
         "app.models",
+        "app.outbox",
         "app.person_data",
         "app.rate_limit",
+        "app.reply_channel",
         "app.settings_store",
         "app.storage",
         "app.teams_approvals",
         "app.teams_bot",
         "app.teams_conversations",
+        "app.teams_pending",
         "app.thanks_rules",
         "app.ticket_service"
       ],
@@ -5739,7 +5875,39 @@
       "summary": "Ticket intake from Teams (phase 8D): a person messages the bot and a ticket is raised or added to.",
       "tables": [],
       "tests": [
+        "tests/test_teams_followups.py",
         "tests/test_teams_intake.py"
+      ]
+    },
+    {
+      "classes": [],
+      "file": "app/teams_pending.py",
+      "functions": [
+        "expire_pending",
+        "held_rows",
+        "hold_files",
+        "release",
+        "release_for_tickets",
+        "take_files"
+      ],
+      "imported_by": [
+        "app.anonymisation",
+        "app.scheduled_jobs",
+        "app.teams_intake"
+      ],
+      "imports": [
+        "app.attachments",
+        "app.intake",
+        "app.models",
+        "app.settings_store",
+        "app.storage"
+      ],
+      "module": "app.teams_pending",
+      "routes": [],
+      "summary": "Files held while the Teams bot asks which request a message is for (phase 8F, #193).",
+      "tables": [],
+      "tests": [
+        "tests/test_teams_followups.py"
       ]
     },
     {
@@ -5779,6 +5947,7 @@
         "app.routers.bulk_resolve",
         "app.routers.data_protection",
         "app.routers.feedback",
+        "app.routers.legal",
         "app.routers.link_account",
         "app.routers.msp_mail",
         "app.routers.my_settings",
@@ -6452,6 +6621,12 @@
       "type": "int"
     },
     {
+      "default": "60",
+      "env": "RATE_LIMIT_LEGAL_PER_MINUTE",
+      "name": "rate_limit_legal_per_minute",
+      "type": "int"
+    },
+    {
       "default": "600",
       "env": "RATE_LIMIT_TEAMS_BOT_PER_MINUTE",
       "name": "rate_limit_teams_bot_per_minute",
@@ -6685,6 +6860,8 @@
     "tests/test_teams_copy.py",
     "tests/test_teams_copy_sending.py",
     "tests/test_teams_dm.py",
+    "tests/test_teams_followups.py",
+    "tests/test_teams_hold.py",
     "tests/test_teams_intake.py",
     "tests/test_thanks_rules.py",
     "tests/test_ticket_core.py",

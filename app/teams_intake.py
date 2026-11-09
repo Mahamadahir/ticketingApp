@@ -595,7 +595,7 @@ def _move_to_new(session: Session, person: User, row: Optional[TeamsIntake], now
     message.ticket_id = new.id
     session.add(message)
     session.exec(update(Attachment).where(Attachment.message_id == message.id).values(ticket_id=new.id))
-    session.exec(delete(OutboundEmail).where(OutboundEmail.message_id == message.id, OutboundEmail.kind == FOLLOWER_UPDATE, OutboundEmail.sent_at.is_(None)))
+    session.exec(delete(OutboundEmail).where(OutboundEmail.about_message_id == message.id, OutboundEmail.kind == FOLLOWER_UPDATE, OutboundEmail.sent_at.is_(None)))
     if row.previous_status == TicketStatus.AWAITING_USER.value and old.status == TicketStatus.IN_PROGRESS:
         set_status(session, old, TicketStatus.AWAITING_USER, sender, detail="Put back: the message was moved to a new request")
     detail = "The requester moved a message they sent in Teams to a new request"
