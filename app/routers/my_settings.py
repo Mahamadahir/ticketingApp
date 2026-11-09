@@ -25,17 +25,23 @@ from app.notification_settings import (
 )
 from app.notifications import AGENT_ROLES, default_teams_delay
 from app.settings_store import EMERGENCY_PASSWORD_MIN_LENGTH, count_setting
+from app.teams_conversations import reference_for
 from app.time_zones import clear_manual_zone, set_browser_zone, set_manual_zone, zone_choices, zone_for_user
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
 
-def _channels() -> dict:
+def _channels(session: Session, user: User) -> dict:
     """The channel labels, with Teams no longer marked "not connected yet" once sending to Teams is on, and called
     "Teams (direct message)" when the bot is on (it sends to the person's chat with the bot)."""
     channels = dict(CHANNELS)
     if settings.teams_bot_configured:
-        channels[TEAMS] = ("Teams (direct message)", None)
+        # A person who has not installed the app is told so here, since the choice does nothing for them until they do.
+        note = None if reference_for(session, user) else (
+            "install the Teams app to get these" if not settings.teams_notifications_enabled
+            else "install the Teams app to get these as messages; until then they go to the support channel"
+        )
+        channels[TEAMS] = ("Teams (direct message)", note)
     elif settings.teams_notifications_enabled:
         channels[TEAMS] = (CHANNELS[TEAMS][0], None)
     return channels
@@ -52,7 +58,7 @@ def notification_settings(
         request,
         "my_notification_settings.html",
         {
-            "user": user, "choices": choices_for(session, user), "channels": _channels(), "saved": saved,
+            "user": user, "choices": choices_for(session, user), "channels": _channels(session, user), "saved": saved,
             "is_agent": user.role in AGENT_ROLES, "can_have_emergency_password": emergency.may_hold_one(user), "default_delay": default_teams_delay(session),
             "max_delay": MAX_TEAMS_DELAY_MINUTES,
             "zone": zone_for_user(session, user), "zone_choices": zone_choices(),

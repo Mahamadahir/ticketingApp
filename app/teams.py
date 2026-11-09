@@ -41,6 +41,7 @@ CHANNEL = "channel"
 MAX_ATTEMPTS = 8
 MAX_BACKOFF_MINUTES = 60
 BATCH = 20
+WEBHOOK_MISSING_RETRY_MINUTES = 5  # a channel post in a process that has no webhook URL is looked at again after this
 TIMEOUT_SECONDS = 10
 # A 4xx other than these means the request itself is refused (a revoked or wrong webhook), which
 # retrying cannot fix.
@@ -238,6 +239,13 @@ def route_for(session: Session, person: User):
     return None, None
 
 
+def can_deliver(session: Session, person: User) -> bool:
+    """Whether a Teams copy for this person has anywhere to go right now. Asked when the copy is handed over, so a
+    person with no conversation (and no channel fallback) is dropped there, counted with the other drops, rather
+    than leaving a failed row in the outbox for every notification."""
+    return route_for(session, person)[0] is not None
+
+
 def notification_post(session: Session, post: TeamsPost):
     if not notifications_on():
         # Switched off after this was queued: the switch is checked again at send time, not only when queuing.
@@ -324,14 +332,16 @@ def deliver_pending(
     )
     webhook = settings.teams_new_ticket_configured
     if not webhook:
-        if not settings.teams_bot_configured:
+        waiting = session.exec(select(TeamsPost.id).where(*due, TeamsPost.kind == NEW_TICKET).limit(1)).first()
+        if waiting is None and not settings.teams_bot_configured:
             waiting = session.exec(select(TeamsPost.id).where(*due).limit(1)).first()
-            if waiting is not None:
-                # Announcing is switched on but this process cannot send: say so rather than let posts pile up.
-                log.warning("Teams posts are waiting but TEAMS_NEW_TICKET_WEBHOOK_URL is not set in this process (it is the one webhook for every kind of post)")
+        if waiting is not None:
+            # Announcing is switched on but this process cannot send: say so rather than let posts pile up.
+            log.warning("Teams posts are waiting but TEAMS_NEW_TICKET_WEBHOOK_URL is not set in this process (it is the one webhook for every kind of post)")
+        if not settings.teams_bot_configured:
             return 0, 0
         # Only the bot can send here. New-ticket cards always need the webhook, so they are left out rather than
-        # filling the batch; a notification that would go to the channel is skipped below.
+        # filling the batch; a notification that would go to the channel is deferred below.
         due = (*due, TeamsPost.kind != NEW_TICKET)
     posts = session.exec(
         select(TeamsPost).where(*due).order_by(TeamsPost.id).limit(limit).with_for_update(skip_locked=True)
@@ -353,6 +363,10 @@ def deliver_pending(
             continue
         direct = isinstance(payload, BotDelivery)
         if not direct and not webhook:
+            # Not an attempt (nothing was tried), but not looked at again at once either: it would fill every batch
+            # ahead of the direct messages behind it.
+            post.next_attempt_at = now + timedelta(minutes=WEBHOOK_MISSING_RETRY_MINUTES)
+            session.add(post)
             log.warning("Teams post %s goes to the channel but TEAMS_NEW_TICKET_WEBHOOK_URL is not set in this process", post.id)
             continue
         try:

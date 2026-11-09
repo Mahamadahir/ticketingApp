@@ -13,10 +13,10 @@ from app import bot_cards, bot_connector, teams
 from app.bot_connector import BotAuthFailed
 from app.config import settings
 from app.jobs import teams_copies
-from app.models import AuditLog, TeamsConversation, TeamsPost, Ticket
+from app.models import MembershipLevel, TeamsConversation, TeamsPost, Ticket, User, UserRole
 from app.notification_settings import save_choices
 from app.notifications import hand_to_teams
-from tests.conftest import create_team
+from tests.conftest import add_membership, create_team
 from tests.test_teams_copy import an_agent
 from tests.test_teams_copy_sending import NOW, due_notification, posts
 
@@ -159,9 +159,25 @@ def test_with_no_conversation_the_channel_mention_is_the_fallback_when_it_is_on(
     assert payload["attachments"][0]["content"]["msteams"]["entities"][0]["mentioned"]["id"] == "bob@example.com"
 
 
-def test_with_no_conversation_and_the_channel_off_the_copy_is_dropped_with_its_reason(client, db_session, bot):
+def test_with_no_conversation_and_the_channel_off_the_copy_is_dropped_when_handed_over(client, db_session, bot):
     bob, _ = an_agent(client, db_session)
+    n = due_notification(db_session, bob)
+
+    assert hand_to_teams(db_session, teams.queue_notification, can_deliver=teams.can_deliver) == (0, 1)
+    db_session.commit()
+
+    assert posts(db_session) == []  # no failed row left in the outbox for a person who was never reachable
+    assert db_session.get(type(n), n.id).teams_handled_at is not None
+    teams_copies(db_session)  # the job passes can_deliver itself
+    assert posts(db_session) == []
+
+
+def test_a_queued_copy_whose_route_has_gone_is_given_up_with_its_reason(client, db_session, bot):
+    bob, _ = an_agent(client, db_session)
+    row = installed(db_session, bob)
     queued(db_session, bob)
+    db_session.delete(row)  # uninstalled since, and there is no channel to fall back to
+    db_session.commit()
     sent = Sent()
 
     assert sent.deliver(db_session) == (0, 1)
@@ -171,14 +187,18 @@ def test_with_no_conversation_and_the_channel_off_the_copy_is_dropped_with_its_r
     assert post.sent_at is None and post.attempts == teams.MAX_ATTEMPTS and "No Teams conversation" in post.last_error
 
 
-def test_a_conversation_that_appears_after_the_copy_was_queued_still_gets_it_in_the_chat(client, db_session, bot):
+def test_a_person_who_uninstalled_after_the_copy_was_queued_gets_the_channel_mention_when_it_is_on(client, db_session, bot, monkeypatch):
     bob, _ = an_agent(client, db_session)
+    row = installed(db_session, bob)
     queued(db_session, bob)
-    installed(db_session, bob)
+    db_session.delete(row)
+    db_session.commit()
+    monkeypatch.setattr(settings, "teams_notifications_enabled", True)
+    monkeypatch.setattr(settings, "teams_new_ticket_webhook_url", "https://example.invalid/hook-secret")
     sent = Sent()
 
     assert sent.deliver(db_session) == (1, 0)
-    assert len(sent.direct) == 1
+    assert sent.direct == [] and len(sent.channel) == 1
 
 
 def test_the_route_is_decided_in_one_place(client, db_session, bot, monkeypatch):
@@ -377,17 +397,40 @@ def test_a_direct_message_does_not_wait_for_the_webhook_but_a_channel_post_does(
     due_notification(db_session, bob)
     teams_copies(db_session)
     db_session.commit()
-    assert sent.deliver(db_session) == (0, 0)  # channel post, no URL here: left waiting, untried
+    assert sent.deliver(db_session, now=NOW) == (0, 0)  # channel post, no URL here: left waiting, untried
     [first, second] = posts(db_session)
     assert second.sent_at is None and second.attempts == 0
+    assert second.next_attempt_at == NOW + timedelta(minutes=teams.WEBHOOK_MISSING_RETRY_MINUTES)  # not first in every batch
 
 
-def test_new_ticket_cards_are_left_alone_by_a_process_with_only_the_bot(client, db_session, bot):
+def test_posts_that_cannot_be_sent_here_do_not_hold_up_the_direct_messages_behind_them(client, db_session, bot, monkeypatch):
+    monkeypatch.setattr(settings, "teams_notifications_enabled", True)
+    bob, team = an_agent(client, db_session)
+    ann = User(email="ann@example.com", display_name="Ann", role=UserRole.AGENT)
+    db_session.add(ann)
+    db_session.commit()
+    add_membership(db_session, ann.id, team.id, MembershipLevel.MEMBER)
+    for _ in range(2):
+        queued(db_session, ann)  # Ann has not installed the app: channel posts
+    installed(db_session, bob)
+    queued(db_session, bob)  # a direct message, queued behind them
+    sent = Sent()
+
+    assert sent.deliver(db_session, limit=2, now=NOW) == (0, 0)  # the batch is the two channel posts: deferred
+    assert sent.deliver(db_session, limit=2, now=NOW) == (1, 0)  # now the direct message is reached
+    assert len(sent.direct) == 1
+
+
+def test_new_ticket_cards_are_left_alone_by_a_process_with_only_the_bot_which_says_so(client, db_session, bot, caplog):
+    import logging
+
     db_session.add(TeamsPost(kind=teams.NEW_TICKET, ticket_id=None))
     db_session.commit()
     sent = Sent()
-    assert sent.deliver(db_session) == (0, 0)
+    with caplog.at_level(logging.WARNING, logger="app.teams"):
+        assert sent.deliver(db_session) == (0, 0)
     assert posts(db_session)[0].attempts == 0
+    assert "TEAMS_NEW_TICKET_WEBHOOK_URL is not set" in caplog.text
 
 
 # ---- Through the real Bot Connector client ------------------------------------------------------------
@@ -433,3 +476,12 @@ def test_the_teams_option_reads_direct_message_when_the_bot_is_on(client, db_ses
     monkeypatch.setattr(settings, "teams_bot_tenant_id", "22222222-2222-2222-2222-222222222222")
     page = client.get("/settings/notifications").text
     assert "Teams (direct message)" in page and "not connected yet" not in page
+
+
+def test_a_person_without_the_app_is_told_to_install_it(client, db_session, bot, monkeypatch):
+    bob, _ = an_agent(client, db_session)
+    assert "install the Teams app to get these" in client.get("/settings/notifications").text
+    monkeypatch.setattr(settings, "teams_notifications_enabled", True)
+    assert "until then they go to the support channel" in client.get("/settings/notifications").text
+    installed(db_session, bob)
+    assert "install the Teams app" not in client.get("/settings/notifications").text

@@ -333,10 +333,12 @@ def hand_to_teams(
     enqueue: Callable[[Session, Notification], None],
     now: Optional[datetime] = None,
     limit: int = TEAMS_BATCH,
+    can_deliver: Optional[Callable[[Session, User], bool]] = None,
 ) -> tuple[int, int]:
     """Hands each due notification to `enqueue` (which writes the Teams post) and marks it dealt with.
     A notification is dropped, not sent, if the person has since become inactive, turned Teams off for that event or can
-    no longer open its ticket (a Teams message would say what the ticket is). Returns (handed, dropped).
+    no longer open its ticket (a Teams message would say what the ticket is), or if `can_deliver` says the person has no
+    way to be reached in Teams. Returns (handed, dropped).
     Does not commit; the worker commits after the job. If `enqueue` raises, nothing from this run is kept."""
     now = now or datetime.now(timezone.utc)
     retire_read_for_teams(session, now)
@@ -346,7 +348,8 @@ def hand_to_teams(
         ticket = session.get(Ticket, notification.ticket_id) if notification.ticket_id else None
         still_wanted = person.is_active and offers(notification.kind, TEAMS) and is_enabled(session, person, notification.kind, TEAMS)
         can_open = notification.ticket_id is None or (ticket is not None and _can_open(session, person, ticket))
-        if still_wanted and can_open:
+        reachable = can_deliver is None or can_deliver(session, person)
+        if still_wanted and can_open and reachable:
             enqueue(session, notification)
             handed += 1
         else:
