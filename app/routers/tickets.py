@@ -194,18 +194,25 @@ def list_tickets(
     request: Request,
     mine: bool = False,
     untriaged: bool = False,
-    team_id: Optional[int] = None,
+    team_id: Optional[str] = None,
     q: str = "",
-    source: Optional[TicketSource] = None,
+    source: Optional[str] = None,
     page: int = 1,
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
+    # The filter form sends a blank value for "any", which is no filter, not an error.
+    try:
+        team_id = optional_int(team_id)
+        source = TicketSource(source) if source and source.strip() else None
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Unknown team or channel")
     # Untriaged first, then by time to breach, then priority (see sla.queue_order).
     query = select(Ticket).order_by(*queue_order(count_setting(session, REQUIRED_BY_LEAD_DAYS)))
 
     # Search only narrows what the agent can already see, so visibility is applied first.
-    visible = visible_ticket_condition(user, access_context(session, user))
+    levels = access_context(session, user)
+    visible = visible_ticket_condition(user, levels)
     if visible is not None:
         query = query.where(visible)
     q = normalise(q)
@@ -224,8 +231,7 @@ def list_tickets(
 
     tickets_page = paginate(session, query, page, request.query_params)
     teams_by_id = {team.id: team for team in session.exec(select(Team)).all()}
-    agents_by_id = {agent.id: agent for agent in session.exec(select(User).where(User.role == UserRole.AGENT)).all()}
-    levels = access_context(session, user)
+    agents_by_id = {agent.id: agent for agent in session.exec(select(User).where(User.role.in_(AGENT_ROLES))).all()}
     teams = sorted(
         (t for t in teams_by_id.values() if user.role == UserRole.SUPER_ADMIN or t.id in levels), key=lambda t: t.name.lower()
     )

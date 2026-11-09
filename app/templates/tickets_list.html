@@ -18,9 +18,9 @@
   </div>
 
   <nav class="tabs" aria-label="Queue views">
-    <a class="tab{{ ' on' if not mine and not untriaged else '' }}" href="{{ list_link(mine=False, untriaged=False) }}"{% if not mine and not untriaged %} aria-current="true"{% endif %}>All I can see <span class="chip t-gray">{{ figures.tab_all }}</span></a>
-    <a class="tab{{ ' on' if mine else '' }}" href="{{ list_link(mine=True, team_id=None) }}"{% if mine %} aria-current="true"{% endif %}>My queue <span class="chip t-gray">{{ figures.tab_mine }}</span></a>
-    <a class="tab{{ ' on' if untriaged else '' }}" href="{{ list_link(untriaged=True) }}"{% if untriaged %} aria-current="true"{% endif %}>Untriaged <span class="chip t-gray">{{ figures.tab_untriaged }}</span></a>
+    <a class="tab{{ ' on' if not mine and not untriaged else '' }}" href="{{ list_link(mine=False, untriaged=False, q='', source='') }}"{% if not mine and not untriaged %} aria-current="true"{% endif %}>All I can see <span class="chip t-gray">{{ figures.tab_all }}</span></a>
+    <a class="tab{{ ' on' if mine else '' }}" href="{{ list_link(mine=True, team_id=None, q='', source='') }}"{% if mine %} aria-current="true"{% endif %}>My queue <span class="chip t-gray">{{ figures.tab_mine }}</span></a>
+    <a class="tab{{ ' on' if untriaged else '' }}" href="{{ list_link(untriaged=True, q='', source='') }}"{% if untriaged %} aria-current="true"{% endif %}>Untriaged <span class="chip t-gray">{{ figures.tab_untriaged }}</span></a>
   </nav>
 
   <form method="get" action="/tickets" class="queue-filters">
@@ -75,12 +75,12 @@
                   <span class="muted small">{{ ticket.source.value|capitalize }}</span>
                 </div>
                 <a class="subj" href="/tickets/{{ ticket.number }}">{{ ticket.subject }}</a>
-                <span class="muted small">{{ teams_by_id[ticket.team_id].name if ticket.team_id and ticket.team_id in teams_by_id else "No team" }} &middot; {{ categories_by_id[ticket.category_id] if ticket.category_id in categories_by_id else "Not triaged" }}</span>
+                <span class="muted small">{{ teams_by_id[ticket.team_id].name if ticket.team_id and ticket.team_id in teams_by_id else "No team" }} &middot; {{ categories_by_id[ticket.category_id] if ticket.category_id in categories_by_id else ("Not triaged" if not ticket.triaged_at else "No category") }}</span>
               </div>
             </td>
             <td><span class="chip {{ 't-red' if ticket.priority == 'p1' else ('t-amber' if ticket.priority == 'p2' else 't-gray') }}">{{ ticket.priority.upper() if ticket.priority else ("Untriaged" if not ticket.triaged_at else "None") }}</span></td>
             <td>
-              <span class="chip t-gray status-{{ ticket.status.value }}">{{ ticket.status.value.replace("_", " ")|capitalize }}</span>
+              <span class="chip t-gray">{{ ticket.status.value.replace("_", " ")|capitalize }}</span>
               <div class="muted small">Updated {{ ticket.updated_at|local_time }}</div>
             </td>
             <td>

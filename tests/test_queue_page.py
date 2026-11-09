@@ -4,9 +4,9 @@ its pinning, the empty states and the one search box. Who sees what is still dec
 import re
 from datetime import date, datetime, timedelta, timezone
 
-from app.models import Ticket, TicketSource, TicketStatus
+from app.models import Ticket, TicketSource, TicketStatus, UserRole
 from app.sla import queue_sla, sla_view
-from tests.conftest import create_category, create_team
+from tests.conftest import create_category, create_team, set_role
 from tests.test_triage import agent, new_ticket
 
 NOW = datetime(2026, 11, 9, 12, 0, tzinfo=timezone.utc)
@@ -171,3 +171,28 @@ def test_assignee_and_channel_and_team_activity(client, db_session):
     assert 'href="/tickets/activity"' in page
     assert "Desk &middot; Hardware" in page or "Desk · Hardware" in page
     assert "Channel" in page and '<option value="email">Email</option>' in page
+
+
+def test_a_blank_filter_means_any_and_is_not_an_error(client, db_session):
+    desk = create_team(db_session, "Desk")
+    category = create_category(db_session, desk, "Hardware")
+    agent(client, db_session, member_of=[desk])
+    triaged(db_session, desk, category, "Router down")
+
+    for params in ({"team_id": "", "source": "email"}, {"team_id": str(desk.id), "source": ""}, {"team_id": "", "source": ""}):
+        response = client.get("/tickets", params=params)
+        assert response.status_code == 200 and "Router down" in response.text
+    assert client.get("/tickets", params={"source": "carrier-pigeon"}).status_code == 422
+
+
+def test_a_super_admins_name_shows_as_assignee_and_a_missing_category_is_not_called_untriaged(client, db_session):
+    desk = create_team(db_session, "Desk")
+    category = create_category(db_session, desk, "Hardware")
+    admin_id = agent(client, db_session, member_of=[desk])
+    set_role(db_session, admin_id, UserRole.SUPER_ADMIN)
+    triaged(db_session, desk, category, "Mine", assigned_agent_id=admin_id)
+    triaged(db_session, desk, category, "No cat", category_id=None)
+
+    page = client.get("/tickets").text
+    assert page.count('<span class="muted">Unassigned</span>') == 1  # only "No cat"
+    assert "Desk &middot; No category" in page and "Not triaged" not in page
