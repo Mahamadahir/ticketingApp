@@ -316,6 +316,10 @@ label { cursor: pointer; }
 .tp-composer .sr-only { top: 0; left: 0; }
 .tp-hint { margin: 0; font-size: 13px; color: var(--muted); }
 .tp-compose-note textarea { background: var(--note-bg); border-color: var(--note-border); }
+.tp-attach { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
+.tp-attach .btn { cursor: pointer; }
+.tp-attach input:focus-visible + .btn { outline: 2px solid var(--focus); outline-offset: 2px; }
+.tp-attach-names { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
 .tp-compose-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
 .tp-compose-row .btn-primary { margin-left: auto; }
 .tp-compose-row label { width: auto; }

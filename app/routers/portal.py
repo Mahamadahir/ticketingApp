@@ -45,6 +45,7 @@ from app.raising import (
 from app.sla import IMPACT_LABELS, URGENCY_LABELS, Level
 from app.triage import TriageError
 from app.visibility import Access, access_context, may_set_required_by, ticket_access
+from app.attachments import files_by_message
 from app.messages import about_labels, record_inbound, requester_visible_answers, requester_visible_messages
 from app.follower_updates import queue_follower_updates
 from app.reopening import ReopenError, latest_follow_on, open_follow_on_ticket, related_tickets, reopen_ticket
@@ -152,6 +153,12 @@ def _render_ticket(request: Request, ticket: Ticket, user: User, session: Sessio
             "ticket": ticket,
             "messages": visible,
             "about": about_labels(session, visible),
+            # The files an agent attached to an email (open from the portal, as the Teams message says): downloaded through
+            # /attachments, which checks the same rule again (visibility.may_view_attachment).
+            "message_files": {
+                message_id: [f for f in files if not f.is_inline]
+                for message_id, files in files_by_message(session, user, access_context(session, user), visible).items()
+            },
             "source_label": source_label(session, ticket),
             "request_info": request_type_of(session, ticket),
             "answers": requester_visible_answers(session, ticket),
@@ -363,7 +370,7 @@ def add_comment(
             session, ticket, subject=ticket.subject, sender_email=user.email, source=TicketSource.PORTAL,
             actor_email=user.email,
         )
-        record_inbound(session, follow_on, sender=user.display_name, body=body, author_user_id=user.id)
+        record_inbound(session, follow_on, sender=user.display_name, body=body, author_user_id=user.id, channel=PORTAL)
         log_action(session, user.email, "ticket", follow_on.id, "commented", body[:200])
         session.commit()
         destination = f"/portal/{follow_on.number}"
@@ -371,7 +378,9 @@ def add_comment(
             return Response(status_code=204, headers={"HX-Redirect": destination})
         return RedirectResponse(destination, status_code=303)
 
-    message = record_inbound(session, ticket, sender=user.display_name, body=body, author_user_id=user.id, reply_by=user.email)
+    message = record_inbound(
+        session, ticket, sender=user.display_name, body=body, author_user_id=user.id, reply_by=user.email, channel=PORTAL,
+    )
     note_requester_wrote(session, ticket, user.email, PORTAL)
     log_action(session, user.email, "ticket", ticket.id, "commented", body[:200])
     queue_follower_updates(session, ticket, message, user.email)  # nobody was sent a portal comment

@@ -199,6 +199,12 @@ COLUMNS: dict[str, ColumnUse] = {
         NOT_PERSON, LABEL, "a file name held (with the file) while the Teams bot asks which request a message is for; dropped when "
         "the question is answered or expires, and by anonymisation", anon=DELETE,
     ),
+    "reply_held_file.filename": _use(
+        NOT_PERSON, LABEL, "a file name held (with the file) while an agent checks the preview of an email to the requester; dropped "
+        "when the preview is confirmed or expires, and by anonymisation", anon=DELETE,
+    ),
+    "reply_held_file.user_id": _use(STAFF, USER_ID),
+    "message.channel": _use(NOT_PERSON, LABEL, "where the message came from or went (email, portal, teams, agent, system); names no one", anon=KEEP),
     "teamsintake.activity_key": _use(NOT_PERSON, LABEL, "one-way hash of an object id and a Teams activity id; names no one and holds no words"),
     "anonymised_requester.address_hash": _use(NOT_PERSON, LABEL, "keyed one-way hash of an anonymised address; the only trace of it, kept so a repeat is recognised"),
     "ticket.split_from_id": _use(NOT_PERSON, LABEL, "a ticket id"),

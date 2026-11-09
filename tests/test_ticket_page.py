@@ -179,7 +179,7 @@ def test_the_composer_starts_on_email_user_for_a_triaged_ticket_with_both_forms(
     assert 'name="next_status"' in html and 'id="email-body"' in html and 'id="email-preview"' in html
     assert "Goes to me@example.com and is copied to 0 followers." in html
     assert "Only agents can see internal notes." in html
-    assert "Preview email</button>" in html and "Add note</button>" in html
+    assert "Preview message</button>" in html and "Add note</button>" in html
 
 
 def test_the_composer_starts_on_internal_note_when_the_ticket_cannot_be_emailed_yet(client, db_session):

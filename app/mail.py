@@ -145,6 +145,8 @@ def build_message_mail(session: Session, row: OutboundEmail) -> Mail:
         raise Unsendable("The requester may not see this message")
     _guard_recipient(row)
     record = _with_about(session, ticket, message.body)
+    note, files = _with_files(session, row, ticket)  # an agent's attachments; the text stays the message's own
+    record += note  # empty unless a file could not be read: then the email says so
     return Mail(
         to=row.to_address,
         cc=[a.strip() for a in (message.cc or "").split(",") if a.strip()],
@@ -154,6 +156,7 @@ def build_message_mail(session: Session, row: OutboundEmail) -> Mail:
         record=record,
         automatic=row.kind == NOTICE,
         reference=ticket.reference,
+        files=files,
     )
 
 
@@ -402,7 +405,7 @@ def send_link_code(
 def _with_files(session: Session, row: OutboundEmail, ticket: Ticket) -> tuple[str, list[tuple[str, str, bytes]]]:
     """The row's text and the files it names (`attachment_ids`, fixed when it was queued) read from storage. A file that
     cannot be read must not stop the email: it is logged, and the text says plainly that it was not attached."""
-    body, files = row.body, []
+    body, files = row.body or "", []
     ids = [int(i) for i in (row.attachment_ids or "").split(",") if i.strip().isdigit()]
     if not ids:
         return body, files
@@ -417,10 +420,8 @@ def _with_files(session: Session, row: OutboundEmail, ticket: Ticket) -> tuple[s
             log.exception("Email %s: attachment %s could not be read from storage", row.id, item.id)
             missing.append(item.filename)
     if missing:
-        body += (
-            "\n\nNOTE: these files, listed above as attached, could NOT be attached: " + ", ".join(missing)
-            + ". Ask the IT mailbox for them."
-        )
+        listed = "listed above as attached, " if row.body else ""
+        body += f"\n\nNOTE: these files, {listed}could NOT be attached: " + ", ".join(missing) + ". Ask the IT mailbox for them."
     return body, files
 
 
@@ -544,7 +545,7 @@ def send_through_graph(mail: Mail) -> None:
     headers = {"X-Ticket-Reference": mail.reference}
     if mail.automatic:
         headers["X-Auto-Response-Suppress"] = "All"  # tell the receiving Exchange not to auto-reply
-    extra = {"attachments": mail.files} if mail.files else {}  # only an MSP handoff carries files
+    extra = {"attachments": mail.files} if mail.files else {}  # an MSP handoff or forward, or an agent reply with files
     graph_client.send_mail(mail.to, mail.subject, mail.body, cc=mail.cc, headers=headers, **extra)
 
 

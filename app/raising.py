@@ -19,6 +19,7 @@ from sqlmodel import Session, select
 from app.backdating import BackdateError, backdate_ticket
 from app.followers import InvalidEmail, normalise_email
 from app.messages import record_inbound
+from app.reply_channel import AGENT, PORTAL
 from app.outbox import queue_raised_for
 from app.identity import person_for_address
 from app.models import (
@@ -182,9 +183,12 @@ def raise_ticket(
         # Stored as the requester's own first message; who typed it is in the sender.
         record_inbound(
             session, ticket, sender=f"Logged by {creator.display_name} on behalf of {requester}", body=description,
+            channel=AGENT,
         )
     else:
-        record_inbound(session, ticket, sender=creator.display_name, body=description, author_user_id=creator.id)
+        record_inbound(
+            session, ticket, sender=creator.display_name, body=description, author_user_id=creator.id, channel=PORTAL,
+        )
 
     if category is not None:
         triage_ticket(

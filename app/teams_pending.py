@@ -23,9 +23,9 @@ from typing import Optional
 
 from sqlmodel import Session, select
 
-from app.attachments import blob_key, detect_content_type, lock_blob
+from app.attachments import blob_key, detect_content_type, keys_in_use, lock_blob
 from app.intake import IncomingAttachment
-from app.models import Attachment, PendingBlobDelete, TeamsHeldFile, TeamsIntake
+from app.models import PendingBlobDelete, TeamsHeldFile, TeamsIntake
 from app.settings_store import TEAMS_PENDING_CHOICE_HOURS, count_setting
 from app.storage import Storage, get_storage
 
@@ -84,10 +84,8 @@ def release(session: Session, rows: list[TeamsHeldFile]) -> int:
     session.flush()
     if not keys:
         return 0
-    used = set(session.exec(select(Attachment.blob_key).where(Attachment.blob_key.in_(keys))).all())
-    used |= set(session.exec(select(TeamsHeldFile.blob_key).where(TeamsHeldFile.blob_key.in_(keys))).all())
     queued = 0
-    for key in keys - used:
+    for key in keys - keys_in_use(session, keys):
         if session.get(PendingBlobDelete, key) is None:
             session.add(PendingBlobDelete(blob_key=key))
             queued += 1

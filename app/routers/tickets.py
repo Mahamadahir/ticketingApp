@@ -3,12 +3,13 @@ from html import escape
 from typing import Optional
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from app.templating import templates
 from sqlalchemy import func, or_
 from sqlmodel import Session, select
 
+from app import reply_files
 from app.audit import log_action
 from app.auth import require_roles
 from app.database import get_session
@@ -81,6 +82,7 @@ from app.splitting import (
     sub_tickets_summary,
 )
 from app.linking import PARENT_TYPES, LinkError, link_ticket, linked_summary, unlink_ticket
+from app.storage import Storage, get_storage
 from app.messages import (
     BadStatusChoice,
     EmptyEmail,
@@ -790,12 +792,16 @@ def preview_email_user(
     next_status: Optional[str] = Form(None),
     due_on: Optional[str] = Form(None, max_length=20),
     due_reason: Optional[str] = Form(None, max_length=600),
+    files: list[UploadFile] = File(default=[]),
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
+    storage: Storage = Depends(get_storage),
 ):
-    """The "are you sure?" step before an email goes to the requester: who it goes to, who is
-    copied, the subject and the text, and what it does to the ticket. Sends and records nothing.
-    The checks are the send's own, so what is previewed is what would go."""
+    """The "are you sure?" step before a message goes to the requester: who it goes to (and whether by email or in Teams), who
+    is copied, the subject and the text, the files, and what it does to the ticket. Sends and records nothing about the
+    ticket; the files are checked (the rules of every stored file, and one email's size) and held with the draft until the
+    preview is confirmed, kept editing or expires (app/reply_files.py). The checks are the send's own, so what is
+    previewed is what would go."""
     ticket = _get_ticket(session, number, user)
     try:
         preview = preview_email(session, ticket, body, cc_emails=cc if cc_form else None, next_status=next_status)
@@ -808,12 +814,21 @@ def preview_email_user(
     except BadStatusChoice as error:
         raise HTTPException(status_code=400, detail=str(error))
     _check_scheduled_date_given(ticket, preview.status_after, due_on)
+    try:
+        new_files = reply_files.read_uploads(session, files)
+        reply_files.check_email_size(session, [len(item.data) for item in new_files])
+    except reply_files.FilesRefused as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    draft = reply_files.hold(session, storage, ticket, user, new_files)
+    session.commit()  # the draft's files outlive this request; nothing else is recorded
+    preview.files = [(item.filename, len(item.data)) for item in new_files]
     return templates.TemplateResponse(
         request,
         "_email_preview.html",
         {
             "ticket": ticket,
             "preview": preview,
+            "draft": draft,
             "cc_form": bool(cc_form),
             "ticked": cc,
             "next_status": next_status,
@@ -821,6 +836,20 @@ def preview_email_user(
             "due_reason": due_reason,
         },
     )
+
+
+@router.post("/{number}/email/discard", response_class=HTMLResponse)
+def discard_email_draft(
+    number: int,
+    draft: str = Form(..., max_length=100),
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """Keep editing: the files held for the preview that was just closed are dropped now, not left to expire."""
+    ticket = _get_ticket(session, number, user)
+    reply_files.discard(session, ticket, user, draft)
+    session.commit()
+    return HTMLResponse("")
 
 
 @router.post("/{number}/email", response_class=HTMLResponse)
@@ -833,18 +862,31 @@ def email_user(
     next_status: Optional[str] = Form(None),
     due_on: Optional[str] = Form(None, max_length=20),
     due_reason: Optional[str] = Form(None, max_length=600),
+    draft: Optional[str] = Form(None, max_length=100),
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
+    storage: Storage = Depends(get_storage),
 ):
-    """Send the requester a message, copying the followers the agent left ticked.
+    """Send the requester a message, copying the followers the agent left ticked. "draft" names the files held
+    at the preview (app/reply_files.py): they are attached to the message and the held copies removed.
     Not available until the ticket is triaged. "cc_form" is sent by the page's form
     so that ticking nobody means copying nobody; a request without it copies every
     follower. "next_status" is the status the agent picked in the form (Awaiting user unless they
     chose otherwise); a request without it gets the same default."""
     ticket = _get_ticket(session, number, user)
 
+    held_rows = reply_files.held(session, ticket, user, draft)
+    if draft and not held_rows:
+        raise HTTPException(status_code=400, detail="The files for this message are no longer held. Preview the message again.")
     try:
-        email_requester(session, ticket, user, body, cc_emails=cc if cc_form else None, bell=False)
+        new_files = reply_files.take(storage, held_rows)
+        reply_files.check_email_size(session, [len(item.data) for item in new_files])
+    except reply_files.FilesRefused as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    try:
+        email_requester(
+            session, ticket, user, body, cc_emails=cc if cc_form else None, bell=False, files=new_files, storage=storage,
+        )
     except NotTriaged:
         raise HTTPException(status_code=400, detail="Triage the ticket before emailing the requester")
     except EmptyEmail:
@@ -866,6 +908,7 @@ def email_user(
     moved_to_awaiting = status_before != TicketStatus.AWAITING_USER and ticket.status == TicketStatus.AWAITING_USER
     notify_agent_emailed(session, ticket, user.email, instead_of=AWAITING_YOU if moved_to_awaiting else None)
     log_action(session, user.email, "ticket", ticket.id, "emailed_requester", body[:200])
+    reply_files.release(session, held_rows)  # the files are attached now, so the stored copies stay
     session.commit()
     session.refresh(ticket)
 
@@ -883,10 +926,12 @@ def add_ticket_note(
     next_status: Optional[str] = Form(None),
     due_on: Optional[str] = Form(None, max_length=20),
     due_reason: Optional[str] = Form(None, max_length=600),
+    files: list[UploadFile] = File(default=[]),
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
+    storage: Storage = Depends(get_storage),
 ):
-    """An internal note, visible to agents only. Allowed at any stage, including
+    """An internal note, visible to agents only; its files are too (never in the portal or an email). Allowed at any stage, including
     on an untriaged ticket the agent has not claimed, and never triages it. The agent may also pick
     the ticket's next status; left alone, a note never changes it."""
     ticket = _get_ticket(session, number, user, Access.READ)
@@ -900,9 +945,13 @@ def add_ticket_note(
     if new_status is not None:
         require_access(user, ticket, levels, Access.WORK)  # changing status needs more than reading
 
+    try:
+        new_files = reply_files.read_uploads(session, files)
+    except reply_files.FilesRefused as error:
+        raise HTTPException(status_code=400, detail=str(error))
     if new_status == TicketStatus.SCHEDULED:
         _ask_for_scheduled_date(session, ticket, user, due_on, due_reason)  # before the note, so a refusal leaves nothing
-    note = add_note(session, ticket, user, body)
+    note = add_note(session, ticket, user, body, files=new_files, storage=storage)
     log_action(session, user.email, "ticket", ticket.id, "note_added", body[:200])
     _set_status_from_message(session, ticket, user, new_status, due_on, due_reason)
     notify_mentions(session, ticket, note, user)

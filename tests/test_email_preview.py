@@ -44,7 +44,7 @@ def recorded(db_session):
 def test_the_page_previews_before_it_sends(client, db_session):
     ticket = ticket_for_email(client, db_session)
     page = client.get(f"/tickets/{ticket.number}").text
-    assert f'hx-post="/tickets/{ticket.number}/email/preview"' in page and "Preview email" in page
+    assert f'hx-post="/tickets/{ticket.number}/email/preview"' in page and "Preview message" in page
     assert f'hx-post="/tickets/{ticket.number}/email"' not in page  # nothing on the page sends directly
 
 

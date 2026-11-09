@@ -212,11 +212,11 @@ def test_record_inbound_notifies_only_when_told_it_is_a_reply(client, db_session
 
     ticket, team, ann_id = assigned_ticket(client, db_session)
 
-    record_inbound(db_session, ticket, sender="Jo", body="the first message")  # how a ticket is created
+    record_inbound(db_session, ticket, sender="Jo", body="the first message", channel="email")  # how a ticket is created
     db_session.commit()
     assert all_notifications(db_session) == []
 
-    record_inbound(db_session, ticket, sender="Jo", body="a reply", reply_by="jo@example.com")
+    record_inbound(db_session, ticket, sender="Jo", body="a reply", reply_by="jo@example.com", channel="email")
     db_session.commit()
     assert [n.kind for n in all_notifications(db_session)] == ["replied"]
 

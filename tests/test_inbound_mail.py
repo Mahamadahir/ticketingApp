@@ -630,9 +630,9 @@ def test_the_reply_notification_is_asked_for_with_the_senders_address(db_session
     # A reply on an existing ticket passes reply_by so the assignee is notified; a new ticket does not.
     seen = {}
 
-    def spy(session, ticket, *, sender, body, author_user_id=None, reply_by=None):
+    def spy(session, ticket, *, sender, body, channel, author_user_id=None, reply_by=None):
         seen.update(sender=sender, reply_by=reply_by)
-        return record_inbound(session, ticket, sender=sender, body=body, author_user_id=author_user_id)
+        return record_inbound(session, ticket, sender=sender, body=body, author_user_id=author_user_id, channel=channel)
 
     ticket = open_ticket(db_session)
     monkeypatch.setattr(intake, "record_inbound", spy)

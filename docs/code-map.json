@@ -54,6 +54,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/d7a3f19e5c28_message_channel_reply_files.py",
+        "revision": "d7a3f19e5c28"
+      },
+      {
         "file": "migrations/versions/cbf4e82d802a_user_theme.py",
         "revision": "cbf4e82d802a"
       },
@@ -68,17 +72,13 @@
       {
         "file": "migrations/versions/3f94eea4bd7c_teams_bot_conversations.py",
         "revision": "3f94eea4bd7c"
-      },
-      {
-        "file": "migrations/versions/e5fda8ca3a76_anonymised_requester.py",
-        "revision": "e5fda8ca3a76"
       }
     ],
-    "count": 66,
+    "count": 67,
     "heads": [
       {
-        "file": "migrations/versions/cbf4e82d802a_user_theme.py",
-        "revision": "cbf4e82d802a"
+        "file": "migrations/versions/d7a3f19e5c28_message_channel_reply_files.py",
+        "revision": "d7a3f19e5c28"
       }
     ]
   },
@@ -210,6 +210,7 @@
         "app.config",
         "app.models",
         "app.person_data",
+        "app.reply_files",
         "app.storage",
         "app.teams_pending",
         "app.ticket_service"
@@ -401,16 +402,19 @@
     },
     {
       "classes": [
-        "AttachmentRejected"
+        "AttachmentRejected",
+        "NewFile"
       ],
       "file": "app/attachments.py",
       "functions": [
         "attachments_of",
         "blob_key",
+        "check_file",
         "clean_filename",
         "detect_content_type",
         "files_by_message",
         "is_inline_type",
+        "keys_in_use",
         "lock_blob",
         "serving_headers",
         "store_attachment",
@@ -420,7 +424,10 @@
         "app.anonymisation",
         "app.inbound",
         "app.intake",
+        "app.messages",
+        "app.reply_files",
         "app.routers.attachments",
+        "app.routers.portal",
         "app.routers.tickets",
         "app.subject_access",
         "app.teams_intake",
@@ -441,6 +448,7 @@
         "tests/test_attachments.py",
         "tests/test_inbound_mail.py",
         "tests/test_msp_mail.py",
+        "tests/test_reply_files.py",
         "tests/test_subject_access.py"
       ]
     },
@@ -980,6 +988,7 @@
         "app.msp",
         "app.outbox",
         "app.rate_limit",
+        "app.reply_files",
         "app.routers.admin",
         "app.routers.auth",
         "app.routers.dev_tools",
@@ -1018,6 +1027,7 @@
         "tests/test_inbound_mail.py",
         "tests/test_linked_identities.py",
         "tests/test_mail_subscriptions.py",
+        "tests/test_message_channel.py",
         "tests/test_msp.py",
         "tests/test_msp_actions.py",
         "tests/test_msp_mail.py",
@@ -1026,6 +1036,7 @@
         "tests/test_outbound_mail.py",
         "tests/test_presence.py",
         "tests/test_public_surface.py",
+        "tests/test_reply_files.py",
         "tests/test_resolution.py",
         "tests/test_security.py",
         "tests/test_sessions.py",
@@ -1869,6 +1880,7 @@
         "tests/test_outage_mode.py",
         "tests/test_outbound_mail.py",
         "tests/test_reopening.py",
+        "tests/test_reply_files.py",
         "tests/test_resolution.py",
         "tests/test_teams_followups.py",
         "tests/test_withdraw.py"
@@ -1935,6 +1947,7 @@
         "tests/test_htmx_errors.py",
         "tests/test_outage_mode.py",
         "tests/test_public_surface.py",
+        "tests/test_reply_files.py",
         "tests/test_sessions.py",
         "tests/test_subject_access.py",
         "tests/test_teams_bot.py",
@@ -1956,11 +1969,13 @@
         "about_text",
         "add_note",
         "agent_timeline",
+        "attach_files",
         "chosen_status",
         "default_status_after_email",
         "email_requester",
         "in_a_split",
         "is_triaged",
+        "kind_label",
         "mail_subject",
         "not_requester_visible_messages",
         "preview_email",
@@ -1995,6 +2010,7 @@
         "app.visibility"
       ],
       "imports": [
+        "app.attachments",
         "app.followers",
         "app.models",
         "app.notifications",
@@ -2002,6 +2018,7 @@
         "app.request_questions",
         "app.sla",
         "app.splitting",
+        "app.storage",
         "app.ticket_service",
         "app.visibility"
       ],
@@ -2014,11 +2031,13 @@
         "tests/test_escalation_tidy.py",
         "tests/test_follower_updates.py",
         "tests/test_inbound_mail.py",
+        "tests/test_message_channel.py",
         "tests/test_messages.py",
         "tests/test_msp_mail.py",
         "tests/test_msp_real_mail.py",
         "tests/test_never_follow.py",
         "tests/test_outbound_mail.py",
+        "tests/test_reply_files.py",
         "tests/test_reply_notification.py",
         "tests/test_request_questions.py",
         "tests/test_resolution.py",
@@ -2060,6 +2079,7 @@
         "OutboundEmail",
         "PendingBlobDelete",
         "RelatedTicket",
+        "ReplyHeldFile",
         "RequestSubTemplate",
         "RequestType",
         "RequestTypeQuestion",
@@ -2142,6 +2162,7 @@
         "app.raising",
         "app.reopening",
         "app.reply_channel",
+        "app.reply_files",
         "app.report_kit",
         "app.reports",
         "app.request_questions",
@@ -2301,6 +2322,10 @@
           "table": "relatedticket"
         },
         {
+          "class": "ReplyHeldFile",
+          "table": "reply_held_file"
+        },
+        {
           "class": "RequestSubTemplate",
           "table": "requestsubtemplate"
         },
@@ -2439,6 +2464,7 @@
         "tests/test_linking.py",
         "tests/test_login_lockout.py",
         "tests/test_mail_subscriptions.py",
+        "tests/test_message_channel.py",
         "tests/test_messages.py",
         "tests/test_msp.py",
         "tests/test_msp_actions.py",
@@ -2458,6 +2484,7 @@
         "tests/test_queue_page.py",
         "tests/test_raising.py",
         "tests/test_reopening.py",
+        "tests/test_reply_files.py",
         "tests/test_reply_notification.py",
         "tests/test_reports.py",
         "tests/test_reports_more.py",
@@ -2558,6 +2585,7 @@
         "app.inbound",
         "app.msp_actions",
         "app.navigation",
+        "app.reply_files",
         "app.reports",
         "app.routers.admin",
         "app.routers.msp_mail",
@@ -2640,6 +2668,7 @@
       "summary": "What an agent does about the MSP besides sending a ticket (issue #150). Nothing here commits.",
       "tables": [],
       "tests": [
+        "tests/test_message_channel.py",
         "tests/test_msp_actions.py",
         "tests/test_reports_more.py"
       ]
@@ -2946,6 +2975,7 @@
         "tests/test_follower_updates.py",
         "tests/test_msp_mail.py",
         "tests/test_outbound_mail.py",
+        "tests/test_reply_files.py",
         "tests/test_resolution.py",
         "tests/test_teams_approvals.py",
         "tests/test_withdraw.py"
@@ -3098,6 +3128,7 @@
         "app.models",
         "app.notification_settings",
         "app.outbox",
+        "app.reply_channel",
         "app.request_questions",
         "app.request_types",
         "app.required_by",
@@ -3204,12 +3235,14 @@
         "note_requester_wrote",
         "queue_reply",
         "reply_route",
-        "requester_channel"
+        "requester_channel",
+        "route_for"
       ],
       "imported_by": [
         "app.inbound",
         "app.intake",
         "app.messages",
+        "app.raising",
         "app.routers.portal",
         "app.teams",
         "app.teams_intake"
@@ -3227,7 +3260,46 @@
       "summary": "Which channel an agent's reply (or an automatic notice) to the requester travels by (phase 8F, #193).",
       "tables": [],
       "tests": [
+        "tests/test_message_channel.py",
         "tests/test_teams_followups.py"
+      ]
+    },
+    {
+      "classes": [
+        "FilesRefused"
+      ],
+      "file": "app/reply_files.py",
+      "functions": [
+        "check_email_size",
+        "discard",
+        "email_budget_bytes",
+        "expire",
+        "held",
+        "hold",
+        "read_uploads",
+        "release",
+        "release_for_tickets",
+        "take"
+      ],
+      "imported_by": [
+        "app.anonymisation",
+        "app.routers.tickets",
+        "app.scheduled_jobs"
+      ],
+      "imports": [
+        "app.attachments",
+        "app.config",
+        "app.models",
+        "app.msp",
+        "app.settings_store",
+        "app.storage"
+      ],
+      "module": "app.reply_files",
+      "routes": [],
+      "summary": "Files an agent attaches to a reply or a note on the ticket page (#201).",
+      "tables": [],
+      "tests": [
+        "tests/test_reply_files.py"
       ]
     },
     {
@@ -4618,6 +4690,7 @@
       ],
       "imports": [
         "app.approvals",
+        "app.attachments",
         "app.audit",
         "app.auth",
         "app.backdating",
@@ -4803,6 +4876,7 @@
         "change_required_by",
         "change_status",
         "close",
+        "discard_email_draft",
         "email_user",
         "escalate_ticket",
         "fill_from_canned",
@@ -4862,6 +4936,7 @@
         "app.presence",
         "app.raising",
         "app.reopening",
+        "app.reply_files",
         "app.request_questions",
         "app.request_types",
         "app.required_by",
@@ -4870,6 +4945,7 @@
         "app.settings_store",
         "app.sla",
         "app.splitting",
+        "app.storage",
         "app.subrequests",
         "app.team_activity",
         "app.templating",
@@ -4964,6 +5040,11 @@
           "handler": "email_user",
           "method": "POST",
           "path": "/tickets/{number}/email"
+        },
+        {
+          "handler": "discard_email_draft",
+          "method": "POST",
+          "path": "/tickets/{number}/email/discard"
         },
         {
           "handler": "preview_email_user",
@@ -5161,6 +5242,7 @@
         "app.entra_check",
         "app.models",
         "app.msp",
+        "app.reply_files",
         "app.sessions",
         "app.settings_store",
         "app.teams_pending"
@@ -5178,6 +5260,7 @@
         "tests/test_handoff_bells_holidays.py",
         "tests/test_msp.py",
         "tests/test_msp_mail.py",
+        "tests/test_reply_files.py",
         "tests/test_scheduled_jobs.py",
         "tests/test_sessions.py",
         "tests/test_teams_followups.py"
@@ -5277,6 +5360,7 @@
         "app.notifications",
         "app.presence",
         "app.raising",
+        "app.reply_files",
         "app.report_kit",
         "app.required_by",
         "app.routers.admin",
@@ -5335,6 +5419,7 @@
         "tests/test_outbound_mail.py",
         "tests/test_presence.py",
         "tests/test_raising.py",
+        "tests/test_reply_files.py",
         "tests/test_reports.py",
         "tests/test_request_types.py",
         "tests/test_required_by.py",
@@ -5493,8 +5578,11 @@
         "app.inbound",
         "app.intake",
         "app.mail",
+        "app.messages",
+        "app.reply_files",
         "app.routers.attachments",
         "app.routers.data_protection",
+        "app.routers.tickets",
         "app.subject_access",
         "app.teams_intake",
         "app.teams_pending"
@@ -5511,6 +5599,7 @@
         "tests/test_attachments.py",
         "tests/test_inbound_mail.py",
         "tests/test_msp_mail.py",
+        "tests/test_reply_files.py",
         "tests/test_storage.py",
         "tests/test_subject_access.py",
         "tests/test_teams_followups.py",
@@ -6033,6 +6122,7 @@
       "summary": "The one place the Jinja2 environment is built, so every router renders the same way.",
       "tables": [],
       "tests": [
+        "tests/test_reply_files.py",
         "tests/test_ticket_page.py"
       ]
     },
@@ -6360,6 +6450,7 @@
         "tests/test_messages.py",
         "tests/test_msp_mail.py",
         "tests/test_permissions.py",
+        "tests/test_reply_files.py",
         "tests/test_reports.py",
         "tests/test_visibility.py"
       ]
@@ -6911,6 +7002,8 @@
     "tests/test_linking.py",
     "tests/test_login_lockout.py",
     "tests/test_mail_subscriptions.py",
+    "tests/test_message_channel.py",
+    "tests/test_message_channel_migration.py",
     "tests/test_messages.py",
     "tests/test_migrations_env.py",
     "tests/test_msp.py",
@@ -6931,6 +7024,7 @@
     "tests/test_queue_page.py",
     "tests/test_raising.py",
     "tests/test_reopening.py",
+    "tests/test_reply_files.py",
     "tests/test_reply_notification.py",
     "tests/test_reports.py",
     "tests/test_reports_more.py",

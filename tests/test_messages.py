@@ -115,7 +115,7 @@ def test_an_internal_message_cannot_be_recorded_as_public(db_session):
     try:
         _record(
             db_session, ticket, sender="x", body="x",
-            direction=MessageDirection.INTERNAL, visibility=MessageVisibility.PUBLIC,
+            direction=MessageDirection.INTERNAL, visibility=MessageVisibility.PUBLIC, channel="agent",
         )
     except ValueError:
         return
@@ -170,7 +170,7 @@ def test_email_user_is_unavailable_until_the_ticket_is_triaged(client, db_sessio
     agent_for(client, db_session, team)
 
     page = client.get(f"/tickets/{ticket.number}").text
-    assert "Preview email" not in page and "Triage this ticket" in page
+    assert "Preview message" not in page and "Triage this ticket" in page
     assert "Add note" in page
 
     response = client.post(f"/tickets/{ticket.number}/email", data={"body": "Hello"})
@@ -184,7 +184,7 @@ def test_email_user_is_unavailable_until_the_ticket_is_triaged(client, db_sessio
         f"/tickets/{ticket.number}/triage", data={"ticket_type": "incident", "impact": "low", "urgency": "low", "category_id": category.id}
     )
     assert triage.status_code == 200
-    assert "Preview email" in client.get(f"/tickets/{ticket.number}").text
+    assert "Preview message" in client.get(f"/tickets/{ticket.number}").text
     assert client.post(f"/tickets/{ticket.number}/email", data={"body": "Hello"}).status_code == 200
 
 
@@ -236,4 +236,4 @@ def test_an_inbound_portal_comment_appears_in_the_agent_timeline(client, db_sess
     agent_for(client, db_session, team)
 
     page = client.get(f"/tickets/{ticket.number}").text
-    assert "From requester" in page and "Still broken" in page
+    assert "Portal reply" in page and "Still broken" in page

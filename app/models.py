@@ -445,6 +445,11 @@ class Message(SQLModel, table=True):
     # An MSP message whose sender check did not pass (Microsoft's compauth was not "pass"): never forwarded automatically.
     msp_unverified: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
     author_user_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    # Where the message came from, or for an agent's reply where it went (app/reply_channel.py MESSAGE_CHANNELS: email,
+    # portal, teams, agent = typed in the console, system = an automatic notice). Display only, never access; set by
+    # app/messages._record, the one place a Message is built. Null on rows from before it was recorded that could not be
+    # worked out; no chip is drawn then.
+    channel: Optional[str] = Field(default=None)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     ticket: Ticket = Relationship(back_populates="messages")
@@ -996,6 +1001,24 @@ class TeamsHeldFile(SQLModel, table=True):
     size: int = Field(default=0)
     blob_key: Optional[str] = Field(default=None)  # None when the file was not fetched (see `skipped`)
     skipped: Optional[str] = Field(default=None)  # why it was not fetched; becomes an event on the ticket chosen
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class ReplyHeldFile(SQLModel, table=True):
+    """A file an agent chose for an email to the requester, held while they check the preview (app/reply_files.py). Stored
+    once under its content hash, the key an attachment would have; confirming the preview attaches it to the new message and
+    removes the row. `token` names the draft (one per agent and ticket). Rows that are never confirmed expire (setting
+    `reply_held_file_hours`) and their stored files go through the blob delete queue."""
+
+    __tablename__ = "reply_held_file"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ticket_id: int = Field(foreign_key="ticket.id", index=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    token: str = Field(index=True)
+    filename: str
+    size: int
+    blob_key: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

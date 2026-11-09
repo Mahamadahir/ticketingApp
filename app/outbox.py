@@ -15,7 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from app.config import settings
-from app.models import ApprovalVote, Message, OutboundEmail, Ticket, TicketApproval, User, UserRole
+from app.models import ApprovalVote, Attachment, Message, OutboundEmail, Ticket, TicketApproval, User, UserRole
 from app.notification_settings import APPROVAL_OVERDUE as OVERDUE_EVENT, EMAIL, is_enabled, wants_approval_email
 
 REPLY = "reply"  # an agent's email to the requester (counts as a first response)
@@ -48,11 +48,16 @@ def queue_message(session: Session, message: Message, ticket: Ticket) -> Optiona
     if not is_on():
         return None
     session.flush()  # the message needs its id
+    # The files an agent attached to the reply (app/messages.attach_files) go with it; fixed now, like the MSP's.
+    files = session.exec(
+        select(Attachment.id).where(Attachment.message_id == message.id, Attachment.is_inline.is_(False)).order_by(Attachment.id)
+    ).all()
     row = OutboundEmail(
         kind=REPLY if message.author_user_id is not None else NOTICE,
         ticket_id=ticket.id,
         message_id=message.id,
         to_address=ticket.requester_email,
+        attachment_ids=",".join(str(i) for i in files) or None,
     )
     session.add(row)
     return row

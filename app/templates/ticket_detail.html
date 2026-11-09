@@ -453,7 +453,7 @@
   {% if can_email %}
   <div class="tp-compose tp-compose-email">
     <form class="tp-form" hx-post="/tickets/{{ ticket.number }}/email/preview" hx-target="#email-preview" hx-swap="innerHTML"
-          hx-on:input="document.getElementById('email-preview').innerHTML = ''">
+          hx-encoding="multipart/form-data" hx-on:input="document.getElementById('email-preview').innerHTML = ''">
       <p class="tp-hint">Goes to {{ ticket.requester_email }} and is copied to {{ cc_candidates|length }} follower{{ "" if cc_candidates|length == 1 else "s" }}.</p>
       {% with body = "" %}{% include "_email_body.html" %}{% endwith %}
       {% if cc_candidates %}
@@ -469,6 +469,7 @@
         <p class="note">Unticking someone only leaves them off this email. Remove them under Followers to stop copying them on future ones.</p>
       </fieldset>
       {% endif %}
+      {% with attach_id = "email-files" %}{% include "_attach_control.html" %}{% endwith %}
       <div class="tp-compose-row">
         {% if canned %}
         <label class="tp-canned">Insert a canned response
@@ -481,7 +482,7 @@
         </label>
         {% endif %}
         {% with blank_label = "Default: " ~ email_default_status.value.replace("_", " ") %}{% include "_next_status.html" %}{% endwith %}
-        <button type="submit" class="btn btn-primary">Preview email</button>
+        <button type="submit" class="btn btn-primary">Preview message</button>
       </div>
     </form>
     <div id="email-preview"></div>
@@ -494,9 +495,10 @@
 
   {% if can_note %}
   <div class="tp-compose tp-compose-note">
-    <form class="tp-form" hx-post="/tickets/{{ ticket.number }}/note" hx-target="main" hx-swap="innerHTML">
+    <form class="tp-form" hx-post="/tickets/{{ ticket.number }}/note" hx-target="main" hx-swap="innerHTML" hx-encoding="multipart/form-data">
       <p class="tp-hint">Only agents can see internal notes.</p>
       <textarea name="body" rows="4" maxlength="{{ max_message_length }}" placeholder="Internal note (agents only, does not triage the ticket)..." required></textarea>
+      {% with attach_id = "note-files" %}{% include "_attach_control.html" %}{% endwith %}
       <div class="tp-compose-row">
         {% with blank_label = "No change (" ~ ticket.status.value.replace("_", " ") ~ ")" %}{% include "_next_status.html" %}{% endwith %}
         <button type="submit" class="btn btn-primary">Add note</button>
@@ -520,9 +522,8 @@
       <span class="tp-who">{{ message.sender }}</span>
       {% if internal %}<span class="chip t-amber"><svg aria-hidden="true" focusable="false" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V8a4 4 0 018 0v3"></path></svg>Internal note · not visible to requester</span>
       {% elif message.msp_forward %}<span class="chip t-blue">From the MSP{% if message.msp_forward == "pending" %} (the user was not on it; agents only until forwarded){% elif message.msp_forward == "forwarded" %} (forwarded to the user){% elif message.msp_forward == "dismissed" %} (not forwarded){% elif message.msp_forward == "internal" %} (acknowledgement; agents only){% endif %}</span>{% if message.msp_unverified %} <span class="chip t-red">sender not verified</span>{% endif %}
-      {% elif message.direction.value == "outbound" %}<span class="chip t-blue">Email to requester{% if message.cc %} (cc: {{ message.cc }}){% endif %}</span>
-      {% elif item.sender_kind == "follower" %}<span class="chip t-gray">From follower</span>
-      {% else %}<span class="chip t-gray">From requester</span>{% endif %}
+      {% elif message.direction.value == "outbound" %}<span class="chip t-blue">{{ item.label }}{% if message.cc %} (cc: {{ message.cc }}){% endif %}</span>
+      {% else %}<span class="chip t-gray">{{ item.label }}</span>{% endif %}
       {% if item.source %}<span class="muted small">[{{ item.source.reference }} {{ item.source.subject }}]</span>{% endif %}
       <time class="tp-when">{{ message.created_at|local_time }}</time>
     </header>

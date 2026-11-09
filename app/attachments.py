@@ -9,13 +9,14 @@ served is decided by serving_headers below, from the detected type alone.
 
 import hashlib
 import re
+from dataclasses import dataclass
 from typing import Optional
 
 from sqlalchemy import text
 from sqlmodel import Session, select
 
 from app.config import settings
-from app.models import Attachment, Message, Ticket, User
+from app.models import Attachment, Message, ReplyHeldFile, TeamsHeldFile, Ticket, User
 from app.storage import Storage, content_disposition
 from app.visibility import AccessContext, may_view_attachment
 
@@ -32,6 +33,14 @@ MAX_FILENAME_LENGTH = 200
 
 class AttachmentRejected(ValueError):
     """The file may not be stored; the message says why and is safe to show."""
+
+
+@dataclass
+class NewFile:
+    """A file an agent chose to attach to a message of their own (app/reply_files.py): the name it came with and its bytes."""
+
+    filename: str
+    data: bytes
 
 
 def detect_content_type(data: bytes) -> str:
@@ -98,9 +107,38 @@ def lock_blob(session: Session, key: str) -> None:
     session.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"), {"key": key})
 
 
+def keys_in_use(session: Session, keys: set[str]) -> set[str]:
+    """Which of these stored files a row still points at: an attachment, or a file held for a Teams question or for an
+    agent's reply preview. The one list a delete of a stored file asks (anonymisation's cleanup, the release of held files),
+    so a new kind of holder is added here and nowhere else."""
+    keys = set(keys)
+    if not keys:
+        return set()
+    used = set(session.exec(select(Attachment.blob_key).where(Attachment.blob_key.in_(keys))).all())
+    used |= set(session.exec(select(TeamsHeldFile.blob_key).where(TeamsHeldFile.blob_key.in_(keys))).all())
+    used |= set(session.exec(select(ReplyHeldFile.blob_key).where(ReplyHeldFile.blob_key.in_(keys))).all())
+    return used
+
+
 def try_lock_blob(session: Session, key: str) -> bool:
     """The same lock without waiting: False when an upload holds it (the cleanup then leaves the file for its next run)."""
     return bool(session.execute(text("SELECT pg_try_advisory_xact_lock(hashtextextended(:key, 0))"), {"key": key}).scalar())
+
+
+def check_file(filename: str, data: bytes) -> str:
+    """The rules every stored file meets, in one place: not empty, within the size limit, not a file whose only use is to be
+    run. Returns the cleaned file name; raises AttachmentRejected, with a reason that is safe to show. store_attachment calls
+    it, and so does the preview of an agent's reply, so a file is refused for the same reasons at both."""
+    if not data:
+        raise AttachmentRejected("The file is empty.")
+    if len(data) > settings.attachment_max_bytes:
+        limit = settings.attachment_max_bytes // (1024 * 1024)
+        raise AttachmentRejected(f"The file is larger than the {limit} MB limit.")
+    name = clean_filename(filename)
+    extension = name.rpartition(".")[2].lower() if "." in name else ""
+    if extension in BLOCKED_EXTENSIONS:
+        raise AttachmentRejected(f"Files ending .{extension} cannot be attached.")
+    return name
 
 
 def store_attachment(
@@ -121,18 +159,9 @@ def store_attachment(
     The bytes are stored under their hash, so the same file added twice is one blob (one that
     ends up with no row, because the request failed afterwards, is harmless and costs a few
     bytes). An inline picture already on the same message is not added again: its row is returned."""
-    if not data:
-        raise AttachmentRejected("The file is empty.")
-    if len(data) > settings.attachment_max_bytes:
-        limit = settings.attachment_max_bytes // (1024 * 1024)
-        raise AttachmentRejected(f"The file is larger than the {limit} MB limit.")
+    name = check_file(filename, data)
     if message is not None and message.ticket_id != ticket.id:
         raise AttachmentRejected("That message belongs to another ticket.")
-
-    name = clean_filename(filename)
-    extension = name.rpartition(".")[2].lower() if "." in name else ""
-    if extension in BLOCKED_EXTENSIONS:
-        raise AttachmentRejected(f"Files ending .{extension} cannot be attached.")
 
     content_type = detect_content_type(data)
     if inline and is_inline_type(content_type) and len(data) < settings.attachment_inline_min_bytes:

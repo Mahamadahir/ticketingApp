@@ -32,6 +32,8 @@ INBOUND_MAX_CC = "inbound_max_cc"
 TEAMS_MAX_PER_PERSON_HOUR = "teams_max_per_person_hour"
 TEAMS_HOLD_WHILE_ACTIVE_MINUTES = "teams_hold_while_active_minutes"
 TEAMS_PENDING_CHOICE_HOURS = "teams_pending_choice_hours"
+REPLY_ATTACH_MAX_MB = "reply_attach_max_mb"
+REPLY_HELD_FILE_HOURS = "reply_held_file_hours"
 SLA_AT_RISK_PERCENT = "sla_at_risk_percent"
 REPORT_MAX_DAYS = "report_max_days"
 SUBJECT_ACCESS_MAX_MB = "subject_access_max_mb"
@@ -179,6 +181,28 @@ REGISTRY: dict[str, SettingDef] = {
         description=(
             "When the bot asks which request a message belongs to and the person never answers, the question and any files "
             "sent with the message are dropped after this long, and the files are deleted from storage."
+        ),
+        default="24",
+    ),
+    REPLY_ATTACH_MAX_MB: SettingDef(
+        key=REPLY_ATTACH_MAX_MB,
+        label="Agent replies: most attachments on one email to the requester (MB in all)",
+        kind="count",
+        description=(
+            "Files an agent attaches to a message to the requester go out on the email, which Graph takes in one send up to "
+            "about 4 MB, base64-encoded (a third larger), so a larger value is treated as 2. A message over this is refused "
+            "at the preview. How many files, how large each is and which types are refused are the inbound mail settings "
+            "and limits. Placeholder."
+        ),
+        default="2",
+    ),
+    REPLY_HELD_FILE_HOURS: SettingDef(
+        key=REPLY_HELD_FILE_HOURS,
+        label="Agent replies: how long files wait for the preview to be confirmed (hours)",
+        kind="count",
+        description=(
+            "Files chosen for an email are kept while the agent checks the preview. If it is never confirmed they are "
+            "dropped after this long and deleted from storage. Placeholder."
         ),
         default="24",
     ),

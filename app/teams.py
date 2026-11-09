@@ -23,10 +23,10 @@ from typing import Callable, Optional
 
 import httpx
 from sqlalchemy import or_
-from sqlmodel import Session, select
+from sqlmodel import Session, func, select
 
 from app.config import settings
-from app.models import Message, Notification, TeamsPost, Ticket, TicketSource, User
+from app.models import Attachment, Message, Notification, TeamsPost, Ticket, TicketSource, User
 from app.notifications import PORTAL_KINDS, can_be_told_about, notification_text
 
 log = logging.getLogger("app.teams")
@@ -363,6 +363,14 @@ def requester_message_post(session: Session, post: TeamsPost, bot_refused: bool 
     body = put_links_in(session, ticket, message.body)
     link = link_for(ticket, AUDIENCE_REQUESTER)
     footer = f"\n\nOpen in the portal: {link}" if link else ""
+    files = session.exec(
+        select(func.count()).select_from(Attachment).where(Attachment.message_id == message.id, Attachment.is_inline.is_(False))
+    ).one()
+    if files:
+        # The bot sends no files: the line says so and points to the portal, where the requester can download them.
+        # (The email copy, when there is one, carries them.)
+        noun = "1 file" if files == 1 else f"{files} files"
+        footer = f"\n\n{noun} attached: open it in the portal" + (f": {link}" if link else ".")
     return BotDelivery(conversation.service_url, conversation.conversation_id, text=f"{mail_subject(session, ticket)}\n\n{body}{footer}")
 
 

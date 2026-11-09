@@ -382,7 +382,8 @@ def act(
     else:
         ticket = create_ticket(session, subject=clean_subject(_first_line(body, files)), requester_email=sender, source=TicketSource.TEAMS)
         message = record_first_message(
-            session, ticket, sender=sender, body=clean_body_of(body, files), author_id=person.id, action="created_by_teams"
+            session, ticket, sender=sender, body=clean_body_of(body, files), author_id=person.id, action="created_by_teams",
+            channel=TEAMS_CHANNEL,
         )
         not_kept = store_files(session, storage, ticket, message, files)
         row.outcome = TICKET_CREATED
