@@ -25,18 +25,22 @@ many, how large) and stored by `intake.store_files`; what is not kept leaves an 
 sent with a message that needs the choice card are not kept (the person is told to send them again): the address Teams
 gives is short-lived and there is nowhere to hold the file before there is a ticket.
 
-Never twice. `TeamsIntake` holds one row per message, unique on a hash of the person and the activity id, claimed in the
+Never twice. `TeamsIntake` holds one row per message, unique on a keyed hash of the person and the activity id, claimed in the
 transaction that makes the ticket, so Teams sending an activity again after a slow answer does nothing. The same row
-makes a card answerable once. Rate limit: one person's tickets and replies in an hour are capped by an admin setting; the
-count is of the rows whose ticket is theirs, so the table holds no name or address.
+makes a card answerable once. Rate limits: one person's tickets, replies and questions in an hour are capped by an admin
+setting, counted from the rows whose ticket is theirs (a question carries the ticket it is about), so the table holds no
+name or address; and a burst limit per minute (app/rate_limit.py) keeps one person from making the bot answer without end.
 
 Answers are sent after the response (`Handled.after`), a card press is answered in the response itself. A failure while
 handling is rolled back whole and the person is told to try again or use the site.
 """
 
 import hashlib
+import hmac
+import json
 import logging
 import re
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -58,7 +62,7 @@ from app.intake import (
 )
 from app.models import FINISHED_STATUSES, Ticket, TicketSource, TicketStatus, TeamsIntake, User
 from app.person_data import is_placeholder_address
-from app.rate_limit import RateLimiter
+from app.rate_limit import TEAMS_PERSON, TEAMS_PERSON_NOTICE
 from app.settings_store import INBOUND_MAX_ATTACHMENTS, TEAMS_MAX_PER_PERSON_HOUR, count_setting
 from app.storage import Storage
 from app.teams_approvals import ACTION_NAME, card_response, message_response
@@ -78,6 +82,8 @@ IGNORED_NEVER_FOLLOW = "ignored_never_follow"
 NEW_PREFIX = re.compile(r"^\s*new\s*:\s*", re.IGNORECASE)
 FILE_DOWNLOAD_INFO = "application/vnd.microsoft.teams.file.download.info"
 MAX_PENDING_TEXT = 3000  # the longest message that can wait inside a choice card
+MAX_CARD_BYTES = 20_000  # the card carries the message once on each button; Teams refuses an activity over about 28 KB
+FILES_BUDGET_SECONDS = 20.0  # all the downloads of one message together: Teams waits about 15 seconds for the answer
 MAX_NOT_KEPT_SHOWN = 5
 FILES_ONLY = "(files only)"
 
@@ -95,12 +101,9 @@ TOO_LONG_TO_ASK = (
 FILES_NOT_KEPT_WHILE_ASKING = "Files sent with this message are not kept while you choose. Send them again once it is added."
 SLOW_DOWN = "You have sent a lot of messages in the last hour, so I have not added this one. Please try again later or use the ticketing site."
 FAILED = "Something went wrong and nothing was recorded. Please try again, or use the ticketing site."
+CARD_FAILED = "I could not show you the choice of request. Please send your message again, starting with new: for a new request."
 ALREADY_DONE = "This question has already been answered."
 NO_LONGER_OPEN = "That request is not open any more. Send your message again, starting with new: for a new request."
-
-# At most one "slow down" answer to a person a minute, so answering cannot become the flood.
-NOTICE_LIMITER = RateLimiter(lambda: 1)
-
 
 @dataclass
 class Result:
@@ -115,8 +118,11 @@ class Result:
 
 
 def activity_key(oid: str, activity_id: str) -> str:
-    """The one-way key of a message: the person and the Teams activity id. Neither is readable from it."""
-    return hashlib.sha256(f"{oid}:{activity_id}".encode("utf-8")).hexdigest()
+    """The key of a message: the person and the Teams activity id, keyed with the session secret (as the anonymisation
+    hash is), so the table cannot be matched against a list of guessed object ids and message ids without it. Rotating the
+    secret only means an activity Teams sends again within the minutes it takes is no longer recognised."""
+    key = settings.session_secret_key.encode("utf-8")
+    return hmac.new(key, f"teams-intake:{oid}:{activity_id}".encode("utf-8"), hashlib.sha256).hexdigest()
 
 
 def _member_address(activity: dict, oid: str) -> tuple[Optional[str], str]:
@@ -185,6 +191,7 @@ def teams_tickets(session: Session, person: User, resolved: bool = False) -> lis
             select(Ticket)
             .where(
                 Ticket.source == TicketSource.TEAMS,
+                Ticket.split_from_id.is_(None),  # a part of a split request (or an automatic sub-request) is not a conversation of its own
                 func.lower(func.trim(Ticket.requester_email)).in_(requester_emails(person, session)),
                 status,
             )
@@ -248,15 +255,20 @@ def load_files(session: Session, activity: dict) -> list[IncomingAttachment]:
     stored."""
     limit_mb = settings.attachment_max_bytes // (1024 * 1024)
     max_files = count_setting(session, INBOUND_MAX_ATTACHMENTS)
+    session.commit()  # what was read and made so far is kept, and no transaction (no pooled connection) is held open while Teams answers
     found: list[IncomingAttachment] = []
+    deadline = time.monotonic() + FILES_BUDGET_SECONDS
     for index, item in enumerate(offered_files(activity)):
         name = clean_filename(clean_text(item["name"]))
         if index >= max_files:
             found.append(IncomingAttachment(name, skipped=f"more than {max_files} files on one message"))
             continue
+        if time.monotonic() > deadline:
+            found.append(IncomingAttachment(name, skipped="took too long to download"))
+            continue
         try:
             data = bot_connector.fetch_file(
-                item["url"], settings.attachment_max_bytes, service_url=_text(activity.get("serviceUrl")) if item["token"] else None
+                item["url"], settings.attachment_max_bytes, service_url=_text(activity.get("serviceUrl")), with_token=item["token"]
             )
         except bot_connector.FileRefused as refused:
             reason = f"larger than the {limit_mb} MB limit" if "larger" in str(refused) else str(refused)
@@ -272,10 +284,10 @@ def load_files(session: Session, activity: dict) -> list[IncomingAttachment]:
 # ---- Doing it ------------------------------------------------------------------------------------------
 
 
-def _claim(session: Session, key: str, outcome: str) -> Optional[TeamsIntake]:
+def _claim(session: Session, key: str, outcome: str, ticket_id: Optional[int] = None) -> Optional[TeamsIntake]:
     """Records that this message is being handled, or returns None if it already was. The unique key decides, so two
     deliveries at once cannot both win: the loser waits for the winner's commit and then fails here."""
-    row = TeamsIntake(activity_key=key, outcome=outcome)
+    row = TeamsIntake(activity_key=key, outcome=outcome, ticket_id=ticket_id)
     try:
         with session.begin_nested():
             session.add(row)
@@ -337,11 +349,14 @@ def clean_body_of(text: str, files: list[IncomingAttachment]) -> str:
     return clean_body(text) if text.strip() or not files else FILES_ONLY
 
 
-def _reply(activity: dict, *, text: Optional[str] = None, card: Optional[dict] = None) -> None:
+def _reply(activity: dict, *, text: Optional[str] = None, card: Optional[dict] = None) -> bool:
+    """Answers the person in their chat. True when it went; a failure is logged and never raised (nobody is waiting)."""
     try:
         bot_connector.reply_to(activity, text=text, card=card)
-    except Exception as error:  # nobody is waiting on this any more
+    except Exception as error:
         log.warning("Teams bot: reply failed: %s", type(error).__name__)
+        return False
+    return True
 
 
 def _say(activity: dict, text: str) -> Handled:
@@ -356,6 +371,9 @@ def answer(session: Session, activity: dict, storage: Optional[Storage] = None) 
     text = clean_text(activity.get("text")).strip()
     if oid is None or not activity_id:
         return None
+    if TEAMS_PERSON.hit(oid) is not None:
+        # Whatever the message is (a refusal, the help, a question), one person cannot make the bot answer without end.
+        return _say(activity, SLOW_DOWN) if TEAMS_PERSON_NOTICE.hit(oid) is None else None
     now = datetime.now(timezone.utc)
     key = activity_key(oid, activity_id)
     if session.exec(select(TeamsIntake.id).where(TeamsIntake.activity_key == key)).first() is not None:
@@ -378,14 +396,14 @@ def answer(session: Session, activity: dict, storage: Optional[Storage] = None) 
         if _over_limit(session, person, now):
             log.warning("Teams intake: one person's messages set aside, too many tickets and replies in an hour")
             session.commit()
-            return _say(activity, SLOW_DOWN) if NOTICE_LIMITER.hit(oid) is None else None
+            return _say(activity, SLOW_DOWN) if TEAMS_PERSON_NOTICE.hit(oid) is None else None
         plan = plan_for(session, person, text, bool(offered))
         if plan.kind == NEW and not plan.text and not offered:
             session.commit()
             return _say(activity, NEW_NEEDS_TEXT)
         if plan.kind == ASK:
             return _ask(session, activity, key, plan, bool(offered))
-        files = load_files(session, activity) if offered else []  # before the claim: no lock is held while Teams answers
+        files = load_files(session, activity) if offered else []  # before the claim: a slow download is not a lock
         row = _claim(session, key, "processing")
         if row is None:
             session.rollback()
@@ -400,17 +418,23 @@ def answer(session: Session, activity: dict, storage: Optional[Storage] = None) 
 
 
 def _ask(session: Session, activity: dict, key: str, plan: Plan, has_files: bool) -> Optional[Handled]:
-    if len(plan.text) > MAX_PENDING_TEXT:
+    card = choose_ticket_card(plan.choices, _text(activity.get("id")), plan.text)
+    if len(plan.text) > MAX_PENDING_TEXT or len(json.dumps(card)) > MAX_CARD_BYTES:
         session.commit()
         return _say(activity, TOO_LONG_TO_ASK)
-    if _claim(session, key, ASKED) is None:
+    # The claim names the most recent of the tickets asked about, so the hourly cap counts the question as theirs.
+    if _claim(session, key, ASKED, plan.choices[0].id) is None:
         session.rollback()
         return None
     session.commit()
-    card = choose_ticket_card(plan.choices, _text(activity.get("id")), plan.text)
     if has_files:
         card["body"].append({"type": "TextBlock", "text": FILES_NOT_KEPT_WHILE_ASKING, "wrap": True, "isSubtle": True})
-    return Handled(after=lambda: _reply(activity, card=card))
+
+    def send() -> None:
+        if not _reply(activity, card=card):
+            _reply(activity, text=CARD_FAILED)
+
+    return Handled(after=send)
 
 
 # ---- The choice card -----------------------------------------------------------------------------------

@@ -9,7 +9,7 @@ import httpx
 import pytest
 from sqlmodel import select
 
-from app import bot_connector, intake, messages, teams, teams_intake
+from app import bot_connector, intake, messages, rate_limit, teams, teams_intake
 from app.bot_connector import FileRefused
 from app.config import settings
 from app.email_templates import save_template
@@ -96,8 +96,11 @@ def card_of(connector, index=-1):
 def isolate(monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "teams_new_ticket_enabled", False)
     monkeypatch.setattr(settings, "graph_shared_mailbox", "itsupport@example.com")
-    teams_intake.NOTICE_LIMITER.reset()
+    rate_limit.TEAMS_PERSON.reset()
+    rate_limit.TEAMS_PERSON_NOTICE.reset()
     monkeypatch.setattr(intake, "get_storage", lambda: LocalStorage(tmp_path))
+    monkeypatch.setattr(settings, "teams_file_host_suffixes", ".example.net")
+    monkeypatch.setattr(bot_connector, "resolve", lambda host: ["93.184.216.34"])  # a public address, whatever the name
 
 
 @pytest.fixture
@@ -536,8 +539,8 @@ def downloads(monkeypatch):
     served = {}
     calls = []
 
-    def fetch(url, max_bytes, *, service_url=None):
-        calls.append((url, service_url))
+    def fetch(url, max_bytes, *, service_url=None, with_token=False):
+        calls.append((url, with_token))
         item = served[url]
         if isinstance(item, Exception):
             raise item
@@ -557,7 +560,7 @@ def test_a_file_is_stored_on_the_ticket_through_the_attachment_rules(public, db_
     assert (stored.ticket_id, stored.filename, stored.content_type, stored.size) == (ticket.id, "report.pdf", "application/pdf", len(PDF))
     assert stored.message_id == messages_of(db_session, ticket)[0].id
     assert LocalStorage(tmp_path).read(stored.blob_key) == PDF
-    assert downloads.calls == [("https://files.example.net/d/1", None)]  # the bot's token is not sent to a download address
+    assert downloads.calls == [("https://files.example.net/d/1", False)]  # the bot's token is not sent to a download address
 
 
 def test_a_file_sent_alone_makes_a_ticket_named_after_it(public, db_session, ann, downloads):
@@ -611,7 +614,7 @@ def test_a_pasted_picture_is_fetched_with_the_bot_token_only_from_the_service_ad
     picture = f"{SERVICE}v3/attachments/abc/views/original"
     downloads.served[picture] = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
     say(public, "Screenshot", attachments=[{"contentType": "image/png", "name": "image.png", "contentUrl": picture}])
-    assert downloads.calls == [(picture, SERVICE)]
+    assert downloads.calls == [(picture, True)]
 
 
 # ---- The same rules as email -----------------------------------------------------------------------------
@@ -798,10 +801,15 @@ def test_a_linked_identity_is_the_main_person(public, db_session, ann):
 # ---- The pieces ------------------------------------------------------------------------------------------
 
 
-def test_the_key_of_a_message_holds_neither_the_person_nor_the_activity_id():
+def test_the_key_of_a_message_holds_neither_the_person_nor_the_activity_id_and_needs_the_secret_to_check(monkeypatch):
     key = teams_intake.activity_key(OID, "act-77")
     assert len(key) == 64 and OID not in key and "act-77" not in key
     assert key != teams_intake.activity_key(OTHER_OID, "act-77") and key != teams_intake.activity_key(OID, "act-78")
+    import hashlib
+
+    assert key != hashlib.sha256(f"{OID}:act-77".encode()).hexdigest()  # not a plain hash of guessable parts
+    monkeypatch.setattr(settings, "session_secret_key", "another-secret-entirely")
+    assert teams_intake.activity_key(OID, "act-77") != key
 
 
 def fake_files(monkeypatch, handler):
@@ -819,9 +827,12 @@ def test_fetch_file_sends_the_token_only_to_the_service_host(monkeypatch):
     seen = []
     monkeypatch.setattr(bot_connector.TOKENS, "get", lambda: "tok")
     fake_files(monkeypatch, lambda request: (seen.append(request), httpx.Response(200, content=b"x"))[1])
-    bot_connector.fetch_file("https://smba.example.net/emea/v3/attachments/1", 10, service_url=SERVICE)
-    bot_connector.fetch_file("https://other.example.net/f", 10, service_url=SERVICE)
+    bot_connector.fetch_file("https://smba.example.net/emea/v3/attachments/1", 10, service_url=SERVICE, with_token=True)
+    bot_connector.fetch_file("https://files.example.net/f", 10, service_url=SERVICE)
     assert seen[0].headers["Authorization"] == "Bearer tok" and "Authorization" not in seen[1].headers
+    with pytest.raises(FileRefused, match="Teams service address"):  # the token never goes to another host
+        bot_connector.fetch_file("https://files.example.net/f", 10, service_url=SERVICE, with_token=True)
+    assert len(seen) == 2
 
 
 @pytest.mark.parametrize("url", ["http://files.example.net/f", "https://127.0.0.1/f", "https://[::1]/f", "https://u:p@files.example.net/f", "ftp://files.example.net/f", "", "files.example.net/f"])
@@ -855,3 +866,126 @@ def test_get_member_asks_the_conversation_for_the_member(connector):
     request = connector.requests[0]
     assert (request.method, str(request.url)) == ("GET", "https://smba.example.net/emea/v3/conversations/a%3Aconv-1/members/29%3Ateams-user")
     assert request.headers["Authorization"].startswith("Bearer ")
+
+
+@pytest.mark.parametrize("url", [
+    "https://evil.example.com/f",  # not a Microsoft file host
+    "https://example.net.evil.com/f",  # a suffix match is on the end of the name
+    "https://localhost/f",
+    "https://internal-service/f",  # a single label
+    "https://2852039166/f",  # a decimal IP address: no dot, and not a name
+])
+def test_fetch_file_refuses_hosts_that_are_not_microsoft_file_hosts_or_not_public(monkeypatch, url):
+    fake_files(monkeypatch, lambda request: pytest.fail("fetched"))
+    with pytest.raises(FileRefused):
+        bot_connector.fetch_file(url, 1000)
+
+
+@pytest.mark.parametrize("address", ["10.0.0.5", "127.0.0.1", "169.254.169.254", "192.168.1.1", "::1", "fd00::1"])
+def test_fetch_file_refuses_a_name_that_resolves_to_a_private_address(monkeypatch, address):
+    monkeypatch.setattr(bot_connector, "resolve", lambda host: ["93.184.216.34", address])
+    fake_files(monkeypatch, lambda request: pytest.fail("fetched"))
+    with pytest.raises(FileRefused, match="public"):
+        bot_connector.fetch_file("https://files.example.net/f", 1000)
+
+
+def test_fetch_file_refuses_a_name_that_does_not_resolve(monkeypatch):
+    def nowhere(host):
+        raise OSError("no such host")
+
+    monkeypatch.setattr(bot_connector, "resolve", nowhere)
+    with pytest.raises(FileRefused):
+        bot_connector.fetch_file("https://files.example.net/f", 1000)
+
+
+def test_a_file_from_a_host_that_is_not_allowed_is_noted_and_does_not_stop_the_message(public, db_session, ann, monkeypatch):
+    fake_files(monkeypatch, lambda request: pytest.fail("fetched"))
+    say(public, "See the report", attachments=[file_info(url="https://evil.example.com/d/1")])
+    assert len(tickets(db_session)) == 1
+    assert db_session.exec(select(TicketEvent).where(TicketEvent.event_type == "attachment_skipped")).one().detail == "The file is not on a Microsoft file host"
+
+
+def test_downloads_stop_when_the_time_for_them_is_used_up(public, db_session, ann, downloads, monkeypatch):
+    downloads.served["https://files.example.net/d/1"] = PDF
+    clock = iter([0.0, 1.0, 100.0, 100.0])
+
+    class Clock:  # only this module's clock, not the real one the HTTP stack uses
+        monotonic = staticmethod(lambda: next(clock))
+
+    monkeypatch.setattr(teams_intake, "time", Clock)
+    say(public, "Two files", attachments=[file_info("a.pdf"), file_info("b.pdf", "https://files.example.net/d/2")])
+    assert [a.filename for a in db_session.exec(select(Attachment)).all()] == ["a.pdf"]
+    assert db_session.exec(select(TicketEvent).where(TicketEvent.event_type == "attachment_skipped")).one().detail == "took too long to download"
+
+
+# ---- Review findings -------------------------------------------------------------------------------------
+
+
+def test_the_parts_of_a_split_request_are_not_conversations_of_their_own(public, connector, db_session, ann):
+    say(public, "Printer is jammed")
+    original = tickets(db_session)[0]
+    for number in range(3):  # what splitting and automatic sub-requests make: same requester and source, linked to the original
+        db_session.add(Ticket(subject=f"Part {number}", requester_email="ann@example.com", source=TicketSource.TEAMS, split_from_id=original.id))
+    db_session.commit()
+
+    say(public, "It is on floor 3")
+
+    assert replies(connector)[-1] == ("text", f"Added to {original.reference}.")  # no card: one conversation
+    assert len(messages_of(db_session, original)) == 2
+
+
+def test_a_card_too_big_for_teams_is_not_sent_and_the_person_is_told_what_to_do(public, connector, db_session, ann):
+    two_open(public, db_session)
+    say(public, "\u00e9\U0001f600" * 1400)  # 2800 characters that need many bytes each in the card's six copies
+    assert last_text(connector) == teams_intake.TOO_LONG_TO_ASK and len(tickets(db_session)) == 2
+
+
+def test_if_the_card_cannot_be_sent_the_person_is_told_to_send_it_again(public, connector, db_session, ann):
+    two_open(public, db_session)
+    connector.script = [400, 400]  # the card is refused, then the plain text goes
+    say(public, "It is on floor 3")
+    assert last_text(connector) == teams_intake.CARD_FAILED
+
+
+def test_questions_count_towards_the_hourly_cap(public, connector, db_session, ann):
+    two_open(public, db_session)
+    set_setting(db_session, TEAMS_MAX_PER_PERSON_HOUR, "3")
+    db_session.commit()
+    say(public, "question one")  # a card: counts as the third
+    connector.requests.clear()
+    say(public, "question two")
+    assert replies(connector) == [("text", teams_intake.SLOW_DOWN)]
+    assert len(db_session.exec(select(TeamsIntake)).all()) == 3
+
+
+def test_one_persons_burst_of_messages_is_cut_off_whatever_they_are(public, connector, db_session, ann, monkeypatch):
+    monkeypatch.setattr(settings, "rate_limit_teams_person_per_minute", 3)
+    for _ in range(3):
+        say(public, "help")
+    connector.requests.clear()
+    say(public, "help")
+    say(public, "help")
+    assert replies(connector) == [("text", teams_intake.SLOW_DOWN)]  # told once, then nothing
+    say(public, "help", oid=OTHER_OID)  # another person is not affected
+    assert last_text(connector) != teams_intake.SLOW_DOWN
+
+
+def test_no_database_transaction_is_held_open_while_files_download(public, db_session, ann, downloads, monkeypatch):
+    from sqlalchemy import text
+
+    from app.database import engine
+
+    idle = []
+    inner = bot_connector.fetch_file
+
+    def watching(url, max_bytes, **kwargs):
+        with engine.connect() as other:
+            idle.append(other.execute(text(
+                "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND state = 'idle in transaction' AND pid <> pg_backend_pid()"
+            )).scalar())
+        return inner(url, max_bytes, **kwargs)
+
+    downloads.served["https://files.example.net/d/1"] = PDF
+    monkeypatch.setattr(bot_connector, "fetch_file", watching)
+    say(public, "See the report", attachments=[file_info()])
+    assert idle == [0] and len(db_session.exec(select(Attachment)).all()) == 1

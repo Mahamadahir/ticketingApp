@@ -321,6 +321,7 @@ any change that adds, removes or renames modules, routes, models, jobs, settings
 | `RATE_LIMIT_BREAK_GLASS_PER_MINUTE` | `int` | `10` |
 | `RATE_LIMIT_EMERGENCY_PER_MINUTE` | `int` | `10` |
 | `RATE_LIMIT_TEAMS_BOT_PER_MINUTE` | `int` | `600` |
+| `RATE_LIMIT_TEAMS_PERSON_PER_MINUTE` | `int` | `20` |
 | `RATE_LIMIT_WEBHOOK_PER_MINUTE` | `int` | `600` |
 | `SESSION_SECRET_KEY` | `str` | `(secret)` |
 | `SSO_CLIENT_ID` | `str` | `''` |
@@ -336,6 +337,7 @@ any change that adds, removes or renames modules, routes, models, jobs, settings
 | `TEAMS_BOT_CLIENT_SECRET` | `str` | `(secret)` |
 | `TEAMS_BOT_ENABLED` | `bool` | `False` |
 | `TEAMS_BOT_TENANT_ID` | `str` | `''` |
+| `TEAMS_FILE_HOST_SUFFIXES` | `str` | `'.sharepoint.com,.sharepoint-df.com,.1drv.com'` |
 | `TEAMS_NEW_TICKET_ENABLED` | `bool` | `False` |
 | `TEAMS_NEW_TICKET_WEBHOOK_URL` | `str` | `''` |
 | `TEAMS_NOTIFICATIONS_ENABLED` | `bool` | `False` |
@@ -517,7 +519,7 @@ A small client for the Bot Connector REST API (phase 8A), over httpx.
 File: `app/bot_connector.py`
 
 - Classes: `BotAuthFailed`, `BotNotConfigured`, `ConversationRef`, `FileRefused`, `TokenCache`
-- Functions: `call`, `client_secret_token`, `create_conversation`, `fetch_file`, `get_member`, `managed_identity_token`, `new_client`, `new_file_client`, `reply_to`, `send`, `send_card`, `send_text`, `sleep`
+- Functions: `call`, `client_secret_token`, `create_conversation`, `fetch_file`, `get_member`, `managed_identity_token`, `new_client`, `new_file_client`, `reply_to`, `resolve`, `send`, `send_card`, `send_text`, `sleep`
 - Imports: `app.config`, `app.teams`
 - Imported by: `app.teams`, `app.teams_bot`, `app.teams_conversations`, `app.teams_intake`
 - Tests: `test_teams_bot.py`, `test_teams_dm.py`, `test_teams_intake.py`
@@ -604,7 +606,7 @@ File: `app/database.py`
 - Functions: `get_session`
 - Imports: `app.config`
 - Imported by: `app.activity`, `app.auth`, `app.breakglass`, `app.routers.action_links`, `app.routers.admin`, `app.routers.approvals`, `app.routers.attachments`, `app.routers.auth`, `app.routers.bulk_resolve`, `app.routers.data_protection`, `app.routers.dev_tools`, `app.routers.feedback`, `app.routers.health`, `app.routers.link_account`, `app.routers.msp_mail`, `app.routers.my_settings`, `app.routers.notifications`, `app.routers.portal`, `app.routers.reports`, `app.routers.teams_bot`, `app.routers.tickets`, `app.routers.webhooks`, `app.scheduled_jobs`, `app.sessions`, `app.templating`, `app.worker`
-- Tests: `conftest.py`, `test_access_context.py`, `test_anonymisation.py`, `test_approval_groups.py`, `test_approval_reminders.py`, `test_approvals.py`, `test_auth.py`, `test_auto_close_chase.py`, `test_category_admin.py`, `test_due_date.py`, `test_followers.py`, `test_hardening.py`, `test_health.py`, `test_inbound_mail.py`, `test_linking.py`, `test_mail_subscriptions.py`, `test_notification_followup.py`, `test_outbound_mail.py`, `test_scheduled_jobs.py`, `test_split_family.py`, `test_splitting.py`, `test_teams_copy.py`, `test_teams_copy_sending.py`, `test_ticket_core.py`, `test_withdraw.py`, `test_worker.py`
+- Tests: `conftest.py`, `test_access_context.py`, `test_anonymisation.py`, `test_approval_groups.py`, `test_approval_reminders.py`, `test_approvals.py`, `test_auth.py`, `test_auto_close_chase.py`, `test_category_admin.py`, `test_due_date.py`, `test_followers.py`, `test_hardening.py`, `test_health.py`, `test_inbound_mail.py`, `test_linking.py`, `test_mail_subscriptions.py`, `test_notification_followup.py`, `test_outbound_mail.py`, `test_scheduled_jobs.py`, `test_split_family.py`, `test_splitting.py`, `test_teams_copy.py`, `test_teams_copy_sending.py`, `test_teams_intake.py`, `test_ticket_core.py`, `test_withdraw.py`, `test_worker.py`
 
 ### `app.due_today`
 
@@ -963,7 +965,7 @@ File: `app/rate_limit.py`
 - Functions: `rate_limited`
 - Imports: `app.config`
 - Imported by: `app.routers.action_links`, `app.routers.approvals`, `app.routers.auth`, `app.routers.teams_bot`, `app.routers.webhooks`, `app.teams_intake`
-- Tests: `conftest.py`, `test_public_surface.py`, `test_teams_bot.py`
+- Tests: `conftest.py`, `test_public_surface.py`, `test_teams_bot.py`, `test_teams_intake.py`
 
 ### `app.reopening`
 

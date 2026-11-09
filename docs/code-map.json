@@ -703,6 +703,7 @@
         "new_client",
         "new_file_client",
         "reply_to",
+        "resolve",
         "send",
         "send_card",
         "send_text",
@@ -1087,6 +1088,7 @@
         "tests/test_splitting.py",
         "tests/test_teams_copy.py",
         "tests/test_teams_copy_sending.py",
+        "tests/test_teams_intake.py",
         "tests/test_ticket_core.py",
         "tests/test_withdraw.py",
         "tests/test_worker.py"
@@ -3056,7 +3058,8 @@
       "tests": [
         "tests/conftest.py",
         "tests/test_public_surface.py",
-        "tests/test_teams_bot.py"
+        "tests/test_teams_bot.py",
+        "tests/test_teams_intake.py"
       ]
     },
     {
@@ -6455,6 +6458,12 @@
       "type": "int"
     },
     {
+      "default": "20",
+      "env": "RATE_LIMIT_TEAMS_PERSON_PER_MINUTE",
+      "name": "rate_limit_teams_person_per_minute",
+      "type": "int"
+    },
+    {
       "default": "600",
       "env": "RATE_LIMIT_WEBHOOK_PER_MINUTE",
       "name": "rate_limit_webhook_per_minute",
@@ -6542,6 +6551,12 @@
       "default": "''",
       "env": "TEAMS_BOT_TENANT_ID",
       "name": "teams_bot_tenant_id",
+      "type": "str"
+    },
+    {
+      "default": "'.sharepoint.com,.sharepoint-df.com,.1drv.com'",
+      "env": "TEAMS_FILE_HOST_SUFFIXES",
+      "name": "teams_file_host_suffixes",
       "type": "str"
     },
     {
