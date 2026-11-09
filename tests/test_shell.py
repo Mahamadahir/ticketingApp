@@ -108,19 +108,19 @@ def test_my_settings_offers_the_three_choices_with_the_current_one_marked(client
     assert "Saved." in saved.text and re.search(r'name="theme" value="dark" checked', saved.text)
 
 
-def test_the_top_bar_button_steps_through_the_three_and_returns_to_the_same_page(client, db_session):
+def test_the_top_bar_button_steps_through_the_three_and_returns_to_the_same_path(client, db_session):
     agent(client, db_session)
     seen = []
     for _ in range(3):
         page = client.get("/tickets?mine=true")
         button = re.search(r'<form method="post" action="/settings/theme"[^>]*>(.*?)</form>', page.text, re.S).group(1)
-        assert 'name="return_to" value="/tickets?mine=true"' in button
+        assert 'name="return_to" value="/tickets"' in button  # the path only: a query can hold a search
         assert 'aria-label="Colour theme:' in button
         seen.append(html_class(page))
         wanted = re.search(r'name="theme" value="(\w+)"', button).group(1)
         assert wanted == next_theme(seen[-1])
-        redirected = client.post("/settings/theme", data={"theme": wanted, "return_to": "/tickets?mine=true"}, follow_redirects=False)
-        assert redirected.headers["location"] == "/tickets?mine=true"
+        redirected = client.post("/settings/theme", data={"theme": wanted, "return_to": "/tickets"}, follow_redirects=False)
+        assert redirected.headers["location"] == "/tickets"
     assert seen == [SYSTEM, LIGHT, DARK]
     assert html_class(client.get("/tickets")) == SYSTEM
 

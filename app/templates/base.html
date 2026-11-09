@@ -11,8 +11,8 @@
 {% macro topbar_actions(shell, theme, with_raise) -%}
 <form method="post" action="/settings/theme" class="inline-form">
   <input type="hidden" name="theme" value="{{ next_theme(theme) }}" />
-  {# Return to this page after the change, when it can be fetched again (a page drawn by a POST cannot). #}
-  {% if request and request.method == "GET" %}<input type="hidden" name="return_to" value="{{ (request.url.path ~ ("?" ~ request.url.query if request.url.query else ""))[:500] }}" />{% endif %}
+  {# Return to this page (its address without the query, which can hold a person's search) after the change, when the page can be fetched again: one drawn by a POST cannot. #}
+  {% if request and request.method == "GET" %}<input type="hidden" name="return_to" value="{{ request.url.path }}" />{% endif %}
   <button type="submit" class="icon-btn" aria-label="Colour theme: {{ theme_labels[theme] }}. Switch to {{ theme_labels[next_theme(theme)] }}" title="Colour theme: {{ theme_labels[theme] }} (press to switch to {{ theme_labels[next_theme(theme)] }})">
     {% if theme == "dark" %}{{ icon("M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z") }}
     {% elif theme == "light" %}{{ icon("M12 8a4 4 0 100 8 4 4 0 000-8zM12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4") }}

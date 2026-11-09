@@ -33,7 +33,7 @@ in the table above is checked at 4.5:1 or better in both themes by `tests/test_s
 ## Light and dark
 
 A per-person setting: System (the default, stored as no value), Light or Dark (`User.theme`). It is changed on My settings
-(Appearance) and with the button in the top bar, which steps System, Light, Dark and returns to the same page
+(Appearance) and with the button in the top bar, which steps System, Light, Dark and returns to the same page (its path; a search or filter in the address is not kept)
 (`POST /settings/theme`, `return_to` accepted only as a path on this site). The server writes the class on `<html>`, so
 the page never flashes the wrong theme. For System no script is needed: the media query decides before first paint
 (the app has no content security policy nonce, so the media query is the approach). `<meta name="color-scheme">` follows
