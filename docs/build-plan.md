@@ -113,7 +113,7 @@ those. Do not record test counts or merge status here.
 
 ## Next up
 
-**Phases 0 to 7 are built**, and so are the owner-decision rounds of Nov 2026 (single pass %, time zones, Due date and
+**Phases 0 to 8 are built**, and so are the owner-decision rounds of Nov 2026 (single pass %, time zones, Due date and
 Scheduled, the bell for everyone, closing emails, permissions, request type defaults, form questions and sub-requests, the
 MSP fixes from real mail, MSP actions, handoff bell entries, gov.uk bank holidays). Each is a row in the status table below.
 
@@ -126,8 +126,8 @@ MSP fixes from real mail, MSP actions, handoff bell entries, gov.uk bank holiday
    (#163), the per-request-type self-approval switch (#167), 6D outage mode (#164), 6E linked identities (#165). Entra app
    roles only if the owner decides to.
 3. **Phase 7, reporting (built, Nov 2026: 7A reports, 7B subject access export, 7C manual anonymisation and 7D cool tier built; automatic anonymisation after a retention period waits for the data protection lead).**
-4. **Phase 8, the Teams bot (8A foundation, 8B direct messages, 8C approval buttons and 8D intake built)**: wanted before go-live.
-5. **Phase 9, the Google Stitch redesign**: wanted before go-live, once screens stop changing.
+4. **Phase 8, the Teams bot (built, Nov 2026: 8A foundation, 8B direct messages, 8C approval buttons, 8D intake)**: wanted before go-live.
+5. **Phase 9, the Google Stitch redesign (next)**: wanted before go-live, once screens stop changing.
 6. **Phase 10, hardening and the go-live gate**, including the console IP decision (staging is open to all IPs; the VPN
    is split tunnel) and the go-live mailbox handover (the app takes over `ITSupport@vardags.com`, its forward to the MSP is
    removed; `docs/azure-setup.md`).
