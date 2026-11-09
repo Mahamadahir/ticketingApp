@@ -1,0 +1,35 @@
+{
+  "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.19/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.19",
+  "version": "{{VERSION}}",
+  "id": "{{BOT_APP_ID}}",
+  "developer": {
+    "name": "{{DEVELOPER_NAME}}",
+    "websiteUrl": "{{WEBSITE_URL}}",
+    "privacyUrl": "{{PRIVACY_URL}}",
+    "termsOfUseUrl": "{{TERMS_URL}}"
+  },
+  "name": {
+    "short": "{{SHORT_NAME}}",
+    "full": "{{FULL_NAME}}"
+  },
+  "description": {
+    "short": "Ticket updates from IT support, in Teams.",
+    "full": "IT support sends you a direct message when a ticket is assigned to you, when you are mentioned, and when a ticket you follow is updated. Later versions let you approve requests and raise tickets from here."
+  },
+  "icons": {
+    "outline": "outline.png",
+    "color": "color.png"
+  },
+  "accentColor": "#2F5597",
+  "bots": [
+    {
+      "botId": "{{BOT_APP_ID}}",
+      "scopes": ["personal"],
+      "supportsFiles": false,
+      "isNotificationOnly": false
+    }
+  ],
+  "permissions": ["identity", "messageTeamMembers"],
+  "validDomains": []
+}

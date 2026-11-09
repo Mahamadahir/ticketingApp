@@ -40,6 +40,13 @@ param superAdminEmails = readEnvironmentVariable('SUPER_ADMIN_EMAILS', '')
 // Teams posts and out-of-office detection, off unless set to 'true'.
 param teamsNewTicketEnabled = toLower(trim(readEnvironmentVariable('TEAMS_NEW_TICKET_ENABLED', 'false'))) == 'true'
 param teamsNotificationsEnabled = toLower(trim(readEnvironmentVariable('TEAMS_NOTIFICATIONS_ENABLED', 'false'))) == 'true'
+// The Teams bot (phase 8): off unless 'true'. 'managedIdentity' (the default) needs no secret and no app id; 'clientSecret'
+// reads the app registration's id and tenant from these variables and its secret from the environment below.
+param teamsBotEnabled = toLower(trim(readEnvironmentVariable('TEAMS_BOT_ENABLED', 'false'))) == 'true'
+var teamsBotIdentityRaw = trim(readEnvironmentVariable('TEAMS_BOT_IDENTITY', ''))
+param teamsBotIdentity = empty(teamsBotIdentityRaw) ? 'managedIdentity' : teamsBotIdentityRaw
+param teamsBotAppId = readEnvironmentVariable('TEAMS_BOT_APP_ID', '')
+param teamsBotTenantIdOverride = readEnvironmentVariable('TEAMS_BOT_TENANT_ID', '')
 param presenceEnabled = toLower(trim(readEnvironmentVariable('PRESENCE_ENABLED', 'false'))) == 'true'
 param mailboxTimeZonesEnabled = toLower(trim(readEnvironmentVariable('MAILBOX_TIME_ZONES_ENABLED', 'false'))) == 'true'
 param entraAccountCheckEnabled = toLower(trim(readEnvironmentVariable('ENTRA_ACCOUNT_CHECK_ENABLED', 'false'))) == 'true'
@@ -51,6 +58,7 @@ param graphWebhookClientState = readEnvironmentVariable('GRAPH_WEBHOOK_CLIENT_ST
 param ssoClientSecret = readEnvironmentVariable('SSO_CLIENT_SECRET', '')
 param graphClientSecret = readEnvironmentVariable('GRAPH_CLIENT_SECRET', '')
 param teamsNewTicketWebhookUrl = readEnvironmentVariable('TEAMS_NEW_TICKET_WEBHOOK_URL', '')
+param teamsBotClientSecret = readEnvironmentVariable('TEAMS_BOT_CLIENT_SECRET', '')
 
 // Point-in-time restore window is the recovery point. Backup retention is the
 // maximum 35 days; zone-redundant HA is the option if downtime matters.

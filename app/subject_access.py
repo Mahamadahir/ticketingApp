@@ -56,11 +56,12 @@ from app.models import (
     TicketFollower,
     User,
     UserPermission,
+    TeamsConversation,
     UserSession,
 )
 from app.messages import not_requester_visible_messages, requester_visible_answers, requester_visible_messages
 from app.models import MessageDirection
-from app.person_data import Person, email_matches, find_person, list_matches, mentions
+from app.person_data import Person, email_matches, find_person, list_matches, mentions, object_ids
 from app.settings_store import SUBJECT_ACCESS_MAX_MB, count_setting
 from app.storage import Storage
 from app.templating import templates
@@ -126,7 +127,7 @@ def _in(column, values):
 EXPORTED_TABLES = {
     "user": "account.json", "user_session": "account.json (sessions)", "userpermission": "account.json",
     "teammembership": "account.json", "approvalgroupmember": "account.json", "linked_identity": "account.json",
-    "link_code": "account.json (link_codes_asked)", "notificationpreference": "preferences.json",
+    "link_code": "account.json (link_codes_asked)", "teams_conversation": "account.json (teams_bot)", "notificationpreference": "preferences.json",
     "requestertimezone": "preferences.json", "activitylog": "activity.csv", "auditlog": "audit.csv",
     "ticketevent": "ticket_events.json", "ticket": "tickets.json", "ticketfollower": "tickets.json",
     "message": "tickets.json", "attachment": "attachments/", "approvalvote": "approvals.json",
@@ -402,6 +403,20 @@ def _preferences(session: Session, person: Person) -> dict:
     }
 
 
+def _teams_bot(session: Session, person: Person) -> list[dict]:
+    return [
+        {
+            "entra_object_id": c.entra_object_id, "teams_user_id": c.teams_user_id, "conversation_id": c.conversation_id,
+            "service_url": c.service_url, "stored_at": c.created_at, "last_message_at": c.updated_at,
+        }
+        for c in session.exec(
+            select(TeamsConversation)
+            .where(or_(_in(TeamsConversation.user_id, person.user_ids), _in(TeamsConversation.entra_object_id, object_ids(session, person))))
+            .order_by(TeamsConversation.id)
+        ).all()
+    ]
+
+
 def _sessions(session: Session, person: Person) -> list[dict]:
     return [
         {
@@ -547,7 +562,7 @@ def build_export(session: Session, storage: Storage, address: str, requested_by:
         data = {
             "account.json": {
                 "accounts": accounts, "linked_identities": linked, "sessions": _sessions(session, person),
-                "link_codes_asked": _link_codes(session, person),
+                "link_codes_asked": _link_codes(session, person), "teams_bot": _teams_bot(session, person),
             },
             "tickets.json": sections,
             "internal_notes.json": {

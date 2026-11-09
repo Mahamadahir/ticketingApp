@@ -221,6 +221,22 @@ CARD_BUILDERS: dict[str, Callable[[Session, TeamsPost], dict]] = {
 }
 
 
+def backoff_minutes(attempts: int) -> int:
+    """How long a post that has failed `attempts` times waits: 2, 4, 8, 16, 32, then 60 minutes."""
+    return min(2**attempts, MAX_BACKOFF_MINUTES)
+
+
+def record_failure(post: TeamsPost, error: Exception, now: datetime) -> None:
+    """Notes a failed send on the row: one more attempt, the reason (never a URL), and when to try next, or
+    nothing more to try when the request itself was refused. Every kind of post, webhook or bot, fails this way."""
+    post.attempts += 1
+    post.last_error = describe_failure(error)
+    if is_permanent(error):
+        post.attempts = MAX_ATTEMPTS
+    else:
+        post.next_attempt_at = now + timedelta(minutes=backoff_minutes(post.attempts))
+
+
 def give_up(post: TeamsPost, reason: str) -> None:
     post.attempts = MAX_ATTEMPTS
     post.last_error = reason
@@ -270,12 +286,7 @@ def deliver_pending(
         try:
             send(payload)
         except Exception as error:
-            post.attempts += 1
-            post.last_error = describe_failure(error)
-            if is_permanent(error):
-                post.attempts = MAX_ATTEMPTS
-            else:
-                post.next_attempt_at = now + timedelta(minutes=min(2**post.attempts, MAX_BACKOFF_MINUTES))
+            record_failure(post, error, now)
             log.warning("Teams post %s failed (attempt %s): %s", post.id, post.attempts, post.last_error)
             failed += 1
         else:

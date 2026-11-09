@@ -89,6 +89,27 @@ def find_person(session: Session, address: str) -> Person:
     return Person(address, frozenset(addresses), frozenset(ids), main)
 
 
+def object_ids(session: Session, person: Person) -> set[str]:
+    """Every Entra object id (lower case) that is the person's: those of their accounts and of their linked identities.
+    Deliberately wider than identity.object_ids_of (which finds who to message): any link status, and links where they are
+    the merged-away side, so an export or an erasure also covers ids that are no longer in use."""
+    ids = {
+        i.lower()
+        for i in session.exec(select(User.entra_object_id).where(User.id.in_(person.user_ids), User.entra_object_id.is_not(None))).all()
+    }
+    if person.user_ids:
+        ids.update(
+            i.lower()
+            for i in session.exec(
+                select(LinkedIdentity.entra_object_id).where(
+                    or_(LinkedIdentity.main_user_id.in_(person.user_ids), LinkedIdentity.secondary_user_id.in_(person.user_ids)),
+                    LinkedIdentity.entra_object_id.is_not(None),
+                )
+            ).all()
+        )
+    return ids
+
+
 def email_matches(column, person: Person):
     """SQL: the column holds exactly one of the person's addresses (any case, spaces trimmed)."""
     return func.lower(func.trim(column)).in_(person.addresses)
@@ -134,6 +155,9 @@ COLUMNS: dict[str, ColumnUse] = {
     "teammembership.user_id": _use(SUBJECT, USER_ID, "account record", anon=DELETE),
     "approvalgroupmember.user_id": _use(SUBJECT, USER_ID, "account record", anon=DELETE),
     "notificationpreference.user_id": _use(SUBJECT, USER_ID, "notification preferences", anon=DELETE),
+    "teams_conversation.user_id": _use(SUBJECT, USER_ID, "their chat with the Teams bot", anon=DELETE),
+    "teams_conversation.entra_object_id": _use(SUBJECT, USER_ID, "their chat with the Teams bot (found by this)", anon=DELETE),
+    "teams_conversation.teams_user_id": _use(SUBJECT, USER_ID, "their chat with the Teams bot", anon=WITH_ROW),
     "requestertimezone.email": _use(SUBJECT, EMAIL, "time zone read from their mailbox", anon=DELETE),
     "linked_identity.main_user_id": _use(SUBJECT, USER_ID, "linked identities", anon=DELETE),
     "linked_identity.secondary_user_id": _use(SUBJECT, USER_ID, "linked identities", anon=WITH_ROW),

@@ -8,7 +8,8 @@ starting a phase, and `README.md` for how to run it.
 
 ## State of play
 
-- **Phases 0 to 7 are built; Phase 8 (the Teams bot) is next** (see "Next up" in `docs/build-plan.md`
+- **Phases 0 to 7 are built; Phase 8 (the Teams bot) is under way: 8A, the foundation (`app/teams_bot.py`, `app/teams_bot_auth.py`,
+  `app/bot_connector.py`, `app/teams_conversations.py`), is built; 8B to 8D follow** (see "Next up" in `docs/build-plan.md`
   for the agreed order to go-live). Phase 7 is the reports with CSV export (`app/report_kit.py`,
   `app/reports.py`; a report is one entry in `REPORTS`), the subject access export
   (`app/subject_access.py`), requester anonymisation (`app/anonymisation.py`) and the cool storage tier

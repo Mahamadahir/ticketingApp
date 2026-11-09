@@ -24,6 +24,7 @@ from app.models import (
     Message,
     Notification,
     NotificationPreference,
+    TeamsConversation,
     OutboundEmail,
     PendingBlobDelete,
     AnonymisedRequester,
@@ -120,6 +121,7 @@ mspunmatchedmail.graph_message_id mspunmatchedmail.msp_number mspunmatchedmail.s
 graphsubscription.subscription_id graphsubscription.client_state_fingerprint graphsubscription.last_error mailsyncstate.folder
 mailsyncstate.delta_link mailsyncstate.resume_link mailsyncstate.last_error ticketevent.event_type activitylog.event_type
 activitylog.method activitylog.path auditlog.entity_type auditlog.action bankholidaycache.dates pending_blob_delete.last_error
+teams_conversation.service_url teams_conversation.conversation_id
 """.split())
 
 
@@ -201,6 +203,8 @@ def test_it_removes_the_person_and_keeps_the_tickets(client, db_session, storage
     assert db.exec(select(NotificationPreference)).all() == []
     assert db.exec(select(Notification).where(Notification.user_id == ann_id)).all() == []
     assert not [r for r in db.exec(select(RequesterTimeZone)).all() if r.email.startswith("ann@")]
+    # her chat with the Teams bot goes (the row names her object id, not her account); Bob's stays
+    assert [c.conversation_id for c in db.exec(select(TeamsConversation)).all()] == ["a:bob"]
     assert db.exec(select(UserPermission).where(UserPermission.user_id == ann_id)).all() == []
     # follower rows naming her are gone; Bob's stay
     assert db.exec(select(TicketFollower).where(TicketFollower.email.like("ann@%"))).all() == []

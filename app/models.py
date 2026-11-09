@@ -160,6 +160,26 @@ class User(SQLModel, table=True):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class TeamsConversation(SQLModel, table=True):
+    """Where to reach one person in Teams as the bot (app/teams_conversations.py owns these rows): the
+    personal chat between them and the bot. Keyed by the person's Entra object id, which Teams sends
+    with every activity; `user_id` is our account for them when there is one (set when the object
+    id matches a user, app/identity.py). Written when the app is installed for the person or they
+    message the bot, removed when they uninstall it."""
+
+    __tablename__ = "teams_conversation"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    entra_object_id: str = Field(unique=True, index=True)  # lower case
+    user_id: Optional[int] = Field(default=None, foreign_key="user.id", index=True, ondelete="SET NULL")
+    service_url: str
+    conversation_id: str
+    # The id Teams gives the person to this bot (29:...). A conversation can be opened again from it.
+    teams_user_id: Optional[str] = Field(default=None)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 class UserSession(SQLModel, table=True):
     """A signed-in browser session, kept on the server (app/sessions.py). The cookie holds a random
     token; this row's id is the SHA-256 of that token, so reading the table gives nobody a usable

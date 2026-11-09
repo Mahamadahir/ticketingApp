@@ -100,6 +100,16 @@ param mailboxTimeZonesEnabled bool = false
 @description('Worker runs the nightly Entra accountEnabled check (phase 6B) and makes agents whose account is disabled or deleted inactive. Needs the Graph settings and the User.Read.All application permission (already consented).')
 param entraAccountCheckEnabled bool = false
 
+@description('The Teams bot (phase 8): the Azure Bot registration with the Teams channel, and the endpoint on the public app. Needs deployPublicApp. Off changes nothing else.')
+param teamsBotEnabled bool = false
+@allowed(['managedIdentity', 'clientSecret'])
+@description('managedIdentity: this template makes a user-assigned identity, attaches it to the public app and the worker, and registers the bot as it (no secret). clientSecret: the bot is an Entra app registration made by hand (teamsBotAppId, and the secret teamsBotClientSecret).')
+param teamsBotIdentity string = 'managedIdentity'
+@description('The bot\'s Entra application (client) id. Only for teamsBotIdentity clientSecret; with a managed identity it is the identity\'s client id (output teamsBotAppId).')
+param teamsBotAppId string = ''
+@description('The directory whose users the bot serves. Empty uses the tenant of the subscription.')
+param teamsBotTenantIdOverride string = ''
+
 // ---- Secrets (supplied at deploy time, stored in Key Vault) -----------------
 
 @secure()
@@ -120,6 +130,9 @@ param graphClientSecret string = ''
 @secure()
 @description('Teams Workflows webhook URL for the support channel. Optional until Teams posts are switched on; only the worker can read it.')
 param teamsNewTicketWebhookUrl string = ''
+@secure()
+@description('The Teams bot\'s client secret. Only for teamsBotIdentity clientSecret; the public app and the worker read it, no other app can.')
+param teamsBotClientSecret string = ''
 
 // ---- Names ------------------------------------------------------------------
 
@@ -162,6 +175,18 @@ resource identityMigrate 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-
   location: location
   tags: tags
 }
+
+// The Teams bot's own identity (managedIdentity mode): it has no role and no secret access, it only lets the
+// Azure Bot and the two apps that call the Bot Connector (public, worker) prove who the bot is.
+var botUsesIdentity = teamsBotEnabled && teamsBotIdentity == 'managedIdentity'
+resource identityBot 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = if (botUsesIdentity) {
+  name: 'id-${prefix}-${environmentName}-bot'
+  location: location
+  tags: tags
+}
+var teamsBotTenantId = empty(teamsBotTenantIdOverride) ? subscription().tenantId : teamsBotTenantIdOverride
+var botAppIdValue = botUsesIdentity ? identityBot!.properties.clientId : teamsBotAppId
+var botIdentityIds = botUsesIdentity ? [identityBot!.id] : []
 
 module network 'modules/network.bicep' = {
   name: 'network'
@@ -253,6 +278,7 @@ module keyvault 'modules/keyvault.bicep' = {
     ssoClientSecret: ssoClientSecret
     graphClientSecret: graphClientSecret
     teamsNewTicketWebhookUrl: teamsNewTicketWebhookUrl
+    teamsBotClientSecret: teamsBotIdentity == 'clientSecret' ? teamsBotClientSecret : ''
   }
 }
 
@@ -296,7 +322,11 @@ var webSecretNames = concat(
 // it makes no Graph calls) and checks the emailed approval links with the internal key the worker
 // signs them with. It holds no Graph secret: the worker is the only app that calls Graph with one
 // besides web.
-var publicSecretNames = ['database-url', 'session-secret-key-internal', 'graph-webhook-client-state']
+var publicBaseSecretNames = ['database-url', 'session-secret-key-internal', 'graph-webhook-client-state']
+// The bot's secret goes to the two apps that call the Bot Connector: public (replies) and the worker (messages
+// to people). Web and the migrate job never see it.
+var optionalBotSecret = teamsBotEnabled && teamsBotIdentity == 'clientSecret' && !empty(teamsBotClientSecret) ? ['teams-bot-client-secret'] : []
+var publicSecretNames = concat(publicBaseSecretNames, optionalBotSecret)
 var optionalTeamsSecret = !empty(teamsNewTicketWebhookUrl) ? ['teams-new-ticket-webhook-url'] : []
 // The worker is the only app that posts to Teams.
 var workerSecretNames = concat(publicSecretNames, optionalGraphSecret, optionalTeamsSecret)
@@ -319,6 +349,7 @@ var secretEnvNames = {
   'sso-client-secret': 'SSO_CLIENT_SECRET'
   'graph-client-secret': 'GRAPH_CLIENT_SECRET'
   'teams-new-ticket-webhook-url': 'TEAMS_NEW_TICKET_WEBHOOK_URL'
+  'teams-bot-client-secret': 'TEAMS_BOT_CLIENT_SECRET'
 }
 var vaultSecretsUrl = 'https://${keyVaultName}${environment().suffixes.keyvaultDns}/secrets/'
 
@@ -367,6 +398,11 @@ var commonEnv = [
   { name: 'WEB_BASE_URL', value: webBaseUrl }
   { name: 'TEAMS_NEW_TICKET_ENABLED', value: toLower(string(teamsNewTicketEnabled)) }
   { name: 'TEAMS_NOTIFICATIONS_ENABLED', value: toLower(string(teamsNotificationsEnabled)) }
+  // The bot's switch and ids reach every app (the settings check wants them together); only the public app
+  // serves the endpoint, and only public and the worker hold the credential.
+  { name: 'TEAMS_BOT_ENABLED', value: toLower(string(teamsBotEnabled)) }
+  { name: 'TEAMS_BOT_APP_ID', value: teamsBotEnabled ? botAppIdValue : '' }
+  { name: 'TEAMS_BOT_TENANT_ID', value: teamsBotEnabled ? teamsBotTenantId : '' }
 ]
 
 var allowRules = [
@@ -427,6 +463,7 @@ module publicApp 'modules/container-app.bicep' = if (deployApps && deployPublicA
     name: publicName
     environmentId: appEnvironment.outputs.id
     identityId: identityPublic.id
+    extraIdentityIds: botIdentityIds
     registryServer: registry.outputs.loginServer
     image: image
     secrets: publicSecrets
@@ -453,6 +490,21 @@ module publicApp 'modules/container-app.bicep' = if (deployApps && deployPublicA
   ]
 }
 
+// The Azure Bot: the Teams channel and the messaging endpoint on the public app. Only with the public app, since
+// that is where the endpoint is; it needs no image, so it can be made before the first app deploy.
+module teamsBot 'modules/teams-bot.bicep' = if (teamsBotEnabled && deployPublicApp) {
+  name: 'teams-bot'
+  params: {
+    tags: tags
+    name: 'bot-${prefix}-${environmentName}-${take(suffix, 6)}'
+    publicAppUrl: publicAppUrl
+    appId: botAppIdValue
+    tenantId: teamsBotTenantId
+    appType: botUsesIdentity ? 'UserAssignedMSI' : 'SingleTenant'
+    identityResourceId: botUsesIdentity ? identityBot!.id : ''
+  }
+}
+
 // Worker: scheduled jobs. No ingress, exactly one replica, otherwise every
 // job runs once per replica.
 module worker 'modules/container-app.bicep' = if (deployApps && deployWorker) {
@@ -463,6 +515,7 @@ module worker 'modules/container-app.bicep' = if (deployApps && deployWorker) {
     name: 'ca-${prefix}-${environmentName}-worker'
     environmentId: appEnvironment.outputs.id
     identityId: identityWorker.id
+    extraIdentityIds: botIdentityIds
     registryServer: registry.outputs.loginServer
     image: image
     command: ['python', '-m', 'app.worker']
@@ -525,3 +578,6 @@ output webUrl string = webBaseUrl
 output publicAppName string = publicName
 output publicUrl string = publicAppUrl
 output webIdentityClientId string = identityWeb.properties.clientId
+@description('The Teams bot application id (also TEAMS_BOT_APP_ID): what the Teams app package is built with (teams-app/build_package.py).')
+output teamsBotAppId string = teamsBotEnabled ? botAppIdValue : ''
+output teamsBotMessagingEndpoint string = teamsBotEnabled && deployPublicApp ? '${publicAppUrl}/api/teams/messages' : ''
