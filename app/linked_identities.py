@@ -111,6 +111,7 @@ KEPT_COLUMNS = (
     "linked_identity.unlinked_by_id",
     "link_code.user_id",
     "teams_conversation.user_id",  # looked up by object id, which resolves to the main person (identity.person_for_object_id)
+    "reply_held_file.user_id",  # an agent's unconfirmed draft: dropped when confirmed or after a day (app/reply_files.py)
 )
 
 
