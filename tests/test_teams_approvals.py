@@ -340,9 +340,25 @@ def test_a_self_approved_vote_is_already_answered_so_a_press_cannot_repeat_it(cl
     assert vote_of(db_session, REQUESTER).decision == APPROVED
 
 
-def test_a_comment_over_the_limit_is_refused_without_a_vote(public, db_session, one_approver):
-    text = card_text(press(public, vote_of(db_session, "boss@example.com"), comment="x" * 1001))
-    assert "at most 1000 characters" in text
+def test_a_comment_over_the_limit_keeps_the_card_so_they_can_shorten_it(public, db_session, one_approver):
+    vote = vote_of(db_session, "boss@example.com")
+    response = press(public, vote, comment="x" * 1001)
+    assert response["type"] == "application/vnd.microsoft.activity.message" and "at most 1000 characters" in response["value"]
+    assert approvals(db_session, one_approver) == {"boss@example.com": PENDING}
+    assert "You approved" in card_text(press(public, vote, comment="x" * 1000))  # the same card still works
+
+
+def test_an_unexpected_failure_records_nothing_and_points_to_the_portal(public, db_session, one_approver, monkeypatch):
+    from app import teams_approvals
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("database went away")
+
+    monkeypatch.setattr(teams_approvals, "record_decision", broken)
+
+    response = press(public, vote_of(db_session, "boss@example.com"))
+
+    assert response["type"] == "application/vnd.microsoft.activity.message" and "ticketing site" in response["value"]
     assert approvals(db_session, one_approver) == {"boss@example.com": PENDING}
 
 
@@ -475,18 +491,32 @@ def test_an_approver_with_no_conversation_gets_no_card_when_the_channel_fallback
     assert sent_cards(db_session) == []  # the route function drops it, as for any copy; the bell still works
 
 
-def test_with_the_channel_fallback_the_card_has_no_buttons_and_opens_the_portal(client, db_session, delivery, monkeypatch):
+def test_a_request_waiting_for_a_vote_never_goes_to_the_shared_channel(client, db_session, delivery, monkeypatch):
+    """Even with the channel fallback on, an approver with no chat gets nothing there: the post would name the request
+    and who asked to everyone in the channel. Other kinds still fall back (test_teams_dm.py)."""
     monkeypatch.setattr(settings, "teams_notifications_enabled", True)
     monkeypatch.setattr(settings, "teams_new_ticket_webhook_url", "https://hooks.example/x")
     person(client, db_session, "boss@example.com")
-    ticket = raised_and_triaged(client, db_session, request_type(db_session, ["boss@example.com"], 100))
+    raised_and_triaged(client, db_session, request_type(db_session, ["boss@example.com"], 100))
     age_notifications(db_session)
 
-    [(route, payload)] = sent_cards(db_session)
+    assert sent_cards(db_session) == []
+    assert db_session.exec(select(TeamsPost)).all() == []  # dropped at the hand-over, so no failed row either
 
-    card = payload["attachments"][0]["content"]
-    assert route == "channel" and "Action.Execute" not in json.dumps(card)  # a shared channel never carries a vote
-    assert card["actions"] == [{"type": "Action.OpenUrl", "title": "Open ticket", "url": f"https://tickets.example.com/portal/{ticket.number}"}]
+
+def test_no_card_for_a_person_who_can_no_longer_answer(client, db_session, delivery):
+    from app.approval_groups import remove_member
+    from app.models import ApprovalGroup
+
+    person(client, db_session, "boss@example.com")
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, ["boss@example.com", "lead@example.com"], 100))
+    notification = db_session.exec(select(Notification).where(Notification.user_id == db_session.exec(select(User.id).where(User.email == "boss@example.com")).one())).one()
+    group = db_session.get(ApprovalGroup, current_approval(db_session, ticket).group_id)
+    remove_member(db_session, group, notification.user_id)
+    db_session.commit()
+
+    with pytest.raises(teams.Unsendable):
+        bot_cards.notification_card(db_session, notification, db_session.get(Ticket, ticket.id))
 
 
 def test_the_approver_can_turn_the_teams_copy_off_and_the_default_is_on(client, db_session, delivery):
@@ -581,6 +611,18 @@ def test_a_reminder_is_not_sent_to_teams_to_someone_with_no_chat_or_with_teams_o
     remind(db_session)
 
     assert reminder_notifications(db_session) == []
+
+
+def test_a_second_teams_reminder_waits_until_the_first_has_been_handed_over(client, db_session, delivery):
+    from app.notifications import notify_approval_reminder
+
+    person(client, db_session, "boss@example.com")
+    ticket = raised_and_triaged(client, db_session, request_type(db_session, ["boss@example.com"], 100))
+    boss = db_session.exec(select(User).where(User.email == "boss@example.com")).one()
+
+    assert notify_approval_reminder(db_session, ticket, boss) is not None
+    db_session.flush()
+    assert notify_approval_reminder(db_session, ticket, boss) is None  # the first is still waiting for the worker
 
 
 def test_the_email_reminder_still_goes_and_both_count_as_one_reminder(client, db_session, delivery, dev_mail):

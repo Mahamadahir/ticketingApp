@@ -90,12 +90,6 @@ def portal_link(ticket: Ticket) -> Optional[str]:
     return f"{settings.ticket_link_base.rstrip('/')}/portal/{ticket.number}"
 
 
-def link_for(notification: Notification, ticket: Ticket) -> Optional[str]:
-    """The page a notification's card opens: the portal for the kinds that open there (a request waiting for your
-    vote), the agent console for the rest."""
-    return portal_link(ticket) if notification.kind in PORTAL_KINDS else ticket_link(ticket)
-
-
 def message(card: dict) -> dict:
     """The Teams Workflows payload: a message carrying one Adaptive Card."""
     return {
@@ -213,7 +207,7 @@ def notification_card(notification: Notification, person: User, ticket: Optional
             ]
         },
     }
-    link = link_for(notification, ticket) if ticket is not None else None
+    link = ticket_link(ticket) if ticket is not None else None
     if link:
         card["actions"] = [{"type": "Action.OpenUrl", "title": "Open ticket", "url": link}]
     return message(card)
@@ -235,18 +229,20 @@ def notifications_on() -> bool:
     return settings.teams_notifications_enabled or settings.teams_bot_configured
 
 
-def route_for(session: Session, person: User):
+def route_for(session: Session, person: User, direct_only: bool = False):
     """The one place that decides how a person's Teams copy travels, worked out when it is sent (so a person who
     installs the app after the copy was queued still gets it in the chat): a direct message from the bot when the bot
     is on and the person has a conversation with it, else the channel @mention when that is switched on, else None
-    (the copy is dropped). Returns (DIRECT, conversation row), (CHANNEL, None) or (None, None)."""
+    (the copy is dropped). `direct_only` is for a copy that must never go to a shared channel (a request waiting for
+    someone's vote: it names the request and carries the buttons): the channel is then not an option. Returns
+    (DIRECT, conversation row), (CHANNEL, None) or (None, None)."""
     if settings.teams_bot_configured:
         from app.teams_conversations import reference_for  # imported here: it needs bot_connector, which needs this module
 
         conversation = reference_for(session, person)
         if conversation is not None:
             return DIRECT, conversation
-    if settings.teams_notifications_enabled:
+    if settings.teams_notifications_enabled and not direct_only:
         return CHANNEL, None
     return None, None
 
@@ -257,11 +253,11 @@ def has_chat_with_bot(session: Session, person: User) -> bool:
     return route_for(session, person)[0] == DIRECT
 
 
-def can_deliver(session: Session, person: User) -> bool:
-    """Whether a Teams copy for this person has anywhere to go right now. Asked when the copy is handed over, so a
+def can_deliver(session: Session, person: User, direct_only: bool = False) -> bool:
+    """Whether a Teams copy for this person has anywhere to go right now (`direct_only`: in their chat with the bot). Asked when the copy is handed over, so a
     person with no conversation (and no channel fallback) is dropped there, counted with the other drops, rather
     than leaving a failed row in the outbox for every notification."""
-    return route_for(session, person)[0] is not None
+    return route_for(session, person, direct_only)[0] is not None
 
 
 def notification_post(session: Session, post: TeamsPost):
@@ -282,7 +278,7 @@ def notification_post(session: Session, post: TeamsPost):
         # Checked again at send time: the ticket may have moved team since the copy was queued, or the person
         # may no longer be asked to vote on it.
         raise Unsendable("The person can no longer open the ticket")
-    route, conversation = route_for(session, person)
+    route, conversation = route_for(session, person, direct_only=notification.kind in PORTAL_KINDS)
     if route == DIRECT:
         from app.bot_cards import notification_card as direct_card  # the bot's cards live in one module (8C extends it)
 

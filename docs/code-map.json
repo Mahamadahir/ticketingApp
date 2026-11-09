@@ -238,6 +238,7 @@
       "imported_by": [
         "app.approval_reminders",
         "app.approvals",
+        "app.bot_cards",
         "app.mail",
         "app.request_types",
         "app.routers.admin"
@@ -658,7 +659,9 @@
         "app.teams_approvals"
       ],
       "imports": [
+        "app.approval_groups",
         "app.approvals",
+        "app.identity",
         "app.messages",
         "app.models",
         "app.notifications",
@@ -1437,6 +1440,7 @@
       "imported_by": [
         "app.approvals",
         "app.auth",
+        "app.bot_cards",
         "app.inbound",
         "app.linked_identities",
         "app.mail",
@@ -2693,6 +2697,7 @@
         "tests/test_notifications.py",
         "tests/test_reply_notification.py",
         "tests/test_requester_bell.py",
+        "tests/test_teams_approvals.py",
         "tests/test_teams_copy.py",
         "tests/test_teams_copy_sending.py",
         "tests/test_teams_dm.py"
@@ -5421,7 +5426,6 @@
         "give_up",
         "has_chat_with_bot",
         "is_permanent",
-        "link_for",
         "mention_name",
         "message",
         "new_ticket_card",
@@ -5494,13 +5498,16 @@
         "app.approvals",
         "app.bot_cards",
         "app.identity",
-        "app.models"
+        "app.models",
+        "app.teams_bot"
       ],
       "module": "app.teams_approvals",
       "routes": [],
       "summary": "Approving or declining from the bot's card (phase 8C): the answer to an `adaptiveCard/action` invoke.",
       "tables": [],
-      "tests": []
+      "tests": [
+        "tests/test_teams_approvals.py"
+      ]
     },
     {
       "classes": [
@@ -5516,7 +5523,8 @@
         "receive"
       ],
       "imported_by": [
-        "app.routers.teams_bot"
+        "app.routers.teams_bot",
+        "app.teams_approvals"
       ],
       "imports": [
         "app.bot_connector",

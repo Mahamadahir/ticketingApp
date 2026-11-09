@@ -407,7 +407,7 @@ File: `app/approval_groups.py`
 - Classes: `ApprovalGroupError`
 - Functions: `add_member`, `all_groups`, `create_group`, `group_is_used_by_active_type`, `is_member`, `members_of`, `remove_member`, `rename_group`, `types_using`
 - Imports: `app.followers`, `app.models`
-- Imported by: `app.approval_reminders`, `app.approvals`, `app.mail`, `app.request_types`, `app.routers.admin`
+- Imported by: `app.approval_reminders`, `app.approvals`, `app.bot_cards`, `app.mail`, `app.request_types`, `app.routers.admin`
 - Tests: `test_approval_groups.py`, `test_approval_reminders.py`, `test_approvals.py`, `test_entra_check.py`, `test_outbound_mail.py`, `test_request_types.py`, `test_teams_approvals.py`
 
 ### `app.approval_links`
@@ -506,7 +506,7 @@ File: `app/bank_holidays.py`
 The Adaptive Cards the Teams bot sends to a person in their own chat (phase 8B, 8C), built in this one module.  
 File: `app/bot_cards.py`
 - Functions: `approval_request_card`, `card_shell`, `decided_card`, `notification_card`, `open_ticket_action`, `portal_action`, `request_facts`, `what_happened_card`
-- Imports: `app.approvals`, `app.messages`, `app.models`, `app.notifications`, `app.teams`
+- Imports: `app.approval_groups`, `app.approvals`, `app.identity`, `app.messages`, `app.models`, `app.notifications`, `app.teams`
 - Imported by: `app.teams`, `app.teams_approvals`
 - Tests: `test_teams_approvals.py`, `test_teams_dm.py`
 
@@ -714,7 +714,7 @@ File: `app/identity.py`
 - Classes: `SsoRefused`
 - Functions: `addresses_of`, `is_follower_of`, `is_requester`, `keep_as_alias`, `merged_into`, `my_ticket_condition`, `my_tickets_query`, `normal_oid`, `object_ids_of`, `people_for_addresses`, `person_for_address`, `person_for_object_id`, `requester_emails`, `resolve_sso_user`
 - Imports: `app.audit`, `app.config`, `app.models`
-- Imported by: `app.approvals`, `app.auth`, `app.inbound`, `app.linked_identities`, `app.mail`, `app.msp`, `app.notifications`, `app.person_data`, `app.raising`, `app.routers.auth`, `app.routers.portal`, `app.teams_approvals`, `app.teams_conversations`, `app.time_zones`, `app.visibility`
+- Imported by: `app.approvals`, `app.auth`, `app.bot_cards`, `app.inbound`, `app.linked_identities`, `app.mail`, `app.msp`, `app.notifications`, `app.person_data`, `app.raising`, `app.routers.auth`, `app.routers.portal`, `app.teams_approvals`, `app.teams_conversations`, `app.time_zones`, `app.visibility`
 - Tests: `test_linked_identities.py`, `test_portal.py`
 
 ### `app.inbound`
@@ -868,7 +868,7 @@ File: `app/notifications.py`
 - Functions: `bell_references`, `bell_tickets`, `can_be_told_about`, `count_unread`, `default_teams_delay`, `drop_due_for_teams`, `due_for_teams`, `hand_to_teams`, `mark_all_read`, `mark_read`, `mentioned_in`, `notification_text`, `notify`, `notify_account_deactivated`, `notify_agent_emailed`, `notify_approval_outcome`, `notify_approval_overdue`, `notify_approval_reminder`, `notify_approval_waiting`, `notify_approval_withdrawn`, `notify_assigned`, `notify_break_glass_sign_in`, `notify_chase_given_up`, `notify_due_today`, `notify_link_requested`, `notify_mentions`, `notify_msp_handed_off`, `notify_msp_handoff_warning`, `notify_msp_unacknowledged`, `notify_no_active_approvers`, `notify_outage_mode`, `notify_reopened`, `notify_reply`, `notify_requesters`, `notify_status_for_requesters`, `notify_subrequests_created`, `retire_read_for_teams`, `visible_to`
 - Imports: `app.approvals`, `app.followers`, `app.identity`, `app.models`, `app.notification_settings`, `app.settings_store`, `app.visibility`
 - Imported by: `app.approval_reminders`, `app.approvals`, `app.auto_close_chase`, `app.bot_cards`, `app.closing`, `app.due_today`, `app.emergency`, `app.entra_check`, `app.escalation`, `app.jobs`, `app.linked_identities`, `app.messages`, `app.msp`, `app.outage`, `app.reopening`, `app.resolution`, `app.routers.auth`, `app.routers.bulk_resolve`, `app.routers.feedback`, `app.routers.msp_mail`, `app.routers.my_settings`, `app.routers.notifications`, `app.routers.tickets`, `app.subrequests`, `app.teams`, `app.ticket_service`, `app.triage`
-- Tests: `test_bell_access.py`, `test_closing_email.py`, `test_due_date.py`, `test_due_date_review.py`, `test_entra_check.py`, `test_inbound_mail.py`, `test_notifications.py`, `test_reply_notification.py`, `test_requester_bell.py`, `test_teams_copy.py`, `test_teams_copy_sending.py`, `test_teams_dm.py`
+- Tests: `test_bell_access.py`, `test_closing_email.py`, `test_due_date.py`, `test_due_date_review.py`, `test_entra_check.py`, `test_inbound_mail.py`, `test_notifications.py`, `test_reply_notification.py`, `test_requester_bell.py`, `test_teams_approvals.py`, `test_teams_copy.py`, `test_teams_copy_sending.py`, `test_teams_dm.py`
 
 ### `app.outage`
 
@@ -1351,7 +1351,7 @@ Teams channel posts (phase 2D): a card in the support channel for each new ticke
 File: `app/teams.py`
 
 - Classes: `BotDelivery`, `Unsendable`
-- Functions: `backoff_minutes`, `can_deliver`, `deliver_pending`, `describe_failure`, `give_up`, `has_chat_with_bot`, `is_permanent`, `link_for`, `mention_name`, `message`, `new_ticket_card`, `new_ticket_post`, `notification_card`, `notification_post`, `notifications_on`, `plain`, `portal_link`, `post_card`, `queue_new_ticket`, `queue_notification`, `record_failure`, `route_for`, `send_bot`, `ticket_link`
+- Functions: `backoff_minutes`, `can_deliver`, `deliver_pending`, `describe_failure`, `give_up`, `has_chat_with_bot`, `is_permanent`, `mention_name`, `message`, `new_ticket_card`, `new_ticket_post`, `notification_card`, `notification_post`, `notifications_on`, `plain`, `portal_link`, `post_card`, `queue_new_ticket`, `queue_notification`, `record_failure`, `route_for`, `send_bot`, `ticket_link`
 - Imports: `app.bot_cards`, `app.bot_connector`, `app.config`, `app.models`, `app.notifications`, `app.teams_conversations`
 - Imported by: `app.approval_reminders`, `app.auto_close_chase`, `app.bot_cards`, `app.bot_connector`, `app.inbound`, `app.jobs`, `app.linked_identities`, `app.mail`, `app.routers.admin`, `app.ticket_service`
 - Tests: `test_anonymisation.py`, `test_approval_reminders.py`, `test_auto_close_chase.py`, `test_inbound_mail.py`, `test_linked_identities.py`, `test_outbound_mail.py`, `test_teams.py`, `test_teams_approvals.py`, `test_teams_bot.py`, `test_teams_copy_sending.py`, `test_teams_dm.py`, `test_wiring_3f.py`, `test_withdraw.py`
@@ -1361,9 +1361,9 @@ File: `app/teams.py`
 Approving or declining from the bot's card (phase 8C): the answer to an `adaptiveCard/action` invoke.  
 File: `app/teams_approvals.py`
 - Functions: `answer`, `card_response`, `message_response`
-- Imports: `app.approvals`, `app.bot_cards`, `app.identity`, `app.models`
+- Imports: `app.approvals`, `app.bot_cards`, `app.identity`, `app.models`, `app.teams_bot`
 - Imported by: `app.teams_bot`
-- Tests: none
+- Tests: `test_teams_approvals.py`
 
 ### `app.teams_bot`
 
@@ -1373,7 +1373,7 @@ File: `app/teams_bot.py`
 - Classes: `Handled`
 - Functions: `activity_tenant`, `handler`, `installation_update`, `invoke`, `message`, `receive`
 - Imports: `app.bot_connector`, `app.config`, `app.teams_approvals`, `app.teams_bot_auth`, `app.teams_conversations`
-- Imported by: `app.routers.teams_bot`
+- Imported by: `app.routers.teams_bot`, `app.teams_approvals`
 - Tests: `test_teams_bot.py`
 
 ### `app.teams_bot_auth`

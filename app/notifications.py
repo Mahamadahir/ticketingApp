@@ -344,7 +344,7 @@ def hand_to_teams(
     enqueue: Callable[[Session, Notification], None],
     now: Optional[datetime] = None,
     limit: int = TEAMS_BATCH,
-    can_deliver: Optional[Callable[[Session, User], bool]] = None,
+    can_deliver: Optional[Callable[..., bool]] = None,
 ) -> tuple[int, int]:
     """Hands each due notification to `enqueue` (which writes the Teams post) and marks it dealt with.
     A notification is dropped, not sent, if the person has since become inactive, turned Teams off for that event or can
@@ -359,7 +359,7 @@ def hand_to_teams(
         ticket = session.get(Ticket, notification.ticket_id) if notification.ticket_id else None
         still_wanted = person.is_active and offers(notification.kind, TEAMS) and is_enabled(session, person, notification.kind, TEAMS)
         can_open = notification.ticket_id is None or (ticket is not None and can_be_told_about(session, person, notification, ticket))
-        reachable = can_deliver is None or can_deliver(session, person)
+        reachable = can_deliver is None or can_deliver(session, person, notification.kind in PORTAL_KINDS)
         if still_wanted and can_open and reachable:
             enqueue(session, notification)
             handed += 1
@@ -492,6 +492,14 @@ def notify_approval_reminder(session: Session, ticket: Ticket, approver: User) -
     Teams-only notification is. None when the person is inactive or has Teams off for this event. Does not commit."""
     if not approver.is_active or not (offers(APPROVAL_WAITING, TEAMS) and is_enabled(session, approver, APPROVAL_WAITING, TEAMS)):
         return None
+    undelivered = session.exec(
+        select(Notification.id).where(
+            Notification.user_id == approver.id, Notification.kind == APPROVAL_WAITING, Notification.ticket_id == ticket.id,
+            Notification.bell.is_(False), Notification.teams_handled_at.is_(None),
+        ).limit(1)
+    ).first()
+    if undelivered is not None:
+        return None  # the last Teams reminder has not been handed over yet: another would only pile up behind it
     notification = Notification(
         user_id=approver.id, kind=APPROVAL_WAITING, ticket_id=ticket.id, actor_email=None,
         text=f"{REF} {ticket.subject} is still waiting for your approval", bell=False, teams_wanted=True,

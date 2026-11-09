@@ -21,10 +21,11 @@ from typing import Any, Optional
 
 from sqlmodel import Session
 
-from app.approvals import APPROVED, DECLINED, ApprovalError, record_decision
+from app.approvals import APPROVED, DECLINED, MAX_COMMENT_LENGTH, ApprovalError, record_decision
 from app.bot_cards import VERB_APPROVE, VERB_DECLINE, decided_card
 from app.identity import person_for_object_id
 from app.models import ApprovalVote
+from app.teams_bot import _sub, _text
 
 log = logging.getLogger("app.teams_bot")
 
@@ -35,11 +36,8 @@ VIA = "Teams"
 
 NOT_YOU = "This request is not waiting for an answer from you."
 NOT_FOUND = "This request could not be found. Open the ticketing site to see what is waiting for you."
+FAILED = "Something went wrong and your answer was not recorded. Please answer on the ticketing site."
 UNKNOWN_PERSON = "I could not match your Teams account to an account on the ticketing site, so I cannot record your answer."
-
-
-def _text(value: Any) -> str:
-    return value if isinstance(value, str) else ""
 
 
 def _int(value: Any) -> Optional[int]:
@@ -60,15 +58,13 @@ def answer(session: Session, activity: dict) -> Optional[dict]:
     """The body to answer an invoke activity with, or None for an invoke that is not a card action."""
     if _text(activity.get("name")) != ACTION_NAME:
         return None
-    value = activity.get("value") if isinstance(activity.get("value"), dict) else {}
-    action = value.get("action") if isinstance(value.get("action"), dict) else {}
-    verb = _text(action.get("verb"))
+    verb = _text(_sub(activity, "value", "action", "verb"))
     if verb not in (VERB_APPROVE, VERB_DECLINE):
         return message_response(NOT_FOUND)
-    data = action.get("data") if isinstance(action.get("data"), dict) else {}
+    data = _sub(activity, "value", "action", "data")
+    data = data if isinstance(data, dict) else {}
 
-    sender = activity.get("from") if isinstance(activity.get("from"), dict) else {}
-    person = person_for_object_id(session, _text(sender.get("aadObjectId")))
+    person = person_for_object_id(session, _text(_sub(activity, "from", "aadObjectId")))
     if person is None:
         return message_response(UNKNOWN_PERSON)
 
@@ -81,8 +77,12 @@ def answer(session: Session, activity: dict) -> Optional[dict]:
         return message_response(NOT_YOU)
 
     decision = APPROVED if verb == VERB_APPROVE else DECLINED
+    comment = _text(data.get("comment"))
+    if len(comment.strip()) > MAX_COMMENT_LENGTH:
+        # The card limits the box, but a client need not: the card stays as it is, so they can shorten it and press again.
+        return message_response(f"The comment can be at most {MAX_COMMENT_LENGTH} characters, so nothing was recorded. Shorten it and press the button again.")
     try:
-        record_decision(session, vote, decision, _text(data.get("comment")), via=VIA)
+        record_decision(session, vote, decision, comment, via=VIA)
         session.commit()
     except ApprovalError as error:
         # Already answered, settled, withdrawn, superseded, no longer an approver, inactive or the requester
@@ -90,4 +90,8 @@ def answer(session: Session, activity: dict) -> Optional[dict]:
         session.rollback()
         session.expire_all()
         return card_response(decided_card(session, session.get(ApprovalVote, vote.id), note=str(error)))
+    except Exception:
+        log.exception("Teams bot: recording a vote from a card failed")
+        session.rollback()
+        return message_response(FAILED)
     return card_response(decided_card(session, session.get(ApprovalVote, vote.id)))

@@ -435,10 +435,10 @@ def _settle(session: Session, ticket: Ticket, approval: TicketApproval, result: 
 def _with_channel(via: Optional[str], comment: str) -> str:
     """The detail kept with a vote: the comment, led by "via Teams" when the vote came from somewhere other than the
     portal or the emailed link."""
-    comment = (comment or "").strip()
+    comment = (comment or "").strip()[:200]
     if not via:
-        return comment[:200]
-    return f"via {via}: {comment}"[:200] if comment else f"via {via}"
+        return comment
+    return f"via {via}: {comment}" if comment else f"via {via}"
 
 
 def record_decision(session: Session, vote: ApprovalVote, decision: str, comment: str, via: Optional[str] = None) -> Optional[str]:
