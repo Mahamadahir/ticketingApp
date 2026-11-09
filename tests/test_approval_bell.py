@@ -57,7 +57,7 @@ def test_switching_the_bell_entry_off_stops_it(client, db_session):
     db_session.add(NotificationPreference(user_id=boss.id, kind=APPROVAL_WAITING, channel=IN_APP, enabled=False))
     db_session.commit()
     raised_and_triaged(client, db_session, request_type(db_session, ["boss@example.com"]))
-    assert bell(db_session, "boss@example.com") == []
+    assert [n for n in bell(db_session, "boss@example.com") if n.bell] == []  # (the Teams copy is a separate choice)
 
 
 def test_an_agent_approver_without_access_to_the_ticket_still_sees_it_and_opens_the_portal(client, db_session):

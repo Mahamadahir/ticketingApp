@@ -124,6 +124,17 @@ def _can_open(session: Session, person: User, ticket: Ticket) -> bool:
     return ticket_access(person, ticket, access_context(session, person)) >= Access.READ
 
 
+def can_be_told_about(session: Session, person: User, notification: Notification, ticket: Ticket) -> bool:
+    """Whether a Teams copy of this notification may still say what its ticket is. An agent's notification needs
+    access to the ticket; a request waiting for someone's vote needs only that they are still asked to vote on it
+    (an approver is often not an agent and never has access; they answer in the portal or on the card)."""
+    if notification.kind == APPROVAL_WAITING:
+        from app.approvals import vote_for  # imported here: approvals imports this module
+
+        return vote_for(session, ticket, person) is not None
+    return _can_open(session, person, ticket)
+
+
 def mentioned_in(session: Session, ticket: Ticket, body: str, author: User) -> list[User]:
     """The agents an internal note mentions who can open the ticket, each once, never the author.
     @alice matches the part of an email address before the @ (or the whole address, @alice@x.com);
@@ -347,7 +358,7 @@ def hand_to_teams(
         person = session.get(User, notification.user_id)
         ticket = session.get(Ticket, notification.ticket_id) if notification.ticket_id else None
         still_wanted = person.is_active and offers(notification.kind, TEAMS) and is_enabled(session, person, notification.kind, TEAMS)
-        can_open = notification.ticket_id is None or (ticket is not None and _can_open(session, person, ticket))
+        can_open = notification.ticket_id is None or (ticket is not None and can_be_told_about(session, person, notification, ticket))
         reachable = can_deliver is None or can_deliver(session, person)
         if still_wanted and can_open and reachable:
             enqueue(session, notification)
@@ -472,6 +483,22 @@ def notify_approval_waiting(session: Session, ticket: Ticket, approver: User) ->
     return notify(
         session, approver, APPROVAL_WAITING, ticket, f"{REF} {ticket.subject} is waiting for your approval", None
     )
+
+
+def notify_approval_reminder(session: Session, ticket: Ticket, approver: User) -> Optional[Notification]:
+    """The Teams reminder to an approver who has not answered (app/approval_reminders.py): a Teams-only copy of the
+    "waiting for your approval" notification, so it follows the same setting (Teams on for approval_waiting) and
+    adds nothing to the bell, which already holds the original. Written already read and due at once, the way any
+    Teams-only notification is. None when the person is inactive or has Teams off for this event. Does not commit."""
+    if not approver.is_active or not (offers(APPROVAL_WAITING, TEAMS) and is_enabled(session, approver, APPROVAL_WAITING, TEAMS)):
+        return None
+    notification = Notification(
+        user_id=approver.id, kind=APPROVAL_WAITING, ticket_id=ticket.id, actor_email=None,
+        text=f"{REF} {ticket.subject} is still waiting for your approval", bell=False, teams_wanted=True,
+        read_at=datetime.now(timezone.utc),
+    )
+    session.add(notification)
+    return notification
 
 
 def notify_approval_overdue(session: Session, ticket: Ticket, super_admin: User, days: int, unanswered: int) -> Optional[Notification]:
