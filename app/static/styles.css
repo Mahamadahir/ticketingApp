@@ -317,8 +317,10 @@ label { cursor: pointer; }
 .tp-hint { margin: 0; font-size: 13px; color: var(--muted); }
 .tp-compose-note textarea { background: var(--note-bg); border-color: var(--note-border); }
 .tp-attach { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
-.tp-attach .btn { cursor: pointer; }
+.tp-form .tp-attach label.btn { flex-direction: row; width: auto; gap: 8px; min-height: 32px; padding: 0 12px; font-size: 13px; color: var(--text); cursor: pointer; }
 .tp-attach input:focus-visible + .btn { outline: 2px solid var(--focus); outline-offset: 2px; }
+.tp-compose .email-preview { margin-top: 12px; }
+.tp-compose .email-preview pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .tp-attach-names { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
 .tp-compose-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
 .tp-compose-row .btn-primary { margin-left: auto; }
