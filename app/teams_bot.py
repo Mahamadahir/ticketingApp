@@ -117,12 +117,27 @@ def installation_update(session: Session, activity: dict) -> Optional[Handled]:
     action = _text(activity.get("action"))
     if action in ("add", "add-upgrade"):
         if _store(session, activity):
-            session.commit()  # the chat is kept whatever the address lookup does
-            link_by_address(session, _person(activity)[0])
+            session.commit()
+            oid = _person(activity)[0]
+            # The address lookup calls Teams, so it runs after the answer, in a session of its own.
+            return Handled(after=lambda: _link_later(oid))
     elif action in ("remove", "remove-upgrade"):
         remove_reference(session, _person(activity)[0])
     session.commit()
     return None
+
+
+def _link_later(oid: str) -> None:
+    """At install, matches a person with no account on record to one through the address Teams gives (8F). Runs once the
+    answer has been sent (it calls Teams); a failure is logged and the first message from them is matched as before."""
+    from app.database import engine
+
+    try:
+        with Session(engine) as own:
+            link_by_address(own, oid)
+            own.commit()
+    except Exception as error:
+        log.warning("Teams bot: matching an installer by address failed (%s)", type(error).__name__)
 
 
 @handler("message")

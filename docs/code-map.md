@@ -471,7 +471,7 @@ File: `app/audit.py`
 File: `app/auth.py`
 
 - Classes: `LoginResult`, `NotAuthenticated`
-- Functions: `acquire_token_by_auth_code`, `attempt_local_login`, `build_auth_url`, `get_current_user`, `get_or_create_user`, `hash_password`, `require_permission`, `require_roles`
+- Functions: `acquire_token_by_auth_code`, `attempt_local_login`, `build_auth_url`, `get_current_user`, `get_current_user_passively`, `get_or_create_user`, `hash_password`, `require_permission`, `require_roles`
 - Imports: `app.audit`, `app.config`, `app.database`, `app.identity`, `app.models`, `app.outage`, `app.sessions`, `app.time_zones`, `app.visibility`
 - Imported by: `app.breakglass`, `app.emergency`, `app.main`, `app.routers.admin`, `app.routers.attachments`, `app.routers.auth`, `app.routers.bulk_resolve`, `app.routers.data_protection`, `app.routers.feedback`, `app.routers.link_account`, `app.routers.msp_mail`, `app.routers.my_settings`, `app.routers.notifications`, `app.routers.portal`, `app.routers.reports`, `app.routers.tickets`
 - Tests: `test_activity_log.py`, `test_auth.py`, `test_break_glass.py`, `test_hardening.py`, `test_login_lockout.py`, `test_outage_mode.py`, `test_sessions.py`, `test_visibility.py`
@@ -608,7 +608,7 @@ File: `app/config.py`
 File: `app/database.py`
 - Functions: `get_session`
 - Imports: `app.config`
-- Imported by: `app.activity`, `app.auth`, `app.breakglass`, `app.routers.action_links`, `app.routers.admin`, `app.routers.approvals`, `app.routers.attachments`, `app.routers.auth`, `app.routers.bulk_resolve`, `app.routers.data_protection`, `app.routers.dev_tools`, `app.routers.feedback`, `app.routers.health`, `app.routers.legal`, `app.routers.link_account`, `app.routers.msp_mail`, `app.routers.my_settings`, `app.routers.notifications`, `app.routers.portal`, `app.routers.reports`, `app.routers.teams_bot`, `app.routers.tickets`, `app.routers.webhooks`, `app.scheduled_jobs`, `app.sessions`, `app.templating`, `app.worker`
+- Imported by: `app.activity`, `app.auth`, `app.breakglass`, `app.routers.action_links`, `app.routers.admin`, `app.routers.approvals`, `app.routers.attachments`, `app.routers.auth`, `app.routers.bulk_resolve`, `app.routers.data_protection`, `app.routers.dev_tools`, `app.routers.feedback`, `app.routers.health`, `app.routers.legal`, `app.routers.link_account`, `app.routers.msp_mail`, `app.routers.my_settings`, `app.routers.notifications`, `app.routers.portal`, `app.routers.reports`, `app.routers.teams_bot`, `app.routers.tickets`, `app.routers.webhooks`, `app.scheduled_jobs`, `app.sessions`, `app.teams_bot`, `app.templating`, `app.worker`
 - Tests: `conftest.py`, `test_access_context.py`, `test_anonymisation.py`, `test_approval_groups.py`, `test_approval_reminders.py`, `test_approvals.py`, `test_auth.py`, `test_auto_close_chase.py`, `test_category_admin.py`, `test_due_date.py`, `test_followers.py`, `test_hardening.py`, `test_health.py`, `test_inbound_mail.py`, `test_linking.py`, `test_mail_subscriptions.py`, `test_notification_followup.py`, `test_outbound_mail.py`, `test_scheduled_jobs.py`, `test_split_family.py`, `test_splitting.py`, `test_teams_copy.py`, `test_teams_copy_sending.py`, `test_teams_intake.py`, `test_ticket_core.py`, `test_withdraw.py`, `test_worker.py`
 
 ### `app.due_today`
@@ -797,8 +797,8 @@ File: `app/mail.py`
 - Classes: `Mail`, `NotReady`
 - Functions: `automatic_cap`, `build_acknowledgement_mail`, `build_approval_mail`, `build_approval_overdue_mail`, `build_approval_reminder_mail`, `build_approval_withdrawn_mail`, `build_chase_mail`, `build_emergency_reset_mail`, `build_follower_update_mail`, `build_message_mail`, `build_msp_forward_mail`, `build_msp_handoff_mail`, `build_msp_release_mail`, `build_raised_for_mail`, `cap_release`, `deliver_mail`, `describe_failure`, `give_up`, `is_permanent`, `own_first_message`, `quoted`, `record_only`, `send_link_code`, `send_now`, `send_through_graph`
 - Imports: `app.action_links`, `app.approval_groups`, `app.approval_links`, `app.approvals`, `app.config`, `app.email_templates`, `app.emergency`, `app.followers`, `app.graph_client`, `app.identity`, `app.messages`, `app.models`, `app.never_follow`, `app.notification_settings`, `app.outage`, `app.outbox`, `app.person_data`, `app.raising`, `app.settings_store`, `app.storage`, `app.teams`
-- Imported by: `app.auto_close_chase`, `app.inbound`, `app.jobs`, `app.linked_identities`, `app.msp`
-- Tests: `test_acknowledgement.py`, `test_action_links.py`, `test_anonymisation.py`, `test_approval_reminders.py`, `test_auto_close_chase.py`, `test_closing_email.py`, `test_email_templates.py`, `test_follower_updates.py`, `test_linked_identities.py`, `test_msp.py`, `test_msp_actions.py`, `test_msp_mail.py`, `test_outage_mode.py`, `test_outbound_mail.py`, `test_reopening.py`, `test_resolution.py`, `test_withdraw.py`
+- Imported by: `app.auto_close_chase`, `app.inbound`, `app.jobs`, `app.linked_identities`, `app.msp`, `app.reply_channel`
+- Tests: `test_acknowledgement.py`, `test_action_links.py`, `test_anonymisation.py`, `test_approval_reminders.py`, `test_auto_close_chase.py`, `test_closing_email.py`, `test_email_templates.py`, `test_follower_updates.py`, `test_linked_identities.py`, `test_msp.py`, `test_msp_actions.py`, `test_msp_mail.py`, `test_outage_mode.py`, `test_outbound_mail.py`, `test_reopening.py`, `test_resolution.py`, `test_teams_followups.py`, `test_withdraw.py`
 
 ### `app.main`
 
@@ -988,7 +988,7 @@ File: `app/reply_channel.py`
 
 - Classes: `ReplyRoute`
 - Functions: `email_instead`, `is_the_requester`, `note_requester_wrote`, `queue_reply`, `reply_route`, `requester_channel`
-- Imports: `app.identity`, `app.messages`, `app.models`, `app.outbox`, `app.teams`
+- Imports: `app.identity`, `app.mail`, `app.messages`, `app.models`, `app.outbox`, `app.teams`
 - Imported by: `app.inbound`, `app.intake`, `app.messages`, `app.routers.portal`, `app.teams`, `app.teams_intake`
 - Tests: `test_teams_followups.py`
 
@@ -1410,9 +1410,9 @@ File: `app/teams_bot.py`
 
 - Classes: `Handled`
 - Functions: `activity_tenant`, `handler`, `installation_update`, `invoke`, `message`, `receive`
-- Imports: `app.bot_cards`, `app.bot_connector`, `app.config`, `app.teams_approvals`, `app.teams_bot_auth`, `app.teams_conversations`, `app.teams_intake`
+- Imports: `app.bot_cards`, `app.bot_connector`, `app.config`, `app.database`, `app.teams_approvals`, `app.teams_bot_auth`, `app.teams_conversations`, `app.teams_intake`
 - Imported by: `app.routers.teams_bot`, `app.teams_approvals`, `app.teams_intake`
-- Tests: `test_teams_bot.py`
+- Tests: `test_teams_bot.py`, `test_teams_followups.py`
 
 ### `app.teams_bot_auth`
 
@@ -1429,10 +1429,10 @@ File: `app/teams_bot_auth.py`
 
 The Teams bot's conversation store (phase 8A): where to reach each person as the bot.  
 File: `app/teams_conversations.py`
-- Functions: `conversation_ref`, `forget_conversation`, `link_by_address`, `reference_for`, `remove_reference`, `save_reference`
+- Functions: `conversation_ref`, `link_by_address`, `reference_for`, `remove_reference`, `save_reference`
 - Imports: `app.audit`, `app.bot_connector`, `app.followers`, `app.identity`, `app.models`, `app.person_data`
 - Imported by: `app.routers.my_settings`, `app.teams`, `app.teams_bot`, `app.teams_intake`
-- Tests: `test_teams_bot.py`, `test_teams_followups.py`, `test_teams_hold.py`
+- Tests: `test_teams_bot.py`, `test_teams_followups.py`
 
 ### `app.teams_intake`
 
@@ -1481,7 +1481,7 @@ File: `app/thanks_rules.py`
 - Functions: `add_rule`, `all_rules`, `candidate_to_rule`, `clean_rule`, `describe`, `dismiss_candidate`, `enabled_rules`, `is_thanks_reply`, `normalise_pattern`, `normalise_text`, `pending_candidates`, `record_candidate`, `rule_matches`, `set_rule_enabled`, `update_rule`
 - Imports: `app.models`
 - Imported by: `app.reopening`, `app.routers.admin`, `app.splitting`, `app.teams_intake`
-- Tests: `test_teams_intake.py`, `test_thanks_rules.py`
+- Tests: `test_teams_followups.py`, `test_teams_intake.py`, `test_thanks_rules.py`
 
 ### `app.ticket_service`
 

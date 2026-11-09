@@ -5,7 +5,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from app.templating import templates
 from sqlmodel import Session, select
 
-from app.auth import get_current_user
+from app.auth import get_current_user, get_current_user_passively
 from app.database import get_session
 from app.models import Notification, Ticket, User
 from app.notifications import PORTAL_KINDS, bell_references, bell_tickets, notification_text, count_unread, mark_all_read, mark_read, visible_to
@@ -43,7 +43,7 @@ def list_notifications(
 
 @router.get("/count", response_class=HTMLResponse)
 def unread_count(
-    user: User = Depends(signed_in),
+    user: User = Depends(get_current_user_passively),  # the poll is not the person being active (app/auth.py)
     session: Session = Depends(get_session),
 ):
     """The bell's label, polled by the page every 30 seconds."""

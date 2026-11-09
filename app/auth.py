@@ -183,6 +183,17 @@ def get_or_create_user(session: Session, email: str, display_name: str) -> User:
 def get_current_user(request: Request, session: Session = Depends(get_session)) -> User:
     """The signed-in person, from the server-side session behind the cookie (app/sessions.py). A session
     that is missing, revoked, expired or idle, or whose person has been deactivated, is not signed in."""
+    return _current_user(request, session, touch=True)
+
+
+def get_current_user_passively(request: Request, session: Session = Depends(get_session)) -> User:
+    """The same check, but the request does not count as the person being active (the session's `last_seen_at` stays).
+    For what a page does by itself in the background, the bell's poll: an open tab nobody is looking at must neither keep
+    a session alive nor hold back the Teams copy of a notification (`teams_hold_while_active_minutes`)."""
+    return _current_user(request, session, touch=False)
+
+
+def _current_user(request: Request, session: Session, touch: bool) -> User:
     now = datetime.now(timezone.utc)
     row = sessions.current_row(session, request)
     reason = sessions.ended_reason(session, row, now)
@@ -205,7 +216,8 @@ def get_current_user(request: Request, session: Session = Depends(get_session)) 
         # Switching outage mode off ends these sessions; this catches any path that did not.
         request.session.pop(sessions.COOKIE_KEY, None)
         raise NotAuthenticated(sessions.SIGNED_OUT_MESSAGE)
-    sessions.touch(row, now, sessions.idle_limit(session, row.break_glass))
+    if touch:
+        sessions.touch(row, now, sessions.idle_limit(session, row.break_glass))
     # Lets error pages (such as "no access") show the signed-in user's navigation.
     request.state.user = user
     # Every page shows times in this person's zone (app/templating.py); worked out here with the request's

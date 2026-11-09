@@ -190,7 +190,7 @@ class Unsendable(Exception):
     message is the reason kept on the row."""
 
 
-def new_ticket_post(session: Session, post: TeamsPost) -> dict:
+def new_ticket_post(session: Session, post: TeamsPost, bot_refused: bool = False) -> dict:
     ticket = session.get(Ticket, post.ticket_id) if post.ticket_id else None
     if ticket is None:
         raise Unsendable("Ticket not found")
@@ -268,14 +268,16 @@ def notifications_on() -> bool:
     return settings.teams_notifications_enabled or settings.teams_bot_configured
 
 
-def route_for(session: Session, person: User, direct_only: bool = False):
+def route_for(session: Session, person: User, direct_only: bool = False, bot_refused: bool = False):
     """The one place that decides how a person's Teams copy travels, worked out when it is sent (so a person who
     installs the app after the copy was queued still gets it in the chat): a direct message from the bot when the bot
     is on and the person has a conversation with it, else the channel @mention when that is switched on, else None
     (the copy is dropped). `direct_only` is for a copy that must never go to a shared channel (a request waiting for
-    someone's vote: it names the request and carries the buttons): the channel is then not an option. Returns
-    (DIRECT, conversation row), (CHANNEL, None) or (None, None)."""
-    if settings.teams_bot_configured:
+    someone's vote: it names the request and carries the buttons): the channel is then not an option. `bot_refused` is
+    for a copy whose direct message Teams has just refused with 403 or 404 (the app was removed): the bot is then not an
+    option for this copy, so it goes to the channel if that is on, else nowhere. Returns (DIRECT, conversation row),
+    (CHANNEL, None) or (None, None)."""
+    if settings.teams_bot_configured and not bot_refused:
         from app.teams_conversations import reference_for  # imported here: it needs bot_connector, which needs this module
 
         conversation = reference_for(session, person)
@@ -299,7 +301,7 @@ def can_deliver(session: Session, person: User, direct_only: bool = False) -> bo
     return route_for(session, person, direct_only)[0] is not None
 
 
-def notification_post(session: Session, post: TeamsPost):
+def notification_post(session: Session, post: TeamsPost, bot_refused: bool = False):
     if not notifications_on():
         # Switched off after this was queued: the switch is checked again at send time, not only when queuing.
         raise Unsendable("Sending notifications to Teams is switched off")
@@ -317,7 +319,7 @@ def notification_post(session: Session, post: TeamsPost):
         # Checked again at send time: the ticket may have moved team since the copy was queued, or the person
         # may no longer be asked to vote on it.
         raise Unsendable("The person can no longer open the ticket")
-    route, conversation = route_for(session, person, direct_only=notification.kind in PORTAL_KINDS)
+    route, conversation = route_for(session, person, direct_only=notification.kind in PORTAL_KINDS, bot_refused=bot_refused)
     if route == DIRECT:
         from app.bot_cards import notification_card as direct_card  # the bot's cards live in one module (8C extends it)
 
@@ -327,7 +329,7 @@ def notification_post(session: Session, post: TeamsPost):
     raise Unsendable("No Teams conversation with the bot, and notifications to the channel are switched off")
 
 
-def requester_message_post(session: Session, post: TeamsPost) -> "BotDelivery":
+def requester_message_post(session: Session, post: TeamsPost, bot_refused: bool = False) -> "BotDelivery":
     """The text of a message for the requester, under the ticket's reference so they can tell which request it is about.
     The same rules as the email (app/mail.py build_message_mail): the ticket is triaged and the message is one the
     requester may see (`requester_visible_messages`, so an internal note can never go); and the person is a real, active
@@ -340,6 +342,8 @@ def requester_message_post(session: Session, post: TeamsPost) -> "BotDelivery":
 
     if not settings.teams_bot_configured:
         raise Unsendable("The Teams bot is switched off")
+    if bot_refused:
+        raise Unsendable("Teams refused the message (the app was removed)")  # only their own chat will do; the email goes instead
     message = session.get(Message, post.message_id) if post.message_id else None
     ticket = session.get(Ticket, post.ticket_id) if post.ticket_id else None
     if message is None or ticket is None or message.ticket_id != ticket.id:
@@ -364,7 +368,7 @@ def requester_message_post(session: Session, post: TeamsPost) -> "BotDelivery":
 
 # One builder per kind of post: it turns the row into the payload to send, or raises Unsendable.
 # A new kind of post is one builder and one entry here; sending, backoff and giving up are shared.
-CARD_BUILDERS: dict[str, Callable[[Session, TeamsPost], "dict | BotDelivery"]] = {
+CARD_BUILDERS: dict[str, Callable[..., "dict | BotDelivery"]] = {  # (session, post, bot_refused=False)
     NEW_TICKET: new_ticket_post,
     NOTIFICATION: notification_post,
     REQUESTER_MESSAGE: requester_message_post,
@@ -467,12 +471,10 @@ def deliver_pending(
         try:
             error = _transmit(payload, send, bot_send)
             if error is not None and direct and is_app_removed(error):
-                # The person removed the app and Teams never told us. Forget the chat, then route again in this one place
-                # (route_for): the channel @mention if that is on, otherwise the builder gives up.
-                from app.teams_conversations import forget_conversation  # here: it needs bot_connector, which needs this module
-
-                forget_conversation(session, payload.conversation_id)
-                payload = builder(session, post)
+                # The person removed the app (an uninstall Teams never told us about, or a refusal for another reason): route
+                # this copy again in the one place (route_for) without the bot: the channel @mention if that is on,
+                # otherwise the builder gives up. The stored chat is kept; the next copy tries the bot again.
+                payload = builder(session, post, bot_refused=True)
                 if not isinstance(payload, BotDelivery) and not webhook:
                     raise Unsendable("The app was removed, and the channel needs TEAMS_NEW_TICKET_WEBHOOK_URL")
                 error = _transmit(payload, send, bot_send)

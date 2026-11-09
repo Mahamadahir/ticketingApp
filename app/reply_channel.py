@@ -18,12 +18,13 @@ The email itself, its checks and its sending are unchanged (app/outbox.py, app/m
 """
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from sqlmodel import Session, select
+from sqlmodel import Session, func, select
 
 from app.identity import person_for_address
-from app.models import Message, OutboundEmail, Ticket, TicketSource
+from app.models import Message, OutboundEmail, TeamsPost, Ticket, TicketSource
 from app.outbox import queue_message
 
 EMAIL = "email"
@@ -84,8 +85,27 @@ def reply_route(session: Session, ticket: Ticket, message: Message) -> ReplyRout
 
     if requester_channel(ticket) != TEAMS_CHANNEL or not can_message_requester(session, ticket):
         return ReplyRoute(email=True, teams=False)
+    if message.author_user_id is None and _notices_to_teams_today(session, ticket) >= _notice_cap(session):
+        return ReplyRoute(email=True, teams=False)  # the same cap as automatic email: past it, the email's own cap holds it back
     person = person_for_address(session, ticket.requester_email)
     return ReplyRoute(email=bool(message.cc) or bool(person and person.teams_replies_also_email), teams=True)
+
+
+def _notice_cap(session: Session) -> int:
+    from app.mail import automatic_cap  # here: mail.py imports messages.py, which imports this module
+
+    return automatic_cap(session)
+
+
+def _notices_to_teams_today(session: Session, ticket: Ticket) -> int:
+    """Automatic notices (no author) already queued for this requester's chat on this ticket in the last 24 hours: what
+    the per-ticket cap on automatic messages (app/mail.py) counts for email, so a loop of notices cannot flood the chat."""
+    return session.exec(
+        select(func.count()).select_from(TeamsPost).join(Message, Message.id == TeamsPost.message_id).where(
+            TeamsPost.kind == "requester_message", TeamsPost.ticket_id == ticket.id, Message.author_user_id.is_(None),
+            TeamsPost.created_at >= datetime.now(timezone.utc) - timedelta(hours=24),
+        )
+    ).one()
 
 
 def queue_reply(session: Session, message: Message, ticket: Ticket) -> ReplyRoute:

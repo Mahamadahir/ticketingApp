@@ -503,6 +503,7 @@
         "attempt_local_login",
         "build_auth_url",
         "get_current_user",
+        "get_current_user_passively",
         "get_or_create_user",
         "hash_password",
         "require_permission",
@@ -1070,6 +1071,7 @@
         "app.routers.webhooks",
         "app.scheduled_jobs",
         "app.sessions",
+        "app.teams_bot",
         "app.templating",
         "app.worker"
       ],
@@ -1817,7 +1819,8 @@
         "app.inbound",
         "app.jobs",
         "app.linked_identities",
-        "app.msp"
+        "app.msp",
+        "app.reply_channel"
       ],
       "imports": [
         "app.action_links",
@@ -1863,6 +1866,7 @@
         "tests/test_outbound_mail.py",
         "tests/test_reopening.py",
         "tests/test_resolution.py",
+        "tests/test_teams_followups.py",
         "tests/test_withdraw.py"
       ]
     },
@@ -3173,6 +3177,7 @@
       ],
       "imports": [
         "app.identity",
+        "app.mail",
         "app.messages",
         "app.models",
         "app.outbox",
@@ -5749,6 +5754,7 @@
         "app.bot_cards",
         "app.bot_connector",
         "app.config",
+        "app.database",
         "app.teams_approvals",
         "app.teams_bot_auth",
         "app.teams_conversations",
@@ -5759,7 +5765,8 @@
       "summary": "The Teams bot (phase 8): receives activities from Teams and dispatches them by type.",
       "tables": [],
       "tests": [
-        "tests/test_teams_bot.py"
+        "tests/test_teams_bot.py",
+        "tests/test_teams_followups.py"
       ]
     },
     {
@@ -5793,7 +5800,6 @@
       "file": "app/teams_conversations.py",
       "functions": [
         "conversation_ref",
-        "forget_conversation",
         "link_by_address",
         "reference_for",
         "remove_reference",
@@ -5819,8 +5825,7 @@
       "tables": [],
       "tests": [
         "tests/test_teams_bot.py",
-        "tests/test_teams_followups.py",
-        "tests/test_teams_hold.py"
+        "tests/test_teams_followups.py"
       ]
     },
     {
@@ -6010,6 +6015,7 @@
       "summary": "Thank-you rules and their review queue (phase 4E-2). Nothing here commits.",
       "tables": [],
       "tests": [
+        "tests/test_teams_followups.py",
         "tests/test_teams_intake.py",
         "tests/test_thanks_rules.py"
       ]

@@ -170,6 +170,25 @@ def test_automatic_notices_follow_the_same_rule(public, db_session, ann, dev_mai
     assert [r.kind for r in db_session.exec(select(OutboundEmail)).all()] == ["notice"]
 
 
+def test_past_the_automatic_cap_a_notice_goes_to_the_emails_own_cap_not_the_chat(public, db_session, ann, dev_mail):
+    from app.mail import automatic_cap
+
+    say(public, "Printer is jammed")
+    ticket = triaged(db_session, tickets(db_session)[0])
+    for n in range(automatic_cap(db_session)):
+        messages.record_notice(db_session, ticket, f"Notice {n}")
+    db_session.commit()
+    assert len(db_session.exec(select(TeamsPost)).all()) == automatic_cap(db_session) and db_session.exec(select(OutboundEmail)).all() == []
+
+    messages.record_notice(db_session, ticket, "One too many")
+    db_session.commit()
+    assert len(db_session.exec(select(TeamsPost)).all()) == automatic_cap(db_session)  # not sent to the chat
+    assert [e.kind for e in db_session.exec(select(OutboundEmail)).all()] == ["notice"]  # the email's cap decides when it goes
+    messages.email_requester(db_session, ticket, an_agent(db_session), "An agent's reply is never capped")
+    db_session.commit()
+    assert len(db_session.exec(select(TeamsPost)).all()) == automatic_cap(db_session) + 1
+
+
 def test_a_reply_that_copies_followers_still_goes_by_email(public, db_session, ann, dev_mail):
     say(public, "Printer is jammed")
     ticket = triaged(db_session, tickets(db_session)[0])
@@ -592,6 +611,27 @@ def test_a_reference_in_the_middle_of_a_message_is_just_words(public, connector,
     assert replies(connector)[-1][0] == "card"  # two open: it asks, because the reference is not at the start
 
 
+def test_the_thanks_rules_apply_to_a_message_that_names_a_resolved_ticket(public, db_session, ann):
+    from app.thanks_rules import add_rule
+
+    ticket = an_email_ticket(db_session)
+    ticket.status = TicketStatus.RESOLVED
+    ticket.resolved_at = datetime.now(timezone.utc)
+    db_session.add(ticket)
+    add_rule(db_session, "equals", "thanks", 10, "admin@example.com")
+    db_session.commit()
+    say(public, f"{ticket.reference}: Thanks")
+    db_session.expire_all()
+    assert db_session.get(Ticket, ticket.id).status == TicketStatus.RESOLVED and len(messages_of(db_session, ticket)) == 1
+
+
+def test_a_prefix_is_ignored_when_the_number_is_right_as_everywhere_else(public, db_session, ann):
+    ticket = an_email_ticket(db_session)
+    other = an_email_ticket(db_session, "Another")
+    say(public, f"PRB-{ticket.number}: typed with the wrong prefix")  # the number alone identifies a ticket
+    assert [m.body for m in messages_of(db_session, ticket)] == ["typed with the wrong prefix"]
+
+
 def test_new_still_forces_a_new_ticket(public, db_session, ann):
     ticket = an_email_ticket(db_session)
     say(public, "new: something else")
@@ -901,6 +941,32 @@ def test_an_inactive_or_anonymised_account_is_not_linked(public, db_session, ros
     db_session.commit()
     install(public)
     assert db_session.exec(select(TeamsConversation)).one().user_id is None
+
+
+def test_a_stale_address_link_is_dropped_when_the_account_belongs_to_another_object_id(public, db_session, roster):
+    roster["member"] = {"objectId": OID, "email": "ann.able@example.com"}
+    account = User(email="ann.able@example.com", display_name="Ann", role=UserRole.END_USER)
+    db_session.add(account)
+    db_session.commit()
+    install(public)
+    assert db_session.exec(select(TeamsConversation)).one().user_id == account.id
+
+    account.entra_object_id = OTHER_OID  # the account was later bound to a different directory person
+    db_session.add(account)
+    db_session.commit()
+    roster["member"] = Exception("no more lookups")
+    post(public, activity("installationUpdate", action="add"), token())
+    db_session.expire_all()
+    assert db_session.exec(select(TeamsConversation)).one().user_id is None
+
+
+def test_the_address_lookup_runs_after_the_answer_not_inside_it(public, db_session, roster, monkeypatch):
+    from app import teams_bot
+
+    seen = []
+    monkeypatch.setattr(teams_bot, "link_by_address", lambda session, oid: seen.append(oid))
+    response = post(public, activity("installationUpdate", action="add"), token())
+    assert response.status_code == 200 and seen == [OID]  # done by the background task, with a session of its own
 
 
 def test_a_known_object_id_needs_no_lookup(public, db_session, roster, ann):

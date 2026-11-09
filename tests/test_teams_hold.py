@@ -189,7 +189,7 @@ def test_a_refused_bot_message_falls_back_to_the_channel_mention_when_it_is_on(c
     assert result == (1, 0) and len(channel) == 1  # the same notification, now as a mention in the channel
     assert "<at>" in str(channel[0])
     assert posts(db_session)[0].sent_at is not None
-    assert db_session.exec(select(TeamsConversation)).all() == []  # the chat is forgotten: the person removed the app
+    assert len(db_session.exec(select(TeamsConversation)).all()) == 1  # kept: a 403 or 404 can have other causes than a removal
 
 
 @pytest.mark.parametrize("status", [403, 404])
@@ -203,7 +203,7 @@ def test_with_the_channel_off_a_refused_bot_message_is_given_up(client, db_sessi
 
     [post] = posts(db_session)
     assert post.sent_at is None and post.attempts == teams.MAX_ATTEMPTS and "app was removed" in post.last_error
-    assert db_session.exec(select(TeamsConversation)).all() == []
+    assert len(db_session.exec(select(TeamsConversation)).all()) == 1
 
 
 def test_an_approval_card_never_falls_back_to_the_channel(client, db_session, no_hold_while_active, bot, monkeypatch):
@@ -212,12 +212,10 @@ def test_an_approval_card_never_falls_back_to_the_channel(client, db_session, no
     installed(db_session, bob)
     assert teams.route_for(db_session, bob, direct_only=True)[0] == teams.DIRECT
 
-    from app.teams_conversations import forget_conversation
-
-    forget_conversation(db_session, CONVERSATION)
-    # It names the request and carries the buttons, so the channel is not an option even though it is on.
-    assert teams.route_for(db_session, bob, direct_only=True) == (None, None)
-    assert teams.route_for(db_session, bob) == (teams.CHANNEL, None)
+    # Refused by Teams: it names the request and carries the buttons, so the channel is not an option even though it is on.
+    assert teams.route_for(db_session, bob, direct_only=True, bot_refused=True) == (None, None)
+    assert teams.route_for(db_session, bob, bot_refused=True) == (teams.CHANNEL, None)
+    assert teams.route_for(db_session, bob)[0] == teams.DIRECT  # the next copy tries the bot again
 
 
 def test_other_errors_are_still_retried_and_the_chat_is_kept(client, db_session, no_hold_while_active, bot, monkeypatch):
@@ -352,3 +350,29 @@ def test_without_a_base_url_every_address_must_be_given(tmp_path, capsys):
 
 def test_a_base_url_that_is_not_https_is_refused(tmp_path, capsys):
     assert build_package.main(["--environment", "staging", "--bot-app-id", APP_ID, "--out", str(tmp_path), "--public-base-url", "http://x.example"]) == 2
+
+
+# ---- The bell's poll is not activity ---------------------------------------------------------------------
+
+
+def test_the_bells_poll_does_not_move_last_seen_but_a_page_view_does(client, db_session):
+    from tests.conftest import login_as
+
+    person_id = login_as(client, "ann@example.com", "Ann Able")
+    row_ = db_session.exec(select(UserSession).where(UserSession.user_id == person_id)).one()
+    old = datetime.now(timezone.utc) - timedelta(minutes=30)
+    row_.last_seen_at = old
+    db_session.add(row_)
+    db_session.commit()
+
+    assert client.get("/notifications/count").status_code == 200
+    db_session.expire_all()
+    assert db_session.exec(select(UserSession).where(UserSession.user_id == person_id)).one().last_seen_at == old
+
+    assert client.get("/notifications").status_code == 200  # a page the person opened
+    db_session.expire_all()
+    assert db_session.exec(select(UserSession).where(UserSession.user_id == person_id)).one().last_seen_at > old
+
+
+def test_the_poll_still_needs_a_valid_session(client):
+    assert client.get("/notifications/count", follow_redirects=False).status_code in (303, 307, 401)

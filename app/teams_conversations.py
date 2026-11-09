@@ -62,7 +62,12 @@ def save_reference(
     row.service_url, row.conversation_id = service_url, conversation_id
     row.teams_user_id = (teams_user_id or row.teams_user_id or None)
     if person is not None:
-        row.user_id = person.id  # a person matched by address at install (`link_by_address`) stays linked until the object id matches
+        row.user_id = person.id
+    elif row.user_id is not None:
+        # Matched by address at install (`link_by_address`): kept, unless that account now belongs to another object id.
+        linked = session.get(User, row.user_id)
+        if linked is None or (linked.entra_object_id and normal_oid(linked.entra_object_id) != oid):
+            row.user_id = None
     row.updated_at = _now()
     session.add(row)
     if created:
@@ -107,20 +112,6 @@ def reference_for(session: Session, user: User) -> Optional[TeamsConversation]:
 
 def conversation_ref(row: TeamsConversation) -> ConversationRef:
     return ConversationRef(row.service_url, row.conversation_id)
-
-
-def forget_conversation(session: Session, conversation_id: str) -> bool:
-    """Forgets a conversation Teams refused to deliver into (403 or 404: the app was removed and the uninstall event never
-    reached us). True when there was one; that is audited as an uninstall. The person is reached again as soon as they
-    message the bot or install the app. Does not commit."""
-    row = session.exec(select(TeamsConversation).where(TeamsConversation.conversation_id == conversation_id)).first()
-    if row is None:
-        return False
-    person = session.get(User, row.user_id) if row.user_id else person_for_object_id(session, row.entra_object_id)
-    log_action(session, _actor(person), ENTITY, row.id, UNINSTALLED, "Conversation with the bot removed: Teams refused a message (the app was removed)")
-    session.delete(row)
-    session.flush()
-    return True
 
 
 def link_by_address(session: Session, oid: str) -> Optional[User]:
