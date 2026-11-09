@@ -60,6 +60,7 @@ from app.models import (
     AnonymisedRequester,
     RequesterTimeZone,
     TeamMembership,
+    TeamsConversation,
     TeamsPost,
     ThanksCandidate,
     Ticket,
@@ -76,7 +77,7 @@ from app.models import (
 )
 from app.person_data import (
     BLANK, COLUMNS, DELETE, KEEP, NULL, REMOVE, REPLACE, SCRUB, WITH_ROW, Person, find_person, list_matches, mentions,
-    PLACEHOLDER_DOMAIN, placeholder_address,
+    PLACEHOLDER_DOMAIN, object_ids, placeholder_address,
 )
 from app.attachments import try_lock_blob
 from app.storage import Storage
@@ -497,6 +498,12 @@ def step_accounts(ctx: Context) -> None:
     ctx.count("Accounts anonymised and made inactive", len(users))
 
 
+_delete_teams_conversations = _delete_rows(
+    TeamsConversation,
+    lambda c: or_(_in(TeamsConversation.user_id, c.person.user_ids), _in(TeamsConversation.entra_object_id, object_ids(c.session, c.person))),
+    "Teams bot conversations deleted",
+)
+
 # One step for every decision that is not KEEP or WITH_ROW, keyed by the column (person_data.COLUMNS). Several
 # columns of one table can share a step; it runs once. Order matters: messages are read before their senders are
 # replaced, files are found before the messages' rows change, accounts last, so what identifies the person is still
@@ -562,6 +569,9 @@ STEPS: dict[str, Callable[[Context], None]] = {
     "notificationpreference.user_id": _delete_rows(
         NotificationPreference, lambda c: _in(NotificationPreference.user_id, c.person.user_ids), "Notification preferences deleted"
     ),
+    # Their chat with the Teams bot is found by their account or by any of their object ids: one step serves both columns.
+    "teams_conversation.user_id": _delete_teams_conversations,
+    "teams_conversation.entra_object_id": _delete_teams_conversations,
     "requestertimezone.email": _delete_rows(
         RequesterTimeZone, lambda c: func.lower(func.trim(RequesterTimeZone.email)).in_(c.person.addresses), "Mailbox time zones deleted"
     ),

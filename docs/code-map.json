@@ -54,6 +54,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/3f94eea4bd7c_teams_bot_conversations.py",
+        "revision": "3f94eea4bd7c"
+      },
+      {
         "file": "migrations/versions/e5fda8ca3a76_anonymised_requester.py",
         "revision": "e5fda8ca3a76"
       },
@@ -68,17 +72,13 @@
       {
         "file": "migrations/versions/d5f1b7c3a928_outage_mode.py",
         "revision": "d5f1b7c3a928"
-      },
-      {
-        "file": "migrations/versions/c4e8a2b6d913_self_approval_switch.py",
-        "revision": "c4e8a2b6d913"
       }
     ],
-    "count": 62,
+    "count": 63,
     "heads": [
       {
-        "file": "migrations/versions/e5fda8ca3a76_anonymised_requester.py",
-        "revision": "e5fda8ca3a76"
+        "file": "migrations/versions/3f94eea4bd7c_teams_bot_conversations.py",
+        "revision": "3f94eea4bd7c"
       }
     ]
   },
@@ -464,7 +464,8 @@
         "app.routers.tickets",
         "app.scheduled_jobs",
         "app.subject_access",
-        "app.subrequests"
+        "app.subrequests",
+        "app.teams_conversations"
       ],
       "imports": [
         "app.models"
@@ -631,6 +632,41 @@
       "tables": [],
       "tests": [
         "tests/test_handoff_bells_holidays.py"
+      ]
+    },
+    {
+      "classes": [
+        "BotNotConfigured",
+        "ConversationRef",
+        "TokenCache"
+      ],
+      "file": "app/bot_connector.py",
+      "functions": [
+        "call",
+        "client_secret_token",
+        "create_conversation",
+        "managed_identity_token",
+        "new_client",
+        "reply_to",
+        "send",
+        "send_card",
+        "send_text",
+        "sleep"
+      ],
+      "imported_by": [
+        "app.teams_bot",
+        "app.teams_conversations"
+      ],
+      "imports": [
+        "app.config",
+        "app.teams"
+      ],
+      "module": "app.bot_connector",
+      "routes": [],
+      "summary": "A small client for the Bot Connector REST API (phase 8A), over httpx.",
+      "tables": [],
+      "tests": [
+        "tests/test_teams_bot.py"
       ]
     },
     {
@@ -850,6 +886,7 @@
         "app.approval_links",
         "app.attachments",
         "app.auth",
+        "app.bot_connector",
         "app.breakglass",
         "app.check_settings",
         "app.database",
@@ -870,10 +907,13 @@
         "app.routers.dev_tools",
         "app.routers.link_account",
         "app.routers.my_settings",
+        "app.routers.teams_bot",
         "app.routers.webhooks",
         "app.storage",
         "app.subscriptions",
         "app.teams",
+        "app.teams_bot",
+        "app.teams_bot_auth",
         "app.telemetry",
         "app.worker"
       ],
@@ -911,6 +951,7 @@
         "tests/test_security.py",
         "tests/test_sessions.py",
         "tests/test_teams.py",
+        "tests/test_teams_bot.py",
         "tests/test_teams_copy_sending.py",
         "tests/test_time_zones.py",
         "tests/test_visibility.py",
@@ -944,6 +985,7 @@
         "app.routers.notifications",
         "app.routers.portal",
         "app.routers.reports",
+        "app.routers.teams_bot",
         "app.routers.tickets",
         "app.routers.webhooks",
         "app.scheduled_jobs",
@@ -1341,8 +1383,10 @@
         "my_ticket_condition",
         "my_tickets_query",
         "normal_oid",
+        "object_ids_of",
         "people_for_addresses",
         "person_for_address",
+        "person_for_object_id",
         "requester_emails",
         "resolve_sso_user"
       ],
@@ -1358,6 +1402,7 @@
         "app.raising",
         "app.routers.auth",
         "app.routers.portal",
+        "app.teams_conversations",
         "app.time_zones",
         "app.visibility"
       ],
@@ -1722,6 +1767,7 @@
         "app.routers.notifications",
         "app.routers.portal",
         "app.routers.reports",
+        "app.routers.teams_bot",
         "app.routers.tickets",
         "app.routers.webhooks",
         "app.sessions",
@@ -1746,6 +1792,7 @@
         "tests/test_public_surface.py",
         "tests/test_sessions.py",
         "tests/test_subject_access.py",
+        "tests/test_teams_bot.py",
         "tests/test_triage.py"
       ]
     },
@@ -1870,6 +1917,7 @@
         "Setting",
         "Team",
         "TeamMembership",
+        "TeamsConversation",
         "TeamsPost",
         "ThanksCandidate",
         "ThanksRule",
@@ -1970,6 +2018,7 @@
         "app.subscriptions",
         "app.team_activity",
         "app.teams",
+        "app.teams_conversations",
         "app.templating",
         "app.thanks_rules",
         "app.ticket_service",
@@ -2123,6 +2172,10 @@
           "table": "teammembership"
         },
         {
+          "class": "TeamsConversation",
+          "table": "teams_conversation"
+        },
+        {
           "class": "TeamsPost",
           "table": "teamspost"
         },
@@ -2257,6 +2310,7 @@
         "tests/test_subrequests.py",
         "tests/test_team_activity.py",
         "tests/test_teams.py",
+        "tests/test_teams_bot.py",
         "tests/test_teams_copy.py",
         "tests/test_teams_copy_sending.py",
         "tests/test_thanks_rules.py",
@@ -2744,6 +2798,7 @@
         "is_placeholder_address",
         "list_matches",
         "mentions",
+        "object_ids",
         "placeholder_address",
         "user_id_columns"
       ],
@@ -2849,6 +2904,7 @@
         "app.routers.action_links",
         "app.routers.approvals",
         "app.routers.auth",
+        "app.routers.teams_bot",
         "app.routers.webhooks"
       ],
       "imports": [
@@ -2860,7 +2916,8 @@
       "tables": [],
       "tests": [
         "tests/conftest.py",
-        "tests/test_public_surface.py"
+        "tests/test_public_surface.py",
+        "tests/test_teams_bot.py"
       ]
     },
     {
@@ -4400,6 +4457,34 @@
     },
     {
       "classes": [],
+      "file": "app/routers/teams_bot.py",
+      "functions": [
+        "messages"
+      ],
+      "imported_by": [
+        "app.main"
+      ],
+      "imports": [
+        "app.config",
+        "app.database",
+        "app.rate_limit",
+        "app.teams_bot",
+        "app.teams_bot_auth"
+      ],
+      "module": "app.routers.teams_bot",
+      "routes": [
+        {
+          "handler": "messages",
+          "method": "POST",
+          "path": "/api/teams/messages"
+        }
+      ],
+      "summary": "The Teams bot's endpoint (phase 8A). Internet-facing: served by the public app only.",
+      "tables": [],
+      "tests": []
+    },
+    {
+      "classes": [],
       "file": "app/routers/tickets.py",
       "functions": [
         "add_ticket_follower",
@@ -5266,6 +5351,7 @@
       ],
       "file": "app/teams.py",
       "functions": [
+        "backoff_minutes",
         "deliver_pending",
         "describe_failure",
         "give_up",
@@ -5279,11 +5365,13 @@
         "plain",
         "post_card",
         "queue_new_ticket",
-        "queue_notification"
+        "queue_notification",
+        "record_failure"
       ],
       "imported_by": [
         "app.approval_reminders",
         "app.auto_close_chase",
+        "app.bot_connector",
         "app.inbound",
         "app.jobs",
         "app.linked_identities",
@@ -5309,9 +5397,89 @@
         "tests/test_linked_identities.py",
         "tests/test_outbound_mail.py",
         "tests/test_teams.py",
+        "tests/test_teams_bot.py",
         "tests/test_teams_copy_sending.py",
         "tests/test_wiring_3f.py",
         "tests/test_withdraw.py"
+      ]
+    },
+    {
+      "classes": [],
+      "file": "app/teams_bot.py",
+      "functions": [
+        "activity_tenant",
+        "handler",
+        "installation_update",
+        "message",
+        "receive"
+      ],
+      "imported_by": [
+        "app.routers.teams_bot"
+      ],
+      "imports": [
+        "app.bot_connector",
+        "app.config",
+        "app.teams_bot_auth",
+        "app.teams_conversations"
+      ],
+      "module": "app.teams_bot",
+      "routes": [],
+      "summary": "The Teams bot (phase 8): receives activities from Teams and dispatches them by type.",
+      "tables": [],
+      "tests": [
+        "tests/test_teams_bot.py"
+      ]
+    },
+    {
+      "classes": [
+        "KeyCache",
+        "TokenRejected"
+      ],
+      "file": "app/teams_bot_auth.py",
+      "functions": [
+        "check_request",
+        "fetch_json",
+        "same_service_url"
+      ],
+      "imported_by": [
+        "app.routers.teams_bot",
+        "app.teams_bot"
+      ],
+      "imports": [
+        "app.config"
+      ],
+      "module": "app.teams_bot_auth",
+      "routes": [],
+      "summary": "Checking the token on a request that claims to come from the Bot Connector (phase 8A).",
+      "tables": [],
+      "tests": [
+        "tests/test_teams_bot.py"
+      ]
+    },
+    {
+      "classes": [],
+      "file": "app/teams_conversations.py",
+      "functions": [
+        "conversation_ref",
+        "reference_for",
+        "remove_reference",
+        "save_reference"
+      ],
+      "imported_by": [
+        "app.teams_bot"
+      ],
+      "imports": [
+        "app.audit",
+        "app.bot_connector",
+        "app.identity",
+        "app.models"
+      ],
+      "module": "app.teams_conversations",
+      "routes": [],
+      "summary": "The Teams bot's conversation store (phase 8A): where to reach each person as the bot.",
+      "tables": [],
+      "tests": [
+        "tests/test_teams_bot.py"
       ]
     },
     {
@@ -6022,6 +6190,12 @@
     },
     {
       "default": "600",
+      "env": "RATE_LIMIT_TEAMS_BOT_PER_MINUTE",
+      "name": "rate_limit_teams_bot_per_minute",
+      "type": "int"
+    },
+    {
+      "default": "600",
       "env": "RATE_LIMIT_WEBHOOK_PER_MINUTE",
       "name": "rate_limit_webhook_per_minute",
       "type": "int"
@@ -6084,6 +6258,30 @@
       "default": "''",
       "env": "SUPER_ADMIN_EMAILS",
       "name": "super_admin_emails",
+      "type": "str"
+    },
+    {
+      "default": "''",
+      "env": "TEAMS_BOT_APP_ID",
+      "name": "teams_bot_app_id",
+      "type": "str"
+    },
+    {
+      "default": "(secret)",
+      "env": "TEAMS_BOT_CLIENT_SECRET",
+      "name": "teams_bot_client_secret",
+      "type": "str"
+    },
+    {
+      "default": "False",
+      "env": "TEAMS_BOT_ENABLED",
+      "name": "teams_bot_enabled",
+      "type": "bool"
+    },
+    {
+      "default": "''",
+      "env": "TEAMS_BOT_TENANT_ID",
+      "name": "teams_bot_tenant_id",
       "type": "str"
     },
     {
@@ -6206,6 +6404,7 @@
     "tests/test_subrequests.py",
     "tests/test_team_activity.py",
     "tests/test_teams.py",
+    "tests/test_teams_bot.py",
     "tests/test_teams_copy.py",
     "tests/test_teams_copy_sending.py",
     "tests/test_thanks_rules.py",

@@ -18,6 +18,7 @@ from app.models import (
     MessageDirection,
     MessageVisibility,
     NotificationPreference,
+    TeamsConversation,
     Ticket,
     TicketApproval,
     TicketFeedback,
@@ -152,6 +153,9 @@ def world(db_session, storage):
     db.add(ActivityLog(event_type="login_success", actor_user_id=ann.id, actor_email="ann@a.example", ip="10.1.2.3"))
     db.add(ActivityLog(event_type="login_success", actor_email="carol@x.example", ip="10.9.9.9"))
     db.add(AuditLog(entity_type="user", entity_id=ann.id, actor_email="admin@x.example", action="role_changed"))
+    ann.entra_object_id = "ann-oid"
+    db.add(TeamsConversation(entra_object_id="ann-oid", service_url="https://smba.example.net/", conversation_id="a:ann"))
+    db.add(TeamsConversation(entra_object_id="bob-oid", service_url="https://smba.example.net/", conversation_id="a:bob"))
     db.commit()
     return dict(ann=ann, bob=bob, agent=agent, own=own, alias=alias, shared=shared, copied=copied, carol=carol, own_file=own_file)
 
@@ -223,6 +227,7 @@ def test_form_answers_feedback_votes_preferences_activity_and_audit(client, db_s
     assert "role_changed" in audit and "admin@x.example" not in audit  # the admin is "a staff member"
     account = part(archive, "account.json")
     assert account["accounts"][0]["email"] == "ann@a.example"
+    assert [(c["entra_object_id"], c["conversation_id"]) for c in account["teams_bot"]] == [("ann-oid", "a:ann")]
     assert {l["address"] for l in account["linked_identities"]} == {"ann@b.example", "ann@old.example"}
 
 

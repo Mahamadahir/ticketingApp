@@ -110,6 +110,7 @@ KEPT_COLUMNS = (
     "linked_identity.approved_by_id",
     "linked_identity.unlinked_by_id",
     "link_code.user_id",
+    "teams_conversation.user_id",  # looked up by object id, which resolves to the main person (identity.person_for_object_id)
 )
 
 

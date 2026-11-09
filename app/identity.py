@@ -216,6 +216,41 @@ def resolve_sso_user(session: Session, oid: Optional[str], email: str, display_n
     return user
 
 
+def person_for_object_id(session: Session, oid: Optional[str]) -> Optional[User]:
+    """The person an Entra object id belongs to, or None. Matched on the id and never on a name or address: the
+    account that holds it, else the main person of an active linked identity that holds it; an account merged into
+    a main person is the main person. Used wherever Teams (which sends the id with every activity) names someone."""
+    oid = normal_oid(oid)
+    if oid is None:
+        return None
+    user = session.exec(select(User).where(func.lower(User.entra_object_id) == oid)).first()
+    if user is not None:
+        return merged_into(session, user) or user
+    main_id = session.exec(
+        select(LinkedIdentity.main_user_id).where(
+            LinkedIdentity.status == LINK_ACTIVE, LinkedIdentity.method != METHOD_EMAIL_CHANGED,
+            func.lower(LinkedIdentity.entra_object_id) == oid,
+        )
+    ).first()
+    return session.get(User, main_id) if main_id is not None else None
+
+
+def object_ids_of(session: Session, user: User) -> set[str]:
+    """Every Entra object id (lower case) that is this person: their own and those of their active linked identities
+    (the merged-away account's id is among them, since a link keeps it)."""
+    ids = {user.entra_object_id.lower()} if user.entra_object_id else set()
+    ids.update(
+        i.lower()
+        for i in session.exec(
+            select(LinkedIdentity.entra_object_id).where(
+                LinkedIdentity.main_user_id == user.id, LinkedIdentity.status == LINK_ACTIVE,
+                LinkedIdentity.method != METHOD_EMAIL_CHANGED, LinkedIdentity.entra_object_id.is_not(None),
+            )
+        ).all()
+    )
+    return ids
+
+
 def _linked_sign_in(session: Session, oid: str, email: str) -> Optional[User]:
     """The main person when this sign-in is a linked identity: by `oid` first, then by the linked email. An address
     linked without a directory id (an emailed code, an email change) takes the `oid` of its first sign-in; a later

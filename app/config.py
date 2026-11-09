@@ -52,6 +52,18 @@ class Settings(BaseSettings):
     # left to pile up). They go to the same channel as the new-ticket cards, so the one webhook URL
     # above is the only credential, and it is needed only by the worker.
     teams_notifications_enabled: bool = False
+    # The Teams bot (phase 8, app/teams_bot.py): people message it and it messages them. Off by default. The
+    # public app serves POST /api/teams/messages (404 while off); the public app and the worker send. APP_ID is
+    # the bot's Entra application (client) id, which is also the audience Teams puts in its token; TENANT_ID is
+    # our directory, the only one whose users are served. The bot signs in to the Bot Connector with
+    # TEAMS_BOT_CLIENT_SECRET (a secret, from Key Vault) when it has one, otherwise as the user-assigned managed
+    # identity whose client id is APP_ID. Only the public app and the worker hold the secret.
+    teams_bot_enabled: bool = False
+    teams_bot_app_id: str = ""
+    teams_bot_tenant_id: str = ""
+    teams_bot_client_secret: str = ""
+    # The public route, per caller address per minute, per replica. Teams sends from few addresses.
+    rate_limit_teams_bot_per_minute: int = 600
     # Out-of-office detection (phase 2E): the worker reads agents' presence from Graph
     # (Presence.Read.All) and marks those who are out of office. Needs the GRAPH_* credentials.
     presence_enabled: bool = False
@@ -150,6 +162,10 @@ class Settings(BaseSettings):
         return bool(self.teams_new_ticket_webhook_url)
 
     @property
+    def teams_bot_configured(self) -> bool:
+        return bool(self.teams_bot_enabled and self.teams_bot_app_id and self.teams_bot_tenant_id)
+
+    @property
     def sso_configured(self) -> bool:
         return bool(self.sso_tenant_id and self.sso_client_id and self.sso_client_secret)
 
@@ -178,6 +194,10 @@ def unsafe_setting_errors(config: Settings) -> list[str]:
         errors.append(f"MAIL_SENDING must be one of {', '.join(MAIL_SENDING_MODES)}")
     if config.app_role not in APP_ROLES:
         errors.append(f"APP_ROLE must be one of {', '.join(APP_ROLES)}")
+    if config.teams_bot_enabled and not (config.teams_bot_app_id and config.teams_bot_tenant_id):
+        errors.append("TEAMS_BOT_ENABLED needs TEAMS_BOT_APP_ID and TEAMS_BOT_TENANT_ID")
+    if config.teams_bot_client_secret and config.app_role == "web":
+        errors.append("Only the public app and the worker may hold the Teams bot secret (TEAMS_BOT_CLIENT_SECRET)")
     if config.is_dev:
         return errors
     if config.mail_sending == "dev":
