@@ -228,7 +228,7 @@ label { cursor: pointer; }
 .ticket-ref { font-size: 12px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
 .subj { color: var(--text); font-weight: 600; text-decoration: none; }
 .subj:hover { color: var(--accent); text-decoration: underline; }
-.queue-bulk { margin: 0; }
+.queue-bulk { margin: 12px 0 0; }
 
 /* ---- Older page classes, mapped onto the tokens (restyled page by page in 9B onwards) ----------------------- */
 

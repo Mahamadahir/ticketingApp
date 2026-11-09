@@ -2452,6 +2452,7 @@
         "tests/test_portal.py",
         "tests/test_presence.py",
         "tests/test_public_surface.py",
+        "tests/test_queue_page.py",
         "tests/test_raising.py",
         "tests/test_reopening.py",
         "tests/test_reply_notification.py",
@@ -5351,6 +5352,7 @@
       "classes": [
         "Level",
         "Priority",
+        "QueueSla",
         "SlaView"
       ],
       "file": "app/sla.py",
@@ -5363,6 +5365,7 @@
         "on_status_change",
         "priority_for",
         "queue_order",
+        "queue_sla",
         "recalculate_deadlines",
         "set_impact_urgency",
         "sla_view",
@@ -5395,6 +5398,7 @@
       "tables": [],
       "tests": [
         "tests/test_backdating.py",
+        "tests/test_queue_page.py",
         "tests/test_required_by.py",
         "tests/test_resolution.py",
         "tests/test_scheduled_status.py",
@@ -6449,6 +6453,18 @@
         "rule": "access-in-visibility"
       },
       {
+        "detail": "select(Ticket) in a route",
+        "file": "app/routers/tickets.py",
+        "in": "_queue_figures",
+        "rule": "access-in-visibility"
+      },
+      {
+        "detail": "select(Ticket) in a route",
+        "file": "app/routers/tickets.py",
+        "in": "_queue_figures",
+        "rule": "access-in-visibility"
+      },
+      {
         "detail": "select() on Message",
         "file": "app/anonymisation.py",
         "in": "_agent_emails_to_them",
@@ -6901,6 +6917,7 @@
     "tests/test_portal.py",
     "tests/test_presence.py",
     "tests/test_public_surface.py",
+    "tests/test_queue_page.py",
     "tests/test_raising.py",
     "tests/test_reopening.py",
     "tests/test_reply_notification.py",

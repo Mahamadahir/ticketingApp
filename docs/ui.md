@@ -96,3 +96,7 @@ restyled.
 Inter 4.0 variable (`app/static/fonts/Inter-4.0-variable.woff2`), SIL Open Font License 1.1, licence in
 `Inter-OFL-LICENSE.txt` beside it. Self-hosted: no request to a font service, so it works offline. The fallback is
 `system-ui`. The file is served with a long cache, so a new version needs a new file name.
+
+## Pages on the components
+
+- **Agent queue** (9B, `tickets_list.html`): the first page moved over. Header with count chips, `.tabs` of links (current tab `aria-current="true"`, plus `.on`), a filter form of `.field` selects, `.table-box` with `table.table.queue-table`, `.empty-state` per view. The time-to-breach chip is `queue_sla` in `app/sla.py`. Page-specific classes are the `.queue-*` and `.ticket-*` ones at the end of the components section of `styles.css`.
