@@ -418,6 +418,7 @@
         "lock_blob",
         "serving_headers",
         "store_attachment",
+        "store_blob",
         "try_lock_blob"
       ],
       "imported_by": [

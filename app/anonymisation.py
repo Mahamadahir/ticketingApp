@@ -275,7 +275,7 @@ def step_attachments(ctx: Context) -> None:
         session.delete(row)
     session.flush()
     ctx.count("Files deleted", len(rows))
-    still_used = set(session.exec(select(Attachment.blob_key).where(Attachment.blob_key.in_(keys))).all()) if keys else set()
+    still_used = keys_in_use(session, keys)
     ctx.shared_files_kept = len(still_used)
     for key in keys - still_used:
         ctx.blob_keys.add(key)

@@ -35,9 +35,10 @@ def upgrade() -> None:
                 SELECT 1 FROM teamspost WHERE teamspost.message_id = message.id AND teamspost.kind = 'requester_message'
             ) THEN 'teams'
             WHEN lower(direction::text) = 'outbound' THEN 'email'
+            WHEN EXISTS (SELECT 1 FROM teamsintake WHERE teamsintake.message_id = message.id) THEN 'teams'
             WHEN graph_message_id IS NOT NULL THEN 'email'
             ELSE (
-                SELECT CASE lower(ticket.source::text) WHEN 'portal' THEN 'portal' WHEN 'teams' THEN 'teams' ELSE NULL END
+                SELECT CASE lower(ticket.source::text) WHEN 'portal' THEN 'portal' ELSE NULL END
                 FROM ticket WHERE ticket.id = message.ticket_id
             )
         END

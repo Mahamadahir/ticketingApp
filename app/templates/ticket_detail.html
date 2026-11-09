@@ -530,7 +530,7 @@
     <div class="message-body tp-msg-body">{{ message.body }}</div>
     {% if message_files.get(message.id) %}
     <ul class="tp-files" aria-label="Attachments">
-      {% for file in message_files[message.id] %}<li><a href="/attachments/{{ file.id }}">{{ file.filename }}</a> <span class="muted small">({{ ((file.size / 1024)|round(1)) if file.size >= 1024 else file.size }}{{ " KB" if file.size >= 1024 else " bytes" }})</span></li>{% endfor %}
+      {% for file in message_files[message.id] %}<li><a href="/attachments/{{ file.id }}">{{ file.filename }}</a> <span class="muted small">({{ file.size|file_size }})</span></li>{% endfor %}
     </ul>
     {% endif %}
   </article>

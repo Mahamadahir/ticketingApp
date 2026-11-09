@@ -61,7 +61,7 @@
     <div class="message-body">{{ message.body }}</div>
     {% if message_files.get(message.id) %}
     <ul class="note" aria-label="Attachments">
-      {% for file in message_files[message.id] %}<li><a href="/attachments/{{ file.id }}">{{ file.filename }}</a> ({{ ((file.size / 1024)|round(1)) if file.size >= 1024 else file.size }}{{ " KB" if file.size >= 1024 else " bytes" }})</li>{% endfor %}
+      {% for file in message_files[message.id] %}<li><a href="/attachments/{{ file.id }}">{{ file.filename }}</a> ({{ file.size|file_size }})</li>{% endfor %}
     </ul>
     {% endif %}
   </div>

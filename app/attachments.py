@@ -141,6 +141,18 @@ def check_file(filename: str, data: bytes) -> str:
     return name
 
 
+def store_blob(session: Session, storage: Storage, data: bytes, content_type: Optional[str] = None) -> tuple[str, str]:
+    """Stores the bytes under their content hash unless they are already there, holding the lock that the cleanup of a
+    stored file also takes (`lock_blob`). Returns (content_hash, key). The one place bytes are written: an attachment, a file
+    held for the Teams question and a file held for an agent's preview all go through it."""
+    content_hash = hashlib.sha256(data).hexdigest()
+    key = blob_key(content_hash)
+    lock_blob(session, key)
+    if not storage.exists(key):
+        storage.put(key, data, content_type or detect_content_type(data))
+    return content_hash, key
+
+
 def store_attachment(
     session: Session,
     storage: Storage,
@@ -182,10 +194,7 @@ def store_attachment(
         if existing is not None:
             return existing
 
-    key = blob_key(content_hash)
-    lock_blob(session, key)
-    if not storage.exists(key):
-        storage.put(key, data, content_type)
+    content_hash, key = store_blob(session, storage, data, content_type)
 
     attachment = Attachment(
         ticket_id=ticket.id,

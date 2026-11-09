@@ -448,7 +448,7 @@ class Message(SQLModel, table=True):
     # Where the message came from, or for an agent's reply where it went (app/reply_channel.py MESSAGE_CHANNELS: email,
     # portal, teams, agent = typed in the console, system = an automatic notice). Display only, never access; set by
     # app/messages._record, the one place a Message is built. Null on rows from before it was recorded that could not be
-    # worked out; no chip is drawn then.
+    # worked out; the kind chip then has no channel in its words ("From requester").
     channel: Optional[str] = Field(default=None)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

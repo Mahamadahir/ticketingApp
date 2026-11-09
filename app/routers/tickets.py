@@ -815,8 +815,7 @@ def preview_email_user(
         raise HTTPException(status_code=400, detail=str(error))
     _check_scheduled_date_given(ticket, preview.status_after, due_on)
     try:
-        new_files = reply_files.read_uploads(session, files)
-        reply_files.check_email_size(session, [len(item.data) for item in new_files])
+        new_files = reply_files.read_uploads(session, files, email=True)
     except reply_files.FilesRefused as error:
         raise HTTPException(status_code=400, detail=str(error))
     draft = reply_files.hold(session, storage, ticket, user, new_files)
@@ -875,7 +874,7 @@ def email_user(
     chose otherwise); a request without it gets the same default."""
     ticket = _get_ticket(session, number, user)
 
-    held_rows = reply_files.held(session, ticket, user, draft)
+    held_rows = reply_files.held(session, ticket, user, draft, lock=True)
     if draft and not held_rows:
         raise HTTPException(status_code=400, detail="The files for this message are no longer held. Preview the message again.")
     try:

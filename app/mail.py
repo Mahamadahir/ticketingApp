@@ -145,8 +145,9 @@ def build_message_mail(session: Session, row: OutboundEmail) -> Mail:
         raise Unsendable("The requester may not see this message")
     _guard_recipient(row)
     record = _with_about(session, ticket, message.body)
-    note, files = _with_files(session, row, ticket)  # an agent's attachments; the text stays the message's own
-    record += note  # empty unless a file could not be read: then the email says so
+    files, missing = _read_files(session, row, ticket)  # an agent's attachments; the text stays the message's own
+    if missing:
+        record += "\n\nNOTE: these files could NOT be attached: " + ", ".join(missing) + ". Ask the IT mailbox for them."
     return Mail(
         to=row.to_address,
         cc=[a.strip() for a in (message.cc or "").split(",") if a.strip()],
@@ -402,15 +403,14 @@ def send_link_code(
     )
 
 
-def _with_files(session: Session, row: OutboundEmail, ticket: Ticket) -> tuple[str, list[tuple[str, str, bytes]]]:
-    """The row's text and the files it names (`attachment_ids`, fixed when it was queued) read from storage. A file that
-    cannot be read must not stop the email: it is logged, and the text says plainly that it was not attached."""
-    body, files = row.body or "", []
+def _read_files(session: Session, row: OutboundEmail, ticket: Ticket) -> tuple[list[tuple[str, str, bytes]], list[str]]:
+    """The files the row names (`attachment_ids`, fixed when it was queued) read from storage, and the names of those that
+    could not be read: that must not stop the email, so it is logged and the caller says plainly what was not attached."""
+    files, missing = [], []
     ids = [int(i) for i in (row.attachment_ids or "").split(",") if i.strip().isdigit()]
     if not ids:
-        return body, files
+        return files, missing
     storage = get_storage()
-    missing = []
     for item in session.exec(
         select(Attachment).where(Attachment.id.in_(ids), Attachment.ticket_id == ticket.id).order_by(Attachment.id)
     ).all():
@@ -419,9 +419,16 @@ def _with_files(session: Session, row: OutboundEmail, ticket: Ticket) -> tuple[s
         except Exception:
             log.exception("Email %s: attachment %s could not be read from storage", row.id, item.id)
             missing.append(item.filename)
+    return files, missing
+
+
+def _with_files(session: Session, row: OutboundEmail, ticket: Ticket) -> tuple[str, list[tuple[str, str, bytes]]]:
+    """An MSP email's text (its body lists the files as attached) and its files; a file that could not be read is named
+    in a note added to the text."""
+    files, missing = _read_files(session, row, ticket)
+    body = row.body or ""
     if missing:
-        listed = "listed above as attached, " if row.body else ""
-        body += f"\n\nNOTE: these files, {listed}could NOT be attached: " + ", ".join(missing) + ". Ask the IT mailbox for them."
+        body += "\n\nNOTE: these files, listed above as attached, could NOT be attached: " + ", ".join(missing) + ". Ask the IT mailbox for them."
     return body, files
 
 

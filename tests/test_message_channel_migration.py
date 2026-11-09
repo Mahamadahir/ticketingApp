@@ -17,12 +17,14 @@ INSERT INTO message (id, ticket_id, sender, body, direction, visibility, msp_for
  (1,1,'r@x.com','mail in','INBOUND','PUBLIC',NULL,'g1',NULL,now()),
  (2,2,'R','portal in','INBOUND','PUBLIC',NULL,NULL,NULL,now()),
  (3,3,'R','teams in','INBOUND','PUBLIC',NULL,NULL,NULL,now()),
+ (10,3,'R','portal comment on a Teams ticket','INBOUND','PUBLIC',NULL,NULL,NULL,now()),
  (4,4,'Logged by Agent','by agent','INBOUND','PUBLIC',NULL,NULL,NULL,now()),
  (5,1,'Agent','note','INTERNAL','AGENTS_ONLY',NULL,NULL,1,now()),
  (6,1,'Agent','reply by email','OUTBOUND','PUBLIC',NULL,NULL,1,now()),
  (7,3,'Agent','reply to teams','OUTBOUND','PUBLIC',NULL,NULL,1,now()),
  (8,1,'IT Support (automatic)','notice','OUTBOUND','PUBLIC',NULL,NULL,NULL,now()),
  (9,1,'msp@x.com','from the msp','OUTBOUND','PUBLIC','forwarded','g9',NULL,now());
+INSERT INTO teamsintake (activity_key, outcome, ticket_id, message_id, created_at) VALUES ('k1','ticket_created',3,3,now());
 INSERT INTO teamspost (kind, ticket_id, message_id, attempts, created_at) VALUES ('requester_message',3,7,0,now());
 """
 
@@ -36,9 +38,9 @@ def test_existing_messages_get_the_channel_that_can_be_worked_out_and_the_rest_s
     alembic("upgrade", "head")
 
     got = dict(rows(connect, "SELECT id, channel FROM message ORDER BY id"))
-    assert got == {1: "email", 2: "portal", 3: "teams", 4: None, 5: "agent", 6: "email", 7: "teams", 8: "system", 9: "email"}
+    assert got == {1: "email", 2: "portal", 3: "teams", 4: None, 5: "agent", 6: "email", 7: "teams", 8: "system", 9: "email", 10: None}
 
     alembic("downgrade", BEFORE)
-    assert rows(connect, "SELECT count(*) FROM message") == [(9,)]
+    assert rows(connect, "SELECT count(*) FROM message") == [(10,)]
     alembic("upgrade", "head")
     alembic("check")

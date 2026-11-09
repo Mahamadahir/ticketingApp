@@ -9,7 +9,7 @@
   <div>
     <p><b>Files:</b></p>
     <ul class="tp-files" aria-label="Files to attach">
-      {% for name, size in preview.files %}<li>{{ name }} <span class="muted small">({{ ((size / 1024)|round(1)) if size >= 1024 else size }}{{ " KB" if size >= 1024 else " bytes" }})</span></li>{% endfor %}
+      {% for name, size in preview.files %}<li>{{ name }} <span class="muted small">({{ size|file_size }})</span></li>{% endfor %}
     </ul>
     <p class="note">
       {% if preview.by_teams %}{% if preview.also_email %}The email carries the files. {% endif %}In Teams the requester is told

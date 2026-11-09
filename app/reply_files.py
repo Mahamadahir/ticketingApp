@@ -18,7 +18,6 @@ them to what an agent chose, and refuses early, with a reason to show:
 Nothing here commits; the caller does.
 """
 
-import hashlib
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -26,7 +25,7 @@ from typing import Optional
 
 from sqlmodel import Session, select
 
-from app.attachments import AttachmentRejected, NewFile, blob_key, check_file, detect_content_type, keys_in_use, lock_blob
+from app.attachments import AttachmentRejected, NewFile, check_file, clean_filename, keys_in_use, store_blob
 from app.config import settings
 from app.models import PendingBlobDelete, ReplyHeldFile, Ticket, User
 from app.msp import GRAPH_INLINE_LIMIT_MB  # what Graph takes in one send with the files inline
@@ -40,13 +39,16 @@ class FilesRefused(ValueError):
     """The files cannot be attached; the message says why and is safe to show."""
 
 
-def read_uploads(session: Session, uploads: list) -> list[NewFile]:
+def read_uploads(session: Session, uploads: list, *, email: bool = False) -> list[NewFile]:
     """The files of a form (starlette UploadFile objects), checked by the rules of every stored file. A file input left empty
-    sends one nameless part, which is not a file. Raises FilesRefused naming the file and why."""
+    sends one nameless part, which is not a file. With `email` the total must also fit one email, and is refused from the
+    sizes the form announced before any file is read into memory. Raises FilesRefused naming the file and why."""
     uploads = [u for u in uploads if getattr(u, "filename", None)]
     most = count_setting(session, INBOUND_MAX_ATTACHMENTS)
     if len(uploads) > most:
         raise FilesRefused(f"Attach at most {most} files to one message.")
+    if email:
+        check_email_size(session, [u.size or 0 for u in uploads])
     files = []
     for upload in uploads:
         data = upload.file.read(settings.attachment_max_bytes + 1)  # one byte over is enough to refuse it, and bounds the memory
@@ -55,6 +57,8 @@ def read_uploads(session: Session, uploads: list) -> list[NewFile]:
         except AttachmentRejected as error:
             raise FilesRefused(f"{upload.filename}: {error}")
         files.append(NewFile(upload.filename, data))
+    if email:
+        check_email_size(session, [len(item.data) for item in files])
     return files
 
 
@@ -85,29 +89,24 @@ def hold(session: Session, storage: Optional[Storage], ticket: Ticket, user: Use
     storage = storage or get_storage()
     token = secrets.token_urlsafe(16)
     for item in files:
-        key = blob_key(hashlib.sha256(item.data).hexdigest())
-        lock_blob(session, key)
-        if not storage.exists(key):
-            storage.put(key, item.data, detect_content_type(item.data))
+        _, key = store_blob(session, storage, item.data)
         session.add(ReplyHeldFile(
-            ticket_id=ticket.id, user_id=user.id, token=token, filename=check_file(item.filename, item.data), size=len(item.data),
-            blob_key=key,
+            ticket_id=ticket.id, user_id=user.id, token=token, filename=clean_filename(item.filename), size=len(item.data), blob_key=key,
         ))
     session.flush()
     return token
 
 
-def held(session: Session, ticket: Ticket, user: User, token: Optional[str]) -> list[ReplyHeldFile]:
-    """This agent's draft with that token on this ticket, in the order the files were chosen. Nobody else's draft is found."""
+def held(session: Session, ticket: Ticket, user: User, token: Optional[str], *, lock: bool = False) -> list[ReplyHeldFile]:
+    """This agent's draft with that token on this ticket, in the order the files were chosen. Nobody else's draft is found.
+    With `lock` the rows are locked until the transaction ends, so a second confirm of the same preview (a double click, a
+    second tab) waits, then finds them gone and is refused instead of sending the message twice."""
     if not token:
         return []
-    return list(
-        session.exec(
-            select(ReplyHeldFile).where(
-                ReplyHeldFile.ticket_id == ticket.id, ReplyHeldFile.user_id == user.id, ReplyHeldFile.token == token
-            ).order_by(ReplyHeldFile.id)
-        ).all()
-    )
+    query = select(ReplyHeldFile).where(
+        ReplyHeldFile.ticket_id == ticket.id, ReplyHeldFile.user_id == user.id, ReplyHeldFile.token == token
+    ).order_by(ReplyHeldFile.id)
+    return list(session.exec(query.with_for_update() if lock else query).all())
 
 
 def take(storage: Optional[Storage], rows: list[ReplyHeldFile]) -> list[NewFile]:

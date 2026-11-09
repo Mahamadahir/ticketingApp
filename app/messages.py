@@ -233,9 +233,12 @@ def email_requester(
     chosen = _copied_followers(session, ticket, cc_emails)
     cc = ", ".join(f.email for f in chosen) or None
     note_first_response(ticket, datetime.now(timezone.utc))
+    # Where it will go is decided now (the same rule `queue_reply` applies below, in this transaction) and recorded on the message.
+    route = route_for(session, ticket, automatic=False, copies_followers=bool(cc))
     message = _record(
         session, ticket, sender=author.display_name, body=body, author_user_id=author.id,
-        direction=MessageDirection.OUTBOUND, visibility=MessageVisibility.PUBLIC, cc=cc, channel=EMAIL,
+        direction=MessageDirection.OUTBOUND, visibility=MessageVisibility.PUBLIC, cc=cc,
+        channel=TEAMS_CHANNEL if route.teams else EMAIL,
     )
     attach_files(session, ticket, message, author, files, storage)
     queue_reply(session, message, ticket)

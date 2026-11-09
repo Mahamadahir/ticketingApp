@@ -134,7 +134,13 @@ def _initials(sender: str) -> str:
     return letters.upper()
 
 
+def _file_size(size: int) -> str:
+    """"209 bytes", "2.9 KB": the one wording of a file's size (the attach control's script writes the same)."""
+    return f"{size} bytes" if size < 1024 else f"{size / 1024:.1f} KB"
+
+
 templates.env.filters["initials"] = _initials
+templates.env.filters["file_size"] = _file_size
 templates.env.filters["local_time"] = _local_time
 templates.env.filters["local_input"] = _local_input
 templates.env.filters["local_date"] = _local_date

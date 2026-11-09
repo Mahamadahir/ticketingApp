@@ -276,7 +276,7 @@ def test_a_file_that_cannot_be_read_at_send_time_is_named_in_the_email_and_does_
     db_session.expire_all()
     storage.delete(db_session.exec(select(Attachment)).one().blob_key)
     built = mail.build_message_mail(db_session, db_session.exec(select(OutboundEmail).where(OutboundEmail.kind == outbox.REPLY)).one())
-    assert built.files == [] and "these files, could NOT be attached: a.pdf" in built.body
+    assert built.files == [] and "these files could NOT be attached: a.pdf" in built.body
 
 
 def test_nobody_can_confirm_with_another_agents_draft(client, db_session, storage):
@@ -472,3 +472,30 @@ def test_the_preview_says_where_a_message_goes_and_what_a_teams_requester_is_tol
     assert "In Teams the requester is told 1 file is attached and given the portal link to open it." in html
     assert "<b>Files:</b>" in html and "quote.pdf" in html
 
+
+
+# ---- Found in review -------------------------------------------------------------------------------------
+
+
+def test_a_preview_confirmed_twice_sends_one_message(client, db_session, storage, dev_mail):
+    ticket = ticket_for_email(client, db_session)
+    page = preview_with(client, ticket, ("quote.pdf", PDF)).text
+    assert confirm(client, ticket, page).status_code == 200
+    again = confirm(client, ticket, page)
+    assert again.status_code == 400 and "no longer held" in again.text
+    assert len(db_session.exec(select(Attachment)).all()) == 1
+    assert len(db_session.exec(select(OutboundEmail).where(OutboundEmail.kind == outbox.REPLY)).all()) == 1
+
+
+def test_files_too_big_for_one_email_are_refused_before_any_is_read(client, db_session, storage, monkeypatch):
+    ticket = ticket_for_email(client, db_session)
+    monkeypatch.setattr(reply_files, "check_file", lambda *a: pytest.fail("a file was read and checked"))
+    big = b"%PDF-1.7\n" + b"x" * 1_200_000
+    response = preview_with(client, ticket, ("a.pdf", big), ("b.pdf", big + b"1"))
+    assert response.status_code == 400 and "one email can carry" in response.text
+
+
+def test_one_wording_of_a_file_size():
+    from app.templating import _file_size
+
+    assert [_file_size(n) for n in (209, 1023, 1024, 2970)] == ["209 bytes", "1023 bytes", "1.0 KB", "2.9 KB"]

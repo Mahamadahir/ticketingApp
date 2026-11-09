@@ -117,14 +117,11 @@ def _notices_to_teams_today(session: Session, ticket: Ticket) -> int:
 
 
 def queue_reply(session: Session, message: Message, ticket: Ticket) -> ReplyRoute:
-    """Queues the public message for the requester by the route above and records on an agent's message where it went
-    (`Message.channel`; an automatic notice stays `system`). Does not commit."""
+    """Queues the public message for the requester by the route above. Does not commit. (An agent's reply records the route
+    on the message when it is made, `messages.email_requester`; an automatic notice is `system` whatever the route.)"""
     from app.teams import queue_requester_message
 
     route = reply_route(session, ticket, message)
-    if message.channel != SYSTEM:
-        message.channel = TEAMS_CHANNEL if route.teams else EMAIL  # where an agent's reply went, for the timeline's chip
-        session.add(message)
     if route.teams:
         queue_requester_message(session, message, ticket)
     if route.email:
