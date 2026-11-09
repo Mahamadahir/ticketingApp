@@ -6404,6 +6404,7 @@
     "tests/test_subrequests.py",
     "tests/test_team_activity.py",
     "tests/test_teams.py",
+    "tests/test_teams_app_package.py",
     "tests/test_teams_bot.py",
     "tests/test_teams_copy.py",
     "tests/test_teams_copy_sending.py",

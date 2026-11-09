@@ -9,3 +9,4 @@ graphify-out/
 
 # Attachments stored by the local storage backend
 /data/
+dist/

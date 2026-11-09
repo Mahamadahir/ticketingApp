@@ -6,6 +6,8 @@ param tags object
 param name string
 param environmentId string
 param identityId string
+@description('More user-assigned identities to attach (the Teams bot\'s identity, on the apps that call the Bot Connector). The first, identityId, still pulls the image and reads the secrets.')
+param extraIdentityIds array = []
 param registryServer string
 param image string
 
@@ -57,9 +59,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
   tags: tags
   identity: {
     type: 'UserAssigned'
-    userAssignedIdentities: {
-      '${identityId}': {}
-    }
+    userAssignedIdentities: toObject(concat([identityId], extraIdentityIds), id => id, id => {})
   }
   properties: {
     environmentId: environmentId

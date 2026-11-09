@@ -210,13 +210,14 @@ The subject must match the GitHub Environment name exactly.
 | Variable | `ALERT_EMAIL`, `WEB_ALLOWED_CIDRS` | required, as in "First deploy" |
 | Variable | `SSO_TENANT_ID`, `SSO_CLIENT_ID`, `GRAPH_TENANT_ID`, `GRAPH_CLIENT_ID`, `GRAPH_SHARED_MAILBOX`, `SUPER_ADMIN_EMAILS` | optional; empty if unset |
 | Variable | `TEAMS_NEW_TICKET_ENABLED`, `TEAMS_NOTIFICATIONS_ENABLED`, `PRESENCE_ENABLED`, `ENTRA_ACCOUNT_CHECK_ENABLED` | optional; `true` switches the feature on, unset means off (see "Teams and out-of-office") |
+| Variable | `TEAMS_BOT_ENABLED`, `TEAMS_BOT_IDENTITY`, `TEAMS_BOT_APP_ID`, `TEAMS_BOT_TENANT_ID` | optional; `TEAMS_BOT_ENABLED=true` switches the Teams bot on (needs `DEPLOY_PUBLIC_APP`), `TEAMS_BOT_IDENTITY` is `managedIdentity` (default) or `clientSecret`, the app id only for `clientSecret`, the tenant defaults to the subscription's (see "Teams bot") |
 | Variable | `DEPLOY_PUBLIC_APP`, `DEPLOY_WORKER` | optional; `true`/`false`. Empty: staging `true`, production `false` |
 | Variable | `MAIL_SENDING` | optional; `off` (default) or `graph` (needs the `GRAPH_*` values and `GRAPH_SHARED_MAILBOX`) |
 | Variable | `GRAPH_SUBSCRIPTION_ENABLED`, `MAIL_CATCH_UP_ENABLED`, `INBOUND_ENABLED` | optional; `true` turns on, on the worker only (phases 3B/3C: the Graph subscription pointing at the public app's `/webhooks/graph/notifications`, the missed-mail sweep, and turning fetched mail into replies and tickets). Off by default |
 | Variable | `WEB_BASE_URL`, `PUBLIC_BASE_URL` | optional; custom domains of the web and public apps. Empty: the generated Azure addresses |
 | Variable | `HEALTH_URL` | optional extra base URL to probe |
 | Secret | `POSTGRES_ADMIN_PASSWORD`, `SESSION_SECRET_KEY`, `INTERNAL_SESSION_SECRET_KEY`, `GRAPH_WEBHOOK_CLIENT_STATE` | required, same values as the platform deploy |
-| Secret | `SSO_CLIENT_SECRET`, `GRAPH_CLIENT_SECRET`, `TEAMS_NEW_TICKET_WEBHOOK_URL` | optional; supply on every deploy once set, or the revision loses them |
+| Secret | `SSO_CLIENT_SECRET`, `GRAPH_CLIENT_SECRET`, `TEAMS_NEW_TICKET_WEBHOOK_URL`, `TEAMS_BOT_CLIENT_SECRET` | optional; supply on every deploy once set, or the revision loses them |
 
 Add **required reviewers** on `production` (that is the approval gate) and,
 optionally, restrict both environments to the `main` branch. The platform-only
@@ -283,6 +284,28 @@ to the same registration, grant admin consent, and set the variable. It conflict
 registration to the shared mailbox (an application access policy that limits it to that mailbox refuses the
 read, docs/plan.md security item 4), so decide the scoping first. Without the consent the reads are refused
 (403): requesters keep the default zone and, when every lookup in a run is refused, the job logs `status=failed`.
+
+## Teams bot (phase 8)
+
+Switch: `TEAMS_BOT_ENABLED=true` (off by default; with it off nothing about the bot is created and the route answers 404).
+It needs the public app (`DEPLOY_PUBLIC_APP=true`), which serves `POST /api/teams/messages`, and the worker for messages to
+people (later phases). The template makes the **Azure Bot** (F0, single tenant) with the Teams channel on and the messaging
+endpoint set to `<public app>/api/teams/messages` (`modules/teams-bot.bicep`), and gives the apps `TEAMS_BOT_ENABLED`,
+`TEAMS_BOT_APP_ID` and `TEAMS_BOT_TENANT_ID`.
+
+Who the bot is, `TEAMS_BOT_IDENTITY`:
+
+- `managedIdentity` (default): the template creates the user-assigned identity `id-ticketing-<env>-bot`, attaches it to the
+  public app and the worker, and registers the bot as it (`UserAssignedMSI`). No app registration and no secret. The
+  application id is the identity's client id (output `teamsBotAppId`).
+- `clientSecret`: make an Entra app registration by hand (single tenant, no redirect URI, no API permissions), set its client
+  id as `TEAMS_BOT_APP_ID` and supply a client secret as `TEAMS_BOT_CLIENT_SECRET`. The secret is stored in Key Vault as
+  `teams-bot-client-secret` and only the public app and worker identities may read it. Supply it on every deploy once set.
+
+Build the Teams app package with the application id (`python teams-app/build_package.py --environment staging --bot-app-id
+<teamsBotAppId> --website-url ... --privacy-url ... --terms-url ...`), upload it in the Teams admin center (Manage apps) and
+install it for a test user. The deploy workflow refuses the switch on without the public app, or `clientSecret` without its id
+and secret.
 
 ## Custom domain (at roll-out)
 
