@@ -12,7 +12,7 @@ a handler and nothing else:
 A handler gets the database session and the activity (already authenticated, from our tenant) and returns the
 body to answer with, or None. It commits its own work before it calls Teams (a reply is a slow call that must not
 hold a transaction open). Types with no handler are accepted and ignored: Teams sends many we do not use, and
-anything but a 2xx makes it retry. Sending out is app/bot_connector.py; who is reachable is
+anything but a 2xx makes it retry. A handler that calls Teams back (a reply) does it in `Handled.after`, which runs once the answer has been sent. Sending out is app/bot_connector.py; who is reachable is
 app/teams_conversations.py.
 
 What 8A handles: `installationUpdate` (the app was added to a person's personal scope, or removed: store or forget
@@ -21,6 +21,7 @@ scope is served; teams and group chats are ignored.
 """
 
 import logging
+from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
 from sqlmodel import Session
@@ -32,7 +33,19 @@ from app.teams_conversations import remove_reference, save_reference
 
 log = logging.getLogger("app.teams_bot")
 
-Handler = Callable[[Session, dict], Optional[dict]]
+
+
+@dataclass
+class Handled:
+    """What a handler hands back: `body` is the JSON to answer with, `after` is work to do once the answer is sent
+    (a reply to the person, say). Teams waits only a few seconds for its answer and sends the activity again when it
+    is late, so anything that calls Teams back goes in `after`."""
+
+    body: Optional[dict] = None
+    after: Optional[Callable[[], None]] = None
+
+
+Handler = Callable[[Session, dict], Optional[Handled]]
 HANDLERS: dict[str, Handler] = {}
 
 PERSONAL = "personal"
@@ -66,9 +79,9 @@ def activity_tenant(activity: dict) -> str:
     return _text(_sub(activity, "channelData", "tenant", "id")).strip().lower()
 
 
-def receive(session: Session, authorization: Optional[str], activity: Any) -> Optional[dict]:
-    """Authenticates and dispatches one activity. Raises TokenRejected (401, or 403 for another tenant or channel);
-    anything a handler returns is the body to answer with."""
+def receive(session: Session, authorization: Optional[str], activity: Any) -> Optional[Handled]:
+    """Authenticates and dispatches one activity. Raises TokenRejected (401, or 403 for another tenant or channel).
+    Returns what the handler returned (None when there is nothing to answer or do afterwards)."""
     if not isinstance(activity, dict):
         raise TokenRejected("the body is not an activity")
     teams_bot_auth.check_request(authorization, _text(activity.get("serviceUrl")), _text(activity.get("channelId")))
@@ -99,7 +112,7 @@ def _store(session: Session, activity: dict) -> bool:
 
 
 @handler("installationUpdate")
-def installation_update(session: Session, activity: dict) -> Optional[dict]:
+def installation_update(session: Session, activity: dict) -> Optional[Handled]:
     if not _is_personal(activity):
         return None
     action = _text(activity.get("action"))
@@ -112,15 +125,16 @@ def installation_update(session: Session, activity: dict) -> Optional[dict]:
 
 
 @handler("message")
-def message(session: Session, activity: dict) -> Optional[dict]:
+def message(session: Session, activity: dict) -> Optional[Handled]:
     if not _is_personal(activity):
         return None
     stored = _store(session, activity)
     session.commit()
-    if stored:
-        try:
-            bot_connector.reply_to(activity, text=MESSAGE_NOT_READ_YET)
-        except Exception as error:  # httpx, the token credential or a bad address: none may fail the request
-            # Teams must still get its 200: a failed reply is not a reason for it to send the message again.
-            log.warning("Teams bot: reply failed: %s", type(error).__name__)
-    return None
+    return Handled(after=lambda: _reply(activity, MESSAGE_NOT_READ_YET)) if stored else None
+
+
+def _reply(activity: dict, text: str) -> None:
+    try:
+        bot_connector.reply_to(activity, text=text)
+    except Exception as error:  # httpx, the token credential or a bad address: nobody is waiting on this any more
+        log.warning("Teams bot: reply failed: %s", type(error).__name__)

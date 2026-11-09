@@ -10,7 +10,7 @@ import json
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request, Response
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from sqlmodel import Session
@@ -29,7 +29,7 @@ MAX_BODY_BYTES = 256_000  # an activity is a few kilobytes
 
 
 @router.post("/messages", dependencies=[Depends(rate_limited(TEAMS_BOT))])
-async def messages(request: Request, authorization: Optional[str] = Header(default=None), session: Session = Depends(get_session)):
+async def messages(request: Request, background: BackgroundTasks, authorization: Optional[str] = Header(default=None), session: Session = Depends(get_session)):
     if not settings.teams_bot_enabled:
         raise HTTPException(status_code=404)
     declared = request.headers.get("content-length")
@@ -46,8 +46,12 @@ async def messages(request: Request, authorization: Optional[str] = Header(defau
         return Response(status_code=401)  # nothing to authenticate
     try:
         # The checks fetch signing keys and the handlers use the database and call Teams: all blocking.
-        answer = await run_in_threadpool(receive, session, authorization, activity)
+        handled = await run_in_threadpool(receive, session, authorization, activity)
     except TokenRejected as rejected:
         log.warning("Teams bot: request refused (%s)", rejected.reason)
         return Response(status_code=rejected.status)
-    return JSONResponse(answer) if answer is not None else Response(status_code=200)
+    if handled is not None and handled.after is not None:
+        background.add_task(handled.after)  # runs after the answer is sent
+    if handled is not None and handled.body is not None:
+        return JSONResponse(handled.body)
+    return Response(status_code=200)

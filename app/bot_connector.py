@@ -13,8 +13,8 @@ service URL Teams gave us, which must be https.
 Failures. A call raises the httpx exception it met (`HTTPStatusError`, a timeout, a connection error), so the
 Teams outbox's rules apply to it unchanged: `app.teams.is_permanent` says whether trying again can help,
 `describe_failure` is the text to keep (no URL, no token) and `record_failure` schedules the next try with the
-outbox's backoff. Inside one call, a 401 gets one retry with a fresh token, and a 408, 429 or 5xx (or a network
-error) is retried twice with a short wait that honours Retry-After, so a blip never reaches the outbox. Longer
+outbox's backoff. Inside one call, a 401 gets one retry with a fresh token, and a 408, 429 or 5xx (or a failure to
+connect) is retried twice with a short wait that honours Retry-After, so a blip never reaches the outbox. Longer
 outages are the outbox's job: the worker's rows wait 2, 4, 8 ... 60 minutes.
 """
 
@@ -49,6 +49,12 @@ class ConversationRef:
 
     service_url: str
     conversation_id: str
+
+
+class BotAuthFailed(Exception):
+    """The Bot Connector refused the bot's own credential (a 401 even with a fresh token): an expired secret or a
+    misconfigured identity. Not an HTTPStatusError, so `teams.is_permanent` does not treat it as a refused message
+    and an outbox row keeps retrying until the credential is fixed."""
 
 
 class BotNotConfigured(Exception):
@@ -86,6 +92,8 @@ def client_secret_token() -> tuple[str, float]:
                 "scope": SCOPE,
             },
         )
+    if response.status_code in (400, 401):
+        raise BotAuthFailed("The bot's credential was refused when asking for a token") from None
     response.raise_for_status()
     body = response.json()
     return body["access_token"], time.time() + float(body.get("expires_in", 3600))
@@ -150,12 +158,16 @@ def call(method: str, url: str, body: Optional[dict] = None) -> Any:
                 refreshed = True
                 TOKENS.reset()  # the token may have been revoked or rotated; the next pass asks for a new one
                 continue
+            if response.status_code == 401:
+                raise BotAuthFailed("The Bot Connector refused the bot's credential") from None
             if _is_transient(response) and attempt < len(RETRY_WAITS_SECONDS):
                 sleep(_wait_for(response, attempt))
                 attempt += 1
                 continue
             response.raise_for_status()
-        except httpx.TransportError as error:
+        except (httpx.ConnectError, httpx.ConnectTimeout) as error:
+            # Only a connection that was never made is tried again: after a read timeout the Connector may already have
+            # delivered the message, and sending it twice is worse than telling the outbox it failed.
             if attempt < len(RETRY_WAITS_SECONDS):
                 log.warning("Bot Connector call failed (%s), trying again", type(error).__name__)
                 sleep(_wait_for(None, attempt))

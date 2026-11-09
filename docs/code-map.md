@@ -506,7 +506,7 @@ File: `app/bank_holidays.py`
 A small client for the Bot Connector REST API (phase 8A), over httpx.  
 File: `app/bot_connector.py`
 
-- Classes: `BotNotConfigured`, `ConversationRef`, `TokenCache`
+- Classes: `BotAuthFailed`, `BotNotConfigured`, `ConversationRef`, `TokenCache`
 - Functions: `call`, `client_secret_token`, `create_conversation`, `managed_identity_token`, `new_client`, `reply_to`, `send`, `send_card`, `send_text`, `sleep`
 - Imports: `app.config`, `app.teams`
 - Imported by: `app.teams_bot`, `app.teams_conversations`
@@ -1351,6 +1351,8 @@ File: `app/teams.py`
 
 The Teams bot (phase 8): receives activities from Teams and dispatches them by type.  
 File: `app/teams_bot.py`
+
+- Classes: `Handled`
 - Functions: `activity_tenant`, `handler`, `installation_update`, `message`, `receive`
 - Imports: `app.bot_connector`, `app.config`, `app.teams_bot_auth`, `app.teams_conversations`
 - Imported by: `app.routers.teams_bot`

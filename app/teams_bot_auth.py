@@ -73,8 +73,8 @@ class KeyCache:
         with self._lock:
             self._keys, self._loaded_at, self._tried_at = {}, None, None
 
-    def _load(self, now: float) -> None:
-        self._tried_at = now
+    @staticmethod
+    def _fetch() -> dict[str, dict[str, Any]]:
         metadata = fetch_json(METADATA_URL)
         jwks_uri = metadata.get("jwks_uri")
         if not isinstance(jwks_uri, str) or not jwks_uri.startswith("https://"):
@@ -83,22 +83,34 @@ class KeyCache:
         keys = {k["kid"]: k for k in document.get("keys", []) if isinstance(k, dict) and isinstance(k.get("kid"), str)}
         if not keys:
             raise ValueError("no keys")
-        self._keys, self._loaded_at = keys, now
+        return keys
 
     def key_for(self, kid: str, now: Optional[float] = None) -> dict[str, Any]:
+        """The signing key with this id. The keys are re-read when they are a day old or the id is unknown, but never
+        more than once a minute, whether or not the last read worked (a failed read is not retried on every request).
+        The read happens outside the lock, so a slow Microsoft endpoint never holds up requests that can be answered
+        from the keys we have; a first request that arrives while the first read is under way is refused, and Teams
+        sends it again."""
         now = time.monotonic() if now is None else now
         with self._lock:
             stale = self._loaded_at is None or now - self._loaded_at >= KEYS_MAX_AGE_SECONDS
-            unknown = kid not in self._keys
-            may_retry = self._tried_at is None or now - self._tried_at >= UNKNOWN_KEY_REFRESH_SECONDS
-            if stale or (unknown and may_retry):
-                try:
-                    self._load(now)
-                except Exception as error:  # a failed refresh keeps the keys we have; a token needing another is refused
-                    log.warning("Teams bot: reading the Bot Framework keys failed: %s", type(error).__name__)
-            if kid not in self._keys:
-                raise TokenRejected("unknown signing key")
-            return self._keys[kid]
+            may_try = self._tried_at is None or now - self._tried_at >= UNKNOWN_KEY_REFRESH_SECONDS
+            refresh = (stale or kid not in self._keys) and may_try
+            if refresh:
+                self._tried_at = now
+        if refresh:
+            try:
+                keys = self._fetch()
+            except Exception as error:  # a failed refresh keeps the keys we have; a token needing another is refused
+                log.warning("Teams bot: reading the Bot Framework keys failed: %s", type(error).__name__)
+            else:
+                with self._lock:
+                    self._keys, self._loaded_at = keys, now
+        with self._lock:
+            key = self._keys.get(kid)
+        if key is None:
+            raise TokenRejected("unknown signing key")
+        return key
 
 
 KEYS = KeyCache()

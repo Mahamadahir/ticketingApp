@@ -90,7 +90,9 @@ def find_person(session: Session, address: str) -> Person:
 
 
 def object_ids(session: Session, person: Person) -> set[str]:
-    """Every Entra object id (lower case) that is the person's: those of their accounts and of their linked identities."""
+    """Every Entra object id (lower case) that is the person's: those of their accounts and of their linked identities.
+    Deliberately wider than identity.object_ids_of (which finds who to message): any link status, and links where they are
+    the merged-away side, so an export or an erasure also covers ids that are no longer in use."""
     ids = {
         i.lower()
         for i in session.exec(select(User.entra_object_id).where(User.id.in_(person.user_ids), User.entra_object_id.is_not(None))).all()

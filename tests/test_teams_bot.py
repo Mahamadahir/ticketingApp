@@ -14,7 +14,7 @@ from jwt.algorithms import RSAAlgorithm
 from sqlmodel import select
 
 from app import bot_connector, rate_limit, teams, teams_bot, teams_bot_auth, teams_conversations
-from app.bot_connector import ConversationRef
+from app.bot_connector import BotAuthFailed, ConversationRef
 from app.config import Settings, settings, unsafe_setting_errors
 from app.main import build_app
 from app.models import AuditLog, LinkedIdentity, TeamsConversation, TeamsPost, User, UserRole
@@ -271,6 +271,23 @@ def test_keys_are_read_once_and_cached(public, metadata, db_session):
     assert len(metadata.calls) == 2  # the metadata and the key set, once
 
 
+def test_a_failed_read_of_the_keys_is_not_repeated_on_every_request():
+    fake = FakeMetadata()
+    fake.broken = True
+    original = teams_bot_auth.fetch_json
+    teams_bot_auth.fetch_json = fake
+    try:
+        cache = teams_bot_auth.KeyCache()
+        for at in (0.0, 5.0, 30.0):
+            with pytest.raises(teams_bot_auth.TokenRejected):
+                cache.key_for(KID, now=at)
+        assert len(fake.calls) == 1  # one try inside the minute, however many requests
+        fake.broken = False
+        assert cache.key_for(KID, now=61.0)["kid"] == KID
+    finally:
+        teams_bot_auth.fetch_json = original
+
+
 def test_an_unknown_key_id_refreshes_at_most_once_a_minute():
     calls = FakeMetadata()
     original = teams_bot_auth.fetch_json
@@ -338,7 +355,7 @@ def test_a_handler_is_one_registration_per_type_and_its_answer_is_returned(publi
 
     @teams_bot.handler("invoke")
     def answer(session, act):
-        return {"status": 200, "seen": act["type"]}
+        return teams_bot.Handled(body={"status": 200, "seen": act["type"]})
 
     assert post(public, activity("invoke"), token()).json() == {"status": 200, "seen": "invoke"}
     with pytest.raises(RuntimeError):
@@ -465,6 +482,14 @@ def test_a_message_stores_the_conversation_and_replies(public, connector, db_ses
     assert body["replyToId"] == "act-1" and body["recipient"]["id"] == "29:teams-user" and body["from"]["id"] == f"28:{APP_ID}"
 
 
+def test_the_reply_is_work_for_after_the_answer_not_part_of_it(bot, connector, db_session):
+    """Teams sends the activity again when the answer is late, so receive() itself never calls Teams back."""
+    handled = teams_bot.receive(db_session, f"Bearer {token()}", activity("message", text="hello"))
+    assert connector.requests == [] and handled.after is not None and handled.body is None
+    handled.after()
+    assert len(connector.requests) == 1
+
+
 def test_a_failing_reply_does_not_fail_the_request(public, connector, db_session):
     connector.script = [500, 500, 500]
     assert post(public, activity("message", text="hello"), token()).status_code == 200
@@ -542,9 +567,16 @@ def test_a_401_gets_one_retry_with_a_fresh_token(connector):
     bot_connector.send_text(REF, "hi")
     assert [r.headers["Authorization"] for r in connector.requests] == ["Bearer bot-token-1", "Bearer bot-token-2"]
     connector.script = [401, 401]
-    with pytest.raises(httpx.HTTPStatusError) as refused:
+    with pytest.raises(BotAuthFailed) as refused:
         bot_connector.send_text(REF, "hi")
-    assert refused.value.response.status_code == 401
+    # a refused credential is not a refused message: an outbox row keeps trying until someone fixes the secret
+    assert not teams.is_permanent(refused.value)
+
+
+def test_a_token_request_the_directory_refuses_is_also_a_credential_failure(bot, monkeypatch):
+    monkeypatch.setattr(bot_connector, "new_client", lambda: httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(401, json={"error": "invalid_client"}))))
+    with pytest.raises(BotAuthFailed):
+        bot_connector.send_text(REF, "hi")
 
 
 def test_a_server_error_is_retried_with_a_short_wait(connector):
@@ -564,6 +596,13 @@ def test_a_network_error_is_retried(connector):
     bot_connector.send_text(REF, "hi")
     assert len(connector.requests) == 2
     assert connector.sleeps == [1.0]
+
+
+def test_a_read_timeout_is_not_retried_because_the_message_may_have_been_delivered(connector):
+    connector.script = [httpx.ReadTimeout("slow")]
+    with pytest.raises(httpx.ReadTimeout):
+        bot_connector.send_text(REF, "hi")
+    assert len(connector.requests) == 1 and connector.sleeps == []
 
 
 def test_when_the_retries_run_out_the_error_reaches_the_caller(connector):

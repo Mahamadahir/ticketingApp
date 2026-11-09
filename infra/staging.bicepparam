@@ -41,7 +41,8 @@ param teamsNotificationsEnabled = toLower(trim(readEnvironmentVariable('TEAMS_NO
 // The Teams bot (phase 8): off unless 'true'. 'managedIdentity' (the default) needs no secret and no app id; 'clientSecret'
 // reads the app registration's id and tenant from these variables and its secret from the environment below.
 param teamsBotEnabled = toLower(trim(readEnvironmentVariable('TEAMS_BOT_ENABLED', 'false'))) == 'true'
-param teamsBotIdentity = trim(readEnvironmentVariable('TEAMS_BOT_IDENTITY', 'managedIdentity'))
+var teamsBotIdentityRaw = trim(readEnvironmentVariable('TEAMS_BOT_IDENTITY', ''))
+param teamsBotIdentity = empty(teamsBotIdentityRaw) ? 'managedIdentity' : teamsBotIdentityRaw
 param teamsBotAppId = readEnvironmentVariable('TEAMS_BOT_APP_ID', '')
 param teamsBotTenantIdOverride = readEnvironmentVariable('TEAMS_BOT_TENANT_ID', '')
 param presenceEnabled = toLower(trim(readEnvironmentVariable('PRESENCE_ENABLED', 'false'))) == 'true'

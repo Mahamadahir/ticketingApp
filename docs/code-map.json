@@ -636,6 +636,7 @@
     },
     {
       "classes": [
+        "BotAuthFailed",
         "BotNotConfigured",
         "ConversationRef",
         "TokenCache"
@@ -5404,7 +5405,9 @@
       ]
     },
     {
-      "classes": [],
+      "classes": [
+        "Handled"
+      ],
       "file": "app/teams_bot.py",
       "functions": [
         "activity_tenant",

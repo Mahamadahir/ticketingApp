@@ -4,7 +4,7 @@
         --website-url https://... --privacy-url https://... --terms-url https://... [--version 1.0.0] [--out dist]
 
 The bot application id is the same value as TEAMS_BOT_APP_ID and the Bicep parameter teamsBotAppId (with a managed
-identity, the identity's client id: `bot_app_id` in the deployment outputs). It is an identifier, not a secret, and
+identity, the identity's client id: `teamsBotAppId` in the deployment outputs). It is an identifier, not a secret, and
 nothing secret goes into the package. Upload the zip in the Teams admin center (Manage apps > Upload new app) and
 install it for a test user. Raise `--version` each time the package changes, or Teams keeps the old one.
 
