@@ -51,9 +51,9 @@
   {% if shell.kind == "console" %}
   <div class="app">
     <div class="sidebar">
-      <a class="brand" href="/" aria-label="IT Support Ticketing, agent console home">
+      <a class="brand" href="/">
         <span class="brand-mark" aria-hidden="true">IT</span>
-        <span class="brand-text"><span class="brand-name">IT Support</span><span class="brand-sub">Agent console</span></span>
+        <span class="brand-text"><span class="brand-name">IT Support Ticketing</span><span class="brand-sub">Agent console</span></span>
       </a>
       {# A bare <nav>: tests/test_htmx_partials.py counts it to tell a full page from a partial. #}
       <nav>
@@ -93,9 +93,9 @@
   {% elif shell.kind == "portal" %}
   <div class="portal-shell">
     <header class="topbar portal-bar">
-      <a class="brand" href="/portal" aria-label="IT Support Ticketing home">
+      <a class="brand" href="/portal">
         <span class="brand-mark" aria-hidden="true">IT</span>
-        <span class="brand-text"><span class="brand-name">IT Support</span></span>
+        <span class="brand-text"><span class="brand-name">IT Support Ticketing</span></span>
       </a>
       <nav>
         <div class="portal-nav">
@@ -116,9 +116,9 @@
   {% else %}
   <div class="portal-shell">
     <header class="topbar portal-bar">
-      <a class="brand" href="/" aria-label="IT Support Ticketing home">
+      <a class="brand" href="/">
         <span class="brand-mark" aria-hidden="true">IT</span>
-        <span class="brand-text"><span class="brand-name">IT Support</span></span>
+        <span class="brand-text"><span class="brand-name">IT Support Ticketing</span></span>
       </a>
     </header>
     <div id="flash" role="alert"></div>

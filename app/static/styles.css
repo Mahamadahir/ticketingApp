@@ -55,7 +55,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   display: flex; align-items: center; justify-content: center; font-weight: 700;
 }
 .brand-text { display: flex; flex-direction: column; line-height: 1.25; }
-.brand-name { font-weight: 700; font-size: 15px; }
+.brand-name { font-weight: 700; font-size: 14px; }
 .brand-sub { font-size: 12px; color: var(--muted); }
 
 .nav-list { display: flex; flex-direction: column; gap: 2px; }
@@ -95,7 +95,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   background: var(--raised); border: 1px solid var(--border); border-radius: var(--radius); color: var(--muted);
 }
 .search-box:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
-.search-box input[type="search"] { flex: 1; min-width: 0; height: 38px; min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent; outline: none; color: var(--text); }
+.search-box input { flex: 1; min-width: 0; height: 38px; min-height: 0; padding: 0; border: 0; background: transparent; outline: none; color: var(--text); }
 .topbar-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
 
 .icon-btn {
@@ -164,8 +164,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 .field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: var(--muted); }
 .field > input, .field > select, .field > textarea { font-size: 14px; font-weight: 500; color: var(--text); }
-.input, input[type="text"], input[type="search"], input[type="email"], input[type="password"], input[type="number"],
-input[type="date"], input[type="datetime-local"], input[type="url"], input:not([type]), select, textarea {
+/* Zero specificity (:where), so a component such as the search box can restyle its own input without a fight. */
+:where(.input, input[type="text"], input[type="search"], input[type="email"], input[type="password"], input[type="number"],
+input[type="date"], input[type="datetime-local"], input[type="url"], input:not([type]), select, textarea) {
   min-height: 36px; padding: 6px 10px; border-radius: var(--radius); border: 1px solid var(--border);
   background: var(--surface); color: var(--text);
 }
