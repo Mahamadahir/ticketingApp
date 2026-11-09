@@ -8,7 +8,7 @@ starting a phase, and `README.md` for how to run it.
 
 ## State of play
 
-- **Phases 0 to 8 are built; Phase 9 (the Google Stitch redesign) is next.** Phase 8 (the Teams bot, behind
+- **Phases 0 to 8 are built; Phase 9 (the redesign, done in the app, not Stitch) has 9A built (tokens, light/dark, the shell: `docs/ui.md`); 9B queue and 9C ticket page are next.** Phase 8 (the Teams bot, behind
   `TEAMS_BOT_ENABLED`) is **8A, the foundation (`app/teams_bot.py`, `app/teams_bot_auth.py`,
   `app/bot_connector.py`, `app/teams_conversations.py`), 8B (personal notifications as direct messages: `app/bot_cards.py`, `teams.route_for`),
   8C (approvals from the bot's card: `app/teams_approvals.py`) and 8D (ticket intake from Teams: `app/teams_intake.py`; the rules email and Teams share are in
@@ -89,8 +89,8 @@ starting a phase, and `README.md` for how to run it.
 - Frontend stays server-rendered Jinja2 + htmx. No SPA, no Static Web Apps.
   The web app is mainly for agents; requesters mostly use email and Teams.
 - Keep the UI plain and functional: semantic HTML, minimal CSS, no styling
-  polish. The whole UI gets redesigned with Google Stitch in Phase 9 once it is
-  feature-complete, so visual effort now is wasted.
+  polish. Phase 9 restyles every page onto the 9A tokens and components (`docs/ui.md`), one issue at
+  a time, so do not restyle a page outside its issue; use the 9A classes and tokens, never raw colours.
 - Schema changes need an Alembic migration (CI runs `alembic check`).
 - Run `pytest -n auto` (parallel, one database per worker) before saying work is done. Tests run against
   Postgres 16 (compose `db` locally, a service container in CI), never SQLite.

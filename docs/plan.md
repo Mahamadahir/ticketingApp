@@ -1295,7 +1295,7 @@ zone. **Everything is stored and calculated in UTC**; only what a person sees is
 | 6 | Break-glass accounts, TOTP, outage mode, Entra app roles, match users on Entra object id, nightly Entra `accountEnabled` check (`is_active`), linked identities |
 | 7 | Reporting and CSV export, subject access export, anonymisation (including requester feedback comments, which are personal data; feedback reports keep the rule that an agent sees only their own) |
 | 8 | Teams bot: direct messages to people (8B) and ticket intake from Teams |
-| 9 | Google Stitch redesign once the UI is feature-complete, to WCAG 2.2 AA |
+| 9 | Redesign to WCAG 2.2 AA, done in the app from the owner-approved mockups (Google Stitch is the fallback): 9A foundation (tokens, light and dark, the shell; `docs/ui.md`), 9B agent queue, 9C ticket page, then the portal on desktop, the portal on mobile and (stretch) the console on mobile |
 | 10 | Security hardening and the go-live gate (see "Security hardening phase"). Nothing here is optional for production; small items are done earlier when their feature is built |
 
 The Azure infrastructure (`infra/`, Bicep) is scaffolded and not deployed.

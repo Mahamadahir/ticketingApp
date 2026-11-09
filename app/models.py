@@ -147,6 +147,9 @@ class User(SQLModel, table=True):
     # their settings page; the browser no longer overwrites it until they clear it). None: not known yet.
     time_zone: Optional[str] = Field(default=None)
     time_zone_source: Optional[str] = Field(default=None)
+    # Colour theme (9A, app/theme.py): "light" or "dark" when chosen on My settings or the top-bar toggle;
+    # None follows the browser's own preference (System).
+    theme: Optional[str] = Field(default=None)
     # A break-glass account (#163, app/breakglass.py): a local super admin that is not anyone's Entra
     # account. It signs in only on /auth/break-glass with password and TOTP code. The TOTP secret is stored
     # encrypted (never plain); totp_last_step is the newest 30-second step already accepted, so a code is

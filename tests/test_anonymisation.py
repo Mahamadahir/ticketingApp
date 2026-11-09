@@ -106,7 +106,7 @@ def test_decisions_are_known_words():
 # Text columns the name pattern in person_data does not find and that were read by hand for #176: kinds, statuses, hashes,
 # ids, admin-written wording and technical errors, none holding a person's words or address.
 REVIEWED_BY_HAND = set("""
-teammembership.level user.role user.password_hash user.time_zone user.time_zone_source user.totp_secret user.emergency_password_hash
+teammembership.level user.role user.password_hash user.time_zone user.time_zone_source user.theme user.totp_secret user.emergency_password_hash
 linked_identity.method linked_identity.status link_code.code_hash requestertimezone.time_zone requestertimezone.source ticket.type
 ticket.status ticket.source ticket.impact ticket.urgency ticket.priority ticket.msp_ticket_number message.direction message.visibility
 message.graph_message_id message.msp_forward attachment.content_type attachment.content_hash attachment.blob_key cannedresponse.title
@@ -158,6 +158,7 @@ def test_it_removes_the_person_and_keeps_the_tickets(client, db_session, storage
     db.add(Notification(user_id=ann_id, kind="assigned", text="Ann has a bell", actor_email="ann@a.example"))
     db.add(RequesterTimeZone(email="ann@b.example", time_zone="Europe/London"))
     db.add(UserPermission(user_id=ann_id, permission="view_reports"))
+    db.get(User, ann_id).theme = "dark"  # a setting of hers (9A); nothing of it is kept
     request_type = RequestType(name="Printing")
     db.add(request_type)
     db.commit()
@@ -198,7 +199,7 @@ def test_it_removes_the_person_and_keeps_the_tickets(client, db_session, storage
     # the account
     ann = db.get(User, ann_id)
     assert ann.email == f"anonymised-{n}@invalid" and ann.display_name == f"Anonymised requester #{n}"
-    assert ann.is_active is False and ann.entra_object_id is None
+    assert ann.is_active is False and ann.entra_object_id is None and ann.theme is None
     # settings and identity rows
     assert db.exec(select(LinkedIdentity)).all() == []
     assert db.exec(select(NotificationPreference)).all() == []

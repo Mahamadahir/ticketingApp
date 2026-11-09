@@ -31,11 +31,13 @@ async def lifespan(app: FastAPI):
 
 
 class AppStaticFiles(StaticFiles):
-    """Static files, with long caching for vendor/: those files carry their version in the name."""
+    """Static files, with long caching for vendor/ scripts and fonts/: those files carry their version in the name."""
 
     async def get_response(self, path, scope):
         response = await super().get_response(path, scope)
-        if path.replace("\\", "/").startswith("vendor/") and path.endswith(".js") and response.status_code == 200:
+        name = path.replace("\\", "/")
+        versioned = (name.startswith("vendor/") and name.endswith(".js")) or (name.startswith("fonts/") and name.endswith(".woff2"))
+        if versioned and response.status_code == 200:
             response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
         return response
 

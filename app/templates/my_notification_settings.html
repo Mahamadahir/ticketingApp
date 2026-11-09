@@ -9,6 +9,18 @@
 <p class="note"><a href="/settings/link-account">Link another account</a> (a second email address or Microsoft account of yours)</p>
 {% if can_have_emergency_password %}<p class="note"><a href="/settings/emergency-password">Emergency password</a> (for signing in if Microsoft sign-in is down)</p>{% endif %}
 
+<form method="post" action="/settings/theme">
+  <input type="hidden" name="return_to" value="/settings/notifications?saved=1" />
+  <fieldset>
+    <legend>Appearance</legend>
+    <p class="note">System follows your device's light or dark setting. The theme button at the top of every page steps through the three.</p>
+    {% for value, label in theme_labels.items() %}
+    <label><input type="radio" name="theme" value="{{ value }}" {% if value == theme %}checked{% endif %} /> {{ label }}</label>
+    {% endfor %}
+    <button type="submit">Save appearance</button>
+  </fieldset>
+</form>
+
 <form method="post" action="/settings/time-zone">
   <fieldset>
     <legend>My time zone</legend>

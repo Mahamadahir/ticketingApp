@@ -27,6 +27,7 @@ from app.notification_settings import (
 from app.notifications import AGENT_ROLES, default_teams_delay
 from app.settings_store import EMERGENCY_PASSWORD_MIN_LENGTH, count_setting
 from app.teams_conversations import reference_for
+from app.theme import LABELS as THEME_LABELS, safe_return, set_theme, theme_for
 from app.time_zones import clear_manual_zone, set_browser_zone, set_manual_zone, zone_choices, zone_for_user
 
 router = APIRouter(prefix="/settings", tags=["settings"])
@@ -63,6 +64,7 @@ def notification_settings(
             "is_agent": user.role in AGENT_ROLES, "can_have_emergency_password": emergency.may_hold_one(user), "default_delay": default_teams_delay(session),
             "max_delay": MAX_TEAMS_DELAY_MINUTES, "show_teams_replies": settings.teams_bot_configured,
             "zone": zone_for_user(session, user), "zone_choices": zone_choices(),
+            "theme": theme_for(user), "theme_labels": THEME_LABELS,
         },
     )
 
@@ -119,6 +121,21 @@ def save_time_zone(
     session.add(user)
     session.commit()
     return RedirectResponse("/settings/notifications?saved=1", status_code=303)
+
+
+@router.post("/theme")
+def save_theme(
+    theme: str = Form("", max_length=16),
+    return_to: str = Form("", max_length=512),
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """Light, Dark or System (9A), from My settings or the top-bar button (which sends the page it was pressed on)."""
+    if not set_theme(user, theme):
+        raise HTTPException(status_code=400, detail="Choose System, Light or Dark")
+    session.add(user)
+    session.commit()
+    return RedirectResponse(safe_return(return_to), status_code=303)
 
 
 @router.post("/sign-out-everywhere")

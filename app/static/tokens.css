@@ -1,0 +1,96 @@
+/* Design tokens (Phase 9A). The values are the approved mockups'. Light is the default; Dark is `.dark` on <html>.
+   System (no stored choice) is `.system` on <html> and follows the browser through the media query below, so the
+   server never has to guess and the page never flashes. Documented in docs/ui.md. */
+
+@font-face {
+  font-family: "Inter";
+  src: url("/static/fonts/Inter-4.0-variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: light;
+  --bg: #F4F5F7;
+  --surface: #FFFFFF;
+  --raised: #F8F9FB;
+  --border: #E1E4E8;
+  --text: #1B1F24;
+  --muted: #57606A;
+  --accent: #2F5BD3;
+  --accent-text: #FFFFFF;
+  --accent-soft: #E6EEFB;
+  --amber: #8A4B00;
+  --amber-bg: #FFF1DC;
+  --note-bg: #FFF8EC;
+  --note-border: #F0D9B5;
+  --red: #B42318;
+  --red-bg: #FDECEA;
+  --green: #1E6B3A;
+  --green-bg: #E3F4E8;
+  --blue: #1F4FB8;
+  --blue-bg: #E6EEFB;
+  --gray: #3D444D;
+  --gray-bg: #EEF0F3;
+  --focus: #2F5BD3;
+
+  --font: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --radius: 8px;
+  --radius-lg: 12px;
+}
+
+:root.dark {
+  color-scheme: dark;
+  --bg: #0E1116;
+  --surface: #161B22;
+  --raised: #1C2230;
+  --border: #2A313C;
+  --text: #E6EAF0;
+  --muted: #9AA4B2;
+  --accent: #7AA2FF;
+  --accent-text: #0E1116;
+  --accent-soft: #1B2740;
+  --amber: #F5B95C;
+  --amber-bg: #2E2414;
+  --note-bg: #221C12;
+  --note-border: #4A3A1F;
+  --red: #FF8A80;
+  --red-bg: #3A1A1A;
+  --green: #6FD38F;
+  --green-bg: #15291D;
+  --blue: #8FB2FF;
+  --blue-bg: #182440;
+  --gray: #C3CAD4;
+  --gray-bg: #232A35;
+  --focus: #7AA2FF;
+}
+
+/* System: the same dark values, when the browser prefers dark. Keep in step with :root.dark above. */
+@media (prefers-color-scheme: dark) {
+  :root.system {
+    color-scheme: dark;
+    --bg: #0E1116;
+    --surface: #161B22;
+    --raised: #1C2230;
+    --border: #2A313C;
+    --text: #E6EAF0;
+    --muted: #9AA4B2;
+    --accent: #7AA2FF;
+    --accent-text: #0E1116;
+    --accent-soft: #1B2740;
+    --amber: #F5B95C;
+    --amber-bg: #2E2414;
+    --note-bg: #221C12;
+    --note-border: #4A3A1F;
+    --red: #FF8A80;
+    --red-bg: #3A1A1A;
+    --green: #6FD38F;
+    --green-bg: #15291D;
+    --blue: #8FB2FF;
+    --blue-bg: #182440;
+    --gray: #C3CAD4;
+    --gray-bg: #232A35;
+    --focus: #7AA2FF;
+  }
+}

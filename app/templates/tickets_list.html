@@ -20,8 +20,9 @@
 </p>
 
 <div class="filters">
-  <a href="{{ list_link(mine=False, team_id=None) }}" class="{{ 'active' if not mine else '' }}">All visible</a>
+  <a href="{{ list_link(mine=False, team_id=None) }}" class="{{ 'active' if not mine and not untriaged else '' }}">All visible</a>
   <a href="{{ list_link(mine=True, team_id=None) }}" class="{{ 'active' if mine else '' }}">Assigned to me</a>
+  <a href="{{ list_link(untriaged=True) }}" class="{{ 'active' if untriaged else '' }}">Untriaged</a>
   {% if user.role.value == "super_admin" and teams %}
     {% for t in teams %}
     <a href="{{ list_link(mine=False, team_id=t.id) }}" class="{{ 'active' if team_id == t.id else '' }}">{{ t.name }}</a>

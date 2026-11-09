@@ -501,6 +501,7 @@ def step_accounts(ctx: Context) -> None:
         user.locked_until = None
         user.time_zone = None
         user.time_zone_source = None
+        user.theme = None
         user.teams_delay_minutes = None
         user.out_of_office = False
         user.is_active = False

@@ -1,12 +1,7 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <title>Dev sign-in</title>
-  <link rel="stylesheet" href="/static/styles.css" />
-</head>
-<body>
-  <main>
+{% extends "base.html" %}
+{% block title %}Dev sign-in{% endblock %}
+{% block content %}
+<div class="login-page">
     <h1>Dev sign-in</h1>
     <p>
       SSO isn't configured (no <code>SSO_TENANT_ID</code>/<code>SSO_CLIENT_ID</code>/<code>SSO_CLIENT_SECRET</code>
@@ -24,6 +19,5 @@
       </label>
       <button type="submit">Sign in</button>
     </form>
-  </main>
-</body>
-</html>
+</div>
+{% endblock %}

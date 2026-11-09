@@ -145,7 +145,7 @@ def _accounts(session: Session, person: Person) -> list[dict]:
             {
                 "email": user.email, "display_name": user.display_name, "role": user.role.value,
                 "is_active": user.is_active, "created_at": user.created_at, "time_zone": user.time_zone,
-                "time_zone_source": user.time_zone_source, "teams_delay_minutes": user.teams_delay_minutes,
+                "time_zone_source": user.time_zone_source, "theme": user.theme,"teams_delay_minutes": user.teams_delay_minutes,
                 "entra_object_id": user.entra_object_id, "is_break_glass": user.is_break_glass,
                 "out_of_office": user.out_of_office, "locked_until": user.locked_until,
                 "has_emergency_password": user.emergency_password_hash is not None,

@@ -3,6 +3,7 @@ viewer's zone, the visibility limit, the permission, the CSV escaping and the au
 
 import csv
 import io
+import re
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -393,7 +394,8 @@ def test_the_permission_is_registered_and_super_admins_hold_it(client, db_sessio
     page = client.get("/reports")
     for definition in REPORTS.values():
         assert f'href="/reports/{definition.key}"' in page.text
-    assert '<a href="/reports">Reports</a>' in page.text
+    # The navigation (app/navigation.py) draws the link with an icon, so the exact tag changed in 9A; still one link to /reports, labelled Reports.
+    assert re.search(r'<a href="/reports" class="navlink"(?: aria-current="page")?>\s*<svg.*?</svg>\s*<span class="navlink-label">Reports</span>', page.text, re.S)
 
 
 def test_agent_needs_the_grant_and_an_end_user_never_gets_in(client, db_session):
