@@ -190,7 +190,7 @@ label { cursor: pointer; }
   font-weight: 600; text-decoration: none; cursor: pointer; display: inline-flex; gap: 8px; align-items: center; min-height: 24px;
 }
 .tab:hover { color: var(--text); }
-.tab.on, .tab[aria-selected="true"], .tab[aria-current="page"] { color: var(--text); border-bottom-color: var(--accent); }
+.tab.on, .tab[aria-selected="true"], .tab[aria-current="page"], .tab[aria-current="true"] { color: var(--text); border-bottom-color: var(--accent); }
 
 .dl { display: grid; grid-template-columns: max-content 1fr; gap: 8px 20px; margin: 0; }
 .dl dt { color: var(--muted); font-weight: 600; }
@@ -207,6 +207,28 @@ label { cursor: pointer; }
 .pagination a:hover { background: var(--raised); }
 
 .visually-muted { color: var(--muted); }
+
+.muted { color: var(--muted); }
+.small { font-size: 12px; }
+
+/* The agent queue (9B) */
+.queue { display: flex; flex-direction: column; gap: 18px; }
+.queue-head { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
+.queue-head h1 { margin: 0 0 4px; }
+.queue-head p { margin: 0; }
+.queue-figures { margin-left: auto; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.queue-figure { padding: 6px 10px; }
+.queue-filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+.queue-filters select { height: 36px; min-width: 150px; }
+.queue-showing { margin: 0 0 0 auto; padding-bottom: 8px; color: var(--muted); font-size: 13px; }
+.queue-table { min-width: 980px; }
+.queue-table th:first-child, .queue-table td:first-child { width: 1%; padding-right: 0; }
+.ticket-cell { display: flex; flex-direction: column; gap: 4px; }
+.ticket-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.ticket-ref { font-size: 12px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+.subj { color: var(--text); font-weight: 600; text-decoration: none; }
+.subj:hover { color: var(--accent); text-decoration: underline; }
+.queue-bulk { margin: 0; }
 
 /* ---- Older page classes, mapped onto the tokens (restyled page by page in 9B onwards) ----------------------- */
 

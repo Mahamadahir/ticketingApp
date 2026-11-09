@@ -158,8 +158,14 @@ def test_filter_clear_and_page_links_keep_the_search(client, db_session):
 
     page = client.get("/tickets", params={"q": "router", "team_id": team.id}).text
     hrefs = [html.unescape(h) for h in re.findall(r'href="([^"]*)"', page)]
-    assert "/tickets?q=router&mine=true" in hrefs  # Assigned to me
-    assert f"/tickets?q=router&team_id={team.id}" in hrefs  # a team filter
-    assert "/tickets?q=router" in hrefs  # All visible
+    assert "/tickets?q=router&mine=true" in hrefs  # the My queue tab
+    assert "/tickets?q=router" in hrefs  # the All I can see tab
+    assert "/tickets?q=router&untriaged=true" in hrefs  # the Untriaged tab
+    # The team filter is a select inside a form that sends the search along and shows the chosen team.
+    assert '<input type="hidden" name="q" value="router" />' in page
+    assert f'<option value="{team.id}" selected>Desk</option>' in page
     assert any(h.startswith("?") and "page=2" in h and "q=router" in h and f"team_id={team.id}" in h for h in hrefs)
-    assert f"/tickets?team_id={team.id}" in hrefs  # Clear keeps the filter, drops the search
+    assert f"/tickets?team_id={team.id}" not in hrefs
+    assert "/tickets?mine=false" not in hrefs
+    # Clear drops the search and the filters (it keeps the view).
+    assert "Clear search and filters" in page

@@ -1,78 +1,121 @@
 {% extends "base.html" %}
-{% block title %}Tickets{% endblock %}
+{% block title %}Queue{% endblock %}
 {% block content %}
 
-<form method="get" action="/tickets" class="search">
-  <input type="search" name="q" value="{{ q }}" maxlength="200" placeholder="Number, subject, requester or message text" />
-  {% if mine %}<input type="hidden" name="mine" value="true" />{% endif %}
-  {% if team_id %}<input type="hidden" name="team_id" value="{{ team_id }}" />{% endif %}
-  {% if source %}<input type="hidden" name="source" value="{{ source }}" />{% endif %}
-  <button type="submit">Search</button>
-  {% if q %}<a href="{{ list_link(q='', mine=mine, team_id=team_id) }}">Clear</a>{% endif %}
-</form>
-{% if q %}<p class="note">{{ page.total_items }} ticket{{ "" if page.total_items == 1 else "s" }} you can open match "{{ q }}" (subject, requester, number, and every message including internal notes).</p>{% endif %}
+{# The queue (9B). Search is the one box in the top bar (it sends q here); this page holds the views, the filters and the list. #}
+<div class="queue">
+  <div class="queue-head">
+    <div>
+      <h1>Queue</h1>
+      <p class="muted">Sorted by time to breach. Untriaged tickets stay at the top.</p>
+    </div>
+    <div class="queue-figures">
+      <span class="chip t-red queue-figure">{{ figures.breached }} breached</span>
+      <span class="chip t-amber queue-figure">{{ figures.at_risk }} at risk</span>
+      <span class="chip t-blue queue-figure">{{ figures.untriaged }} untriaged</span>
+      <a href="/tickets/activity" class="btn">Team activity</a>
+    </div>
+  </div>
 
-<p>
-  <a href="/portal/new">Raise a request</a> &middot; <a href="/tickets/activity">Team activity</a>
-  &middot; Channel:
-  <a href="{{ list_link(source='', mine=mine, team_id=team_id) }}" class="{{ 'active' if not source else '' }}">any</a>
-  {% for s in sources %}<a href="{{ list_link(source=s, mine=mine, team_id=team_id) }}" class="{{ 'active' if source == s else '' }}">{{ s }}</a> {% endfor %}
-</p>
+  <nav class="tabs" aria-label="Queue views">
+    <a class="tab{{ ' on' if not mine and not untriaged else '' }}" href="{{ list_link(mine=False, untriaged=False) }}"{% if not mine and not untriaged %} aria-current="true"{% endif %}>All I can see <span class="chip t-gray">{{ figures.tab_all }}</span></a>
+    <a class="tab{{ ' on' if mine else '' }}" href="{{ list_link(mine=True, team_id=None) }}"{% if mine %} aria-current="true"{% endif %}>My queue <span class="chip t-gray">{{ figures.tab_mine }}</span></a>
+    <a class="tab{{ ' on' if untriaged else '' }}" href="{{ list_link(untriaged=True) }}"{% if untriaged %} aria-current="true"{% endif %}>Untriaged <span class="chip t-gray">{{ figures.tab_untriaged }}</span></a>
+  </nav>
 
-<div class="filters">
-  <a href="{{ list_link(mine=False, team_id=None) }}" class="{{ 'active' if not mine and not untriaged else '' }}">All visible</a>
-  <a href="{{ list_link(mine=True, team_id=None) }}" class="{{ 'active' if mine else '' }}">Assigned to me</a>
-  <a href="{{ list_link(untriaged=True) }}" class="{{ 'active' if untriaged else '' }}">Untriaged</a>
-  {% if user.role.value == "super_admin" and teams %}
-    {% for t in teams %}
-    <a href="{{ list_link(mine=False, team_id=t.id) }}" class="{{ 'active' if team_id == t.id else '' }}">{{ t.name }}</a>
-    {% endfor %}
-  {% endif %}
-</div>
+  <form method="get" action="/tickets" class="queue-filters">
+    {% if q %}<input type="hidden" name="q" value="{{ q }}" />{% endif %}
+    {% if mine %}<input type="hidden" name="mine" value="true" />{% endif %}
+    {% if untriaged %}<input type="hidden" name="untriaged" value="true" />{% endif %}
+    <label class="field">Team
+      <select name="team_id">
+        <option value="">Any team</option>
+        {% for t in teams %}<option value="{{ t.id }}"{{ ' selected' if team_id == t.id else '' }}>{{ t.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="field">Channel
+      <select name="source">
+        <option value="">Any channel</option>
+        {% for s in sources %}<option value="{{ s }}"{{ ' selected' if source == s else '' }}>{{ s|capitalize }}</option>{% endfor %}
+      </select>
+    </label>
+    <button type="submit" class="btn">Apply filters</button>
+    {% if q or team_id or source %}<a href="{{ list_link(q='', source='', team_id=None, mine=mine, untriaged=untriaged) }}" class="btn">Clear search and filters</a>{% endif %}
+    <p class="queue-showing" role="status">Showing {{ page.items|length }} of {{ page.total_items }}</p>
+  </form>
+  {% if q %}<p class="note">{{ page.total_items }} ticket{{ "" if page.total_items == 1 else "s" }} you can open match "{{ q }}" (subject, requester, number, and every message including internal notes).</p>{% endif %}
 
-<form method="get" action="/bulk-resolve">
-<table>
-  <thead>
-    <tr>
-      <th></th>
-      <th>Ref</th>
-      <th>Subject</th>
-      <th>Requester</th>
-      <th>Team</th>
-      <th>Assigned</th>
-      <th>Priority</th>
-      <th>SLA</th>
-      <th>Status</th>
-      <th>Updated</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for ticket in page.items %}
-    <tr class="{{ 'escalated-row' if ticket.is_escalated else '' }}">
-      <td><input type="checkbox" name="number" value="{{ ticket.number }}" aria-label="Select {{ ticket.reference }}" /></td>
-      <td>{{ ticket.reference }}</td>
-      <td>
-        <a href="/tickets/{{ ticket.number }}">{{ ticket.subject }}</a>
-        <span class="badge">{{ ticket.source.value }}</span>
-        {% if ticket.is_escalated %}<span class="badge badge-escalated">escalated</span>{% endif %}
-      </td>
-      <td>{{ ticket.requester_email }}</td>
-      <td>{{ teams_by_id[ticket.team_id].name if ticket.team_id and ticket.team_id in teams_by_id else "Unassigned" }}</td>
-      <td>{{ agents_by_id[ticket.assigned_agent_id].display_name if ticket.assigned_agent_id and ticket.assigned_agent_id in agents_by_id else "Unassigned" }}</td>
-      <td>{{ ticket.priority.upper() if ticket.priority else ("Untriaged" if not ticket.triaged_at else "") }}</td>
-      <td class="sla sla-{{ sla[ticket.id].state }}">{{ sla[ticket.id].text }}</td>
-      <td><span class="status status-{{ ticket.status.value }}">{{ ticket.status.value.replace("_", " ") }}</span></td>
-      <td>{{ ticket.updated_at|local_time }}</td>
-    </tr>
+  {% if page.items %}
+  <form method="get" action="/bulk-resolve">
+    <div class="table-box">
+      <table class="table queue-table">
+        <thead>
+          <tr>
+            <th scope="col"><span class="sr-only">Select</span></th>
+            <th scope="col">Ticket</th>
+            <th scope="col">Priority</th>
+            <th scope="col">Status</th>
+            <th scope="col">Time to breach</th>
+            <th scope="col">Requester</th>
+            <th scope="col">Assignee</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for ticket in page.items %}
+          {% set clock = sla[ticket.id] %}
+          {% set agent = agents_by_id[ticket.assigned_agent_id] if ticket.assigned_agent_id and ticket.assigned_agent_id in agents_by_id else none %}
+          <tr class="{{ 'escalated-row' if ticket.is_escalated else '' }}">
+            <td><input type="checkbox" name="number" value="{{ ticket.number }}" aria-label="Select {{ ticket.reference }}" /></td>
+            <td>
+              <div class="ticket-cell">
+                <div class="ticket-meta">
+                  <span class="ticket-ref">{{ ticket.reference }}</span>
+                  {% if not ticket.triaged_at %}<span class="chip t-blue">Needs triage</span>{% endif %}
+                  {% if ticket.is_escalated %}<span class="chip t-red">Escalated</span>{% endif %}
+                  <span class="muted small">{{ ticket.source.value|capitalize }}</span>
+                </div>
+                <a class="subj" href="/tickets/{{ ticket.number }}">{{ ticket.subject }}</a>
+                <span class="muted small">{{ teams_by_id[ticket.team_id].name if ticket.team_id and ticket.team_id in teams_by_id else "No team" }} &middot; {{ categories_by_id[ticket.category_id] if ticket.category_id in categories_by_id else "Not triaged" }}</span>
+              </div>
+            </td>
+            <td><span class="chip {{ 't-red' if ticket.priority == 'p1' else ('t-amber' if ticket.priority == 'p2' else 't-gray') }}">{{ ticket.priority.upper() if ticket.priority else ("Untriaged" if not ticket.triaged_at else "None") }}</span></td>
+            <td>
+              <span class="chip t-gray status-{{ ticket.status.value }}">{{ ticket.status.value.replace("_", " ")|capitalize }}</span>
+              <div class="muted small">Updated {{ ticket.updated_at|local_time }}</div>
+            </td>
+            <td>
+              <span class="chip t-{{ clock.tone }}">
+                <svg aria-hidden="true" focusable="false" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
+                {{ clock.text }}
+              </span>
+            </td>
+            <td>{{ ticket.requester_email }}</td>
+            <td>{% if agent %}{{ agent.display_name }}{% else %}<span class="muted">Unassigned</span>{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="queue-bulk"><button type="submit" class="btn">Resolve selected tickets</button></p>
+  </form>
+  {% else %}
+  <div class="empty-state">
+    {% if q or team_id or source %}
+      <strong>No tickets match.</strong>
+      Try fewer words, or clear the filters.
+    {% elif mine %}
+      <strong>Nothing is assigned to you.</strong>
+      Pick up a ticket from All I can see or Untriaged.
+    {% elif untriaged %}
+      <strong>Nothing is waiting for triage.</strong>
+      New tickets appear here until someone triages them.
     {% else %}
-    <tr>
-      <td colspan="10">{{ "No tickets match." if q else "No tickets yet." }}</td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
-<button type="submit">Resolve selected tickets</button>
-</form>
+      <strong>No tickets yet.</strong>
+      Tickets raised by email, in the portal or in Teams appear here.
+    {% endif %}
+  </div>
+  {% endif %}
 
-{% include "_pagination.html" %}
+  {% include "_pagination.html" %}
+</div>
 {% endblock %}
