@@ -223,10 +223,10 @@ def test_an_internal_note_is_tinted_and_labelled_and_a_public_message_is_not(cli
     assert "Secret words" not in portal and "tp-msg-note" not in portal and "Internal note" not in portal
 
 
-def test_the_files_that_came_with_a_message_are_listed_on_it_but_not_inline_pictures(client, db_session):
+def test_the_files_that_came_with_a_message_are_listed_on_it_including_pasted_pictures(client, db_session):
     ticket, _ = triaged_ticket(client, db_session)
     message = add_message(db_session, ticket, "me@example.com", "See the screenshot", MessageDirection.INBOUND, MessageVisibility.PUBLIC, 10)
-    for name, inline in (("error.png", False), ("signature-logo.png", True)):
+    for name, inline in (("error.png", False), ("pasted-screenshot.png", True)):
         db_session.add(Attachment(ticket_id=ticket.id, message_id=message.id, filename=name, size=2048, content_type="image/png",
                                   content_hash=name.ljust(64, "0"), blob_key=name, is_inline=inline))
     db_session.commit()
@@ -234,7 +234,7 @@ def test_the_files_that_came_with_a_message_are_listed_on_it_but_not_inline_pict
     html = page(client, ticket)
 
     assert f'<a href="/attachments/{attachment.id}">error.png</a>' in html and "(2.0 KB)" in html
-    assert "signature-logo.png" not in html
+    assert "pasted-screenshot.png" in html  # a picture kept from the body is evidence too (tiny signature logos are never stored)
 
 
 # ---- The Service level card and the small helpers ---------------------------------------------------------------
@@ -270,6 +270,11 @@ def test_a_finished_ticket_is_met_or_missed_and_a_ticket_with_no_clock_has_no_ro
     assert row(clocked(is_backdated=True, resolution_due_at=NOW)) == [] and row(clocked(priority=None)) == []
 
 
+def test_time_the_clock_was_stopped_is_not_counted_as_time_taken():
+    done = clocked(status=TicketStatus.RESOLVED, resolved_at=NOW, resolution_due_at=NOW + timedelta(hours=1), sla_paused_seconds=3 * 3600)
+    assert row(done) == [("Resolution", "green", "Met · 1h 0m")]  # 4h since creation, 3h of it waiting on the requester
+
+
 def test_the_page_shows_the_service_level_card_and_the_header_chip(client, db_session):
     ticket, _ = triaged_ticket(client, db_session)
     html = page(client, ticket)
@@ -281,3 +286,4 @@ def test_the_page_shows_the_service_level_card_and_the_header_chip(client, db_se
 def test_initials_for_the_avatar():
     assert _initials("Daniel Okafor") == "DO" and _initials("Sam Rowe <sam@example.com>") == "SR"
     assert _initials("daniel.okafor@example.com") == "DO" and _initials("priya@example.com") == "PR" and _initials("") == "?"
+    assert _initials("<j.smith@example.com>") == "JS" and _initials('"Smith, John" <j@example.com>') == "JS"

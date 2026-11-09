@@ -94,7 +94,8 @@ from app.messages import (
     preview_email,
     status_choices,
 )
-from app.models import FINISHED_STATUSES, Attachment, CannedResponse, Category, Message, RequestType, Team, Ticket, TicketSource, TicketStatus, TicketType, User, UserRole
+from app.models import FINISHED_STATUSES, CannedResponse, Category, Message, RequestType, Team, Ticket, TicketSource, TicketStatus, TicketType, User, UserRole
+from app.attachments import files_by_message
 from app.pagination import paginate
 from app.team_activity import KIND_LABELS, Kind, describe as describe_activity, feed_query
 from app.sla import (
@@ -1589,19 +1590,6 @@ def _may_close(session: Session, ticket: Ticket) -> bool:
     return _may(check_can_close, CloseError, session, ticket)
 
 
-def _message_files(session: Session, timeline) -> dict[int, list[Attachment]]:
-    """The files that came with each message on the timeline (not the pictures inside a body), by message id.
-    Downloading is still checked per file by /attachments/{id}."""
-    ids = [item.message.id for item in timeline if item.message is not None]
-    files: dict[int, list[Attachment]] = {}
-    if ids:
-        for attachment in session.exec(
-            select(Attachment).where(Attachment.message_id.in_(ids), Attachment.is_inline.is_(False)).order_by(Attachment.id)
-        ).all():
-            files.setdefault(attachment.message_id, []).append(attachment)
-    return files
-
-
 def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session: Session) -> HTMLResponse:
     ticket_approval = current_approval(session, ticket)
     ticket_votes = votes_of(session, ticket_approval)
@@ -1662,7 +1650,8 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
     )
 
     now = datetime.now(timezone.utc)
-    sla_now = sla_view(ticket, now, at_risk_percent(session))
+    at_risk = at_risk_percent(session)
+    sla_now = sla_view(ticket, now, at_risk)
 
     return templates.TemplateResponse(
         request,
@@ -1739,8 +1728,8 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             "urgency_options": urgency_options(),
             "sla": sla_now,
             "sla_chip": queue_sla(ticket, sla_now, now),
-            "sla_rows": sla_rows(ticket, now, at_risk_percent(session)),
-            "message_files": _message_files(session, timeline),
+            "sla_rows": sla_rows(ticket, now, at_risk),
+            "message_files": files_by_message(session, user, levels, [i.message for i in timeline if i.message is not None]),
             "moment_format": MOMENT_FORMAT,
             "can_backdate": may_backdate(ticket),
             "can_set_required_by": (offers_required_by(session, ticket) or ticket.required_by is not None)

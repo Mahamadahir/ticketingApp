@@ -409,6 +409,7 @@
         "blob_key",
         "clean_filename",
         "detect_content_type",
+        "files_by_message",
         "is_inline_type",
         "lock_blob",
         "serving_headers",
@@ -420,6 +421,7 @@
         "app.inbound",
         "app.intake",
         "app.routers.attachments",
+        "app.routers.tickets",
         "app.subject_access",
         "app.teams_intake",
         "app.teams_pending"
@@ -427,7 +429,8 @@
       "imports": [
         "app.config",
         "app.models",
-        "app.storage"
+        "app.storage",
+        "app.visibility"
       ],
       "module": "app.attachments",
       "routes": [],
@@ -4837,6 +4840,7 @@
       ],
       "imports": [
         "app.approvals",
+        "app.attachments",
         "app.audit",
         "app.auth",
         "app.backdating",
@@ -6318,6 +6322,7 @@
         "visible_ticket_condition"
       ],
       "imported_by": [
+        "app.attachments",
         "app.auth",
         "app.bulk_resolve",
         "app.feedback",

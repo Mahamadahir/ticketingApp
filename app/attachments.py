@@ -17,6 +17,7 @@ from sqlmodel import Session, select
 from app.config import settings
 from app.models import Attachment, Message, Ticket, User
 from app.storage import Storage, content_disposition
+from app.visibility import AccessContext, may_view_attachment
 
 # The only types the browser may show in the page. Never SVG or HTML: both can carry script.
 INLINE_TYPES = frozenset({"image/png", "image/jpeg", "image/gif", "image/webp"})
@@ -177,3 +178,19 @@ def attachments_of(session: Session, ticket: Ticket) -> list[Attachment]:
     return list(
         session.exec(select(Attachment).where(Attachment.ticket_id == ticket.id).order_by(Attachment.id)).all()
     )
+
+
+def files_by_message(session: Session, user: User, levels: AccessContext, messages: list[Message]) -> dict[int, list[Attachment]]:
+    """The files that came with each of these messages, by message id, for the agent ticket page: only the ones this
+    person may download (app/visibility.may_view_attachment), so a link never ends on a refusal."""
+    ids = [m.id for m in messages]
+    files: dict[int, list[Attachment]] = {}
+    if not ids:
+        return files
+    tickets: dict[int, Ticket] = {}
+    for attachment in session.exec(select(Attachment).where(Attachment.message_id.in_(ids)).order_by(Attachment.id)).all():
+        ticket = tickets.get(attachment.ticket_id) or session.get(Ticket, attachment.ticket_id)
+        tickets[attachment.ticket_id] = ticket
+        if ticket is not None and may_view_attachment(session, user, attachment, ticket, levels):
+            files.setdefault(attachment.message_id, []).append(attachment)
+    return files

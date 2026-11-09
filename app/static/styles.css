@@ -320,9 +320,10 @@ label { cursor: pointer; }
 .tp-compose-row .btn-primary { margin-left: auto; }
 .tp-compose-row label { width: auto; }
 .tp-canned select, .tp-status select { height: 38px; }
-.tp-due { width: 100%; }
-.tp-due > summary { cursor: pointer; font-size: 13px; color: var(--muted); }
-.tp-due label { margin-top: 8px; }
+/* The Due date boxes matter only for Scheduled, so they show once it is picked (they are always in the form). */
+.tp-due { display: none; width: 100%; gap: 10px; flex-wrap: wrap; }
+.tp-compose-row:has(select[name="next_status"] option[value="scheduled"]:checked) .tp-due { display: flex; }
+.tp-due label { flex: 1 1 200px; }
 
 /* The timeline */
 .tp-thread { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
@@ -337,9 +338,12 @@ label { cursor: pointer; }
 .tp-event { display: flex; gap: 10px; align-items: center; padding: 2px 6px; margin: 0; color: var(--muted); font-size: 13px; }
 .tp-dot { flex: none; width: 8px; height: 8px; border-radius: 999px; background: var(--border); }
 
-@media (max-width: 720px) {
+/* Where the header can wrap, a floating panel could open off the left edge, so it opens in the flow instead. */
+@media (max-width: 1280px) {
   .tp-panel, .tp-panel-wide { position: static; width: 100%; max-height: none; margin-top: 6px; box-shadow: none; }
   .tp-action[open] { flex: 1 1 100%; }
+}
+@media (max-width: 720px) {
   .tp-side { max-width: none; }
 }
 

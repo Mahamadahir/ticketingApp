@@ -268,13 +268,15 @@ class SlaRow:
 
 
 def _clock_row(label: str, due: Optional[datetime], done_at: Optional[datetime], ticket: Ticket, now: datetime,
-               at_risk_percent: int, paused_seconds: int = 0) -> Optional[SlaRow]:
-    """One target of the Service level card: met or missed once done_at is set, else time left or overrun."""
+               at_risk_percent: int, paused_seconds: int = 0, minus_pause: bool = False) -> Optional[SlaRow]:
+    """One target of the Service level card: met or missed once done_at is set, else time left or overrun. For the
+    resolution target the time the clock was stopped (which also moved the deadline) is not counted as time taken."""
     if due is None:
         return None
     due = _aware(due)
     if done_at is not None:
-        taken = _span(_aware(done_at) - _aware(ticket.created_at))
+        spent = _aware(done_at) - _aware(ticket.created_at) - (timedelta(seconds=paused_seconds) if minus_pause else timedelta(0))
+        taken = _span(max(timedelta(0), spent))
         return SlaRow(label, "red", f"Missed · {taken}") if _aware(done_at) > due else SlaRow(label, "green", f"Met · {taken}")
     if ticket.sla_paused_at is not None:
         return SlaRow(label, "blue", "Paused · waiting on requester")
@@ -298,7 +300,7 @@ def sla_rows(ticket: Ticket, now: datetime, at_risk_percent: int) -> list[SlaRow
         _clock_row("Resolution", ticket.resolution_due_at,
                    (ticket.resolved_at or ticket.closed_at) if ticket.status in FINISHED_STATUSES else None,
                    ticket, now, at_risk_percent,
-                   0 if ticket.due_on is not None else ticket.sla_paused_seconds),
+                   0 if ticket.due_on is not None else ticket.sla_paused_seconds, minus_pause=ticket.due_on is None),
     ]
     return [r for r in rows if r is not None]
 
