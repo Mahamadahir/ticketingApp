@@ -57,7 +57,6 @@ from app.models import (
     NotificationPreference,
     OutboundEmail,
     PendingBlobDelete,
-    TeamsHeldFile,
     AnonymisedRequester,
     RequesterTimeZone,
     TeamMembership,
@@ -80,7 +79,7 @@ from app.person_data import (
     BLANK, COLUMNS, DELETE, KEEP, NULL, REMOVE, REPLACE, SCRUB, WITH_ROW, Person, find_person, list_matches, mentions,
     PLACEHOLDER_DOMAIN, object_ids, placeholder_address,
 )
-from app.attachments import try_lock_blob
+from app.attachments import keys_in_use, try_lock_blob
 from app.storage import Storage
 from app.ticket_service import set_status
 
@@ -250,9 +249,11 @@ def step_held_files(ctx: Context) -> None:
     """Files held while the Teams bot asks which request a message is for, on questions about their tickets (8F): the
     held rows go and the stored files nothing else uses are queued for deletion. Runs before `step_attachments`, so a file
     the person also attached somewhere is still counted as used here and queued by that step."""
+    from app.reply_files import release_for_tickets as release_reply_files
     from app.teams_pending import release_for_tickets
 
     ctx.count("Held Teams files deleted", release_for_tickets(ctx.session, sorted(ctx.ticket_ids)))
+    ctx.count("Files held for an agent's reply deleted", release_reply_files(ctx.session, sorted(ctx.ticket_ids)))
 
 
 def step_attachments(ctx: Context) -> None:
@@ -274,7 +275,7 @@ def step_attachments(ctx: Context) -> None:
         session.delete(row)
     session.flush()
     ctx.count("Files deleted", len(rows))
-    still_used = set(session.exec(select(Attachment.blob_key).where(Attachment.blob_key.in_(keys))).all()) if keys else set()
+    still_used = keys_in_use(session, keys)
     ctx.shared_files_kept = len(still_used)
     for key in keys - still_used:
         ctx.blob_keys.add(key)
@@ -522,6 +523,7 @@ _delete_teams_conversations = _delete_rows(
 STEPS: dict[str, Callable[[Context], None]] = {
     # files and the messages they hang off
     "teams_held_file.filename": step_held_files,
+    "reply_held_file.filename": step_held_files,
     "attachment.uploaded_by_id": step_attachments,
     "message.body": step_message_body,
     "message.sender": step_message_sender,
@@ -808,11 +810,7 @@ def purge_pending_blobs(session: Session, storage: Storage, keys: Optional[set[s
     # Lock every key first (the lock an upload of the same bytes also takes), then ask which are used: a row committed
     # before the lock is seen here, and an upload that comes after waits until this transaction ends.
     entries = [e for e in session.exec(query).all() if try_lock_blob(session, e.blob_key)]
-    used = (
-        set(session.exec(select(Attachment.blob_key).where(Attachment.blob_key.in_([e.blob_key for e in entries]))).all())
-        | set(session.exec(select(TeamsHeldFile.blob_key).where(TeamsHeldFile.blob_key.in_([e.blob_key for e in entries]))).all())
-        if entries else set()
-    )
+    used = keys_in_use(session, {e.blob_key for e in entries})
     done = failed = 0
     for entry in entries:
         if entry.blob_key in used:

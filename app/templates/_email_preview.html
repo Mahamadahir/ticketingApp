@@ -1,18 +1,34 @@
 <div class="email-preview">
   <h3>Check before sending</h3>
-  <p><b>To:</b> {{ preview.to }}</p>
+  <p><b>To:</b> {{ preview.to }}{% if preview.by_teams %} (in Teams{% if preview.also_email %} and by email{% endif %}){% endif %}</p>
   <p><b>Copied:</b> {{ preview.cc | join(", ") if preview.cc else "no one" }}</p>
   <p><b>Subject:</b> {{ preview.subject }}</p>
-  {% if preview.about %}<p class="note">{{ preview.about }} (this email is about one part of a split request)</p>{% endif %}
+  {% if preview.about %}<p class="note">{{ preview.about }} (this message is about one part of a split request)</p>{% endif %}
   <pre class="message-body">{{ preview.body }}</pre>
+  {% if preview.files %}
+  <div>
+    <p><b>Files:</b></p>
+    <ul class="tp-files" aria-label="Files to attach">
+      {% for name, size in preview.files %}<li>{{ name }} <span class="muted small">({{ size|file_size }})</span></li>{% endfor %}
+    </ul>
+    <p class="note">
+      {% if preview.by_teams %}{% if preview.also_email %}The email carries the files. {% endif %}In Teams the requester is told
+      {{ "1 file is" if preview.files|length == 1 else (preview.files|length ~ " files are") }} attached and given the portal link to open
+      {{ "it" if preview.files|length == 1 else "them" }}.
+      {% else %}The files go with the email as attachments.{% endif %}
+    </p>
+  </div>
+  {% endif %}
   <p class="note">
     {% if preview.status_after %}Sending moves this ticket to {{ preview.status_after.value.replace("_", " ") }}{% if preview.status_after.value == "awaiting_user" %} and pauses its SLA clock{% endif %}.
     {% else %}Sending leaves the ticket's status as it is.{% endif %}
-    The email is recorded on the ticket and goes to the requester.
+    {% if preview.by_teams %}The message is recorded on the ticket and goes to the requester in Teams{% if preview.also_email %} and by email{% endif %}.
+    {% else %}The message is recorded on the ticket and goes to the requester by email.{% endif %}
   </p>
   <form hx-post="/tickets/{{ ticket.number }}/email" hx-target="main" hx-swap="innerHTML" hx-disabled-elt="find button[type=submit]">
     <textarea name="body" hidden>
 {{ preview.body }}</textarea>
+    {% if draft %}<input type="hidden" name="draft" value="{{ draft }}" />{% endif %}
     {% if cc_form %}
     <input type="hidden" name="cc_form" value="1" />
     {% for address in ticked %}<input type="hidden" name="cc" value="{{ address }}" />{% endfor %}
@@ -20,7 +36,12 @@
     {% if next_status %}<input type="hidden" name="next_status" value="{{ next_status }}" />{% endif %}
     {% if due_on %}<input type="hidden" name="due_on" value="{{ due_on }}" />{% endif %}
     {% if due_reason %}<input type="hidden" name="due_reason" value="{{ due_reason }}" />{% endif %}
-    <button type="submit">Send email</button>
+    <button type="submit">Send message</button>
+    {% if draft %}
+    <button type="button" class="button-outline" hx-post="/tickets/{{ ticket.number }}/email/discard" hx-vals='{"draft": "{{ draft }}"}'
+            hx-target="#email-preview" hx-swap="innerHTML">Keep editing</button>
+    {% else %}
     <button type="button" class="button-outline" hx-on:click="document.getElementById('email-preview').innerHTML = ''">Keep editing</button>
+    {% endif %}
   </form>
 </div>

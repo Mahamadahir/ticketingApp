@@ -475,7 +475,7 @@ def test_a_follower_reply_reaches_the_agents_labelled_as_from_a_follower(client,
     # The label is the kind chip of the message card the body sits in.
     requester_part = page.split("From the requester")[0].rsplit('<span class="chip', 1)[1].split(">", 1)[1].strip()
     follower_part = page.split("From the boss")[0].rsplit('<span class="chip', 1)[1].split(">", 1)[1].strip()
-    assert requester_part.startswith("From requester") and follower_part.startswith("From follower")
+    assert requester_part.startswith("Portal reply<") and follower_part.startswith("Portal reply from follower")
     db_session.expire_all()
     assert db_session.get(Ticket, ticket.id).updated_at > before
 

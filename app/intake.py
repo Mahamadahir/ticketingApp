@@ -79,11 +79,12 @@ def ignored_as_never_follow(session: Session, address: str, what: str, now: date
 
 
 def record_first_message(
-    session: Session, ticket: Ticket, *, sender: str, body: str, author_id: Optional[int], action: str,
+    session: Session, ticket: Ticket, *, sender: str, body: str, author_id: Optional[int], action: str, channel: str,
     graph_message_id: Optional[str] = None,
 ) -> Message:
-    """The words a ticket was opened with: a public message from the requester, which tells nobody, and the audit entry."""
-    message = record_inbound(session, ticket, sender=sender, body=body, author_user_id=author_id)
+    """The words a ticket was opened with: a public message from the requester, which tells nobody, and the audit entry.
+    `channel` is the one they wrote in (email or teams)."""
+    message = record_inbound(session, ticket, sender=sender, body=body, author_user_id=author_id, channel=channel)
     message.graph_message_id = graph_message_id
     session.flush()
     log_action(session, sender, "ticket", ticket.id, action)
@@ -99,7 +100,7 @@ def record_reply(
     unless the reply is a thank-you; `text` is the new words only) and writes the audit entries. The caller then keeps
     the files and updates the followers. `channel` (email or teams) is remembered as the one the requester last wrote in
     when the sender is the requester (app/reply_channel.py): agent replies follow it."""
-    message = record_inbound(session, ticket, sender=sender, body=body, author_user_id=author_id, reply_by=sender)
+    message = record_inbound(session, ticket, sender=sender, body=body, author_user_id=author_id, reply_by=sender, channel=channel)
     note_requester_wrote(session, ticket, sender, channel)
     message.graph_message_id = graph_message_id
     session.flush()

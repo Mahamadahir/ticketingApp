@@ -621,7 +621,7 @@ def ingest_mail(
         )
     message = record_first_message(
         session, new, sender=sender, body=body, author_id=author_id, action="created_by_email",
-        graph_message_id=mail.graph_message_id,
+        channel=EMAIL, graph_message_id=mail.graph_message_id,
     )
     mailbox = settings.graph_shared_mailbox.strip().lower()
     for address in mail.cc[: count_setting(session, INBOUND_MAX_CC)]:

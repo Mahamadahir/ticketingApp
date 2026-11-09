@@ -30,7 +30,10 @@ from app.outbox import queue_message
 EMAIL = "email"
 PORTAL = "portal"
 TEAMS_CHANNEL = "teams"
-CHANNELS = (EMAIL, PORTAL, TEAMS_CHANNEL)
+CHANNELS = (EMAIL, PORTAL, TEAMS_CHANNEL)  # where a requester can write
+AGENT = "agent"  # typed in the console: an internal note, a ticket logged on someone's behalf
+SYSTEM = "system"  # an automatic notice
+MESSAGE_CHANNELS = (EMAIL, PORTAL, TEAMS_CHANNEL, AGENT, SYSTEM)  # what `Message.channel` may hold
 
 SOURCE_CHANNEL = {
     TicketSource.EMAIL: EMAIL,
@@ -81,14 +84,19 @@ class ReplyRoute:
 def reply_route(session: Session, ticket: Ticket, message: Message) -> ReplyRoute:
     """Where a public message to the requester goes now. Teams only when the channel is Teams and the bot can reach them;
     email in every other case, so nothing is lost."""
+    return route_for(session, ticket, automatic=message.author_user_id is None, copies_followers=bool(message.cc))
+
+
+def route_for(session: Session, ticket: Ticket, *, automatic: bool, copies_followers: bool) -> ReplyRoute:
+    """The rule behind `reply_route`, asked before a message exists too (the preview says where the message will go)."""
     from app.teams import can_message_requester  # here: teams.py imports this module for the fallback
 
     if requester_channel(ticket) != TEAMS_CHANNEL or not can_message_requester(session, ticket):
         return ReplyRoute(email=True, teams=False)
-    if message.author_user_id is None and _notices_to_teams_today(session, ticket) >= _notice_cap(session):
+    if automatic and _notices_to_teams_today(session, ticket) >= _notice_cap(session):
         return ReplyRoute(email=True, teams=False)  # the same cap as automatic email: past it, the email's own cap holds it back
     person = person_for_address(session, ticket.requester_email)
-    return ReplyRoute(email=bool(message.cc) or bool(person and person.teams_replies_also_email), teams=True)
+    return ReplyRoute(email=copies_followers or bool(person and person.teams_replies_also_email), teams=True)
 
 
 def _notice_cap(session: Session) -> int:
@@ -109,7 +117,8 @@ def _notices_to_teams_today(session: Session, ticket: Ticket) -> int:
 
 
 def queue_reply(session: Session, message: Message, ticket: Ticket) -> ReplyRoute:
-    """Queues the public message for the requester by the route above. Does not commit."""
+    """Queues the public message for the requester by the route above. Does not commit. (An agent's reply records the route
+    on the message when it is made, `messages.email_requester`; an automatic notice is `system` whatever the route.)"""
     from app.teams import queue_requester_message
 
     route = reply_route(session, ticket, message)

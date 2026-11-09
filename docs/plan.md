@@ -625,6 +625,8 @@ notes and events (created, triaged, assigned, re-assigned, unassigned, category
 or priority changed, status changed, escalated, split, linked), each with who
 and when. Today events sit in a separate History table.
 
+*Channel and files (9 Nov 2026, #201):* every message records its channel (email, portal, teams, agent for what is typed in the console, system for an automatic notice); an agent's reply records where it went, and the timeline's kind chip says so ("Teams message from requester", "Email to requester"). Agents attach files to an Email user message (held with the preview, limited by the stored-file rules, the inbound count and one email's size) and to an internal note (agents only). A Teams reply carries a line pointing to the portal instead of the file. Details in `docs/build-plan.md`, decisions of 9 Nov 2026.
+
 **Followers.** Requesters and agents can add followers by email. Followers
 are CC'd on public messages and see the ticket under "Following" in the
 portal. Followers are not read-only (corrected 12 Oct 2026): they can respond,

@@ -60,7 +60,7 @@ def test_viewer_cannot_change_anything(client, db_session):
 
     page = client.get(f"/tickets/{ticket.number}").text
     assert "read-only access" in page
-    assert "Preview email" not in page and "Add note" not in page
+    assert "Preview message" not in page and "Add note" not in page
 
     for path, data in (
         ("email", {"body": "hi"}),
@@ -89,7 +89,7 @@ def test_every_agent_can_see_untriaged_tickets_but_must_claim_one_to_work_it(cli
 
     # Visible, with a way to claim it, but not workable until claimed.
     page = client.get(f"/tickets/{new_in_other_team.number}").text
-    assert "assign it to yourself" in page and "Assign to me" in page and "Preview email" not in page
+    assert "assign it to yourself" in page and "Assign to me" in page and "Preview message" not in page
     assert client.post(f"/tickets/{new_in_other_team.number}/email", data={"body": "On it"}).status_code == 403
     assert client.post(f"/tickets/{new_in_other_team.number}/status", data={"status": "open"}).status_code == 403
     assert client.post(f"/tickets/{triaged_elsewhere.number}/assign").status_code == 403

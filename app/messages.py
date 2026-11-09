@@ -15,6 +15,7 @@ from typing import Optional
 
 from sqlmodel import Session, select
 
+from app.attachments import NewFile, store_attachment
 from app.followers import copyable_followers
 from app.models import (
     FINISHED_STATUSES,
@@ -29,7 +30,8 @@ from app.models import (
 from app.request_questions import answer_rows
 from app.notifications import notify_agent_emailed, notify_reply
 from app.sla import note_first_response
-from app.reply_channel import queue_reply
+from app.reply_channel import AGENT, EMAIL, MESSAGE_CHANNELS, PORTAL, SYSTEM, TEAMS_CHANNEL, queue_reply, route_for
+from app.storage import Storage, get_storage
 from app.ticket_service import NotTriaged
 from app.visibility import Access, is_untriaged, ticket_access, visible_ticket_condition
 
@@ -49,13 +51,18 @@ def _record(
     body: str,
     direction: MessageDirection,
     visibility: MessageVisibility,
+    channel: str,
     author_user_id: Optional[int] = None,
     cc: Optional[str] = None,
 ) -> Message:
     """The one place a Message is built, so the invariants cannot drift: an
-    internal note is always agents-only, and any new message touches the ticket."""
+    internal note is always agents-only, any new message touches the ticket, and every message records its
+    channel (required, so a new way of creating one cannot forget it; tests/test_message_channel.py guards that
+    nothing else builds a Message)."""
     if direction == MessageDirection.INTERNAL and visibility != MessageVisibility.AGENTS_ONLY:
         raise ValueError("An internal message must be agents-only")
+    if channel not in MESSAGE_CHANNELS:
+        raise ValueError(f"Unknown channel {channel}")
 
     message = Message(
         ticket_id=ticket.id,
@@ -65,6 +72,7 @@ def _record(
         visibility=visibility,
         author_user_id=author_user_id,
         cc=cc,
+        channel=channel,
     )
     session.add(message)
     ticket.updated_at = datetime.now(timezone.utc)
@@ -104,6 +112,9 @@ class EmailPreview:
     about: Optional[str]
     body: str
     status_after: Optional[TicketStatus] = None  # the status sending would set; None: left as it is
+    by_teams: bool = False  # the message would go to the requester's chat with the bot
+    also_email: bool = True  # and by email (always, unless it goes to Teams only)
+    files: Optional[list] = None  # (name, size) of each file that would be attached, set by the caller that holds them
 
 
 # The statuses an agent may pick when emailing the requester or adding a note. New is left only by
@@ -176,6 +187,7 @@ def preview_email(
         raise EmptyEmail()
     chosen = _copied_followers(session, ticket, cc_emails)
     status_after = chosen_status(session, ticket, next_status, default_status_after_email(ticket))
+    route = route_for(session, ticket, automatic=False, copies_followers=bool(chosen))
     return EmailPreview(
         to=ticket.requester_email,
         cc=[f.email for f in chosen],
@@ -183,6 +195,8 @@ def preview_email(
         about=about_text(ticket) if in_a_split(session, ticket) else None,
         body=body,
         status_after=status_after,
+        by_teams=route.teams,
+        also_email=route.email,
     )
 
 
@@ -195,7 +209,7 @@ def in_a_split(session: Session, ticket: Ticket) -> bool:
 
 def email_requester(
     session: Session, ticket: Ticket, author: User, body: str, cc_emails: Optional[list[str]] = None,
-    bell: bool = True,
+    bell: bool = True, files: Optional[list[NewFile]] = None, storage: Optional[Storage] = None,
 ) -> Message:
     """A public message from an agent to the requester. Records it and queues the email
     (app/outbox.py); the worker sends it (app/mail.py).
@@ -206,7 +220,11 @@ def email_requester(
     copied. The list is recorded on the message, so the timeline shows exactly who
     received it even if the followers change later. The requester and the followers with an account get a bell
     entry (#130) unless bell is False: the caller then tells them itself, or says something more specific
-    (the status it sets next, the resolution)."""
+    (the status it sets next, the resolution).
+
+    `files` are the agent's attachments (already checked by app/reply_files.py): stored on the new message before the
+    email is queued, so the email carries them (app/outbox.queue_message), and the Teams copy points to the portal
+    (app/teams.requester_message_post). The reply route records where it went on the message (`channel`)."""
     if not is_triaged(ticket):
         raise NotTriaged()
     if not body.strip():
@@ -215,14 +233,34 @@ def email_requester(
     chosen = _copied_followers(session, ticket, cc_emails)
     cc = ", ".join(f.email for f in chosen) or None
     note_first_response(ticket, datetime.now(timezone.utc))
+    # Where it will go is decided now (the same rule `queue_reply` applies below, in this transaction) and recorded on the message.
+    route = route_for(session, ticket, automatic=False, copies_followers=bool(cc))
     message = _record(
         session, ticket, sender=author.display_name, body=body, author_user_id=author.id,
         direction=MessageDirection.OUTBOUND, visibility=MessageVisibility.PUBLIC, cc=cc,
+        channel=TEAMS_CHANNEL if route.teams else EMAIL,
     )
+    attach_files(session, ticket, message, author, files, storage)
     queue_reply(session, message, ticket)
     if bell:
         notify_agent_emailed(session, ticket, author.email)
     return message
+
+
+def attach_files(
+    session: Session, ticket: Ticket, message: Message, author: User, files: Optional[list[NewFile]],
+    storage: Optional[Storage] = None,
+) -> list:
+    """Stores an agent's files on the message they wrote, each through `store_attachment` (the one place a file is checked).
+    The files were checked when chosen, so a refusal here is a bug and propagates. Adds rows; the caller commits."""
+    if not files:
+        return []
+    session.flush()  # the message needs its id
+    storage = storage or get_storage()
+    return [
+        store_attachment(session, storage, ticket=ticket, filename=item.filename, data=item.data, message=message, uploaded_by=author)
+        for item in files
+    ]
 
 
 def record_notice(session: Session, ticket: Ticket, body: str, copy_followers: bool = False) -> Message:
@@ -235,18 +273,24 @@ def record_notice(session: Session, ticket: Ticket, body: str, copy_followers: b
         cc = ", ".join(f.email for f in _copied_followers(session, ticket, None)) or None
     message = _record(
         session, ticket, sender="IT Support (automatic)", body=body,
-        direction=MessageDirection.OUTBOUND, visibility=MessageVisibility.PUBLIC, cc=cc,
+        direction=MessageDirection.OUTBOUND, visibility=MessageVisibility.PUBLIC, cc=cc, channel=SYSTEM,
     )
     queue_reply(session, message, ticket)
     return message
 
 
-def add_note(session: Session, ticket: Ticket, author: User, body: str) -> Message:
-    """An internal note. Allowed at any stage and does not triage the ticket."""
-    return _record(
+def add_note(
+    session: Session, ticket: Ticket, author: User, body: str, files: Optional[list[NewFile]] = None,
+    storage: Optional[Storage] = None,
+) -> Message:
+    """An internal note. Allowed at any stage and does not triage the ticket. Its files stay with the note: agents only
+    (app/visibility.may_view_attachment), never in the portal or an email."""
+    note = _record(
         session, ticket, sender=author.display_name, body=body, author_user_id=author.id,
-        direction=MessageDirection.INTERNAL, visibility=MessageVisibility.AGENTS_ONLY,
+        direction=MessageDirection.INTERNAL, visibility=MessageVisibility.AGENTS_ONLY, channel=AGENT,
     )
+    attach_files(session, ticket, note, author, files, storage)
+    return note
 
 
 def record_inbound(
@@ -255,18 +299,19 @@ def record_inbound(
     *,
     sender: str,
     body: str,
+    channel: str,
     author_user_id: Optional[int] = None,
     reply_by: Optional[str] = None,
 ) -> Message:
-    """A message from the requester (portal comment, or mail once Graph is wired
-    up). Always public: the requester wrote it and may see it.
+    """A message from the requester (portal comment, mail, or the Teams bot). Always public: the requester wrote it and
+    may see it. `channel` is where it came from (email, portal, teams), or agent for a ticket an agent logged for someone.
 
     reply_by is the email of the person replying: pass it for a reply on an existing ticket and the
     assigned agent is notified (whatever the status). Leave it out for the message a ticket is
     created with, which tells nobody."""
     message = _record(
         session, ticket, sender=sender, body=body, author_user_id=author_user_id,
-        direction=MessageDirection.INBOUND, visibility=MessageVisibility.PUBLIC,
+        direction=MessageDirection.INBOUND, visibility=MessageVisibility.PUBLIC, channel=channel,
     )
     if reply_by is not None:
         notify_reply(session, ticket, reply_by)
@@ -283,7 +328,7 @@ def record_msp_message(
     for any update from outside."""
     visible = forward not in ("pending", "internal")
     message = _record(
-        session, ticket, sender=sender, body=body, direction=MessageDirection.OUTBOUND,
+        session, ticket, sender=sender, body=body, direction=MessageDirection.OUTBOUND, channel=EMAIL,
         visibility=MessageVisibility.PUBLIC if visible else MessageVisibility.AGENTS_ONLY,
     )
     message.msp_forward = forward
@@ -407,6 +452,28 @@ def about_labels(session: Session, messages: list[Message]) -> dict[int, str]:
     }
 
 
+def kind_label(message: Message, sender_kind: Optional[str] = None) -> str:
+    """The words of a message's kind chip on the agent timeline, from where it came from or went (`Message.channel`):
+    "Email from requester", "Teams message from requester", "Portal reply", "Email to requester", "Teams reply to
+    requester". A message with no recorded channel (an old row that could not be worked out) gets the plain words. Display
+    only: who may see the message is decided by `requester_visible_messages`, never by this."""
+    who = "follower" if sender_kind == "follower" else "requester"
+    channel = message.channel
+    if message.direction == MessageDirection.OUTBOUND:
+        return {
+            EMAIL: "Email to requester", TEAMS_CHANNEL: "Teams reply to requester", SYSTEM: "Automatic message to requester",
+        }.get(channel, "Message to requester")
+    if channel == EMAIL:
+        return f"Email from {who}"
+    if channel == TEAMS_CHANNEL:
+        return f"Teams message from {who}"
+    if channel == PORTAL:
+        return "Portal reply" if who == "requester" else "Portal reply from follower"
+    if channel == AGENT:
+        return "Logged by an agent"
+    return f"From {who}"
+
+
 @dataclass
 class TimelineItem:
     at: datetime
@@ -421,6 +488,10 @@ class TimelineItem:
     @property
     def kind(self) -> str:
         return "message" if self.message is not None else "event"
+
+    @property
+    def label(self) -> str:
+        return kind_label(self.message, self.sender_kind) if self.message is not None else ""
 
 
 def agent_timeline(session: Session, ticket: Ticket, viewer=None) -> list[TimelineItem]:
