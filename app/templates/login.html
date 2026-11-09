@@ -1,13 +1,7 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <title>Sign in</title>
-  <link rel="stylesheet" href="/static/styles.css" />
-</head>
-<body>
-  {% include "_outage_banner.html" %}
-  <main class="login-page">
+{% extends "base.html" %}
+{% block title %}Sign in{% endblock %}
+{% block content %}
+<div class="login-page">
     <h1>IT Support Ticketing</h1>
 
     {% if error %}
@@ -57,6 +51,5 @@
       <button type="submit">Sign in</button>
     </form>
     <p class="note"><a href="/auth/break-glass">Emergency (break-glass) sign-in</a></p>
-  </main>
-</body>
-</html>
+</div>
+{% endblock %}

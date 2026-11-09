@@ -161,6 +161,7 @@ def _list_link(q: str, source: str = ""):
 def list_tickets(
     request: Request,
     mine: bool = False,
+    untriaged: bool = False,
     team_id: Optional[int] = None,
     q: str = "",
     source: Optional[TicketSource] = None,
@@ -186,6 +187,8 @@ def list_tickets(
 
     if mine:
         query = query.where(Ticket.assigned_agent_id == user.id)
+    if untriaged:  # the sidebar's Untriaged item (app/navigation.py counts the same set)
+        query = query.where(Ticket.triaged_at.is_(None), Ticket.status.notin_(FINISHED_STATUSES))
 
     tickets_page = paginate(session, query, page, request.query_params)
     teams_by_id = {team.id: team for team in session.exec(select(Team)).all()}
@@ -205,6 +208,7 @@ def list_tickets(
             "teams": teams,
             "user": user,
             "mine": mine,
+            "untriaged": untriaged,
             "team_id": team_id,
             "q": q,
             "source": source.value if source else "",

@@ -151,9 +151,12 @@ def test_the_kind_filter(client, db_session):
     client.post(f"/tickets/{ticket.number}/email", data={"body": "An email out"})
     client.post(f"/tickets/{ticket.number}/note", data={"body": "A private note"})
 
-    notes = feed(client, kind="notes").text
+    def content(response):  # the page's own content: the frame's navigation has an "Untriaged" item (9A)
+        return response.text.split("<main", 1)[1]
+
+    notes = content(feed(client, kind="notes"))
     assert "A private note" in notes and "An email out" not in notes and "triaged" not in notes
-    conversation = feed(client, kind="conversation").text
+    conversation = content(feed(client, kind="conversation"))
     assert "An email out" in conversation and "It is smoking" in conversation
     assert "A private note" not in conversation and "triaged" not in conversation
     changes = feed(client, kind="events").text

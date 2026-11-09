@@ -1,6 +1,8 @@
 """The one place the Jinja2 environment is built, so every router renders the same way."""
 
+import logging
 from datetime import timezone
+from urllib.parse import parse_qs
 from zoneinfo import ZoneInfo
 
 from fastapi import Request
@@ -13,6 +15,8 @@ from app.backdating import FORMAT as MOMENT_FORMAT
 from app.database import engine
 from app.forms import MAX_MESSAGE_LENGTH
 from app.models import UserRole
+from app.navigation import Shell, build_shell
+from app.theme import LABELS as THEME_LABELS, next_theme, theme_for
 from app import outage
 from app.permissions import ASSIGNABLE_ROLES
 from app.presence import agent_label
@@ -119,3 +123,51 @@ templates.env.filters["local_time"] = _local_time
 templates.env.filters["local_input"] = _local_input
 templates.env.filters["local_date"] = _local_date
 templates.env.globals["viewer_zone"] = _viewer_zone
+
+
+def _viewer(context):
+    """The signed-in person a page is drawn for: the page's own `user`, else the one the request already loaded."""
+    state = getattr(context.get("request"), "state", None)
+    return context.get("user") or getattr(state, "user", None)
+
+
+@pass_context
+def _shell(context) -> Shell:
+    """{% set shell = app_shell() %}: the navigation around a page (app/navigation.py). Only a full page asks for it,
+    never an htmx partial. A failure here must not turn a page (or an error page) into a second error, so it falls back to
+    the bare frame."""
+    request = context.get("request")
+    user = _viewer(context)
+    if user is None or request is None:
+        return Shell(kind="bare")
+    query = parse_qs(request.url.query)
+    try:
+        session = object_session(user)
+        if session is not None:
+            return build_shell(session, user, request.url.path, query)
+        with Session(engine) as own:  # detached (an error page): its own connection
+            return build_shell(own, user, request.url.path, query)
+    except Exception:
+        logging.getLogger(__name__).exception("Could not build the navigation")
+        return Shell(kind="bare")
+
+
+@pass_context
+def _theme(context) -> str:
+    """{{ app_theme() }}: system, light or dark, written as a class on <html> so there is no flash on load."""
+    return theme_for(_viewer(context))
+
+
+templates.env.globals["app_shell"] = _shell
+templates.env.globals["app_theme"] = _theme
+templates.env.globals["next_theme"] = next_theme
+templates.env.globals["theme_labels"] = THEME_LABELS
+
+
+@pass_context
+def _app_viewer(context):
+    """{{ app_viewer() }}: the signed-in person for the frame, even on a page that does not pass `user` itself."""
+    return _viewer(context)
+
+
+templates.env.globals["app_viewer"] = _app_viewer

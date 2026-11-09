@@ -54,6 +54,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/cbf4e82d802a_user_theme.py",
+        "revision": "cbf4e82d802a"
+      },
+      {
         "file": "migrations/versions/8f193a5c2d17_teams_follow_ups.py",
         "revision": "8f193a5c2d17"
       },
@@ -68,17 +72,13 @@
       {
         "file": "migrations/versions/e5fda8ca3a76_anonymised_requester.py",
         "revision": "e5fda8ca3a76"
-      },
-      {
-        "file": "migrations/versions/b12eaa1c47fe_report_indexes.py",
-        "revision": "b12eaa1c47fe"
       }
     ],
-    "count": 65,
+    "count": 66,
     "heads": [
       {
-        "file": "migrations/versions/8f193a5c2d17_teams_follow_ups.py",
-        "revision": "8f193a5c2d17"
+        "file": "migrations/versions/cbf4e82d802a_user_theme.py",
+        "revision": "cbf4e82d802a"
       }
     ]
   },
@@ -358,6 +358,7 @@
         "app.entra_check",
         "app.linked_identities",
         "app.mail",
+        "app.navigation",
         "app.notifications",
         "app.request_types",
         "app.routers.admin",
@@ -2126,6 +2127,7 @@
         "app.messages",
         "app.msp",
         "app.msp_actions",
+        "app.navigation",
         "app.never_follow",
         "app.notification_settings",
         "app.notifications",
@@ -2176,6 +2178,7 @@
         "app.teams_pending",
         "app.templating",
         "app.thanks_rules",
+        "app.theme",
         "app.ticket_service",
         "app.time_zones",
         "app.triage",
@@ -2465,6 +2468,7 @@
         "tests/test_search.py",
         "tests/test_self_approval.py",
         "tests/test_sessions.py",
+        "tests/test_shell.py",
         "tests/test_sla.py",
         "tests/test_split_family.py",
         "tests/test_splitting.py",
@@ -2548,6 +2552,7 @@
         "app.escalation",
         "app.inbound",
         "app.msp_actions",
+        "app.navigation",
         "app.reports",
         "app.routers.admin",
         "app.routers.msp_mail",
@@ -2632,6 +2637,33 @@
       "tests": [
         "tests/test_msp_actions.py",
         "tests/test_reports_more.py"
+      ]
+    },
+    {
+      "classes": [
+        "NavItem",
+        "Shell"
+      ],
+      "file": "app/navigation.py",
+      "functions": [
+        "build_shell"
+      ],
+      "imported_by": [
+        "app.templating"
+      ],
+      "imports": [
+        "app.approvals",
+        "app.models",
+        "app.msp",
+        "app.notifications",
+        "app.visibility"
+      ],
+      "module": "app.navigation",
+      "routes": [],
+      "summary": "The app shell's navigation (9A): the one definition of what each person sees in the sidebar (agents) or the top bar",
+      "tables": [],
+      "tests": [
+        "tests/test_shell.py"
       ]
     },
     {
@@ -2774,6 +2806,7 @@
         "app.linked_identities",
         "app.messages",
         "app.msp",
+        "app.navigation",
         "app.outage",
         "app.reopening",
         "app.resolution",
@@ -2812,6 +2845,7 @@
         "tests/test_notifications.py",
         "tests/test_reply_notification.py",
         "tests/test_requester_bell.py",
+        "tests/test_shell.py",
         "tests/test_teams_approvals.py",
         "tests/test_teams_copy.py",
         "tests/test_teams_copy_sending.py",
@@ -4439,6 +4473,7 @@
         "report_browser_time_zone",
         "save_emergency_password",
         "save_notification_settings",
+        "save_theme",
         "save_time_zone",
         "sign_out_everywhere"
       ],
@@ -4458,6 +4493,7 @@
         "app.settings_store",
         "app.teams_conversations",
         "app.templating",
+        "app.theme",
         "app.time_zones"
       ],
       "module": "app.routers.my_settings",
@@ -4486,6 +4522,11 @@
           "handler": "sign_out_everywhere",
           "method": "POST",
           "path": "/settings/sign-out-everywhere"
+        },
+        {
+          "handler": "save_theme",
+          "method": "POST",
+          "path": "/settings/theme"
         },
         {
           "handler": "save_time_zone",
@@ -5967,9 +6008,11 @@
         "app.database",
         "app.forms",
         "app.models",
+        "app.navigation",
         "app.outage",
         "app.permissions",
         "app.presence",
+        "app.theme",
         "app.time_zones",
         "app.visibility"
       ],
@@ -6018,6 +6061,30 @@
         "tests/test_teams_followups.py",
         "tests/test_teams_intake.py",
         "tests/test_thanks_rules.py"
+      ]
+    },
+    {
+      "classes": [],
+      "file": "app/theme.py",
+      "functions": [
+        "next_theme",
+        "safe_return",
+        "set_theme",
+        "theme_for"
+      ],
+      "imported_by": [
+        "app.routers.my_settings",
+        "app.templating"
+      ],
+      "imports": [
+        "app.models"
+      ],
+      "module": "app.theme",
+      "routes": [],
+      "summary": "The colour theme (9A): a per-person setting. System (the default, stored as None) follows the browser's",
+      "tables": [],
+      "tests": [
+        "tests/test_shell.py"
       ]
     },
     {
@@ -6247,6 +6314,7 @@
         "app.main",
         "app.messages",
         "app.msp_actions",
+        "app.navigation",
         "app.notifications",
         "app.report_kit",
         "app.reports",
@@ -6850,6 +6918,7 @@
     "tests/test_security.py",
     "tests/test_self_approval.py",
     "tests/test_sessions.py",
+    "tests/test_shell.py",
     "tests/test_sla.py",
     "tests/test_split_family.py",
     "tests/test_splitting.py",

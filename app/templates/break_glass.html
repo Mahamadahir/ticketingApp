@@ -1,13 +1,7 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <title>Break-glass sign-in</title>
-  <link rel="stylesheet" href="/static/styles.css" />
-</head>
-<body>
-  {% include "_outage_banner.html" %}
-  <main class="login-page">
+{% extends "base.html" %}
+{% block title %}Break-glass sign-in{% endblock %}
+{% block content %}
+<div class="login-page">
     <h1>Break-glass sign-in</h1>
     <p class="note">
       For emergencies only (for example when Microsoft sign-in is down). Every use is recorded and the
@@ -34,6 +28,5 @@
       <button type="submit">Sign in</button>
     </form>
     <p><a href="/auth/login">Back to the normal sign-in</a></p>
-  </main>
-</body>
-</html>
+</div>
+{% endblock %}
