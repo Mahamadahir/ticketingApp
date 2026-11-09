@@ -74,7 +74,6 @@ TICKET_CREATED = "ticket_created"
 REPLY_ADDED = "reply_added"
 ASKED = "asked"  # a card is waiting for the person to choose
 IGNORED_NEVER_FOLLOW = "ignored_never_follow"
-HANDLED = (TICKET_CREATED, REPLY_ADDED)
 
 NEW_PREFIX = re.compile(r"^\s*new\s*:\s*", re.IGNORECASE)
 FILE_DOWNLOAD_INFO = "application/vnd.microsoft.teams.file.download.info"
@@ -168,7 +167,6 @@ def _over_limit(session: Session, person: User, now: datetime) -> bool:
     count = session.exec(
         select(func.count()).select_from(TeamsIntake).join(Ticket, Ticket.id == TeamsIntake.ticket_id).where(
             func.lower(func.trim(Ticket.requester_email)).in_(requester_emails(person, session)),
-            TeamsIntake.outcome.in_(HANDLED),
             TeamsIntake.created_at >= now - timedelta(hours=1),
         )
     ).one()

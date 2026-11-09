@@ -248,12 +248,16 @@ def get_member(service_url: str, conversation_id: str, teams_user_id: str) -> di
     return result if isinstance(result, dict) else {}
 
 
-class FileRefused(Exception):
-    """A file Teams offered could not be taken: not an https address, larger than the limit, or no longer there."""
-
-
 FILE_TIMEOUT_SECONDS = 30
 FILE_CHUNK = 64 * 1024
+
+
+def new_file_client() -> httpx.Client:
+    return httpx.Client(timeout=FILE_TIMEOUT_SECONDS, follow_redirects=False)
+
+
+class FileRefused(Exception):
+    """A file Teams offered could not be taken: not an https address, larger than the limit, or no longer there."""
 
 
 def fetch_file(url: str, max_bytes: int, *, service_url: Optional[str] = None) -> bytes:
@@ -272,7 +276,7 @@ def fetch_file(url: str, max_bytes: int, *, service_url: Optional[str] = None) -
     if service_url and host == (urlsplit(service_url).hostname or "").lower():
         headers["Authorization"] = f"Bearer {TOKENS.get()}"
     data = bytearray()
-    with httpx.Client(timeout=FILE_TIMEOUT_SECONDS, follow_redirects=False) as client:
+    with new_file_client() as client:
         with client.stream("GET", url, headers=headers) as response:
             if response.status_code in (404, 410):
                 raise FileRefused("no longer available")

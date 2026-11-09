@@ -9,8 +9,9 @@ starting a phase, and `README.md` for how to run it.
 ## State of play
 
 - **Phases 0 to 7 are built; Phase 8 (the Teams bot) is under way: 8A, the foundation (`app/teams_bot.py`, `app/teams_bot_auth.py`,
-  `app/bot_connector.py`, `app/teams_conversations.py`), and 8B (personal notifications as direct messages: `app/bot_cards.py`, `teams.route_for`) are built; 8C and 8D follow** (see "Next up" in `docs/build-plan.md`
-  for the agreed order to go-live). Phase 7 is the reports with CSV export (`app/report_kit.py`,
+  `app/bot_connector.py`, `app/teams_conversations.py`), 8B (personal notifications as direct messages: `app/bot_cards.py`, `teams.route_for`),
+  8C (approvals from the bot's card: `app/teams_approvals.py`) and 8D (ticket intake from Teams: `app/teams_intake.py`; the rules email and Teams share are in
+  `app/intake.py`) are built** (see "Next up" in `docs/build-plan.md` for the agreed order to go-live). Phase 7 is the reports with CSV export (`app/report_kit.py`,
   `app/reports.py`; a report is one entry in `REPORTS`), the subject access export
   (`app/subject_access.py`), requester anonymisation (`app/anonymisation.py`) and the cool storage tier
   (Bicep). Every column that holds a person's data is classified once, in `app/person_data.py`. Phase 6 (identity) is matching on the Entra object id and

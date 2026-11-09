@@ -160,7 +160,7 @@ def choose_ticket_card(tickets: list[Ticket], activity_id: str, text: str) -> di
         if ticket.status == TicketStatus.RESOLVED:
             title = f"{title} (resolved, reopens)"
         buttons.append({
-            "type": "Action.Execute", "title": plain(title)[:CHOICE_TITLE_LENGTH], "verb": VERB_PICK,
+            "type": "Action.Execute", "title": " ".join(title.split())[:CHOICE_TITLE_LENGTH], "verb": VERB_PICK,  # a button title is not markdown
             "data": {"m": activity_id, "t": text, "n": ticket.number},
         })
     buttons.append({"type": "Action.Execute", "title": "A new request", "verb": VERB_NEW, "data": {"m": activity_id, "t": text}, "style": "positive"})
