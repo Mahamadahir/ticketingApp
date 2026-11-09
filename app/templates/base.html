@@ -51,9 +51,9 @@
   {% if shell.kind == "console" %}
   <div class="app">
     <div class="sidebar">
-      <a class="brand" href="/">
+      <a class="brand" href="/" aria-label="IT Support Ticketing, agent console home">
         <span class="brand-mark" aria-hidden="true">IT</span>
-        <span class="brand-text"><span class="brand-name">IT Support Ticketing</span><span class="brand-sub">Agent console</span></span>
+        <span class="brand-text"><span class="brand-name">IT Support</span><span class="brand-sub">Agent console</span></span>
       </a>
       {# A bare <nav>: tests/test_htmx_partials.py counts it to tell a full page from a partial. #}
       <nav>
@@ -64,9 +64,11 @@
         </div>
       </nav>
       <div class="sidebar-person">
-        <span class="avatar" aria-hidden="true">{{ initials }}</span>
-        <span class="person"><span class="person-name">{{ viewer.display_name }}</span><span class="person-role">{{ viewer.role.value }}</span></span>
-        <form method="post" action="/auth/logout" class="inline-form"><button type="submit">Sign out</button></form>
+        <div class="person-row">
+          <span class="avatar" aria-hidden="true">{{ initials }}</span>
+          <span class="person"><span class="person-name">{{ viewer.display_name }}</span><span class="person-role">{{ viewer.role.value }}</span></span>
+        </div>
+        <form method="post" action="/auth/logout"><button type="submit" class="btn btn-block">Sign out</button></form>
       </div>
     </div>
     <div class="app-main">
@@ -91,9 +93,9 @@
   {% elif shell.kind == "portal" %}
   <div class="portal-shell">
     <header class="topbar portal-bar">
-      <a class="brand" href="/portal">
+      <a class="brand" href="/portal" aria-label="IT Support Ticketing home">
         <span class="brand-mark" aria-hidden="true">IT</span>
-        <span class="brand-text"><span class="brand-name">IT Support Ticketing</span></span>
+        <span class="brand-text"><span class="brand-name">IT Support</span></span>
       </a>
       <nav>
         <div class="portal-nav">
@@ -103,7 +105,7 @@
       <div class="topbar-actions">
         {{ topbar_actions(shell, theme, false) }}
         <span class="person-inline"><span class="avatar" aria-hidden="true">{{ initials }}</span><span class="person-name">{{ viewer.display_name }}</span></span>
-        <form method="post" action="/auth/logout" class="inline-form"><button type="submit">Sign out</button></form>
+        <form method="post" action="/auth/logout" class="inline-form"><button type="submit" class="btn">Sign out</button></form>
       </div>
     </header>
     <div id="flash" role="alert"></div>
@@ -114,9 +116,9 @@
   {% else %}
   <div class="portal-shell">
     <header class="topbar portal-bar">
-      <a class="brand" href="/">
+      <a class="brand" href="/" aria-label="IT Support Ticketing home">
         <span class="brand-mark" aria-hidden="true">IT</span>
-        <span class="brand-text"><span class="brand-name">IT Support Ticketing</span></span>
+        <span class="brand-text"><span class="brand-name">IT Support</span></span>
       </a>
     </header>
     <div id="flash" role="alert"></div>

@@ -70,9 +70,11 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .navlink-label { flex: 1; }
 
 .sidebar-person {
-  margin-top: auto; padding: 10px 8px 0; border-top: 1px solid var(--border);
-  display: flex; align-items: center; gap: 10px;
+  margin-top: auto; padding: 12px 8px 0; border-top: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 10px;
 }
+.person-row { display: flex; align-items: center; gap: 10px; }
+.btn-block { width: 100%; }
 .avatar {
   flex: none; width: 32px; height: 32px; border-radius: 999px; background: var(--gray-bg); color: var(--gray);
   display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px;
@@ -93,7 +95,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   background: var(--raised); border: 1px solid var(--border); border-radius: var(--radius); color: var(--muted);
 }
 .search-box:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
-.search-box input { flex: 1; min-width: 0; height: 38px; border: 0; background: transparent; outline: none; color: var(--text); }
+.search-box input[type="search"] { flex: 1; min-width: 0; height: 38px; min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent; outline: none; color: var(--text); }
 .topbar-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
 
 .icon-btn {
