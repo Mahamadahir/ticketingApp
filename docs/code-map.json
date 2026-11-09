@@ -2488,6 +2488,7 @@
         "tests/test_teams_intake.py",
         "tests/test_thanks_rules.py",
         "tests/test_ticket_core.py",
+        "tests/test_ticket_page.py",
         "tests/test_ticket_urls.py",
         "tests/test_tickets_rbac.py",
         "tests/test_time_zones.py",
@@ -5353,6 +5354,7 @@
         "Level",
         "Priority",
         "QueueSla",
+        "SlaRow",
         "SlaView"
       ],
       "file": "app/sla.py",
@@ -5368,6 +5370,7 @@
         "queue_sla",
         "recalculate_deadlines",
         "set_impact_urgency",
+        "sla_rows",
         "sla_view",
         "target_minutes",
         "urgency_options"
@@ -5403,6 +5406,7 @@
         "tests/test_resolution.py",
         "tests/test_scheduled_status.py",
         "tests/test_sla.py",
+        "tests/test_ticket_page.py",
         "tests/test_with_supplier.py"
       ]
     },
@@ -6024,7 +6028,9 @@
       "routes": [],
       "summary": "The one place the Jinja2 environment is built, so every router renders the same way.",
       "tables": [],
-      "tests": []
+      "tests": [
+        "tests/test_ticket_page.py"
+      ]
     },
     {
       "classes": [
@@ -6957,6 +6963,7 @@
     "tests/test_teams_intake.py",
     "tests/test_thanks_rules.py",
     "tests/test_ticket_core.py",
+    "tests/test_ticket_page.py",
     "tests/test_ticket_urls.py",
     "tests/test_tickets_rbac.py",
     "tests/test_time_zones.py",

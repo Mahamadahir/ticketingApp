@@ -309,7 +309,7 @@ def test_the_list_and_ticket_pages_show_priority_and_the_countdown(client, db_se
 
     # The queue words the same clock for scanning ("42m to first response"); the ticket page keeps its own sentence.
     assert "P1" in listing and "to first response" in listing
-    assert "Priority: P1" in detail and "SLA: first response due in" in detail
+    assert "<dt>Priority</dt><dd>P1</dd>" in detail and "SLA: first response due in" in detail
 
 
 def test_a_ticket_triaged_before_priorities_existed_still_lists_and_opens(client, db_session):
@@ -322,7 +322,7 @@ def test_a_ticket_triaged_before_priorities_existed_still_lists_and_opens(client
 
     assert client.get("/tickets").status_code == 200
     detail = client.get(f"/tickets/{old.number}")
-    assert detail.status_code == 200 and "Priority: Not set" in detail.text
+    assert detail.status_code == 200 and "<dt>Priority</dt><dd>Not set</dd>" in detail.text
 
 
 def test_requesters_never_see_priority_or_sla(client, db_session):

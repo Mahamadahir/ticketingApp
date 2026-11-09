@@ -70,7 +70,7 @@ def test_resolving_stores_the_notes_who_resolved_and_when_and_writes_the_event_a
     [audit] = db_session.exec(select(AuditLog).where(AuditLog.action == "resolved")).all()
     assert (audit.entity_id, audit.actor_email, audit.detail) == (ticket.id, "agent@example.com", "Replaced the roller")
     page = client.get(f"/tickets/{ticket.number}").text
-    assert "<h3>Resolution</h3>" in page and "Replaced the roller" in page and "Resolved by Agent Ann" in page
+    assert 'id="resolution-heading">Resolution</h2>' in page and "Replaced the roller" in page and "Resolved by Agent Ann" in page
 
 
 @pytest.mark.parametrize("notes", ["", "   \r\n  "])

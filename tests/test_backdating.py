@@ -172,7 +172,7 @@ def test_backdating_leaves_an_event_and_an_audit_entry_saying_who_and_what(clien
 def test_the_ticket_page_shows_the_dates_and_that_it_was_backdated(client, db_session):
     ticket, _ = triaged_ticket(client, db_session)
     plain = client.get(f"/tickets/{ticket.number}").text
-    assert "Reported:" in plain and "backdated</span>" not in plain
+    assert "<dt>Reported</dt>" in plain and "backdated</span>" not in plain
 
     post(client, ticket, reported_at=ago(days=2).strftime(FORMAT))
     page = client.get(f"/tickets/{ticket.number}").text

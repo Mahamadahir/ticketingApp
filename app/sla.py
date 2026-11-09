@@ -260,6 +260,49 @@ def queue_sla(ticket: Ticket, view: SlaView, now: datetime) -> QueueSla:
     return QueueSla("amber" if view.state == "at_risk" else "green", words)
 
 
+@dataclass
+class SlaRow:
+    label: str
+    tone: str  # gray | blue | amber | red | green
+    text: str  # in words, as queue_sla's are
+
+
+def _clock_row(label: str, due: Optional[datetime], done_at: Optional[datetime], ticket: Ticket, now: datetime,
+               at_risk_percent: int, paused_seconds: int = 0) -> Optional[SlaRow]:
+    """One target of the Service level card: met or missed once done_at is set, else time left or overrun."""
+    if due is None:
+        return None
+    due = _aware(due)
+    if done_at is not None:
+        taken = _span(_aware(done_at) - _aware(ticket.created_at))
+        return SlaRow(label, "red", f"Missed · {taken}") if _aware(done_at) > due else SlaRow(label, "green", f"Met · {taken}")
+    if ticket.sla_paused_at is not None:
+        return SlaRow(label, "blue", "Paused · waiting on requester")
+    remaining = due - now
+    if remaining.total_seconds() < 0:
+        return SlaRow(label, "red", f"Breached {_span(remaining)} ago")
+    window = due - _aware(ticket.created_at) - timedelta(seconds=paused_seconds)
+    at_risk = window.total_seconds() > 0 and remaining <= window * at_risk_percent / 100
+    return SlaRow(label, "amber" if at_risk else "green", f"{_span(remaining)} left")
+
+
+def sla_rows(ticket: Ticket, now: datetime, at_risk_percent: int) -> list[SlaRow]:
+    """The first response and resolution rows of the ticket page's Service level card, in the same words as the
+    queue. Empty when the ticket has no clock (untriaged, or backdated: those are out of SLA figures)."""
+    if ticket.is_backdated or (not ticket.priority and ticket.due_on is None):
+        return []
+    unanswered = ticket.status in FINISHED_STATUSES and ticket.first_responded_at is None  # nothing left to measure
+    rows = [
+        None if unanswered else _clock_row("First response", ticket.first_response_due_at, ticket.first_responded_at, ticket,
+                                           now, at_risk_percent, ticket.sla_paused_seconds),
+        _clock_row("Resolution", ticket.resolution_due_at,
+                   (ticket.resolved_at or ticket.closed_at) if ticket.status in FINISHED_STATUSES else None,
+                   ticket, now, at_risk_percent,
+                   0 if ticket.due_on is not None else ticket.sla_paused_seconds),
+    ]
+    return [r for r in rows if r is not None]
+
+
 def at_risk_percent(session: Session) -> int:
     value = get_int_setting(session, SLA_AT_RISK_PERCENT)
     return value if value is not None and 0 < value < 100 else 25

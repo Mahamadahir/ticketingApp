@@ -2,187 +2,271 @@
 {% block title %}{{ ticket.reference }}{% endblock %}
 {% block content %}
 {% from "_triage_selects.html" import impact_select, urgency_select, category_select %}
-<p><a href="/tickets">&larr; back to tickets</a></p>
-
-<h2>
-  {{ ticket.reference }} {{ ticket.subject }}
-  {% if ticket.is_escalated %}<span class="badge badge-escalated">escalated</span>{% endif %}
-</h2>
-<p>
-  From: {{ ticket.requester_email }}
-  &middot; Type: {{ ticket.type.value.replace("_", " ") }}
-  &middot; Source: {{ source_label }}
-  {% if request_info %}&middot; Request: {{ request_info[0].name }}{% if request_info[1] %} (approval group: {{ request_info[1].name }}){% endif %}{% endif %}
-  &middot; Category: {{ category_path or "Not triaged" }}
-  &middot; Priority: {{ ticket.priority.upper() if ticket.priority else "Not set" }}
-  {% if ticket.required_by %}&middot; Required by: {{ ticket.required_by.isoformat() }}{% endif %}
-  {% if ticket.due_on %}&middot; Due: {{ ticket.due_on.isoformat() }} (end of the day in {{ requester_zone }}){% endif %}
-  &middot; Reported: {{ ticket.reported_at|local_time }}{% if ticket.is_backdated %} <span class="badge">backdated</span>{% endif %}
-  {% if ticket.resolved_at %}&middot; Resolved: {{ ticket.resolved_at|local_time }}{% endif %}
-  &middot; Team: {{ team.name if team else "Unassigned" }}
-  &middot; Assigned: {{ assigned_agent.display_name if assigned_agent else "Unassigned" }}{% if assigned_agent and not assigned_agent.is_active %} (inactive){% endif %}
-  &middot;
-  <span class="status status-{{ ticket.status.value }}">{{ ticket.status.value }}</span>{% if ticket.msp_hold %} <span class="badge">on MSP hold</span>{% endif %}
-  {% if ticket.msp_ticket_number %}&middot; With MSP as MSP ticket #{{ ticket.msp_ticket_number }}{% endif %}
-</p>
-
-{% if approval_waiting %}
-<p class="note"><b>Waiting: no active approvers{% if approval_waiting_group %} in {{ approval_waiting_group.name }}{% endif %}.</b> The approval starts by itself once an active member is added to the group or reactivated. Its status cannot be changed by hand until then. The SLA clock is running.</p>
-{% if can_waive %}
-<form hx-post="/tickets/{{ ticket.number }}/approval/waive" hx-target="main" hx-swap="innerHTML">
-  <p class="note">Super admin: let this request through without waiting for approvers.</p>
-  <button type="submit" class="button-outline">Waive approval</button>
-</form>
-{% endif %}
-{% elif ticket.status.value == "awaiting_approval" %}
-<p class="note"><b>Waiting for approval</b> ({{ approval_rule }}). The ticket moves on when its approvers decide; its status cannot be changed by hand until then. The SLA clock is running.</p>
-{% endif %}
-{% if approvals %}
-<details {{ "open" if ticket.status.value == "awaiting_approval" else "" }}>
-  <summary>Approvals: {{ approval_status }}{% if approval_rule %} ({{ approval_rule }}){% endif %}</summary>
-  <table>
-    <thead><tr><th>Voter</th><th>Answer</th><th>Comment</th><th>When</th></tr></thead>
-    <tbody>
-      {% for approval, approver in approvals %}
-      <tr>
-        <td>{{ approver.display_name or approver.email }}</td>
-        <td>{{ approval.decision.replace("_", " ") }}</td>
-        <td>{{ approval.comment }}</td>
-        <td>{{ approval.decided_at|local_time if approval.decided_at else "" }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  {% if can_waive %}
-  <form hx-post="/tickets/{{ ticket.number }}/approval/waive" hx-target="main" hx-swap="innerHTML">
-    <p class="note">Super admin: let this request through without waiting for the remaining voters.</p>
-    <button type="submit" class="button-outline">Waive approval</button>
-  </form>
-  {% endif %}
+{# One action of the header bar: a disclosure that opens its panel under the button (native <details>, so the keyboard
+   works without a script). Opening one closes the others (the shared name). #}
+{% macro action(label, primary=false, wide=false) %}
+<details class="tp-action" name="ticket-action">
+  <summary class="btn{{ ' btn-primary' if primary else '' }}">{{ label }}</summary>
+  <div class="tp-panel{{ ' tp-panel-wide' if wide else '' }}">{{ caller() }}</div>
 </details>
-{% endif %}
+{% endmacro %}
+{# One item of the More actions menu: a nested disclosure. #}
+{% macro item(label) %}
+<details class="tp-item">
+  <summary>{{ label }}</summary>
+  <div class="tp-item-body">{{ caller() }}</div>
+</details>
+{% endmacro %}
+{% set triaged_actions = ticket.triaged_at and ticket.status.value != "awaiting_approval" %}
+{% set status_label = ticket.status.value.replace("_", " ")|capitalize|replace("msp", "MSP") %}
+<div class="tp">
+<p class="tp-crumbs"><a href="/tickets">&larr; back to tickets</a></p>
 
-{% if ticket.is_escalated %}
-<p class="note">Escalated: {{ ticket.escalation_reason }}</p>
-{% if escalators %}
-<p class="note">Escalated by (each keeps access to this ticket): {% for e in escalators %}{{ e.display_name }} ({{ e.email }}){{ ", " if not loop.last else "" }}{% endfor %}</p>
-{% endif %}
-{% endif %}
+<header class="tp-head">
+  <div class="tp-title">
+    <div class="tp-meta">
+      <span class="ticket-ref">{{ ticket.reference }} &middot; {{ ticket.type.value.replace("_", " ")|capitalize }}</span>
+      <span class="chip {{ 't-red' if ticket.priority == 'p1' else ('t-amber' if ticket.priority == 'p2' else 't-gray') }}">{{ ticket.priority.upper() if ticket.priority else ("Untriaged" if not ticket.triaged_at else "No priority") }}</span>
+      <span class="chip {{ 't-green' if ticket.status.value == 'resolved' else ('t-blue' if ticket.status.value == 'with_msp' else 't-gray') }}">{{ status_label }}</span>
+      <span class="chip t-{{ sla_chip.tone }}">
+        <svg aria-hidden="true" focusable="false" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
+        {{ sla_chip.text }}
+      </span>
+      {% if ticket.is_escalated %}<span class="chip t-red">Escalated</span>{% endif %}
+      {% if ticket.msp_hold %}<span class="chip t-amber">On MSP hold</span>{% endif %}
+      {% if ticket.is_backdated %}<span class="chip t-gray">Backdated</span>{% endif %}
+    </div>
+    <h1>{{ ticket.subject }}</h1>
+    <p class="muted">
+      {{ source_label }} &middot; {{ ticket.requester_email }} &middot; {{ ticket.reported_at|local_time }}
+      &middot; assigned to {{ assigned_agent.display_name if assigned_agent else "no one" }}{% if assigned_agent and not assigned_agent.is_active %} (inactive){% endif %}
+    </p>
+  </div>
 
-{% if sla.state != "none" %}
-<p class="sla sla-{{ sla.state }}">SLA: {{ sla.text }}{% if sla.due %} (due {{ sla.due|local_time }}){% endif %}</p>
-{% endif %}
+  {% if can_work %}
+  <div class="tp-actions" role="group" aria-label="Ticket actions">
+    {% if not assigned_agent and user.role.value == "agent" and can_self_assign %}
+    <form hx-post="/tickets/{{ ticket.number }}/assign" hx-target="main" hx-swap="innerHTML">
+      <button type="submit" class="btn">Assign to me</button>
+    </form>
+    {% endif %}
 
-{% if not can_work %}
-<p class="note">You have read-only access to this ticket.{% if can_claim %} It is untriaged: assign it to yourself to work on it.{% endif %}</p>
-{% if can_claim %}
-<form hx-post="/tickets/{{ ticket.number }}/assign" hx-target="main" hx-swap="innerHTML">
-  <button type="submit">Assign to me</button>
-</form>
-{% endif %}
-{% endif %}
+    {% if not ticket.triaged_at and user.role.value == "super_admin" %}
+    {% call action("Assign") %}
+    <form class="tp-form" hx-post="/tickets/{{ ticket.number }}/assign" hx-target="main" hx-swap="innerHTML">
+      <label>Assign to (without triaging)
+        <select name="agent_id">
+          {% for agent in team_agents %}
+          <option value="{{ agent.id }}" {{ "selected" if assigned_agent and agent.id == assigned_agent.id else "" }}>{{ agent_label(agent) }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button type="submit" class="btn btn-primary">Assign</button>
+    </form>
+    {% endcall %}
+    {% endif %}
 
-{% if answers or can_edit_answers %}
-<h3>Request details</h3>
-{% if answers %}
-<dl>
-  {% for a in answers %}<dt>{{ a.label }}</dt><dd>{{ a.display }}</dd>{% endfor %}
-</dl>
-{% endif %}
-{% if answers_changed_at %}<p class="note">Answers were changed on {{ answers_changed_at|local_time }} after they were first given.{% if answers_changed_after_subrequests %} Sub-requests were already made from the earlier answers; nothing was added or removed for the change, so check them.{% endif %}</p>{% endif %}
-{% if pending_subrequests %}<p class="note">Once this request is approved these sub-requests will be made: {{ pending_subrequests|join("; ") }}.</p>{% endif %}
-{% if can_edit_answers and not can_triage and edit_questions %}
-<form hx-post="/tickets/{{ ticket.number }}/answers" hx-target="main" hx-swap="innerHTML">
-  {% with div_id = "edit-answers", rows = edit_questions, oob = false %}{% include "_request_questions.html" %}{% endwith %}
-  <button type="submit">Save answers</button>
-</form>
-{% endif %}
-{% endif %}
+    {% if can_reassign %}
+    {% call action("Re-assign" if assigned_agent else "Assign") %}
+    <form class="tp-form" hx-post="/tickets/{{ ticket.number }}/reassign" hx-target="main" hx-swap="innerHTML">
+      <label>Team
+        <select name="team_id" hx-get="/tickets/agents-for-team" hx-trigger="change" hx-target="#reassign-agent">
+          {% for t in teams %}
+          <option value="{{ t.id }}" {{ "selected" if ticket.team_id == t.id else "" }}>{{ t.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Agent
+        <select name="agent_id" id="reassign-agent">
+          <option value="">Leave unassigned</option>
+          {% for agent in reassign_agents %}
+          <option value="{{ agent.id }}" {{ "selected" if assigned_agent and agent.id == assigned_agent.id else "" }}>{{ agent_label(agent) }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button type="submit" class="btn btn-primary">{{ "Re-assign" if assigned_agent else "Assign" }}</button>
+    </form>
+    {% endcall %}
+    {% endif %}
 
-{% if can_triage %}
-<h3>Triage</h3>
-<p class="note">Classify this ticket. The category decides the team. Assigning is optional: leave it as is and the team can pick it up.</p>
-<form id="triage-form" hx-post="/tickets/{{ ticket.number }}/triage" hx-target="main" hx-swap="innerHTML">
-  <label>Type
-    <select name="ticket_type">
-      {% for type in ticket_types %}
-      <option value="{{ type.value }}" {{ "selected" if ticket.type == type else "" }}>{{ type.value.replace("_", " ") }}</option>
-      {% endfor %}
-    </select>
-  </label>
-  <label>Impact
-    {{ impact_select(impact_options, "") }}
-  </label>
-  <label>Urgency
-    {{ urgency_select(urgency_options, "") }}
-  </label>
-  {% if request_types %}
-  <label>Kind of request (service requests)
-    <select name="request_type_id"
-      hx-get="/tickets/triage-dates?number={{ ticket.number }}" hx-trigger="change" hx-target="#triage-dates" hx-swap="outerHTML"
-      hx-include="closest form">
-      <option value="">Leave as is{{ " (" ~ request_info[0].name ~ ")" if request_info else " (none)" }}</option>
-      {% for rt in request_types %}<option value="{{ rt.id }}">{{ rt.name }}</option>{% endfor %}
-    </select>
-  </label>
-  {% endif %}
-  {% with offers = offers_required_by, required_by = ticket.required_by.isoformat() if ticket.required_by else "", due_on = ticket.due_on.isoformat() if ticket.due_on else "", due_reason = "", has_due = ticket.due_on is not none %}{% include "_triage_dates.html" %}{% endwith %}
-  {% with div_id = "triage-questions", rows = triage_questions, oob = false %}{% include "_request_questions.html" %}{% endwith %}
-  {% with rows = triage_subrequests %}{% include "_triage_subrequests.html" %}{% endwith %}
-  <label>Category
-    {{ category_select(category_options, none) }}
-  </label>
-  <label>Assign to
-    <select name="agent_id" id="triage-agent">
-      <option value="">Leave as is{{ " (" ~ assigned_agent.display_name ~ (", inactive" if not assigned_agent.is_active else "") ~ ")" if assigned_agent else " (unassigned)" }}</option>
-    </select>
-  </label>
-  {% if can_create_category %}
-  <details>
-    <summary>Create a new category instead</summary>
-    <p class="note">Leave the category above on "Choose a category". A new main category needs a team; a sub-category uses its parent's.</p>
-    <label>Name <input type="text" name="new_category_name" maxlength="80" /></label>
-    <label>Under
-      <select name="new_category_parent_id">
-        <option value="">Nothing: a new main category</option>
-        {% for main in main_categories %}
-        <option value="{{ main.id }}">{{ main.name }}</option>
+    {% call action("Escalate") %}
+    {% if escalation_is_msp %}
+    <p class="note">The escalation target for this category is the MSP: use Send to MSP above.</p>
+    {% elif escalation_team %}
+    <form class="tp-form" hx-post="/tickets/{{ ticket.number }}/escalate" hx-target="main" hx-swap="innerHTML">
+      <p class="note">Goes to {{ escalation_team.name }}, unassigned. You keep access to this ticket. To hand it to a different team, use Re-assign.</p>
+      <textarea name="reason" maxlength="{{ max_message_length }}" placeholder="Why does this need escalating?" required></textarea>
+      <button type="submit" class="btn btn-danger">Escalate to {{ escalation_team.name }}</button>
+    </form>
+    {% else %}
+    <p class="note">Cannot escalate: {{ escalation_blocked }}</p>
+    {% endif %}
+    {% endcall %}
+
+    {% call action("Send to MSP") %}
+    {% if msp_blocked %}
+    <p class="note">Cannot send to the MSP: {{ msp_blocked }}</p>
+    {% else %}
+    <form class="tp-form" hx-post="/tickets/{{ ticket.number }}/send-to-msp/preview" hx-target="#msp-preview" hx-swap="innerHTML"
+          hx-on:input="document.getElementById('msp-preview').innerHTML = ''">
+      <p class="note">The ticket stays in its team, with the status With MSP, and nobody's access changes. You keep access to it and are copied on its mail to the MSP.{% if escalation_is_msp %} This is also what escalating does for this category.{% endif %}</p>
+      <textarea name="reason" maxlength="{{ max_message_length }}" placeholder="Why is it being sent to the MSP?" required></textarea>
+      <label><input type="radio" name="scope" value="thread" checked /> Send the thread (the user's messages, emails sent, comments and notes)</label>
+      <label><input type="radio" name="scope" value="original" /> Send only the original request (use this when it was passed between teams and the MSP does not need that history)</label>
+      <button type="submit" class="btn btn-primary">Preview</button>
+    </form>
+    <div id="msp-preview"></div>
+    {% endif %}
+    {% endcall %}
+
+    {% call action("More actions", wide=true) %}
+    <div class="tp-menu">
+      {% if triaged_actions %}
+      {% call item("Change status") %}
+      <form class="tp-form" hx-post="/tickets/{{ ticket.number }}/status" hx-target="main" hx-swap="innerHTML">
+        <div class="tp-status-buttons">
+          {% for s in statuses %}
+          {% if s.value == "resolved" %}<button type="button" disabled class="button-active">resolved</button>
+          {% elif s.value == "closed" and can_close %}<button type="button" disabled class="button-outline" title="Use Close in More actions: it needs notes and emails the requester">closed</button>{% else %}
+          <button type="submit" name="status" value="{{ s.value }}" class="{{ 'button-active' if ticket.status == s else 'button-outline' }}">{{ s.value.replace("_", " ") }}</button>{% endif %}
+          {% endfor %}
+        </div>
+        <label>Scheduled needs a date: Due
+          <input type="date" name="due_on" value="{{ ticket.due_on.isoformat() if ticket.due_on else "" }}" /></label>
+        <label>Why the date is being moved (only if you change it)
+          <input type="text" name="due_reason" maxlength="500" /></label>
+      </form>
+      {% endcall %}
+      {% endif %}
+
+      {% if can_set_priority %}
+      {% call item("Impact and urgency") %}
+      <form class="tp-form" hx-post="/tickets/{{ ticket.number }}/priority" hx-target="main" hx-swap="innerHTML">
+        <label>Impact
+          <select name="impact">
+            {% for value, label in impact_options %}<option value="{{ value }}" {{ "selected" if ticket.impact == value else "" }}>{{ label }}</option>{% endfor %}
+          </select>
+        </label>
+        <label>Urgency
+          <select name="urgency">
+            {% for value, label in urgency_options %}<option value="{{ value }}" {{ "selected" if ticket.urgency == value else "" }}>{{ label }}</option>{% endfor %}
+          </select>
+        </label>
+        <button type="submit" class="btn">Set priority</button>
+      </form>
+      {% endcall %}
+      {% endif %}
+
+      {% if can_set_required_by %}
+      {% call item("Required by") %}
+      <form class="tp-form" hx-post="/tickets/{{ ticket.number }}/required-by" hx-target="main" hx-swap="innerHTML">
+        <label>Required by ({{ "recorded only: a backdated ticket has no SLA, so a past date is allowed" if ticket.is_backdated else "Due follows it unless you have set Due by hand; not in the past, UTC" }}; blank to remove)
+          <input type="date" name="required_by" value="{{ ticket.required_by.isoformat() if ticket.required_by else "" }}" /></label>
+        <button type="submit" class="btn">Save date</button>
+      </form>
+      {% endcall %}
+      {% endif %}
+
+      {% if can_set_due %}
+      {% call item("Due date") %}
+      <form class="tp-form" hx-post="/tickets/{{ ticket.number }}/due" hx-target="main" hx-swap="innerHTML">
+        <label>Due (the SLA target is the end of this day in {{ requester_zone }}; never after Required by; blank puts it back to the default)
+          <input type="date" name="due_on" value="{{ ticket.due_on.isoformat() if ticket.due_on else "" }}" /></label>
+        <label>Why Due is being moved (required when it changes)
+          <input type="text" name="due_reason" maxlength="500" /></label>
+        <button type="submit" class="btn">Save Due</button>
+      </form>
+      {% endcall %}
+      {% endif %}
+
+      {% if not parent and not has_hidden_parent and can_link %}
+      {% call item("Link") %}
+      <form class="tp-form" hx-post="/tickets/{{ ticket.number }}/link" hx-target="main" hx-swap="innerHTML">
+        <label>Link under a Major Incident or Problem (ticket number, e.g. 1042)
+          <input type="text" name="parent_number" maxlength="40" required />
+        </label>
+        <button type="submit" class="btn">Link</button>
+      </form>
+      {% endcall %}
+      {% endif %}
+
+      {% if can_split %}
+      {% call item("Split ticket") %}
+      <p class="note">Each part with a subject becomes its own ticket, triaged like this one (type, category, impact, urgency, team); amend or assign it on its own page. Leave unused parts blank; a part with details needs a subject. A ticket needs at least two sub-tickets in all and at most {{ max_sub_tickets }} (sub-requests made automatically count too).</p>
+      <form class="tp-form" hx-post="/tickets/{{ ticket.number }}/split" hx-target="main" hx-swap="innerHTML">
+        {% for i in split_slots %}
+        <fieldset>
+          <label>Part {{ loop.index }} subject <input type="text" name="subject" maxlength="200" /></label>
+          <label>Details <textarea name="details" maxlength="5000" rows="2"></textarea></label>
+        </fieldset>
         {% endfor %}
-      </select>
-    </label>
-    <label>Team (main category only)
-      <select name="new_category_team_id">
-        <option value="">Choose a team</option>
-        {% for t in teams %}
-        <option value="{{ t.id }}">{{ t.name }}</option>
-        {% endfor %}
-      </select>
-    </label>
-  </details>
-  {% endif %}
-  <button type="submit">Triage</button>
-</form>
-{% endif %}
+        <button type="submit" class="btn">Split</button>
+      </form>
+      {% endcall %}
+      {% endif %}
 
-{% if can_work %}
-<div class="actions">
-  {% if ticket.triaged_at and ticket.status.value != "awaiting_approval" %}
-  <form hx-post="/tickets/{{ ticket.number }}/status" hx-target="main" hx-swap="innerHTML">
-    {% for s in statuses %}
-    {% if s.value == "resolved" %}<button type="button" disabled class="button-active">resolved</button>
-    {% elif s.value == "closed" and can_close %}<button type="button" disabled class="button-outline" title="Use Close below: it needs notes and emails the requester">closed</button>{% else %}
-    <button type="submit" name="status" value="{{ s.value }}" class="{{ 'button-active' if ticket.status == s else 'button-outline' }}">{{ s.value.replace("_", " ") }}</button>{% endif %}
-    {% endfor %}
-    <label>Scheduled needs a date: Due
-      <input type="date" name="due_on" value="{{ ticket.due_on.isoformat() if ticket.due_on else "" }}" /></label>
-    <label>Why the date is being moved (only if you change it)
-      <input type="text" name="due_reason" maxlength="500" /></label>
-  </form>
-  {% if status_follows_parts %}<p class="note">This ticket has sub-tickets, so its status follows them. You can resolve or close it once they are all finished.</p>{% endif %}
-  {% if can_resolve %}
-  <details>
-    <summary>Resolve</summary>
-    <form hx-post="/tickets/{{ ticket.number }}/resolve/preview" hx-target="#resolve-preview" hx-swap="innerHTML"
+      {% if can_backdate %}
+      {% call item("Backdate (log after the fact)") %}
+      <p class="note">Enter when it was reported or fixed: up to 30 days back, never in the future, times in your time zone ({{ viewer_zone() }}). A backdated ticket counts towards volume but is left out of SLA figures. Leave a box blank to keep that date.</p>
+      <form class="tp-form" hx-post="/tickets/{{ ticket.number }}/backdate" hx-target="main" hx-swap="innerHTML">
+        <label>Reported <input type="datetime-local" name="reported_at" value="{{ ticket.reported_at|local_input }}" /></label>
+        {% if ticket.resolved_at %}
+        <label>Resolved <input type="datetime-local" name="resolved_at" value="{{ ticket.resolved_at|local_input }}" /></label>
+        {% endif %}
+        <button type="submit" class="btn">Save dates</button>
+      </form>
+      {% endcall %}
+      {% endif %}
+
+      {% if not ticket.msp_hold and can_hold %}
+      {% call item("Hold (keep out of the MSP handoff)") %}
+      <form class="tp-form" hx-post="/tickets/{{ ticket.number }}/msp-hold" hx-target="main" hx-swap="innerHTML">
+        <p class="note">Hold keeps this ticket out of the automatic MSP handoff. It lasts until you or someone else releases it.</p>
+        <button type="submit" class="btn">Hold (keep out of the MSP handoff)</button>
+      </form>
+      {% endcall %}
+      {% endif %}
+
+      {% if can_take_back_from_msp %}
+      {% call item("Take back from MSP") %}
+      <form class="tp-form" hx-post="/tickets/{{ ticket.number }}/take-back-from-msp/preview" hx-target="#take-back-preview" hx-swap="innerHTML">
+        <p class="note">Moves the ticket to In progress (or Open if nobody is assigned). You can tell the MSP it is no longer needed.</p>
+        <button type="submit" class="btn">Preview</button>
+      </form>
+      <div id="take-back-preview"></div>
+      {% endcall %}
+      {% endif %}
+
+      {% if triaged_actions and can_close %}
+      {% call item("Close") %}
+      <form class="tp-form" hx-post="/tickets/{{ ticket.number }}/close/preview" hx-target="#close-preview" hx-swap="innerHTML"
+            hx-on:input="document.getElementById('close-preview').innerHTML = ''">
+        <label>Closing notes (why it is being closed; they go into the email to the requester)
+          <textarea name="closing_notes" rows="4" maxlength="{{ max_message_length }}" required></textarea>
+        </label>
+        {% if cc_candidates %}
+        <fieldset>
+          <legend>Copy the closed email to</legend>
+          <input type="hidden" name="cc_form" value="1" />
+          {% for f in cc_candidates %}
+          <label>
+            <input type="checkbox" name="cc" value="{{ f.email }}" checked {{ "disabled" if f.is_internal else "" }} />
+            {{ f.email }}{% if f.is_internal %} <i>(internal, always copied)</i>{% endif %}
+          </label>
+          {% endfor %}
+        </fieldset>
+        {% endif %}
+        <button type="submit" class="btn">Preview closing</button>
+      </form>
+      <div id="close-preview"></div>
+      {% endcall %}
+      {% endif %}
+    </div>
+    {% endcall %}
+
+    {% if triaged_actions and can_resolve %}
+    {% call action("Resolve", primary=true, wide=true) %}
+    <form class="tp-form" hx-post="/tickets/{{ ticket.number }}/resolve/preview" hx-target="#resolve-preview" hx-swap="innerHTML"
           hx-on:input="document.getElementById('resolve-preview').innerHTML = ''">
       <label>Resolution notes (what was done to fix it; they go into the email to the requester)
         <textarea name="resolution_notes" rows="4" maxlength="{{ max_message_length }}" required></textarea>
@@ -199,22 +283,182 @@
         {% endfor %}
       </fieldset>
       {% endif %}
-      <button type="submit">Preview resolution</button>
+      <button type="submit" class="btn btn-primary">Preview resolution</button>
     </form>
     <div id="resolve-preview"></div>
-  </details>
-  {% endif %}
-  {% if can_close %}
-  <details>
-    <summary>Close</summary>
-    <form hx-post="/tickets/{{ ticket.number }}/close/preview" hx-target="#close-preview" hx-swap="innerHTML"
-          hx-on:input="document.getElementById('close-preview').innerHTML = ''">
-      <label>Closing notes (why it is being closed; they go into the email to the requester)
-        <textarea name="closing_notes" rows="4" maxlength="{{ max_message_length }}" required></textarea>
+    {% endcall %}
+    {% endif %}
+
+    {% if triaged_actions and can_reopen %}
+    {% call action("Reopen", primary=not can_resolve) %}
+    <form class="tp-form" hx-post="/tickets/{{ ticket.number }}/reopen" hx-target="main" hx-swap="innerHTML">
+      <label>Why is it being reopened?
+        <textarea name="reason" rows="2" maxlength="{{ max_reason_length }}" required></textarea>
       </label>
+      <button type="submit" class="btn btn-primary">Reopen ticket</button>
+    </form>
+    {% endcall %}
+    {% endif %}
+
+    {% if triaged_actions and can_reclose %}
+    {% call action("Reclose") %}
+    <form class="tp-form" hx-post="/tickets/{{ ticket.number }}/reclose" hx-target="main" hx-swap="innerHTML">
+      <label>Close it again because
+        <select name="reason" required>
+          {% for key, label in reclose_reasons.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+        </select>
+      </label>
+      <p class="note">Reclosing sends no email. To tell the requester why, use Close.</p>
+      <button type="submit" class="btn btn-primary">Reclose ticket</button>
+    </form>
+    {% endcall %}
+    {% endif %}
+  </div>
+  {% endif %}
+</header>
+
+{% if not can_work %}
+<p class="note tp-banner">You have read-only access to this ticket.{% if can_claim %} It is untriaged: assign it to yourself to work on it.{% endif %}</p>
+{% if can_claim %}
+<form hx-post="/tickets/{{ ticket.number }}/assign" hx-target="main" hx-swap="innerHTML">
+  <button type="submit" class="btn">Assign to me</button>
+</form>
+{% endif %}
+{% endif %}
+
+{% if approval_waiting %}
+<p class="note tp-banner"><b>Waiting: no active approvers{% if approval_waiting_group %} in {{ approval_waiting_group.name }}{% endif %}.</b> The approval starts by itself once an active member is added to the group or reactivated. Its status cannot be changed by hand until then. The SLA clock is running.</p>
+{% if can_waive %}
+<form hx-post="/tickets/{{ ticket.number }}/approval/waive" hx-target="main" hx-swap="innerHTML">
+  <p class="note">Super admin: let this request through without waiting for approvers.</p>
+  <button type="submit" class="btn">Waive approval</button>
+</form>
+{% endif %}
+{% elif ticket.status.value == "awaiting_approval" %}
+<p class="note tp-banner"><b>Waiting for approval</b> ({{ approval_rule }}). The ticket moves on when its approvers decide; its status cannot be changed by hand until then. The SLA clock is running.</p>
+{% endif %}
+
+{% if ticket.is_escalated %}
+<p class="note tp-banner">Escalated: {{ ticket.escalation_reason }}</p>
+{% if escalators %}
+<p class="note">Escalated by (each keeps access to this ticket): {% for e in escalators %}{{ e.display_name }} ({{ e.email }}){{ ", " if not loop.last else "" }}{% endfor %}</p>
+{% endif %}
+{% endif %}
+{% if can_work and triaged_actions and status_follows_parts %}<p class="note tp-banner">This ticket has sub-tickets, so its status follows them. You can resolve or close it once they are all finished.</p>{% endif %}
+{% if can_work and triaged_actions and all_parts_done %}<p class="note tp-banner"><b>All sub-tickets are done: resolve this ticket.</b></p>{% endif %}
+
+<div class="tp-body">
+<section class="tp-main" aria-label="Conversation">
+
+{% if can_triage %}
+<section class="card tp-triage" aria-labelledby="triage-heading">
+  <h2 id="triage-heading">Triage</h2>
+  <p class="note">Classify this ticket. The category decides the team. Assigning is optional: leave it as is and the team can pick it up.</p>
+  <form id="triage-form" class="tp-form" hx-post="/tickets/{{ ticket.number }}/triage" hx-target="main" hx-swap="innerHTML">
+    <div class="tp-grid">
+    <label>Type
+      <select name="ticket_type">
+        {% for type in ticket_types %}
+        <option value="{{ type.value }}" {{ "selected" if ticket.type == type else "" }}>{{ type.value.replace("_", " ") }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Impact
+      {{ impact_select(impact_options, "") }}
+    </label>
+    <label>Urgency
+      {{ urgency_select(urgency_options, "") }}
+    </label>
+    {% if request_types %}
+    <label>Kind of request (service requests)
+      <select name="request_type_id"
+        hx-get="/tickets/triage-dates?number={{ ticket.number }}" hx-trigger="change" hx-target="#triage-dates" hx-swap="outerHTML"
+        hx-include="closest form">
+        <option value="">Leave as is{{ " (" ~ request_info[0].name ~ ")" if request_info else " (none)" }}</option>
+        {% for rt in request_types %}<option value="{{ rt.id }}">{{ rt.name }}</option>{% endfor %}
+      </select>
+    </label>
+    {% endif %}
+    <label>Category
+      {{ category_select(category_options, none) }}
+    </label>
+    <label>Assign to
+      <select name="agent_id" id="triage-agent">
+        <option value="">Leave as is{{ " (" ~ assigned_agent.display_name ~ (", inactive" if not assigned_agent.is_active else "") ~ ")" if assigned_agent else " (unassigned)" }}</option>
+      </select>
+    </label>
+    </div>
+    {% with offers = offers_required_by, required_by = ticket.required_by.isoformat() if ticket.required_by else "", due_on = ticket.due_on.isoformat() if ticket.due_on else "", due_reason = "", has_due = ticket.due_on is not none %}{% include "_triage_dates.html" %}{% endwith %}
+    {% with div_id = "triage-questions", rows = triage_questions, oob = false %}{% include "_request_questions.html" %}{% endwith %}
+    {% with rows = triage_subrequests %}{% include "_triage_subrequests.html" %}{% endwith %}
+    {% if can_create_category %}
+    <details class="tp-item">
+      <summary>Create a new category instead</summary>
+      <div class="tp-item-body">
+      <p class="note">Leave the category above on "Choose a category". A new main category needs a team; a sub-category uses its parent's.</p>
+      <label>Name <input type="text" name="new_category_name" maxlength="80" /></label>
+      <label>Under
+        <select name="new_category_parent_id">
+          <option value="">Nothing: a new main category</option>
+          {% for main in main_categories %}
+          <option value="{{ main.id }}">{{ main.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Team (main category only)
+        <select name="new_category_team_id">
+          <option value="">Choose a team</option>
+          {% for t in teams %}
+          <option value="{{ t.id }}">{{ t.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      </div>
+    </details>
+    {% endif %}
+    <button type="submit" class="btn btn-primary">Triage</button>
+  </form>
+</section>
+{% endif %}
+
+{% if ticket.resolution_notes and ticket.status.value in ("resolved", "closed") %}
+<section class="card" aria-labelledby="resolution-heading">
+  <h2 id="resolution-heading">Resolution</h2>
+  <p class="note">{% if ticket.closed_at and ticket.resolved_at == ticket.closed_at %}{# closed without being resolved (the Close action): the notes say why #}Closed by {{ (resolved_by.display_name or resolved_by.email) if resolved_by else "the system" }} on {{ ticket.closed_at|local_time }}{% else %}{% if resolved_by %}Resolved by {{ resolved_by.display_name or resolved_by.email }}{% else %}Resolved automatically{% endif %}{% if ticket.resolved_at %} on {{ ticket.resolved_at|local_time }}{% endif %}{% if ticket.closed_at %}; closed {{ ticket.closed_at|local_time }}{% endif %}{% endif %}.</p>
+  <pre class="message-body">{{ ticket.resolution_notes }}</pre>
+</section>
+{% endif %}
+{% if feedback %}
+<section class="card" aria-labelledby="feedback-heading">
+  <h2 id="feedback-heading">Requester feedback</h2>
+  {% for f in feedback %}
+  <p class="note">{{ f.rating }} out of 5, {{ f.created_at|local_time }}</p>
+  {% if f.comment %}<pre class="message-body">{{ f.comment }}</pre>{% endif %}
+  {% endfor %}
+</section>
+{% endif %}
+
+{% if can_work or can_note %}
+{% set start_on_note = not can_email and can_note %}
+<section class="card tp-composer" aria-label="Reply">
+  {% if can_work %}<input type="radio" class="tp-mode sr-only" name="reply-mode" id="mode-email" {{ "" if start_on_note else "checked" }} />{% endif %}
+  {% if can_note %}<input type="radio" class="tp-mode sr-only" name="reply-mode" id="mode-note" {{ "checked" if start_on_note else "" }} />{% endif %}
+  <div class="segmented tp-segmented">
+    {% if can_work %}<label for="mode-email">Email user</label>{% endif %}
+    {% if can_note %}<label for="mode-note">
+      <svg aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V8a4 4 0 018 0v3"></path></svg>
+      Internal note</label>{% endif %}
+  </div>
+
+  {% if can_email %}
+  <div class="tp-compose tp-compose-email">
+    <form class="tp-form" hx-post="/tickets/{{ ticket.number }}/email/preview" hx-target="#email-preview" hx-swap="innerHTML"
+          hx-on:input="document.getElementById('email-preview').innerHTML = ''">
+      <p class="tp-hint">Goes to {{ ticket.requester_email }} and is copied to {{ cc_candidates|length }} follower{{ "" if cc_candidates|length == 1 else "s" }}.</p>
+      {% with body = "" %}{% include "_email_body.html" %}{% endwith %}
       {% if cc_candidates %}
       <fieldset>
-        <legend>Copy the closed email to</legend>
+        <legend>Copy this email to</legend>
         <input type="hidden" name="cc_form" value="1" />
         {% for f in cc_candidates %}
         <label>
@@ -222,376 +466,278 @@
           {{ f.email }}{% if f.is_internal %} <i>(internal, always copied)</i>{% endif %}
         </label>
         {% endfor %}
+        <p class="note">Unticking someone only leaves them off this email. Remove them under Followers to stop copying them on future ones.</p>
       </fieldset>
       {% endif %}
-      <button type="submit">Preview closing</button>
+      <div class="tp-compose-row">
+        {% if canned %}
+        <label class="tp-canned">Insert a canned response
+          <select name="canned_id" hx-get="/tickets/{{ ticket.number }}/canned" hx-trigger="change"
+                  hx-include="#email-body" hx-target="#email-body" hx-swap="outerHTML"
+                  hx-on::after-request="this.value = ''; document.getElementById('email-preview').innerHTML = ''">
+            <option value="">Choose one...</option>
+            {% for c in canned %}<option value="{{ c.id }}">{{ c.title }}</option>{% endfor %}
+          </select>
+        </label>
+        {% endif %}
+        {% with blank_label = "Default: " ~ email_default_status.value.replace("_", " ") %}{% include "_next_status.html" %}{% endwith %}
+        <button type="submit" class="btn btn-primary">Preview email</button>
+      </div>
     </form>
-    <div id="close-preview"></div>
-  </details>
-  {% endif %}
-  {% if can_reopen %}
-  <details>
-    <summary>Reopen</summary>
-    <form hx-post="/tickets/{{ ticket.number }}/reopen" hx-target="main" hx-swap="innerHTML">
-      <label>Why is it being reopened?
-        <textarea name="reason" rows="2" maxlength="{{ max_reason_length }}" required></textarea>
-      </label>
-      <button type="submit">Reopen ticket</button>
-    </form>
-  </details>
-  {% endif %}
-  {% if can_reclose %}
-  <details>
-    <summary>Reclose</summary>
-    <form hx-post="/tickets/{{ ticket.number }}/reclose" hx-target="main" hx-swap="innerHTML">
-      <label>Close it again because
-        <select name="reason" required>
-          {% for key, label in reclose_reasons.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
-        </select>
-      </label>
-      <p class="note">Reclosing sends no email. To tell the requester why, use Close.</p>
-      <button type="submit">Reclose ticket</button>
-    </form>
-  </details>
-  {% endif %}
-  {% if all_parts_done %}<p class="note"><b>All sub-tickets are done: resolve this ticket.</b></p>{% endif %}
-  {% endif %}
-
-  {% if not ticket.triaged_at and user.role.value == "super_admin" %}
-  <form hx-post="/tickets/{{ ticket.number }}/assign" hx-target="main" hx-swap="innerHTML">
-    <label>Assign to (without triaging)
-      <select name="agent_id">
-        {% for agent in team_agents %}
-        <option value="{{ agent.id }}" {{ "selected" if assigned_agent and agent.id == assigned_agent.id else "" }}>{{ agent_label(agent) }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <button type="submit">Assign</button>
-  </form>
-  {% endif %}
-
-  {% if not assigned_agent and user.role.value == "agent" and can_self_assign %}
-  <form hx-post="/tickets/{{ ticket.number }}/assign" hx-target="main" hx-swap="innerHTML">
-    <button type="submit">Assign to me</button>
-  </form>
-  {% endif %}
-
-  {% if can_set_priority %}
-  <form hx-post="/tickets/{{ ticket.number }}/priority" hx-target="main" hx-swap="innerHTML">
-    <label>Impact
-      <select name="impact">
-        {% for value, label in impact_options %}<option value="{{ value }}" {{ "selected" if ticket.impact == value else "" }}>{{ label }}</option>{% endfor %}
-      </select>
-    </label>
-    <label>Urgency
-      <select name="urgency">
-        {% for value, label in urgency_options %}<option value="{{ value }}" {{ "selected" if ticket.urgency == value else "" }}>{{ label }}</option>{% endfor %}
-      </select>
-    </label>
-    <button type="submit">Set priority</button>
-  </form>
-  {% endif %}
-
-  {% if can_set_required_by %}
-  <form hx-post="/tickets/{{ ticket.number }}/required-by" hx-target="main" hx-swap="innerHTML">
-    <label>Required by ({{ "recorded only: a backdated ticket has no SLA, so a past date is allowed" if ticket.is_backdated else "Due follows it unless you have set Due by hand; not in the past, UTC" }}; blank to remove)
-      <input type="date" name="required_by" value="{{ ticket.required_by.isoformat() if ticket.required_by else "" }}" /></label>
-    <button type="submit">Save date</button>
-  </form>
-  {% endif %}
-
-  {% if can_set_due %}
-  <form hx-post="/tickets/{{ ticket.number }}/due" hx-target="main" hx-swap="innerHTML">
-    <label>Due (the SLA target is the end of this day in {{ requester_zone }}; never after Required by; blank puts it back to the default)
-      <input type="date" name="due_on" value="{{ ticket.due_on.isoformat() if ticket.due_on else "" }}" /></label>
-    <label>Why Due is being moved (required when it changes)
-      <input type="text" name="due_reason" maxlength="500" /></label>
-    <button type="submit">Save Due</button>
-  </form>
-  {% endif %}
-
-  {% if can_backdate %}
-  <details>
-    <summary>Backdate (log after the fact)</summary>
-    <p class="note">Enter when it was reported or fixed: up to 30 days back, never in the future, times in your time zone ({{ viewer_zone() }}). A backdated ticket counts towards volume but is left out of SLA figures. Leave a box blank to keep that date.</p>
-    <form hx-post="/tickets/{{ ticket.number }}/backdate" hx-target="main" hx-swap="innerHTML">
-      <label>Reported <input type="datetime-local" name="reported_at" value="{{ ticket.reported_at|local_input }}" /></label>
-      {% if ticket.resolved_at %}
-      <label>Resolved <input type="datetime-local" name="resolved_at" value="{{ ticket.resolved_at|local_input }}" /></label>
-      {% endif %}
-      <button type="submit">Save dates</button>
-    </form>
-  </details>
-  {% endif %}
-
-  {% if can_reassign %}
-  <form hx-post="/tickets/{{ ticket.number }}/reassign" hx-target="main" hx-swap="innerHTML">
-    <label>Team
-      <select name="team_id" hx-get="/tickets/agents-for-team" hx-trigger="change" hx-target="#reassign-agent">
-        {% for t in teams %}
-        <option value="{{ t.id }}" {{ "selected" if ticket.team_id == t.id else "" }}>{{ t.name }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>Agent
-      <select name="agent_id" id="reassign-agent">
-        <option value="">Leave unassigned</option>
-        {% for agent in reassign_agents %}
-        <option value="{{ agent.id }}" {{ "selected" if assigned_agent and agent.id == assigned_agent.id else "" }}>{{ agent_label(agent) }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <button type="submit">{{ "Re-assign" if assigned_agent else "Assign" }}</button>
-  </form>
-  {% endif %}
-
-  {% if msp_pending %}
-  <div class="msp-pending">
-    <h4>The MSP replied without copying the user</h4>
-    <p class="note">Check what they wrote in the timeline, then pass it on to {{ ticket.requester_email }} or leave it with the agents. In business hours nothing is forwarded until you do; out of hours it is forwarded automatically.</p>
-    {% for m in msp_pending %}
-    <div>
-      <pre class="message-body">{{ m.body }}</pre>
-      <form hx-post="/tickets/{{ ticket.number }}/msp-forward/{{ m.id }}/preview" hx-target="#msp-forward-preview-{{ m.id }}" hx-swap="innerHTML" style="display:inline">
-        <button type="submit">Preview the forward</button>
-      </form>
-      <form hx-post="/tickets/{{ ticket.number }}/msp-forward/{{ m.id }}/dismiss" hx-target="main" hx-swap="innerHTML" style="display:inline">
-        <button type="submit" class="button-outline">Do not forward</button>
-      </form>
-      <div id="msp-forward-preview-{{ m.id }}"></div>
-    </div>
-    {% endfor %}
+    <div id="email-preview"></div>
+  </div>
+  {% elif can_work %}
+  <div class="tp-compose tp-compose-email">
+    <p class="note">Triage this ticket before emailing the requester. You can still add a note.</p>
   </div>
   {% endif %}
 
-  <details>
-    <summary>Send to MSP</summary>
-    {% if msp_blocked %}
-    <p class="note">Cannot send to the MSP: {{ msp_blocked }}</p>
-    {% else %}
-    <form hx-post="/tickets/{{ ticket.number }}/send-to-msp/preview" hx-target="#msp-preview" hx-swap="innerHTML"
-          hx-on:input="document.getElementById('msp-preview').innerHTML = ''">
-      <p class="note">The ticket stays in its team, with the status With MSP, and nobody's access changes. You keep access to it and are copied on its mail to the MSP.{% if escalation_is_msp %} This is also what escalating does for this category.{% endif %}</p>
-      <textarea name="reason" maxlength="{{ max_message_length }}" placeholder="Why is it being sent to the MSP?" required></textarea>
-      <label><input type="radio" name="scope" value="thread" checked /> Send the thread (the user's messages, emails sent, comments and notes)</label>
-      <label><input type="radio" name="scope" value="original" /> Send only the original request (use this when it was passed between teams and the MSP does not need that history)</label>
-      <button type="submit">Preview</button>
+  {% if can_note %}
+  <div class="tp-compose tp-compose-note">
+    <form class="tp-form" hx-post="/tickets/{{ ticket.number }}/note" hx-target="main" hx-swap="innerHTML">
+      <p class="tp-hint">Only agents can see internal notes.</p>
+      <textarea name="body" rows="4" maxlength="{{ max_message_length }}" placeholder="Internal note (agents only, does not triage the ticket)..." required></textarea>
+      <div class="tp-compose-row">
+        {% with blank_label = "No change (" ~ ticket.status.value.replace("_", " ") ~ ")" %}{% include "_next_status.html" %}{% endwith %}
+        <button type="submit" class="btn btn-primary">Add note</button>
+      </div>
     </form>
-    <div id="msp-preview"></div>
-    {% endif %}
-  </details>
-
-  {% if can_take_back_from_msp %}
-  <details>
-    <summary>Take back from MSP</summary>
-    <form hx-post="/tickets/{{ ticket.number }}/take-back-from-msp/preview" hx-target="#take-back-preview" hx-swap="innerHTML">
-      <p class="note">Moves the ticket to In progress (or Open if nobody is assigned). You can tell the MSP it is no longer needed.</p>
-      <button type="submit">Preview</button>
-    </form>
-    <div id="take-back-preview"></div>
-  </details>
+  </div>
   {% endif %}
-
-  {% if ticket.msp_hold %}
-  <form hx-post="/tickets/{{ ticket.number }}/msp-hold/release" hx-target="main" hx-swap="innerHTML">
-    <p class="note"><b>On hold:</b> kept out of the automatic MSP handoff until someone releases it.</p>
-    {% if can_release_hold %}<button type="submit">Release the hold</button>{% endif %}
-  </form>
-  {% elif can_hold %}
-  <form hx-post="/tickets/{{ ticket.number }}/msp-hold" hx-target="main" hx-swap="innerHTML">
-    <p class="note">Hold keeps this ticket out of the automatic MSP handoff. It lasts until you or someone else releases it.</p>
-    <button type="submit" class="button-outline">Hold (keep out of the MSP handoff)</button>
-  </form>
-  {% endif %}
-
-  <details>
-    <summary>Escalate</summary>
-    {% if escalation_is_msp %}
-    <p class="note">The escalation target for this category is the MSP: use Send to MSP above.</p>
-    {% elif escalation_team %}
-    <form hx-post="/tickets/{{ ticket.number }}/escalate" hx-target="main" hx-swap="innerHTML">
-      <p class="note">Goes to {{ escalation_team.name }}, unassigned. You keep access to this ticket. To hand it to a different team, use Re-assign.</p>
-      <textarea name="reason" maxlength="{{ max_message_length }}" placeholder="Why does this need escalating?" required></textarea>
-      <button type="submit" class="button-destructive">Escalate to {{ escalation_team.name }}</button>
-    </form>
-    {% else %}
-    <p class="note">Cannot escalate: {{ escalation_blocked }}</p>
-    {% endif %}
-  </details>
-</div>
-{% endif %}
-{% if ticket.resolution_notes and ticket.status.value in ("resolved", "closed") %}
-<h3>Resolution</h3>
-<p class="note">{% if ticket.closed_at and ticket.resolved_at == ticket.closed_at %}{# closed without being resolved (the Close action): the notes say why #}Closed by {{ (resolved_by.display_name or resolved_by.email) if resolved_by else "the system" }} on {{ ticket.closed_at|local_time }}{% else %}{% if resolved_by %}Resolved by {{ resolved_by.display_name or resolved_by.email }}{% else %}Resolved automatically{% endif %}{% if ticket.resolved_at %} on {{ ticket.resolved_at|local_time }}{% endif %}{% if ticket.closed_at %}; closed {{ ticket.closed_at|local_time }}{% endif %}{% endif %}.</p>
-<pre class="message-body">{{ ticket.resolution_notes }}</pre>
-{% endif %}
-{% if feedback %}
-<h3>Requester feedback</h3>
-{% for f in feedback %}
-<p class="note">{{ f.rating }} out of 5, {{ f.created_at|local_time }}</p>
-{% if f.comment %}<pre class="message-body">{{ f.comment }}</pre>{% endif %}
-{% endfor %}
+</section>
 {% endif %}
 
-<h3>Linked tickets</h3>
-{% if parent %}
-<div>Linked to <a href="/tickets/{{ parent.number }}">{{ parent.reference }}</a> {{ parent.subject }}
-  {% if can_work %}
-  <form hx-post="/tickets/{{ ticket.number }}/unlink" hx-target="main" hx-swap="innerHTML" class="inline-form"><button type="submit">Unlink</button></form>
-  {% endif %}
-</div>
-{% elif has_hidden_parent %}
-<p class="note">Linked to a ticket you cannot open.</p>
-{% if can_work %}
-<form hx-post="/tickets/{{ ticket.number }}/unlink" hx-target="main" hx-swap="innerHTML"><button type="submit">Unlink</button></form>
-{% endif %}
-{% elif can_link %}
-<form hx-post="/tickets/{{ ticket.number }}/link" hx-target="main" hx-swap="innerHTML">
-  <label>Link under a Major Incident or Problem (ticket number, e.g. 1042)
-    <input type="text" name="parent_number" maxlength="40" required />
-  </label>
-  <button type="submit">Link</button>
-</form>
-{% endif %}
-{% if linked or hidden_linked_count %}
-<ul>
-  {% for t in linked %}<li><a href="/tickets/{{ t.number }}">{{ t.reference }}</a> {{ t.subject }} <span class="status status-{{ t.status.value }}">{{ t.status.value.replace("_", " ") }}</span></li>{% endfor %}
-</ul>
-{% if linked and can_work %}<p><a href="/bulk-resolve?parent={{ ticket.number }}">Resolve this ticket and its linked tickets together</a></p>{% endif %}
-{% if more_linked_count %}<p class="note">Showing the first {{ linked|length }}; {{ more_linked_count }} more you can open are not listed.</p>{% endif %}
-{% if hidden_linked_count %}<p class="note">{{ hidden_linked_count }} more linked ticket{{ "s" if hidden_linked_count != 1 else "" }} you cannot open.</p>{% endif %}
-{% endif %}
-
-{% if related %}
-<h3>Related tickets</h3>
-<ul>
-  {% for t, which in related %}<li><a href="/tickets/{{ t.number }}">{{ t.reference }}</a> {{ t.subject }} <span class="status status-{{ t.status.value }}">{{ t.status.value.replace("_", " ") }}</span> <span class="note">({{ "this ticket follows on from it" if which == "earlier" else "opened after this one was closed" }})</span></li>{% endfor %}
-</ul>
-{% endif %}
-
-<h3>Sub-tickets</h3>
-{% if original %}
-<p>Split from <a href="/tickets/{{ original.number }}">{{ original.reference }}</a> {{ original.subject }}</p>
-{% elif has_hidden_original %}
-<p class="note">Split from a ticket you cannot open.</p>
-{% endif %}
-{% if sub_tickets or hidden_sub_count %}
-<ul>
-  {% for t in sub_tickets %}<li><a href="/tickets/{{ t.number }}">{{ t.reference }}</a> {{ t.subject }} <span class="status status-{{ t.status.value }}">{{ t.status.value.replace("_", " ") }}</span></li>{% endfor %}
-</ul>
-{% if more_sub_count %}<p class="note">Showing the first {{ sub_tickets|length }}; {{ more_sub_count }} more you can open are not listed.</p>{% endif %}
-{% if hidden_sub_count %}<p class="note">{{ hidden_sub_count }} more sub-ticket{{ "s" if hidden_sub_count != 1 else "" }} you cannot open.</p>{% endif %}
-{% endif %}
-{% if can_split %}
-<details>
-  <summary>Split ticket</summary>
-  <p class="note">Each part with a subject becomes its own ticket, triaged like this one (type, category, impact, urgency, team); amend or assign it on its own page. Leave unused parts blank; a part with details needs a subject. A ticket needs at least two sub-tickets in all and at most {{ max_sub_tickets }} (sub-requests made automatically count too).</p>
-  <form hx-post="/tickets/{{ ticket.number }}/split" hx-target="main" hx-swap="innerHTML">
-    {% for i in split_slots %}
-    <fieldset>
-      <label>Part {{ loop.index }} subject <input type="text" name="subject" maxlength="200" /></label>
-      <label>Details <textarea name="details" maxlength="5000" rows="2"></textarea></label>
-    </fieldset>
-    {% endfor %}
-    <button type="submit">Split</button>
-  </form>
-</details>
-{% endif %}
-
-<h3>Followers</h3>
-<p class="note">Copied on every email to the requester. Internal followers are agents, such as whoever escalated the ticket; they are copied while they follow, and following does not give access to the ticket.</p>
-<ul>
-  {% for follower in followers %}
-  <li>
-    {{ follower.email }}{% if follower.is_internal %} <i>(internal)</i>{% endif %}
-    {% if can_edit_followers %}
-    <form hx-post="/tickets/{{ ticket.number }}/followers/{{ follower.id }}/remove" hx-target="main" hx-swap="innerHTML" class="inline-form">
-      <button type="submit">Remove</button>
-    </form>
-    {% endif %}
-  </li>
-  {% else %}
-  <li>No followers.</li>
-  {% endfor %}
-</ul>
-{% if can_edit_followers %}
-<form hx-post="/tickets/{{ ticket.number }}/followers" hx-target="main" hx-swap="innerHTML">
-  <input type="email" name="email" placeholder="person@example.org" required />
-  <button type="submit">Add follower</button>
-</form>
-{% endif %}
-
-<h3>Timeline</h3>
-<div id="thread">
+<h2 class="sr-only" id="timeline-heading">Timeline</h2>
+<ol id="thread" class="tp-thread" aria-labelledby="timeline-heading">
   {% for item in timeline %}
+  <li>
   {% if item.message %}
   {% set message = item.message %}
-  <div class="message message-{{ message.direction.value }}">
-    <div class="message-meta">
-      {% if item.source %}<span class="note">[{{ item.source.reference }} {{ item.source.subject }}]</span>{% endif %}
-      {% if message.direction.value == "internal" %}<b>Internal note</b> (agents only)
-      {% elif message.msp_forward %}<b>From the MSP</b>{% if message.msp_forward == "pending" %} (the user was not on it; agents only until forwarded){% elif message.msp_forward == "forwarded" %} (forwarded to the user){% elif message.msp_forward == "dismissed" %} (not forwarded){% elif message.msp_forward == "internal" %} (acknowledgement; agents only){% endif %}{% if message.msp_unverified %} <span class="badge">sender not verified</span>{% endif %}
-      {% elif message.direction.value == "outbound" %}<b>Email to requester</b>{% if message.cc %} (cc: {{ message.cc }}){% endif %}
-      {% elif item.sender_kind == "follower" %}<b>From follower</b>
-      {% else %}<b>From requester</b>{% endif %}
-      &middot; {{ message.sender }} &middot; {{ message.created_at|local_time }}
-    </div>
-    <div class="message-body">{{ message.body }}</div>
-  </div>
+  {% set internal = message.direction.value == "internal" %}
+  <article class="tp-msg{{ ' tp-msg-note' if internal else '' }}">
+    <header class="tp-msg-head">
+      <span class="avatar tp-avatar" aria-hidden="true">{{ message.sender|initials }}</span>
+      <span class="tp-who">{{ message.sender }}</span>
+      {% if internal %}<span class="chip t-amber"><svg aria-hidden="true" focusable="false" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V8a4 4 0 018 0v3"></path></svg>Internal note · not visible to requester</span>
+      {% elif message.msp_forward %}<span class="chip t-blue">From the MSP{% if message.msp_forward == "pending" %} (the user was not on it; agents only until forwarded){% elif message.msp_forward == "forwarded" %} (forwarded to the user){% elif message.msp_forward == "dismissed" %} (not forwarded){% elif message.msp_forward == "internal" %} (acknowledgement; agents only){% endif %}</span>{% if message.msp_unverified %} <span class="chip t-red">sender not verified</span>{% endif %}
+      {% elif message.direction.value == "outbound" %}<span class="chip t-blue">Email to requester{% if message.cc %} (cc: {{ message.cc }}){% endif %}</span>
+      {% elif item.sender_kind == "follower" %}<span class="chip t-gray">From follower</span>
+      {% else %}<span class="chip t-gray">From requester</span>{% endif %}
+      {% if item.source %}<span class="muted small">[{{ item.source.reference }} {{ item.source.subject }}]</span>{% endif %}
+      <time class="tp-when">{{ message.created_at|local_time }}</time>
+    </header>
+    <div class="message-body tp-msg-body">{{ message.body }}</div>
+    {% if message_files.get(message.id) %}
+    <ul class="tp-files" aria-label="Attachments">
+      {% for file in message_files[message.id] %}<li><a href="/attachments/{{ file.id }}">{{ file.filename }}</a> <span class="muted small">({{ ((file.size / 1024)|round(1)) if file.size >= 1024 else file.size }}{{ " KB" if file.size >= 1024 else " bytes" }})</span></li>{% endfor %}
+    </ul>
+    {% endif %}
+  </article>
   {% else %}
   {% set event = item.event %}
-  <div class="event">
+  <div class="tp-event event">
+    <span class="tp-dot" aria-hidden="true"></span>
+    <span>
     {% if item.source %}<span class="note">[{{ item.source.reference }} {{ item.source.subject }}]</span>{% endif %}
-    {{ event.created_at|local_time }} &middot;
     {% if event.event_type == "with_msp_through" %}With the MSP through {{ event.to_value }}{% else %}{{ event.event_type.replace("_", " ") }}{% endif %}
     {% if event.event_type != "with_msp_through" and (event.from_value or event.to_value) %}: {{ event.from_value or "none" }}{% if event.event_type == "backdated" and event.from_value %} UTC{% endif %} &rarr; {{ event.to_value or "none" }}{% if event.event_type == "backdated" and event.to_value %} UTC{% endif %}{% endif %}
     {% if event.detail %} ({{ event.detail }}){% endif %}
     &middot; {{ event.actor_email or "system" }}
+    </span>
+    <time class="tp-when">{{ event.created_at|local_time }}</time>
   </div>
   {% endif %}
+  </li>
   {% endfor %}
+</ol>
+</section>
+
+<aside class="tp-side" aria-label="Ticket details">
+  <section class="card tp-card" aria-labelledby="sla-heading">
+    <h2 id="sla-heading">Service level</h2>
+    {% if sla_rows %}
+    <ul class="tp-rows">
+      {% for row in sla_rows %}<li><span>{{ row.label }}</span><span class="chip t-{{ row.tone }}">{{ row.text }}</span></li>{% endfor %}
+      {% if ticket.due_on %}<li><span>Due</span><b>{{ ticket.due_on.isoformat() }}, end of day</b></li>{% endif %}
+    </ul>
+    {% else %}
+    <p class="muted">{{ sla_chip.text }}.</p>
+    {% if ticket.due_on %}<ul class="tp-rows"><li><span>Due</span><b>{{ ticket.due_on.isoformat() }}, end of day</b></li></ul>{% endif %}
+    {% endif %}
+    {% if sla.state != "none" %}
+    <p class="sla sla-{{ sla.state }}">SLA: {{ sla.text }}{% if sla.due %} (due {{ sla.due|local_time }}){% endif %}</p>
+    {% endif %}
+    {% if ticket.due_on %}<p class="note">The SLA target is the end of the Due day in {{ requester_zone }}.</p>{% endif %}
+  </section>
+
+  <section class="card tp-card" aria-labelledby="details-heading">
+    <h2 id="details-heading">Details</h2>
+    <dl class="dl tp-dl">
+      <dt>Requester</dt><dd>{{ ticket.requester_email }}<br><span class="muted">{{ requester_zone }}</span></dd>
+      <dt>Team</dt><dd>{{ team.name if team else "Unassigned" }}</dd>
+      <dt>Assigned</dt><dd>{{ assigned_agent.display_name if assigned_agent else "Unassigned" }}{% if assigned_agent and not assigned_agent.is_active %} (inactive){% endif %}</dd>
+      <dt>Category</dt><dd>{{ category_path or "Not triaged" }}</dd>
+      <dt>Priority</dt><dd>{{ ticket.priority.upper() if ticket.priority else "Not set" }}</dd>
+      <dt>Impact</dt><dd>{{ (impact_options|selectattr(0, "equalto", ticket.impact)|first)[1] if ticket.impact else "Not set" }}</dd>
+      <dt>Urgency</dt><dd>{{ (urgency_options|selectattr(0, "equalto", ticket.urgency)|first)[1] if ticket.urgency else "Not set" }}</dd>
+      <dt>Source</dt><dd>{{ source_label }}</dd>
+      {% if request_info %}<dt>Request</dt><dd>{{ request_info[0].name }}{% if request_info[1] %} (approval group: {{ request_info[1].name }}){% endif %}</dd>{% endif %}
+      {% if ticket.required_by %}<dt>Required by</dt><dd>{{ ticket.required_by.isoformat() }}</dd>{% endif %}
+      {% if ticket.due_on %}<dt>Due</dt><dd>{{ ticket.due_on.isoformat() }} (end of the day in {{ requester_zone }})</dd>{% endif %}
+      <dt>Reported</dt><dd>{{ ticket.reported_at|local_time }}{% if ticket.is_backdated %} <span class="badge">backdated</span>{% endif %}</dd>
+      {% if ticket.resolved_at %}<dt>Resolved</dt><dd>{{ ticket.resolved_at|local_time }}</dd>{% endif %}
+    </dl>
+    {% if answers or can_edit_answers %}
+    <h3 class="tp-sub">Request details</h3>
+    {% if answers %}
+    <dl class="dl tp-dl">
+      {% for a in answers %}<dt>{{ a.label }}</dt><dd>{{ a.display }}</dd>{% endfor %}
+    </dl>
+    {% endif %}
+    {% if answers_changed_at %}<p class="note">Answers were changed on {{ answers_changed_at|local_time }} after they were first given.{% if answers_changed_after_subrequests %} Sub-requests were already made from the earlier answers; nothing was added or removed for the change, so check them.{% endif %}</p>{% endif %}
+    {% if pending_subrequests %}<p class="note">Once this request is approved these sub-requests will be made: {{ pending_subrequests|join("; ") }}.</p>{% endif %}
+    {% if can_edit_answers and not can_triage and edit_questions %}
+    <form class="tp-form" hx-post="/tickets/{{ ticket.number }}/answers" hx-target="main" hx-swap="innerHTML">
+      {% with div_id = "edit-answers", rows = edit_questions, oob = false %}{% include "_request_questions.html" %}{% endwith %}
+      <button type="submit" class="btn">Save answers</button>
+    </form>
+    {% endif %}
+    {% endif %}
+  </section>
+
+  <section class="card tp-card" aria-labelledby="followers-heading">
+    <h2 id="followers-heading">Followers</h2>
+    <p class="note">Copied on every email to the requester. Internal followers are agents, such as whoever escalated the ticket; they are copied while they follow, and following does not give access to the ticket.</p>
+    <ul class="tp-rows">
+      {% for follower in followers %}
+      <li>
+        <span>{{ follower.email }}{% if follower.is_internal %} <i>(internal)</i>{% endif %}</span>
+        {% if can_edit_followers %}
+        <form hx-post="/tickets/{{ ticket.number }}/followers/{{ follower.id }}/remove" hx-target="main" hx-swap="innerHTML" class="inline-form">
+          <button type="submit" class="btn">Remove</button>
+        </form>
+        {% endif %}
+      </li>
+      {% else %}
+      <li>No followers.</li>
+      {% endfor %}
+    </ul>
+    {% if can_edit_followers %}
+    <form class="tp-form tp-inline-add" hx-post="/tickets/{{ ticket.number }}/followers" hx-target="main" hx-swap="innerHTML">
+      <input type="email" name="email" placeholder="person@example.org" aria-label="Follower's email address" required />
+      <button type="submit" class="btn">Add follower</button>
+    </form>
+    {% endif %}
+  </section>
+
+  {% if parent or has_hidden_parent or linked or hidden_linked_count or related or original or has_hidden_original or sub_tickets or hidden_sub_count %}
+  <section class="card tp-card" aria-labelledby="linked-heading">
+    <h2 id="linked-heading">Linked tickets</h2>
+    {% if parent %}
+    <div>Linked to <a href="/tickets/{{ parent.number }}">{{ parent.reference }}</a> {{ parent.subject }}
+      {% if can_work %}
+      <form hx-post="/tickets/{{ ticket.number }}/unlink" hx-target="main" hx-swap="innerHTML" class="inline-form"><button type="submit" class="btn">Unlink</button></form>
+      {% endif %}
+    </div>
+    {% elif has_hidden_parent %}
+    <p class="note">Linked to a ticket you cannot open.</p>
+    {% if can_work %}
+    <form hx-post="/tickets/{{ ticket.number }}/unlink" hx-target="main" hx-swap="innerHTML"><button type="submit" class="btn">Unlink</button></form>
+    {% endif %}
+    {% endif %}
+    {% if linked or hidden_linked_count %}
+    <ul class="tp-list">
+      {% for t in linked %}<li><a href="/tickets/{{ t.number }}">{{ t.reference }}</a> {{ t.subject }} <span class="status status-{{ t.status.value }}">{{ t.status.value.replace("_", " ") }}</span></li>{% endfor %}
+    </ul>
+    {% if linked and can_work %}<p><a href="/bulk-resolve?parent={{ ticket.number }}">Resolve this ticket and its linked tickets together</a></p>{% endif %}
+    {% if more_linked_count %}<p class="note">Showing the first {{ linked|length }}; {{ more_linked_count }} more you can open are not listed.</p>{% endif %}
+    {% if hidden_linked_count %}<p class="note">{{ hidden_linked_count }} more linked ticket{{ "s" if hidden_linked_count != 1 else "" }} you cannot open.</p>{% endif %}
+    {% endif %}
+
+    {% if related %}
+    <h3 class="tp-sub">Related tickets</h3>
+    <ul class="tp-list">
+      {% for t, which in related %}<li><a href="/tickets/{{ t.number }}">{{ t.reference }}</a> {{ t.subject }} <span class="status status-{{ t.status.value }}">{{ t.status.value.replace("_", " ") }}</span> <span class="note">({{ "this ticket follows on from it" if which == "earlier" else "opened after this one was closed" }})</span></li>{% endfor %}
+    </ul>
+    {% endif %}
+
+    {% if original or has_hidden_original or sub_tickets or hidden_sub_count %}
+    <h3 class="tp-sub">Sub-tickets</h3>
+    {% if original %}
+    <p>Split from <a href="/tickets/{{ original.number }}">{{ original.reference }}</a> {{ original.subject }}</p>
+    {% elif has_hidden_original %}
+    <p class="note">Split from a ticket you cannot open.</p>
+    {% endif %}
+    {% if sub_tickets or hidden_sub_count %}
+    <ul class="tp-list">
+      {% for t in sub_tickets %}<li><a href="/tickets/{{ t.number }}">{{ t.reference }}</a> {{ t.subject }} <span class="status status-{{ t.status.value }}">{{ t.status.value.replace("_", " ") }}</span></li>{% endfor %}
+    </ul>
+    {% if more_sub_count %}<p class="note">Showing the first {{ sub_tickets|length }}; {{ more_sub_count }} more you can open are not listed.</p>{% endif %}
+    {% if hidden_sub_count %}<p class="note">{{ hidden_sub_count }} more sub-ticket{{ "s" if hidden_sub_count != 1 else "" }} you cannot open.</p>{% endif %}
+    {% endif %}
+    {% endif %}
+  </section>
+  {% endif %}
+
+  {% if approvals %}
+  <section class="card tp-card" aria-labelledby="approvals-heading">
+    <h2 id="approvals-heading">Approvals: {{ approval_status }}{% if approval_rule %} ({{ approval_rule }}){% endif %}</h2>
+    <div class="table-box">
+    <table class="table tp-approvals">
+      <thead><tr><th scope="col">Voter</th><th scope="col">Answer</th><th scope="col">Comment</th><th scope="col">When</th></tr></thead>
+      <tbody>
+        {% for approval, approver in approvals %}
+        <tr>
+          <td>{{ approver.display_name or approver.email }}</td>
+          <td>{{ approval.decision.replace("_", " ") }}</td>
+          <td>{{ approval.comment }}</td>
+          <td>{{ approval.decided_at|local_time if approval.decided_at else "" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% if can_waive %}
+    <form hx-post="/tickets/{{ ticket.number }}/approval/waive" hx-target="main" hx-swap="innerHTML">
+      <p class="note">Super admin: let this request through without waiting for the remaining voters.</p>
+      <button type="submit" class="btn">Waive approval</button>
+    </form>
+    {% endif %}
+  </section>
+  {% endif %}
+
+  {% if ticket.status.value == "with_msp" or ticket.msp_ticket_number or ticket.msp_hold or msp_pending %}
+  <section class="card tp-card" aria-labelledby="msp-heading">
+    <h2 id="msp-heading">MSP</h2>
+    {% if ticket.status.value == "with_msp" %}<p>With the MSP.</p>{% endif %}
+    {% if ticket.msp_ticket_number %}<p>With MSP as MSP ticket #{{ ticket.msp_ticket_number }}</p>{% endif %}
+    {% if can_work and ticket.msp_hold %}
+    <form class="tp-form" hx-post="/tickets/{{ ticket.number }}/msp-hold/release" hx-target="main" hx-swap="innerHTML">
+      <p class="note"><b>On hold:</b> kept out of the automatic MSP handoff until someone releases it.</p>
+      {% if can_release_hold %}<button type="submit" class="btn">Release the hold</button>{% endif %}
+    </form>
+    {% endif %}
+    {% if can_work and msp_pending %}
+    <div class="msp-pending">
+      <h3>The MSP replied without copying the user</h3>
+      <p class="note">Check what they wrote in the timeline, then pass it on to {{ ticket.requester_email }} or leave it with the agents. In business hours nothing is forwarded until you do; out of hours it is forwarded automatically.</p>
+      {% for m in msp_pending %}
+      <div>
+        <pre class="message-body">{{ m.body }}</pre>
+        <form hx-post="/tickets/{{ ticket.number }}/msp-forward/{{ m.id }}/preview" hx-target="#msp-forward-preview-{{ m.id }}" hx-swap="innerHTML" style="display:inline">
+          <button type="submit" class="btn">Preview the forward</button>
+        </form>
+        <form hx-post="/tickets/{{ ticket.number }}/msp-forward/{{ m.id }}/dismiss" hx-target="main" hx-swap="innerHTML" style="display:inline">
+          <button type="submit" class="btn">Do not forward</button>
+        </form>
+        <div id="msp-forward-preview-{{ m.id }}"></div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </section>
+  {% endif %}
+</aside>
 </div>
-
-{% if can_email %}
-<form hx-post="/tickets/{{ ticket.number }}/email/preview" hx-target="#email-preview" hx-swap="innerHTML"
-      hx-on:input="document.getElementById('email-preview').innerHTML = ''">
-  {% if canned %}
-  <label>Insert a canned response
-    <select name="canned_id" hx-get="/tickets/{{ ticket.number }}/canned" hx-trigger="change"
-            hx-include="#email-body" hx-target="#email-body" hx-swap="outerHTML"
-            hx-on::after-request="this.value = ''; document.getElementById('email-preview').innerHTML = ''">
-      <option value="">Choose one...</option>
-      {% for c in canned %}<option value="{{ c.id }}">{{ c.title }}</option>{% endfor %}
-    </select>
-  </label>
-  {% endif %}
-  {% with body = "" %}{% include "_email_body.html" %}{% endwith %}
-  {% if cc_candidates %}
-  <fieldset>
-    <legend>Copy this email to</legend>
-    <input type="hidden" name="cc_form" value="1" />
-    {% for f in cc_candidates %}
-    <label>
-      <input type="checkbox" name="cc" value="{{ f.email }}" checked {{ "disabled" if f.is_internal else "" }} />
-      {{ f.email }}{% if f.is_internal %} <i>(internal, always copied)</i>{% endif %}
-    </label>
-    {% endfor %}
-    <p class="note">Unticking someone only leaves them off this email. Remove them under Followers to stop copying them on future ones.</p>
-  </fieldset>
-  {% endif %}
-  {% with blank_label = "Default: " ~ email_default_status.value.replace("_", " ") %}{% include "_next_status.html" %}{% endwith %}
-  <button type="submit">Preview email</button>
-</form>
-<div id="email-preview"></div>
-{% elif can_work %}
-<p class="note">Triage this ticket before emailing the requester. You can still add a note.</p>
-{% endif %}
-
-{% if can_note %}
-<form hx-post="/tickets/{{ ticket.number }}/note" hx-target="main" hx-swap="innerHTML">
-  <textarea name="body" rows="3" maxlength="{{ max_message_length }}" placeholder="Internal note (agents only, does not triage the ticket)..." required></textarea>
-  {% with blank_label = "No change (" ~ ticket.status.value.replace("_", " ") ~ ")" %}{% include "_next_status.html" %}{% endwith %}
-  <button type="submit" class="button-outline">Add note</button>
-</form>
-{% endif %}
+</div>
 {% endblock %}

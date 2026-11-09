@@ -94,7 +94,7 @@ from app.messages import (
     preview_email,
     status_choices,
 )
-from app.models import FINISHED_STATUSES, CannedResponse, Category, Message, RequestType, Team, Ticket, TicketSource, TicketStatus, TicketType, User, UserRole
+from app.models import FINISHED_STATUSES, Attachment, CannedResponse, Category, Message, RequestType, Team, Ticket, TicketSource, TicketStatus, TicketType, User, UserRole
 from app.pagination import paginate
 from app.team_activity import KIND_LABELS, Kind, describe as describe_activity, feed_query
 from app.sla import (
@@ -105,6 +105,7 @@ from app.sla import (
     describe_priority,
     queue_order,
     queue_sla,
+    sla_rows,
     set_impact_urgency,
     sla_view,
 )
@@ -1588,6 +1589,19 @@ def _may_close(session: Session, ticket: Ticket) -> bool:
     return _may(check_can_close, CloseError, session, ticket)
 
 
+def _message_files(session: Session, timeline) -> dict[int, list[Attachment]]:
+    """The files that came with each message on the timeline (not the pictures inside a body), by message id.
+    Downloading is still checked per file by /attachments/{id}."""
+    ids = [item.message.id for item in timeline if item.message is not None]
+    files: dict[int, list[Attachment]] = {}
+    if ids:
+        for attachment in session.exec(
+            select(Attachment).where(Attachment.message_id.in_(ids), Attachment.is_inline.is_(False)).order_by(Attachment.id)
+        ).all():
+            files.setdefault(attachment.message_id, []).append(attachment)
+    return files
+
+
 def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session: Session) -> HTMLResponse:
     ticket_approval = current_approval(session, ticket)
     ticket_votes = votes_of(session, ticket_approval)
@@ -1646,6 +1660,9 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
         if ticket.split_from_id is not None
         else sub_tickets_summary(session, ticket, visible_ticket_condition(user, levels))
     )
+
+    now = datetime.now(timezone.utc)
+    sla_now = sla_view(ticket, now, at_risk_percent(session))
 
     return templates.TemplateResponse(
         request,
@@ -1720,7 +1737,10 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             "can_link": can_work and ticket.triaged_at is not None and linked_total == 0,
             "impact_options": impact_options(),
             "urgency_options": urgency_options(),
-            "sla": sla_view(ticket, datetime.now(timezone.utc), at_risk_percent(session)),
+            "sla": sla_now,
+            "sla_chip": queue_sla(ticket, sla_now, now),
+            "sla_rows": sla_rows(ticket, now, at_risk_percent(session)),
+            "message_files": _message_files(session, timeline),
             "moment_format": MOMENT_FORMAT,
             "can_backdate": may_backdate(ticket),
             "can_set_required_by": (offers_required_by(session, ticket) or ticket.required_by is not None)

@@ -310,7 +310,7 @@ def test_the_agent_page_shows_the_request_and_its_approvers_but_the_requester_do
     ticket = db_session.exec(select(Ticket)).one()
 
     page = client.get(f"/tickets/{ticket.number}").text
-    assert "Request: New starter (approval group: New starter group)" in page
+    assert "<dt>Request</dt><dd>New starter (approval group: New starter group)</dd>" in page
 
     client.post("/auth/logout")
     login_as(client, "walkin@example.com")
