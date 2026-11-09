@@ -17,6 +17,7 @@ The sender is passed in (post_card is the real one) so tests never touch the net
 
 import logging
 import re
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional
 
@@ -32,12 +33,15 @@ from app.visibility import Access, access_context, ticket_access
 log = logging.getLogger("app.teams")
 
 NEW_TICKET = "new_ticket"
-NOTIFICATION = "notification"  # an agent's unread notification, sent as a post that @mentions them
+NOTIFICATION = "notification"  # a person's unread notification: a direct message from the bot, else a post that @mentions them
+DIRECT = "direct"
+CHANNEL = "channel"
 # A failed post waits 2, 4, 8, 16, 32, 60, 60 minutes before its next try, so a Teams outage of a few
 # hours is ridden out; after that it is left alone with its reason.
 MAX_ATTEMPTS = 8
 MAX_BACKOFF_MINUTES = 60
 BATCH = 20
+WEBHOOK_MISSING_RETRY_MINUTES = 5  # a channel post in a process that has no webhook URL is looked at again after this
 TIMEOUT_SECONDS = 10
 # A 4xx other than these means the request itself is refused (a revoked or wrong webhook), which
 # retrying cannot fix.
@@ -73,6 +77,13 @@ def plain(text: str) -> str:
     return "".join("\\" + c if c in MARKDOWN_CHARACTERS else c for c in text)
 
 
+def ticket_link(ticket: Ticket) -> Optional[str]:
+    """Where the "Open ticket" button of a card goes, or None while the web app's address is not known."""
+    if not settings.ticket_link_base:
+        return None
+    return f"{settings.ticket_link_base.rstrip('/')}/tickets/{ticket.number}"
+
+
 def message(card: dict) -> dict:
     """The Teams Workflows payload: a message carrying one Adaptive Card."""
     return {
@@ -101,8 +112,8 @@ def new_ticket_card(ticket: Ticket) -> dict:
         "version": "1.4",
         "body": body,
     }
-    if settings.ticket_link_base:
-        link = f"{settings.ticket_link_base.rstrip('/')}/tickets/{ticket.number}"
+    link = ticket_link(ticket)
+    if link:
         card["actions"] = [{"type": "Action.OpenUrl", "title": "Open ticket", "url": link}]
     return message(card)
 
@@ -190,14 +201,53 @@ def notification_card(notification: Notification, person: User, ticket: Optional
             ]
         },
     }
-    if ticket is not None and settings.ticket_link_base:
-        link = f"{settings.ticket_link_base.rstrip('/')}/tickets/{ticket.number}"
+    link = ticket_link(ticket) if ticket is not None else None
+    if link:
         card["actions"] = [{"type": "Action.OpenUrl", "title": "Open ticket", "url": link}]
     return message(card)
 
 
-def notification_post(session: Session, post: TeamsPost) -> dict:
-    if not settings.teams_notifications_enabled:
+@dataclass(frozen=True)
+class BotDelivery:
+    """What a builder returns when the post goes to a person as a direct message from the bot, rather than to the
+    channel webhook: where the conversation is, and the Adaptive Card itself (not the Workflows payload)."""
+
+    service_url: str
+    conversation_id: str
+    card: dict
+
+
+def notifications_on() -> bool:
+    """Whether Teams copies of notifications are sent at all: to the channel (the switch) or as direct messages
+    (the bot). The worker queues copies only while this is true; with it false, due copies are dropped."""
+    return settings.teams_notifications_enabled or settings.teams_bot_configured
+
+
+def route_for(session: Session, person: User):
+    """The one place that decides how a person's Teams copy travels, worked out when it is sent (so a person who
+    installs the app after the copy was queued still gets it in the chat): a direct message from the bot when the bot
+    is on and the person has a conversation with it, else the channel @mention when that is switched on, else None
+    (the copy is dropped). Returns (DIRECT, conversation row), (CHANNEL, None) or (None, None)."""
+    if settings.teams_bot_configured:
+        from app.teams_conversations import reference_for  # imported here: it needs bot_connector, which needs this module
+
+        conversation = reference_for(session, person)
+        if conversation is not None:
+            return DIRECT, conversation
+    if settings.teams_notifications_enabled:
+        return CHANNEL, None
+    return None, None
+
+
+def can_deliver(session: Session, person: User) -> bool:
+    """Whether a Teams copy for this person has anywhere to go right now. Asked when the copy is handed over, so a
+    person with no conversation (and no channel fallback) is dropped there, counted with the other drops, rather
+    than leaving a failed row in the outbox for every notification."""
+    return route_for(session, person)[0] is not None
+
+
+def notification_post(session: Session, post: TeamsPost):
+    if not notifications_on():
         # Switched off after this was queued: the switch is checked again at send time, not only when queuing.
         raise Unsendable("Sending notifications to Teams is switched off")
     notification = session.get(Notification, post.notification_id) if post.notification_id else None
@@ -206,16 +256,26 @@ def notification_post(session: Session, post: TeamsPost) -> dict:
     person = session.get(User, notification.user_id)
     if person is None:
         raise Unsendable("Person not found")
+    if not person.is_active:
+        # Inactive and anonymised people (an anonymised account is made inactive) are never messaged.
+        raise Unsendable("The person is no longer active")
     ticket = session.get(Ticket, notification.ticket_id) if notification.ticket_id else None
     if ticket is not None and ticket_access(person, ticket, access_context(session, person)) < Access.READ:
         # Checked again at send time: the ticket may have moved team since the copy was queued.
         raise Unsendable("The person can no longer open the ticket")
-    return notification_card(notification, person, ticket)
+    route, conversation = route_for(session, person)
+    if route == DIRECT:
+        from app.bot_cards import notification_card as direct_card  # the bot's cards live in one module (8C extends it)
+
+        return BotDelivery(conversation.service_url, conversation.conversation_id, direct_card(notification, ticket))
+    if route == CHANNEL:
+        return notification_card(notification, person, ticket)
+    raise Unsendable("No Teams conversation with the bot, and notifications to the channel are switched off")
 
 
 # One builder per kind of post: it turns the row into the payload to send, or raises Unsendable.
 # A new kind of post is one builder and one entry here; sending, backoff and giving up are shared.
-CARD_BUILDERS: dict[str, Callable[[Session, TeamsPost], dict]] = {
+CARD_BUILDERS: dict[str, Callable[[Session, TeamsPost], "dict | BotDelivery"]] = {
     NEW_TICKET: new_ticket_post,
     NOTIFICATION: notification_post,
 }
@@ -242,29 +302,47 @@ def give_up(post: TeamsPost, reason: str) -> None:
     post.last_error = reason
 
 
+def send_bot(delivery: BotDelivery) -> None:
+    """Sends one direct message through the Bot Connector (app/bot_connector.py). Raises on any failure; the outbox
+    records it like a webhook failure (never the token or the address)."""
+    from app.bot_connector import ConversationRef, send_card  # imported here: bot_connector imports this module
+
+    send_card(ConversationRef(delivery.service_url, delivery.conversation_id), delivery.card)
+
+
 def deliver_pending(
     session: Session,
     send: Optional[Callable[[dict], None]] = None,
     limit: int = BATCH,
     now: Optional[datetime] = None,
+    bot_send: Optional[Callable[[BotDelivery], None]] = None,
 ) -> tuple[int, int]:
-    """Sends the oldest unsent posts that are due, up to `limit`. A post that fails waits longer each
-    time (see MAX_ATTEMPTS) and is given up on at once if Teams refuses the request itself. The row
-    keeps the reason. One failure never stops the rest. Returns (sent, failed). Does not commit;
+    """Sends the oldest unsent posts that are due, up to `limit`: a webhook payload through `send`, a direct message
+    from the bot through `bot_send`. A post that fails waits longer each time (see MAX_ATTEMPTS) and is given up on
+    at once if Teams refuses the request itself. The row keeps the reason. One failure never stops the rest. A post
+    that needs the webhook waits, untried, in a process that has no URL. Returns (sent, failed). Does not commit;
     the worker commits after the job."""
     send = send or post_card
+    bot_send = bot_send or send_bot
     now = now or datetime.now(timezone.utc)
     due = (
         TeamsPost.sent_at.is_(None),
         TeamsPost.attempts < MAX_ATTEMPTS,
         or_(TeamsPost.next_attempt_at.is_(None), TeamsPost.next_attempt_at <= now),
     )
-    if not settings.teams_new_ticket_configured:
-        waiting = session.exec(select(TeamsPost.id).where(*due).limit(1)).first()
+    webhook = settings.teams_new_ticket_configured
+    if not webhook:
+        waiting = session.exec(select(TeamsPost.id).where(*due, TeamsPost.kind == NEW_TICKET).limit(1)).first()
+        if waiting is None and not settings.teams_bot_configured:
+            waiting = session.exec(select(TeamsPost.id).where(*due).limit(1)).first()
         if waiting is not None:
             # Announcing is switched on but this process cannot send: say so rather than let posts pile up.
             log.warning("Teams posts are waiting but TEAMS_NEW_TICKET_WEBHOOK_URL is not set in this process (it is the one webhook for every kind of post)")
-        return 0, 0
+        if not settings.teams_bot_configured:
+            return 0, 0
+        # Only the bot can send here. New-ticket cards always need the webhook, so they are left out rather than
+        # filling the batch; a notification that would go to the channel is deferred below.
+        due = (*due, TeamsPost.kind != NEW_TICKET)
     posts = session.exec(
         select(TeamsPost).where(*due).order_by(TeamsPost.id).limit(limit).with_for_update(skip_locked=True)
     ).all()
@@ -283,8 +361,19 @@ def deliver_pending(
             session.add(post)
             failed += 1
             continue
+        direct = isinstance(payload, BotDelivery)
+        if not direct and not webhook:
+            # Not an attempt (nothing was tried), but not looked at again at once either: it would fill every batch
+            # ahead of the direct messages behind it.
+            post.next_attempt_at = now + timedelta(minutes=WEBHOOK_MISSING_RETRY_MINUTES)
+            session.add(post)
+            log.warning("Teams post %s goes to the channel but TEAMS_NEW_TICKET_WEBHOOK_URL is not set in this process", post.id)
+            continue
         try:
-            send(payload)
+            if direct:
+                bot_send(payload)
+            else:
+                send(payload)
         except Exception as error:
             record_failure(post, error, now)
             log.warning("Teams post %s failed (attempt %s): %s", post.id, post.attempts, post.last_error)

@@ -26,7 +26,7 @@ from app.presence import CHECK_EVERY_SECONDS, refresh_presence
 from app.time_zones import refresh_requester_zones
 from app.subscriptions import CATCH_UP_EVERY_SECONDS, SUBSCRIPTION_EVERY_SECONDS, catch_up, keep_subscription_alive
 from app.notifications import drop_due_for_teams, hand_to_teams
-from app.teams import deliver_pending, queue_notification
+from app.teams import can_deliver, deliver_pending, notifications_on, queue_notification
 
 
 @dataclass(frozen=True)
@@ -50,10 +50,10 @@ def teams_posts(session: Session) -> None:
 
 def teams_copies(session: Session) -> None:
     """Queues the Teams copy of each notification that is due (app.notifications.hand_to_teams); the
-    teams-posts job then sends them. With the switch off, due copies are dropped, not left to pile up
+    teams-posts job then sends them. With neither the channel switch nor the bot on, due copies are dropped, not left to pile up
     and arrive in a flood the day it is switched on."""
-    if settings.teams_notifications_enabled:
-        hand_to_teams(session, queue_notification)
+    if notifications_on():
+        hand_to_teams(session, queue_notification, can_deliver=can_deliver)
     else:
         drop_due_for_teams(session)
 

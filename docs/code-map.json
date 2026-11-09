@@ -635,6 +635,31 @@
       ]
     },
     {
+      "classes": [],
+      "file": "app/bot_cards.py",
+      "functions": [
+        "card_shell",
+        "notification_card",
+        "open_ticket_action",
+        "what_happened_card"
+      ],
+      "imported_by": [
+        "app.teams"
+      ],
+      "imports": [
+        "app.models",
+        "app.notifications",
+        "app.teams"
+      ],
+      "module": "app.bot_cards",
+      "routes": [],
+      "summary": "The Adaptive Cards the Teams bot sends to a person in their own chat (phase 8B), built in this one module.",
+      "tables": [],
+      "tests": [
+        "tests/test_teams_dm.py"
+      ]
+    },
+    {
       "classes": [
         "BotAuthFailed",
         "BotNotConfigured",
@@ -655,6 +680,7 @@
         "sleep"
       ],
       "imported_by": [
+        "app.teams",
         "app.teams_bot",
         "app.teams_conversations"
       ],
@@ -667,7 +693,8 @@
       "summary": "A small client for the Bot Connector REST API (phase 8A), over httpx.",
       "tables": [],
       "tests": [
-        "tests/test_teams_bot.py"
+        "tests/test_teams_bot.py",
+        "tests/test_teams_dm.py"
       ]
     },
     {
@@ -954,6 +981,7 @@
         "tests/test_teams.py",
         "tests/test_teams_bot.py",
         "tests/test_teams_copy_sending.py",
+        "tests/test_teams_dm.py",
         "tests/test_time_zones.py",
         "tests/test_visibility.py",
         "tests/test_wiring_3f.py",
@@ -1530,6 +1558,7 @@
         "tests/test_scheduled_jobs.py",
         "tests/test_teams.py",
         "tests/test_teams_copy_sending.py",
+        "tests/test_teams_dm.py",
         "tests/test_time_zones.py",
         "tests/test_worker.py"
       ]
@@ -1954,6 +1983,7 @@
         "app.auto_close_chase",
         "app.backdating",
         "app.bank_holidays",
+        "app.bot_cards",
         "app.breakglass",
         "app.bulk_resolve",
         "app.canned",
@@ -2314,6 +2344,7 @@
         "tests/test_teams_bot.py",
         "tests/test_teams_copy.py",
         "tests/test_teams_copy_sending.py",
+        "tests/test_teams_dm.py",
         "tests/test_thanks_rules.py",
         "tests/test_ticket_core.py",
         "tests/test_ticket_urls.py",
@@ -2542,7 +2573,8 @@
         "tests/test_notification_followup.py",
         "tests/test_notification_settings.py",
         "tests/test_requester_bell.py",
-        "tests/test_teams_copy.py"
+        "tests/test_teams_copy.py",
+        "tests/test_teams_dm.py"
       ]
     },
     {
@@ -2590,6 +2622,7 @@
         "app.approval_reminders",
         "app.approvals",
         "app.auto_close_chase",
+        "app.bot_cards",
         "app.closing",
         "app.due_today",
         "app.emergency",
@@ -2637,7 +2670,8 @@
         "tests/test_reply_notification.py",
         "tests/test_requester_bell.py",
         "tests/test_teams_copy.py",
-        "tests/test_teams_copy_sending.py"
+        "tests/test_teams_copy_sending.py",
+        "tests/test_teams_dm.py"
       ]
     },
     {
@@ -4201,6 +4235,7 @@
         "app.notifications",
         "app.sessions",
         "app.settings_store",
+        "app.teams_conversations",
         "app.templating",
         "app.time_zones"
       ],
@@ -5348,11 +5383,13 @@
     },
     {
       "classes": [
+        "BotDelivery",
         "Unsendable"
       ],
       "file": "app/teams.py",
       "functions": [
         "backoff_minutes",
+        "can_deliver",
         "deliver_pending",
         "describe_failure",
         "give_up",
@@ -5363,15 +5400,20 @@
         "new_ticket_post",
         "notification_card",
         "notification_post",
+        "notifications_on",
         "plain",
         "post_card",
         "queue_new_ticket",
         "queue_notification",
-        "record_failure"
+        "record_failure",
+        "route_for",
+        "send_bot",
+        "ticket_link"
       ],
       "imported_by": [
         "app.approval_reminders",
         "app.auto_close_chase",
+        "app.bot_cards",
         "app.bot_connector",
         "app.inbound",
         "app.jobs",
@@ -5381,9 +5423,12 @@
         "app.ticket_service"
       ],
       "imports": [
+        "app.bot_cards",
+        "app.bot_connector",
         "app.config",
         "app.models",
         "app.notifications",
+        "app.teams_conversations",
         "app.visibility"
       ],
       "module": "app.teams",
@@ -5400,6 +5445,7 @@
         "tests/test_teams.py",
         "tests/test_teams_bot.py",
         "tests/test_teams_copy_sending.py",
+        "tests/test_teams_dm.py",
         "tests/test_wiring_3f.py",
         "tests/test_withdraw.py"
       ]
@@ -5469,6 +5515,8 @@
         "save_reference"
       ],
       "imported_by": [
+        "app.routers.my_settings",
+        "app.teams",
         "app.teams_bot"
       ],
       "imports": [
@@ -6411,6 +6459,7 @@
     "tests/test_teams_bot.py",
     "tests/test_teams_copy.py",
     "tests/test_teams_copy_sending.py",
+    "tests/test_teams_dm.py",
     "tests/test_thanks_rules.py",
     "tests/test_ticket_core.py",
     "tests/test_ticket_urls.py",
