@@ -290,3 +290,53 @@ def test_the_page_says_how_many_files_and_how_big(client, db_session):
     page = client.get(f"/portal/{ticket.number}").text
     assert 'hx-encoding="multipart/form-data"' in page and 'name="files"' in page and "Add a file" in page
     assert "Up to 20 files, 10 MB each." in page
+
+
+# ---- code review follow-ups ------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("status", list(TicketStatus))
+def test_every_status_has_exactly_one_current_step_that_matches_the_chip(db_session, status):
+    ticket = make(db_session, status, due_on=date(2026, 11, 12))
+    chip = requester_status(db_session, ticket, "UTC")
+    steps = requester_steps(ticket, chip)
+    assert [s.state for s in steps].count("current") == 1
+    current = next(s for s in steps if s.state == "current")
+    expected = {
+        "Waiting for your reply": "Waiting for you",
+        "Scheduled": "Scheduled for Thursday 12 November",
+        "Closed": "Closed",
+    }.get(chip.label, chip.label)
+    assert current.label == expected
+
+
+def test_a_follower_is_not_told_the_wait_is_for_them(client, db_session):
+    from app.followers import add_follower
+
+    ticket = make(db_session, TicketStatus.AWAITING_USER)
+    add_follower(db_session, ticket, "pal@example.com", "jo@example.com")
+    db_session.commit()
+    login_as(client, "pal@example.com")
+    page = client.get(f"/portal/{ticket.number}").text
+    assert "Waiting for a reply" in page and "Waiting for you" not in page and "Waiting for your reply" not in page
+    assert "IT Support is waiting to hear from you" not in page and "rq-reply-wanted" not in page
+
+
+def test_an_agent_whose_name_is_an_address_is_shown_as_it_support(client, db_session):
+    team = create_team(db_session, "Service Desk")
+    agent_id = login_as(client, "jsmith@vardags.com", "jsmith@vardags.com")
+    set_role(db_session, agent_id, UserRole.AGENT, team.id)
+    ticket = make(db_session, TicketStatus.OPEN, team_id=team.id, assigned_agent_id=agent_id)
+    say(db_session, ticket, "On it", MessageDirection.OUTBOUND, sender="jsmith@vardags.com", author=agent_id)
+    client.post("/auth/logout")
+    login_as(client, "jo@example.com")
+    page = client.get(f"/portal/{ticket.number}").text
+    assert "jsmith" not in page and "<dt>Handled by</dt><dd>IT Support</dd>" in page and '<span class="rq-who">IT Support</span>' in page
+
+
+def test_the_first_message_an_agent_logged_for_the_requester_reads_as_theirs(client, db_session):
+    ticket = make(db_session, TicketStatus.OPEN)
+    say(db_session, ticket, "Phoned in", MessageDirection.INBOUND, sender="Logged by Sam for Jo", channel="agent")
+    login_as(client, "jo@example.com", "Jo Lee")
+    page = client.get(f"/portal/{ticket.number}").text
+    assert '<span class="rq-who">You</span>' in page and "Logged by" not in page

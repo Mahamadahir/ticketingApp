@@ -1,3 +1,4 @@
+from dataclasses import replace
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
@@ -53,8 +54,7 @@ from app.storage import Storage, get_storage
 from app.messages import (
     about_labels,
     attach_files,
-    first_name,
-    initials,
+    it_support_label,
     record_inbound,
     requester_kind,
     requester_last_update,
@@ -167,10 +167,11 @@ def _approval_rule(session: Session, ticket: Ticket):
     return describe_rule(approval) if approval is not None and approval.status == PENDING else None
 
 
-def _conversation(session: Session, ticket: Ticket, user: User, visible: list, files: dict) -> list[dict]:
+def _conversation(
+    session: Session, ticket: Ticket, user: User, emails: set[str], visible: list, files: dict, is_requester_view: bool,
+) -> list[dict]:
     """The request page's messages, newest first: who wrote each in the viewer's words ("You", "Sam from IT Support", "Our
     support partner"). Only the messages given (`requester_visible_messages`) and their downloadable files."""
-    mine_emails = identity.requester_emails(user)
     authors = {
         u.id: u for u in session.exec(select(User).where(User.id.in_({m.author_user_id for m in visible if m.author_user_id}))).all()
     } if any(m.author_user_id for m in visible) else {}
@@ -182,16 +183,19 @@ def _conversation(session: Session, ticket: Ticket, user: User, visible: list, f
             is_it = True
             if message.msp_forward:
                 who = "Our support partner"  # never who at the partner wrote
-            elif author is not None and first_name(author.display_name):
-                who = f"{first_name(author.display_name)} from IT Support"
             else:
-                who = "IT Support"
+                who = it_support_label(author.display_name if author is not None else None)
             initial = "IT"
         else:
             is_it = False
-            mine = message.author_user_id == user.id or sender.lower() in mine_emails
+            # The person's own words: sent by them, from one of their addresses, or logged for them by an agent (the
+            # request's first message, which "How" in About this request says was raised for them).
+            mine = (
+                message.author_user_id == user.id or sender.lower() in emails or sender.lower() == user.display_name.lower()
+                or (message.channel == AGENT and is_requester_view)
+            )
             who = "You" if mine else sender or "Someone"
-            initial = initials(user.display_name) if mine else initials(sender) if message.channel != AGENT else "IT"
+            initial = user.display_name if mine else sender
         rows.append({
             "message": message, "who": who, "initials": initial, "is_it": is_it, "msp": bool(message.msp_forward),
             "files": files.get(message.id, []),
@@ -202,8 +206,11 @@ def _conversation(session: Session, ticket: Ticket, user: User, visible: list, f
 def _render_ticket(request: Request, ticket: Ticket, user: User, session: Session) -> HTMLResponse:
     visible = requester_visible_messages(session, ticket)
     mine = _is_requester(ticket, user)
+    emails = identity.requester_emails(user)
     zone = zone_for_user(session, user)
     status = requester_status(session, ticket, zone, can_reopen=mine)
+    if not mine and ticket.status == TicketStatus.AWAITING_USER:
+        status = replace(status, label="Waiting for a reply")  # the question was put to the requester, not to a follower
     request_info = request_type_of(session, ticket)
     assignee = session.get(User, ticket.assigned_agent_id) if ticket.assigned_agent_id else None
     # The files an agent attached to an email (open from the portal, as the Teams message says) and the ones this person
@@ -217,16 +224,17 @@ def _render_ticket(request: Request, ticket: Ticket, user: User, session: Sessio
         "portal_ticket_detail.html",
         {
             "ticket": ticket,
-            "thread": _conversation(session, ticket, user, visible, message_files),
+            "thread": _conversation(session, ticket, user, emails, visible, message_files, mine),
             "about": about_labels(session, visible),
             "status": status,
             "kind": requester_kind(ticket, request_info[0].name if request_info else None),
-            "steps": requester_steps(ticket, status),
+            "steps": requester_steps(ticket, status, viewer_is_requester=mine),
             "raised_at": format_moment(ticket.created_at, zone),
             "source_label": source_label(session, ticket),
-            "handled_by": f"{first_name(assignee.display_name)} from IT Support" if assignee is not None and first_name(assignee.display_name) else "IT Support",
+            "handled_by": it_support_label(assignee.display_name if assignee is not None else None),
+            # Without the reopen window, which has its own card
             "last_update": requester_last_update(
-                session, ticket, zone, identity.requester_emails(user), can_reopen=False, viewer_id=user.id,  # the reopen window has its own card
+                session, ticket, zone, emails, can_reopen=False, viewer_id=user.id, status=replace(status, reopen_note=""),
             ),
             "max_files": count_setting(session, INBOUND_MAX_ATTACHMENTS),
             "max_file_mb": settings.attachment_max_bytes // (1024 * 1024),

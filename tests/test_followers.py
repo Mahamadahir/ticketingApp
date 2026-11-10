@@ -280,7 +280,7 @@ def test_a_follower_with_an_account_can_read_and_reply_but_not_manage_the_ticket
     assert "We are on it" in page.text
     assert SECRET_NOTE not in page.text and "Internal note" not in page.text
     assert "Send reply" in page.text  # followers are not read-only
-    assert "Also keeping up to date" not in page.text  # but they do not manage the follower list
+    assert "Also kept up to date" not in page.text  # but they do not manage the follower list
 
     assert client.post(f"/portal/{ticket.number}/comment", data={"body": "Thanks, that fixed it"}).status_code == 200
     reply = db_session.exec(select(Message).where(Message.body == "Thanks, that fixed it")).one()
@@ -391,7 +391,7 @@ def test_a_follower_cannot_see_who_else_is_copied(client, db_session):
     login_as(client, "alice@example.org")
     page = client.get(f"/portal/{ticket.number}").text
     assert "bob@example.org" not in page and "alice@example.org" not in page
-    assert "Also keeping up to date" not in page
+    assert "Also kept up to date" not in page
 
 
 def test_adding_the_same_follower_at_the_same_time_is_a_quiet_no_op(db_session):

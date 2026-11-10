@@ -24,10 +24,10 @@
 <div class="rq-cols">
 <section class="rq-main" aria-label="Conversation">
   {% if can_comment %}
-  <div class="card rq-reply{{ " rq-reply-wanted" if ticket.status.value == "awaiting_user" else "" }}">
+  <div class="card rq-reply{{ " rq-reply-wanted" if ticket.status.value == "awaiting_user" and is_requester else "" }}">
     <form hx-post="/portal/{{ ticket.number }}/comment" hx-encoding="multipart/form-data" hx-target="main" hx-swap="innerHTML" class="rq-form">
       <label for="reply" class="rq-label">Reply to IT Support</label>
-      {% if ticket.status.value == "awaiting_user" %}<p class="rq-hint">IT Support is waiting to hear from you.</p>{% endif %}
+      {% if ticket.status.value == "awaiting_user" and is_requester %}<p class="rq-hint">IT Support is waiting to hear from you.</p>{% endif %}
       {% if ticket.status.value == "closed" %}<p class="rq-hint">This request is closed. Adding a comment opens a new request linked to it.</p>{% endif %}
       <textarea id="reply" name="body" rows="4" maxlength="{{ max_message_length }}" placeholder="Write your reply..." required></textarea>
       {% with attach_id = "reply-files", attach_label = "Add a file" %}{% include "_attach_control.html" %}{% endwith %}
@@ -47,7 +47,7 @@
     <li>
       <article class="rq-msg{{ " rq-msg-it" if row.is_it else "" }}">
         <header>
-          <span class="rq-avatar{{ " rq-avatar-it" if row.is_it else "" }}" aria-hidden="true">{{ row.initials }}</span>
+          <span class="rq-avatar{{ " rq-avatar-it" if row.is_it else "" }}" aria-hidden="true">{{ row.initials|initials }}</span>
           <span class="rq-who">{{ row.who }}</span>
           <span class="rq-when">{{ message.created_at|local_time }}</span>
         </header>
