@@ -122,7 +122,7 @@ graphsubscription.subscription_id graphsubscription.client_state_fingerprint gra
 mailsyncstate.delta_link mailsyncstate.resume_link mailsyncstate.last_error ticketevent.event_type activitylog.event_type
 activitylog.method activitylog.path auditlog.entity_type auditlog.action bankholidaycache.dates pending_blob_delete.last_error
 teams_conversation.service_url teams_conversation.conversation_id teamsintake.outcome teamsintake.previous_status
-ticket.last_requester_channel teams_held_file.blob_key teams_held_file.skipped reply_held_file.token reply_held_file.blob_key
+requesttype.icon approvalgroup.request_notice ticket.last_requester_channel teams_held_file.blob_key teams_held_file.skipped reply_held_file.token reply_held_file.blob_key
 """.split())
 
 
