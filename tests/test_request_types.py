@@ -257,7 +257,7 @@ def test_an_end_user_raises_a_service_request(client, db_session):
     assert ticket.reference.startswith("SR-")
     [event] = db_session.exec(select(TicketEvent).where(TicketEvent.event_type == "request_type")).all()
     assert (event.ticket_id, event.to_value) == (ticket.id, "New starter")
-    assert "Request: New starter" in client.get(f"/portal/{ticket.number}").text
+    assert "<dt>Request</dt><dd>New starter</dd>" in client.get(f"/portal/{ticket.number}").text
 
 
 def test_without_a_request_type_it_is_still_an_incident(client, db_session):
@@ -315,7 +315,7 @@ def test_the_agent_page_shows_the_request_and_its_approvers_but_the_requester_do
     client.post("/auth/logout")
     login_as(client, "walkin@example.com")
     portal = client.get(f"/portal/{ticket.number}").text
-    assert "Request: New starter" in portal and "approval group" not in portal
+    assert "<dt>Request</dt><dd>New starter</dd>" in portal and "approval group" not in portal
 
 
 # ---- Review fixes -----------------------------------------------------------------------------------

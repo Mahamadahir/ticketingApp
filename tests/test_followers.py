@@ -279,7 +279,7 @@ def test_a_follower_with_an_account_can_read_and_reply_but_not_manage_the_ticket
     assert page.status_code == 200
     assert "We are on it" in page.text
     assert SECRET_NOTE not in page.text and "Internal note" not in page.text
-    assert "Add comment" in page.text  # followers are not read-only
+    assert "Send reply" in page.text  # followers are not read-only
     assert "Also keeping up to date" not in page.text  # but they do not manage the follower list
 
     assert client.post(f"/portal/{ticket.number}/comment", data={"body": "Thanks, that fixed it"}).status_code == 200
@@ -506,7 +506,7 @@ def test_an_internal_follower_cannot_comment_from_the_portal(client, db_session)
     client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "x"})
 
     page = client.get(f"/portal/{ticket.number}")
-    assert page.status_code == 200 and "Add comment" not in page.text
+    assert page.status_code == 200 and "Send reply" not in page.text
     assert "Reply from the agent console" in page.text
     assert client.post(f"/portal/{ticket.number}/comment", data={"body": "hello"}).status_code == 404
 

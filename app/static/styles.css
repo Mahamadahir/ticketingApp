@@ -486,3 +486,53 @@ th { color: var(--muted); font-weight: 600; }
 .req-last { font-size: 14px; color: var(--muted); }
 .req-side { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; padding: 18px 20px 18px 0; }
 .req-side .chip { font-size: 13px; padding: 4px 10px; }
+
+/* The portal request page (9E): header, progress steps, the reply box and the conversation beside the side cards */
+.rq { display: flex; flex-direction: column; gap: 22px; }
+.rq-back { margin: 0; font-size: 14px; }
+.rq-head { display: flex; flex-direction: column; gap: 10px; }
+.rq-head h1 { margin: 0; font-size: 28px; overflow-wrap: anywhere; }
+.rq-line { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 0; }
+.rq-ref { color: var(--muted); font-weight: 600; }
+.rq-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(var(--steps), minmax(0, 1fr)); gap: 8px; }
+.rq-step { display: flex; flex-direction: column; gap: 8px; }
+.rq-bar { height: 6px; border-radius: 999px; background: var(--accent); }
+.rq-step-todo .rq-bar { background: var(--border); }
+.rq-step-current.rq-tone-amber .rq-bar { background: var(--amber); }
+.rq-step-current.rq-tone-green .rq-bar { background: var(--green); }
+.rq-step-label { font-size: 14px; font-weight: 500; }
+.rq-step-current .rq-step-label { font-weight: 700; }
+.rq-step-todo .rq-step-label { color: var(--muted); }
+.rq-cols { display: flex; flex-wrap: wrap; gap: 22px; align-items: flex-start; }
+.rq-main { flex: 999 1 520px; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+.rq-side { flex: 1 1 300px; max-width: 360px; min-width: 260px; display: flex; flex-direction: column; gap: 14px; }
+.rq-card { padding: 20px; }
+.rq-card h2 { margin: 0 0 14px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.rq-card .dl { grid-template-columns: minmax(0, 110px) minmax(0, 1fr); font-size: 14px; }
+.rq-card .dl dd { font-weight: 500; }
+.rq-reply { padding: 20px; }
+.rq-reply-wanted { border-color: var(--accent); }
+.rq-form { display: flex; flex-direction: column; gap: 12px; }
+.rq-label { font-weight: 700; }
+.rq-hint { margin: 0; color: var(--muted); font-size: 14px; }
+.rq-form textarea { resize: vertical; padding: 12px 14px; line-height: 1.5; }
+.rq-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.rq-reply .rq-actions { justify-content: flex-end; }
+.rq-reply .tp-attach label.btn { flex-direction: row; gap: 8px; cursor: pointer; }
+.rq-card .rq-form { margin-top: 0; }
+.rq-followers { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.rq-followers li { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.rq-followers li > span { min-width: 0; overflow-wrap: anywhere; }
+.rq-followers .btn { flex-shrink: 0; white-space: nowrap; min-height: 32px; padding: 0 12px; font-size: 14px; }
+.rq-card > .rq-hint { margin-bottom: 12px; }
+.rq-related { margin: 0; padding-left: 18px; font-size: 14px; }
+.rq-thread { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.rq-msg { border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; }
+.rq-msg-it { background: var(--raised); }
+.rq-msg header { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.rq-avatar { width: 32px; height: 32px; border-radius: 999px; background: var(--gray-bg); color: var(--gray); display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 12px; }
+.rq-avatar-it { background: var(--accent-soft); color: var(--accent); }
+.rq-who { font-weight: 600; }
+.rq-when { margin-left: auto; color: var(--muted); font-size: 14px; }
+.rq-msg .message-body { line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.rq-files { margin: 0; padding-left: 18px; }

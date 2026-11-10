@@ -1,6 +1,6 @@
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from app.templating import templates
 from sqlalchemy import func
@@ -48,12 +48,18 @@ from app.sla import IMPACT_LABELS, URGENCY_LABELS, Level
 from app.triage import TriageError
 from app.visibility import Access, access_context, may_set_required_by, ticket_access
 from app.attachments import files_by_message
+from app import reply_files
+from app.storage import Storage, get_storage
 from app.messages import (
     about_labels,
+    attach_files,
+    first_name,
+    initials,
     record_inbound,
     requester_kind,
     requester_last_update,
     requester_status,
+    requester_steps,
     requester_visible_answers,
     requester_visible_messages,
 )
@@ -64,12 +70,14 @@ from app.splitting import apply_requester_reply
 from app.request_questions import form_rows
 from app.request_types import active_request_types, portal_tiles, request_type_of
 from app.required_by import RequiredByError, offers_required_by, parse_required_by, set_required_by
-from app.models import FINISHED_STATUSES, Category, RequestType, Ticket, TicketSource, TicketStatus, TicketType, User, UserRole
+from app.models import FINISHED_STATUSES, Category, MessageDirection, RequestType, Ticket, TicketSource, TicketStatus, TicketType, User, UserRole
 from app.ticket_service import get_by_number
 from app import identity
 from app.identity import is_follower_of, is_requester, my_tickets_query
 from app.pagination import paginate
-from app.time_zones import zone_for_user
+from app.reply_channel import AGENT
+from app.settings_store import INBOUND_MAX_ATTACHMENTS, count_setting
+from app.time_zones import format_moment, zone_for_user
 
 router = APIRouter(prefix="/portal", tags=["portal"])
 
@@ -159,23 +167,70 @@ def _approval_rule(session: Session, ticket: Ticket):
     return describe_rule(approval) if approval is not None and approval.status == PENDING else None
 
 
+def _conversation(session: Session, ticket: Ticket, user: User, visible: list, files: dict) -> list[dict]:
+    """The request page's messages, newest first: who wrote each in the viewer's words ("You", "Sam from IT Support", "Our
+    support partner"). Only the messages given (`requester_visible_messages`) and their downloadable files."""
+    mine_emails = identity.requester_emails(user)
+    authors = {
+        u.id: u for u in session.exec(select(User).where(User.id.in_({m.author_user_id for m in visible if m.author_user_id}))).all()
+    } if any(m.author_user_id for m in visible) else {}
+    rows = []
+    for message in reversed(visible):
+        sender = (message.sender or "").strip()
+        if message.direction == MessageDirection.OUTBOUND:
+            author = authors.get(message.author_user_id)
+            is_it = True
+            if message.msp_forward:
+                who = "Our support partner"  # never who at the partner wrote
+            elif author is not None and first_name(author.display_name):
+                who = f"{first_name(author.display_name)} from IT Support"
+            else:
+                who = "IT Support"
+            initial = "IT"
+        else:
+            is_it = False
+            mine = message.author_user_id == user.id or sender.lower() in mine_emails
+            who = "You" if mine else sender or "Someone"
+            initial = initials(user.display_name) if mine else initials(sender) if message.channel != AGENT else "IT"
+        rows.append({
+            "message": message, "who": who, "initials": initial, "is_it": is_it, "msp": bool(message.msp_forward),
+            "files": files.get(message.id, []),
+        })
+    return rows
+
+
 def _render_ticket(request: Request, ticket: Ticket, user: User, session: Session) -> HTMLResponse:
     visible = requester_visible_messages(session, ticket)
+    mine = _is_requester(ticket, user)
+    zone = zone_for_user(session, user)
+    status = requester_status(session, ticket, zone, can_reopen=mine)
+    request_info = request_type_of(session, ticket)
+    assignee = session.get(User, ticket.assigned_agent_id) if ticket.assigned_agent_id else None
+    # The files an agent attached to an email (open from the portal, as the Teams message says) and the ones this person
+    # added to a reply: downloaded through /attachments, which checks the same rule again (visibility.may_view_attachment).
+    message_files = {
+        message_id: [f for f in files if not f.is_inline]
+        for message_id, files in files_by_message(session, user, access_context(session, user), visible).items()
+    }
     return templates.TemplateResponse(
         request,
         "portal_ticket_detail.html",
         {
             "ticket": ticket,
-            "messages": visible,
+            "thread": _conversation(session, ticket, user, visible, message_files),
             "about": about_labels(session, visible),
-            # The files an agent attached to an email (open from the portal, as the Teams message says): downloaded through
-            # /attachments, which checks the same rule again (visibility.may_view_attachment).
-            "message_files": {
-                message_id: [f for f in files if not f.is_inline]
-                for message_id, files in files_by_message(session, user, access_context(session, user), visible).items()
-            },
+            "status": status,
+            "kind": requester_kind(ticket, request_info[0].name if request_info else None),
+            "steps": requester_steps(ticket, status),
+            "raised_at": format_moment(ticket.created_at, zone),
             "source_label": source_label(session, ticket),
-            "request_info": request_type_of(session, ticket),
+            "handled_by": f"{first_name(assignee.display_name)} from IT Support" if assignee is not None and first_name(assignee.display_name) else "IT Support",
+            "last_update": requester_last_update(
+                session, ticket, zone, identity.requester_emails(user), can_reopen=False, viewer_id=user.id,  # the reopen window has its own card
+            ),
+            "max_files": count_setting(session, INBOUND_MAX_ATTACHMENTS),
+            "max_file_mb": settings.attachment_max_bytes // (1024 * 1024),
+            "request_info": request_info,
             "answers": requester_visible_answers(session, ticket),
             "my_approval": _my_pending_approval(session, ticket, user),
             "is_approver": vote_for(session, ticket, user) is not None,
@@ -409,10 +464,19 @@ def add_comment(
     number: int,
     request: Request,
     body: str = Form(..., max_length=MAX_MESSAGE_LENGTH),
+    files: list[UploadFile] = File(default=[]),
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
+    storage: Storage = Depends(get_storage),
 ):
+    """A reply on the request page, with files if the person added any. The files meet the rules of every stored file (the
+    agent-side upload path: reply_files.read_uploads, then messages.attach_files), are visible to the agents who can read the
+    ticket and to the people who can read the message, and the message is recorded with channel=portal."""
     ticket = _get_commentable_ticket(session, number, user)
+    try:
+        new_files = reply_files.read_uploads(session, files)  # before anything is written, so a refusal leaves nothing
+    except reply_files.FilesRefused as error:
+        raise HTTPException(status_code=400, detail=str(error))
 
     if ticket.status == TicketStatus.CLOSED:
         # Serialise two replies on the same closed ticket (a double click); if an earlier reply already
@@ -427,7 +491,8 @@ def add_comment(
             session, ticket, subject=ticket.subject, sender_email=user.email, source=TicketSource.PORTAL,
             actor_email=user.email,
         )
-        record_inbound(session, follow_on, sender=user.display_name, body=body, author_user_id=user.id, channel=PORTAL)
+        reply = record_inbound(session, follow_on, sender=user.display_name, body=body, author_user_id=user.id, channel=PORTAL)
+        attach_files(session, follow_on, reply, user, new_files, storage)
         log_action(session, user.email, "ticket", follow_on.id, "commented", body[:200])
         session.commit()
         destination = f"/portal/{follow_on.number}"
@@ -438,6 +503,7 @@ def add_comment(
     message = record_inbound(
         session, ticket, sender=user.display_name, body=body, author_user_id=user.id, reply_by=user.email, channel=PORTAL,
     )
+    attach_files(session, ticket, message, user, new_files, storage)
     note_requester_wrote(session, ticket, user.email, PORTAL)
     log_action(session, user.email, "ticket", ticket.id, "commented", body[:200])
     queue_follower_updates(session, ticket, message, user.email)  # nobody was sent a portal comment

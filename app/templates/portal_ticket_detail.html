@@ -1,106 +1,175 @@
 {% extends "base.html" %}
 {% block title %}{{ ticket.subject }}{% endblock %}
 {% block content %}
-<p><a href="/portal">&larr; back to my requests</a></p>
+<div class="rq">
+<p class="rq-back"><a href="/portal">&larr; My requests</a></p>
 
-<h2>{{ ticket.reference }} {{ ticket.subject }}</h2>
-<p><span class="status status-{{ ticket.status.value }}">{{ ticket.status.value.replace("_", " ") }}</span>
-  &middot; <span class="note">{{ source_label }}</span>
-  {% if request_info %}&middot; <span class="note">Request: {{ request_info[0].name }}</span>{% endif %}</p>
-
-{% if answers %}
-<h3>Your answers</h3>
-<dl>
-  {% for a in answers %}<dt>{{ a.label }}</dt><dd>{{ a.display }}</dd>{% endfor %}
-</dl>
-{% endif %}
-{% if ticket.required_by %}<p class="note">Required by: {{ ticket.required_by.isoformat() }}</p>{% endif %}
-{% if can_set_required_by %}
-<form method="post" action="/portal/{{ ticket.number }}/required-by" class="inline-form">
-  <label>Required by (blank to remove; you can change it while the request is open) <input type="date" name="required_by" value="{{ ticket.required_by.isoformat() if ticket.required_by else "" }}" /></label>
-  <button type="submit">Save date</button>
-</form>
-{% endif %}
-{% if can_reopen %}
-<form method="post" action="/portal/{{ ticket.number }}/reopen" class="inline-form">
-  <button type="submit">Reopen this request</button>
-</form>
-{% endif %}
-{% if can_withdraw %}
-<form method="post" action="/portal/{{ ticket.number }}/withdraw" class="inline-form" onsubmit="return confirm('Withdraw this request? It will be closed and cannot be reopened.')">
-  <button type="submit" class="button-outline">Withdraw this request</button>
-</form>
-{% endif %}
-{% if related %}
-<p class="note">Related:
-  {% for other, which in related %}<a href="/portal/{{ other.number }}">{{ other.reference }}</a> {{ other.subject }} ({{ "this follows on from it" if which == "earlier" else "opened after this was closed" }}){{ "; " if not loop.last }}{% endfor %}
-</p>
-{% endif %}
-{% if approval_rule %}
-<p class="note">Waiting for approval ({{ approval_rule }}).</p>
-{% endif %}
-{% if self_approved %}
-<p class="note">Your own approval was recorded automatically: approvers may approve their own requests of this kind.</p>
-{% endif %}
-{% if my_approval %}
-<form hx-post="/portal/{{ ticket.number }}/approval" hx-target="main" hx-swap="innerHTML">
-  <h3>Your approval</h3>
-  <label>Comment (optional; shown to the requester if you decline)
-    <textarea name="comment" rows="2" maxlength="1000"></textarea>
-  </label>
-  <button type="submit" name="decision" value="approved">Approve</button>
-  <button type="submit" name="decision" value="declined" class="button-outline">Decline</button>
-</form>
-{% endif %}
-
-<div id="thread">
-  {% for message in messages %}
-  <div class="message message-{{ message.direction.value }}">
-    <div class="message-meta">{% if message.msp_forward %}<b>From our support partner</b> &middot; {% endif %}{{ message.sender }} &middot; {{ message.created_at|local_time }}</div>
-    {% if about.get(message.id) %}<div class="note">{{ about[message.id] }}</div>{% endif %}
-    <div class="message-body">{{ message.body }}</div>
-    {% if message_files.get(message.id) %}
-    <ul class="note" aria-label="Attachments">
-      {% for file in message_files[message.id] %}<li><a href="/attachments/{{ file.id }}">{{ file.filename }}</a> ({{ file.size|file_size }})</li>{% endfor %}
-    </ul>
-    {% endif %}
-  </div>
-  {% endfor %}
+<div class="rq-head">
+  <p class="rq-line"><span class="rq-ref">{{ ticket.reference }} &middot; {{ kind }}</span>
+    <span class="chip t-{{ status.tone }}">{{ status.label }}</span></p>
+  <h1>{{ ticket.subject }}</h1>
 </div>
 
-{% if can_comment %}
-{% if ticket.status.value == "closed" %}<p class="note">This request is closed. Adding a comment opens a new request linked to it.</p>{% endif %}
-<form hx-post="/portal/{{ ticket.number }}/comment" hx-target="main" hx-swap="innerHTML">
-  <textarea name="body" rows="4" maxlength="{{ max_message_length }}" placeholder="Add a comment..." required></textarea>
-  <button type="submit">Add comment</button>
-</form>
-{% elif is_approver and not is_requester %}
-<p class="note">You can see this request because you are one of its approvers.</p>
-{% else %}
-<p class="note">You are following this request as an agent. Reply from the agent console, not from here.</p>
-{% endif %}
+<ol class="rq-steps" aria-label="Progress" style="--steps: {{ steps|length }}">
+  {% for step in steps %}
+  <li class="rq-step rq-step-{{ step.state }} rq-tone-{{ step.tone }}"{% if step.state == "current" %} aria-current="step"{% endif %}>
+    <span class="rq-bar" aria-hidden="true"></span>
+    <span class="rq-step-label">{{ step.label }}<span class="sr-only">{{ step.sr }}</span></span>
+  </li>
+  {% endfor %}
+</ol>
+{% if approval_rule %}<p class="note">Waiting for approval ({{ approval_rule }}).</p>{% endif %}
+{% if self_approved %}<p class="note">Your own approval was recorded automatically: approvers may approve their own requests of this kind.</p>{% endif %}
 
-{% if is_requester %}
-<h3>Also keeping up to date</h3>
-<p class="note">People listed here are copied on updates to this request.</p>
-<ul>
-  {% for follower in followers %}
-  <li>
-    {{ follower.email }}
-    {% if is_requester %}
-    <form method="post" action="/portal/{{ ticket.number }}/followers/{{ follower.id }}/remove" class="inline-form"
-          hx-post="/portal/{{ ticket.number }}/followers/{{ follower.id }}/remove" hx-target="main" hx-swap="innerHTML">
-      <button type="submit">Remove</button>
+<div class="rq-cols">
+<section class="rq-main" aria-label="Conversation">
+  {% if can_comment %}
+  <div class="card rq-reply{{ " rq-reply-wanted" if ticket.status.value == "awaiting_user" else "" }}">
+    <form hx-post="/portal/{{ ticket.number }}/comment" hx-encoding="multipart/form-data" hx-target="main" hx-swap="innerHTML" class="rq-form">
+      <label for="reply" class="rq-label">Reply to IT Support</label>
+      {% if ticket.status.value == "awaiting_user" %}<p class="rq-hint">IT Support is waiting to hear from you.</p>{% endif %}
+      {% if ticket.status.value == "closed" %}<p class="rq-hint">This request is closed. Adding a comment opens a new request linked to it.</p>{% endif %}
+      <textarea id="reply" name="body" rows="4" maxlength="{{ max_message_length }}" placeholder="Write your reply..." required></textarea>
+      {% with attach_id = "reply-files", attach_label = "Add a file" %}{% include "_attach_control.html" %}{% endwith %}
+      <p class="rq-hint">Up to {{ max_files }} files, {{ max_file_mb }} MB each.</p>
+      <div class="rq-actions"><button type="submit" class="btn btn-primary">Send reply</button></div>
+    </form>
+  </div>
+  {% elif is_approver and not is_requester %}
+  <p class="note">You can see this request because you are one of its approvers.</p>
+  {% else %}
+  <p class="note">You are following this request as an agent. Reply from the agent console, not from here.</p>
+  {% endif %}
+
+  <ol class="rq-thread" id="thread">
+    {% for row in thread %}
+    {% set message = row.message %}
+    <li>
+      <article class="rq-msg{{ " rq-msg-it" if row.is_it else "" }}">
+        <header>
+          <span class="rq-avatar{{ " rq-avatar-it" if row.is_it else "" }}" aria-hidden="true">{{ row.initials }}</span>
+          <span class="rq-who">{{ row.who }}</span>
+          <span class="rq-when">{{ message.created_at|local_time }}</span>
+        </header>
+        {% if about.get(message.id) %}<div class="note">{{ about[message.id] }}</div>{% endif %}
+        <div class="message-body">{{ message.body }}</div>
+        {% if row.files %}
+        <ul class="note rq-files" aria-label="Attachments">
+          {% for file in row.files %}<li><a href="/attachments/{{ file.id }}">{{ file.filename }}</a> ({{ file.size|file_size }})</li>{% endfor %}
+        </ul>
+        {% endif %}
+      </article>
+    </li>
+    {% endfor %}
+  </ol>
+</section>
+
+<aside class="rq-side" aria-label="About this request">
+  {% if my_approval %}
+  <form class="card rq-card rq-form" hx-post="/portal/{{ ticket.number }}/approval" hx-target="main" hx-swap="innerHTML">
+    <h2>Your approval</h2>
+    <label class="field">Comment (optional; shown to the requester if you decline)
+      <textarea name="comment" rows="2" maxlength="1000"></textarea>
+    </label>
+    <div class="rq-actions">
+      <button type="submit" name="decision" value="approved" class="btn btn-primary">Approve</button>
+      <button type="submit" name="decision" value="declined" class="btn">Decline</button>
+    </div>
+  </form>
+  {% endif %}
+
+  <div class="card rq-card">
+    <h2>About this request</h2>
+    <dl class="dl">
+      <dt>Reference</dt><dd>{{ ticket.reference }}</dd>
+      {% if request_info %}<dt>Request</dt><dd>{{ request_info[0].name }}</dd>{% endif %}
+      <dt>Raised</dt><dd>{{ raised_at }}</dd>
+      <dt>How</dt><dd>{{ source_label }}</dd>
+      <dt>Handled by</dt><dd>{{ handled_by }}</dd>
+      <dt>Last update</dt><dd>{{ last_update }}</dd>
+    </dl>
+  </div>
+
+  {% if can_reopen %}
+  <div class="card rq-card rq-form">
+    <h2>Not fixed?</h2>
+    {% set until = status.reopen_note.replace(" · ", "") %}
+    {% if until %}<p class="rq-hint">{{ until[:1]|upper }}{{ until[1:] }}.</p>{% endif %}
+    <form method="post" action="/portal/{{ ticket.number }}/reopen"><button type="submit" class="btn">Reopen this request</button></form>
+  </div>
+  {% endif %}
+
+  {% if answers %}
+  <div class="card rq-card">
+    <h2>Your answers</h2>
+    <dl class="dl">
+      {% for a in answers %}<dt>{{ a.label }}</dt><dd>{{ a.display }}</dd>{% endfor %}
+    </dl>
+  </div>
+  {% endif %}
+
+  {% if ticket.required_by or can_set_required_by %}
+  <div class="card rq-card rq-form">
+    <h2>Required by</h2>
+    {% if ticket.required_by %}<p class="rq-hint">Required by: {{ ticket.required_by.isoformat() }}</p>{% endif %}
+    {% if can_set_required_by %}
+    <form method="post" action="/portal/{{ ticket.number }}/required-by" class="rq-form">
+      <label class="field">Required by (blank to remove; you can change it while the request is open) <input type="date" name="required_by" value="{{ ticket.required_by.isoformat() if ticket.required_by else "" }}" /></label>
+      <div class="rq-actions"><button type="submit" class="btn">Save date</button></div>
     </form>
     {% endif %}
-  </li>
-  {% else %}
-  <li>No one else.</li>
-  {% endfor %}
-</ul>
-<form hx-post="/portal/{{ ticket.number }}/followers" hx-target="main" hx-swap="innerHTML">
-  <input type="email" name="email" placeholder="colleague@example.org" required />
-  <button type="submit">Copy this person on updates</button>
-</form>
-{% endif %}
+  </div>
+  {% endif %}
+
+  {% if is_requester %}
+  <div class="card rq-card">
+    <h2>Also kept up to date</h2>
+    <p class="rq-hint">People listed here are copied on updates to this request.</p>
+    <ul class="rq-followers">
+      {% for follower in followers %}
+      <li>
+        <span>{{ follower.email }}</span>
+        <form method="post" action="/portal/{{ ticket.number }}/followers/{{ follower.id }}/remove"
+              hx-post="/portal/{{ ticket.number }}/followers/{{ follower.id }}/remove" hx-target="main" hx-swap="innerHTML">
+          <button type="submit" class="btn">Remove</button>
+        </form>
+      </li>
+      {% else %}
+      <li>No one else.</li>
+      {% endfor %}
+    </ul>
+    <form hx-post="/portal/{{ ticket.number }}/followers" hx-target="main" hx-swap="innerHTML" class="rq-form">
+      <label class="field">Copy someone on updates
+        <input type="email" name="email" placeholder="colleague@example.org" required />
+      </label>
+      <div class="rq-actions"><button type="submit" class="btn">Copy this person on updates</button></div>
+    </form>
+  </div>
+  {% endif %}
+
+  {% if related %}
+  <div class="card rq-card">
+    <h2>Related</h2>
+    <ul class="rq-related">
+      {% for other, which in related %}<li><a href="/portal/{{ other.number }}">{{ other.reference }}</a> {{ other.subject }} <span class="rq-hint">({{ "this follows on from it" if which == "earlier" else "opened after this was closed" }})</span></li>{% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {% if can_withdraw %}
+  <div class="card rq-card">
+    <h2>Changed your mind?</h2>
+    <form method="post" action="/portal/{{ ticket.number }}/withdraw" onsubmit="return confirm('Withdraw this request? It will be closed and cannot be reopened.')">
+      <button type="submit" class="btn btn-danger">Withdraw this request</button>
+    </form>
+  </div>
+  {% endif %}
+
+  <div class="card rq-card">
+    <h2>Need something else?</h2>
+    <a href="/portal/new">Raise a new request</a>
+  </div>
+</aside>
+</div>
+</div>
 {% endblock %}

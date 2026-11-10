@@ -1,10 +1,10 @@
 {# The attach control of the composer (#201): a native file input styled as a button with a paperclip. `attach_id` makes the
-   ids unique when the page has two composers. The chosen names are listed beside the button by a one-line handler. #}
+   ids unique when the page has two composers; `attach_label` replaces the button's words (the portal says "Add a file"). The chosen names are listed beside the button by a one-line handler. #}
 <div class="tp-attach">
   <input type="file" multiple id="{{ attach_id }}" name="files" class="sr-only" aria-describedby="{{ attach_id }}-names"
          hx-on:change="document.getElementById('{{ attach_id }}-names').textContent = Array.from(this.files).map(f => f.name + ' (' + (f.size >= 1024 ? (f.size / 1024).toFixed(1) + ' KB' : f.size + ' bytes') + ')').join(', ')" />
   <label class="btn" for="{{ attach_id }}">
     <svg aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5l-8.6 8.6a5 5 0 01-7.1-7.1l8.6-8.6a3.4 3.4 0 014.9 4.9l-8.6 8.6a1.7 1.7 0 01-2.4-2.4l7.9-7.9"></path></svg>
-    Attach files</label>
+    {{ attach_label or "Attach files" }}</label>
   <span class="tp-attach-names" id="{{ attach_id }}-names" aria-live="polite"></span>
 </div>

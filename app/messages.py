@@ -476,6 +476,54 @@ def requester_status(session: Session, ticket: Ticket, zone: str, *, can_reopen:
     return RequesterStatus(label, tone, sentence, note)
 
 
+@dataclass(frozen=True)
+class Step:
+    """One step of the progress bar on the request page. `state` is done, current or todo; `tone` colours the current bar."""
+
+    label: str
+    state: str
+    tone: str = "blue"
+
+    @property
+    def sr(self) -> str:
+        """What a screen reader adds after the label: the bar's colour alone says nothing to it."""
+        return {"done": " (done)", "current": " (current step)"}.get(self.state, " (not yet)")
+
+
+def requester_steps(ticket: Ticket, status: RequesterStatus) -> list[Step]:
+    """The progress steps of the request page: Received, Being worked on, Waiting for you (only while the ticket is
+    Awaiting user), Resolved. Waiting for approval and Scheduled take the place of Being worked on while the ticket is in
+    them. Built from the requester's wording only (`status`), so With MSP and With supplier read as Being worked on."""
+    working = "Being worked on"
+    if ticket.status == TicketStatus.AWAITING_APPROVAL:
+        working = "Waiting for approval"
+    elif ticket.status == TicketStatus.SCHEDULED:
+        working = status.sentence  # "Scheduled for Thursday 12 November"
+    labels = ["Received", working] + (["Waiting for you"] if ticket.status == TicketStatus.AWAITING_USER else []) + ["Resolved"]
+    if ticket.status == TicketStatus.NEW:
+        current = 0
+    elif ticket.status in (TicketStatus.RESOLVED, TicketStatus.CLOSED):
+        current = len(labels) - 1
+    else:
+        current = len(labels) - 2 if ticket.status == TicketStatus.AWAITING_USER else 1
+    tone = {"amber": "amber", "green": "green"}.get(status.tone, "blue")
+    if ticket.status == TicketStatus.CLOSED:
+        labels[-1] = "Closed"
+    return [
+        Step(label, "done" if i < current else "current" if i == current else "todo", tone if i == current else "blue")
+        for i, label in enumerate(labels)
+    ]
+
+
+def first_name(name: Optional[str]) -> str:
+    return (name or "").split()[0] if (name or "").split() else ""
+
+
+def initials(name: Optional[str]) -> str:
+    parts = (name or "").split()
+    return "".join(p[0] for p in parts[:2]).upper() or "?"
+
+
 def _approval_progress(session: Session, ticket: Ticket) -> str:
     """"Waiting for 1 of 2 approvals": the approvals still wanted of the number that settles the request. Never says who."""
     from app.approvals import PENDING, APPROVED, current_approval, tally, votes_needed, votes_of
