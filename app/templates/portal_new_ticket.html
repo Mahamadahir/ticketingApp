@@ -8,10 +8,10 @@
   <label>What do you need?
     <select name="request_type_id" hx-get="/portal/questions" hx-trigger="change" hx-target="#request-questions" hx-swap="outerHTML" hx-include="this">
       <option value="">Something is not working (report a problem)</option>
-      {% for t in request_types %}<option value="{{ t.id }}">{{ t.name }}{% if t.description %} - {{ t.description }}{% endif %}</option>{% endfor %}
+      {% for t in request_types %}<option value="{{ t.id }}"{{ " selected" if t.id == chosen_type_id else "" }}>{{ t.name }}{% if t.description %} - {{ t.description }}{% endif %}</option>{% endfor %}
     </select>
   </label>
-  {% with div_id = "request-questions", rows = [], oob = false %}{% include "_request_questions.html" %}{% endwith %}
+  {% with div_id = "request-questions", rows = question_rows, oob = false %}{% include "_request_questions.html" %}{% endwith %}
   {% if required_by_names %}
   <label>Required by (optional; only for these kinds of request: {{ required_by_names|join(", ") }}; today or later, UTC)
     <input type="date" name="required_by" />

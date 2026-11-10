@@ -1,27 +1,65 @@
 {% extends "base.html" %}
 {% block title %}My requests{% endblock %}
 {% block content %}
-<h2>My requests</h2>
-<p><a href="/portal/new">Raise a request</a>{% if waiting_on_me %} &middot; <a href="/portal/approvals">Waiting for your approval ({{ waiting_on_me }})</a>{% endif %}</p>
-
-{% if not page.items %}
-<p>No open tickets right now.</p>
-{% endif %}
-
-<div class="ticket-cards">
-  {% for ticket in page.items %}
-  <a class="ticket-card" href="/portal/{{ ticket.number }}">
-    <div class="ticket-card-subject">{{ ticket.reference }} {{ ticket.subject }}{% if ticket.requester_email.strip().lower() not in my_emails %} <span class="note">(following)</span>{% endif %}</div>
-    <span class="status status-{{ ticket.status.value }}">{{ ticket.status.value.replace("_", " ") }}</span>
-    <div class="ticket-card-updated">Updated {{ ticket.updated_at|local_time }}</div>
-  </a>
-  {% if ticket.status.value == "resolved" and ticket.requester_email.strip().lower() in my_emails %}
-  <form method="post" action="/portal/{{ ticket.number }}/reopen" class="inline-form"><button type="submit">Reopen</button></form>
+{# 9D: the portal home. Statuses and the last-update line come from app/messages.py (requester_status, requester_last_update). #}
+<section class="home-hero" aria-labelledby="help">
+  <div class="home-hero-top">
+    <div class="home-hero-text">
+      <h1 id="help">Hi {{ first_name }}, how can we help?</h1>
+      <p class="muted">You can also email IT Support{% if teams_bot_on %} or message the IT Support app in Teams{% endif %}.</p>
+    </div>
+    <a class="btn btn-primary btn-xl" href="/portal/new"><svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"></path></svg> New request</a>
+  </div>
+  {% if tiles %}
+  <div class="tiles">
+    {% for t in tiles %}
+    <a class="tile" href="/portal/new?request_type_id={{ t.id }}">
+      <svg aria-hidden="true" focusable="false" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H8l-4 4z"></path></svg>
+      <span class="tile-title">{{ t.name }}</span>
+      {% if t.description %}<span class="tile-text">{{ t.description }}</span>{% endif %}
+    </a>
+    {% endfor %}
+  </div>
   {% endif %}
-  {% endfor %}
-</div>
+</section>
+
+<section class="home-requests" aria-labelledby="mine">
+  <div class="tabs home-tabs">
+    <h2 id="mine">My requests</h2>
+    <a class="tab{{ ' on' if tab == 'open' else '' }}" href="/portal?tab=open"{% if tab == 'open' %} aria-current="page"{% endif %}>Open ({{ counts.open }})</a>
+    <a class="tab{{ ' on' if tab == 'finished' else '' }}" href="/portal?tab=finished"{% if tab == 'finished' %} aria-current="page"{% endif %}>Finished ({{ counts.finished }})</a>
+  </div>
+
+  {% if waiting_on_me %}<p><a href="/portal/approvals">Waiting for your approval ({{ waiting_on_me }})</a></p>{% endif %}
+
+  {% if not rows %}
+  <div class="empty-state">
+    {% if tab == 'finished' %}<strong>Nothing finished yet</strong>Requests that have been resolved or closed will appear here.
+    {% else %}<strong>No open requests right now</strong>Use New request when you need something from IT Support.{% endif %}
+  </div>
+  {% else %}
+  <ul class="req-list">
+    {% for row in rows %}
+    {% set ticket = row.ticket %}
+    <li class="req">
+      <a class="req-main" href="/portal/{{ ticket.number }}">
+        <span class="req-ref">{{ ticket.reference }} &middot; {{ row.kind }}{% if row.following %} <span class="note">(following)</span>{% endif %}</span>
+        <span class="req-subject">{{ ticket.subject }}</span>
+        <span class="req-last">{{ row.last_update }}</span>
+      </a>
+      <div class="req-side">
+        <span class="chip t-{{ row.status.tone }}">{{ row.status.label }}</span>
+        {% if row.can_reopen %}
+        <form method="post" action="/portal/{{ ticket.number }}/reopen" class="inline-form"><button type="submit" class="btn">Reopen</button></form>
+        {% endif %}
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</section>
 
 {% include "_pagination.html" %}
-<p class="note">Requests marked as following were raised by someone else who copied you in. You can read them and reply, but not manage them.</p>
+{% if rows|selectattr("following")|list %}<p class="note">Requests marked as following were raised by someone else who copied you in. You can read them and reply, but not manage them.</p>{% endif %}
 
 {% endblock %}

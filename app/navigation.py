@@ -53,7 +53,7 @@ class Shell:
 
     kind: str  # "console" (agents), "portal" (everyone on a portal page, and requesters everywhere) or "bare" (not signed in)
     items: tuple = ()  # the main navigation
-    more: tuple = ()  # the person's own pages (agents only): My requests, My feedback, Settings
+    more: tuple = ()  # the person's own pages: My requests, My feedback, Settings (agents); Settings (the portal's person menu)
     unread: int = 0
     can_search: bool = False
 
@@ -150,5 +150,6 @@ def build_shell(session: Session, user: Optional[User], path: str, query: dict) 
     items = [NavItem(k, label, href, ICONS[icon], count, tone, k == current) for k, label, href, icon, count, tone in rows]
     if user.role in AGENT_ROLES:
         items.append(NavItem("console", "Agent console", "/tickets", ICONS["queue"]))
-    items.append(NavItem("settings", "Settings", "/settings/notifications", ICONS["settings"], active=path.startswith("/settings")))
-    return Shell(kind="portal", items=tuple(items), unread=unread)
+    # Settings sits in the person's menu (the initials), not among the links.
+    settings_item = NavItem("settings", "Settings", "/settings/notifications", ICONS["settings"], active=path.startswith("/settings"))
+    return Shell(kind="portal", items=tuple(items), more=(settings_item,), unread=unread)

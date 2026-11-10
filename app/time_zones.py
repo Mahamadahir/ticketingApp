@@ -136,6 +136,28 @@ def format_date(moment: datetime, zone_name: str, *, now: Optional[datetime] = N
     return f"{local.day} {local:%b}" + (f" {local.year}" if _year_if_not_now(local, zone_name, now) else "")
 
 
+def format_long_date(day, zone_name: str, *, now: Optional[datetime] = None) -> str:
+    """A day written out for plain text: "Thursday 12 November" (with the year when it is not this year). `day` is a
+    calendar date (written as it is) or a moment (the day it falls on in that zone)."""
+    zone_name = valid_zone(zone_name) or "UTC"
+    if isinstance(day, datetime):
+        day = _aware(day).astimezone(ZoneInfo(zone_name))
+    current = (now or datetime.now(timezone.utc)).astimezone(ZoneInfo(zone_name))
+    return f"{day:%A} {day.day} {day:%B}" + (f" {day.year}" if day.year != current.year else "")
+
+
+def relative_time(moment: datetime, now: Optional[datetime] = None) -> str:
+    """How long ago, in words: "just now", "5 minutes ago", "2 hours ago", "3 days ago", then "6 weeks ago"."""
+    seconds = int(((now or datetime.now(timezone.utc)) - _aware(moment)).total_seconds())
+    if seconds < 60:
+        return "just now"
+    for size, unit in ((60 * 60 * 24 * 7, "week"), (60 * 60 * 24, "day"), (60 * 60, "hour"), (60, "minute")):
+        if seconds >= size:
+            count = seconds // size
+            return f"{count} {unit}{'' if count == 1 else 's'} ago"
+    return "just now"
+
+
 def end_of_day_utc(day: date, zone_name: str) -> datetime:
     """The moment day D ends in that zone, as UTC: the first instant of D+1 there. A deadline of "the end of
     D" is therefore reached at this instant (compare with `<`). Handles daylight saving, so the day may be 23
