@@ -1271,7 +1271,7 @@ def _type_snapshot(session: Session, request_type: RequestType) -> tuple:
         request_type.pass_percent, request_type.offers_required_by,
         request_type.due_days_before, request_type.queue_lead_days,
         _defaults_text(session, request_type), request_type.subrequests_need_own_approval,
-        request_type.approvers_may_self_approve,
+        request_type.approvers_may_self_approve, request_type.is_featured,
     )
 
 
@@ -1353,6 +1353,7 @@ def add_request_type(
     default_urgency: Optional[str] = Form(None, max_length=20),
     subrequests_need_own_approval: Optional[str] = Form(None),
     approvers_may_self_approve: Optional[str] = Form(None),
+    is_featured: Optional[str] = Form(None),
     admin: User = Depends(require_request_templates),
     session: Session = Depends(get_session),
 ):
@@ -1363,6 +1364,7 @@ def add_request_type(
             defaults=_defaults_from_form(default_team_id, default_category_id, default_impact, default_urgency),
             subrequests_need_own_approval=subrequests_need_own_approval == "on",
             approvers_may_self_approve=approvers_may_self_approve == "on",
+            is_featured=is_featured == "on",
         )
     except RequestTypeError as error:
         session.rollback()
@@ -1389,6 +1391,7 @@ def edit_request_type(
     default_urgency: Optional[str] = Form(None, max_length=20),
     subrequests_need_own_approval: Optional[str] = Form(None),
     approvers_may_self_approve: Optional[str] = Form(None),
+    is_featured: Optional[str] = Form(None),
     admin: User = Depends(require_request_templates),
     session: Session = Depends(get_session),
 ):
@@ -1405,6 +1408,7 @@ def edit_request_type(
             defaults=_defaults_from_form(default_team_id, default_category_id, default_impact, default_urgency),
             subrequests_need_own_approval=subrequests_need_own_approval == "on",
             approvers_may_self_approve=approvers_may_self_approve == "on",
+            is_featured=is_featured == "on",
         )
     except RequestTypeError as error:
         session.rollback()
@@ -1434,6 +1438,8 @@ def edit_request_type(
             changes.append(f"sub-requests of this type need their own approval {before[8]} -> {after[8]}")
         if before[9] != after[9]:
             changes.append(f"approvers may approve their own requests {before[9]} -> {after[9]}")
+        if before[10] != after[10]:
+            changes.append(f"featured on the portal {before[10]} -> {after[10]}")
         log_action(session, admin.email, "request_type", request_type.id, "edited", "; ".join(changes))
     if request_type.is_active != was_active:
         log_action(
