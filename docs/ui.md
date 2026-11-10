@@ -44,8 +44,7 @@ the theme so form controls and scrollbars match.
 `base.html` draws one of three frames and puts the page into `<main id="main-content">` (an htmx form still swaps
 `main`, so the frame stays put; an htmx partial carries no frame at all).
 
-- **Console** (agents and super admins): a left sidebar (the app mark, the navigation with counts, the person and
-  Sign out), a top bar (search, theme button, bell, Raise ticket) and the outage banner above both.
+- **Console** (agents and super admins): a left sidebar fixed to the viewport (the app mark, the navigation with counts, which scrolls on its own when it is taller than the screen, and the person row, always in view; below 800px it stacks above the page and scrolls with it), a top bar (search, theme button, bell, Raise ticket) and the outage banner above both.
 - **Portal** (requesters on every page, and anyone on a `/portal` page): a top bar with the app mark, My requests, New
   request, Approvals, Settings (and Agent console for an agent), the theme button, the bell and Sign out. No sidebar.
 - **Bare** (sign-in pages, nobody signed in): the app mark only.
@@ -75,7 +74,7 @@ high (the icon buttons 40px).
 | `.icon-btn` | A square icon-only button or link. It needs an `aria-label` or a `.sr-only` label |
 | `.card`, `.card-header` | A bordered panel; the header holds a heading and, optionally, actions |
 | `.table-box` around a `table.table` | A table: uppercase header row, row hover, and a box that scrolls sideways on a narrow screen |
-| `.field` around a label text and its control | A form field with a visible label above the control. Inputs, selects and textareas are styled by element |
+| `.field` around a label text and its control | A form field with a visible label above the control. Inputs, selects and textareas are styled by element. See "Forms" below for the layout |
 | `.segmented` | Two to four exclusive choices that change a view or a mode (links or buttons; mark the current one with `.on`, `aria-selected="true"` or `aria-current="page"`) |
 | `.tabs` with `.tab` | Page sections on one screen or sibling pages; mark the current tab with `.on`, `aria-selected` or `aria-current` |
 | `dl.dl` | A definition list: label and value pairs |
@@ -90,6 +89,20 @@ Older classes still used by page bodies (`.badge`, `.status-*`, `.filters`, `.ad
 `.note`, `.error`, `.button-*`, `.team-card`, `.ticket-card`, `.sla-*`, `.outage-banner`) are kept and now read from the
 tokens, so every page looks right in dark mode. New pages use the components above; the old classes go as each page is
 restyled.
+
+## The person menu
+
+One component for both frames (the `person_menu` macro in `base.html`): `details.person-menu` whose `summary` is the person row (console, `.person-menu-up`: the panel opens upward across the row) or the initials (portal: the panel opens downward at the right). The panel holds the items from `Shell.person_menu` in `app/navigation.py` (agents: My requests, My feedback, Settings, Appearance; the portal: Settings, Appearance) in a `nav[aria-label="Account"]`, then Sign out (a POST form to `/auth/logout`). A script at the foot of `base.html` closes it on Escape (focus returns to the summary) or a click outside. A template never decides which items a person gets.
+
+## Forms
+
+One layout, replacing runs of inline `label + input`.
+
+- `.form-grid`: a responsive grid (`repeat(auto-fit, minmax(220px, 1fr))`, 16px gap). Each child is a `label.field` (label text above the control; add a `.field-hint` span for help and a `.field-error` for a message under the control). `.field-wide` spans the full row; `.field-narrow` caps a short field at 260px. Inputs, selects and textareas fill their field. A tick box is a `label.field-check` (the box beside its text), with `.field-wide` when it should take a row.
+- `.form-actions`: the buttons row under the grid, right-aligned (the primary button last), wrapping on a narrow screen.
+- `.filter-bar`: an inline form of `.field` selects plus its button(s), wrapping; each field takes at least 200px.
+
+Field names, ids and validation belong to the page and do not change when a form moves onto this. First users: Admin > Users and My settings; the other admin pages move with the admin overhaul.
 
 ## Font
 

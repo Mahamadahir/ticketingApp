@@ -193,7 +193,7 @@ def test_inter_is_self_hosted_with_its_licence(client):
 # ---- The navigation ---------------------------------------------------------------------------------------
 
 
-AGENT_ITEMS = ["Queue", "My tickets", "Untriaged", "Approvals", "MSP mail", "My requests", "My feedback", "Settings"]
+AGENT_ITEMS = ["Queue", "My tickets", "Untriaged", "Approvals", "MSP mail", "My requests", "My feedback", "Settings", "Appearance"]
 
 
 def test_an_agent_sees_the_work_items_and_nothing_they_may_not_open(client, db_session):
@@ -208,7 +208,7 @@ def test_an_agent_sees_the_work_items_and_nothing_they_may_not_open(client, db_s
 def test_a_super_admin_also_sees_reports_canned_responses_and_admin(client, db_session):
     set_role(db_session, login_as(client, "boss@example.com"), UserRole.SUPER_ADMIN)
     links = nav_links(client.get("/tickets"))
-    assert list(links) == ["Queue", "My tickets", "Untriaged", "Approvals", "MSP mail", "Reports", "Canned responses", "Admin", "My requests", "My feedback", "Settings"]
+    assert list(links) == ["Queue", "My tickets", "Untriaged", "Approvals", "MSP mail", "Reports", "Canned responses", "Admin", "My requests", "My feedback", "Settings", "Appearance"]
     assert links["Reports"] == "/reports" and links["Canned responses"] == "/admin/canned" and links["Admin"] == "/admin/users"
 
 
@@ -217,7 +217,7 @@ def test_view_reports_alone_adds_reports_and_nothing_else(client, db_session):
     db_session.add(UserPermission(user_id=agent_id, permission="view_reports"))
     db_session.commit()
     links = nav_links(client.get("/tickets"))
-    assert list(links) == ["Queue", "My tickets", "Untriaged", "Approvals", "MSP mail", "Reports", "My requests", "My feedback", "Settings"]
+    assert list(links) == ["Queue", "My tickets", "Untriaged", "Approvals", "MSP mail", "Reports", "My requests", "My feedback", "Settings", "Appearance"]
 
 
 @pytest.mark.parametrize("permission,destination", [("manage_request_templates", "/admin/request-types"), ("data_protection", "/admin/data-protection")])
@@ -233,19 +233,19 @@ def test_an_extra_permission_adds_an_admin_item_that_opens_its_page(client, db_s
 def test_an_end_user_gets_the_portal_frame_and_no_agent_navigation(client, db_session):
     set_role(db_session, login_as(client, "ann@example.com"), UserRole.END_USER)
     page = client.get("/portal")
-    assert list(nav_links(page)) == ["My requests", "New request", "Approvals", "Settings"]
+    assert list(nav_links(page)) == ["My requests", "New request", "Approvals", "Settings", "Appearance"]
     assert "Agent console" not in page.text and 'class="sidebar"' not in page.text
     assert "/tickets" not in nav_links(page).values()
     assert 'action="/tickets"' not in page.text  # no ticket search for someone who cannot use it
     assert "Raise ticket" not in page.text
     # An end user is in the portal frame on every page they can open, not only /portal.
-    assert list(nav_links(client.get("/settings/notifications"))) == ["My requests", "New request", "Approvals", "Settings"]
+    assert list(nav_links(client.get("/settings/notifications"))) == ["My requests", "New request", "Approvals", "Settings", "Appearance"]
 
 
 def test_an_agent_on_a_portal_page_gets_the_portal_frame_with_a_way_back(client, db_session):
     agent(client, db_session)
     links = nav_links(client.get("/portal"))
-    assert list(links) == ["My requests", "New request", "Approvals", "Agent console", "Settings"]
+    assert list(links) == ["My requests", "New request", "Approvals", "Agent console", "Settings", "Appearance"]
     assert links["Agent console"] == "/tickets"
 
 
@@ -408,3 +408,75 @@ def test_an_htmx_partial_carries_no_frame(client, db_session):
 def test_build_shell_survives_a_person_with_no_role_row(db_session):
     """The frame is a convenience: for nobody it is the bare one."""
     assert build_shell(db_session, None, "/tickets", {}).kind == "bare"
+
+
+# ---- The person menu and the fixed sidebar (9G, issue #210) ------------------------------------------------
+
+CSS = (Path(__file__).resolve().parent.parent / "app" / "static" / "styles.css").read_text()
+
+
+def menu_of(page) -> str:
+    """The person menu's <details>."""
+    return re.search(r'<details class="person-menu.*?</details>', page.text, re.S).group(0)
+
+
+def test_the_console_sidebar_has_one_nav_and_the_person_menu_is_its_own_landmark(client, db_session):
+    agent(client, db_session)
+    page = client.get("/tickets")
+    assert page.text.count("<nav>") == 1  # the sidebar's navigation; tests/test_htmx_partials.py counts it
+    assert page.text.count('<nav aria-label="Account">') == 1
+    assert menu_of(page).count('<nav aria-label="Account">') == 1
+    # The Me group is gone from the sidebar list: those pages are in the menu.
+    sidebar_nav = re.search(r"<nav>.*?</nav>", page.text, re.S).group(0)
+    assert "nav-heading" not in sidebar_nav and "My feedback" not in sidebar_nav and "Settings" not in sidebar_nav
+
+
+def test_an_agents_person_menu_holds_their_pages_and_a_sign_out_post(client, db_session):
+    agent(client, db_session)
+    menu = menu_of(client.get("/tickets"))
+    labels = re.findall(r'<a href="([^"]+)" class="navlink"[^>]*>.*?<span class="navlink-label">([^<]+)</span>', menu, re.S)
+    assert labels == [("/portal", "My requests"), ("/my-feedback", "My feedback"), ("/settings/notifications", "Settings"), ("/settings/notifications#appearance", "Appearance")]
+    assert re.search(r'<form method="post" action="/auth/logout"><button type="submit" class="btn btn-block">Sign out</button></form>', menu)
+    assert 'aria-label="Account menu for ' in menu and "person-menu-up" in menu
+
+
+def test_an_end_users_person_menu_is_the_same_component_without_agent_pages(client, db_session):
+    set_role(db_session, login_as(client, "ann@example.com"), UserRole.END_USER)
+    menu = menu_of(client.get("/portal"))
+    assert "Settings" in menu and "Appearance" in menu and "Sign out" in menu
+    assert "My feedback" not in menu and "person-menu-up" not in menu
+
+
+def test_sign_out_from_the_menu_ends_the_session(client, db_session):
+    agent(client, db_session)
+    assert client.get("/tickets").status_code == 200
+    client.post("/auth/logout", follow_redirects=False)
+    assert client.get("/tickets", follow_redirects=False).status_code in (302, 303, 307, 401)
+
+
+def test_the_appearance_link_lands_on_the_appearance_fieldset(client, db_session):
+    agent(client, db_session)
+    assert '<fieldset id="appearance">' in client.get("/settings/notifications").text
+
+
+def test_the_sidebar_is_fixed_to_the_viewport_and_only_its_navigation_scrolls():
+    sidebar = re.search(r"\n\.sidebar \{.*?\n\}", CSS, re.S).group(0)
+    assert "position: sticky" in sidebar and "top: 0" in sidebar and "height: 100vh" in sidebar and "height: 100dvh" in sidebar
+    assert re.search(r"\.sidebar > nav \{[^}]*overflow-y: auto", CSS)
+    # Stacked (the sidebar wraps above the page): no fixed height, so nothing is trapped on a small screen.
+    stacked = re.search(r"@media \(max-width: 800px\) \{.*?\n\}", CSS, re.S).group(0)
+    assert "position: static" in stacked and "height: auto" in stacked
+
+
+def test_admin_users_forms_use_the_form_layout_with_their_field_names(client, db_session):
+    set_role(db_session, login_as(client, "boss@example.com"), UserRole.SUPER_ADMIN)
+    page = client.get("/admin/users").text
+    create = page[page.index('<form method="post" action="/admin/users">'):]
+    create = create[: create.index("</form>")]
+    assert 'class="form-grid"' in create and 'class="form-actions"' in create and create.count('class="field"') == 6
+    for name in ("email", "display_name", "password", "role", "team_id", "level"):
+        assert f'name="{name}"' in create
+    link = page[page.index('action="/admin/links/preview"'):]
+    link = link[: link.index("</form>")]
+    assert 'class="form-grid"' in link and 'name="main_email"' in link and 'name="other_email"' in link
+    assert 'class="filter-bar"' in page  # the role and membership forms in the user rows

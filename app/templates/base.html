@@ -8,6 +8,27 @@
   {% if item.count %}<span class="chip t-{{ item.tone }}"><span class="sr-only">{{ item.label }}: </span>{{ item.count }}</span>{% endif %}
 </a>
 {%- endmacro %}
+{# The person menu (9G), one component for both frames: a <details> that opens from the person row (console) or the initials (portal). The items come from the shell (app/navigation.py). Closing on Escape or an outside click is the script at the foot of the page. #}
+{% macro person_menu(shell, viewer, initials, row) -%}
+<details class="person-menu{% if row %} person-menu-up{% endif %}">
+  {% if row %}
+  <summary class="person-row" aria-label="Account menu for {{ viewer.display_name }}">
+    <span class="avatar" aria-hidden="true">{{ initials }}</span>
+    <span class="person"><span class="person-name">{{ viewer.display_name }}</span><span class="person-role">{{ viewer.role.value }}</span></span>
+    {{ icon("M6 9l6 6 6-6", 16, 2) }}
+  </summary>
+  {% else %}
+  <summary class="avatar avatar-lg" aria-label="Account menu for {{ viewer.display_name }}"><span aria-hidden="true">{{ initials }}</span></summary>
+  {% endif %}
+  <div class="person-menu-panel">
+    {% if not row %}<span class="person-name">{{ viewer.display_name }}</span>{% endif %}
+    <nav aria-label="Account">
+      {% for item in shell.person_menu %}{{ nav_item(item) }}{% endfor %}
+    </nav>
+    <form method="post" action="/auth/logout"><button type="submit" class="btn btn-block">Sign out</button></form>
+  </div>
+</details>
+{%- endmacro %}
 {% macro topbar_actions(shell, theme, with_raise) -%}
 <form method="post" action="/settings/theme" class="inline-form">
   <input type="hidden" name="theme" value="{{ next_theme(theme) }}" />
@@ -59,16 +80,10 @@
       <nav>
         <div class="nav-list">
           {% for item in shell.items %}{{ nav_item(item) }}{% endfor %}
-          <div class="nav-heading">Me</div>
-          {% for item in shell.more %}{{ nav_item(item) }}{% endfor %}
         </div>
       </nav>
       <div class="sidebar-person">
-        <div class="person-row">
-          <span class="avatar" aria-hidden="true">{{ initials }}</span>
-          <span class="person"><span class="person-name">{{ viewer.display_name }}</span><span class="person-role">{{ viewer.role.value }}</span></span>
-        </div>
-        <form method="post" action="/auth/logout"><button type="submit" class="btn btn-block">Sign out</button></form>
+        {{ person_menu(shell, viewer, initials, true) }}
       </div>
     </div>
     <div class="app-main">
@@ -105,15 +120,8 @@
       </nav>
       <div class="topbar-actions">
         {{ topbar_actions(shell, theme, false) }}
-        {# The person: initials that open a small menu with their name, Settings and Sign out (no script: a details element). #}
-        <details class="person-menu">
-          <summary class="avatar avatar-lg" aria-label="Account menu for {{ viewer.display_name }}"><span aria-hidden="true">{{ initials }}</span></summary>
-          <div class="person-menu-panel">
-            <span class="person-name">{{ viewer.display_name }}</span>
-            {% for item in shell.more %}<a href="{{ item.href }}" class="navlink"{% if item.active %} aria-current="page"{% endif %}>{{ icon(item.icon) }}<span class="navlink-label">{{ item.label }}</span></a>{% endfor %}
-            <form method="post" action="/auth/logout"><button type="submit" class="btn btn-block">Sign out</button></form>
-          </div>
-        </details>
+        {# The person: initials that open the person menu. #}
+        {{ person_menu(shell, viewer, initials, false) }}
       </div>
     </header>
     <div id="flash" role="alert"></div>
@@ -170,7 +178,7 @@
   </script>
   {% endif %}
   <script>
-    // The person menu in the portal bar is a <details>: close it on a click elsewhere or Escape.
+    // The person menu (either frame) is a <details>: close it on a click elsewhere or Escape.
     (function () {
       var menu = document.querySelector(".person-menu");
       if (!menu) { return; }

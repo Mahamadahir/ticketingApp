@@ -46,7 +46,11 @@ button, input, select, textarea { font: inherit; color: inherit; }
   flex: 1 1 232px; max-width: 260px; min-width: 220px;
   background: var(--surface); border-right: 1px solid var(--border);
   padding: 20px 14px; display: flex; flex-direction: column; gap: 20px;
+  /* 9G: fixed to the viewport, so the person row is always in reach; only the navigation scrolls. */
+  position: sticky; top: 0; align-self: flex-start; height: 100vh; height: 100dvh; box-sizing: border-box;
 }
+.sidebar > nav { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.sidebar > .brand, .sidebar-person { flex: none; }
 .brand { display: flex; align-items: center; gap: 10px; padding: 0 8px; text-decoration: none; color: var(--text); }
 .brand:hover { color: var(--text); }
 .brand-mark {
@@ -69,11 +73,13 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .navlink svg { flex: none; }
 .navlink-label { flex: 1; }
 
-.sidebar-person {
-  margin-top: auto; padding: 12px 8px 0; border-top: 1px solid var(--border);
-  display: flex; flex-direction: column; gap: 10px;
-}
+.sidebar-person { margin-top: auto; padding: 12px 0 0; border-top: 1px solid var(--border); }
 .person-row { display: flex; align-items: center; gap: 10px; }
+summary.person-row { padding: 6px 8px; border-radius: var(--radius); cursor: pointer; list-style: none; }
+summary.person-row::-webkit-details-marker { display: none; }
+summary.person-row:hover { background: var(--raised); }
+summary.person-row > svg { flex: none; color: var(--muted); transform: rotate(180deg); }
+.person-menu[open] > summary.person-row > svg { transform: none; }
 .btn-block { width: 100%; }
 .avatar {
   flex: none; width: 32px; height: 32px; border-radius: 999px; background: var(--gray-bg); color: var(--gray);
@@ -134,6 +140,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
   display: flex; flex-direction: column; gap: 8px; background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--radius-lg); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
 }
+.person-menu-panel nav { display: flex; flex-direction: column; gap: 2px; }
+/* From the bottom row of the sidebar the panel opens upward, across the width of the row. */
+.person-menu-up > .person-menu-panel { top: auto; bottom: calc(100% + 8px); left: 0; right: 0; min-width: 0; }
 
 /* ---- Components --------------------------------------------------------------------------------------------- */
 
@@ -177,6 +186,23 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 .field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: var(--muted); }
 .field > input, .field > select, .field > textarea { font-size: 14px; font-weight: 500; color: var(--text); }
+/* Forms (9G): one responsive layout. A .form-grid holds .field items (label above the control, optional .field-hint, the
+   .field-error under it); .field-wide spans the row; .form-actions is the buttons row; .filter-bar is the inline
+   selects-plus-Apply form. Field names, ids and validation are the page's own. */
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin: 0 0 16px; align-items: start; }
+.form-grid .field { min-width: 0; }
+.form-grid .field > input:not([type="checkbox"]):not([type="radio"]), .form-grid .field > select, .form-grid .field > textarea { width: 100%; box-sizing: border-box; }
+.form-grid .field-wide { grid-column: 1 / -1; }
+.field-narrow { max-width: 260px; }
+.field-hint { font-weight: 400; color: var(--muted); }
+.field-error { font-weight: 500; color: var(--red); }
+.form-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; margin: 0 0 16px; }
+.filter-bar { display: flex; flex-wrap: wrap; align-items: end; gap: 12px 16px; margin: 0 0 16px; }
+.filter-bar .field { flex: 1 1 200px; min-width: 0; }
+.filter-bar .field > input, .filter-bar .field > select { width: 100%; box-sizing: border-box; }
+.field-check { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 500; color: var(--text); }
+.form-grid fieldset { grid-column: 1 / -1; margin: 0; }
+
 /* Zero specificity (:where), so a component such as the search box can restyle its own input without a fight. */
 :where(.input, input[type="text"], input[type="search"], input[type="email"], input[type="password"], input[type="number"],
 input[type="date"], input[type="datetime-local"], input[type="url"], input:not([type]), select, textarea) {
@@ -444,6 +470,14 @@ th { color: var(--muted); font-weight: 600; }
 .outage-banner { background: var(--amber-bg); color: var(--amber); border-bottom: 2px solid var(--amber); padding: 0.5rem 1rem; }
 .outage-banner a { color: inherit; font-weight: 600; }
 
+/* Where the sidebar wraps above the page (it needs 220px beside 560px), it stacks: no fixed height, and the menu opens downward. */
+@media (max-width: 800px) {
+  .sidebar { position: static; height: auto; max-width: none; flex-basis: 100%; }
+  .sidebar > nav { overflow: visible; }
+  .person-menu-up > .person-menu-panel { bottom: auto; top: calc(100% + 8px); }
+  summary.person-row > svg { transform: none; }
+  .person-menu[open] > summary.person-row > svg { transform: rotate(180deg); }
+}
 @media (max-width: 720px) {
   .sidebar { max-width: none; flex-basis: 100%; }
   .topbar { padding: 12px 16px; }

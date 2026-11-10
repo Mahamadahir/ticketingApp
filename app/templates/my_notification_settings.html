@@ -11,13 +11,13 @@
 
 <form method="post" action="/settings/theme">
   <input type="hidden" name="return_to" value="/settings/notifications?saved=1" />
-  <fieldset>
+  <fieldset id="appearance">
     <legend>Appearance</legend>
     <p class="note">System follows your device's light or dark setting. The theme button at the top of every page steps through the three.</p>
     {% for value, label in theme_labels.items() %}
     <label><input type="radio" name="theme" value="{{ value }}" {% if value == theme %}checked{% endif %} /> {{ label }}</label>
     {% endfor %}
-    <button type="submit">Save appearance</button>
+    <div class="form-actions"><button type="submit" class="btn btn-primary">Save appearance</button></div>
   </fieldset>
 </form>
 
@@ -28,12 +28,16 @@
       Times are shown in your time zone, <b>{{ zone }}</b>{% if user.time_zone_source == "manual" %}, which you chose{% elif user.time_zone_source == "browser" %}, taken from your browser and updated when it changes{% else %} (the organisation default until your browser reports one){% endif %}.
       Choose one yourself to stop your browser changing it, for example while you work remotely from elsewhere.
     </p>
-    <label>Time zone
-      <input type="text" name="time_zone" list="time-zones" value="{{ user.time_zone if user.time_zone_source == 'manual' else '' }}" placeholder="Europe/London" />
-    </label>
+    <div class="form-grid">
+      <label class="field">Time zone
+        <input type="text" name="time_zone" list="time-zones" value="{{ user.time_zone if user.time_zone_source == 'manual' else '' }}" placeholder="Europe/London" />
+      </label>
+    </div>
     <datalist id="time-zones">{% for name in zone_choices %}<option value="{{ name }}"></option>{% endfor %}</datalist>
-    <button type="submit">Use this time zone</button>
-    {% if user.time_zone_source == "manual" %}<button type="submit" name="clear" value="1" formnovalidate>Go back to my browser's</button>{% endif %}
+    <div class="form-actions">
+      {% if user.time_zone_source == "manual" %}<button type="submit" name="clear" value="1" class="btn" formnovalidate>Go back to my browser's</button>{% endif %}
+      <button type="submit" class="btn btn-primary">Use this time zone</button>
+    </div>
   </fieldset>
 </form>
 
@@ -58,9 +62,11 @@
       events where you have Teams ticked. Leave it blank for the usual {{ default_delay }} minutes. If
       you have the app turned off for an event but Teams on, it goes to Teams straight away.
     </p>
-    <label>Minutes
-      <input type="number" name="teams_delay" min="1" max="{{ max_delay }}" value="{{ user.teams_delay_minutes or '' }}" placeholder="{{ default_delay }}" />
-    </label>
+    <div class="form-grid">
+      <label class="field field-narrow">Minutes
+        <input type="number" name="teams_delay" min="1" max="{{ max_delay }}" value="{{ user.teams_delay_minutes or '' }}" placeholder="{{ default_delay }}" />
+      </label>
+    </div>
   </fieldset>
   {% endif %}
   {% if show_teams_replies %}
@@ -75,7 +81,7 @@
     <label><input type="radio" name="teams_replies" value="both" {{ "checked" if user.teams_replies_also_email else "" }} /> Teams and email</label>
   </fieldset>
   {% endif %}
-  <button type="submit">Save</button>
+  <div class="form-actions"><button type="submit" class="btn btn-primary">Save</button></div>
 </form>
 
 <h2>Sign-in</h2>
