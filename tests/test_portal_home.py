@@ -45,10 +45,10 @@ def make_ticket(db, email="jo@example.com", subject="Printer is offline", status
     return ticket
 
 
-def say(db, ticket, body, direction, visibility=MessageVisibility.PUBLIC, sender="agent@example.com", ago=timedelta(hours=2)):
+def say(db, ticket, body, direction, visibility=MessageVisibility.PUBLIC, sender="agent@example.com", ago=timedelta(hours=2), author=None):
     message = Message(
         ticket_id=ticket.id, sender=sender, body=body, direction=direction, visibility=visibility,
-        created_at=datetime.now(timezone.utc) - ago,
+        created_at=datetime.now(timezone.utc) - ago, author_user_id=author,
     )
     db.add(message)
     db.commit()
@@ -156,6 +156,8 @@ def test_relative_time_in_words():
     assert relative_time(NOW - timedelta(hours=2, minutes=5), NOW) == "2 hours ago"
     assert relative_time(NOW - timedelta(days=3), NOW) == "3 days ago"
     assert relative_time(NOW - timedelta(days=15), NOW) == "2 weeks ago"
+    assert relative_time(NOW - timedelta(days=65), NOW) == "2 months ago"
+    assert relative_time(NOW - timedelta(days=800), NOW) == "2 years ago"
     assert format_long_date(date(2026, 11, 12), "UTC", now=NOW) == "Thursday 12 November"
 
 
@@ -170,10 +172,29 @@ def test_an_agents_reply_reads_as_it_support_replied(db_session):
 
 def test_the_requesters_own_reply_reads_as_you_replied_and_a_followers_does_not(db_session):
     ticket = make_ticket(db_session)
+    say(db_session, ticket, "The request itself", MessageDirection.INBOUND, sender="jo@example.com", ago=timedelta(hours=1))
     say(db_session, ticket, "Still broken", MessageDirection.INBOUND, sender="jo@example.com", ago=timedelta(minutes=10))
     assert requester_last_update(db_session, ticket, "UTC", {"jo@example.com"}) == "You replied 10 minutes ago"
     say(db_session, ticket, "Me too", MessageDirection.INBOUND, sender="pat@example.com", ago=timedelta(minutes=3))
     assert requester_last_update(db_session, ticket, "UTC", {"jo@example.com"}) == "A reply was added 3 minutes ago"
+
+
+def test_a_portal_reply_is_the_viewers_own_even_though_it_is_signed_with_the_display_name(db_session):
+    """The portal records a comment with the person's display name as sender, so the author is what says whose it is."""
+    jo = User(email="jo@example.com", display_name="Jo Bloggs")
+    db_session.add(jo)
+    db_session.commit()
+    ticket = make_ticket(db_session)
+    say(db_session, ticket, "The request itself", MessageDirection.INBOUND, sender="Jo Bloggs", ago=timedelta(hours=1), author=jo.id)
+    say(db_session, ticket, "Still broken", MessageDirection.INBOUND, sender="Jo Bloggs", ago=timedelta(minutes=5), author=jo.id)
+    assert requester_last_update(db_session, ticket, "UTC", {"jo@example.com"}, viewer_id=jo.id) == "You replied 5 minutes ago"
+    assert requester_last_update(db_session, ticket, "UTC", {"pat@example.com"}, viewer_id=jo.id + 1) == "A reply was added 5 minutes ago"
+
+
+def test_a_request_with_only_its_own_opening_message_is_just_received(db_session):
+    ticket = make_ticket(db_session)
+    say(db_session, ticket, "Printer is offline", MessageDirection.INBOUND, sender="jo@example.com", ago=timedelta(minutes=30))
+    assert requester_last_update(db_session, ticket, "UTC", {"jo@example.com"}, now=ticket.created_at + timedelta(minutes=30)) == "Received 30 minutes ago"
 
 
 def test_with_no_messages_the_line_says_when_it_was_received(db_session):
@@ -366,6 +387,12 @@ def test_the_empty_states(client, db_session):
     login_as(client, "jo@example.com")
     assert "No open requests right now" in client.get("/portal").text
     assert "Nothing finished yet" in client.get("/portal?tab=finished").text
+
+
+def test_the_portal_frame_menu_closes_on_escape_and_outside_click(client, db_session):
+    login_as(client, "jo@example.com")
+    page = client.get("/portal").text
+    assert 'querySelector(".person-menu")' in page and "Escape" in page
 
 
 def test_the_portal_frame(client, db_session):

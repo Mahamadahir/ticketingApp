@@ -170,6 +170,17 @@
   </script>
   {% endif %}
   <script>
+    // The person menu in the portal bar is a <details>: close it on a click elsewhere or Escape.
+    (function () {
+      var menu = document.querySelector(".person-menu");
+      if (!menu) { return; }
+      document.addEventListener("click", function (event) { if (menu.open && !menu.contains(event.target)) { menu.open = false; } });
+      document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape" && menu.open) { menu.open = false; menu.querySelector("summary").focus(); }
+      });
+    })();
+  </script>
+  <script>
     // Forms swap <main> with htmx. Clear any earlier message when one is sent, and
     // let our error messages (4xx responses that name #flash as their target) show,
     // because htmx ignores 4xx responses by default.

@@ -416,6 +416,7 @@ class RequesterStatus:
     label: str
     tone: str
     sentence: str
+    reopen_note: str = ""  # the " \u00b7 you can reopen it until ..." part of a Resolved sentence, for a line that adds its own date
 
 
 # The one mapping from the internal status to what the requester is told: (wording, chip tone). Requesters never see
@@ -466,12 +467,13 @@ def requester_status(session: Session, ticket: Ticket, zone: str, *, can_reopen:
     for the dates; `can_reopen` is whether this viewer may reopen it (the requester, not a follower), which decides
     whether a Resolved ticket says so."""
     label, tone = REQUESTER_STATUS_WORDING[ticket.status]
-    sentence = label
+    sentence, note = label, ""
     if ticket.status == TicketStatus.SCHEDULED and ticket.due_on is not None:
         sentence = f"Scheduled for {format_long_date(ticket.due_on, zone)}"
     elif ticket.status == TicketStatus.RESOLVED:
-        sentence = label + _reopen_clause(session, ticket, zone, can_reopen)
-    return RequesterStatus(label, tone, sentence)
+        note = _reopen_clause(session, ticket, zone, can_reopen)
+        sentence = label + note
+    return RequesterStatus(label, tone, sentence, note)
 
 
 def _approval_progress(session: Session, ticket: Ticket) -> str:
@@ -489,29 +491,35 @@ def _approval_progress(session: Session, ticket: Ticket) -> str:
 
 
 def requester_last_update(
-    session: Session, ticket: Ticket, zone: str, my_emails: set[str], *, can_reopen: bool = False, now: Optional[datetime] = None
+    session: Session, ticket: Ticket, zone: str, my_emails: set[str], *, can_reopen: bool = False, now: Optional[datetime] = None,
+    viewer_id: Optional[int] = None, status: Optional[RequesterStatus] = None,
 ) -> str:
     """The one-line "last update" on My requests: "IT Support replied 2 hours ago", "Waiting for 1 of 2 approvals",
     "Scheduled for Thursday 12 November", "Resolved on 3 November \u00b7 you can reopen it until 10 November". Built only
     from what the requester may see: their visible messages (never a note or MSP mail they have not been given, and
-    never who at the partner wrote), the approval count and the dates on the ticket. Who wrote a reply is not named."""
+    never who at the partner wrote), the approval count and the dates on the ticket. Who wrote a reply is not named.
+    `viewer_id` and `my_emails` tell the person's own reply from someone else's; `status` is the `requester_status` already
+    worked out for the row, so it is not worked out twice."""
     now = now or datetime.now(timezone.utc)
+    status = status or requester_status(session, ticket, zone, can_reopen=can_reopen)
     if ticket.status == TicketStatus.AWAITING_APPROVAL:
         return _approval_progress(session, ticket)
     if ticket.status == TicketStatus.SCHEDULED and ticket.due_on is not None:
-        return requester_status(session, ticket, zone).sentence
+        return status.sentence
     if ticket.status == TicketStatus.RESOLVED and ticket.resolved_at is not None:
-        return f"Resolved on {format_long_date(ticket.resolved_at, zone)}" + _reopen_clause(session, ticket, zone, can_reopen)
+        return f"Resolved on {format_long_date(ticket.resolved_at, zone)}" + status.reopen_note
     if ticket.status == TicketStatus.CLOSED:
         closed = ticket.closed_at or ticket.updated_at
         return f"Closed on {format_long_date(closed, zone)}"
     visible = requester_visible_messages(session, ticket)
-    if not visible:
+    last = visible[-1] if visible else None
+    # The request itself is the first message (an inbound one): with nothing after it, the ticket is just received.
+    if last is None or (len(visible) == 1 and last.direction == MessageDirection.INBOUND):
         return f"Received {relative_time(ticket.created_at, now)}"
-    last = visible[-1]
     if last.direction == MessageDirection.OUTBOUND:
         return f"IT Support replied {relative_time(last.created_at, now)}"
-    who = "You replied" if (last.sender or "").strip().lower() in my_emails else "A reply was added"
+    mine = (viewer_id is not None and last.author_user_id == viewer_id) or (last.sender or "").strip().lower() in my_emails
+    who = "You replied" if mine else "A reply was added"
     return f"{who} {relative_time(last.created_at, now)}"
 
 

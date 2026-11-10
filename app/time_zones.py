@@ -147,11 +147,14 @@ def format_long_date(day, zone_name: str, *, now: Optional[datetime] = None) -> 
 
 
 def relative_time(moment: datetime, now: Optional[datetime] = None) -> str:
-    """How long ago, in words: "just now", "5 minutes ago", "2 hours ago", "3 days ago", then "6 weeks ago"."""
+    """How long ago, in words: "just now", "5 minutes ago", "2 hours ago", "3 days ago", then weeks, months and years."""
     seconds = int(((now or datetime.now(timezone.utc)) - _aware(moment)).total_seconds())
     if seconds < 60:
         return "just now"
-    for size, unit in ((60 * 60 * 24 * 7, "week"), (60 * 60 * 24, "day"), (60 * 60, "hour"), (60, "minute")):
+    for size, unit in (
+        (60 * 60 * 24 * 365, "year"), (60 * 60 * 24 * 30, "month"), (60 * 60 * 24 * 7, "week"),
+        (60 * 60 * 24, "day"), (60 * 60, "hour"), (60, "minute"),
+    ):
         if seconds >= size:
             count = seconds // size
             return f"{count} {unit}{'' if count == 1 else 's'} ago"

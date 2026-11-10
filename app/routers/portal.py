@@ -218,10 +218,11 @@ def list_my_tickets(
     by any of their addresses) in Open and Finished tabs, each with its status in plain words and a one-line last update."""
     finished = tab == FINISHED_TAB
     query = my_tickets_query(user)
-    counts = {
-        name: session.exec(select(func.count()).select_from(query.where(condition).subquery())).one()
-        for name, condition in ((OPEN_TAB, Ticket.status.notin_(FINISHED_STATUSES)), (FINISHED_TAB, Ticket.status.in_(FINISHED_STATUSES)))
-    }
+    in_finished = Ticket.status.in_(FINISHED_STATUSES)
+    done, total = session.exec(
+        select(func.count().filter(in_finished), func.count()).where(Ticket.id.in_(query.with_only_columns(Ticket.id).order_by(None)))
+    ).one()
+    counts = {OPEN_TAB: total - done, FINISHED_TAB: done}
     tickets_page = paginate(
         session,
         query.where(Ticket.status.in_(FINISHED_STATUSES) if finished else Ticket.status.notin_(FINISHED_STATUSES)),
@@ -234,11 +235,12 @@ def list_my_tickets(
     rows = []
     for ticket in tickets_page.items:
         mine = ticket.requester_email.strip().lower() in emails
+        status = requester_status(session, ticket, zone, can_reopen=mine)
         rows.append({
             "ticket": ticket,
             "kind": requester_kind(ticket, kinds.get(ticket.request_type_id)),
-            "status": requester_status(session, ticket, zone, can_reopen=mine),
-            "last_update": requester_last_update(session, ticket, zone, emails, can_reopen=mine),
+            "status": status,
+            "last_update": requester_last_update(session, ticket, zone, emails, can_reopen=mine, viewer_id=user.id, status=status),
             "following": not mine,
             "can_reopen": mine and ticket.status == TicketStatus.RESOLVED,
         })
