@@ -655,6 +655,8 @@ class RequestType(SQLModel, table=True):
     # Off by default (#167): an approver who is also the requester counts as a voter and approves their own
     # request at once (app/approvals.py). Off: the requester is left out of the vote.
     approvers_may_self_approve: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
+    # Shown first among the quick-start tiles on the portal's My requests page (#204, app/request_types.py `portal_tiles`).
+    is_featured: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

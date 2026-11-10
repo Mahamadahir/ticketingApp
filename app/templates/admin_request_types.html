@@ -123,6 +123,7 @@
     </label>
     <label>Percent to pass <input type="number" name="pass_percent" value="{{ t.pass_percent }}" min="1" max="100" required /></label>
     <label><input type="checkbox" name="is_active" {{ "checked" if t.is_active else "" }} /> Available on the request form</label>
+    <label><input type="checkbox" name="is_featured" {{ "checked" if t.is_featured else "" }} /> Feature on the portal home page (up to four kinds show as quick-start tiles; with none featured, the first four do)</label>
     <label><input type="checkbox" name="offers_required_by" {{ "checked" if t.offers_required_by else "" }} /> Offer a Required by date</label>
     <label>Due: days before Required by (blank: {{ default_due_days }}) <input type="number" name="due_days_before" value="{{ t.due_days_before if t.due_days_before is not none else "" }}" min="0" max="365" /></label>
     <label>Queue lead time in days (blank: {{ default_queue_days }}) <input type="number" name="queue_lead_days" value="{{ t.queue_lead_days if t.queue_lead_days is not none else "" }}" min="0" max="365" /></label>
@@ -207,6 +208,7 @@
   </label>
   <label>Percent to pass <input type="number" name="pass_percent" value="{{ default_pass }}" min="1" max="100" required /></label>
   <label><input type="checkbox" name="is_active" checked /> Available on the request form</label>
+  <label><input type="checkbox" name="is_featured" /> Feature on the portal home page (up to four kinds show as quick-start tiles; with none featured, the first four do)</label>
   <label><input type="checkbox" name="offers_required_by" /> Offer a Required by date</label>
   <label>Due: days before Required by (blank: {{ default_due_days }}) <input type="number" name="due_days_before" min="0" max="365" /></label>
   <label>Queue lead time in days (blank: {{ default_queue_days }}) <input type="number" name="queue_lead_days" min="0" max="365" /></label>

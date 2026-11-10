@@ -7,10 +7,13 @@ Rules that live here and nowhere else:
 - A ticket cannot be emailed until it is triaged. Notes can be added any time.
 - Which messages show on which ticket of a split request (_shared_conversation), the
   one thread subject (thread_subject) and the "About:" line (about_labels).
+- What a requester is told about a ticket's state, in plain words: `requester_status` (the one mapping from the
+  internal status to the wording and chip tone, used on every portal page) and `requester_last_update` (the
+  "last update" line of My requests). Both are built from requester-visible facts only.
 """
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from sqlmodel import Session, select
@@ -25,11 +28,14 @@ from app.models import (
     Ticket,
     TicketEvent,
     TicketStatus,
+    TicketType,
     User,
 )
 from app.request_questions import answer_rows
 from app.notifications import notify_agent_emailed, notify_reply
+from app.settings_store import AUTO_CLOSE_AFTER_DAYS, AUTO_CLOSE_ENABLED, count_setting, get_flag
 from app.sla import note_first_response
+from app.time_zones import format_long_date, relative_time
 from app.reply_channel import AGENT, EMAIL, MESSAGE_CHANNELS, PORTAL, SYSTEM, TEAMS_CHANNEL, queue_reply, route_for
 from app.storage import Storage, get_storage
 from app.ticket_service import NotTriaged
@@ -399,6 +405,122 @@ def requester_visible_answers(session: Session, ticket: Ticket) -> list[dict]:
     answers are what the requester (or the agent, for them) gave about their own request, so all of them are
     shown; nothing agent-only is stored with them. Kept here with the other requester-visible rules."""
     return [{"label": row["label"], "display": row["display"]} for row in answer_rows(session, ticket)]
+
+
+@dataclass(frozen=True)
+class RequesterStatus:
+    """A ticket's status as the requester reads it. `label` is the short wording for a chip, `tone` its colour pair
+    (the `t-<tone>` chip class), `sentence` the full wording where there is room, which carries the date for Scheduled
+    and the reopen window for Resolved."""
+
+    label: str
+    tone: str
+    sentence: str
+    reopen_note: str = ""  # the " \u00b7 you can reopen it until ..." part of a Resolved sentence, for a line that adds its own date
+
+
+# The one mapping from the internal status to what the requester is told: (wording, chip tone). Requesters never see
+# the partner, so With supplier and With MSP read as the work going on. Resolved, Closed and Scheduled get their dates
+# in `requester_status`. Every portal page uses this; agents keep the internal names.
+REQUESTER_STATUS_WORDING = {
+    TicketStatus.NEW: ("Received", "gray"),
+    TicketStatus.OPEN: ("Being worked on", "blue"),
+    TicketStatus.IN_PROGRESS: ("Being worked on", "blue"),
+    TicketStatus.AWAITING_USER: ("Waiting for your reply", "amber"),
+    TicketStatus.AWAITING_APPROVAL: ("Waiting for approval", "blue"),
+    TicketStatus.WITH_SUPPLIER: ("Being worked on", "blue"),
+    TicketStatus.WITH_MSP: ("Being worked on", "blue"),
+    TicketStatus.SCHEDULED: ("Scheduled", "gray"),
+    TicketStatus.RESOLVED: ("Resolved", "green"),
+    TicketStatus.CLOSED: ("Closed", "gray"),
+}
+
+
+def requester_kind(ticket: Ticket, request_type_name: Optional[str]) -> str:
+    """The kind of request, in the requester's words: the request type's name when it was raised as one, else "Service
+    request" or "Problem report". A Major Incident or Problem is an agents' category, so the requester reads it as a
+    problem report."""
+    if request_type_name:
+        return request_type_name
+    return "Service request" if ticket.type == TicketType.SERVICE_REQUEST else "Problem report"
+
+
+def reopen_deadline(session: Session, ticket: Ticket) -> Optional[datetime]:
+    """When a Resolved ticket stops being reopenable: the moment auto-close will close it. None when it is not
+    Resolved, when auto-close is off (it can be reopened until someone closes it) or when the resolution time is unknown."""
+    if ticket.status != TicketStatus.RESOLVED or ticket.resolved_at is None or not get_flag(session, AUTO_CLOSE_ENABLED):
+        return None
+    resolved_at = ticket.resolved_at if ticket.resolved_at.tzinfo else ticket.resolved_at.replace(tzinfo=timezone.utc)
+    return resolved_at + timedelta(days=count_setting(session, AUTO_CLOSE_AFTER_DAYS))
+
+
+def _reopen_clause(session: Session, ticket: Ticket, zone: str, can_reopen: bool) -> str:
+    """" · you can reopen it until 17 November" (or without the date), for the person who may reopen; else nothing."""
+    if not can_reopen or ticket.status != TicketStatus.RESOLVED:
+        return ""
+    until = reopen_deadline(session, ticket)
+    return " \u00b7 you can reopen it" + (f" until {format_long_date(until, zone)}" if until else "")
+
+
+def requester_status(session: Session, ticket: Ticket, zone: str, *, can_reopen: bool = False) -> RequesterStatus:
+    """The ticket's status in the requester's words (see REQUESTER_STATUS_WORDING). `zone` is the viewer's time zone,
+    for the dates; `can_reopen` is whether this viewer may reopen it (the requester, not a follower), which decides
+    whether a Resolved ticket says so."""
+    label, tone = REQUESTER_STATUS_WORDING[ticket.status]
+    sentence, note = label, ""
+    if ticket.status == TicketStatus.SCHEDULED and ticket.due_on is not None:
+        sentence = f"Scheduled for {format_long_date(ticket.due_on, zone)}"
+    elif ticket.status == TicketStatus.RESOLVED:
+        note = _reopen_clause(session, ticket, zone, can_reopen)
+        sentence = label + note
+    return RequesterStatus(label, tone, sentence, note)
+
+
+def _approval_progress(session: Session, ticket: Ticket) -> str:
+    """"Waiting for 1 of 2 approvals": the approvals still wanted of the number that settles the request. Never says who."""
+    from app.approvals import PENDING, APPROVED, current_approval, tally, votes_needed, votes_of
+
+    approval = current_approval(session, ticket)
+    if approval is None or approval.status != PENDING:
+        return "Waiting for approval"
+    needed = votes_needed(approval.pass_percent, approval.voters)
+    approved = tally([vote for vote, _ in votes_of(session, approval)])[0]
+    if needed <= 1:
+        return "Waiting for approval"
+    return f"Waiting for {max(needed - approved, 1)} of {needed} approvals"
+
+
+def requester_last_update(
+    session: Session, ticket: Ticket, zone: str, my_emails: set[str], *, can_reopen: bool = False, now: Optional[datetime] = None,
+    viewer_id: Optional[int] = None, status: Optional[RequesterStatus] = None,
+) -> str:
+    """The one-line "last update" on My requests: "IT Support replied 2 hours ago", "Waiting for 1 of 2 approvals",
+    "Scheduled for Thursday 12 November", "Resolved on 3 November \u00b7 you can reopen it until 10 November". Built only
+    from what the requester may see: their visible messages (never a note or MSP mail they have not been given, and
+    never who at the partner wrote), the approval count and the dates on the ticket. Who wrote a reply is not named.
+    `viewer_id` and `my_emails` tell the person's own reply from someone else's; `status` is the `requester_status` already
+    worked out for the row, so it is not worked out twice."""
+    now = now or datetime.now(timezone.utc)
+    status = status or requester_status(session, ticket, zone, can_reopen=can_reopen)
+    if ticket.status == TicketStatus.AWAITING_APPROVAL:
+        return _approval_progress(session, ticket)
+    if ticket.status == TicketStatus.SCHEDULED and ticket.due_on is not None:
+        return status.sentence
+    if ticket.status == TicketStatus.RESOLVED and ticket.resolved_at is not None:
+        return f"Resolved on {format_long_date(ticket.resolved_at, zone)}" + status.reopen_note
+    if ticket.status == TicketStatus.CLOSED:
+        closed = ticket.closed_at or ticket.updated_at
+        return f"Closed on {format_long_date(closed, zone)}"
+    visible = requester_visible_messages(session, ticket)
+    last = visible[-1] if visible else None
+    # The request itself is the first message (an inbound one): with nothing after it, the ticket is just received.
+    if last is None or (len(visible) == 1 and last.direction == MessageDirection.INBOUND):
+        return f"Received {relative_time(ticket.created_at, now)}"
+    if last.direction == MessageDirection.OUTBOUND:
+        return f"IT Support replied {relative_time(last.created_at, now)}"
+    mine = (viewer_id is not None and last.author_user_id == viewer_id) or (last.sender or "").strip().lower() in my_emails
+    who = "You replied" if mine else "A reply was added"
+    return f"{who} {relative_time(last.created_at, now)}"
 
 
 def thread_subject(session: Session, ticket: Ticket) -> str:

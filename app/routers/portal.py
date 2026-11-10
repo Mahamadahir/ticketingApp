@@ -3,9 +3,11 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from app.templating import templates
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 from app.audit import log_action
+from app.config import settings
 from app.auth import get_current_user
 from app.database import get_session
 from app.followers import (
@@ -46,15 +48,23 @@ from app.sla import IMPACT_LABELS, URGENCY_LABELS, Level
 from app.triage import TriageError
 from app.visibility import Access, access_context, may_set_required_by, ticket_access
 from app.attachments import files_by_message
-from app.messages import about_labels, record_inbound, requester_visible_answers, requester_visible_messages
+from app.messages import (
+    about_labels,
+    record_inbound,
+    requester_kind,
+    requester_last_update,
+    requester_status,
+    requester_visible_answers,
+    requester_visible_messages,
+)
 from app.follower_updates import queue_follower_updates
 from app.reopening import ReopenError, latest_follow_on, open_follow_on_ticket, related_tickets, reopen_ticket
 from app.reply_channel import PORTAL, note_requester_wrote
 from app.splitting import apply_requester_reply
 from app.request_questions import form_rows
-from app.request_types import active_request_types, request_type_of
+from app.request_types import active_request_types, portal_tiles, request_type_of
 from app.required_by import RequiredByError, offers_required_by, parse_required_by, set_required_by
-from app.models import Category, RequestType, Ticket, TicketSource, TicketStatus, TicketType, User, UserRole
+from app.models import FINISHED_STATUSES, Category, RequestType, Ticket, TicketSource, TicketStatus, TicketType, User, UserRole
 from app.ticket_service import get_by_number
 from app import identity
 from app.identity import is_follower_of, is_requester, my_tickets_query
@@ -62,6 +72,8 @@ from app.pagination import paginate
 from app.time_zones import zone_for_user
 
 router = APIRouter(prefix="/portal", tags=["portal"])
+
+OPEN_TAB, FINISHED_TAB = "open", "finished"
 
 
 def _is_requester(ticket: Ticket, user: User) -> bool:
@@ -100,8 +112,9 @@ def _get_readable_ticket(session: Session, number: int, user: User) -> Ticket:
     return ticket
 
 
-def _render_new_form(request: Request, user: User, session: Session) -> HTMLResponse:
+def _render_new_form(request: Request, user: User, session: Session, chosen_type_id: Optional[int] = None) -> HTMLResponse:
     types = active_request_types(session)
+    chosen = next((t for t in types if t.id == chosen_type_id), None)  # a tile's kind; one no longer offered is ignored
     agent = is_agent(user)
     return templates.TemplateResponse(
         request,
@@ -118,6 +131,8 @@ def _render_new_form(request: Request, user: User, session: Session) -> HTMLResp
             "max_subject_length": MAX_SUBJECT_LENGTH,
             "tell_requester": should_tell_requester(session),
             "request_types": types,
+            "chosen_type_id": chosen.id if chosen else None,
+            "question_rows": form_rows(session, chosen.id) if chosen else [],
             "required_by_names": [t.name for t in types if t.offers_required_by],
         },
     )
@@ -195,24 +210,66 @@ def _render_ticket(request: Request, ticket: Ticket, user: User, session: Sessio
 def list_my_tickets(
     request: Request,
     page: int = 1,
+    tab: str = OPEN_TAB,
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    tickets_page = paginate(session, my_tickets_query(user), page, request.query_params)
+    """My requests: the tiles for the kinds of request people can raise, then the person's requests (raised or followed,
+    by any of their addresses) in Open and Finished tabs, each with its status in plain words and a one-line last update."""
+    finished = tab == FINISHED_TAB
+    query = my_tickets_query(user)
+    in_finished = Ticket.status.in_(FINISHED_STATUSES)
+    done, total = session.exec(
+        select(func.count().filter(in_finished), func.count()).where(Ticket.id.in_(query.with_only_columns(Ticket.id).order_by(None)))
+    ).one()
+    counts = {OPEN_TAB: total - done, FINISHED_TAB: done}
+    tickets_page = paginate(
+        session,
+        query.where(Ticket.status.in_(FINISHED_STATUSES) if finished else Ticket.status.notin_(FINISHED_STATUSES)),
+        page,
+        request.query_params,
+    )
+    emails = identity.requester_emails(user)
+    zone = zone_for_user(session, user)
+    kinds = {t.id: t.name for t in session.exec(select(RequestType).where(RequestType.id.in_({t.request_type_id for t in tickets_page.items if t.request_type_id}))).all()}
+    rows = []
+    for ticket in tickets_page.items:
+        mine = ticket.requester_email.strip().lower() in emails
+        status = requester_status(session, ticket, zone, can_reopen=mine)
+        rows.append({
+            "ticket": ticket,
+            "kind": requester_kind(ticket, kinds.get(ticket.request_type_id)),
+            "status": status,
+            "last_update": requester_last_update(session, ticket, zone, emails, can_reopen=mine, viewer_id=user.id, status=status),
+            "following": not mine,
+            "can_reopen": mine and ticket.status == TicketStatus.RESOLVED,
+        })
     return templates.TemplateResponse(
         request,
         "portal_tickets_list.html",
-        {"page": tickets_page, "my_emails": identity.requester_emails(user), "waiting_on_me": count_pending_for(session, user), "user": user},
+        {
+            "page": tickets_page,
+            "rows": rows,
+            "tab": FINISHED_TAB if finished else OPEN_TAB,
+            "counts": counts,
+            "tiles": portal_tiles(session),
+            "first_name": (user.display_name.split() or [user.email])[0],
+            "teams_bot_on": settings.teams_bot_configured,
+            "waiting_on_me": count_pending_for(session, user),
+            "user": user,
+        },
     )
 
 
 @router.get("/new", response_class=HTMLResponse)
 def new_ticket_form(
     request: Request,
+    request_type_id: Optional[str] = None,
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    return _render_new_form(request, user, session)
+    """The raise form. `request_type_id` (a quick-start tile on My requests) chooses the kind of request in advance."""
+    return _render_new_form(request, user, session, optional_int(request_type_id))
 
 
 @router.get("/questions", response_class=HTMLResponse)

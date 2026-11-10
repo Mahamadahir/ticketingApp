@@ -29,15 +29,15 @@ def test_portal_list_is_paginated(client, db_session):
     login_as(client, "requester@example.com")
     add_tickets(db_session, PAGE_SIZE + 1, requester_email="requester@example.com")
 
-    assert client.get("/portal").text.count('class="ticket-card"') == PAGE_SIZE
-    assert client.get("/portal?page=2").text.count('class="ticket-card"') == 1
+    assert client.get("/portal").text.count('class="req"') == PAGE_SIZE
+    assert client.get("/portal?page=2").text.count('class="req"') == 1
 
 
 def test_page_number_below_one_shows_first_page(client, db_session):
     login_as(client, "requester@example.com")
     add_tickets(db_session, 3, requester_email="requester@example.com")
 
-    assert client.get("/portal?page=0").text.count('class="ticket-card"') == 3
+    assert client.get("/portal?page=0").text.count('class="req"') == 3
 
 
 def test_agent_reply_over_the_length_cap_is_rejected(client, db_session):

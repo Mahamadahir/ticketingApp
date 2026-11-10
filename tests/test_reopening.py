@@ -304,7 +304,7 @@ def test_the_requester_reopens_their_resolved_ticket_from_my_requests(client, db
     ticket = finish(db_session, ticket)
     client.post("/auth/logout")
     login_as(client, "jo@example.com")
-    assert f"/portal/{ticket.number}/reopen" in client.get("/portal").text
+    assert f"/portal/{ticket.number}/reopen" in client.get("/portal?tab=finished").text  # Resolved sits in the Finished tab
     assert f"/portal/{ticket.number}/reopen" in client.get(f"/portal/{ticket.number}").text
 
     response = client.post(f"/portal/{ticket.number}/reopen")
@@ -314,7 +314,8 @@ def test_the_requester_reopens_their_resolved_ticket_from_my_requests(client, db
     assert (ticket.status, ticket.reopen_count) == (TicketStatus.IN_PROGRESS, 1)
     [told] = notifications_for(db_session, "agent@example.com")
     assert told.kind == "reopened" and told.actor_email == "jo@example.com"
-    assert f"/portal/{ticket.number}/reopen" not in client.get("/portal").text  # no longer resolved
+    for tab in ("open", "finished"):  # no longer resolved, so no Reopen on either tab
+        assert f"/portal/{ticket.number}/reopen" not in client.get(f"/portal?tab={tab}").text
 
 
 def test_a_follower_or_a_stranger_cannot_reopen_it_from_the_portal(client, db_session):

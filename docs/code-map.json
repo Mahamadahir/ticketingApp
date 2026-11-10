@@ -54,6 +54,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/b3e8d1f46a72_request_type_featured.py",
+        "revision": "b3e8d1f46a72"
+      },
+      {
         "file": "migrations/versions/d7a3f19e5c28_message_channel_reply_files.py",
         "revision": "d7a3f19e5c28"
       },
@@ -68,17 +72,13 @@
       {
         "file": "migrations/versions/f72463c9eda5_teams_intake.py",
         "revision": "f72463c9eda5"
-      },
-      {
-        "file": "migrations/versions/3f94eea4bd7c_teams_bot_conversations.py",
-        "revision": "3f94eea4bd7c"
       }
     ],
-    "count": 67,
+    "count": 68,
     "heads": [
       {
-        "file": "migrations/versions/d7a3f19e5c28_message_channel_reply_files.py",
-        "revision": "d7a3f19e5c28"
+        "file": "migrations/versions/b3e8d1f46a72_request_type_featured.py",
+        "revision": "b3e8d1f46a72"
       }
     ]
   },
@@ -262,6 +262,7 @@
         "tests/test_approvals.py",
         "tests/test_entra_check.py",
         "tests/test_outbound_mail.py",
+        "tests/test_portal_home.py",
         "tests/test_request_types.py",
         "tests/test_teams_approvals.py"
       ]
@@ -359,6 +360,7 @@
         "app.entra_check",
         "app.linked_identities",
         "app.mail",
+        "app.messages",
         "app.navigation",
         "app.notifications",
         "app.request_types",
@@ -995,6 +997,7 @@
         "app.routers.dev_tools",
         "app.routers.link_account",
         "app.routers.my_settings",
+        "app.routers.portal",
         "app.routers.teams_bot",
         "app.routers.webhooks",
         "app.storage",
@@ -1035,6 +1038,7 @@
         "tests/test_msp_real_mail.py",
         "tests/test_outage_mode.py",
         "tests/test_outbound_mail.py",
+        "tests/test_portal_home.py",
         "tests/test_presence.py",
         "tests/test_public_surface.py",
         "tests/test_reply_files.py",
@@ -1961,6 +1965,7 @@
         "BadStatusChoice",
         "EmailPreview",
         "EmptyEmail",
+        "RequesterStatus",
         "TimelineItem",
         "UnknownRecipient"
       ],
@@ -1983,6 +1988,10 @@
         "record_inbound",
         "record_msp_message",
         "record_notice",
+        "reopen_deadline",
+        "requester_kind",
+        "requester_last_update",
+        "requester_status",
         "requester_visible_answers",
         "requester_visible_messages",
         "status_choices",
@@ -2011,16 +2020,19 @@
         "app.visibility"
       ],
       "imports": [
+        "app.approvals",
         "app.attachments",
         "app.followers",
         "app.models",
         "app.notifications",
         "app.reply_channel",
         "app.request_questions",
+        "app.settings_store",
         "app.sla",
         "app.splitting",
         "app.storage",
         "app.ticket_service",
+        "app.time_zones",
         "app.visibility"
       ],
       "module": "app.messages",
@@ -2038,6 +2050,7 @@
         "tests/test_msp_real_mail.py",
         "tests/test_never_follow.py",
         "tests/test_outbound_mail.py",
+        "tests/test_portal_home.py",
         "tests/test_reply_files.py",
         "tests/test_reply_notification.py",
         "tests/test_request_questions.py",
@@ -2480,6 +2493,7 @@
         "tests/test_pagination_and_limits.py",
         "tests/test_permissions.py",
         "tests/test_portal.py",
+        "tests/test_portal_home.py",
         "tests/test_presence.py",
         "tests/test_public_surface.py",
         "tests/test_queue_page.py",
@@ -3438,6 +3452,7 @@
         "active_request_types",
         "all_request_types",
         "create_request_type",
+        "portal_tiles",
         "request_type_of",
         "self_triage",
         "self_triage_defaults",
@@ -3466,6 +3481,7 @@
       "tables": [],
       "tests": [
         "tests/test_approvals.py",
+        "tests/test_portal_home.py",
         "tests/test_request_questions.py",
         "tests/test_request_type_defaults.py",
         "tests/test_request_types.py"
@@ -4696,6 +4712,7 @@
         "app.auth",
         "app.backdating",
         "app.categories",
+        "app.config",
         "app.database",
         "app.follower_updates",
         "app.followers",
@@ -5356,6 +5373,7 @@
         "app.intake",
         "app.linked_identities",
         "app.mail",
+        "app.messages",
         "app.msp",
         "app.never_follow",
         "app.notifications",
@@ -5418,6 +5436,7 @@
         "tests/test_notification_followup.py",
         "tests/test_outage_mode.py",
         "tests/test_outbound_mail.py",
+        "tests/test_portal_home.py",
         "tests/test_presence.py",
         "tests/test_raising.py",
         "tests/test_reply_files.py",
@@ -6292,6 +6311,7 @@
         "end_of_day_for_user",
         "end_of_day_utc",
         "format_date",
+        "format_long_date",
         "format_moment",
         "in_business_hours",
         "morning_of",
@@ -6300,6 +6320,7 @@
         "parse_clock",
         "parse_dates",
         "refresh_requester_zones",
+        "relative_time",
         "scheduled_morning_hour",
         "set_browser_zone",
         "set_manual_zone",
@@ -6316,6 +6337,7 @@
         "app.entra_check",
         "app.inbound",
         "app.jobs",
+        "app.messages",
         "app.msp",
         "app.report_kit",
         "app.reports",
@@ -6343,6 +6365,7 @@
         "tests/test_due_date.py",
         "tests/test_msp.py",
         "tests/test_msp_mail.py",
+        "tests/test_portal_home.py",
         "tests/test_time_zones.py"
       ]
     },
@@ -7020,6 +7043,7 @@
     "tests/test_pagination_and_limits.py",
     "tests/test_permissions.py",
     "tests/test_portal.py",
+    "tests/test_portal_home.py",
     "tests/test_presence.py",
     "tests/test_public_surface.py",
     "tests/test_queue_page.py",

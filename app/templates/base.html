@@ -95,8 +95,9 @@
     <header class="topbar portal-bar">
       <a class="brand" href="/portal">
         <span class="brand-mark" aria-hidden="true">IT</span>
-        <span class="brand-text"><span class="brand-name">IT Support Ticketing</span></span>
+        <span class="brand-text"><span class="brand-name">IT Support</span></span>
       </a>
+      {# A bare <nav>, as in the console (tests/test_htmx_partials.py counts it). #}
       <nav>
         <div class="portal-nav">
           {% for item in shell.items %}{{ nav_item(item) }}{% endfor %}
@@ -104,8 +105,15 @@
       </nav>
       <div class="topbar-actions">
         {{ topbar_actions(shell, theme, false) }}
-        <span class="person-inline"><span class="avatar" aria-hidden="true">{{ initials }}</span><span class="person-name">{{ viewer.display_name }}</span></span>
-        <form method="post" action="/auth/logout" class="inline-form"><button type="submit" class="btn">Sign out</button></form>
+        {# The person: initials that open a small menu with their name, Settings and Sign out (no script: a details element). #}
+        <details class="person-menu">
+          <summary class="avatar avatar-lg" aria-label="Account menu for {{ viewer.display_name }}"><span aria-hidden="true">{{ initials }}</span></summary>
+          <div class="person-menu-panel">
+            <span class="person-name">{{ viewer.display_name }}</span>
+            {% for item in shell.more %}<a href="{{ item.href }}" class="navlink"{% if item.active %} aria-current="page"{% endif %}>{{ icon(item.icon) }}<span class="navlink-label">{{ item.label }}</span></a>{% endfor %}
+            <form method="post" action="/auth/logout"><button type="submit" class="btn btn-block">Sign out</button></form>
+          </div>
+        </details>
       </div>
     </header>
     <div id="flash" role="alert"></div>
@@ -161,6 +169,17 @@
     })();
   </script>
   {% endif %}
+  <script>
+    // The person menu in the portal bar is a <details>: close it on a click elsewhere or Escape.
+    (function () {
+      var menu = document.querySelector(".person-menu");
+      if (!menu) { return; }
+      document.addEventListener("click", function (event) { if (menu.open && !menu.contains(event.target)) { menu.open = false; } });
+      document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape" && menu.open) { menu.open = false; menu.querySelector("summary").focus(); }
+      });
+    })();
+  </script>
   <script>
     // Forms swap <main> with htmx. Clear any earlier message when one is sent, and
     // let our error messages (4xx responses that name #flash as their target) show,
