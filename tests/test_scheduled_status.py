@@ -103,8 +103,8 @@ def test_the_portal_shows_the_label(client, db_session):
     team = create_team(db_session, "Service Desk")
     ticket = make_ticket(db_session, team.id, SCHEDULED)
     login_as(client, "me@example.com")
-    for url in ("/portal", f"/portal/{ticket.number}"):
-        assert "scheduled" in client.get(url).text
+    assert "scheduled" in client.get(f"/portal/{ticket.number}").text  # the ticket page still reads the status (9E restyles it)
+    assert '<span class="chip t-gray">Scheduled</span>' in client.get("/portal").text  # My requests: the requester's wording (9D)
 
 
 @pytest.mark.parametrize(

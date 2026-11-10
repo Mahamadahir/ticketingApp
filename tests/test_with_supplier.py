@@ -85,10 +85,12 @@ def test_the_portal_shows_the_label_and_never_internal_notes(client, db_session)
     client.post(f"/tickets/{ticket.number}/note", data={"body": "Vendor case VND-991, secret"})
     client.post("/auth/logout")
     login_as(client, "me@example.com")
-    for url in ("/portal", f"/portal/{ticket.number}"):
-        page = client.get(url).text
-        assert "with supplier" in page
-        assert "VND-991" not in page
+    page = client.get(f"/portal/{ticket.number}").text  # the ticket page still reads the status (9E restyles it)
+    assert "with supplier" in page
+    assert "VND-991" not in page
+    listing = client.get("/portal").text  # My requests (9D): the requester is never told about the supplier
+    assert "Being worked on" in listing and "supplier" not in listing.lower()
+    assert "VND-991" not in listing
 
 
 @pytest.mark.parametrize(

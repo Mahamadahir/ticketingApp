@@ -360,7 +360,9 @@ def test_portal_shows_readable_status(client, db_session):
     db_session.commit()
     login_as(client, "me@example.com")
 
-    for path in ("/portal", f"/portal/{ticket.number}"):
-        page = client.get(path).text
-        assert "awaiting user" in page
-        assert "awaiting_user</span>" not in page
+    page = client.get(f"/portal/{ticket.number}").text  # the ticket page still reads the status (9E restyles it)
+    assert "awaiting user" in page
+    assert "awaiting_user</span>" not in page
+    listing = client.get("/portal").text  # My requests: the requester's wording (9D)
+    assert "Waiting for your reply" in listing
+    assert "awaiting_user" not in listing and "awaiting user" not in listing
