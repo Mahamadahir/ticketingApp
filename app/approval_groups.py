@@ -16,6 +16,7 @@ from app.followers import InvalidEmail, normalise_email
 from app.models import ApprovalGroup, ApprovalGroupMember, RequestType, User
 
 MAX_NAME_LENGTH = 100
+MAX_NOTICE_LENGTH = 200
 
 
 class ApprovalGroupError(ValueError):
@@ -65,6 +66,17 @@ def rename_group(session: Session, group: ApprovalGroup, name: str) -> ApprovalG
     group.name = name
     session.add(group)
     _flush(session)
+    return group
+
+
+def set_notice(session: Session, group: ApprovalGroup, notice: Optional[str]) -> ApprovalGroup:
+    """The sentence the New request form shows for a kind this group approves; blank restores the default wording."""
+    notice = (notice or "").strip()
+    if len(notice) > MAX_NOTICE_LENGTH:
+        raise ApprovalGroupError(f"The notice can be at most {MAX_NOTICE_LENGTH} characters")
+    group.request_notice = notice or None
+    session.add(group)
+    session.flush()
     return group
 
 

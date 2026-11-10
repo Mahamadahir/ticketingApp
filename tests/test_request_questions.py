@@ -189,7 +189,10 @@ def test_the_portal_form_shows_the_chosen_types_questions(client, db_session):
     assert "Which software" not in fragment and "Old question" not in fragment
     assert "q_" in client.get("/portal/questions", params={"request_type_id": request_type.id}).text
     assert "Department" not in client.get("/portal/questions").text
-    assert "hx-get=\"/portal/questions\"" in client.get("/portal/new").text
+    # New request shows the questions of the chosen kind (a plain GET, no script needed), and none for the problem report
+    chosen = client.get("/portal/new", params={"request_type_id": request_type.id}).text
+    assert "Department (required)" in chosen and "Needs a laptop" in chosen and "Which software" not in chosen
+    assert "Department" not in client.get("/portal/new").text
 
 
 def test_a_portal_request_stores_its_answers_and_shows_them_to_the_requester(client, db_session):

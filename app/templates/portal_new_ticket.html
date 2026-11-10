@@ -1,82 +1,122 @@
 {% extends "base.html" %}
-{% block title %}Raise a request{% endblock %}
+{% from "_icons.html" import kind_icon %}
+{% block title %}New request{% endblock %}
 {% block content %}
-<p><a href="{{ '/tickets' if is_agent else '/portal' }}">&larr; back</a></p>
-<h2>Raise a request</h2>
+{# 9F: step 1 is a list of links (a plain GET, so it works without JavaScript); step 2 is the form for the chosen kind. Every
+   field name is the one app/routers/portal.py and app/raising.py read. #}
+<div class="nr">
+  <div class="nr-head">
+    <h1>New request</h1>
+    <p class="muted">Pick what you need, then tell us the details. We will reply by email{% if teams_bot_on %} and in Teams{% endif %}.</p>
+  </div>
 
-<form hx-post="/portal/new" hx-target="#flash" hx-swap="innerHTML" hx-disabled-elt="find button[type=submit]">
-  <label>What do you need?
-    <select name="request_type_id" hx-get="/portal/questions" hx-trigger="change" hx-target="#request-questions" hx-swap="outerHTML" hx-include="this">
-      <option value="">Something is not working (report a problem)</option>
-      {% for t in request_types %}<option value="{{ t.id }}"{{ " selected" if t.id == chosen_type_id else "" }}>{{ t.name }}{% if t.description %} - {{ t.description }}{% endif %}</option>{% endfor %}
-    </select>
-  </label>
-  {% with div_id = "request-questions", rows = question_rows, oob = false %}{% include "_request_questions.html" %}{% endwith %}
-  {% if required_by_names %}
-  <label>Required by (optional; only for these kinds of request: {{ required_by_names|join(", ") }}; today or later, UTC)
-    <input type="date" name="required_by" />
-  </label>
-  {% endif %}
-  <label>Subject <input type="text" name="subject" maxlength="{{ max_subject_length }}" required /></label>
-  <label>Describe what you need, or what is wrong
-    <textarea name="description" rows="6" maxlength="{{ max_message_length }}" required></textarea>
-  </label>
+  <div class="nr-cols">
+    <nav class="nr-kinds" aria-labelledby="nr-step1">
+      <h2 id="nr-step1" class="nr-step">1. What do you need?</h2>
+      {% for card in cards %}
+      {% set on = (card.request_type.id if card.request_type else None) == (chosen.id if chosen else None) %}
+      <a class="kind{{ ' on' if on else '' }}" href="{{ card.href }}"{% if on %} aria-current="true"{% endif %}>
+        {{ kind_icon(card.icon) }}
+        <span class="kind-body">
+          <span class="kind-title">{{ card.title }}</span>
+          {% if card.text %}<span class="kind-text">{{ card.text }}</span>{% endif %}
+        </span>
+      </a>
+      {% endfor %}
+    </nav>
 
-  {% if is_agent %}
-  <fieldset>
-    <legend>For someone else (agents)</legend>
-    <p class="note">
-      Leave the email blank to raise this for yourself. Fill it in when someone came to the desk or phoned and
-      you are logging it for them; the ticket then reads "Raised by you for them". Everything below applies only
-      to a ticket raised for someone else.
-    </p>
-    <label>Their email address <input type="email" name="for_email" maxlength="254" /></label>
-    <p class="note">{{ "They are set to be told by email that you raised this for them, unless they have turned that off in their own notification settings (the ticket records which). No email is sent yet: sending starts when mail is connected." if tell_requester else "They will not be emailed about this (switched off in Settings)." }}</p>
+    <form class="nr-form card" method="post" action="/portal/new" enctype="multipart/form-data"
+          hx-post="/portal/new" hx-encoding="multipart/form-data" hx-target="#flash" hx-swap="innerHTML" hx-disabled-elt="find button[type=submit]">
+      <div class="nr-form-head">
+        <h2>2. {{ chosen_title }}</h2>
+        {% if approval_notice %}
+        <p class="nr-notice" role="note"><svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 8h.01M11 12h1v5h1"></path></svg> {{ approval_notice }}</p>
+        {% endif %}
+      </div>
+      <input type="hidden" name="request_type_id" value="{{ chosen.id if chosen else '' }}" />
 
-    <h4>Classify and assign now (optional)</h4>
-    <p class="note">A ticket you already understand can skip the triage queue. Choose a category, impact and urgency together.</p>
-    <label>Type (a kind of request chosen above makes it a service request whatever this says)
-      <select name="ticket_type">
-        {% for type in ticket_types %}<option value="{{ type.value }}">{{ type.value.replace("_", " ") }}</option>{% endfor %}
-      </select>
-    </label>
-    <label>Category
-      <select name="category_id" hx-get="/tickets/agents-for-category" hx-trigger="change" hx-target="#raise-agent">
-        <option value="">Leave for triage</option>
-        {% for option, label in category_options %}<option value="{{ option.id }}">{{ label }}</option>{% endfor %}
-      </select>
-    </label>
-    <label>Impact
-      <select name="impact">
-        <option value="">-</option>
-        {% for level in levels %}<option value="{{ level.value }}">{{ impact_labels[level] }}</option>{% endfor %}
-      </select>
-    </label>
-    <label>Urgency
-      <select name="urgency">
-        <option value="">-</option>
-        {% for level in levels %}<option value="{{ level.value }}">{{ urgency_labels[level] }}</option>{% endfor %}
-      </select>
-    </label>
-    <label>Assign to
-      <select name="agent_id" id="raise-agent"><option value="">Leave unassigned</option></select>
-    </label>
+      <label class="nr-field">Subject
+        <span class="nr-hint">A few words we will see in the list.</span>
+        <input type="text" name="subject" maxlength="{{ max_subject_length }}" required{% if not chosen %} placeholder="e.g. Outlook keeps asking for a password"{% endif %} />
+      </label>
 
-    <h4>Fixed in person? (optional)</h4>
-    <p class="note">
-      If this was reported and fixed before you logged it, say when (in your time zone, {{ viewer_zone() }}, up to 30 days back). A ticket with a
-      resolved time is created already resolved, needs a category, impact and urgency, and has no SLA. (A
-      request that needs approval cannot be logged as already resolved: it waits for its approvers first.) Leave
-      Reported blank with a Resolved time and it is taken to have been reported at that moment.
-    </p>
-    <label>Reported <input type="datetime-local" name="reported_at" /></label>
-    <label>Resolved <input type="datetime-local" name="resolved_at" /></label>
-    <label>Resolution notes (needed with a Resolved time; what was done to fix it; nobody is emailed)
-      <textarea name="resolution_notes" rows="3"></textarea>
-    </label>
-  </fieldset>
-  {% endif %}
+      {% with div_id = "request-questions", rows = question_rows, oob = false %}{% include "_request_questions.html" %}{% endwith %}
 
-  <button type="submit">Raise request</button>
-</form>
+      <label class="nr-field">Describe what you need, or what is wrong
+        <textarea name="description" rows="6" maxlength="{{ max_message_length }}" required></textarea>
+      </label>
+
+      {% if offers_required_by %}
+      <label class="nr-field">Needed by (optional)
+        <span class="nr-hint">We will plan around this date (today or later).</span>
+        <input type="date" name="required_by" />
+      </label>
+      {% endif %}
+
+      {% if is_agent %}
+      <details class="nr-agent">
+        <summary>Agent options</summary>
+        <fieldset>
+          <legend>For someone else (agents)</legend>
+          <p class="note">
+            Leave the email blank to raise this for yourself. Fill it in when someone came to the desk or phoned and
+            you are logging it for them; the ticket then reads "Raised by you for them". Everything below applies only
+            to a ticket raised for someone else.
+          </p>
+          <label>Their email address <input type="email" name="for_email" maxlength="254" /></label>
+          <p class="note">{{ "They are set to be told by email that you raised this for them, unless they have turned that off in their own notification settings (the ticket records which). No email is sent yet: sending starts when mail is connected." if tell_requester else "They will not be emailed about this (switched off in Settings)." }}</p>
+
+          <h4>Classify and assign now (optional)</h4>
+          <p class="note">A ticket you already understand can skip the triage queue. Choose a category, impact and urgency together.</p>
+          <label>Type (a kind of request chosen above makes it a service request whatever this says)
+            <select name="ticket_type">
+              {% for type in ticket_types %}<option value="{{ type.value }}">{{ type.value.replace("_", " ") }}</option>{% endfor %}
+            </select>
+          </label>
+          <label>Category
+            <select name="category_id" hx-get="/tickets/agents-for-category" hx-trigger="change" hx-target="#raise-agent">
+              <option value="">Leave for triage</option>
+              {% for option, label in category_options %}<option value="{{ option.id }}">{{ label }}</option>{% endfor %}
+            </select>
+          </label>
+          <label>Impact
+            <select name="impact">
+              <option value="">-</option>
+              {% for level in levels %}<option value="{{ level.value }}">{{ impact_labels[level] }}</option>{% endfor %}
+            </select>
+          </label>
+          <label>Urgency
+            <select name="urgency">
+              <option value="">-</option>
+              {% for level in levels %}<option value="{{ level.value }}">{{ urgency_labels[level] }}</option>{% endfor %}
+            </select>
+          </label>
+          <label>Assign to
+            <select name="agent_id" id="raise-agent"><option value="">Leave unassigned</option></select>
+          </label>
+
+          <h4>Fixed in person? (optional)</h4>
+          <p class="note">
+            If this was reported and fixed before you logged it, say when (in your time zone, {{ viewer_zone() }}, up to 30 days back). A ticket with a
+            resolved time is created already resolved, needs a category, impact and urgency, and has no SLA. (A
+            request that needs approval cannot be logged as already resolved: it waits for its approvers first.) Leave
+            Reported blank with a Resolved time and it is taken to have been reported at that moment.
+          </p>
+          <label>Reported <input type="datetime-local" name="reported_at" /></label>
+          <label>Resolved <input type="datetime-local" name="resolved_at" /></label>
+          <label>Resolution notes (needed with a Resolved time; what was done to fix it; nobody is emailed)
+            <textarea name="resolution_notes" rows="3"></textarea>
+          </label>
+        </fieldset>
+      </details>
+      {% endif %}
+
+      <div class="nr-actions">
+        {% with attach_id = "new-files", attach_label = "Add a file" %}{% include "_attach_control.html" %}{% endwith %}
+        <button type="submit" class="btn btn-primary nr-send">Send request</button>
+      </div>
+      <p class="nr-hint">{% if is_agent %}Up to {{ max_files }} files, {{ max_file_mb }} MB each.{% else %}Up to {{ max_files }} files, {{ max_file_mb }} MB each and {{ max_total_mb }} MB in all.{% endif %}</p>
+    </form>
+  </div>
+</div>
 {% endblock %}

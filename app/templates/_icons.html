@@ -1,0 +1,4 @@
+{# One of the request type icons (app/request_types.py `ICONS`) drawn inline: {{ kind_icon(card.icon) }} after `{% from "_icons.html" import kind_icon %}`. #}
+{% macro kind_icon(name, size=22) -%}
+<svg aria-hidden="true" focusable="false" width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="kind-icon"><path d="{{ icon_path(name) }}"></path></svg>
+{%- endmacro %}

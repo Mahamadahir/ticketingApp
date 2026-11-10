@@ -67,8 +67,8 @@ from app.follower_updates import queue_follower_updates
 from app.reopening import ReopenError, latest_follow_on, open_follow_on_ticket, related_tickets, reopen_ticket
 from app.reply_channel import PORTAL, note_requester_wrote
 from app.splitting import apply_requester_reply
-from app.request_questions import form_rows
-from app.request_types import active_request_types, portal_tiles, request_type_of
+from app.request_questions import answer_rows, form_rows
+from app.request_types import PROBLEM_TITLE, active_request_types, approval_notice, portal_cards, portal_tiles, request_type_of
 from app.required_by import RequiredByError, offers_required_by, parse_required_by, set_required_by
 from app.models import FINISHED_STATUSES, Category, MessageDirection, RequestType, Ticket, TicketSource, TicketStatus, TicketType, User, UserRole
 from app.ticket_service import get_by_number
@@ -76,7 +76,7 @@ from app import identity
 from app.identity import is_follower_of, is_requester, my_tickets_query
 from app.pagination import paginate
 from app.reply_channel import AGENT
-from app.settings_store import INBOUND_MAX_ATTACHMENTS, count_setting
+from app.settings_store import INBOUND_MAX_ATTACHMENTS, REQUESTER_UPLOAD_TOTAL_MB, count_setting
 from app.time_zones import format_moment, zone_for_user
 
 router = APIRouter(prefix="/portal", tags=["portal"])
@@ -120,9 +120,18 @@ def _get_readable_ticket(session: Session, number: int, user: User) -> Ticket:
     return ticket
 
 
+def _upload_limits(session: Session) -> dict:
+    """What a requester may add to a reply or a new request, for the page to say beside the Add a file button."""
+    return {
+        "max_files": count_setting(session, INBOUND_MAX_ATTACHMENTS),
+        "max_file_mb": settings.attachment_max_bytes // (1024 * 1024),
+        "max_total_mb": count_setting(session, REQUESTER_UPLOAD_TOTAL_MB),
+    }
+
+
 def _render_new_form(request: Request, user: User, session: Session, chosen_type_id: Optional[int] = None) -> HTMLResponse:
     types = active_request_types(session)
-    chosen = next((t for t in types if t.id == chosen_type_id), None)  # a tile's kind; one no longer offered is ignored
+    chosen = next((t for t in types if t.id == chosen_type_id), None)  # a card's kind; one no longer offered is ignored
     agent = is_agent(user)
     return templates.TemplateResponse(
         request,
@@ -138,10 +147,14 @@ def _render_new_form(request: Request, user: User, session: Session, chosen_type
             "moment_format": MOMENT_FORMAT,
             "max_subject_length": MAX_SUBJECT_LENGTH,
             "tell_requester": should_tell_requester(session),
-            "request_types": types,
-            "chosen_type_id": chosen.id if chosen else None,
+            "cards": portal_cards(session),
+            "teams_bot_on": settings.teams_bot_configured,
+            "chosen": chosen,
+            "chosen_title": chosen.name if chosen else PROBLEM_TITLE,
             "question_rows": form_rows(session, chosen.id) if chosen else [],
-            "required_by_names": [t.name for t in types if t.offers_required_by],
+            "offers_required_by": chosen is not None and chosen.offers_required_by,
+            "approval_notice": approval_notice(session, chosen) if chosen else None,
+            **_upload_limits(session),
         },
     )
 
@@ -208,9 +221,7 @@ def _render_ticket(request: Request, ticket: Ticket, user: User, session: Sessio
     mine = _is_requester(ticket, user)
     emails = identity.requester_emails(user)
     zone = zone_for_user(session, user)
-    status = requester_status(session, ticket, zone, can_reopen=mine)
-    if not mine and ticket.status == TicketStatus.AWAITING_USER:
-        status = replace(status, label="Waiting for a reply")  # the question was put to the requester, not to a follower
+    status = requester_status(session, ticket, zone, can_reopen=mine, is_requester=mine)
     request_info = request_type_of(session, ticket)
     assignee = session.get(User, ticket.assigned_agent_id) if ticket.assigned_agent_id else None
     # The files an agent attached to an email (open from the portal, as the Teams message says) and the ones this person
@@ -236,8 +247,7 @@ def _render_ticket(request: Request, ticket: Ticket, user: User, session: Sessio
             "last_update": requester_last_update(
                 session, ticket, zone, emails, can_reopen=False, viewer_id=user.id, status=replace(status, reopen_note=""),
             ),
-            "max_files": count_setting(session, INBOUND_MAX_ATTACHMENTS),
-            "max_file_mb": settings.attachment_max_bytes // (1024 * 1024),
+            **_upload_limits(session),
             "request_info": request_info,
             "answers": requester_visible_answers(session, ticket),
             "my_approval": _my_pending_approval(session, ticket, user),
@@ -298,7 +308,7 @@ def list_my_tickets(
     rows = []
     for ticket in tickets_page.items:
         mine = ticket.requester_email.strip().lower() in emails
-        status = requester_status(session, ticket, zone, can_reopen=mine)
+        status = requester_status(session, ticket, zone, can_reopen=mine, is_requester=mine)
         rows.append({
             "ticket": ticket,
             "kind": requester_kind(ticket, kinds.get(ticket.request_type_id)),
@@ -368,13 +378,21 @@ def raise_new_ticket(
     required_by: Optional[str] = Form(None, max_length=20),
     resolution_notes: Optional[str] = Form(None, max_length=MAX_MESSAGE_LENGTH + 1000),
     answers: dict[int, str] = Depends(form_answers),
+    files: list[UploadFile] = File(default=[]),
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
+    storage: Storage = Depends(get_storage),
 ):
-    """Raise a ticket for yourself, or (agents) for someone else. An agent can classify and
-    assign it in the same step and say when it was reported and resolved."""
+    """Raise a ticket for yourself, or (agents) for someone else, with files if the person added any (stored on the first
+    message, by the same rules as a reply's files). An agent can classify and assign it in the same step and say when it was
+    reported and resolved."""
     if len(description.strip()) > MAX_MESSAGE_LENGTH:
         raise HTTPException(status_code=400, detail=f"The description can be at most {MAX_MESSAGE_LENGTH} characters")
+    try:
+        # Before anything is written, so a refusal leaves nothing. An agent is not held to the requester's total.
+        new_files = (reply_files.read_uploads if is_agent(user) else reply_files.read_requester_uploads)(session, files)
+    except reply_files.FilesRefused as error:
+        raise HTTPException(status_code=400, detail=str(error))
     try:
         category_choice = optional_int(category_id)
         chosen_category = session.get(Category, category_choice) if category_choice is not None else None
@@ -402,7 +420,7 @@ def raise_new_ticket(
             session, user, subject=subject, description=description, for_email=for_email,
             ticket_type=ticket_type, category=chosen_category, impact=level_impact, urgency=level_urgency,
             assignee=assignee, reported_at=moments[0], resolved_at=moments[1], request_type=chosen_request_type,
-            resolution_notes=resolution_notes, required_by=day, answers=answers,
+            resolution_notes=resolution_notes, required_by=day, answers=answers, files=new_files, storage=storage,
         )
         log_action(session, user.email, "ticket", ticket.id, "raised", ticket.source.value)
         session.flush()
@@ -428,8 +446,22 @@ def my_approvals(
     session: Session = Depends(get_session),
 ):
     """Requests waiting for this person to approve or decline."""
+    zone = zone_for_user(session, user)
+    cards = []
+    for vote, ticket in pending_for(session, user):
+        asker = identity.person_for_address(session, ticket.requester_email)
+        approval = current_approval(session, ticket)
+        cards.append({
+            "ticket": ticket,
+            "asked_by": asker.display_name if asker is not None and asker.display_name else ticket.requester_email,
+            "asked_by_email": ticket.requester_email,
+            "asked_at": vote.created_at,
+            "answers": answer_rows(session, ticket),
+            "rule": describe_rule(approval) if approval is not None else None,
+            "kind": (request_type_of(session, ticket) or (None, None))[0],
+        })
     return templates.TemplateResponse(
-        request, "portal_approvals.html", {"waiting": pending_for(session, user), "user": user}
+        request, "portal_approvals.html", {"cards": cards, "max_comment_length": MAX_COMMENT_LENGTH, "zone": zone, "user": user}
     )
 
 
@@ -482,7 +514,7 @@ def add_comment(
     ticket and to the people who can read the message, and the message is recorded with channel=portal."""
     ticket = _get_commentable_ticket(session, number, user)
     try:
-        new_files = reply_files.read_uploads(session, files)  # before anything is written, so a refusal leaves nothing
+        new_files = reply_files.read_requester_uploads(session, files)  # before anything is written, so a refusal leaves nothing
     except reply_files.FilesRefused as error:
         raise HTTPException(status_code=400, detail=str(error))
 

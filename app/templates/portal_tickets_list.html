@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_icons.html" import kind_icon %}
 {% block title %}My requests{% endblock %}
 {% block content %}
 {# 9D: the portal home. Statuses and the last-update line come from app/messages.py (requester_status, requester_last_update). #}
@@ -13,10 +14,10 @@
   {% if tiles %}
   <div class="tiles">
     {% for t in tiles %}
-    <a class="tile" href="/portal/new?request_type_id={{ t.id }}">
-      <svg aria-hidden="true" focusable="false" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H8l-4 4z"></path></svg>
-      <span class="tile-title">{{ t.name }}</span>
-      {% if t.description %}<span class="tile-text">{{ t.description }}</span>{% endif %}
+    <a class="tile" href="{{ t.href }}">
+      {{ kind_icon(t.icon) }}
+      <span class="tile-title">{{ t.title }}</span>
+      {% if t.text %}<span class="tile-text">{{ t.text }}</span>{% endif %}
     </a>
     {% endfor %}
   </div>

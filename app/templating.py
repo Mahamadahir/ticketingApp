@@ -11,6 +11,8 @@ from sqlalchemy.orm import object_session
 from sqlmodel import Session
 from fastapi.templating import Jinja2Templates
 
+from app.request_icons import icon_path
+
 from app.backdating import FORMAT as MOMENT_FORMAT
 from app.database import engine
 from app.forms import MAX_MESSAGE_LENGTH
@@ -38,6 +40,7 @@ def _htmx_partial(request: Request) -> dict:
 
 templates = Jinja2Templates(directory="app/templates", context_processors=[_htmx_partial])
 templates.env.globals["max_message_length"] = MAX_MESSAGE_LENGTH
+templates.env.globals["icon_path"] = icon_path  # the SVG path of a request type icon (_icons.html)
 templates.env.globals["agent_label"] = agent_label  # a name, plus "(out of office)" when they are
 
 

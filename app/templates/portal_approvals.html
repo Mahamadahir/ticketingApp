@@ -1,16 +1,42 @@
 {% extends "base.html" %}
 {% block title %}Waiting for your approval{% endblock %}
 {% block content %}
-<p><a href="/portal">&larr; back to my requests</a></p>
-<h2>Waiting for your approval</h2>
+{# 9F: one card per request waiting on this person. Approve and Decline post to the same route as the request page's form. #}
+<div class="ap">
+  <div class="nr-head">
+    <h1>Waiting for your approval</h1>
+    <p class="muted">{% if cards %}{{ cards|length }} {{ "request is" if cards|length == 1 else "requests are" }} waiting for you. Approving starts the work; declining tells the person why, if you say.{% else %}Requests that need your decision will appear here.{% endif %}</p>
+  </div>
 
-{% for approval, ticket in waiting %}
-<p>
-  <a href="/portal/{{ ticket.number }}">{{ ticket.reference }} {{ ticket.subject }}</a>
-  &middot; from {{ ticket.requester_email }}
-  &middot; asked {{ approval.created_at|local_time }}
-</p>
-{% else %}
-<p>Nothing is waiting for your approval.</p>
-{% endfor %}
+  {% for c in cards %}
+  {% set ticket = c.ticket %}
+  <article class="card ap-card" aria-labelledby="ap-{{ ticket.number }}">
+    <header class="ap-head">
+      <div>
+        <p class="ap-ref">{{ ticket.reference }}{% if c.kind %} &middot; {{ c.kind.name }}{% endif %}</p>
+        <h2 id="ap-{{ ticket.number }}"><a href="/portal/{{ ticket.number }}">{{ ticket.subject }}</a></h2>
+        <p class="muted">From {{ c.asked_by }}{% if c.asked_by_email != c.asked_by %} ({{ c.asked_by_email }}){% endif %} &middot; asked {{ c.asked_at|local_time }}{% if c.rule %} &middot; {{ c.rule }}{% endif %}</p>
+      </div>
+      <span class="chip t-blue">Waiting for approval</span>
+    </header>
+    {% if c.answers %}
+    <dl class="dl ap-answers">
+      {% for a in c.answers %}<dt>{{ a.label }}</dt><dd>{{ a.display }}</dd>{% endfor %}
+    </dl>
+    {% endif %}
+    <form class="ap-form" hx-post="/portal/{{ ticket.number }}/approval" hx-target="main" hx-swap="innerHTML">
+      <label class="field">Comment (optional; shown to the requester if you decline)
+        <textarea name="comment" rows="2" maxlength="{{ max_comment_length }}"></textarea>
+      </label>
+      <div class="ap-actions">
+        <button type="submit" name="decision" value="approved" class="btn btn-primary">Approve</button>
+        <button type="submit" name="decision" value="declined" class="btn">Decline</button>
+        <a class="ap-open" href="/portal/{{ ticket.number }}">Open the request</a>
+      </div>
+    </form>
+  </article>
+  {% else %}
+  <div class="empty-state"><strong>Nothing is waiting for your approval</strong>When someone asks for something you approve, it will appear here.</div>
+  {% endfor %}
+</div>
 {% endblock %}

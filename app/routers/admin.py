@@ -36,6 +36,7 @@ from app.categories import (
 )
 from app.approval_groups import (
     MAX_NAME_LENGTH as MAX_GROUP_NAME_LENGTH,
+    MAX_NOTICE_LENGTH,
     ApprovalGroupError,
     add_member as add_group_member,
     all_groups,
@@ -43,6 +44,7 @@ from app.approval_groups import (
     members_of,
     remove_member as remove_group_member,
     rename_group,
+    set_notice,
     types_using,
 )
 from app.request_questions import (
@@ -65,6 +67,7 @@ from app.subrequests import (
     save_template as save_sub_template,
 )
 from app.request_types import (
+    ICONS,
     MAX_DESCRIPTION_LENGTH as MAX_REQUEST_DESCRIPTION_LENGTH,
     MAX_NAME_LENGTH as MAX_REQUEST_NAME_LENGTH,
     RequestTypeError,
@@ -1177,6 +1180,7 @@ def list_approval_groups(
         {
             "groups": [(g, members_of(session, g.id), types_using(session, g.id)) for g in all_groups(session)],
             "max_name_length": MAX_GROUP_NAME_LENGTH,
+            "max_notice_length": MAX_NOTICE_LENGTH,
             "user": user,
         },
     )
@@ -1216,6 +1220,28 @@ def rename_approval_group(
         raise HTTPException(status_code=400, detail=str(error))
     if before != group.name:
         log_action(session, admin.email, "approval_group", group.id, "renamed", f"{before!r} -> {group.name!r}")
+    session.commit()
+    return RedirectResponse("/admin/approval-groups", status_code=303)
+
+
+@router.post("/approval-groups/{group_id}/notice")
+def set_approval_group_notice(
+    group_id: int,
+    request_notice: str = Form("", max_length=2000),
+    admin: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    group = session.get(ApprovalGroup, group_id)
+    if group is None:
+        raise HTTPException(status_code=404, detail="Approval group not found")
+    before = group.request_notice
+    try:
+        set_notice(session, group, request_notice)
+    except ApprovalGroupError as error:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(error))
+    if before != group.request_notice:
+        log_action(session, admin.email, "approval_group", group.id, "notice_changed", group.request_notice or "(default wording)")
     session.commit()
     return RedirectResponse("/admin/approval-groups", status_code=303)
 
@@ -1271,7 +1297,7 @@ def _type_snapshot(session: Session, request_type: RequestType) -> tuple:
         request_type.pass_percent, request_type.offers_required_by,
         request_type.due_days_before, request_type.queue_lead_days,
         _defaults_text(session, request_type), request_type.subrequests_need_own_approval,
-        request_type.approvers_may_self_approve, request_type.is_featured,
+        request_type.approvers_may_self_approve, request_type.is_featured, request_type.icon,
     )
 
 
@@ -1320,6 +1346,7 @@ def list_request_types(
             "default_queue_days": get_setting(session, REQUIRED_BY_LEAD_DAYS),
             "max_name_length": MAX_REQUEST_NAME_LENGTH,
             "max_description_length": MAX_REQUEST_DESCRIPTION_LENGTH,
+            "icons": ICONS,
             "teams": session.exec(select(Team).order_by(Team.name)).all(),
             "category_options": selectable(session),
             "impact_options": impact_options(),
@@ -1354,6 +1381,7 @@ def add_request_type(
     subrequests_need_own_approval: Optional[str] = Form(None),
     approvers_may_self_approve: Optional[str] = Form(None),
     is_featured: Optional[str] = Form(None),
+    icon: Optional[str] = Form(None, max_length=40),
     admin: User = Depends(require_request_templates),
     session: Session = Depends(get_session),
 ):
@@ -1364,7 +1392,7 @@ def add_request_type(
             defaults=_defaults_from_form(default_team_id, default_category_id, default_impact, default_urgency),
             subrequests_need_own_approval=subrequests_need_own_approval == "on",
             approvers_may_self_approve=approvers_may_self_approve == "on",
-            is_featured=is_featured == "on",
+            is_featured=is_featured == "on", icon=icon,
         )
     except RequestTypeError as error:
         session.rollback()
@@ -1392,6 +1420,7 @@ def edit_request_type(
     subrequests_need_own_approval: Optional[str] = Form(None),
     approvers_may_self_approve: Optional[str] = Form(None),
     is_featured: Optional[str] = Form(None),
+    icon: Optional[str] = Form(None, max_length=40),
     admin: User = Depends(require_request_templates),
     session: Session = Depends(get_session),
 ):
@@ -1408,7 +1437,7 @@ def edit_request_type(
             defaults=_defaults_from_form(default_team_id, default_category_id, default_impact, default_urgency),
             subrequests_need_own_approval=subrequests_need_own_approval == "on",
             approvers_may_self_approve=approvers_may_self_approve == "on",
-            is_featured=is_featured == "on",
+            is_featured=is_featured == "on", icon=icon, set_icon=True,
         )
     except RequestTypeError as error:
         session.rollback()
@@ -1440,6 +1469,8 @@ def edit_request_type(
             changes.append(f"approvers may approve their own requests {before[9]} -> {after[9]}")
         if before[10] != after[10]:
             changes.append(f"featured on the portal {before[10]} -> {after[10]}")
+        if before[11] != after[11]:
+            changes.append(f"icon {before[11] or '(default)'} -> {after[11] or '(default)'}")
         log_action(session, admin.email, "request_type", request_type.id, "edited", "; ".join(changes))
     if request_type.is_active != was_active:
         log_action(

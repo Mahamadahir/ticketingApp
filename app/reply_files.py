@@ -29,7 +29,9 @@ from app.attachments import AttachmentRejected, NewFile, check_file, clean_filen
 from app.config import settings
 from app.models import PendingBlobDelete, ReplyHeldFile, Ticket, User
 from app.msp import GRAPH_INLINE_LIMIT_MB  # what Graph takes in one send with the files inline
-from app.settings_store import INBOUND_MAX_ATTACHMENTS, REPLY_ATTACH_MAX_MB, REPLY_HELD_FILE_HOURS, count_setting
+from app.settings_store import (
+    INBOUND_MAX_ATTACHMENTS, REPLY_ATTACH_MAX_MB, REPLY_HELD_FILE_HOURS, REQUESTER_UPLOAD_TOTAL_MB, count_setting,
+)
 from app.storage import Storage, get_storage
 
 log = logging.getLogger("app.reply_files")
@@ -39,16 +41,19 @@ class FilesRefused(ValueError):
     """The files cannot be attached; the message says why and is safe to show."""
 
 
-def read_uploads(session: Session, uploads: list, *, email: bool = False) -> list[NewFile]:
+def read_uploads(session: Session, uploads: list, *, email: bool = False, requester: bool = False) -> list[NewFile]:
     """The files of a form (starlette UploadFile objects), checked by the rules of every stored file. A file input left empty
     sends one nameless part, which is not a file. With `email` the total must also fit one email, and is refused from the
-    sizes the form announced before any file is read into memory. Raises FilesRefused naming the file and why."""
+    sizes the form announced before any file is read into memory. With `requester` (a requester's reply or new request on the
+    portal) the total must also fit `requester_upload_total_mb`, checked the same two ways. Raises FilesRefused naming the file and why."""
     uploads = [u for u in uploads if getattr(u, "filename", None)]
     most = count_setting(session, INBOUND_MAX_ATTACHMENTS)
     if len(uploads) > most:
         raise FilesRefused(f"Attach at most {most} files to one message.")
     if email:
         check_email_size(session, [u.size or 0 for u in uploads])
+    if requester:
+        check_requester_total(session, [u.size or 0 for u in uploads])
     files = []
     for upload in uploads:
         data = upload.file.read(settings.attachment_max_bytes + 1)  # one byte over is enough to refuse it, and bounds the memory
@@ -59,7 +64,25 @@ def read_uploads(session: Session, uploads: list, *, email: bool = False) -> lis
         files.append(NewFile(upload.filename, data))
     if email:
         check_email_size(session, [len(item.data) for item in files])
+    if requester:
+        check_requester_total(session, [len(item.data) for item in files])
     return files
+
+
+def read_requester_uploads(session: Session, uploads: list) -> list[NewFile]:
+    """The one way a requester's files are read on the portal (a reply, or a new request): every rule of `read_uploads` and
+    the total-size limit."""
+    return read_uploads(session, uploads, requester=True)
+
+
+def check_requester_total(session: Session, sizes: list[int]) -> None:
+    """Refuses a set of files that together are more than a requester may add at once (setting `requester_upload_total_mb`)."""
+    limit = count_setting(session, REQUESTER_UPLOAD_TOTAL_MB)
+    if sum(sizes) > limit * 1024 * 1024:
+        raise FilesRefused(
+            f"These files add up to {_megabytes(sum(sizes))}, more than the {limit} MB you can add at once. "
+            "Add fewer or smaller files."
+        )
 
 
 def email_budget_bytes(session: Session) -> int:

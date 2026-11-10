@@ -275,35 +275,42 @@ def test_the_tiles_come_from_the_request_types_the_new_request_page_offers(clien
     kinds(db_session, "Alpha", "Bravo", "Charlie", "Delta", "Echo", inactive=("Alpha",))
     login_as(client, "jo@example.com")
     page = client.get("/portal").text
-    # none featured: the first four active ones in the catalogue's order; an inactive kind never shows
+    # "Something is not working" first, then with none featured the first three active ones in the catalogue's order;
+    # an inactive kind never shows
     assert [name for name in ("Alpha", "Bravo", "Charlie", "Delta", "Echo") if f'<span class="tile-title">{name}</span>' in page] == [
-        "Bravo", "Charlie", "Delta", "Echo",
+        "Bravo", "Charlie", "Delta",
     ]
+    assert page.index('<span class="tile-title">Something is not working</span>') < page.index('<span class="tile-title">Bravo</span>')
     offered = client.get("/portal/new").text
-    for name in ("Bravo", "Charlie", "Delta", "Echo"):
-        assert f">{name} - About {name}</option>" in offered
+    for name in ("Bravo", "Charlie", "Delta", "Echo"):  # New request offers every active kind, not only the tiles
+        assert f'<span class="kind-title">{name}</span>' in offered and f'<span class="kind-text">About {name}</span>' in offered
+    assert '<span class="kind-title">Alpha</span>' not in offered
     bravo = db_session.exec(select(RequestType).where(RequestType.name == "Bravo")).one()
     assert f'href="/portal/new?request_type_id={bravo.id}"' in page
 
 
-def test_featured_kinds_come_first_and_are_capped_at_four(db_session):
+def test_featured_kinds_come_first_and_are_capped_at_three_after_the_problem_tile(db_session):
     kinds(db_session, "Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot", featured=("Echo", "Foxtrot"))
-    assert [t.name for t in portal_tiles(db_session)] == ["Echo", "Foxtrot"]
+    assert [t.title for t in portal_tiles(db_session)] == ["Something is not working", "Echo", "Foxtrot"]
     kinds(db_session, "Golf", "Hotel", "India", featured=("Golf", "Hotel", "India"))
-    assert [t.name for t in portal_tiles(db_session)] == ["Echo", "Foxtrot", "Golf", "Hotel"]
+    assert [t.title for t in portal_tiles(db_session)] == ["Something is not working", "Echo", "Foxtrot", "Golf"]
 
 
-def test_no_tiles_when_there_are_no_request_types(client, db_session):
+def test_only_the_problem_tile_when_there_are_no_request_types(client, db_session):
     login_as(client, "jo@example.com")
-    assert 'class="tiles"' not in client.get("/portal").text
+    page = client.get("/portal").text
+    assert page.count('class="tile"') == 1 and '<span class="tile-title">Something is not working</span>' in page
+    assert 'href="/portal/new"' in page
 
 
 def test_a_tile_opens_new_request_with_that_kind_chosen(client, db_session):
     first, second = kinds(db_session, "Alpha", "Bravo")
     login_as(client, "jo@example.com")
     page = client.get(f"/portal/new?request_type_id={second.id}").text
-    assert f'<option value="{second.id}" selected>' in page and f'<option value="{first.id}" selected>' not in page
-    assert "selected" not in client.get("/portal/new").text
+    assert f'name="request_type_id" value="{second.id}"' in page and f'name="request_type_id" value="{first.id}"' not in page
+    assert page.count('aria-current="true"') == 1 and "2. Bravo" in page
+    plain = client.get("/portal/new").text  # no kind chosen: the plain problem report
+    assert 'name="request_type_id" value=""' in plain and "2. Something is not working" in plain
     assert client.get("/portal/new?request_type_id=99999").status_code == 200  # an unknown kind is ignored
     assert client.get("/portal/new?request_type_id=abc").status_code == 400  # as the other portal forms read a bad id
 

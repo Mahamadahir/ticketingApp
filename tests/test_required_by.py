@@ -319,13 +319,15 @@ def test_the_admin_switch_turns_the_field_on_and_off_for_a_type(client, db_sessi
         "name": "Laptop", "description": "", "approval_group_id": request_type.approval_group_id,
         "pass_percent": 51, "is_active": "on",
     }
+    chosen = f"/portal/new?request_type_id={request_type.id}"
     assert request_type.offers_required_by is False
-    assert 'name="required_by"' not in client.get("/portal/new").text
+    assert 'name="required_by"' not in client.get(chosen).text
 
     client.post(f"/admin/request-types/{request_type.id}", data={**base, "offers_required_by": "on"})
     db_session.expire_all()
     assert db_session.get(RequestType, request_type.id).offers_required_by is True
-    assert 'name="required_by"' in client.get("/portal/new").text
+    assert 'name="required_by"' in client.get(chosen).text
+    assert 'name="required_by"' not in client.get("/portal/new").text  # the problem report offers none
 
     client.post(f"/admin/request-types/{request_type.id}", data=base)
     db_session.expire_all()
