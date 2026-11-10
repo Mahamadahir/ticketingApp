@@ -279,8 +279,8 @@ def test_a_follower_with_an_account_can_read_and_reply_but_not_manage_the_ticket
     assert page.status_code == 200
     assert "We are on it" in page.text
     assert SECRET_NOTE not in page.text and "Internal note" not in page.text
-    assert "Add comment" in page.text  # followers are not read-only
-    assert "Also keeping up to date" not in page.text  # but they do not manage the follower list
+    assert "Send reply" in page.text  # followers are not read-only
+    assert "Also kept up to date" not in page.text  # but they do not manage the follower list
 
     assert client.post(f"/portal/{ticket.number}/comment", data={"body": "Thanks, that fixed it"}).status_code == 200
     reply = db_session.exec(select(Message).where(Message.body == "Thanks, that fixed it")).one()
@@ -391,7 +391,7 @@ def test_a_follower_cannot_see_who_else_is_copied(client, db_session):
     login_as(client, "alice@example.org")
     page = client.get(f"/portal/{ticket.number}").text
     assert "bob@example.org" not in page and "alice@example.org" not in page
-    assert "Also keeping up to date" not in page
+    assert "Also kept up to date" not in page
 
 
 def test_adding_the_same_follower_at_the_same_time_is_a_quiet_no_op(db_session):
@@ -506,7 +506,7 @@ def test_an_internal_follower_cannot_comment_from_the_portal(client, db_session)
     client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "x"})
 
     page = client.get(f"/portal/{ticket.number}")
-    assert page.status_code == 200 and "Add comment" not in page.text
+    assert page.status_code == 200 and "Send reply" not in page.text
     assert "Reply from the agent console" in page.text
     assert client.post(f"/portal/{ticket.number}/comment", data={"body": "hello"}).status_code == 404
 

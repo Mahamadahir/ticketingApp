@@ -476,6 +476,55 @@ def requester_status(session: Session, ticket: Ticket, zone: str, *, can_reopen:
     return RequesterStatus(label, tone, sentence, note)
 
 
+@dataclass(frozen=True)
+class Step:
+    """One step of the progress bar on the request page. `state` is done, current or todo; `tone` colours the current bar."""
+
+    label: str
+    state: str
+    tone: str = "blue"
+
+    @property
+    def sr(self) -> str:
+        """What a screen reader adds after the label: the bar's colour alone says nothing to it."""
+        return {"done": " (done)", "current": " (current step)"}.get(self.state, " (not yet)")
+
+
+def requester_steps(ticket: Ticket, status: RequesterStatus, *, viewer_is_requester: bool = True) -> list[Step]:
+    """The progress steps of the request page: Received, Being worked on, Waiting for you (only while the ticket is
+    Awaiting user), Resolved. Waiting for approval and Scheduled take the place of Being worked on while the ticket is in
+    them. Built from the requester's wording only (`status`), so With MSP and With supplier read as Being worked on. A
+    follower is not the one being waited for, so their step reads "Waiting for a reply"."""
+    working = "Being worked on"
+    if ticket.status == TicketStatus.AWAITING_APPROVAL:
+        working = "Waiting for approval"
+    elif ticket.status == TicketStatus.SCHEDULED:
+        working = status.sentence  # "Scheduled for Thursday 12 November"
+    labels = ["Received", working] + (["Waiting for you" if viewer_is_requester else "Waiting for a reply"] if ticket.status == TicketStatus.AWAITING_USER else []) + ["Resolved"]
+    if ticket.status == TicketStatus.NEW:
+        current = 0
+    elif ticket.status in (TicketStatus.RESOLVED, TicketStatus.CLOSED):
+        current = len(labels) - 1
+    else:
+        current = len(labels) - 2 if ticket.status == TicketStatus.AWAITING_USER else 1
+    tone = {"amber": "amber", "green": "green"}.get(status.tone, "blue")
+    if ticket.status == TicketStatus.CLOSED:
+        labels[-1] = "Closed"
+    return [
+        Step(label, "done" if i < current else "current" if i == current else "todo", tone if i == current else "blue")
+        for i, label in enumerate(labels)
+    ]
+
+
+def it_support_label(display_name: Optional[str]) -> str:
+    """How the requester reads an agent: "Sam from IT Support", from the first word of their display name; plain "IT Support"
+    when there is no name, or the name is an address (an account with no real name), which is never shown to a requester."""
+    words = (display_name or "").split()
+    if not words or "@" in words[0]:
+        return "IT Support"
+    return f"{words[0]} from IT Support"
+
+
 def _approval_progress(session: Session, ticket: Ticket) -> str:
     """"Waiting for 1 of 2 approvals": the approvals still wanted of the number that settles the request. Never says who."""
     from app.approvals import PENDING, APPROVED, current_approval, tally, votes_needed, votes_of

@@ -85,8 +85,8 @@ def test_the_portal_shows_the_label_and_never_internal_notes(client, db_session)
     client.post(f"/tickets/{ticket.number}/note", data={"body": "Vendor case VND-991, secret"})
     client.post("/auth/logout")
     login_as(client, "me@example.com")
-    page = client.get(f"/portal/{ticket.number}").text  # the ticket page still reads the status (9E restyles it)
-    assert "with supplier" in page
+    page = client.get(f"/portal/{ticket.number}").text  # the request page (9E): the requester's wording, never the supplier
+    assert "Being worked on" in page and "supplier" not in page.lower()
     assert "VND-991" not in page
     listing = client.get("/portal").text  # My requests (9D): the requester is never told about the supplier
     assert "Being worked on" in listing and "supplier" not in listing.lower()
