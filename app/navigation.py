@@ -33,7 +33,11 @@ ICONS = {
     "feedback": "M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z",
     "settings": "M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0M16 4v4M10 10v4M18 16v4",
     "plus": "M12 5v14M5 12h14",
+    "appearance": "M12 8a4 4 0 100 8 4 4 0 000-8zM12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4",
 }
+
+# Where the theme choice lives on My settings (the fieldset has this id).
+APPEARANCE_HREF = "/settings/notifications#appearance"
 
 
 @dataclass(frozen=True)
@@ -53,7 +57,7 @@ class Shell:
 
     kind: str  # "console" (agents), "portal" (everyone on a portal page, and requesters everywhere) or "bare" (not signed in)
     items: tuple = ()  # the main navigation
-    more: tuple = ()  # the person's own pages: My requests, My feedback, Settings (agents); Settings (the portal's person menu)
+    person_menu: tuple = ()  # the person menu (9G), in order: My requests, My feedback, Settings, Appearance (agents); Settings, Appearance (the portal)
     unread: int = 0
     can_search: bool = False
 
@@ -136,9 +140,14 @@ def build_shell(session: Session, user: Optional[User], path: str, query: dict) 
         rows = _agent_items(session, user)
         current = _active_key(rows, path, query)
         items = tuple(NavItem(k, label, href, ICONS[icon], count, tone, k == current) for k, label, href, icon, count, tone in rows)
-        own = [("requests", "My requests", "/portal", "requests"), ("feedback", "My feedback", "/my-feedback", "feedback"), ("settings", "Settings", "/settings/notifications", "settings")]
-        more = tuple(NavItem(k, label, href, ICONS[icon], active=path == href) for k, label, href, icon in own)
-        return Shell(kind="console", items=items, more=more, unread=unread, can_search=True)
+        own = [
+            ("requests", "My requests", "/portal", "requests"),
+            ("feedback", "My feedback", "/my-feedback", "feedback"),
+            ("settings", "Settings", "/settings/notifications", "settings"),
+            ("appearance", "Appearance", APPEARANCE_HREF, "appearance"),
+        ]
+        menu = tuple(NavItem(k, label, href, ICONS[icon], active=path == href) for k, label, href, icon in own)
+        return Shell(kind="console", items=items, person_menu=menu, unread=unread, can_search=True)
     # The portal: requesters everywhere, and anyone on a portal page. Agents get a way back to the console.
     pending = count_pending_for(session, user)
     rows = [
@@ -150,6 +159,9 @@ def build_shell(session: Session, user: Optional[User], path: str, query: dict) 
     items = [NavItem(k, label, href, ICONS[icon], count, tone, k == current) for k, label, href, icon, count, tone in rows]
     if user.role in AGENT_ROLES:
         items.append(NavItem("console", "Agent console", "/tickets", ICONS["queue"]))
-    # Settings sits in the person's menu (the initials), not among the links.
-    settings_item = NavItem("settings", "Settings", "/settings/notifications", ICONS["settings"], active=path.startswith("/settings"))
-    return Shell(kind="portal", items=tuple(items), more=(settings_item,), unread=unread)
+    # Settings sits in the person's menu (the initials), not among the links; My requests is already in the top bar.
+    menu = (
+        NavItem("settings", "Settings", "/settings/notifications", ICONS["settings"], active=path.startswith("/settings")),
+        NavItem("appearance", "Appearance", APPEARANCE_HREF, ICONS["appearance"]),
+    )
+    return Shell(kind="portal", items=tuple(items), person_menu=menu, unread=unread)

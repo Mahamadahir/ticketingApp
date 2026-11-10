@@ -56,28 +56,36 @@
 
 <h4>Sign in with the other account</h4>
 <form method="post" action="/settings/link-account/sign-in">
-  <label><input type="checkbox" name="other_is_main" value="true" /> Make the other account the main one (if it has an account here); this account then joins it and you sign in again</label>
-  <button type="submit" {{ "" if sso_configured else "disabled" }}>Sign in with the other account</button>
-  {% if not sso_configured %}<span class="note">Microsoft sign-in is not set up here.</span>{% endif %}
+  <div class="form-grid">
+    <label class="field-check field-wide"><input type="checkbox" name="other_is_main" value="true" /> Make the other account the main one (if it has an account here); this account then joins it and you sign in again</label>
+  </div>
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary" {{ "" if sso_configured else "disabled" }}>Sign in with the other account</button>
+    {% if not sso_configured %}<span class="note">Microsoft sign-in is not set up here.</span>{% endif %}
+  </div>
 </form>
 
 <h4>Or email a code to the other address</h4>
 {% if not sent %}
 <form method="post" action="/settings/link-account/code">
-  <label>The other email address
-    <input type="email" name="address" value="{{ address }}" required maxlength="320" />
-  </label>
-  <label><input type="checkbox" name="other_is_main" value="true" /> Make the other account the main one (if it has an account here)</label>
-  <button type="submit">Email me a code</button>
+  <div class="form-grid">
+    <label class="field">The other email address
+      <input type="email" name="address" value="{{ address }}" required maxlength="320" />
+    </label>
+    <label class="field-check field-wide"><input type="checkbox" name="other_is_main" value="true" /> Make the other account the main one (if it has an account here)</label>
+  </div>
+  <div class="form-actions"><button type="submit" class="btn btn-primary">Email me a code</button></div>
 </form>
 {% else %}
 <p>A 6-digit code was emailed to {{ address }}. It works for {{ minutes }} minutes.</p>
 <form method="post" action="/settings/link-account/verify" autocomplete="off">
   <input type="hidden" name="address" value="{{ address }}" />
-  <label>Code
-    <input type="text" name="code" inputmode="numeric" pattern="[0-9 ]*" maxlength="12" autocomplete="one-time-code" required />
-  </label>
-  <button type="submit">Link</button>
+  <div class="form-grid">
+    <label class="field field-narrow">Code
+      <input type="text" name="code" inputmode="numeric" pattern="[0-9 ]*" maxlength="12" autocomplete="one-time-code" required />
+    </label>
+  </div>
+  <div class="form-actions"><button type="submit" class="btn btn-primary">Link</button></div>
 </form>
 <p><a href="/settings/link-account">Start again with another address</a></p>
 {% endif %}
