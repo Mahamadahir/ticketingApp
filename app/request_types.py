@@ -316,10 +316,15 @@ def portal_tiles(session: Session) -> list[Card]:
     return [problem_card()] + [card_for(t) for t in (featured or types)[: TILE_COUNT - 1]]
 
 
-def approval_notice(session: Session, request_type: RequestType) -> Optional[str]:
+def approval_notice(session: Session, request_type: RequestType, viewer=None) -> Optional[str]:
     """The blue notice of the New request form for a kind that needs approval, in the approval group's own words or the
-    default; None for a kind with no approval group."""
+    default; None for a kind with no approval group, and for a member of the group on a kind that lets approvers approve
+    their own requests (their own approval is recorded at once, so nothing waits)."""
     group = session.get(ApprovalGroup, request_type.approval_group_id) if request_type.approval_group_id else None
     if group is None:
+        return None
+    if viewer is not None and request_type.approvers_may_self_approve and viewer.id in {
+        u.id for u in members_of(session, group.id, active_only=True)
+    }:
         return None
     return (group.request_notice or "").strip() or DEFAULT_APPROVAL_NOTICE

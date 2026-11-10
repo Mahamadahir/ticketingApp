@@ -129,6 +129,17 @@ def _upload_limits(session: Session) -> dict:
     }
 
 
+def _read_files(session: Session, user: User, files: list) -> list:
+    """A person's uploaded files, checked: the rules of every stored file for anyone, plus the total-size limit for a
+    requester (an agent, replying or raising, is not held to the total). The one place a portal route reads files."""
+    read = reply_files.read_uploads if is_agent(user) else reply_files.read_requester_uploads
+    return read(session, files)
+
+
+def _upload_hint(session: Session, user: User) -> dict:
+    return {**_upload_limits(session), "show_total": not is_agent(user)}
+
+
 def _render_new_form(request: Request, user: User, session: Session, chosen_type_id: Optional[int] = None) -> HTMLResponse:
     types = active_request_types(session)
     chosen = next((t for t in types if t.id == chosen_type_id), None)  # a card's kind; one no longer offered is ignored
@@ -153,8 +164,8 @@ def _render_new_form(request: Request, user: User, session: Session, chosen_type
             "chosen_title": chosen.name if chosen else PROBLEM_TITLE,
             "question_rows": form_rows(session, chosen.id) if chosen else [],
             "offers_required_by": chosen is not None and chosen.offers_required_by,
-            "approval_notice": approval_notice(session, chosen) if chosen else None,
-            **_upload_limits(session),
+            "approval_notice": approval_notice(session, chosen, user) if chosen else None,
+            **_upload_hint(session, user),
         },
     )
 
@@ -247,7 +258,7 @@ def _render_ticket(request: Request, ticket: Ticket, user: User, session: Sessio
             "last_update": requester_last_update(
                 session, ticket, zone, emails, can_reopen=False, viewer_id=user.id, status=replace(status, reopen_note=""),
             ),
-            **_upload_limits(session),
+            **_upload_hint(session, user),
             "request_info": request_info,
             "answers": requester_visible_answers(session, ticket),
             "my_approval": _my_pending_approval(session, ticket, user),
@@ -390,7 +401,7 @@ def raise_new_ticket(
         raise HTTPException(status_code=400, detail=f"The description can be at most {MAX_MESSAGE_LENGTH} characters")
     try:
         # Before anything is written, so a refusal leaves nothing. An agent is not held to the requester's total.
-        new_files = (reply_files.read_uploads if is_agent(user) else reply_files.read_requester_uploads)(session, files)
+        new_files = _read_files(session, user, files)
     except reply_files.FilesRefused as error:
         raise HTTPException(status_code=400, detail=str(error))
     try:
@@ -514,7 +525,7 @@ def add_comment(
     ticket and to the people who can read the message, and the message is recorded with channel=portal."""
     ticket = _get_commentable_ticket(session, number, user)
     try:
-        new_files = reply_files.read_requester_uploads(session, files)  # before anything is written, so a refusal leaves nothing
+        new_files = _read_files(session, user, files)  # before anything is written, so a refusal leaves nothing
     except reply_files.FilesRefused as error:
         raise HTTPException(status_code=400, detail=str(error))
 

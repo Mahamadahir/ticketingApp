@@ -380,3 +380,27 @@ def test_with_nothing_waiting_the_page_says_so(client, db_session):
     login_as(client, "jo@example.com")
     page = client.get("/portal/approvals").text
     assert "Nothing is waiting for your approval" in page and "ap-card" not in page
+
+
+def test_an_agent_replying_in_the_portal_is_not_held_to_the_requesters_total(client, db_session, storage):
+    set_setting(db_session, REQUESTER_UPLOAD_TOTAL_MB, "1")
+    ticket = Ticket(subject="Mine", requester_email="agent@example.com", status=TicketStatus.OPEN, triaged_at=datetime.now(timezone.utc))
+    db_session.add(ticket)
+    db_session.commit()
+    desk(client, db_session)
+    big = lambda n: b"%PDF-1.7\n" + bytes([n]) * (700 * 1024)  # noqa: E731
+    reply = client.post(f"/portal/{ticket.number}/comment", data={"body": "x"}, files=files(("a.pdf", big(1)), ("b.pdf", big(2))))
+    assert reply.status_code == 200
+    assert "in all" not in client.get(f"/portal/{ticket.number}").text and "in all" not in client.get("/portal/new").text
+
+
+def test_no_approval_notice_for_a_member_who_will_approve_their_own_request(client, db_session):
+    kind = make(db_session, "Mailbox access")
+    kind.approvers_may_self_approve = True
+    db_session.add(kind)
+    db_session.commit()
+    login_as(client, "boss@example.com")
+    assert "nr-notice" not in client.get(f"/portal/new?request_type_id={kind.id}").text
+    client.post("/auth/logout")
+    login_as(client, "jo@example.com")
+    assert "nr-notice" in client.get(f"/portal/new?request_type_id={kind.id}").text

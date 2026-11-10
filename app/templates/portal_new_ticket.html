@@ -115,7 +115,7 @@
         {% with attach_id = "new-files", attach_label = "Add a file" %}{% include "_attach_control.html" %}{% endwith %}
         <button type="submit" class="btn btn-primary nr-send">Send request</button>
       </div>
-      <p class="nr-hint">{% if is_agent %}Up to {{ max_files }} files, {{ max_file_mb }} MB each.{% else %}Up to {{ max_files }} files, {{ max_file_mb }} MB each and {{ max_total_mb }} MB in all.{% endif %}</p>
+      <p class="nr-hint">{% if not show_total %}Up to {{ max_files }} files, {{ max_file_mb }} MB each.{% else %}Up to {{ max_files }} files, {{ max_file_mb }} MB each and {{ max_total_mb }} MB in all.{% endif %}</p>
     </form>
   </div>
 </div>

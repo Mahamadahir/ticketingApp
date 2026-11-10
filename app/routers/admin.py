@@ -1227,7 +1227,7 @@ def rename_approval_group(
 @router.post("/approval-groups/{group_id}/notice")
 def set_approval_group_notice(
     group_id: int,
-    request_notice: str = Form("", max_length=2000),
+    request_notice: str = Form("", max_length=MAX_NOTICE_LENGTH + 500),
     admin: User = Depends(require_super_admin),
     session: Session = Depends(get_session),
 ):
