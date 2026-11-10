@@ -35,8 +35,9 @@
     </div>
     <datalist id="time-zones">{% for name in zone_choices %}<option value="{{ name }}"></option>{% endfor %}</datalist>
     <div class="form-actions">
-      {% if user.time_zone_source == "manual" %}<button type="submit" name="clear" value="1" class="btn" formnovalidate>Go back to my browser's</button>{% endif %}
+      {# The primary button is first in the page so Enter in the box submits it; .form-actions shows it on the right. #}
       <button type="submit" class="btn btn-primary">Use this time zone</button>
+      {% if user.time_zone_source == "manual" %}<button type="submit" name="clear" value="1" class="btn" formnovalidate>Go back to my browser's</button>{% endif %}
     </div>
   </fieldset>
 </form>

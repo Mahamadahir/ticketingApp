@@ -60,8 +60,8 @@
     <label class="field-check field-wide"><input type="checkbox" name="other_is_main" value="true" /> Make the other account the main one (if it has an account here); this account then joins it and you sign in again</label>
   </div>
   <div class="form-actions">
-    {% if not sso_configured %}<span class="note">Microsoft sign-in is not set up here.</span>{% endif %}
     <button type="submit" class="btn btn-primary" {{ "" if sso_configured else "disabled" }}>Sign in with the other account</button>
+    {% if not sso_configured %}<span class="note">Microsoft sign-in is not set up here.</span>{% endif %}
   </div>
 </form>
 

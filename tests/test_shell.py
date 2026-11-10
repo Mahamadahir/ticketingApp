@@ -480,3 +480,23 @@ def test_admin_users_forms_use_the_form_layout_with_their_field_names(client, db
     link = link[: link.index("</form>")]
     assert 'class="form-grid"' in link and 'name="main_email"' in link and 'name="other_email"' in link
     assert 'class="filter-bar"' in page  # the role and membership forms in the user rows
+
+
+def test_pressing_enter_in_the_time_zone_box_submits_use_this_time_zone_not_the_clear_button(client, db_session):
+    uid = agent(client, db_session)
+    user = db_session.get(User, uid)
+    user.time_zone, user.time_zone_source = "Europe/Paris", "manual"
+    db_session.add(user)
+    db_session.commit()
+    page = client.get("/settings/notifications").text
+    zone_form = page[page.index('action="/settings/time-zone"'):]
+    zone_form = zone_form[: zone_form.index("</form>")]
+    # The first submit button in the markup is the one Enter uses; .form-actions (row-reverse) puts it on the right.
+    assert zone_form.index("Use this time zone") < zone_form.index('name="clear"')
+    assert "flex-direction: row-reverse" in re.search(r"\n\.form-actions \{[^}]*\}", CSS).group(0)
+
+
+def test_choosing_a_link_in_the_person_menu_closes_it(client, db_session):
+    agent(client, db_session)
+    page = client.get("/tickets").text
+    assert 'event.target.closest(".person-menu-panel a")' in page and "Escape" in page

@@ -99,7 +99,7 @@ One component for both frames (the `person_menu` macro in `base.html`): `details
 One layout, replacing runs of inline `label + input`.
 
 - `.form-grid`: a responsive grid (`repeat(auto-fit, minmax(220px, 1fr))`, 16px gap). Each child is a `label.field` (label text above the control; add a `.field-hint` span for help and a `.field-error` for a message under the control). `.field-wide` spans the full row; `.field-narrow` caps a short field at 260px. Inputs, selects and textareas fill their field. A tick box is a `label.field-check` (the box beside its text), with `.field-wide` when it should take a row.
-- `.form-actions`: the buttons row under the grid, right-aligned (the primary button last), wrapping on a narrow screen.
+- `.form-actions`: the buttons row under the grid, shown right-aligned and wrapping on a narrow screen. It is `row-reverse`, so write the primary button first in the markup (Enter in a field submits the first button) and it shows last, on the right.
 - `.filter-bar`: an inline form of `.field` selects plus its button(s), wrapping; each field takes at least 200px.
 
 Field names, ids and validation belong to the page and do not change when a form moves onto this. First users: Admin > Users and My settings; the other admin pages move with the admin overhaul.
