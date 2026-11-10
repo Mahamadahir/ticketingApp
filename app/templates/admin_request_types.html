@@ -112,8 +112,14 @@
 <form method="post" action="/admin/request-types/{{ t.id }}">
   <fieldset>
     <label>Name <input type="text" name="name" value="{{ t.name }}" maxlength="{{ max_name_length }}" required /></label>
-    <label>Description (shown on the form)
+    <label>Description (one short line, shown on the kind's card on New request and on the home page tiles)
       <textarea name="description" rows="2" maxlength="{{ max_description_length }}">{{ t.description }}</textarea>
+    </label>
+    <label>Icon (on the card and the tile)
+      <select name="icon">
+        <option value="">General</option>
+        {% for key, (label, _path) in icons.items() if key != "chat" %}<option value="{{ key }}" {{ "selected" if key == t.icon else "" }}>{{ label }}</option>{% endfor %}
+      </select>
     </label>
     <label>Approval group
       <select name="approval_group_id">
@@ -197,8 +203,14 @@
 <h3>New request type</h3>
 <form method="post" action="/admin/request-types">
   <label>Name <input type="text" name="name" maxlength="{{ max_name_length }}" required /></label>
-  <label>Description (shown on the form)
+  <label>Description (one short line, shown on the kind's card on New request and on the home page tiles)
     <textarea name="description" rows="2" maxlength="{{ max_description_length }}"></textarea>
+  </label>
+  <label>Icon (on the card and the tile)
+    <select name="icon">
+      <option value="">General</option>
+      {% for key, (label, _path) in icons.items() if key != "chat" %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+    </select>
   </label>
   <label>Approval group
     <select name="approval_group_id">

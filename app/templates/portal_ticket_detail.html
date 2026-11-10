@@ -31,7 +31,7 @@
       {% if ticket.status.value == "closed" %}<p class="rq-hint">This request is closed. Adding a comment opens a new request linked to it.</p>{% endif %}
       <textarea id="reply" name="body" rows="4" maxlength="{{ max_message_length }}" placeholder="Write your reply..." required></textarea>
       {% with attach_id = "reply-files", attach_label = "Add a file" %}{% include "_attach_control.html" %}{% endwith %}
-      <p class="rq-hint">Up to {{ max_files }} files, {{ max_file_mb }} MB each.</p>
+      <p class="rq-hint">Up to {{ max_files }} files, {{ max_file_mb }} MB each{% if show_total %} and {{ max_total_mb }} MB in all{% endif %}.</p>
       <div class="rq-actions"><button type="submit" class="btn btn-primary">Send reply</button></div>
     </form>
   </div>

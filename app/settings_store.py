@@ -33,6 +33,7 @@ TEAMS_MAX_PER_PERSON_HOUR = "teams_max_per_person_hour"
 TEAMS_HOLD_WHILE_ACTIVE_MINUTES = "teams_hold_while_active_minutes"
 TEAMS_PENDING_CHOICE_HOURS = "teams_pending_choice_hours"
 REPLY_ATTACH_MAX_MB = "reply_attach_max_mb"
+REQUESTER_UPLOAD_TOTAL_MB = "requester_upload_total_mb"
 REPLY_HELD_FILE_HOURS = "reply_held_file_hours"
 SLA_AT_RISK_PERCENT = "sla_at_risk_percent"
 REPORT_MAX_DAYS = "report_max_days"
@@ -195,6 +196,17 @@ REGISTRY: dict[str, SettingDef] = {
             "and limits. Placeholder."
         ),
         default="2",
+    ),
+    REQUESTER_UPLOAD_TOTAL_MB: SettingDef(
+        key=REQUESTER_UPLOAD_TOTAL_MB,
+        label="Portal: most files a requester can add to one reply or new request (MB in all)",
+        kind="count",
+        description=(
+            "The total size of the files a requester adds to one reply on their request page or to one new request. A set "
+            "over this is refused with a message naming the limit, and nothing is kept. Each file is still held to the 10 MB "
+            "limit and the most-attachments setting. Agents are not held to this total. Placeholder."
+        ),
+        default="25",
     ),
     REPLY_HELD_FILE_HOURS: SettingDef(
         key=REPLY_HELD_FILE_HOURS,

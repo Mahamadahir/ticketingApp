@@ -600,6 +600,9 @@ class ApprovalGroup(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(unique=True, index=True)
+    # The sentence a requester reads on the New request form for a kind that this group approves (#206); blank: the
+    # default wording in app/request_types.py.
+    request_notice: Optional[str] = Field(default=None)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -657,6 +660,8 @@ class RequestType(SQLModel, table=True):
     approvers_may_self_approve: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
     # Shown first among the quick-start tiles on the portal's My requests page (#204, app/request_types.py `portal_tiles`).
     is_featured: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
+    # The icon on the kind's card and tile (#206): a name from app/request_types.py `ICONS`; blank shows the generic one.
+    icon: Optional[str] = Field(default=None)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

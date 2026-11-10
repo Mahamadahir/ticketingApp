@@ -18,7 +18,8 @@ from sqlmodel import Session, select
 
 from app.backdating import BackdateError, backdate_ticket
 from app.followers import InvalidEmail, normalise_email
-from app.messages import record_inbound
+from app.attachments import NewFile
+from app.messages import attach_files, record_inbound
 from app.reply_channel import AGENT, PORTAL
 from app.outbox import queue_raised_for
 from app.identity import person_for_address
@@ -36,6 +37,7 @@ from app.notification_settings import EMAIL, RAISED_FOR_YOU, is_enabled
 from app.settings_store import TELL_REQUESTER_RAISED_FOR, get_flag
 from app.required_by import RequiredByError, set_required_by
 from app.sla import Level
+from app.storage import Storage
 from app.resolution import ResolveError, clean_notes, resolve_ticket
 from app.ticket_service import EVENT_REQUEST_TYPE, create_ticket, record_event
 from app.request_questions import QuestionError, save_answers
@@ -95,11 +97,14 @@ def raise_ticket(
     resolution_notes: Optional[str] = None,
     required_by: Optional[date] = None,
     answers: Optional[dict[int, str]] = None,
+    files: Optional[list[NewFile]] = None,
+    storage: Optional[Storage] = None,
 ) -> Ticket:
     """Raises a ticket. With for_email an agent raises it on that person's behalf; without,
     the creator raises it for themselves. Only the agent mode can classify, assign or
     backdate. A request whose type offers it can carry a Required by date, from either mode; a past
-    date is refused unless the agent is backdating (giving reported or resolved times).
+    date is refused unless the agent is backdating (giving reported or resolved times). `files` (already checked by
+    reply_files.read_requester_uploads or read_uploads) are stored on the first message, the one that carries the description.
     Nothing is committed: the caller does that."""
     subject, description = (subject or "").strip(), (description or "").strip()
     if not subject:
@@ -181,14 +186,15 @@ def raise_ticket(
         if will_tell:
             queue_raised_for(session, ticket)
         # Stored as the requester's own first message; who typed it is in the sender.
-        record_inbound(
+        first = record_inbound(
             session, ticket, sender=f"Logged by {creator.display_name} on behalf of {requester}", body=description,
             channel=AGENT,
         )
     else:
-        record_inbound(
+        first = record_inbound(
             session, ticket, sender=creator.display_name, body=description, author_user_id=creator.id, channel=PORTAL,
         )
+    attach_files(session, ticket, first, creator, files, storage)
 
     if category is not None:
         triage_ticket(

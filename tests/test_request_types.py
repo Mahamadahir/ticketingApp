@@ -241,8 +241,9 @@ def test_the_form_lists_the_active_kinds_of_request(client, db_session):
 
     page = client.get("/portal/new").text
 
-    assert "New starter - A new colleague" in page and "Old thing" not in page
-    assert "Something is not working" in page
+    assert '<span class="kind-title">New starter</span>' in page and '<span class="kind-text">A new colleague</span>' in page
+    assert "Old thing" not in page
+    assert page.index("Something is not working") < page.index('<span class="kind-title">New starter</span>')  # first card
 
 
 def test_an_end_user_raises_a_service_request(client, db_session):

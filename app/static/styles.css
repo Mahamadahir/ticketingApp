@@ -536,3 +536,51 @@ th { color: var(--muted); font-weight: 600; }
 .rq-when { margin-left: auto; color: var(--muted); font-size: 14px; }
 .rq-msg .message-body { line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
 .rq-files { margin: 0; padding-left: 18px; }
+
+/* New request (9F): the two steps, the kind cards and the approvals page */
+.nr { display: flex; flex-direction: column; gap: 24px; }
+.nr-head { display: flex; flex-direction: column; gap: 6px; }
+.nr-head h1 { margin: 0; font-size: 28px; font-weight: 700; }
+.nr-head p { margin: 0; }
+.nr-cols { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
+.nr-kinds { flex: 1 1 300px; max-width: 380px; min-width: 260px; display: flex; flex-direction: column; gap: 10px; }
+.nr-step { margin: 0 0 4px; font-size: 16px; font-weight: 700; }
+.kind { display: flex; gap: 12px; align-items: flex-start; padding: 16px; border-radius: var(--radius-lg); border: 1px solid var(--border); background: var(--surface); color: var(--text); text-decoration: none; }
+.kind:hover { border-color: var(--accent); color: var(--text); }
+.kind.on { border: 2px solid var(--accent); padding: 15px; background: var(--accent-soft); }
+.kind-icon { flex: none; margin-top: 2px; }
+.kind-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.kind-title { font-weight: 700; }
+.kind-text { font-size: 14px; color: var(--muted); overflow-wrap: anywhere; }
+.tile .kind-icon { margin-top: 0; }
+.nr-form { flex: 999 1 480px; min-width: 0; padding: 24px; display: flex; flex-direction: column; gap: 18px; }
+.nr-form-head { display: flex; flex-direction: column; gap: 10px; }
+.nr-form-head h2 { margin: 0; font-size: 20px; font-weight: 700; }
+.nr-notice { margin: 0; display: flex; gap: 8px; align-items: center; color: var(--blue); background: var(--blue-bg); padding: 10px 12px; border-radius: 10px; font-size: 14px; font-weight: 500; }
+.nr-notice svg { flex: none; }
+.nr-form > label, .nr-form > div > label, .nr-form #request-questions > label { display: flex; flex-direction: column; gap: 6px; font-weight: 600; font-size: 15px; }
+.nr-form #request-questions { display: flex; flex-direction: column; gap: 18px; }
+.nr-form input[type="date"] { max-width: 240px; }
+.nr-form textarea { resize: vertical; padding: 12px; line-height: 1.5; }
+.nr-hint { margin: 0; font-weight: 400; color: var(--muted); font-size: 14px; }
+.nr-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; border-top: 1px solid var(--border); padding-top: 18px; }
+.nr-actions .tp-attach label.btn { flex-direction: row; gap: 8px; cursor: pointer; }
+.nr-send { margin-left: auto; }
+.nr-agent { border: 1px solid var(--border); border-radius: var(--radius); padding: 0 14px; }
+.nr-agent > summary { cursor: pointer; font-weight: 600; padding: 10px 0; }
+.nr-agent[open] > summary { border-bottom: 1px solid var(--border); margin-bottom: 12px; }
+.nr-agent fieldset { border: 0; padding: 0; }
+.nr-agent label { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; font-weight: 600; }
+.ap { display: flex; flex-direction: column; gap: 18px; max-width: 760px; }
+.ap-card { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+.ap-head { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: flex-start; }
+.ap-head h2 { margin: 2px 0 4px; font-size: 18px; font-weight: 700; }
+.ap-head p { margin: 0; font-size: 14px; }
+.ap-ref { color: var(--muted); font-weight: 600; }
+.ap-answers { font-size: 14px; }
+.ap-form { display: flex; flex-direction: column; gap: 12px; }
+.ap-form textarea { resize: vertical; padding: 10px 12px; }
+.ap-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.ap-open { margin-left: auto; font-size: 14px; }
+.ap-head h2 a { text-decoration: none; color: var(--text); }
+.ap-head h2 a:hover { color: var(--accent); }

@@ -54,6 +54,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/c4f7a2b9e813_request_type_icon_and_approval_notice.py",
+        "revision": "c4f7a2b9e813"
+      },
+      {
         "file": "migrations/versions/b3e8d1f46a72_request_type_featured.py",
         "revision": "b3e8d1f46a72"
       },
@@ -68,17 +72,13 @@
       {
         "file": "migrations/versions/8f193a5c2d17_teams_follow_ups.py",
         "revision": "8f193a5c2d17"
-      },
-      {
-        "file": "migrations/versions/f72463c9eda5_teams_intake.py",
-        "revision": "f72463c9eda5"
       }
     ],
-    "count": 68,
+    "count": 69,
     "heads": [
       {
-        "file": "migrations/versions/b3e8d1f46a72_request_type_featured.py",
-        "revision": "b3e8d1f46a72"
+        "file": "migrations/versions/c4f7a2b9e813_request_type_icon_and_approval_notice.py",
+        "revision": "c4f7a2b9e813"
       }
     ]
   },
@@ -238,6 +238,7 @@
         "members_of",
         "remove_member",
         "rename_group",
+        "set_notice",
         "types_using"
       ],
       "imported_by": [
@@ -263,6 +264,7 @@
         "tests/test_entra_check.py",
         "tests/test_outbound_mail.py",
         "tests/test_portal_home.py",
+        "tests/test_portal_new.py",
         "tests/test_request_types.py",
         "tests/test_teams_approvals.py"
       ]
@@ -428,6 +430,7 @@
         "app.inbound",
         "app.intake",
         "app.messages",
+        "app.raising",
         "app.reply_files",
         "app.routers.attachments",
         "app.routers.portal",
@@ -1039,6 +1042,7 @@
         "tests/test_outage_mode.py",
         "tests/test_outbound_mail.py",
         "tests/test_portal_home.py",
+        "tests/test_portal_new.py",
         "tests/test_portal_request.py",
         "tests/test_presence.py",
         "tests/test_public_surface.py",
@@ -1412,6 +1416,7 @@
         "tests/test_inbound_mail.py",
         "tests/test_msp_mail.py",
         "tests/test_never_follow.py",
+        "tests/test_portal_new.py",
         "tests/test_portal_request.py",
         "tests/test_reopening.py",
         "tests/test_reply_notification.py",
@@ -1953,6 +1958,7 @@
         "tests/test_health.py",
         "tests/test_htmx_errors.py",
         "tests/test_outage_mode.py",
+        "tests/test_portal_new.py",
         "tests/test_portal_request.py",
         "tests/test_public_surface.py",
         "tests/test_reply_files.py",
@@ -2501,6 +2507,7 @@
         "tests/test_permissions.py",
         "tests/test_portal.py",
         "tests/test_portal_home.py",
+        "tests/test_portal_new.py",
         "tests/test_portal_request.py",
         "tests/test_presence.py",
         "tests/test_public_surface.py",
@@ -3144,6 +3151,7 @@
         "app.routers.tickets"
       ],
       "imports": [
+        "app.attachments",
         "app.backdating",
         "app.followers",
         "app.identity",
@@ -3158,6 +3166,7 @@
         "app.resolution",
         "app.settings_store",
         "app.sla",
+        "app.storage",
         "app.subrequests",
         "app.ticket_service",
         "app.triage"
@@ -3294,11 +3303,13 @@
       "file": "app/reply_files.py",
       "functions": [
         "check_email_size",
+        "check_requester_total",
         "discard",
         "email_budget_bytes",
         "expire",
         "held",
         "hold",
+        "read_requester_uploads",
         "read_uploads",
         "release",
         "release_for_tickets",
@@ -3405,6 +3416,25 @@
       ]
     },
     {
+      "classes": [],
+      "file": "app/request_icons.py",
+      "functions": [
+        "icon_path"
+      ],
+      "imported_by": [
+        "app.request_types",
+        "app.templating"
+      ],
+      "imports": [],
+      "module": "app.request_icons",
+      "routes": [],
+      "summary": "The icons of the request types (#206). Kept apart from app/request_types.py so the template environment can use",
+      "tables": [],
+      "tests": [
+        "tests/test_portal_new.py"
+      ]
+    },
+    {
       "classes": [
         "QuestionError"
       ],
@@ -3448,12 +3478,14 @@
       "summary": "Form questions on request types, and the answers on tickets (#118 part 1). Nothing here commits.",
       "tables": [],
       "tests": [
+        "tests/test_portal_new.py",
         "tests/test_request_questions.py",
         "tests/test_subrequests.py"
       ]
     },
     {
       "classes": [
+        "Card",
         "RequestTypeError",
         "TypeDefaults"
       ],
@@ -3461,8 +3493,12 @@
       "functions": [
         "active_request_types",
         "all_request_types",
+        "approval_notice",
+        "card_for",
         "create_request_type",
+        "portal_cards",
         "portal_tiles",
+        "problem_card",
         "request_type_of",
         "self_triage",
         "self_triage_defaults",
@@ -3480,6 +3516,7 @@
         "app.audit",
         "app.categories",
         "app.models",
+        "app.request_icons",
         "app.request_questions",
         "app.sla",
         "app.subrequests",
@@ -3492,6 +3529,7 @@
       "tests": [
         "tests/test_approvals.py",
         "tests/test_portal_home.py",
+        "tests/test_portal_new.py",
         "tests/test_request_questions.py",
         "tests/test_request_type_defaults.py",
         "tests/test_request_types.py"
@@ -3696,6 +3734,7 @@
         "review_category",
         "save_email_template",
         "save_setting",
+        "set_approval_group_notice",
         "set_membership",
         "set_team_msp_handoff",
         "set_user_active",
@@ -3782,6 +3821,11 @@
           "handler": "remove_approval_group_member",
           "method": "POST",
           "path": "/admin/approval-groups/{group_id}/members/{user_id}/remove"
+        },
+        {
+          "handler": "set_approval_group_notice",
+          "method": "POST",
+          "path": "/admin/approval-groups/{group_id}/notice"
         },
         {
           "handler": "rename_approval_group",
@@ -5451,6 +5495,7 @@
         "tests/test_outage_mode.py",
         "tests/test_outbound_mail.py",
         "tests/test_portal_home.py",
+        "tests/test_portal_new.py",
         "tests/test_portal_request.py",
         "tests/test_presence.py",
         "tests/test_raising.py",
@@ -5614,6 +5659,7 @@
         "app.intake",
         "app.mail",
         "app.messages",
+        "app.raising",
         "app.reply_files",
         "app.routers.attachments",
         "app.routers.data_protection",
@@ -5635,6 +5681,7 @@
         "tests/test_attachments.py",
         "tests/test_inbound_mail.py",
         "tests/test_msp_mail.py",
+        "tests/test_portal_new.py",
         "tests/test_portal_request.py",
         "tests/test_reply_files.py",
         "tests/test_storage.py",
@@ -6150,6 +6197,7 @@
         "app.outage",
         "app.permissions",
         "app.presence",
+        "app.request_icons",
         "app.theme",
         "app.time_zones",
         "app.visibility"
@@ -6491,6 +6539,7 @@
         "tests/test_messages.py",
         "tests/test_msp_mail.py",
         "tests/test_permissions.py",
+        "tests/test_portal_new.py",
         "tests/test_portal_request.py",
         "tests/test_reply_files.py",
         "tests/test_reports.py",
@@ -7062,6 +7111,7 @@
     "tests/test_permissions.py",
     "tests/test_portal.py",
     "tests/test_portal_home.py",
+    "tests/test_portal_new.py",
     "tests/test_portal_request.py",
     "tests/test_presence.py",
     "tests/test_public_surface.py",

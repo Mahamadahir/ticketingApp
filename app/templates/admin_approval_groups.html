@@ -20,6 +20,12 @@
     <label>Name <input type="text" name="name" value="{{ g.name }}" maxlength="{{ max_name_length }}" required /></label>
     <button type="submit">Rename</button>
   </form>
+  <form method="post" action="/admin/approval-groups/{{ g.id }}/notice">
+    <label>Notice on the New request form (blank: "This needs approval before we start.")
+      <input type="text" name="request_notice" value="{{ g.request_notice or '' }}" maxlength="{{ max_notice_length }}" />
+    </label>
+    <button type="submit">Save notice</button>
+  </form>
   <p>Used by: {% for t in types %}{{ t.name }}{% if not t.is_active %} (off){% endif %}{{ ", " if not loop.last else "" }}{% else %}no request type{% endfor %}</p>
   <p>Members ({{ members|length }}):</p>
   <ul>

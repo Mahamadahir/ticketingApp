@@ -462,11 +462,19 @@ def _reopen_clause(session: Session, ticket: Ticket, zone: str, can_reopen: bool
     return " \u00b7 you can reopen it" + (f" until {format_long_date(until, zone)}" if until else "")
 
 
-def requester_status(session: Session, ticket: Ticket, zone: str, *, can_reopen: bool = False) -> RequesterStatus:
+FOLLOWER_WAITING_LABEL = "Waiting for a reply"
+
+
+def requester_status(
+    session: Session, ticket: Ticket, zone: str, *, can_reopen: bool = False, is_requester: bool = True
+) -> RequesterStatus:
     """The ticket's status in the requester's words (see REQUESTER_STATUS_WORDING). `zone` is the viewer's time zone,
     for the dates; `can_reopen` is whether this viewer may reopen it (the requester, not a follower), which decides
-    whether a Resolved ticket says so."""
+    whether a Resolved ticket says so. A follower (`is_requester` False) is not the one being waited for, so Awaiting
+    user reads "Waiting for a reply" to them on every portal page (the request page and My requests)."""
     label, tone = REQUESTER_STATUS_WORDING[ticket.status]
+    if ticket.status == TicketStatus.AWAITING_USER and not is_requester:
+        label = FOLLOWER_WAITING_LABEL
     sentence, note = label, ""
     if ticket.status == TicketStatus.SCHEDULED and ticket.due_on is not None:
         sentence = f"Scheduled for {format_long_date(ticket.due_on, zone)}"

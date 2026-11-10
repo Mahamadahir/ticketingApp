@@ -289,7 +289,7 @@ def test_the_page_says_how_many_files_and_how_big(client, db_session):
     login_as(client, "jo@example.com")
     page = client.get(f"/portal/{ticket.number}").text
     assert 'hx-encoding="multipart/form-data"' in page and 'name="files"' in page and "Add a file" in page
-    assert "Up to 20 files, 10 MB each." in page
+    assert "Up to 20 files, 10 MB each and 25 MB in all." in page
 
 
 # ---- code review follow-ups ------------------------------------------------------------------------------------

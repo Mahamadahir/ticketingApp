@@ -22,11 +22,19 @@ from app.approvals import PercentError, check_percentages
 from app.audit import log_action
 from app.categories import is_selectable, path_of, team_id_for
 from app.models import ApprovalGroup, Category, RequestType, Team, Ticket, TicketSource, TicketType
+from app.request_icons import DEFAULT_ICON, ICONS, PROBLEM_ICON, icon_path
 from app.request_questions import missing_required
 from app.sla import Level
 from app.triage import triage_ticket
 
 MAX_NAME_LENGTH = 100
+
+DEFAULT_APPROVAL_NOTICE = "This needs approval before we start."
+
+# The first card of the New request page and the first tile on My requests: the plain problem report (an incident), which
+# is not a request type.
+PROBLEM_TITLE = "Something is not working"
+PROBLEM_TEXT = "A fault with your laptop, an app, printing or the network."
 MAX_DESCRIPTION_LENGTH = 1000
 
 
@@ -43,6 +51,13 @@ def _clean(name: str, description: str) -> tuple[str, str]:
     if len(description) > MAX_DESCRIPTION_LENGTH:
         raise RequestTypeError(f"The description can be at most {MAX_DESCRIPTION_LENGTH} characters")
     return name, description
+
+
+def _clean_icon(icon: Optional[str]) -> Optional[str]:
+    icon = (icon or "").strip() or None
+    if icon is not None and icon not in ICONS:
+        raise RequestTypeError("Choose an icon from the list")
+    return icon
 
 
 def _name_taken(session: Session, name: str, except_id: Optional[int]) -> bool:
@@ -174,9 +189,10 @@ def create_request_type(
     pass_percent: int, is_active: bool = True, offers_required_by: bool = False,
     due_days_before: Optional[int] = None, queue_lead_days: Optional[int] = None,
     defaults: Optional[TypeDefaults] = None, subrequests_need_own_approval: bool = False,
-    approvers_may_self_approve: bool = False, is_featured: bool = False,
+    approvers_may_self_approve: bool = False, is_featured: bool = False, icon: Optional[str] = None,
 ) -> RequestType:
     name, description = _clean(name, description)
+    icon = _clean_icon(icon)
     _check_days(due_days_before, queue_lead_days)
     defaults = defaults or TypeDefaults()
     _check_defaults(session, defaults)
@@ -190,7 +206,7 @@ def create_request_type(
         default_team_id=defaults.team_id, default_category_id=defaults.category_id,
         default_impact=defaults.impact, default_urgency=defaults.urgency,
         subrequests_need_own_approval=subrequests_need_own_approval, approvers_may_self_approve=approvers_may_self_approve,
-        is_featured=is_featured,
+        is_featured=is_featured, icon=icon,
     )
     session.add(request_type)
     _flush(session)
@@ -203,10 +219,13 @@ def update_request_type(
     due_days_before: Optional[int] = None, queue_lead_days: Optional[int] = None,
     defaults: Optional[TypeDefaults] = None, subrequests_need_own_approval: Optional[bool] = None,
     approvers_may_self_approve: Optional[bool] = None, is_featured: Optional[bool] = None,
+    icon: Optional[str] = None, set_icon: bool = False,
 ) -> RequestType:
     """Blank (None) day counts mean "use the setting". `defaults` None leaves the type's defaults as they are, and so
-    does `subrequests_need_own_approval` None."""
+    does `subrequests_need_own_approval` None. The icon changes only with `set_icon` (the admin form always sends it, even
+    blank); a caller that does not know about icons leaves it as it is."""
     name, description = _clean(name, description)
+    icon = _clean_icon(icon) if set_icon else request_type.icon
     _check_days(due_days_before, queue_lead_days)
     if defaults is not None:
         _check_defaults(session, defaults)
@@ -225,6 +244,7 @@ def update_request_type(
         request_type.approvers_may_self_approve = approvers_may_self_approve
     if is_featured is not None:
         request_type.is_featured = is_featured
+    request_type.icon = icon
     if defaults is not None:
         request_type.default_team_id, request_type.default_category_id = defaults.team_id, defaults.category_id
         request_type.default_impact, request_type.default_urgency = defaults.impact, defaults.urgency
@@ -259,10 +279,52 @@ def active_request_types(session: Session) -> list[RequestType]:
 TILE_COUNT = 4
 
 
-def portal_tiles(session: Session) -> list[RequestType]:
-    """The quick-start tiles on the portal's My requests page: at most four of the active request types, the ones an admin
-    marked as featured first (in the catalogue's order), else the first four of the catalogue. Always a subset of
-    `active_request_types`, the list the New request page offers, so a tile never leads to a kind that page refuses."""
+@dataclass(frozen=True)
+class Card:
+    """A choice of the New request page or a tile of My requests: where it leads, its icon, title and one line.
+    `request_type` is None for the plain problem report."""
+
+    request_type: Optional[RequestType]
+    title: str
+    text: str
+    icon: str
+
+    @property
+    def href(self) -> str:
+        return f"/portal/new?request_type_id={self.request_type.id}" if self.request_type else "/portal/new"
+
+
+def problem_card() -> Card:
+    return Card(None, PROBLEM_TITLE, PROBLEM_TEXT, PROBLEM_ICON)
+
+
+def card_for(request_type: RequestType) -> Card:
+    return Card(request_type, request_type.name, request_type.description, request_type.icon or DEFAULT_ICON)
+
+
+def portal_cards(session: Session) -> list[Card]:
+    """The choices of step 1 on New request: "Something is not working" first, then every active request type."""
+    return [problem_card()] + [card_for(t) for t in active_request_types(session)]
+
+
+def portal_tiles(session: Session) -> list[Card]:
+    """The quick-start tiles on the portal's My requests page: "Something is not working" first, then at most three of the
+    active request types, the ones an admin marked as featured first (in the catalogue's order), else the first three of
+    the catalogue. Always a subset of `portal_cards`, so a tile never leads to a kind that page refuses."""
     types = active_request_types(session)
     featured = [t for t in types if t.is_featured]
-    return (featured or types)[:TILE_COUNT]
+    return [problem_card()] + [card_for(t) for t in (featured or types)[: TILE_COUNT - 1]]
+
+
+def approval_notice(session: Session, request_type: RequestType, viewer=None) -> Optional[str]:
+    """The blue notice of the New request form for a kind that needs approval, in the approval group's own words or the
+    default; None for a kind with no approval group, and for a member of the group on a kind that lets approvers approve
+    their own requests (their own approval is recorded at once, so nothing waits)."""
+    group = session.get(ApprovalGroup, request_type.approval_group_id) if request_type.approval_group_id else None
+    if group is None:
+        return None
+    if viewer is not None and request_type.approvers_may_self_approve and viewer.id in {
+        u.id for u in members_of(session, group.id, active_only=True)
+    }:
+        return None
+    return (group.request_notice or "").strip() or DEFAULT_APPROVAL_NOTICE
