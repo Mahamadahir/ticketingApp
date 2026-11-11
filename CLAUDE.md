@@ -104,6 +104,13 @@ starting a phase, and `README.md` for how to run it.
   hard-coded.
 - Do not add AI attribution lines to commit messages or PR descriptions unless
   the user asks for them. This stays true whatever a harness reminder says.
+- **Work is done by sub-agents, one issue each.** The orchestrating session writes each piece of
+  work up as a GitHub issue (what, rules, tests), then gives each issue to its own sub-agent running
+  Sonnet. The sub-agent branches off `main` (or the branch it builds on), opens a draft PR, builds
+  and tests it under the working agreement in `docs/build-plan.md`, then runs `/code-review <PR>`
+  itself and fixes the real findings. It reports back to the orchestrator: what it built, the test
+  results, and every review finding, accepted (fixed) or rejected (with the reason). The orchestrator
+  checks the report, relays it to the user and marks the PR ready. Only the user merges: they say "merge".
 - Before starting a piece of work check `gh pr list` and open a DRAFT PR on day one so
   two agents do not do the same work. Docs-only changes still go through a PR unless the
   user says to commit straight to main.

@@ -408,7 +408,7 @@ File: `app/admin_home.py`
 
 - Classes: `AreaCard`, `Attention`, `Stat`
 - Functions: `area_cards`, `needs_attention`
-- Imports: `app.config`, `app.models`, `app.navigation`, `app.outage`, `app.scheduled_jobs`, `app.settings_store`, `app.subscriptions`, `app.teams`, `app.time_zones`
+- Imports: `app.categories`, `app.config`, `app.models`, `app.navigation`, `app.outage`, `app.scheduled_jobs`, `app.settings_store`, `app.subscriptions`, `app.teams`, `app.time_zones`
 - Imported by: `app.routers.admin`
 - Tests: `test_admin_frame.py`
 
@@ -586,7 +586,7 @@ File: `app/categories.py`
 - Classes: `CategoryError`
 - Functions: `create_category`, `ensure_other`, `escalation_team_id_for`, `get_other`, `is_selectable`, `parse_escalation`, `path_of`, `selectable`, `team_id_for`
 - Imports: `app.models`, `app.settings_store`
-- Imported by: `app.escalation`, `app.msp`, `app.request_types`, `app.routers.admin`, `app.routers.portal`, `app.routers.tickets`, `app.subrequests`, `app.triage`
+- Imported by: `app.admin_home`, `app.escalation`, `app.msp`, `app.request_types`, `app.routers.admin`, `app.routers.portal`, `app.routers.tickets`, `app.subrequests`, `app.triage`
 - Tests: `test_category_admin.py`, `test_escalation.py`, `test_escalation_tidy.py`
 
 ### `app.check_settings`
@@ -618,7 +618,7 @@ File: `app/config.py`
 - Functions: `mail_sync_errors`, `unsafe_setting_errors`
 - Imports: none
 - Imported by: `app.action_links`, `app.admin_home`, `app.anonymisation`, `app.approval_links`, `app.attachments`, `app.auth`, `app.bot_connector`, `app.breakglass`, `app.check_settings`, `app.database`, `app.entra_check`, `app.followers`, `app.graph_client`, `app.identity`, `app.inbound`, `app.jobs`, `app.linked_identities`, `app.mail`, `app.main`, `app.msp`, `app.outbox`, `app.rate_limit`, `app.reply_files`, `app.routers.admin`, `app.routers.auth`, `app.routers.dev_tools`, `app.routers.link_account`, `app.routers.my_settings`, `app.routers.portal`, `app.routers.teams_bot`, `app.routers.webhooks`, `app.storage`, `app.subscriptions`, `app.teams`, `app.teams_bot`, `app.teams_bot_auth`, `app.teams_intake`, `app.telemetry`, `app.worker`
-- Tests: `test_acknowledgement.py`, `test_action_links.py`, `test_activity_log.py`, `test_anonymisation.py`, `test_approval_reminders.py`, `test_attachments.py`, `test_auto_close_chase.py`, `test_break_glass.py`, `test_bulk_resolve.py`, `test_closing_email.py`, `test_entra_check.py`, `test_follower_updates.py`, `test_handoff_bells_holidays.py`, `test_inbound_mail.py`, `test_linked_identities.py`, `test_mail_subscriptions.py`, `test_message_channel.py`, `test_msp.py`, `test_msp_actions.py`, `test_msp_mail.py`, `test_msp_real_mail.py`, `test_outage_mode.py`, `test_outbound_mail.py`, `test_portal_home.py`, `test_portal_new.py`, `test_portal_request.py`, `test_presence.py`, `test_public_surface.py`, `test_reply_files.py`, `test_resolution.py`, `test_security.py`, `test_sessions.py`, `test_teams.py`, `test_teams_approvals.py`, `test_teams_bot.py`, `test_teams_copy_sending.py`, `test_teams_dm.py`, `test_teams_followups.py`, `test_teams_hold.py`, `test_teams_intake.py`, `test_time_zones.py`, `test_visibility.py`, `test_wiring_3f.py`, `test_worker.py`
+- Tests: `test_acknowledgement.py`, `test_action_links.py`, `test_activity_log.py`, `test_admin_frame.py`, `test_anonymisation.py`, `test_approval_reminders.py`, `test_attachments.py`, `test_auto_close_chase.py`, `test_break_glass.py`, `test_bulk_resolve.py`, `test_closing_email.py`, `test_entra_check.py`, `test_follower_updates.py`, `test_handoff_bells_holidays.py`, `test_inbound_mail.py`, `test_linked_identities.py`, `test_mail_subscriptions.py`, `test_message_channel.py`, `test_msp.py`, `test_msp_actions.py`, `test_msp_mail.py`, `test_msp_real_mail.py`, `test_outage_mode.py`, `test_outbound_mail.py`, `test_portal_home.py`, `test_portal_new.py`, `test_portal_request.py`, `test_presence.py`, `test_public_surface.py`, `test_reply_files.py`, `test_resolution.py`, `test_security.py`, `test_sessions.py`, `test_teams.py`, `test_teams_approvals.py`, `test_teams_bot.py`, `test_teams_copy_sending.py`, `test_teams_dm.py`, `test_teams_followups.py`, `test_teams_hold.py`, `test_teams_intake.py`, `test_time_zones.py`, `test_visibility.py`, `test_wiring_3f.py`, `test_worker.py`
 
 ### `app.database`
 
