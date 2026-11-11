@@ -1,11 +1,16 @@
 # Local development only: Compose reads this file on its own beside docker-compose.yml (Azure does not use Compose).
-# The app runs the code in this folder instead of the copy baked into the image, and restarts when a Python file
-# changes. Templates and static files are read from disk on each request, so they need no restart. The worker does
-# not reload: run `docker compose restart worker` after changing job code. A new dependency still needs --build.
+# The app and the worker run the code in this folder instead of the copy baked into the image. The app restarts when a
+# Python file changes (UVICORN_RELOAD, handled by docker-entrypoint.sh, so RUN_MIGRATIONS still applies). Templates and
+# static files are read from disk on each request, so they need no restart. The worker does not reload: run
+# `docker compose restart worker` after changing job code. A new dependency still needs --build.
 services:
   app:
+    environment:
+      UVICORN_RELOAD: "true"
     volumes:
       - ./app:/srv/app
       - ./migrations:/srv/migrations
-    # The entrypoint's steps, with one uvicorn process that reloads (polling, so edits made from Windows on /mnt/c are seen).
-    command: ["sh", "-c", "python -m app.check_settings && alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir app"]
+  worker:
+    volumes:
+      - ./app:/srv/app
+      - ./migrations:/srv/migrations

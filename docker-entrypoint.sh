@@ -10,4 +10,10 @@ if [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
     alembic upgrade head
 fi
 
+# Local development only (docker-compose.override.yml sets it): one process that restarts when a
+# file in app/ changes. Unset, the line below is unchanged.
+if [ "${UVICORN_RELOAD:-false}" = "true" ]; then
+    exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir app
+fi
+
 exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers "${UVICORN_WORKERS:-4}"
