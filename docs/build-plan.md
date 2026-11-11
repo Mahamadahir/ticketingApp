@@ -270,7 +270,11 @@ with `createReply` (sendMail returns no id, so a sent message has none).
 6. Container smoke test when the change touches startup or migrations.
 7. Open the PR with `gh pr create --body-file` against `main` (CI only runs on PRs
    targeting `main`). `gh` is at `C:\Program Files\GitHub CLI\gh.exe`.
-8. `/code-review N` is run by the user. Fix real findings, explain rejected ones.
+8. Who does what: the orchestrating session writes the issue and hands it to one sub-agent (Sonnet).
+   That sub-agent builds the PR, then runs `/code-review N` on it before the PR is marked ready, fixes
+   the real findings and explains the rejected ones, and reports to the orchestrator: what was built,
+   the test results, and each finding accepted or rejected with why. The orchestrator relays the report
+   to the user and marks the PR ready.
    To stop two agents starting the same work, run `gh pr list` before starting, and open a
    **draft** PR on day one with a title that says what it is; mark it ready when done. Docs-only
    changes still go through a PR (docs-only PRs run no CI, so they merge quickly).
