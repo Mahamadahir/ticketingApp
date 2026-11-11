@@ -45,6 +45,7 @@ the theme so form controls and scrollbars match.
 `main`, so the frame stays put; an htmx partial carries no frame at all).
 
 - **Console** (agents and super admins): a left sidebar fixed to the viewport (the app mark, the navigation with counts, which scrolls on its own when it is taller than the screen, and the person row, always in view; below 800px it stacks above the page and scrolls with it), a top bar (search, theme button, bell, Raise ticket) and the outage banner above both.
+- **Admin frame** (9H, every `/admin` page in the console): `.admin-frame` puts `nav.admin-nav[aria-label="Admin"]` beside `<main>`: the Admin home link, then a `.admin-group` per group (a `p.admin-group-title` over a `ul` of `a.admin-link`, the current one `aria-current="page"`). The groups and who gets each page are `ADMIN_GROUPS` and `allowed_admin_pages` in `app/navigation.py`, carried on `Shell.admin_home` and `Shell.admin_menu`. Below 1000px the menu sits above the page, its groups side by side.
 - **Portal** (requesters on every page, and anyone on a `/portal` page): a top bar with the app mark, My requests, New
   request, Approvals, Settings (and Agent console for an agent), the theme button, the bell and Sign out. No sidebar.
 - **Bare** (sign-in pages, nobody signed in): the app mark only.
@@ -85,7 +86,7 @@ high (the icon buttons 40px).
 | `.count-badge` | The red number on an icon button |
 | `.navlink` | A navigation item (drawn by the `nav_item` macro in `base.html`) |
 
-Older classes still used by page bodies (`.badge`, `.status-*`, `.filters`, `.admin-tabs`, `.message`, `.message-internal`,
+Older classes still used by page bodies (`.badge`, `.status-*`, `.filters`, `.message`, `.message-internal`,
 `.note`, `.error`, `.button-*`, `.team-card`, `.ticket-card`, `.sla-*`, `.outage-banner`) are kept and now read from the
 tokens, so every page looks right in dark mode. New pages use the components above; the old classes go as each page is
 restyled.
@@ -112,6 +113,7 @@ Inter 4.0 variable (`app/static/fonts/Inter-4.0-variable.woff2`), SIL Open Font 
 
 ## Pages on the components
 
+- **Admin home** (9H, `admin_home.html`, data from `app/admin_home.py`): `.admin-head` (`h1`, one muted line), `.card.admin-attention` with `ul.attention-list` of `li.attention` (a tone `.chip`, `.attention-text`, the link) or `p.attention-clear`, then `.admin-areas`, a grid of `section.card.admin-area` (`h2`, `dl.admin-stats` whose `div`s show the value above its label, `ul.admin-quick` of links).
 - **Agent queue** (9B, `tickets_list.html`): the first page moved over. Header with count chips, `.tabs` of links (current tab `aria-current="true"`, plus `.on`), a filter form of `.field` selects, `.table-box` with `table.table.queue-table`, `.empty-state` per view. The time-to-breach chip is `queue_sla` in `app/sla.py`. Page-specific classes are the `.queue-*` and `.ticket-*` ones at the end of the components section of `styles.css`.
 - **Portal home** (9D, `portal_tickets_list.html`): the portal frame is the top bar of `base.html` (`.portal-bar`: brand, `.navlink` items, theme button, bell, and `details.person-menu` whose `summary.avatar` opens Settings and Sign out) over a centred `.content` of at most 1120px. The page is `.home-hero` (greeting, `.btn-xl` New request, `.tiles` of `a.tile`), then `.home-requests`: `.tabs.home-tabs` of links and `ul.req-list` of `li.req` (`a.req-main` with `.req-ref`, `.req-subject`, `.req-last`; `.req-side` with the status `.chip` and Reopen). Status words, tones and the last-update line come from `messages.requester_status` and `messages.requester_last_update`; every portal page uses them, never the internal status name.
 - **Portal New request** (9F, `portal_new_ticket.html`): `div.nr` of `.nr-head`, then `.nr-cols`: `nav.nr-kinds` (step 1: `a.kind` cards, the chosen one `.on` with `aria-current="true"`, drawn with `kind_icon` from `_icons.html`; icons are the fixed set in `app/request_icons.py`) beside `form.nr-form.card` (step 2: `.nr-notice` blue approval notice, `label` fields, `.nr-hint`, `details.nr-agent` for agents, `.nr-actions` with the attach control and `.nr-send`). The My requests tiles use the same icons. **Portal approvals** (`portal_approvals.html`): `.ap` of `article.card.ap-card` (`.ap-head`, `dl.dl.ap-answers`, `form.ap-form`).

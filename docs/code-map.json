@@ -162,6 +162,39 @@
     },
     {
       "classes": [
+        "AreaCard",
+        "Attention",
+        "Stat"
+      ],
+      "file": "app/admin_home.py",
+      "functions": [
+        "area_cards",
+        "needs_attention"
+      ],
+      "imported_by": [
+        "app.routers.admin"
+      ],
+      "imports": [
+        "app.config",
+        "app.models",
+        "app.navigation",
+        "app.outage",
+        "app.scheduled_jobs",
+        "app.settings_store",
+        "app.subscriptions",
+        "app.teams",
+        "app.time_zones"
+      ],
+      "module": "app.admin_home",
+      "routes": [],
+      "summary": "The admin home (9H, #212): what needs a look first, then one card per admin group with a couple of real counts and",
+      "tables": [],
+      "tests": [
+        "tests/test_admin_frame.py"
+      ]
+    },
+    {
+      "classes": [
         "Context",
         "Outcome",
         "Preview",
@@ -974,6 +1007,7 @@
       ],
       "imported_by": [
         "app.action_links",
+        "app.admin_home",
         "app.anonymisation",
         "app.approval_links",
         "app.attachments",
@@ -2143,6 +2177,7 @@
       "imported_by": [
         "app.action_links",
         "app.activity",
+        "app.admin_home",
         "app.anonymisation",
         "app.approval_groups",
         "app.approval_reminders",
@@ -2456,6 +2491,7 @@
         "tests/test_action_links.py",
         "tests/test_activity_log.py",
         "tests/test_admin.py",
+        "tests/test_admin_frame.py",
         "tests/test_anonymisation.py",
         "tests/test_approval_bell.py",
         "tests/test_approval_groups.py",
@@ -2705,14 +2741,22 @@
     },
     {
       "classes": [
+        "AdminGroup",
+        "AdminPage",
         "NavItem",
         "Shell"
       ],
       "file": "app/navigation.py",
       "functions": [
-        "build_shell"
+        "admin_menu",
+        "allowed_admin_pages",
+        "build_shell",
+        "current_admin_page",
+        "is_admin_path"
       ],
       "imported_by": [
+        "app.admin_home",
+        "app.routers.admin",
         "app.templating"
       ],
       "imports": [
@@ -2727,6 +2771,7 @@
       "summary": "The app shell's navigation (9A): the one definition of what each person sees in the sidebar (agents) or the top bar",
       "tables": [],
       "tests": [
+        "tests/test_admin_frame.py",
         "tests/test_shell.py"
       ]
     },
@@ -2932,6 +2977,7 @@
         "turn_on"
       ],
       "imported_by": [
+        "app.admin_home",
         "app.auth",
         "app.emergency",
         "app.mail",
@@ -2949,6 +2995,7 @@
       "summary": "Outage mode (#164): the switch that lets agents sign in with an emergency password while Entra is down.",
       "tables": [],
       "tests": [
+        "tests/test_admin_frame.py",
         "tests/test_outage_mode.py"
       ]
     },
@@ -3695,6 +3742,7 @@
         "add_subrequest_template",
         "add_thanks_rule_route",
         "add_type_question",
+        "admin_home",
         "approve_link",
         "category_review",
         "clear_user_object_id",
@@ -3759,6 +3807,7 @@
       ],
       "imports": [
         "app.activity",
+        "app.admin_home",
         "app.approval_groups",
         "app.approvals",
         "app.audit",
@@ -3777,6 +3826,7 @@
         "app.linked_identities",
         "app.models",
         "app.msp",
+        "app.navigation",
         "app.never_follow",
         "app.outage",
         "app.pagination",
@@ -3797,6 +3847,11 @@
       ],
       "module": "app.routers.admin",
       "routes": [
+        {
+          "handler": "admin_home",
+          "method": "GET",
+          "path": "/admin"
+        },
         {
           "handler": "view_activity_log",
           "method": "GET",
@@ -5285,12 +5340,14 @@
     },
     {
       "classes": [
+        "JobHealth",
         "ScheduledJobDef"
       ],
       "file": "app/scheduled_jobs.py",
       "functions": [
         "claim_next_due",
         "ensure_rows",
+        "job_health",
         "next_slot",
         "registry_errors",
         "run_claimed",
@@ -5302,6 +5359,7 @@
         "worker_id"
       ],
       "imported_by": [
+        "app.admin_home",
         "app.jobs",
         "app.routers.admin",
         "app.worker"
@@ -5327,6 +5385,7 @@
       "summary": "Recurring jobs driven by the database (phase 4A): the `scheduled_job` table.",
       "tables": [],
       "tests": [
+        "tests/test_admin_frame.py",
         "tests/test_anonymisation.py",
         "tests/test_approval_reminders.py",
         "tests/test_auto_close_chase.py",
@@ -5419,6 +5478,7 @@
       ],
       "imported_by": [
         "app.action_links",
+        "app.admin_home",
         "app.approval_reminders",
         "app.auto_close_chase",
         "app.bank_holidays",
@@ -5803,6 +5863,7 @@
         "subscription_resource"
       ],
       "imported_by": [
+        "app.admin_home",
         "app.jobs",
         "app.routers.admin",
         "app.routers.health"
@@ -5818,6 +5879,7 @@
       "summary": "Keeping mail flowing from the shared mailbox (phase 3C).",
       "tables": [],
       "tests": [
+        "tests/test_admin_frame.py",
         "tests/test_mail_subscriptions.py"
       ]
     },
@@ -5883,6 +5945,7 @@
         "ticket_link"
       ],
       "imported_by": [
+        "app.admin_home",
         "app.approval_reminders",
         "app.auto_close_chase",
         "app.bot_cards",
@@ -5913,6 +5976,7 @@
       "summary": "Teams channel posts (phase 2D): a card in the support channel for each new ticket.",
       "tables": [],
       "tests": [
+        "tests/test_admin_frame.py",
         "tests/test_anonymisation.py",
         "tests/test_approval_reminders.py",
         "tests/test_auto_close_chase.py",
@@ -6396,6 +6460,7 @@
         "zone_for_user"
       ],
       "imported_by": [
+        "app.admin_home",
         "app.auth",
         "app.backdating",
         "app.due_today",
@@ -7055,6 +7120,7 @@
     "tests/test_action_links.py",
     "tests/test_activity_log.py",
     "tests/test_admin.py",
+    "tests/test_admin_frame.py",
     "tests/test_anonymisation.py",
     "tests/test_approval_bell.py",
     "tests/test_approval_groups.py",

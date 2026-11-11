@@ -22,7 +22,8 @@ from app.activity import (
 from app.bank_holidays import REGIONS as BANK_HOLIDAY_REGIONS
 from app import emergency, linked_identities as links, outage
 from app.audit import log_action
-from app.auth import hash_password, require_permission, require_roles
+from app.admin_home import area_cards, needs_attention
+from app.auth import get_current_user, hash_password, require_permission, require_roles
 from app.permissions import ASSIGNABLE_ROLES, MANAGE_REQUEST_TEMPLATES, PERMISSIONS
 from app.sla import impact_options, urgency_options
 from app.categories import (
@@ -162,13 +163,36 @@ from app.sessions import live_session_counts, revoke_user_sessions
 from app.inbound import IGNORED_FLOOD
 from app.subscriptions import health_warnings, mail_folder, subscription_resource
 from app.teams import MAX_ATTEMPTS
-from app.time_zones import parse_clock, parse_dates, valid_zone
+from app.navigation import allowed_admin_pages
+from app.time_zones import parse_clock, parse_dates, valid_zone, zone_for_user
 from app.ticket_service import EVENT_CATEGORY_REVIEWED, get_by_number, record_event
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 require_super_admin = require_roles(UserRole.SUPER_ADMIN)
 require_request_templates = require_permission(MANAGE_REQUEST_TEMPLATES)
+
+
+# ---- Admin home (9H) ------------------------------------------------------------------------------------------
+
+@router.get("", response_class=HTMLResponse)
+def admin_home(request: Request, user: User = Depends(get_current_user), session: Session = Depends(get_session)):
+    """What needs a look first, then a card per admin group: open to anyone who may open at least one admin page,
+    and showing only what those pages show."""
+    allowed = allowed_admin_pages(session, user)
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Not permitted")
+    now = datetime.now(timezone.utc)
+    zone = zone_for_user(session, user)
+    return templates.TemplateResponse(
+        request,
+        "admin_home.html",
+        {
+            "user": user,
+            "attention": needs_attention(session, allowed, now, zone),
+            "cards": area_cards(session, allowed, now, zone),
+        },
+    )
 
 
 @router.get("/users", response_class=HTMLResponse)

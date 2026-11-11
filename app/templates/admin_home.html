@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Admin{% endblock %}
+{% block content %}
+{# The admin home (9H): built by app/admin_home.py, limited to the admin pages this person may open. #}
+<header class="admin-head">
+  <h1>Admin</h1>
+  <p>What needs a look first, then everything you can set up.</p>
+</header>
+
+<section class="card admin-attention" aria-labelledby="attention-title">
+  <h2 id="attention-title">Needs attention</h2>
+  {% if attention %}
+  <ul class="attention-list">
+    {% for line in attention %}
+    <li class="attention">
+      <span class="chip t-{{ line.tone }}">{{ line.tag }}</span>
+      <span class="attention-text">{{ line.text }}</span>
+      {% if line.href %}<a href="{{ line.href }}">{{ line.action }} <span aria-hidden="true">&rarr;</span></a>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="attention-clear"><strong>Nothing needs attention.</strong> Everything you look after here is in order.</p>
+  {% endif %}
+</section>
+
+<div class="admin-areas">
+  {% for card in cards %}
+  <section class="card admin-area" aria-labelledby="area-{{ loop.index }}">
+    <h2 id="area-{{ loop.index }}">{{ card.title }}</h2>
+    {% if card.stats %}
+    <dl class="admin-stats">
+      {% for stat in card.stats %}<div><dt>{{ stat.label }}</dt><dd>{{ stat.value }}</dd></div>{% endfor %}
+    </dl>
+    {% endif %}
+    <ul class="admin-quick">
+      {% for link in card.links %}<li><a href="{{ link.href }}">{{ link.label }} <span aria-hidden="true">&rsaquo;</span></a></li>{% endfor %}
+    </ul>
+  </section>
+  {% endfor %}
+</div>
+{% endblock %}
