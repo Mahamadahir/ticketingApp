@@ -143,9 +143,9 @@ def test_saving_a_group_saves_only_that_groups_settings_and_audits_each_change(c
     admin(client, db_session)
     set_setting(db_session, SESSION_IDLE_MINUTES, "100")  # another group, must stay as it is
     db_session.commit()
-    response = post_group(client, "resolving-and-closing", auto_close_after_days="9", chase_after_days="4", auto_close_enabled="on")
+    response = post_group(client, "resolving-and-closing", auto_close_after_days="9", chase_after_days="4", auto_close_enabled="off")
     assert response.status_code == 303
-    assert response.headers["location"] == "/admin/settings?group=resolving-and-closing&saved=2"  # enabled=on is the default
+    assert response.headers["location"] == "/admin/settings?group=resolving-and-closing&saved=2"  # enabled=off is the default, so not a change
     db_session.expire_all()
     assert get_setting(db_session, AUTO_CLOSE_AFTER_DAYS) == "9" and get_setting(db_session, CHASE_AFTER_DAYS) == "4"
     assert get_setting(db_session, SESSION_IDLE_MINUTES) == "100"
