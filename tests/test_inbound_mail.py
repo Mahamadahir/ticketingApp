@@ -957,3 +957,30 @@ def test_a_flooding_senders_files_are_not_downloaded(db_session, storage):
     assert process_message(db_session, "m1", graph, storage).outcome == TICKET_CREATED
     assert process_message(db_session, "m2", graph, storage).outcome == IGNORED_FLOOD
     assert graph.downloaded == []
+
+
+PAST = datetime(2026, 11, 4, 11, 0, tzinfo=timezone.utc)  # a fixed past moment: nothing below may read today's date
+
+
+def test_the_flood_check_before_the_files_are_fetched_uses_the_given_now(db_session, storage):
+    """process_message's own flood check (#225) is measured at the `now` it is given, as ingest_mail's is. The earlier
+    mail is 30 minutes before PAST: inside PAST's hour, long outside the hour before the real time."""
+    set_setting(db_session, INBOUND_MAX_PER_SENDER_HOUR, "1")
+    db_session.add(InboundMail(
+        graph_message_id="old", sender="jo@example.com", outcome=TICKET_CREATED, created_at=PAST - timedelta(minutes=30),
+    ))
+    db_session.commit()
+    graph = FakeGraph()
+    graph.add("m2")
+    graph.attach("m2", "report.pdf", PDF)
+    assert process_message(db_session, "m2", graph, storage, PAST).outcome == IGNORED_FLOOD
+    assert graph.downloaded == []  # set aside before the file was fetched, not only afterwards
+
+
+def test_a_new_requesters_time_zone_check_is_due_at_the_given_now(db_session):
+    from app.models import RequesterTimeZone
+
+    assert ingest_mail(db_session, mail("z1", sender="newcomer@example.com"), now=PAST).outcome == TICKET_CREATED
+    db_session.commit()
+    row = db_session.exec(select(RequesterTimeZone).where(RequesterTimeZone.email == "newcomer@example.com")).one()
+    assert row.next_check_at == PAST

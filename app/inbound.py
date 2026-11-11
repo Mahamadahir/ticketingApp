@@ -574,7 +574,7 @@ def ingest_mail(
     if from_msp:
         return _ingest_msp_mail(session, mail, sender, attachments, storage, now, settle)
 
-    note_requester(session, sender)  # whoever writes in gets their mailbox time zone read (app/time_zones.py)
+    note_requester(session, sender, now)  # whoever writes in gets their mailbox time zone read (app/time_zones.py)
     body = _body_of(mail)
     files = attachments or []
     account = person_for_address(session, sender)
@@ -642,11 +642,14 @@ def ingest_mail(
 
 
 def process_message(
-    session: Session, graph_message_id: str, client: Optional[MailSource] = None, storage: Optional[Storage] = None
+    session: Session, graph_message_id: str, client: Optional[MailSource] = None, storage: Optional[Storage] = None,
+    now: Optional[datetime] = None,
 ) -> Handled:
     """Reads one message from the shared mailbox and handles it (see ingest_mail). The entry point the
     catch-up job (3C) uses. Safe to call twice and from two places at once. Does not commit. Raises if
-    Graph fails (the caller retries); a message Graph no longer has is `GONE`."""
+    Graph fails (the caller retries); a message Graph no longer has is `GONE`. `now` is the one moment the whole mail is
+    handled at (the flood check before the files are fetched, then ingest_mail); it defaults to the real time."""
+    now = now or datetime.now(timezone.utc)
     client = client or graph_client
     if session.exec(select(InboundMail.id).where(InboundMail.graph_message_id == graph_message_id)).first():
         return Handled(DUPLICATE)  # the cheap check: no need to fetch a mail we have
@@ -657,9 +660,9 @@ def process_message(
     mail.graph_message_id = graph_message_id  # the id we asked for is the one we dedupe on
     files: list[IncomingAttachment] = []
     from_msp = bool(mail.sender) and not mail.is_draft and is_msp_sender(session, mail.sender)  # its List-Unsubscribe is not automatic
-    if mail.has_attachments and (msp_auto_reply(mail) if from_msp else automatic_reason(mail)) is None and not _flooding(session, mail.sender, datetime.now(timezone.utc)):
+    if mail.has_attachments and (msp_auto_reply(mail) if from_msp else automatic_reason(mail)) is None and not _flooding(session, mail.sender, now):
         files = load_attachments(session, client, graph_message_id)  # before any ticket is made: no lock is held while Graph answers
-    return ingest_mail(session, mail, files, storage)
+    return ingest_mail(session, mail, files, storage, now)
 
 
 # ---- The worker job ----------------------------------------------------------------------------
