@@ -42,6 +42,7 @@ from app.models import (
     InboundMail,
     Message,
     MessageDirection,
+    RequesterTimeZone,
     Ticket,
     TicketEvent,
     TicketFollower,
@@ -978,8 +979,6 @@ def test_the_flood_check_before_the_files_are_fetched_uses_the_given_now(db_sess
 
 
 def test_a_new_requesters_time_zone_check_is_due_at_the_given_now(db_session):
-    from app.models import RequesterTimeZone
-
     assert ingest_mail(db_session, mail("z1", sender="newcomer@example.com"), now=PAST).outcome == TICKET_CREATED
     db_session.commit()
     row = db_session.exec(select(RequesterTimeZone).where(RequesterTimeZone.email == "newcomer@example.com")).one()
