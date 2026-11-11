@@ -14,8 +14,13 @@
   <a class="btn btn-primary users-new" href="/admin/users?new=1">New local account</a>
 </header>
 {% if link_error %}<p class="error" role="alert">{{ link_error }}</p>{% endif %}
+{% if pending_links %}
+<p class="users-pending" role="status"><span class="chip t-amber">{{ pending_links|length }}</span> link request{{ "" if pending_links|length == 1 else "s" }} waiting for you. <a href="#linked-identities">Review</a></p>
+{% endif %}
 
 <form method="get" action="/admin/users" class="users-filters" role="search" aria-label="Filter users">
+  {% if only_stranded %}<input type="hidden" name="inactive" value="open_tickets" />{% endif %}
+  {% if show_aliases %}<input type="hidden" name="aliases" value="1" />{% endif %}
   <div class="form-grid">
     <label class="field users-q">Search <input type="search" name="q" value="{{ filters.q }}" placeholder="Name or email" /></label>
     <label class="field">Role
@@ -100,7 +105,7 @@
         <label class="field">Role
           <select name="role">
             {% for r in roles %}
-            <option value="{{ r.value }}">{{ r.value }}</option>
+            <option value="{{ r.value }}">{{ role_label(r) }}</option>
             {% endfor %}
           </select>
         </label>
@@ -156,7 +161,7 @@
         <label class="field">Role
           <select name="role">
             {% for r in roles %}
-            <option value="{{ r.value }}" {{ "selected" if u.role == r else "" }}>{{ r.value }}</option>
+            <option value="{{ r.value }}" {{ "selected" if u.role == r else "" }}>{{ role_label(r) }}</option>
             {% endfor %}
           </select>
         </label>
@@ -172,6 +177,7 @@
       {% for m in memberships.get(u.id, []) %}
       <div class="up-team">
         <span class="up-team-name">{{ teams_by_id[m.team_id].name }} ({{ m.level.value }})</span>
+        {% if u.role.value != "end_user" %}
         <form method="post" action="/admin/users/{{ u.id }}/memberships" class="up-inline">
           <input type="hidden" name="team_id" value="{{ m.team_id }}" />
           <label class="field"><span class="sr-only">Level in {{ teams_by_id[m.team_id].name }}</span>
@@ -181,6 +187,7 @@
           </label>
           <button type="submit" class="btn">Change level</button>
         </form>
+        {% endif %}
         <form method="post" action="/admin/users/{{ u.id }}/memberships/{{ m.team_id }}/remove" class="up-inline">
           <button type="submit" class="btn" aria-label="Remove from {{ teams_by_id[m.team_id].name }}">Remove</button>
         </form>

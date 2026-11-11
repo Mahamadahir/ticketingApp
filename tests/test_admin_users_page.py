@@ -182,6 +182,34 @@ def test_the_panel_opens_for_someone_outside_the_page_and_says_when_nobody_is_fo
     assert "That person was not found." in client.get("/admin/users?user=999999").text
     assert client.get("/admin/users?user=99999999999").status_code == 200  # out of range: nobody, not an error
     assert "Choose a person." in client.get("/admin/users").text
+    for odd in ("?user=abc", "?user=-1", "?new=yes", "?user=%C2%B2", "?team=%C2%B2"):  # hand-edited: nobody, never an error
+        assert client.get("/admin/users" + odd).status_code == 200, odd
+
+
+def test_a_link_error_is_not_carried_into_the_row_links(client, db_session):
+    boss(client, db_session)
+    ann = person(db_session, "ann@example.com")
+    html = client.get("/admin/users?link_error=Nope").text
+    assert "Nope" in html and f'href="/admin/users?user={ann.id}"' in html
+
+
+def test_filtering_keeps_the_stranded_view_and_old_addresses_and_pending_requests_show_at_the_top(client, db_session):
+    boss(client, db_session)
+    html = client.get("/admin/users?inactive=open_tickets&aliases=1").text
+    form = re.search(r'<form method="get" action="/admin/users" class="users-filters".*?</form>', html, re.S).group(0)
+    assert 'name="inactive" value="open_tickets"' in form and 'name="aliases" value="1"' in form
+    assert 'name="inactive"' not in client.get("/admin/users").text.split('class="users-filters"')[1].split("</form>")[0]
+    assert "waiting for you" not in client.get("/admin/users").text
+
+
+def test_an_end_user_who_still_has_a_membership_can_only_be_removed_from_it(client, db_session):
+    boss(client, db_session)
+    team = create_team(db_session, "Service Desk")
+    end = person(db_session, "end@example.com", role=UserRole.END_USER)
+    add_membership(db_session, end.id, team.id)
+    posted = forms(panel(client, end.id))
+    assert f"/admin/users/{end.id}/memberships/{team.id}/remove" in posted
+    assert f"/admin/users/{end.id}/memberships" not in posted
 
 
 def test_the_list_links_each_person_and_keeps_the_filters(client, db_session):
@@ -260,7 +288,7 @@ def test_role_team_and_status_filters(client, db_session):
     assert emails(f"?team={team.id}") == {"member@example.com"}
     assert emails("?status=inactive") == {"gone@example.com"}
     assert "gone@example.com" not in emails("?status=active") and "solo@example.com" in emails("?status=active")
-    assert emails("?status=local") == {"local@example.com", "breakglass1@example.com"}
+    assert emails("?status=local") == {"local@example.com"}  # a break-glass account has its own status
     assert emails("?status=break_glass") == {"breakglass1@example.com"}
     assert emails(f"?role=agent&team={team.id}&status=active") == {"member@example.com"}
     # a value that means nothing is ignored, never an error

@@ -726,3 +726,4 @@ th { color: var(--muted); font-weight: 600; }
 @media (max-width: 1000px) {
   .users-panel { flex-basis: 100%; max-width: none; }
 }
+.users-pending { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }

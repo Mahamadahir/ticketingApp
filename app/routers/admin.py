@@ -212,8 +212,8 @@ def list_users(
     role: str = "",
     team: str = "",
     status: str = "",
-    user_id: Optional[int] = Query(None, alias="user"),
-    new: int = 0,
+    selected_id: str = Query("", alias="user"),
+    new: str = "",
     user: User = Depends(require_super_admin),
     session: Session = Depends(get_session),
 ):
@@ -233,7 +233,12 @@ def list_users(
     teams_by_id = {team_row.id: team_row for team_row in teams}
 
     # The person whose panel is open (a person outside the current filter or page can still be opened).
-    selected = session.get(User, user_id) if user_id is not None and 0 < user_id < 2**31 and not new else None
+    # `user` and `new` are read leniently: a hand-edited value that means nothing is "nobody", not an error page.
+    creating = new.strip() not in ("", "0")
+    user_id = int(selected_id) if selected_id.isascii() and selected_id.isdigit() and int(selected_id) < 2**31 else None
+    selected = session.get(User, user_id) if user_id else None
+    if creating:
+        selected = None
     user_ids = [u.id for u in users_page.items]
     if selected is not None and selected.id not in user_ids:
         user_ids.append(selected.id)
@@ -265,7 +270,7 @@ def list_users(
                 merged_in.append(other)
 
     # A row's link keeps the filters and the page, and adds the person.
-    row_query = {key: value for key, value in request.query_params.items() if key not in ("user", "new") and value}
+    row_query = {key: value for key, value in request.query_params.items() if key not in ("user", "new", "link_error") and value}
 
     return templates.TemplateResponse(
         request,
@@ -285,8 +290,8 @@ def list_users(
             "filters": {"q": q.strip(), "role": role, "team": team.strip(), "status": status},
             "row_query": row_query,
             "selected": selected,
-            "selected_missing": user_id is not None and selected is None and not new,
-            "creating": bool(new),
+            "selected_missing": bool(selected_id) and selected is None and not creating,
+            "creating": creating,
             "merged_in": merged_in,
             "now": datetime.now(timezone.utc),
             "live_sessions": live_session_counts(session, user_ids),

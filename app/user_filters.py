@@ -26,7 +26,7 @@ def filter_users(query, q: str, role: str, team: str, status: str):
     elif status == "inactive":
         query = query.where(User.is_active.is_(False))
     elif status == "local":
-        query = query.where(User.password_hash.is_not(None))
+        query = query.where(User.password_hash.is_not(None), User.is_break_glass.is_(False))
     elif status == "break_glass":
         query = query.where(User.is_break_glass.is_(True))
     return query
