@@ -395,10 +395,11 @@ def test_a_deactivated_user_cannot_sign_in_through_entra(client, db_session, mon
 
 
 def test_the_admin_users_page_shows_the_oid_and_session_count(client, db_session):
-    db_session.add(User(email="x@example.com", display_name="X", entra_object_id=OID))
+    person = User(email="x@example.com", display_name="X", entra_object_id=OID)
+    db_session.add(person)
     db_session.commit()
     login_as(client, "admin@example.com")
-    text = client.get("/admin/users").text
+    text = client.get(f"/admin/users?user={person.id}").text
     assert OID in text and "Sign out everywhere" in text and "1 signed-in session" in text
 
 

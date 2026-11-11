@@ -678,3 +678,51 @@ th { color: var(--muted); font-weight: 600; }
 .ap-open { margin-left: auto; font-size: 14px; }
 .ap-head h2 a { text-decoration: none; color: var(--text); }
 .ap-head h2 a:hover { color: var(--accent); }
+
+/* Admin > Users (9I): the list beside the panel of the chosen person; the panel goes below the list on a narrow screen. */
+.users-head { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin-bottom: 16px; }
+.users-head .admin-head { margin: 0; }
+.users-new { margin-left: auto; }
+.users-filters { margin-bottom: 8px; }
+.users-filters .form-grid { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); margin-bottom: 8px; }
+.users-filters .users-q { grid-column: span 2; }
+.users-filters .form-actions { justify-content: flex-start; flex-direction: row; }
+.users-stranded { margin: 0 0 12px; }
+.users-cols { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; margin-bottom: 28px; }
+.users-list { flex: 999 1 420px; min-width: 0; }
+.users-table { min-width: 520px; }
+.users-table td { vertical-align: middle; }
+.person-cell { display: flex; flex-direction: column; text-decoration: none; color: var(--text); }
+.person-name { font-weight: 600; }
+.person-email { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.person-cell:hover .person-name { color: var(--accent); }
+.users-table tr.sel { background: var(--accent-soft); }
+.users-teams { color: var(--muted); }
+.users-table td .chip + .chip { margin-left: 4px; }
+.users-panel { flex: 1 1 320px; max-width: 420px; min-width: 280px; box-sizing: border-box; padding: 20px; }
+.users-panel > h2 { margin: 0 0 8px; font-size: 18px; }
+.up-person { display: flex; align-items: center; gap: 12px; padding-bottom: 10px; }
+.up-avatar {
+  flex: 0 0 44px; width: 44px; height: 44px; border-radius: 999px; background: var(--gray-bg); color: var(--gray);
+  display: flex; align-items: center; justify-content: center; font-weight: 700;
+}
+.up-who { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.up-who h2 { margin: 0; font-size: 17px; overflow-wrap: anywhere; }
+.up-chips { display: flex; flex-wrap: wrap; gap: 6px; padding-bottom: 4px; }
+.up-section { padding: 14px 0; border-top: 1px solid var(--border); }
+.up-section h3 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.up-section p { margin: 0 0 8px; }
+.up-inline { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; margin: 0 0 8px; }
+.up-inline .field { flex: 1 1 120px; min-width: 0; }
+.up-inline .field > select { width: 100%; box-sizing: border-box; }
+.up-team { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-bottom: 8px; }
+.up-team-name { flex: 1 1 100%; font-weight: 600; }
+.up-team .up-inline { margin: 0; }
+.up-perms { display: flex; flex-direction: column; gap: 8px; }
+.up-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.up-actions form { margin: 0; }
+.users-links { padding-top: 8px; }
+.users-links h2 { font-size: 18px; margin: 0 0 8px; }
+@media (max-width: 1000px) {
+  .users-panel { flex-basis: 100%; max-width: none; }
+}

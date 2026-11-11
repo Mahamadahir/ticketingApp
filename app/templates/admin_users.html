@@ -1,235 +1,369 @@
 {% extends "base.html" %}
 {% block title %}Admin: Users{% endblock %}
 {% block content %}
+{# Admin > Users (9I): a filtered list beside the panel of the person chosen (?user=<id>) or the new-account panel (?new=1).
+   Every form posts to its existing route with its existing field names; the panel keeps one form per job. #}
+{% macro role_label(r) %}{{ r.value|replace("_", " ")|capitalize }}{% endmacro %}
+{% set role_tone = {"super_admin": "t-blue", "agent": "t-green", "end_user": "t-gray"} %}
 
-<h2>Users</h2>
-<p class="note">
-  A <b>member</b> sees and works a team's tickets; a <b>viewer</b> can only read them.
-  Agents also work every untriaged ticket. Super admins see everything and hold every extra permission.
-  An <b>extra permission</b> lets an agent do one more admin job without being a super admin.
-</p>
-<p class="note">
+<header class="users-head">
+  <div class="admin-head">
+    <h1>Users</h1>
+    <p>Choose a person to change their role, teams and access.</p>
+  </div>
+  <a class="btn btn-primary users-new" href="/admin/users?new=1">New local account</a>
+</header>
+{% if link_error %}<p class="error" role="alert">{{ link_error }}</p>{% endif %}
+
+<form method="get" action="/admin/users" class="users-filters" role="search" aria-label="Filter users">
+  <div class="form-grid">
+    <label class="field users-q">Search <input type="search" name="q" value="{{ filters.q }}" placeholder="Name or email" /></label>
+    <label class="field">Role
+      <select name="role">
+        <option value="">Any role</option>
+        {% for r in roles %}<option value="{{ r.value }}" {{ "selected" if filters.role == r.value else "" }}>{{ role_label(r) }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="field">Team
+      <select name="team">
+        <option value="">Any team</option>
+        {% for t in teams %}<option value="{{ t.id }}" {{ "selected" if filters.team == t.id|string else "" }}>{{ t.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="field">Status
+      <select name="status">
+        <option value="">Any status</option>
+        {% for key, label in statuses.items() %}<option value="{{ key }}" {{ "selected" if filters.status == key else "" }}>{{ label }}</option>{% endfor %}
+      </select>
+    </label>
+  </div>
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary">Filter</button>
+    <a class="btn" href="/admin/users">Clear filters</a>
+  </div>
+</form>
+<p class="note users-stranded">
   {% if only_stranded %}
   Showing inactive agents who still hold open tickets (re-assign those tickets). <a href="/admin/users">Show everyone</a>
   {% else %}
   <a href="/admin/users?inactive=open_tickets">Inactive agents with open tickets</a>
   {% endif %}
 </p>
-{% if link_error %}<p class="error" role="alert">{{ link_error }}</p>{% endif %}
 
-{% if pending_links %}
-<h3>Link requests waiting for you</h3>
-<p class="note">Someone asked to link a second identity and an agent or super admin account is involved, so it needs a super admin.</p>
-<table>
-  <thead><tr><th>Address</th><th>Main account</th><th>Other account</th><th>Asked by</th><th>How shown</th><th></th></tr></thead>
-  <tbody>
-    {% for row in pending_links %}
-    <tr>
-      <td>{{ row.link.email }}</td>
-      <td>{{ row.main.email }} ({{ row.main.role.value }})</td>
-      <td>{% if row.secondary %}{{ row.secondary.email }} ({{ row.secondary.role.value }}){% else %}address only{% endif %}</td>
-      <td>{{ row.requested_by.email if row.requested_by else "" }}</td>
-      <td>{{ row.link.method|replace("_", " ") }}</td>
-      <td>
-        <form method="post" action="/admin/links/{{ row.link.id }}/approve" class="inline-form"><button type="submit">Approve</button></form>
-        <form method="post" action="/admin/links/{{ row.link.id }}/decline" class="inline-form"><button type="submit">Decline</button></form>
-      </td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
-{% endif %}
-
-<h3>Linked identities</h3>
-<p class="note">
-  One person known by two identities. The main account keeps everything; the other account is kept, inactive, and its
-  tickets moved to the main one. Unlinking makes it its own account again (moved tickets stay where they are).
-</p>
-<p class="note">
-  {% if show_aliases %}Showing old addresses kept after an email change too. <a href="/admin/users">Hide them</a>
-  {% else %}Old addresses kept after an Entra email change are not listed. <a href="/admin/users?aliases=1">Show them</a>{% endif %}
-</p>
-{% if active_links %}
-<table>
-  <thead><tr><th>Address</th><th>Main account</th><th>Other account</th><th>How</th><th>What moved</th><th></th></tr></thead>
-  <tbody>
-    {% for row in active_links %}
-    <tr>
-      <td>{{ row.link.email }}</td>
-      <td>{{ row.main.email }}</td>
-      <td>{% if row.secondary %}{{ row.secondary.email }}{% else %}address only{% endif %}</td>
-      <td>{{ row.link.method|replace("_", " ") }}</td>
-      <td>{{ row.link.moved_summary or "" }}</td>
-      <td><form method="post" action="/admin/links/{{ row.link.id }}/unlink" class="inline-form"><button type="submit">Unlink</button></form></td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
-{% else %}
-<p>None.</p>
-{% endif %}
-<form method="get" action="/admin/links/preview">
-  <div class="form-grid">
-    <label class="field">Main account email <input type="email" name="main_email" required /></label>
-    <label class="field">Account to link into it <input type="email" name="other_email" required /></label>
-  </div>
-  <div class="form-actions"><button type="submit" class="btn btn-primary">Review the link</button></div>
-</form>
-
-<h3>All users</h3>
-<div class="table-box">
-<table class="table">
-  <thead>
-    <tr>
-      <th>Email</th>
-      <th>Name</th>
-      <th>Role</th>
-      <th>Teams</th>
-      <th>Extra permissions</th>
-      <th>Active</th>
-      <th>Local account</th>
-      <th>Sign-in</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for u in page.items %}
-    <tr>
-      <td>{{ u.email }}{% if u.is_break_glass %} <b>(break-glass)</b>{% endif %}{% if u.id in merged_into %} <b>(linked: merged into account {{ merged_into[u.id] }})</b>{% endif %}</td>
-      <td>{{ u.display_name }}</td>
-      <td>
-        <form method="post" action="/admin/users/{{ u.id }}" class="filter-bar">
-          <label class="field"><span class="sr-only">Role for {{ u.email }}</span>
-            <select name="role">
-              {% for r in roles %}
-              <option value="{{ r.value }}" {{ "selected" if u.role == r else "" }}>{{ r.value }}</option>
-              {% endfor %}
-            </select>
-          </label>
-          <button type="submit" class="btn">Save</button>
-        </form>
-      </td>
-      <td>
-        {% for m in memberships.get(u.id, []) %}
-        <form method="post" action="/admin/users/{{ u.id }}/memberships/{{ m.team_id }}/remove" class="inline-form">
-          {{ teams_by_id[m.team_id].name }} ({{ m.level.value }})
-          <button type="submit">Remove</button>
-        </form>
-        <br />
-        {% else %}
-        No teams
-        <br />
-        {% endfor %}
-        <form method="post" action="/admin/users/{{ u.id }}/memberships" class="filter-bar">
-          <label class="field">Team
-            <select name="team_id" required>
-              {% for t in teams %}
-              <option value="{{ t.id }}">{{ t.name }}</option>
-              {% endfor %}
-            </select>
-          </label>
-          <label class="field">Level
-            <select name="level">
-              {% for l in levels %}
-              <option value="{{ l.value }}">{{ l.value }}</option>
-              {% endfor %}
-            </select>
-          </label>
-          <button type="submit" class="btn">Add or change</button>
-        </form>
-      </td>
-      <td>
-        {% if u.role.value == "super_admin" %}
-          all (super admin)
-        {% elif u.role in assignable_roles %}
-        <form method="post" action="/admin/users/{{ u.id }}/permissions">
-          {% if not u.is_active %}<b>(inactive: none can be added)</b><br />{% endif %}
-          {% for key, perm in permissions.items() %}
-          <label class="field-check" title="{{ perm.description }}"><input type="checkbox" name="permissions" value="{{ key }}" {{ "checked" if key in granted.get(u.id, ()) else "" }} /> {{ perm.label }}</label>
+<div class="users-cols">
+  <div class="users-list">
+    <div class="table-box">
+      <table class="table users-table">
+        <caption class="sr-only">Users</caption>
+        <thead>
+          <tr><th scope="col">Person</th><th scope="col">Role</th><th scope="col">Teams</th><th scope="col">Status</th></tr>
+        </thead>
+        <tbody>
+          {% for u in page.items %}
+          <tr {% if selected and selected.id == u.id %}class="sel"{% endif %}>
+            <td>
+              <a class="person-cell" href="/admin/users?{{ dict(row_query, user=u.id)|urlencode }}"{% if selected and selected.id == u.id %} aria-current="true"{% endif %}>
+                <span class="person-name">{{ u.display_name }}</span>
+                <span class="person-email">{{ u.email }}</span>
+              </a>
+              {% if u.id in merged_into %}<span class="person-email">linked: merged into account {{ merged_into[u.id] }}</span>{% endif %}
+            </td>
+            <td><span class="chip {{ role_tone[u.role.value] }}">{{ role_label(u.role) }}</span></td>
+            <td class="users-teams">
+              {% for m in memberships.get(u.id, []) %}{{ teams_by_id[m.team_id].name }} ({{ m.level.value }}){{ ", " if not loop.last else "" }}{% else %}No teams{% endfor %}
+            </td>
+            <td>
+              <span class="chip {{ 't-green' if u.is_active else 't-gray' }}">{{ "Active" if u.is_active else "Inactive" }}</span>
+              {% if u.is_break_glass %}<span class="chip t-amber">Break-glass</span>{% endif %}
+              {% if u.password_hash and not u.is_break_glass %}<span class="chip t-blue">Local account</span>{% endif %}
+              {% if u.id in merged_into %}<span class="chip t-amber">Merged</span>{% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="4"><div class="empty-state"><strong>No one matches.</strong><span>Change or clear the filters.</span></div></td></tr>
           {% endfor %}
-          <div class="form-actions"><button type="submit" class="btn">Save</button></div>
+        </tbody>
+      </table>
+    </div>
+    {% include "_pagination.html" %}
+  </div>
+
+  {% if creating %}
+  <aside class="card users-panel" aria-label="New local account">
+    <h2>New local account</h2>
+    <p class="note">For contractors or anyone without a Microsoft tenant identity.</p>
+    <form method="post" action="/admin/users">
+      <div class="form-grid">
+        <label class="field">Email <input type="email" name="email" required /></label>
+        <label class="field">Display name <input type="text" name="display_name" required /></label>
+        <label class="field">Password <input type="password" name="password" required /></label>
+        <label class="field">Role
+          <select name="role">
+            {% for r in roles %}
+            <option value="{{ r.value }}">{{ r.value }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="field">Team
+          <select name="team_id">
+            <option value="">No team</option>
+            {% for t in teams %}
+            <option value="{{ t.id }}">{{ t.name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="field">Level
+          <select name="level">
+            {% for l in levels %}
+            <option value="{{ l.value }}">{{ l.value }}</option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Create account</button>
+        <a class="btn" href="/admin/users?{{ row_query|urlencode }}">Cancel</a>
+      </div>
+    </form>
+  </aside>
+
+  {% elif selected %}
+  {% set u = selected %}
+  {% set is_merged = u.id in merged_into %}
+  <aside class="card users-panel" aria-label="{{ u.display_name }}">
+    <div class="up-person">
+      <span class="up-avatar" aria-hidden="true">{{ (u.display_name or u.email)[:1]|upper }}</span>
+      <div class="up-who">
+        <h2>{{ u.display_name }}</h2>
+        <span class="person-email">{{ u.email }}</span>
+      </div>
+      <a class="icon-btn up-close" href="/admin/users?{{ row_query|urlencode }}" aria-label="Close the panel">&times;</a>
+    </div>
+    <div class="up-chips">
+      <span class="chip {{ role_tone[u.role.value] }}">{{ role_label(u.role) }}</span>
+      <span class="chip {{ 't-green' if u.is_active else 't-gray' }}">{{ "Active" if u.is_active else "Inactive" }}</span>
+      {% if u.is_break_glass %}<span class="chip t-amber">Break-glass</span>{% endif %}
+      {% if u.password_hash and not u.is_break_glass %}<span class="chip t-blue">Local account</span>{% endif %}
+      {% if is_merged %}<span class="chip t-amber">Merged</span>{% endif %}
+    </div>
+
+    <section class="up-section" aria-labelledby="up-role">
+      <h3 id="up-role">Role</h3>
+      {% if u.is_break_glass %}
+      <p class="note">A break-glass account stays a super admin; deactivate it instead.</p>
+      {% else %}
+      <form method="post" action="/admin/users/{{ u.id }}" class="up-inline">
+        <label class="field">Role
+          <select name="role">
+            {% for r in roles %}
+            <option value="{{ r.value }}" {{ "selected" if u.role == r else "" }}>{{ r.value }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <button type="submit" class="btn btn-primary">Save role</button>
+      </form>
+      <p class="note">A new role ends this person's sessions; they sign in again.</p>
+      {% endif %}
+    </section>
+
+    <section class="up-section" aria-labelledby="up-teams">
+      <h3 id="up-teams">Teams</h3>
+      <p class="note">A <b>member</b> sees and works a team's tickets; a <b>viewer</b> can only read them.</p>
+      {% for m in memberships.get(u.id, []) %}
+      <div class="up-team">
+        <span class="up-team-name">{{ teams_by_id[m.team_id].name }} ({{ m.level.value }})</span>
+        <form method="post" action="/admin/users/{{ u.id }}/memberships" class="up-inline">
+          <input type="hidden" name="team_id" value="{{ m.team_id }}" />
+          <label class="field"><span class="sr-only">Level in {{ teams_by_id[m.team_id].name }}</span>
+            <select name="level">
+              {% for l in levels %}<option value="{{ l.value }}" {{ "selected" if m.level == l else "" }}>{{ l.value }}</option>{% endfor %}
+            </select>
+          </label>
+          <button type="submit" class="btn">Change level</button>
         </form>
-        {% else %}
-          none (agents only)
-        {% endif %}
-      </td>
-      <td>
-        <form method="post" action="/admin/users/{{ u.id }}/active">
-          {{ "yes" if u.is_active else "no" }}
-          <input type="hidden" name="is_active" value="{{ 'false' if u.is_active else 'true' }}" />
-          <button type="submit">{{ "Deactivate" if u.is_active else "Activate" }}</button>
+        <form method="post" action="/admin/users/{{ u.id }}/memberships/{{ m.team_id }}/remove" class="up-inline">
+          <button type="submit" class="btn" aria-label="Remove from {{ teams_by_id[m.team_id].name }}">Remove</button>
         </form>
-      </td>
-      <td>
-        {% if u.password_hash %}
-          yes
-          {% if u.locked_until and u.locked_until > now %}
-            <br />locked until {{ u.locked_until|local_time }}
-          {% endif %}
-          {% if u.failed_login_count %}
-            <br />{{ u.failed_login_count }} failed attempt{{ "" if u.failed_login_count == 1 else "s" }}
-            <form method="post" action="/admin/users/{{ u.id }}/unlock">
-              <button type="submit">Unlock</button>
-            </form>
-          {% endif %}
-          {% if u.is_break_glass %}
-            <br />password and authenticator code; reissue only with <code>python -m app.breakglass reset {{ u.email.split("@")[0] }}</code> in the container (never from this page)
-          {% endif %}
-        {% else %}
-          no (SSO)
-        {% endif %}
-      </td>
-      <td>
+      </div>
+      {% else %}
+      <p class="note">No teams.</p>
+      {% endfor %}
+      {% if u.role.value == "end_user" %}
+      <p class="note">Make this person an agent before adding them to a team.</p>
+      {% elif teams %}
+      <form method="post" action="/admin/users/{{ u.id }}/memberships" class="up-inline up-add">
+        <label class="field">Add to a team
+          <select name="team_id" required>
+            {% for t in teams %}
+            <option value="{{ t.id }}">{{ t.name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="field">Level
+          <select name="level">
+            {% for l in levels %}
+            <option value="{{ l.value }}">{{ l.value }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <button type="submit" class="btn">Add or change</button>
+      </form>
+      {% endif %}
+    </section>
+
+    <section class="up-section" aria-labelledby="up-perms">
+      <h3 id="up-perms">Extra permissions</h3>
+      {% if u.role.value == "super_admin" %}
+      <p class="note">All (super admin).</p>
+      {% elif u.role in assignable_roles %}
+      <form method="post" action="/admin/users/{{ u.id }}/permissions" class="up-perms">
+        {% if not u.is_active %}<p class="note"><b>(inactive: none can be added)</b></p>{% endif %}
+        {% for key, perm in permissions.items() %}
+        <label class="field-check" title="{{ perm.description }}"><input type="checkbox" name="permissions" value="{{ key }}" {{ "checked" if key in granted.get(u.id, ()) else "" }} /> {{ perm.label }}</label>
+        {% endfor %}
+        <div class="form-actions"><button type="submit" class="btn btn-primary">Save permissions</button></div>
+      </form>
+      {% else %}
+      <p class="note">None (agents only).</p>
+      {% endif %}
+    </section>
+
+    <section class="up-section" aria-labelledby="up-signin">
+      <h3 id="up-signin">Sign-in</h3>
+      {% if u.password_hash %}
+      <p>Local account (password){% if u.is_break_glass %} and authenticator code{% endif %}.</p>
+      {% if u.locked_until and u.locked_until > now %}<p class="note">Locked until {{ u.locked_until|local_time }}</p>{% endif %}
+      {% if u.failed_login_count %}
+      <p class="note">{{ u.failed_login_count }} failed attempt{{ "" if u.failed_login_count == 1 else "s" }}</p>
+      <form method="post" action="/admin/users/{{ u.id }}/unlock" class="up-inline"><button type="submit" class="btn">Unlock</button></form>
+      {% endif %}
+      {% if u.is_break_glass %}
+      <p class="note">Reissue only with <code>python -m app.breakglass reset {{ u.email.split("@")[0] }}</code> in the container (never from this page).</p>
+      {% endif %}
+      {% else %}
+      <p>Microsoft account (single sign-on).</p>
+      {% endif %}
+      {% if u.entra_object_id %}
+      <p class="note">Entra id <code>{{ u.entra_object_id }}</code></p>
+      {% elif not u.password_hash %}
+      <p class="note">No Entra id yet.</p>
+      {% endif %}
+      <p class="note">{{ live_sessions.get(u.id, 0) }} signed-in session{{ "" if live_sessions.get(u.id, 0) == 1 else "s" }}</p>
+      <div class="up-actions">
+        <form method="post" action="/admin/users/{{ u.id }}/sign-out"><button type="submit" class="btn">Sign out everywhere</button></form>
         {% if u.entra_object_id %}
-        Entra id <code>{{ u.entra_object_id }}</code>
         <form method="post" action="/admin/users/{{ u.id }}/clear-oid">
-          <button type="submit" title="For a re-hire or a recreated account: the next Entra sign-in with this email binds the new directory account">Clear Entra id</button>
+          <button type="submit" class="btn" title="For a re-hire or a recreated account: the next Entra sign-in with this email binds the new directory account">Clear Microsoft link</button>
         </form>
-        {% else %}
-        no Entra id yet
         {% endif %}
-        <br />{{ live_sessions.get(u.id, 0) }} signed-in session{{ "" if live_sessions.get(u.id, 0) == 1 else "s" }}
-        <form method="post" action="/admin/users/{{ u.id }}/sign-out">
-          <button type="submit">Sign out everywhere</button>
-        </form>
-      </td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+      </div>
+    </section>
+
+    <section class="up-section" aria-labelledby="up-links">
+      <h3 id="up-links">Linked identities</h3>
+      {% if is_merged %}
+      <p>This account was merged into account {{ merged_into[u.id] }} by a link.</p>
+      {% endif %}
+      {% for other in merged_in %}<p>Includes {{ other.email }} (merged into this account).</p>{% endfor %}
+      {% if not is_merged and not merged_in %}<p class="note">No linked accounts.</p>{% endif %}
+      <p><a href="#linked-identities">Review and link identities</a></p>
+    </section>
+
+    <section class="up-section up-status" aria-labelledby="up-active">
+      <h3 id="up-active">{{ "Deactivate" if u.is_active else "Activate" }}</h3>
+      <form method="post" action="/admin/users/{{ u.id }}/active">
+        <input type="hidden" name="is_active" value="{{ 'false' if u.is_active else 'true' }}" />
+        {% if u.is_active %}
+        <p class="note">They can no longer sign in, and every session ends at once.</p>
+        <button type="submit" class="btn btn-danger">Deactivate</button>
+        {% elif is_merged %}
+        <p class="note">This account was merged into another by a link; unlink it to use it again.</p>
+        <button type="submit" class="btn btn-primary" disabled aria-disabled="true">Activate</button>
+        {% else %}
+        <button type="submit" class="btn btn-primary">Activate</button>
+        {% endif %}
+      </form>
+    </section>
+  </aside>
+
+  {% else %}
+  <aside class="card users-panel users-panel-empty" aria-label="Person">
+    {% if selected_missing %}
+    <div class="empty-state"><strong>That person was not found.</strong><span>Choose someone from the list.</span></div>
+    {% else %}
+    <div class="empty-state"><strong>Choose a person.</strong><span>Their role, teams and access open here.</span></div>
+    {% endif %}
+  </aside>
+  {% endif %}
 </div>
 
-{% include "_pagination.html" %}
+<section class="users-links" id="linked-identities" aria-labelledby="links-title">
+  <h2 id="links-title">Linked identities</h2>
+  <p class="note">
+    Super admins see everything and hold every extra permission. Agents also work every untriaged ticket.
+    An <b>extra permission</b> lets an agent do one more admin job without being a super admin.
+  </p>
 
-<h2>Create local account</h2>
-<p class="note">For contractors or anyone without a Microsoft tenant identity.</p>
-<form method="post" action="/admin/users">
-  <div class="form-grid">
-    <label class="field">Email <input type="email" name="email" required /></label>
-    <label class="field">Display name <input type="text" name="display_name" required /></label>
-    <label class="field">Password <input type="password" name="password" required /></label>
-    <label class="field">Role
-      <select name="role">
-        {% for r in roles %}
-        <option value="{{ r.value }}">{{ r.value }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label class="field">Team
-      <select name="team_id">
-        <option value="">No team</option>
-        {% for t in teams %}
-        <option value="{{ t.id }}">{{ t.name }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label class="field">Level
-      <select name="level">
-        {% for l in levels %}
-        <option value="{{ l.value }}">{{ l.value }}</option>
-        {% endfor %}
-      </select>
-    </label>
+  {% if pending_links %}
+  <h3>Link requests waiting for you</h3>
+  <p class="note">Someone asked to link a second identity and an agent or super admin account is involved, so it needs a super admin.</p>
+  <div class="table-box">
+  <table class="table">
+    <thead><tr><th>Address</th><th>Main account</th><th>Other account</th><th>Asked by</th><th>How shown</th><th></th></tr></thead>
+    <tbody>
+      {% for row in pending_links %}
+      <tr>
+        <td>{{ row.link.email }}</td>
+        <td>{{ row.main.email }} ({{ row.main.role.value }})</td>
+        <td>{% if row.secondary %}{{ row.secondary.email }} ({{ row.secondary.role.value }}){% else %}address only{% endif %}</td>
+        <td>{{ row.requested_by.email if row.requested_by else "" }}</td>
+        <td>{{ row.link.method|replace("_", " ") }}</td>
+        <td>
+          <form method="post" action="/admin/links/{{ row.link.id }}/approve" class="inline-form"><button type="submit" class="btn">Approve</button></form>
+          <form method="post" action="/admin/links/{{ row.link.id }}/decline" class="inline-form"><button type="submit" class="btn">Decline</button></form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
   </div>
-  <div class="form-actions"><button type="submit" class="btn btn-primary">Create</button></div>
-</form>
+  {% endif %}
+
+  <p class="note">
+    One person known by two identities. The main account keeps everything; the other account is kept, inactive, and its
+    tickets moved to the main one. Unlinking makes it its own account again (moved tickets stay where they are).
+  </p>
+  <p class="note">
+    {% if show_aliases %}Showing old addresses kept after an email change too. <a href="/admin/users#linked-identities">Hide them</a>
+    {% else %}Old addresses kept after an Entra email change are not listed. <a href="/admin/users?aliases=1#linked-identities">Show them</a>{% endif %}
+  </p>
+  {% if active_links %}
+  <div class="table-box">
+  <table class="table">
+    <thead><tr><th>Address</th><th>Main account</th><th>Other account</th><th>How</th><th>What moved</th><th></th></tr></thead>
+    <tbody>
+      {% for row in active_links %}
+      <tr>
+        <td>{{ row.link.email }}</td>
+        <td>{{ row.main.email }}</td>
+        <td>{% if row.secondary %}{{ row.secondary.email }}{% else %}address only{% endif %}</td>
+        <td>{{ row.link.method|replace("_", " ") }}</td>
+        <td>{{ row.link.moved_summary or "" }}</td>
+        <td><form method="post" action="/admin/links/{{ row.link.id }}/unlink" class="inline-form"><button type="submit" class="btn">Unlink</button></form></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p>None.</p>
+  {% endif %}
+  <form method="get" action="/admin/links/preview">
+    <div class="form-grid">
+      <label class="field">Main account email <input type="email" name="main_email" required /></label>
+      <label class="field">Account to link into it <input type="email" name="other_email" required /></label>
+    </div>
+    <div class="form-actions"><button type="submit" class="btn btn-primary">Review the link</button></div>
+  </form>
+</section>
 {% endblock %}

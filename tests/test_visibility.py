@@ -337,7 +337,8 @@ def test_users_page_lists_memberships(client, db_session):
     client.post("/auth/logout")
     login_as(client, "admin@example.com")
 
-    page = client.get("/admin/users").text
+    assert "Service Desk (member)" in client.get("/admin/users").text  # the list
+    page = client.get(f"/admin/users?user={agent_id}").text  # the panel
     assert "Service Desk (member)" in page
     assert f"/admin/users/{agent_id}/memberships/{team.id}/remove" in page
 
@@ -360,8 +361,8 @@ def test_unlock_clears_the_lock_and_is_audited(client, db_session):
     db_session.refresh(locked)
     login_as(client, "admin@example.com")
 
-    page = client.get("/admin/users").text
-    assert "locked until" in page and "7 failed attempts" in page
+    page = client.get(f"/admin/users?user={locked.id}").text
+    assert "Locked until" in page and "7 failed attempts" in page
 
     client.post(f"/admin/users/{locked.id}/unlock", follow_redirects=False)
 

@@ -595,6 +595,7 @@
       "tables": [],
       "tests": [
         "tests/test_activity_log.py",
+        "tests/test_admin_users_page.py",
         "tests/test_auth.py",
         "tests/test_break_glass.py",
         "tests/test_hardening.py",
@@ -2268,6 +2269,7 @@
         "app.ticket_service",
         "app.time_zones",
         "app.triage",
+        "app.user_filters",
         "app.visibility"
       ],
       "imports": [],
@@ -2492,6 +2494,7 @@
         "tests/test_activity_log.py",
         "tests/test_admin.py",
         "tests/test_admin_frame.py",
+        "tests/test_admin_users_page.py",
         "tests/test_anonymisation.py",
         "tests/test_approval_bell.py",
         "tests/test_approval_groups.py",
@@ -3106,6 +3109,7 @@
       "summary": "Extra permissions a super admin can grant (issue #132). Not RBAC: the three roles stay, and a",
       "tables": [],
       "tests": [
+        "tests/test_admin_users_page.py",
         "tests/test_anonymisation.py",
         "tests/test_permissions.py",
         "tests/test_reports.py",
@@ -3843,7 +3847,8 @@
         "app.templating",
         "app.thanks_rules",
         "app.ticket_service",
-        "app.time_zones"
+        "app.time_zones",
+        "app.user_filters"
       ],
       "module": "app.routers.admin",
       "routes": [
@@ -6541,6 +6546,24 @@
       ]
     },
     {
+      "classes": [],
+      "file": "app/user_filters.py",
+      "functions": [
+        "filter_users"
+      ],
+      "imported_by": [
+        "app.routers.admin"
+      ],
+      "imports": [
+        "app.models"
+      ],
+      "module": "app.user_filters",
+      "routes": [],
+      "summary": "The filters of Admin > Users (9I): name or email, role, team and status, applied to a `select(User)`.",
+      "tables": [],
+      "tests": []
+    },
+    {
       "classes": [
         "Access",
         "AccessContext",
@@ -7121,6 +7144,7 @@
     "tests/test_activity_log.py",
     "tests/test_admin.py",
     "tests/test_admin_frame.py",
+    "tests/test_admin_users_page.py",
     "tests/test_anonymisation.py",
     "tests/test_approval_bell.py",
     "tests/test_approval_groups.py",
