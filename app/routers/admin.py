@@ -135,6 +135,7 @@ from app.models import (
     RequestSubTemplate,
     RequestTypeQuestion,
     ScheduledJob,
+    Setting,
     MembershipLevel,
     Team,
     TeamMembership,
@@ -1905,12 +1906,20 @@ def _group_of(key: str | None) -> tuple[str, str, str]:
     return GROUPS[0]
 
 
+def _stored_values(session: Session) -> dict[str, str]:
+    """Every setting's current value in one query (a key with no row holds its default)."""
+    held = {row.key: row.value for row in session.exec(select(Setting)).all()}
+    return {key: held.get(key, definition.default) for key, definition in REGISTRY.items()}
+
+
 def _settings_rows(session: Session, definitions, values=None, errors=None) -> list[dict]:
     rows = []
+    stored_values = _stored_values(session)
     for definition in definitions:
-        stored = get_setting(session, definition.key)
+        stored = stored_values[definition.key]
         rows.append({
             "definition": definition,
+            "original": stored,
             "value": (values or {}).get(definition.key, stored),
             "changed": _differs_from_default(definition, stored),
             "default": _default_shown(definition),
@@ -1953,11 +1962,12 @@ def view_settings(
     request: Request,
     group: str = "",
     q: str = "",
-    saved: int | None = None,
+    saved: str = "",
     user: User = Depends(require_super_admin),
     session: Session = Depends(get_session),
 ):
-    return _settings_page(request, session, user, group, q, saved=saved)
+    count = int(saved) if saved.isascii() and saved.isdigit() and len(saved) < 5 else None  # a bad value shows no banner
+    return _settings_page(request, session, user, group, q, saved=count)
 
 
 @router.post("/settings")
@@ -1995,7 +2005,12 @@ async def save_settings_group(
     for definition in group_definitions(group_key):
         raw = form.get(f"v_{definition.key}")
         if isinstance(raw, str):
-            submitted[definition.key] = raw[:2000]
+            if len(raw) > 2000:
+                raise HTTPException(status_code=400, detail="That is too long")
+            # `o_<key>` is the value the form was drawn with: a field left as it was is not saved (so a stale form
+            # cannot undo another admin's change) and is not checked again.
+            if form.get(f"o_{definition.key}") != raw:
+                submitted[definition.key] = raw
     cleaned, errors = {}, {}
     for key, raw in submitted.items():
         try:
@@ -2012,9 +2027,10 @@ async def save_settings_group(
 def _reset_plan(session: Session, group_key: str):
     """The group's settings a reset would change, and those with no default, which it leaves alone."""
     to_reset, left = [], []
+    stored_values = _stored_values(session)
     for definition in group_definitions(group_key):
-        stored = get_setting(session, definition.key)
-        if stored == definition.default:
+        stored = stored_values[definition.key]
+        if not _differs_from_default(definition, stored):
             continue
         if definition.has_default:
             to_reset.append((definition, stored))

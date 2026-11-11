@@ -295,3 +295,42 @@ def test_a_group_with_only_unchanged_settings_has_nothing_to_reset(client, db_se
     page = client.get("/admin/settings/reset?group=mail").text
     assert "Nothing to reset." in page and "Reset 0" not in page
     assert db_session.get(Setting, MSP_ADDRESS) is None
+
+
+# ---- A stale form, a bad link ---------------------------------------------------------------------------------------
+
+
+def test_a_field_left_as_drawn_is_not_saved_so_a_stale_form_cannot_undo_another_admins_change(client, db_session):
+    admin(client, db_session)
+    set_setting(db_session, AUTO_CLOSE_AFTER_DAYS, "14")  # changed by someone else after this form was drawn
+    db_session.commit()
+    response = client.post(
+        "/admin/settings/group",
+        data={"group": "resolving-and-closing", "v_auto_close_after_days": "7", "o_auto_close_after_days": "7",
+              "v_chase_after_days": "4", "o_chase_after_days": "3"},
+        follow_redirects=False,
+    )
+    assert response.headers["location"].endswith("saved=1")
+    db_session.expire_all()
+    assert get_setting(db_session, AUTO_CLOSE_AFTER_DAYS) == "14" and get_setting(db_session, CHASE_AFTER_DAYS) == "4"
+
+
+def test_an_untouched_invalid_value_does_not_block_saving_another_field(client, db_session):
+    admin(client, db_session)
+    set_setting(db_session, AUTO_CLOSE_AFTER_DAYS, "junk")
+    db_session.commit()
+    response = client.post(
+        "/admin/settings/group",
+        data={"group": "resolving-and-closing", "v_auto_close_after_days": "junk", "o_auto_close_after_days": "junk",
+              "v_chase_after_days": "4", "o_chase_after_days": "3"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+
+def test_the_form_carries_the_drawn_value_and_a_bad_saved_count_is_ignored(client, db_session):
+    admin(client, db_session)
+    assert 'name="o_auto_close_after_days" value="7"' in client.get("/admin/settings?group=resolving-and-closing").text
+    page = client.get("/admin/settings?group=mail&saved=abc")
+    assert page.status_code == 200 and "Saved" not in page.text
+    assert client.post("/admin/settings/group", data={"group": "mail", "v_inbound_max_cc": "1" * 2001}).status_code == 400

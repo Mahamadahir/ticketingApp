@@ -7,6 +7,7 @@
     <span class="setting-default">Default: {{ row.default }}</span>
   </div>
   <div class="setting-input">
+    <input type="hidden" name="o_{{ d.key }}" value="{{ row.original }}" />
     <div class="setting-control">
       {% if d.kind == "team" %}
       <select id="s-{{ d.key }}" name="v_{{ d.key }}" aria-describedby="help-{{ d.key }}{% if row.error %} err-{{ d.key }}{% endif %}">
