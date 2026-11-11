@@ -552,8 +552,8 @@ def test_the_title_window_is_measured_from_the_time_the_mail_is_taken_not_the_wa
     """The handoff was sent 5 minutes before IN_HOURS (a fixed past date); the window must follow `now`, not today's date."""
     ticket = sent_ticket(db_session)
     handoff_email(db_session, ticket, subject="Printer offline on floor 3")
-    raw = lambda: acknowledgement(subject="Ticket#7000237/Printer offline on floor 3 -- has been received", body="<p>no reference</p>")
-    assert take(db_session, raw(), IN_HOURS + timedelta(days=6)).ticket.id == ticket.id  # inside 7 days of the handoff
+    raw = acknowledgement(subject="Ticket#7000237/Printer offline on floor 3 -- has been received", body="<p>no reference</p>")
+    assert take(db_session, raw, IN_HOURS + timedelta(days=6)).ticket.id == ticket.id  # inside 7 days of the handoff
 
     second = sent_ticket(db_session, subject="Second")
     handoff_email(db_session, second, subject="Second")
