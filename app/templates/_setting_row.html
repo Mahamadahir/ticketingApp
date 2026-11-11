@@ -1,0 +1,28 @@
+{# One setting of the Settings page (9J). `row` is built by app/routers/admin.py: the definition, the value to show, whether it differs from the default, the default as shown and any error. #}
+{% set d = row.definition %}
+<div class="setting" id="setting-{{ d.key }}">
+  <div class="setting-text">
+    <label for="s-{{ d.key }}" class="setting-label">{{ d.display_label }}{% if row.changed %} <span class="chip t-amber">Changed</span>{% endif %}</label>
+    <span class="setting-help" id="help-{{ d.key }}">{{ d.description }}</span>
+    <span class="setting-default">Default: {{ row.default }}</span>
+  </div>
+  <div class="setting-input">
+    <div class="setting-control">
+      {% if d.kind == "team" %}
+      <select id="s-{{ d.key }}" name="v_{{ d.key }}" aria-describedby="help-{{ d.key }}{% if row.error %} err-{{ d.key }}{% endif %}">
+        <option value="">None</option>
+        {% for t in teams %}<option value="{{ t.id }}" {{ "selected" if row.value == t.id|string else "" }}>{{ t.name }}</option>{% endfor %}
+      </select>
+      {% elif d.kind == "flag" %}
+      <select id="s-{{ d.key }}" name="v_{{ d.key }}" aria-describedby="help-{{ d.key }}{% if row.error %} err-{{ d.key }}{% endif %}">
+        <option value="on" {{ "selected" if row.value != "off" else "" }}>On</option>
+        <option value="off" {{ "selected" if row.value == "off" else "" }}>Off</option>
+      </select>
+      {% else %}
+      <input type="text" id="s-{{ d.key }}" name="v_{{ d.key }}" value="{{ row.value }}" aria-describedby="help-{{ d.key }}{% if row.error %} err-{{ d.key }}{% endif %}"{% if row.error %} aria-invalid="true"{% endif %} />
+      {% endif %}
+      {% if d.unit %}<span class="setting-unit">{{ d.unit }}</span>{% endif %}
+    </div>
+    {% if row.error %}<span class="field-error" id="err-{{ d.key }}" role="alert">{{ row.error }}</span>{% endif %}
+  </div>
+</div>

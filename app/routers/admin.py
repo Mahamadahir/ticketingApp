@@ -153,8 +153,12 @@ from app.settings_store import (
     JOB_LATE_MINUTES,
     MSP_BUSINESS_END,
     MSP_BUSINESS_START,
+    GROUP_KEYS,
+    GROUPS,
     REGISTRY,
     get_setting,
+    group_definitions,
+    search_definitions,
     set_setting,
 )
 from app.msp import compile_subject_pattern
@@ -1799,22 +1803,161 @@ def review_category(
 # ---- Settings -------------------------------------------------------------------
 
 
-@router.get("/settings", response_class=HTMLResponse)
-def view_settings(
-    request: Request,
-    user: User = Depends(require_super_admin),
-    session: Session = Depends(get_session),
-):
+def _clean_setting_value(session: Session, definition, value: str, submitted: dict[str, str] | None = None) -> str:
+    """One setting's value as it will be stored; raises ValueError with the message to show when it is not allowed.
+    `submitted` holds the other values posted in the same save, so two settings that depend on each other
+    (business hours start and end) are checked together."""
+    key = definition.key
+    value = value.strip()
+    if len(value) > (500 if definition.kind == "regex" else 200) and definition.kind != "dates":
+        raise ValueError("That is too long (200 characters at most)")
+    if definition.kind == "email" and value:
+        try:
+            value = normalise_email(value)
+        except InvalidEmail:
+            raise ValueError("Enter one email address, or leave it blank")
+    if definition.kind == "dates" and value:
+        try:
+            value = ", ".join(d.isoformat() for d in sorted(set(parse_dates(value))))
+        except ValueError:
+            raise ValueError("Enter dates like 2026-12-25, separated by commas or spaces")
+    if definition.kind == "region" and value not in BANK_HOLIDAY_REGIONS:
+        raise ValueError("Choose england-and-wales, scotland or northern-ireland")
+    if definition.kind == "team" and value:
+        if not (value.isascii() and value.isdigit()) or session.get(Team, int(value)) is None:
+            raise ValueError("That team does not exist")
+
+    if definition.kind == "minutes" and value:
+        # Up to a year; a blank value means the target is not tracked.
+        if not (value.isascii() and value.isdigit()) or not 1 <= int(value) <= 525600:
+            raise ValueError("Enter a whole number of minutes, 1 to 525600, or leave it blank")
+    if definition.kind == "count":
+        if not (value.isascii() and value.isdigit()) or not 1 <= int(value) <= 1000:
+            raise ValueError("Enter a whole number from 1 to 1000")
+    if definition.kind == "off_minutes":
+        if not (value.isascii() and value.isdigit()) or not 0 <= int(value) <= 525600:
+            raise ValueError("Enter a whole number of minutes, 0 to 525600 (0 is off)")
+    if definition.kind == "regex" and value:  # blank means the default pattern
+        try:
+            compile_subject_pattern(value)
+        except ValueError as error:
+            raise ValueError(str(error))
+    if definition.kind == "hour":
+        if not (value.isascii() and value.isdigit()) or not 0 <= int(value) <= 23:
+            raise ValueError("Enter a whole number from 0 to 23")
+    if definition.kind == "clock":
+        if parse_clock(value) is None:
+            raise ValueError("Enter a time of day like 09:00 or 17:30")
+        value = f"{parse_clock(value):%H:%M}"
+        other_key = {MSP_BUSINESS_START: MSP_BUSINESS_END, MSP_BUSINESS_END: MSP_BUSINESS_START}.get(key)
+        other_raw = (submitted or {}).get(other_key) if other_key else None
+        if other_key and other_raw is None:
+            other_raw = get_setting(session, other_key)
+        other = parse_clock(other_raw) if other_raw is not None else None
+        if other is not None and ((key == MSP_BUSINESS_START and value >= f"{other:%H:%M}") or (key == MSP_BUSINESS_END and value <= f"{other:%H:%M}")):
+            raise ValueError("Business hours must end after they start")
+    if definition.kind == "time_zone" and value and valid_zone(value) is None:
+        raise ValueError("Enter an IANA time zone name such as Europe/London")
+    if definition.kind == "flag" and value not in ("on", "off"):
+        raise ValueError("Choose on or off")
+    if definition.kind == "vote_percent":
+        if not (value.isascii() and value.isdigit()) or not 1 <= int(value) <= 100:
+            raise ValueError("Enter a whole number from 1 to 100")
+    if definition.kind == "percent":
+        if not (value.isascii() and value.isdigit()) or not 1 <= int(value) <= 99:
+            raise ValueError("Enter a whole number from 1 to 99")
+    return value
+
+
+def _apply_setting(session: Session, admin: User, key: str, value: str, how: str = "") -> bool:
+    """Store a cleaned value and audit it; False (and nothing written) when it is the value already held. Does not commit."""
+    previous = get_setting(session, key)
+    if previous == value:
+        return False
+    set_setting(session, key, value)
+    log_action(session, admin.email, "setting", 0, "changed", f"{key}: {previous!r} -> {value!r}{how}")
+    if key == BANK_HOLIDAY_REGION:  # fetch the new region at the next tick, not at the next slot
+        job = session.get(ScheduledJob, "bank-holidays")
+        if job is not None:
+            job.next_run_at = datetime.now(timezone.utc)
+            session.add(job)
+    return True
+
+
+def _differs_from_default(definition, stored: str) -> bool:
+    if definition.kind == "flag":  # anything but "off" reads as on
+        return (stored.strip().lower() != "off") != (definition.default.strip().lower() != "off")
+    return stored != definition.default
+
+
+def _default_shown(definition) -> str:
+    if definition.kind == "flag":
+        return "Off" if definition.default.strip().lower() == "off" else "On"
+    if definition.default == "":
+        return "None" if definition.kind == "team" else "blank"
+    return definition.default
+
+
+def _group_of(key: str | None) -> tuple[str, str, str]:
+    for group in GROUPS:
+        if group[0] == key:
+            return group
+    return GROUPS[0]
+
+
+def _settings_rows(session: Session, definitions, values=None, errors=None) -> list[dict]:
+    rows = []
+    for definition in definitions:
+        stored = get_setting(session, definition.key)
+        rows.append({
+            "definition": definition,
+            "value": (values or {}).get(definition.key, stored),
+            "changed": _differs_from_default(definition, stored),
+            "default": _default_shown(definition),
+            "error": (errors or {}).get(definition.key),
+        })
+    return rows
+
+
+def _settings_page(request, session, user, group_key, q="", values=None, errors=None, saved=None, status_code=200):
+    group = _group_of(group_key)
+    query = q.strip()[:100]
+    found = []
+    rows = []
+    if query:
+        found = _settings_rows(session, search_definitions(query))
+        for row in found:
+            row["group"] = _group_of(row["definition"].group)
+    else:
+        rows = _settings_rows(session, group_definitions(group[0]), values, errors)
     return templates.TemplateResponse(
         request,
         "admin_settings.html",
         {
-            "definitions": list(REGISTRY.values()),
-            "values": {key: get_setting(session, key) for key in REGISTRY},
+            "groups": GROUPS,
+            "group": group,
+            "rows": rows,
+            "q": query,
+            "found": found,
             "teams": session.exec(select(Team).order_by(Team.name)).all(),
+            "saved": saved,
+            "has_resettable": any(r["definition"].has_default for r in rows),
             "user": user,
         },
+        status_code=status_code,
     )
+
+
+@router.get("/settings", response_class=HTMLResponse)
+def view_settings(
+    request: Request,
+    group: str = "",
+    q: str = "",
+    saved: int | None = None,
+    user: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    return _settings_page(request, session, user, group, q, saved=saved)
 
 
 @router.post("/settings")
@@ -1827,74 +1970,96 @@ def save_setting(
     definition = REGISTRY.get(key)
     if definition is None:
         raise HTTPException(status_code=404, detail="Unknown setting")
-
-    value = value.strip()
-    if len(value) > (500 if definition.kind == "regex" else 200) and definition.kind != "dates":
-        raise HTTPException(status_code=400, detail="That is too long (200 characters at most)")
-    if definition.kind == "email" and value:
-        try:
-            value = normalise_email(value)
-        except InvalidEmail:
-            raise HTTPException(status_code=400, detail="Enter one email address, or leave it blank")
-    if definition.kind == "dates" and value:
-        try:
-            value = ", ".join(d.isoformat() for d in sorted(set(parse_dates(value))))
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Enter dates like 2026-12-25, separated by commas or spaces")
-    if definition.kind == "region" and value not in BANK_HOLIDAY_REGIONS:
-        raise HTTPException(status_code=400, detail="Choose england-and-wales, scotland or northern-ireland")
-    if definition.kind == "team" and value:
-        if not (value.isascii() and value.isdigit()) or session.get(Team, int(value)) is None:
-            raise HTTPException(status_code=400, detail="That team does not exist")
-
-    if definition.kind == "minutes" and value:
-        # Up to a year; a blank value means the target is not tracked.
-        if not (value.isascii() and value.isdigit()) or not 1 <= int(value) <= 525600:
-            raise HTTPException(status_code=400, detail="Enter a whole number of minutes, 1 to 525600, or leave it blank")
-    if definition.kind == "count":
-        if not (value.isascii() and value.isdigit()) or not 1 <= int(value) <= 1000:
-            raise HTTPException(status_code=400, detail="Enter a whole number from 1 to 1000")
-    if definition.kind == "off_minutes":
-        if not (value.isascii() and value.isdigit()) or not 0 <= int(value) <= 525600:
-            raise HTTPException(status_code=400, detail="Enter a whole number of minutes, 0 to 525600 (0 is off)")
-    if definition.kind == "regex" and value:  # blank means the default pattern
-        try:
-            compile_subject_pattern(value)
-        except ValueError as error:
-            raise HTTPException(status_code=400, detail=str(error))
-    if definition.kind == "hour":
-        if not (value.isascii() and value.isdigit()) or not 0 <= int(value) <= 23:
-            raise HTTPException(status_code=400, detail="Enter a whole number from 0 to 23")
-    if definition.kind == "clock":
-        if parse_clock(value) is None:
-            raise HTTPException(status_code=400, detail="Enter a time of day like 09:00 or 17:30")
-        value = f"{parse_clock(value):%H:%M}"
-        other_key = {MSP_BUSINESS_START: MSP_BUSINESS_END, MSP_BUSINESS_END: MSP_BUSINESS_START}.get(key)
-        other = parse_clock(get_setting(session, other_key)) if other_key else None
-        if other is not None and ((key == MSP_BUSINESS_START and value >= f"{other:%H:%M}") or (key == MSP_BUSINESS_END and value <= f"{other:%H:%M}")):
-            raise HTTPException(status_code=400, detail="Business hours must end after they start")
-    if definition.kind == "time_zone" and value and valid_zone(value) is None:
-        raise HTTPException(status_code=400, detail="Enter an IANA time zone name such as Europe/London")
-    if definition.kind == "flag" and value not in ("on", "off"):
-        raise HTTPException(status_code=400, detail="Choose on or off")
-    if definition.kind == "vote_percent":
-        if not (value.isascii() and value.isdigit()) or not 1 <= int(value) <= 100:
-            raise HTTPException(status_code=400, detail="Enter a whole number from 1 to 100")
-    if definition.kind == "percent":
-        if not (value.isascii() and value.isdigit()) or not 1 <= int(value) <= 99:
-            raise HTTPException(status_code=400, detail="Enter a whole number from 1 to 99")
-
-    previous = get_setting(session, key)
-    if previous != value:
-        set_setting(session, key, value)
-        log_action(session, admin.email, "setting", 0, "changed", f"{key}: {previous!r} -> {value!r}")
-        if key == BANK_HOLIDAY_REGION:  # fetch the new region at the next tick, not at the next slot
-            job = session.get(ScheduledJob, "bank-holidays")
-            if job is not None:
-                job.next_run_at = datetime.now(timezone.utc)
-                session.add(job)
+    try:
+        value = _clean_setting_value(session, definition, value)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    _apply_setting(session, admin, key, value)
     session.commit()
-    return RedirectResponse("/admin/settings", status_code=303)
+    return RedirectResponse(f"/admin/settings?group={definition.group}", status_code=303)
+
+
+@router.post("/settings/group")
+async def save_settings_group(
+    request: Request,
+    admin: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    """Save one group's settings together: the fields are named v_<key>, and only that group's keys are read. If any
+    value is refused nothing is saved and the page comes back with the message under each field and what was typed."""
+    form = await request.form()
+    group_key = form.get("group")
+    if group_key not in GROUP_KEYS:
+        raise HTTPException(status_code=404, detail="Unknown group")
+    submitted = {}
+    for definition in group_definitions(group_key):
+        raw = form.get(f"v_{definition.key}")
+        if isinstance(raw, str):
+            submitted[definition.key] = raw[:2000]
+    cleaned, errors = {}, {}
+    for key, raw in submitted.items():
+        try:
+            cleaned[key] = _clean_setting_value(session, REGISTRY[key], raw, submitted)
+        except ValueError as error:
+            errors[key] = str(error)
+    if errors:
+        return _settings_page(request, session, admin, group_key, values=submitted, errors=errors, status_code=400)
+    changed = sum(_apply_setting(session, admin, key, value) for key, value in cleaned.items())
+    session.commit()
+    return RedirectResponse(f"/admin/settings?group={group_key}&saved={changed}", status_code=303)
+
+
+def _reset_plan(session: Session, group_key: str):
+    """The group's settings a reset would change, and those with no default, which it leaves alone."""
+    to_reset, left = [], []
+    for definition in group_definitions(group_key):
+        stored = get_setting(session, definition.key)
+        if stored == definition.default:
+            continue
+        if definition.has_default:
+            to_reset.append((definition, stored))
+        else:
+            left.append(definition)
+    return to_reset, left
+
+
+@router.get("/settings/reset", response_class=HTMLResponse)
+def confirm_reset_settings(
+    request: Request,
+    group: str,
+    user: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    """The confirm step: what would change, before anything is posted."""
+    if group not in GROUP_KEYS:
+        raise HTTPException(status_code=404, detail="Unknown group")
+    to_reset, left = _reset_plan(session, group)
+    return templates.TemplateResponse(
+        request,
+        "admin_settings_reset.html",
+        {"group": _group_of(group), "to_reset": to_reset, "left": left, "user": user},
+    )
+
+
+@router.post("/settings/reset")
+def reset_settings_group(
+    group: str = Form(...),
+    confirm: str = Form(""),
+    admin: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    """Put each setting of the group back to its default, one audit entry per change. Settings with no default are
+    left as they are. Without the confirmation the person goes back to the confirm step and nothing changes."""
+    if group not in GROUP_KEYS:
+        raise HTTPException(status_code=404, detail="Unknown group")
+    if confirm != "yes":
+        return RedirectResponse(f"/admin/settings/reset?group={group}", status_code=303)
+    to_reset, _left = _reset_plan(session, group)
+    for definition, _stored in to_reset:
+        _apply_setting(session, admin, definition.key, definition.default, " (reset to default)")
+    session.commit()
+    return RedirectResponse(f"/admin/settings?group={group}&saved={len(to_reset)}", status_code=303)
+
 
 # ---- Activity log ---------------------------------------------------------------
 
