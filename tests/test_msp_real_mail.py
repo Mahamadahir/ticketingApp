@@ -546,3 +546,16 @@ def test_msp_mail_marked_auto_generated_or_suppress_or_bulk_is_still_accepted(db
         ("Auto-Submitted", "auto-generated"), ("X-Auto-Response-Suppress", "All"), ("Precedence", "bulk"), ("List-Id", "<x.msp.example>"),
     )
     assert take(db_session, raw).outcome == REPLY_ADDED
+
+
+def test_the_title_window_is_measured_from_the_time_the_mail_is_taken_not_the_wall_clock(db_session):
+    """The handoff was sent 5 minutes before IN_HOURS (a fixed past date); the window must follow `now`, not today's date."""
+    ticket = sent_ticket(db_session)
+    handoff_email(db_session, ticket, subject="Printer offline on floor 3")
+    raw = lambda: acknowledgement(subject="Ticket#7000237/Printer offline on floor 3 -- has been received", body="<p>no reference</p>")
+    assert take(db_session, raw(), IN_HOURS + timedelta(days=6)).ticket.id == ticket.id  # inside 7 days of the handoff
+
+    second = sent_ticket(db_session, subject="Second")
+    handoff_email(db_session, second, subject="Second")
+    late = graph_raw("Ticket#7000999/Second -- has been received", msp_headers(), body="<p>none</p>", html=True)
+    assert take(db_session, late, IN_HOURS + timedelta(days=8)).outcome == IGNORED_MSP  # outside it

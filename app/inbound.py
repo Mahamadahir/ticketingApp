@@ -459,7 +459,7 @@ def _claim(session: Session, mail: IncomingMail) -> Optional[InboundMail]:
     return row
 
 
-def _msp_ticket_for(session: Session, mail: IncomingMail, parsed) -> tuple[Optional[Ticket], Optional[str]]:
+def _msp_ticket_for(session: Session, mail: IncomingMail, parsed, now: Optional[datetime] = None) -> tuple[Optional[Ticket], Optional[str]]:
     """The ticket a mail from the MSP belongs to. The MSP's own number first (learned from its acknowledgement), then, for
     an acknowledgement, our reference in its title or body and the exact title against what we sent, then the usual thread,
     Message-ID and subject-reference matching. Only a ticket that was sent to the MSP counts, except by number."""
@@ -468,7 +468,7 @@ def _msp_ticket_for(session: Session, mail: IncomingMail, parsed) -> tuple[Optio
         if ticket is not None:
             return ticket, "msp-number"
         if parsed.is_acknowledgement:
-            ticket, how = ticket_of_acknowledgement(session, parsed.title, mail.body, referenced_ticket)
+            ticket, how = ticket_of_acknowledgement(session, parsed.title, mail.body, referenced_ticket, now)
             if ticket is not None:
                 return ticket, how
     ticket, how = find_ticket_for(session, mail)
@@ -490,7 +490,7 @@ def _ingest_msp_mail(session, mail, sender, attachments, storage, now, settle) -
         return settle(IGNORED_MSP)
     verified = trust == TRUST_PASS
     parsed = parse_msp_subject(session, mail.subject)
-    ticket, how = _msp_ticket_for(session, mail, parsed)
+    ticket, how = _msp_ticket_for(session, mail, parsed, now)
     def park() -> None:
         park_unmatched(
             session, graph_message_id=mail.graph_message_id, sender=sender, subject=_subject_of(mail), body=_body_of(mail),
