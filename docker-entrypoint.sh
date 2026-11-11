@@ -11,7 +11,7 @@ if [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
 fi
 
 # Local development only (docker-compose.override.yml sets it): one process that restarts when a
-# file in app/ changes. Unset, the line below is unchanged.
+# file in app/ changes (uvicorn cannot reload with --workers, so UVICORN_WORKERS is ignored). Unset, the line below is unchanged.
 if [ "${UVICORN_RELOAD:-false}" = "true" ]; then
     exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir app
 fi
