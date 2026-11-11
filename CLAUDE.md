@@ -8,7 +8,7 @@ starting a phase, and `README.md` for how to run it.
 
 ## State of play
 
-- **Phases 0 to 8 are built; Phase 9 (the redesign, done in the app, not Stitch) has 9A (tokens, light/dark, the shell: `docs/ui.md`), 9B queue, 9C ticket page and 9D portal home (My requests, `messages.requester_status` is the one requester wording of a status) built; the rest of the portal is next.** Phase 8 (the Teams bot, behind
+- **Phases 0 to 8 are built; Phase 9 (the redesign, done in the app, not Stitch) has 9A (tokens, light/dark, the shell: `docs/ui.md`), 9B queue, 9C ticket page, 9D portal home (My requests, `messages.requester_status` is the one requester wording of a status), 9E to 9G (the rest of the portal, shell fixes) and 9H (the admin frame: the grouped admin menu in `navigation.ADMIN_GROUPS`, the admin home in `app/admin_home.py`) built; 9I to 9L (the rest of the admin overhaul) are next.** Phase 8 (the Teams bot, behind
   `TEAMS_BOT_ENABLED`) is **8A, the foundation (`app/teams_bot.py`, `app/teams_bot_auth.py`,
   `app/bot_connector.py`, `app/teams_conversations.py`), 8B (personal notifications as direct messages: `app/bot_cards.py`, `teams.route_for`),
   8C (approvals from the bot's card: `app/teams_approvals.py`) and 8D (ticket intake from Teams: `app/teams_intake.py`; the rules email and Teams share are in

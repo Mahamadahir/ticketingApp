@@ -52,6 +52,14 @@ class NavItem:
 
 
 @dataclass(frozen=True)
+class AdminGroup:
+    """One heading of the admin menu (9H) and the pages under it this person may open."""
+
+    title: str
+    items: tuple = ()  # NavItem
+
+
+@dataclass(frozen=True)
 class Shell:
     """What base.html draws around a page for this person."""
 
@@ -60,18 +68,109 @@ class Shell:
     person_menu: tuple = ()  # the person menu (9G), in order: My requests, My feedback, Settings, Appearance (agents); Settings, Appearance (the portal)
     unread: int = 0
     can_search: bool = False
+    # On an /admin page: the admin menu (9H), a second column beside the sidebar. Empty everywhere else.
+    admin_home: Optional[NavItem] = None
+    admin_menu: tuple = ()  # AdminGroup
+
+
+# ---- The admin menu (9H) ----------------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class AdminPage:
+    key: str
+    label: str
+    href: str
+    # None: super admins only. Otherwise the extra permission (app/permissions.py) that opens the page; super admins
+    # hold every permission. The same rule the page's route enforces (require_super_admin, require_permission).
+    permission: Optional[str] = None
+
+
+ADMIN_HOME_HREF = "/admin"
+
+# The admin menu, in order: one definition. The admin home's cards follow the same groups.
+ADMIN_GROUPS: tuple[tuple[str, tuple[AdminPage, ...]], ...] = (
+    ("People", (
+        AdminPage("users", "Users", "/admin/users"),
+        AdminPage("teams", "Teams", "/admin/teams"),
+        AdminPage("approval-groups", "Approval groups", "/admin/approval-groups"),
+    )),
+    ("Tickets", (
+        AdminPage("categories", "Categories", "/admin/categories"),
+        AdminPage("category-review", "Category review", "/admin/category-review"),
+        AdminPage("request-types", "Request types", "/admin/request-types", "manage_request_templates"),
+        AdminPage("canned", "Canned responses", "/admin/canned"),
+    )),
+    ("Mail and Teams", (
+        AdminPage("email-templates", "Email templates", "/admin/email-templates"),
+        AdminPage("never-follow", "Never follow", "/admin/never-follow"),
+        AdminPage("thanks-rules", "Thanks rules", "/admin/thanks-rules"),
+        AdminPage("mail-intake", "Mail intake", "/admin/mail-intake"),
+        AdminPage("outbound-mail", "Outbound mail", "/admin/outbound-mail"),
+    )),
+    ("System", (
+        AdminPage("settings", "Settings", "/admin/settings"),
+        AdminPage("scheduled-jobs", "Scheduled jobs", "/admin/scheduled-jobs"),
+        AdminPage("outage", "Outage mode", "/admin/outage"),
+        AdminPage("data-protection", "Data protection", "/admin/data-protection", "data_protection"),
+    )),
+    ("Logs", (
+        AdminPage("audit-log", "Audit log", "/admin/audit-log"),
+        AdminPage("activity-log", "Activity log", "/admin/activity-log"),
+        AdminPage("feedback", "Feedback", "/admin/feedback"),
+    )),
+)
+
+ADMIN_PAGES: dict[str, AdminPage] = {page.key: page for _title, pages in ADMIN_GROUPS for page in pages}
+
+# Admin addresses that belong to a page with another address: reviewing a linked identity is part of Users.
+_ADMIN_ALIASES = {"/admin/links": "users"}
+
+
+def allowed_admin_pages(session: Session, user: Optional[User]) -> frozenset[str]:
+    """The keys of the admin pages this person may open."""
+    if user is None or user.role not in AGENT_ROLES:
+        return frozenset()
+    if user.role == UserRole.SUPER_ADMIN:
+        return frozenset(ADMIN_PAGES)
+    held = {key for key in {p.permission for p in ADMIN_PAGES.values()} - {None} if has_permission(session, user, key)}
+    return frozenset(page.key for page in ADMIN_PAGES.values() if page.permission in held)
+
+
+def is_admin_path(path: str) -> bool:
+    return path == ADMIN_HOME_HREF or path.startswith(ADMIN_HOME_HREF + "/")
+
+
+def current_admin_page(path: str) -> Optional[str]:
+    """The admin page this address belongs to: "home" for the admin home, else the page whose address is the longest
+    prefix of it (/admin/data-protection/anonymise is Data protection)."""
+    if path.rstrip("/") == ADMIN_HOME_HREF:
+        return "home"
+    candidates = [(href, key) for href, key in _ADMIN_ALIASES.items()]
+    candidates += [(page.href, page.key) for page in ADMIN_PAGES.values()]
+    hits = [(len(href), key) for href, key in candidates if path == href or path.startswith(href + "/")]
+    return max(hits)[1] if hits else None
+
+
+def admin_menu(allowed: frozenset[str], path: str) -> tuple[Optional[NavItem], tuple[AdminGroup, ...]]:
+    """The admin home link and the groups of the admin menu, each holding only the pages in `allowed`; a group with
+    none is left out. The current page is marked."""
+    if not allowed:
+        return None, ()
+    current = current_admin_page(path)
+    home = NavItem("home", "Admin home", ADMIN_HOME_HREF, ICONS["admin"], active=current == "home")
+    groups = []
+    for title, pages in ADMIN_GROUPS:
+        items = tuple(NavItem(p.key, p.label, p.href, "", active=current == p.key) for p in pages if p.key in allowed)
+        if items:
+            groups.append(AdminGroup(title, items))
+    return home, tuple(groups)
 
 
 def _admin_href(session: Session, user: User) -> Optional[str]:
-    """Where "Admin" leads: the first admin page this person may open (a super admin all of them; an agent holding
-    an extra permission only the pages it opens)."""
-    if user.role == UserRole.SUPER_ADMIN:
-        return "/admin/users"
-    if has_permission(session, user, "manage_request_templates"):
-        return "/admin/request-types"
-    if has_permission(session, user, "data_protection"):
-        return "/admin/data-protection"
-    return None
+    """Where "Admin" leads: the admin home, for anyone who may open at least one admin page (a super admin all of
+    them; an agent holding an extra permission only the pages it opens)."""
+    return ADMIN_HOME_HREF if allowed_admin_pages(session, user) else None
 
 
 def _count(session: Session, query) -> int:
@@ -147,7 +246,11 @@ def build_shell(session: Session, user: Optional[User], path: str, query: dict) 
             ("appearance", "Appearance", APPEARANCE_HREF, "appearance"),
         ]
         menu = tuple(NavItem(k, label, href, ICONS[icon], active=path == href) for k, label, href, icon in own)
-        return Shell(kind="console", items=items, person_menu=menu, unread=unread, can_search=True)
+        admin_home, admin_groups = admin_menu(allowed_admin_pages(session, user), path) if is_admin_path(path) else (None, ())
+        return Shell(
+            kind="console", items=items, person_menu=menu, unread=unread, can_search=True,
+            admin_home=admin_home, admin_menu=admin_groups,
+        )
     # The portal: requesters everywhere, and anyone on a portal page. Agents get a way back to the console.
     pending = count_pending_for(session, user)
     rows = [

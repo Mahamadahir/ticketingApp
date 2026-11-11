@@ -209,7 +209,7 @@ def test_a_super_admin_also_sees_reports_canned_responses_and_admin(client, db_s
     set_role(db_session, login_as(client, "boss@example.com"), UserRole.SUPER_ADMIN)
     links = nav_links(client.get("/tickets"))
     assert list(links) == ["Queue", "My tickets", "Untriaged", "Approvals", "MSP mail", "Reports", "Canned responses", "Admin", "My requests", "My feedback", "Settings", "Appearance"]
-    assert links["Reports"] == "/reports" and links["Canned responses"] == "/admin/canned" and links["Admin"] == "/admin/users"
+    assert links["Reports"] == "/reports" and links["Canned responses"] == "/admin/canned" and links["Admin"] == "/admin"
 
 
 def test_view_reports_alone_adds_reports_and_nothing_else(client, db_session):
@@ -221,13 +221,15 @@ def test_view_reports_alone_adds_reports_and_nothing_else(client, db_session):
 
 
 @pytest.mark.parametrize("permission,destination", [("manage_request_templates", "/admin/request-types"), ("data_protection", "/admin/data-protection")])
-def test_an_extra_permission_adds_an_admin_item_that_opens_its_page(client, db_session, permission, destination):
+def test_an_extra_permission_adds_an_admin_item_that_leads_to_its_page(client, db_session, permission, destination):
     agent_id = agent(client, db_session)
     db_session.add(UserPermission(user_id=agent_id, permission=permission))
     db_session.commit()
     links = nav_links(client.get("/tickets"))
-    assert links["Admin"] == destination and "Reports" not in links and "Canned responses" not in links
+    assert links["Admin"] == "/admin" and "Reports" not in links and "Canned responses" not in links
     assert client.get(destination).status_code == 200
+    # The admin home leads on to the page the permission opens.
+    assert f'href="{destination}"' in client.get("/admin").text
 
 
 def test_an_end_user_gets_the_portal_frame_and_no_agent_navigation(client, db_session):

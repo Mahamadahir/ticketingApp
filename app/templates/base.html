@@ -100,9 +100,28 @@
         </div>
       </header>
       <div id="flash" role="alert"></div>
+      {% if shell.admin_menu %}
+      {# The admin frame (9H): the admin menu beside the page; below 1000px it sits above it. The items come from
+         app/navigation.py (ADMIN_GROUPS, each only for people who may open it). #}
+      <div class="admin-frame">
+        <nav class="admin-nav" aria-label="Admin">
+          <a href="{{ shell.admin_home.href }}" class="admin-link admin-home-link"{% if shell.admin_home.active %} aria-current="page"{% endif %}>{{ shell.admin_home.label }}</a>
+          {% for group in shell.admin_menu %}
+          <div class="admin-group">
+            <p class="admin-group-title" id="admin-group-{{ loop.index }}">{{ group.title }}</p>
+            <ul aria-labelledby="admin-group-{{ loop.index }}">
+              {% for item in group.items %}<li><a href="{{ item.href }}" class="admin-link"{% if item.active %} aria-current="page"{% endif %}>{{ item.label }}</a></li>{% endfor %}
+            </ul>
+          </div>
+          {% endfor %}
+        </nav>
+      {% endif %}
       <main id="main-content" tabindex="-1" class="content">
         {{ self.content() }}
       </main>
+      {% if shell.admin_menu %}
+      </div>
+      {% endif %}
     </div>
   </div>
   {% elif shell.kind == "portal" %}

@@ -74,8 +74,6 @@
       <textarea name="conditions" rows="4">{{ condition_text.get(tpl.id, "") if tpl else "" }}</textarea>
     </label>
 {% endmacro %}
-{% set active = "/admin/request-types" %}
-{% include "_admin_tabs.html" %}
 
 <h2>Request types</h2>
 <p class="note">

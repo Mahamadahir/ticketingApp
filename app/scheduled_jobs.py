@@ -247,22 +247,43 @@ def scheduled_jobs_tick(session: Session) -> None:
     run_due_jobs()
 
 
-def status_line(rows: Sequence[ScheduledJob], now: datetime, late: timedelta, registered: Optional[set[str]] = None) -> str:
-    """One line for the admin page: whether the recurring jobs are healthy. A job is overdue when it is
-    more than `late` past its due time and nothing holds it (the worker is down or stuck). Rows for jobs
-    no longer in `registered` are ignored."""
+@dataclass(frozen=True)
+class JobHealth:
+    """Which recurring jobs are in trouble (the jobs page's status line and the admin home share this rule)."""
+
+    total: int
+    failing: tuple[str, ...]
+    stuck: tuple[str, ...]
+    overdue: tuple[str, ...]
+
+    @property
+    def unhealthy(self) -> int:
+        return len(set(self.failing) | set(self.stuck) | set(self.overdue))
+
+
+def job_health(rows: Sequence[ScheduledJob], now: datetime, late: timedelta, registered: Optional[set[str]] = None) -> JobHealth:
+    """A job is failing when its last run raised, stuck when its lease expired (the worker died mid-run), and overdue
+    when it is more than `late` past its due time and nothing holds it (the worker is down or stuck). Rows for jobs no
+    longer in `registered` are ignored."""
     if registered is not None:
         rows = [row for row in rows if row.name in registered]
-    if not rows:
-        return "No recurring jobs have run yet."
     failing = [row.name for row in rows if row.failures_in_a_row]
     stuck = [row.name for row in rows if row.lease_expires_at is not None and row.lease_expires_at <= now]
     overdue = [
         row.name for row in rows
         if row.lease_owner is None and now - row.next_run_at > late and row.name not in failing
     ]
+    return JobHealth(len(rows), tuple(sorted(failing)), tuple(sorted(stuck)), tuple(sorted(overdue)))
+
+
+def status_line(rows: Sequence[ScheduledJob], now: datetime, late: timedelta, registered: Optional[set[str]] = None) -> str:
+    """One line for the admin page: whether the recurring jobs are healthy (`job_health`)."""
+    health = job_health(rows, now, late, registered)
+    if not health.total:
+        return "No recurring jobs have run yet."
+    failing, stuck, overdue = health.failing, health.stuck, health.overdue
     if not failing and not stuck and not overdue:
-        return f"All {len(rows)} recurring job(s) are healthy."
+        return f"All {health.total} recurring job(s) are healthy."
     parts = []
     if failing:
         parts.append(f"failing: {', '.join(sorted(failing))}")
