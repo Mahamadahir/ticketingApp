@@ -175,6 +175,7 @@
         "app.routers.admin"
       ],
       "imports": [
+        "app.categories",
         "app.config",
         "app.models",
         "app.navigation",
@@ -919,6 +920,7 @@
         "team_id_for"
       ],
       "imported_by": [
+        "app.admin_home",
         "app.escalation",
         "app.msp",
         "app.request_types",
@@ -1055,6 +1057,7 @@
         "tests/test_acknowledgement.py",
         "tests/test_action_links.py",
         "tests/test_activity_log.py",
+        "tests/test_admin_frame.py",
         "tests/test_anonymisation.py",
         "tests/test_approval_reminders.py",
         "tests/test_attachments.py",

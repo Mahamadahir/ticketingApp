@@ -115,14 +115,12 @@
           </div>
           {% endfor %}
         </nav>
-        <main id="main-content" tabindex="-1" class="content">
-          {{ self.content() }}
-        </main>
-      </div>
-      {% else %}
+      {% endif %}
       <main id="main-content" tabindex="-1" class="content">
         {{ self.content() }}
       </main>
+      {% if shell.admin_menu %}
+      </div>
       {% endif %}
     </div>
   </div>

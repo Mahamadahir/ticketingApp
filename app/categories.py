@@ -10,11 +10,15 @@ from typing import Optional
 from sqlalchemy import text
 from sqlmodel import Session, select
 
-from app.models import Category, Team
+from app.models import FINISHED_STATUSES, Category, Team, Ticket
 from app.settings_store import DEFAULT_TRIAGE_TEAM, get_int_setting
 
 MAX_NAME_LENGTH = 80
 OTHER_NAME = "Other"
+
+# The tickets the category review lists: finished tickets triaged as "Other". The review page and the admin home count
+# share this one definition.
+CATEGORY_REVIEW_CONDITIONS = (Ticket.needs_category_review.is_(True), Ticket.status.in_(FINISHED_STATUSES))
 
 
 # One fixed key for the whole category table. A uniqueness constraint cannot stop two

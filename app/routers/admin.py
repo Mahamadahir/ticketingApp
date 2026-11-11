@@ -27,6 +27,7 @@ from app.auth import get_current_user, hash_password, require_permission, requir
 from app.permissions import ASSIGNABLE_ROLES, MANAGE_REQUEST_TEMPLATES, PERMISSIONS
 from app.sla import impact_options, urgency_options
 from app.categories import (
+    CATEGORY_REVIEW_CONDITIONS,
     CategoryError,
     create_category,
     ensure_other,
@@ -1724,7 +1725,7 @@ def _review_queue(session: Session) -> list[Ticket]:
     return list(
         session.exec(
             select(Ticket)
-            .where(Ticket.needs_category_review.is_(True), Ticket.status.in_(FINISHED_STATUSES))
+            .where(*CATEGORY_REVIEW_CONDITIONS)
             .order_by(Ticket.resolved_at.desc(), Ticket.id.desc())
         ).all()
     )

@@ -304,3 +304,34 @@ def test_cards_hold_only_what_the_viewer_may_open(db_session):
     assert [s.label for s in cards[0].stats] == ["files waiting to be deleted"]
     cards = area_cards(db_session, frozenset({"request-types"}), datetime.now(timezone.utc), ZONE)
     assert [(card.title, [s.label for s in card.stats]) for card in cards] == [("Tickets", ["request types"])]
+
+
+def test_mail_intake_is_on_only_with_credentials_and_a_shared_mailbox(db_session, monkeypatch):
+    from app.config import settings
+
+    def intake() -> str:
+        found = stats(area_cards(db_session, frozenset({"mail-intake"}), datetime.now(timezone.utc), ZONE))
+        return found["Mail and Teams"]["mail intake"]
+
+    monkeypatch.setattr(settings, "graph_tenant_id", "t")
+    monkeypatch.setattr(settings, "graph_client_id", "c")
+    monkeypatch.setattr(settings, "graph_client_secret", "s")
+    monkeypatch.setattr(settings, "graph_shared_mailbox", "")
+    assert intake() == "Off"
+    monkeypatch.setattr(settings, "graph_shared_mailbox", "support@example.com")
+    assert intake() == "On"
+
+
+@pytest.mark.parametrize("key", sorted(ADMIN_PAGES))
+def test_the_menu_permission_of_each_page_is_the_one_its_route_enforces(client, db_session, key):
+    """ADMIN_GROUPS says who may open a page; the page's route must say the same, or the menu lies."""
+    page = ADMIN_PAGES[key]
+    user_id = agent(client, db_session)
+    assert client.get(page.href).status_code == 403, f"{key}: a plain agent must be refused"
+    if page.permission is None:
+        grant(db_session, user_id, "manage_request_templates")
+        grant(db_session, user_id, "data_protection")
+        assert client.get(page.href).status_code == 403, f"{key}: marked super admin only, but an extra permission opens it"
+    else:
+        grant(db_session, user_id, page.permission)
+        assert client.get(page.href).status_code == 200, f"{key}: marked {page.permission}, but the route refuses it"
