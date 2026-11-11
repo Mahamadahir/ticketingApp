@@ -191,6 +191,10 @@ docker compose up --build
 
 Then open http://localhost:8000. You'll land on `/auth/login`.
 
+`docker-compose.override.yml` (read by Compose on its own) mounts `app/` and `migrations/` into the container and
+runs uvicorn with `--reload`, so a code change shows without a rebuild. Run `docker compose restart worker` after
+changing job code, and rebuild after a dependency change.
+
 `.env.example` sets `ENV=dev`. Staging and production must set
 `ENV=staging` or `ENV=production`: outside dev the app refuses to start
 while `SESSION_SECRET_KEY` (or, once Graph is configured,
