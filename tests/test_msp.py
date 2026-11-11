@@ -102,13 +102,13 @@ def test_the_msp_settings_are_validated(client, db_session):
     set_role(db_session, admin_id, UserRole.SUPER_ADMIN)
     assert client.post("/admin/settings", data={"key": MSP_ADDRESS, "value": "not an address"}).status_code == 400
     assert client.post("/admin/settings", data={"key": MSP_ADDRESS, "value": "Help@MSP.example"}, follow_redirects=False).status_code == 303
-    assert "help@msp.example" in client.get("/admin/settings").text
+    assert "help@msp.example" in client.get("/admin/settings?group=msp").text
     assert client.post("/admin/settings", data={"key": MSP_ADDRESS, "value": ""}, follow_redirects=False).status_code == 303
     assert client.post("/admin/settings", data={"key": MSP_HANDOFF_HOUR, "value": "24"}).status_code == 400
     assert client.post("/admin/settings", data={"key": MSP_BANK_HOLIDAYS, "value": "Christmas"}).status_code == 400
     ok = client.post("/admin/settings", data={"key": MSP_BANK_HOLIDAYS, "value": "2026-12-28 2026-12-25"}, follow_redirects=False)
     assert ok.status_code == 303
-    assert "2026-12-25, 2026-12-28" in client.get("/admin/settings").text
+    assert "2026-12-25, 2026-12-28" in client.get("/admin/settings?group=msp").text
 
 
 def test_a_team_is_included_in_the_handoff_by_an_admin(client, db_session):

@@ -464,7 +464,7 @@ def test_the_default_time_zone_is_a_validated_admin_setting(client, db_session):
 
     assert REGISTRY[DEFAULT_TIME_ZONE].default == "Europe/London"
     login_as(client, "admin@example.com")
-    assert DEFAULT_TIME_ZONE in client.get("/admin/settings").text
+    assert DEFAULT_TIME_ZONE in client.get("/admin/settings?group=other").text
     assert client.post("/admin/settings", data={"key": DEFAULT_TIME_ZONE, "value": "Mars/Olympus"}).status_code == 400
     assert client.post("/admin/settings", data={"key": DEFAULT_TIME_ZONE, "value": "Asia/Tokyo"}, follow_redirects=False).status_code == 303
     assert client.post("/admin/settings", data={"key": DEFAULT_TIME_ZONE, "value": ""}, follow_redirects=False).status_code == 303
