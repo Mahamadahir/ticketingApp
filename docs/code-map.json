@@ -2499,6 +2499,7 @@
         "tests/test_admin_frame.py",
         "tests/test_admin_mail_pages.py",
         "tests/test_admin_settings.py",
+        "tests/test_admin_system_log_pages.py",
         "tests/test_admin_users_page.py",
         "tests/test_anonymisation.py",
         "tests/test_approval_bell.py",
@@ -3004,6 +3005,7 @@
       "tables": [],
       "tests": [
         "tests/test_admin_frame.py",
+        "tests/test_admin_system_log_pages.py",
         "tests/test_outage_mode.py"
       ]
     },
@@ -5420,6 +5422,7 @@
       "tables": [],
       "tests": [
         "tests/test_admin_frame.py",
+        "tests/test_admin_system_log_pages.py",
         "tests/test_anonymisation.py",
         "tests/test_approval_reminders.py",
         "tests/test_auto_close_chase.py",
@@ -7178,6 +7181,7 @@
     "tests/test_admin_frame.py",
     "tests/test_admin_mail_pages.py",
     "tests/test_admin_settings.py",
+    "tests/test_admin_system_log_pages.py",
     "tests/test_admin_users_page.py",
     "tests/test_anonymisation.py",
     "tests/test_approval_bell.py",

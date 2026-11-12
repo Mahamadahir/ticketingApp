@@ -787,3 +787,19 @@ th { color: var(--muted); font-weight: 600; }
 .intake-card p { margin: 0 0 4px; }
 .intake-big { font-size: 20px; font-weight: 700; }
 .intake-warnings { margin: 0 0 16px; }
+
+/* Admin > System and Logs pages (9L part 2): Scheduled jobs, Outage mode, Data protection, the logs and Feedback. Tokens only. */
+.job-status { margin: 0 0 16px; }
+.job-table td { vertical-align: top; }
+.log-table td { vertical-align: top; overflow-wrap: anywhere; }
+.log-table { min-width: 720px; }
+.outage-cards, .dp-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; margin: 0 0 24px; align-items: start; }
+.outage-card .card-header h2, .dp-card > h2 { margin: 0 0 8px; font-size: 16px; }
+.dp-card .card-header { margin-bottom: 8px; }
+.dp-card h3 { margin: 16px 0 6px; font-size: 14px; }
+.dp-card .form-actions { margin-bottom: 0; }
+.dp-card { margin-bottom: 16px; }
+.dp-cards .dp-card { margin-bottom: 0; }
+.dp-confirm { border-color: var(--red); }
+.outage-message { margin: 0 0 12px; padding: 10px 14px; border-radius: var(--radius); background: var(--amber-bg); color: var(--amber); font-weight: 600; }
+.outage-without { margin: 0; padding-left: 20px; }

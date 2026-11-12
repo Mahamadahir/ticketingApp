@@ -2303,6 +2303,15 @@ def view_mail_intake(
     )
 
 
+def _every_text(seconds: int) -> str:
+    """How often a job is due, for the jobs page: "5 minutes", "1 hour", "1 day"."""
+    for size, unit in ((86400, "day"), (3600, "hour"), (60, "minute")):
+        if seconds >= size and seconds % size == 0:
+            count = seconds // size
+            return f"{count} {unit}{'' if count == 1 else 's'}"
+    return f"{seconds} second{'' if seconds == 1 else 's'}"
+
+
 # ---- Recurring jobs -------------------------------------------------------------------------------
 
 @router.get("/scheduled-jobs", response_class=HTMLResponse)
@@ -2318,7 +2327,10 @@ def view_scheduled_jobs(
     return templates.TemplateResponse(
         request,
         "admin_scheduled_jobs.html",
-        {"rows": rows, "status": status_line(rows, now, timing(session, JOB_LATE_MINUTES), {job.name for job in SCHEDULED_JOBS}), "now": now, "user": user},
+        {
+            "rows": rows, "status": status_line(rows, now, timing(session, JOB_LATE_MINUTES), {job.name for job in SCHEDULED_JOBS}),
+            "intervals": {job.name: _every_text(job.every_seconds) for job in SCHEDULED_JOBS}, "now": now, "user": user,
+        },
     )
 
 

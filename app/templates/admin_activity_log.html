@@ -1,50 +1,57 @@
 {% extends "base.html" %}
 {% block title %}Admin: Activity log{% endblock %}
 {% block content %}
-
-<h2>Activity log</h2>
+{# 9L: the filter bar in the 9G layout, then the table with paging. Filters and their names are unchanged. #}
+<header class="admin-head">
+  <h1>Activity log</h1>
+  <p>Sign-ins, failed sign-ins, lockouts, refused access and every state-changing request.</p>
+</header>
 <p class="note">
-  Sign-ins, failed sign-ins, lockouts, refused access and every state-changing request, with who,
-  from where and what happened. Times are in your time zone. Request bodies, passwords, tokens and query strings are
+  With who, from where and what happened. Times are in your time zone. Request bodies, passwords, tokens and query strings are
   never recorded, and the path shown is the route, not the full address. The named actions on tickets,
   users and teams are in the Audit log.
 </p>
 
-<form class="filter-form" method="get" action="/admin/activity-log">
-  <label>Event
+<form class="filter-bar" method="get" action="/admin/activity-log" role="search" aria-label="Filter the activity log">
+  <label class="field">Event
     <select name="event_type">
       <option value="">Any</option>
       {% for kind in event_types %}<option value="{{ kind }}" {{ "selected" if event_type == kind else "" }}>{{ kind.replace("_", " ") }}</option>{% endfor %}
     </select>
   </label>
-  <label>Email (any part) <input type="text" name="actor" value="{{ actor }}" /></label>
-  <label>From <input type="date" name="date_from" value="{{ date_from }}" /></label>
-  <label>To <input type="date" name="date_to" value="{{ date_to }}" /></label>
-  <label><input type="checkbox" name="problems" value="true" {{ "checked" if problems else "" }} /> Problems only</label>
-  <button type="submit">Filter</button>
+  <label class="field">Email (any part) <input type="text" name="actor" value="{{ actor }}" /></label>
+  <label class="field">From <input type="date" name="date_from" value="{{ date_from }}" /></label>
+  <label class="field">To <input type="date" name="date_to" value="{{ date_to }}" /></label>
+  <label class="field-check"><input type="checkbox" name="problems" value="true" {{ "checked" if problems else "" }} /> Problems only</label>
+  <button type="submit" class="btn btn-primary">Filter</button>
+  <a class="btn" href="/admin/activity-log">Clear</a>
 </form>
 
-<table>
-  <thead>
-    <tr><th>When</th><th>Event</th><th>Who</th><th>Request</th><th>Result</th><th>From</th><th>Browser</th><th>Detail</th></tr>
-  </thead>
-  <tbody>
-    {% for row in page.items %}
-    <tr>
-      <td>{{ row.created_at|local_time(seconds=True) }}</td>
-      <td>{{ row.event_type.replace("_", " ") }}</td>
-      <td>{{ row.actor_email or "(not signed in)" }}</td>
-      <td>{% if row.path %}{{ row.method }} {{ row.path }}{% endif %}</td>
-      <td>{{ row.status_code or "" }}</td>
-      <td>{{ row.ip or "" }}</td>
-      <td title="{{ row.user_agent or '' }}">{{ (row.user_agent or "")[:40] }}</td>
-      <td>{{ row.detail or "" }}</td>
-    </tr>
-    {% else %}
-    <tr><td colspan="8">Nothing matches.</td></tr>
-    {% endfor %}
-  </tbody>
-</table>
+{% if page.items %}
+<div class="table-box">
+  <table class="table log-table">
+    <thead>
+      <tr><th>When</th><th>Event</th><th>Who</th><th>Request</th><th>Result</th><th>From</th><th>Browser</th><th>Detail</th></tr>
+    </thead>
+    <tbody>
+      {% for row in page.items %}
+      <tr>
+        <td>{{ row.created_at|local_time(seconds=True) }}</td>
+        <td>{{ row.event_type.replace("_", " ") }}</td>
+        <td>{{ row.actor_email or "(not signed in)" }}</td>
+        <td>{% if row.path %}{{ row.method }} {{ row.path }}{% endif %}</td>
+        <td>{% if row.status_code %}<span class="chip {{ 't-red' if row.status_code >= 500 else ('t-amber' if row.status_code >= 400 else 't-green') }}">{{ row.status_code }}</span>{% endif %}</td>
+        <td>{{ row.ip or "" }}</td>
+        <td title="{{ row.user_agent or '' }}">{{ (row.user_agent or "")[:40] }}</td>
+        <td>{{ row.detail or "" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="empty-state"><strong>Nothing matches.</strong><span>Widen the dates or clear the filters.</span></div>
+{% endif %}
 
 {% include "_pagination.html" %}
 {% endblock %}
