@@ -648,7 +648,7 @@ Admin-managed wording for the emails the app sends by itself (phase 4T).
 File: `app/email_templates.py`
 
 - Classes: `Rendered`, `TemplateDef`, `TemplateError`
-- Functions: `current_text`, `definition`, `is_customised`, `render_preview`, `render_template`, `render_text`, `reset_template`, `save_template`, `ticket_values`, `validate`
+- Functions: `current_text`, `customised_keys`, `definition`, `is_customised`, `render_preview`, `render_template`, `render_text`, `reset_template`, `save_template`, `ticket_values`, `validate`
 - Imports: `app.models`
 - Imported by: `app.approvals`, `app.closing`, `app.mail`, `app.msp`, `app.msp_actions`, `app.resolution`, `app.routers.admin`, `app.routers.legal`, `app.teams_intake`
 - Tests: `test_acknowledgement.py`, `test_action_links.py`, `test_auto_close_chase.py`, `test_closing_email.py`, `test_email_templates.py`, `test_follower_updates.py`, `test_msp_actions.py`, `test_resolution.py`, `test_teams_hold.py`, `test_teams_intake.py`

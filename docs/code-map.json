@@ -1210,6 +1210,7 @@
       "file": "app/email_templates.py",
       "functions": [
         "current_text",
+        "customised_keys",
         "definition",
         "is_customised",
         "render_preview",
