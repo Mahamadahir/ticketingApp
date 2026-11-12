@@ -1,8 +1,12 @@
 {% extends "base.html" %}
 {% block title %}Admin: Thanks rules{% endblock %}
 {% block content %}
-
-<h2>Thanks rules</h2>
+{# 9L: the rules table with an edit panel per rule (the rule's own form, opened from its row), the add form and the review
+   queue. Every form posts to its existing route with its existing field names. #}
+<header class="admin-head">
+  <h1>Thanks rules</h1>
+  <p>Replies on a resolved ticket that only say thanks, and so do not reopen it.</p>
+</header>
 <p class="note">
   A reply on a resolved ticket normally reopens it. If the new text of the reply (not the quoted
   thread) matches an enabled rule below and the reply has no attachment, it is recorded and the ticket
@@ -12,73 +16,97 @@
   Regular expressions are not supported. Rules apply to portal comments as well as email.
 </p>
 
-<h3>Rules</h3>
-{% if rules %}
-<table>
-  <thead><tr><th>Match</th><th>Pattern</th><th>Max length</th><th>Enabled</th><th>Added by</th><th></th><th></th></tr></thead>
-  <tbody>
-  {% for r in rules %}
-  <tr>
-    <td>
-      <select name="match_type" form="rule-{{ r.id }}">
-        {% for key, label in match_types.items() %}<option value="{{ key }}" {{ "selected" if key == r.match_type }}>{{ label }}</option>{% endfor %}
-      </select>
-    </td>
-    <td><input type="text" name="pattern" form="rule-{{ r.id }}" value="{{ r.pattern }}" maxlength="{{ max_pattern }}" required /></td>
-    <td><input type="number" name="max_length" form="rule-{{ r.id }}" value="{{ r.max_length }}" min="1" max="{{ max_length }}" required /></td>
-    <td>{{ "yes" if r.enabled else "no" }}</td>
-    <td>{{ r.created_by }}</td>
-    <td>
-      <form id="rule-{{ r.id }}" method="post" action="/admin/thanks-rules/{{ r.id }}"><button type="submit">Save</button></form>
-    </td>
-    <td>
-      <form method="post" action="/admin/thanks-rules/{{ r.id }}/{{ 'disable' if r.enabled else 'enable' }}">
-        <button type="submit">{{ "Disable" if r.enabled else "Enable" }}</button>
-      </form>
-    </td>
-  </tr>
-  {% endfor %}
-  </tbody>
-</table>
-{% else %}
-<p>No rules: every reply on a resolved ticket reopens it.</p>
-{% endif %}
+<section class="mail-section" aria-labelledby="tr-rules">
+  <h2 id="tr-rules">Rules</h2>
+  {% if rules %}
+  <div class="table-box">
+    <table class="table">
+      <thead><tr><th>Match</th><th>Pattern</th><th>Max length</th><th>Status</th><th>Added by</th><th><span class="sr-only">Actions</span></th></tr></thead>
+      <tbody>
+      {% for r in rules %}
+      <tr>
+        <td>{{ match_types.get(r.match_type, r.match_type) }}</td>
+        <td><code>{{ r.pattern }}</code></td>
+        <td>{{ r.max_length }}</td>
+        <td>{% if r.enabled %}<span class="chip t-green">Enabled</span>{% else %}<span class="chip t-gray">Disabled</span>{% endif %}</td>
+        <td>{{ r.created_by }}</td>
+        <td>
+          <div class="mail-actions">
+            <details class="rule-edit">
+              <summary class="btn">Edit<span class="sr-only"> rule {{ r.pattern }}</span></summary>
+              <form id="rule-{{ r.id }}" method="post" action="/admin/thanks-rules/{{ r.id }}" class="card rule-panel">
+                <div class="form-grid">
+                  <label class="field">Match
+                    <select name="match_type">
+                      {% for key, label in match_types.items() %}<option value="{{ key }}" {{ "selected" if key == r.match_type }}>{{ label }}</option>{% endfor %}
+                    </select>
+                  </label>
+                  <label class="field">Pattern <input type="text" name="pattern" value="{{ r.pattern }}" maxlength="{{ max_pattern }}" required /></label>
+                  <label class="field field-narrow">Max length <input type="number" name="max_length" value="{{ r.max_length }}" min="1" max="{{ max_length }}" required /></label>
+                </div>
+                <div class="form-actions"><button type="submit" class="btn btn-primary">Save</button></div>
+              </form>
+            </details>
+            <form method="post" action="/admin/thanks-rules/{{ r.id }}/{{ 'disable' if r.enabled else 'enable' }}">
+              <button type="submit" class="btn">{{ "Disable" if r.enabled else "Enable" }}<span class="sr-only"> rule {{ r.pattern }}</span></button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state"><strong>No rules.</strong><span>Every reply on a resolved ticket reopens it.</span></div>
+  {% endif %}
+</section>
 
-<h3>Add a rule</h3>
-<form method="post" action="/admin/thanks-rules">
-  <label>Match
-    <select name="match_type">{% for key, label in match_types.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select>
-  </label>
-  <label>Pattern <input type="text" name="pattern" maxlength="{{ max_pattern }}" required /></label>
-  <label>Maximum length <input type="number" name="max_length" value="20" min="1" max="{{ max_length }}" required /></label>
-  <button type="submit">Add</button>
+<form method="post" action="/admin/thanks-rules" class="card mail-form" aria-labelledby="tr-add">
+  <h2 id="tr-add">Add a rule</h2>
+  <div class="form-grid">
+    <label class="field">Match
+      <select name="match_type">{% for key, label in match_types.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select>
+    </label>
+    <label class="field">Pattern <input type="text" name="pattern" maxlength="{{ max_pattern }}" required /></label>
+    <label class="field field-narrow">Maximum length <input type="number" name="max_length" value="20" min="1" max="{{ max_length }}" required /></label>
+  </div>
+  <div class="form-actions"><button type="submit" class="btn btn-primary">Add</button></div>
 </form>
 
-<h3>Review queue</h3>
-<p class="note">
-  Replies an agent reclosed as "User said thanks" that no rule covered. Make one a rule (edit it first
-  if you like) or dismiss it; a dismissed reply is not queued again.
-</p>
-{% if candidates %}
-<table>
-  <thead><tr><th>Reply</th><th>Seen</th><th>Make a rule</th><th></th></tr></thead>
-  <tbody>
-  {% for c in candidates %}
-  <tr>
-    <td>{{ c.sample_text }}</td>
-    <td>{{ c.occurrences }}</td>
-    <td>
-      <select name="match_type" form="candidate-{{ c.id }}">{% for key, label in match_types.items() %}<option value="{{ key }}" {{ "selected" if key == "equals" }}>{{ label }}</option>{% endfor %}</select>
-      <input type="text" name="pattern" form="candidate-{{ c.id }}" value="{{ c.normalised_text }}" maxlength="{{ max_pattern }}" required />
-      <input type="number" name="max_length" form="candidate-{{ c.id }}" value="{{ c.normalised_text|length }}" min="1" max="{{ max_length }}" required />
-      <form id="candidate-{{ c.id }}" method="post" action="/admin/thanks-rules/candidates/{{ c.id }}/rule" style="display:inline"><button type="submit">Make rule</button></form>
-    </td>
-    <td><form method="post" action="/admin/thanks-rules/candidates/{{ c.id }}/dismiss"><button type="submit">Dismiss</button></form></td>
-  </tr>
-  {% endfor %}
-  </tbody>
-</table>
-{% else %}
-<p>Nothing to review.</p>
-{% endif %}
+<section class="mail-section" aria-labelledby="tr-review">
+  <h2 id="tr-review">Review queue</h2>
+  <p class="note">
+    Replies an agent reclosed as "User said thanks" that no rule covered. Make one a rule (edit it first
+    if you like) or dismiss it; a dismissed reply is not queued again.
+  </p>
+  {% if candidates %}
+  <div class="table-box">
+    <table class="table">
+      <thead><tr><th>Reply</th><th>Seen</th><th>Make a rule</th><th><span class="sr-only">Dismiss</span></th></tr></thead>
+      <tbody>
+      {% for c in candidates %}
+      <tr>
+        <td>{{ c.sample_text }}</td>
+        <td>{{ c.occurrences }}</td>
+        <td>
+          <form id="candidate-{{ c.id }}" method="post" action="/admin/thanks-rules/candidates/{{ c.id }}/rule" class="candidate-form">
+            <label class="field">Match
+              <select name="match_type">{% for key, label in match_types.items() %}<option value="{{ key }}" {{ "selected" if key == "equals" }}>{{ label }}</option>{% endfor %}</select>
+            </label>
+            <label class="field">Pattern <input type="text" name="pattern" value="{{ c.normalised_text }}" maxlength="{{ max_pattern }}" required /></label>
+            <label class="field field-narrow">Max length <input type="number" name="max_length" value="{{ c.normalised_text|length }}" min="1" max="{{ max_length }}" required /></label>
+            <button type="submit" class="btn btn-primary">Make rule</button>
+          </form>
+        </td>
+        <td><form method="post" action="/admin/thanks-rules/candidates/{{ c.id }}/dismiss"><button type="submit" class="btn">Dismiss</button></form></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state"><strong>Nothing to review.</strong><span>Replies reclosed as thanks that no rule covered will appear here.</span></div>
+  {% endif %}
+</section>
 {% endblock %}

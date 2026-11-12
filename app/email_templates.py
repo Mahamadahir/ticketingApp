@@ -498,6 +498,26 @@ REGISTRY: dict[str, TemplateDef] = {
 }
 
 
+# Who a template is for: the admin list groups by this (9L). Every key in REGISTRY must be here, in one group
+# (tests/test_email_templates.py fails for one that is not).
+AUDIENCES: tuple[tuple[str, str, str], ...] = (
+    ("requester", "Requesters", "Emails and notices to the person who raised a ticket, and to the people copied on it."),
+    ("agent", "Agents, approvers and the support partner", "Emails to the people who work on or approve a request."),
+    ("admin", "Admins", "Emails to super admins."),
+    ("legal", "Legal pages", "Not emails: the Teams app's privacy and terms pages."),
+)
+AUDIENCE_OF: dict[str, str] = {
+    "raised_for": "requester", "acknowledgement": "requester", "follower_update": "requester", "resolution": "requester",
+    "closed": "requester", "chase": "requester", "auto_resolve_note": "requester", "link_code": "requester",
+    "msp_forward": "requester", "msp_sent_notice": "requester", "approval_approved": "requester",
+    "approval_declined": "requester", "approval_waived": "requester",
+    "approval_request": "agent", "approval_reminder": "agent", "approval_withdrawn": "agent",
+    "emergency_password_reset": "agent", "msp_handoff": "agent", "msp_no_longer_needed": "agent",
+    "approval_overdue": "admin",
+    "legal_privacy": "legal", "legal_terms": "legal",
+}
+
+
 def definition(key: str) -> TemplateDef:
     try:
         return REGISTRY[key]

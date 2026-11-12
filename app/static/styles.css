@@ -755,3 +755,35 @@ th { color: var(--muted); font-weight: 600; }
 .setting-control input, .setting-control select { flex: 1 1 auto; min-width: 0; }
 .setting-unit { color: var(--muted); font-size: 13px; white-space: nowrap; }
 .settings-panel .form-actions { padding-top: 16px; border-top: 1px solid var(--border); }
+
+/* Admin > Mail pages (9L part 1): Email templates, Never follow, Thanks rules, Mail intake, Outbound mail. Tokens only. */
+.mail-section { margin: 24px 0; }
+.mail-section > h2 { margin: 0 0 8px; font-size: 18px; }
+.mail-form { margin: 20px 0 24px; max-width: 820px; }
+.mail-form > h2 { margin: 0 0 12px; font-size: 18px; }
+.mail-form .form-actions { margin-bottom: 0; }
+.mail-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
+.mail-actions form { margin: 0; }
+.rule-edit > summary { list-style: none; }
+.rule-edit > summary::-webkit-details-marker { display: none; }
+.rule-panel { margin-top: 8px; width: min(360px, 80vw); padding: 14px; }
+.rule-panel .form-actions { margin-bottom: 0; }
+.candidate-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; margin: 0; }
+.candidate-form .field { flex: 1 1 130px; min-width: 0; }
+.candidate-form .field > input, .candidate-form .field > select { width: 100%; box-sizing: border-box; }
+.mail-table pre { white-space: pre-wrap; margin: 6px 0 0; font-family: inherit; }
+.tpl-table td:nth-child(2) { max-width: 520px; }
+.tpl-editor { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
+.tpl-form { flex: 3 1 460px; min-width: 0; box-sizing: border-box; }
+.tpl-preview { flex: 2 1 320px; min-width: 0; box-sizing: border-box; }
+.tpl-preview > h2, .tpl-placeholders > h2 { margin: 0 0 8px; font-size: 16px; }
+.tpl-preview .message-body, .tpl-preview pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; font-family: inherit; }
+.tpl-placeholders { padding-top: 12px; border-top: 1px solid var(--border); }
+.tpl-placeholders ul { margin: 0 0 8px; padding-left: 20px; }
+@media (min-width: 1100px) { .tpl-preview { position: sticky; top: 16px; } }
+.intake-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin: 0 0 24px; align-items: start; }
+.intake-card .card-header { margin-bottom: 10px; }
+.intake-card .card-header h2 { font-size: 16px; }
+.intake-card p { margin: 0 0 4px; }
+.intake-big { font-size: 20px; font-weight: 700; }
+.intake-warnings { margin: 0 0 16px; }

@@ -2497,6 +2497,7 @@
         "tests/test_activity_log.py",
         "tests/test_admin.py",
         "tests/test_admin_frame.py",
+        "tests/test_admin_mail_pages.py",
         "tests/test_admin_settings.py",
         "tests/test_admin_users_page.py",
         "tests/test_anonymisation.py",
@@ -3763,6 +3764,7 @@
         "delete_type_question",
         "dismiss_thanks_candidate",
         "edit_canned",
+        "edit_email_template",
         "edit_request_type",
         "edit_subrequest_template",
         "edit_thanks_rule",
@@ -3948,6 +3950,11 @@
           "handler": "list_email_templates",
           "method": "GET",
           "path": "/admin/email-templates"
+        },
+        {
+          "handler": "edit_email_template",
+          "method": "GET",
+          "path": "/admin/email-templates/{key}"
         },
         {
           "handler": "save_email_template",
@@ -7169,6 +7176,7 @@
     "tests/test_activity_log.py",
     "tests/test_admin.py",
     "tests/test_admin_frame.py",
+    "tests/test_admin_mail_pages.py",
     "tests/test_admin_settings.py",
     "tests/test_admin_users_page.py",
     "tests/test_anonymisation.py",
