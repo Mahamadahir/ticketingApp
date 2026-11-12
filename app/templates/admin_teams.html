@@ -87,6 +87,7 @@
       {% else %}
       <p class="note">No members yet.</p>
       {% endfor %}
+      {% if selected.parent_team_id %}<p class="note">Every member of {{ teams_by_id[selected.parent_team_id].name }} also works this team's tickets, at the same level.</p>{% endif %}
       <p class="note">Add or remove people, and change their level, in <a href="/admin/users?team={{ selected.id }}">Users</a>.</p>
     </section>
 

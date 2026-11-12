@@ -4,7 +4,7 @@ table, panel). Behaviour is the routes' and is tested with them (test_teams, tes
 import re
 
 from app.approval_groups import add_member, create_group
-from app.models import UserRole
+from app.models import Category, UserRole
 from tests.conftest import add_membership, create_category, create_team, login_as, set_role
 from tests.test_category_admin import other_ticket
 
@@ -132,3 +132,39 @@ def test_category_review_empty_state(client, db_session):
     boss(client, db_session)
     html = client.get("/admin/category-review").text
     assert "Nothing waiting for review" in html and "<table" not in html
+
+
+def test_the_category_list_shows_team_escalation_and_state(client, db_session):
+    boss(client, db_session)
+    desk = create_team(db_session, "Service Desk")
+    hardware = create_category(db_session, desk, "Hardware")
+    create_category(db_session, None, "Laptops", parent=hardware)
+    html = client.get("/admin/categories").text
+    assert "Service Desk (from Hardware)" in html and "Same as Hardware" in html
+    assert re.search(r"Hardware.*?>Active<", html, re.S) and "Hidden:" not in html
+
+    hardware.is_active = False
+    db_session.add(hardware)
+    db_session.commit()
+    html = client.get("/admin/categories").text
+    assert "Hidden: Hardware is off" in html  # a sub-category triage cannot offer says so
+
+
+def test_a_sub_category_of_a_main_without_a_team_has_no_dangling_from(client, db_session):
+    boss(client, db_session)
+    html = client.get("/admin/categories").text  # seeds Other, which has no team
+    other_id = re.search(r'category=(\d+)"[^>]*>\s*<span class="person-name">Other', html).group(1)
+    create_category(db_session, None, "Odd jobs", parent=db_session.get(Category, int(other_id)))
+    html = client.get("/admin/categories").text
+    assert "No team yet" in html and "(from Other)" not in html
+
+
+def test_a_sub_team_panel_says_the_parents_members_work_it_too(client, db_session):
+    boss(client, db_session)
+    support = create_team(db_session, "Support")
+    sub = create_team(db_session, "2nd line")
+    sub.parent_team_id = support.id
+    db_session.add(sub)
+    db_session.commit()
+    assert "Every member of Support also works this team" in panel(client.get(f"/admin/teams?team={sub.id}").text)
+    assert "Every member of" not in panel(client.get(f"/admin/teams?team={support.id}").text)
