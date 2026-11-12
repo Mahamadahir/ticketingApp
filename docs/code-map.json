@@ -2497,6 +2497,7 @@
         "tests/test_activity_log.py",
         "tests/test_admin.py",
         "tests/test_admin_frame.py",
+        "tests/test_admin_settings.py",
         "tests/test_admin_users_page.py",
         "tests/test_anonymisation.py",
         "tests/test_approval_bell.py",
@@ -3753,6 +3754,7 @@
         "approve_link",
         "category_review",
         "clear_user_object_id",
+        "confirm_reset_settings",
         "create_link",
         "create_local_user",
         "create_team",
@@ -3786,9 +3788,11 @@
         "remove_never_follow",
         "rename_approval_group",
         "reset_email_template",
+        "reset_settings_group",
         "review_category",
         "save_email_template",
         "save_setting",
+        "save_settings_group",
         "set_approval_group_notice",
         "set_membership",
         "set_team_msp_handoff",
@@ -4099,6 +4103,21 @@
           "handler": "save_setting",
           "method": "POST",
           "path": "/admin/settings"
+        },
+        {
+          "handler": "save_settings_group",
+          "method": "POST",
+          "path": "/admin/settings/group"
+        },
+        {
+          "handler": "confirm_reset_settings",
+          "method": "GET",
+          "path": "/admin/settings/reset"
+        },
+        {
+          "handler": "reset_settings_group",
+          "method": "POST",
+          "path": "/admin/settings/reset"
         },
         {
           "handler": "list_teams",
@@ -5481,6 +5500,8 @@
         "get_flag",
         "get_int_setting",
         "get_setting",
+        "group_definitions",
+        "search_definitions",
         "set_setting",
         "sla_key"
       ],
@@ -5537,6 +5558,7 @@
         "tests/conftest.py",
         "tests/test_acknowledgement.py",
         "tests/test_action_links.py",
+        "tests/test_admin_settings.py",
         "tests/test_approval_inactive.py",
         "tests/test_approval_reminders.py",
         "tests/test_approvals.py",
@@ -7147,6 +7169,7 @@
     "tests/test_activity_log.py",
     "tests/test_admin.py",
     "tests/test_admin_frame.py",
+    "tests/test_admin_settings.py",
     "tests/test_admin_users_page.py",
     "tests/test_anonymisation.py",
     "tests/test_approval_bell.py",

@@ -200,7 +200,7 @@ def test_the_tell_the_requester_setting_defaults_on_and_is_changed_in_settings(c
     db_session.expire_all()
     assert should_tell_requester(db_session) is False
     assert "They will not be emailed" in client.get("/portal/new").text
-    assert "Tell the requester when an agent raises" in client.get("/admin/settings").text
+    assert "Tell the requester when an agent raises" in client.get("/admin/settings?group=notifications").text
     entry = db_session.exec(select(AuditLog).where(AuditLog.entity_type == "setting")).all()[-1]
     assert key in entry.detail and "'off'" in entry.detail
 

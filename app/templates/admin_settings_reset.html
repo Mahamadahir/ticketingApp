@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Admin: Reset settings{% endblock %}
+{% block content %}
+{# The confirm step of "Reset this group to defaults" (9J). Nothing changes until the button below posts. #}
+<header class="admin-head">
+  <h1>Reset {{ group[1] }} to defaults?</h1>
+  <p>Each setting below goes back to its default, and each change is written to the audit log.</p>
+</header>
+<form method="post" action="/admin/settings/reset" class="card settings-panel">
+  <input type="hidden" name="group" value="{{ group[0] }}" />
+  <input type="hidden" name="confirm" value="yes" />
+  {% if to_reset %}
+  <div class="table-box">
+    <table class="table">
+      <thead><tr><th scope="col">Setting</th><th scope="col">Now</th><th scope="col">Default</th></tr></thead>
+      <tbody>
+        {% for definition, stored in to_reset %}
+        <tr><td>{{ definition.display_label }}</td><td>{{ stored if stored != "" else "blank" }}</td><td>{{ definition.default }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state"><strong>Nothing to reset.</strong><span>Every setting in this group already has its default.</span></div>
+  {% endif %}
+  {% if left %}
+  <p class="note">These have no default, so they stay as they are: {% for definition in left %}{{ definition.display_label }}{{ ", " if not loop.last else "." }}{% endfor %}</p>
+  {% endif %}
+  <div class="form-actions">
+    {% if to_reset %}<button type="submit" class="btn btn-danger">Reset {{ to_reset|length }} setting{{ "" if to_reset|length == 1 else "s" }}</button>{% endif %}
+    <a class="btn" href="/admin/settings?group={{ group[0] }}">Cancel</a>
+  </div>
+</form>
+{% endblock %}

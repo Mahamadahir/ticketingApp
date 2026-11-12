@@ -1,27 +1,61 @@
 {% extends "base.html" %}
 {% block title %}Admin: Settings{% endblock %}
 {% block content %}
+{# The Settings page (9J). Which group a setting is in is declared with it in app/settings_store.py, never here. #}
+<header class="admin-head">
+  <h1>Settings</h1>
+  <p>Every change is audited. Values that differ from the default are marked.</p>
+</header>
 
-<h2>Settings</h2>
-{% for definition in definitions %}
-<form method="post" action="/admin/settings">
-  <input type="hidden" name="key" value="{{ definition.key }}" />
-  <h3>{{ definition.label }}</h3>
-  <p class="note">{{ definition.description }}</p>
-  {% if definition.kind == "team" %}
-  <select name="value">
-    <option value="">None</option>
-    {% for t in teams %}<option value="{{ t.id }}" {{ "selected" if values[definition.key] == t.id|string else "" }}>{{ t.name }}</option>{% endfor %}
-  </select>
-  {% elif definition.kind == "flag" %}
-  <select name="value">
-    <option value="on" {{ "selected" if values[definition.key] != "off" else "" }}>On</option>
-    <option value="off" {{ "selected" if values[definition.key] == "off" else "" }}>Off</option>
-  </select>
-  {% else %}
-  <input type="text" name="value" value="{{ values[definition.key] }}" />
-  {% endif %}
-  <button type="submit">Save</button>
+<form method="get" action="/admin/settings" role="search" class="filter-bar settings-search">
+  <label class="field">Find a setting
+    <input type="search" name="q" value="{{ q }}" placeholder="e.g. auto-close, chase, MSP hour" />
+  </label>
+  <button type="submit" class="btn">Find</button>
+  {% if q %}<a class="btn" href="/admin/settings?group={{ group[0] }}">Clear</a>{% endif %}
 </form>
-{% endfor %}
+
+<div class="settings-layout">
+  <nav class="settings-groups" aria-label="Setting groups">
+    {% for key, title, _text in groups %}
+    <a class="grp{{ ' on' if not q and key == group[0] else '' }}" href="/admin/settings?group={{ key }}"{% if not q and key == group[0] %} aria-current="page"{% endif %}>{{ title }}</a>
+    {% endfor %}
+  </nav>
+
+  {% if q %}
+  <section class="card settings-panel" aria-labelledby="results-title">
+    <h2 id="results-title">Settings matching &ldquo;{{ q }}&rdquo;</h2>
+    {% if found %}
+    <p class="note">{{ found|length }} found. Open the group to change one.</p>
+    <ul class="settings-found">
+      {% for row in found %}
+      <li class="setting" id="found-{{ row.definition.key }}">
+        <div class="setting-text">
+          <span class="setting-label">{{ row.definition.display_label }}{% if row.changed %} <span class="chip t-amber">Changed</span>{% endif %}</span>
+          <span class="setting-help">{{ row.definition.description }}</span>
+          <span class="setting-default">Default: {{ row.default }}</span>
+        </div>
+        <div class="setting-input"><a href="/admin/settings?group={{ row.group[0] }}#setting-{{ row.definition.key }}">{{ row.group[1] }} <span aria-hidden="true">&rarr;</span></a></div>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <div class="empty-state"><strong>No setting matches that.</strong><span>Try one word, such as chase or hour.</span></div>
+    {% endif %}
+  </section>
+  {% else %}
+  <form method="post" action="/admin/settings/group" class="card settings-panel" aria-labelledby="group-title">
+    <input type="hidden" name="group" value="{{ group[0] }}" />
+    <h2 id="group-title">{{ group[1] }}</h2>
+    <p class="note">{{ group[2] }}</p>
+    {% if saved is not none %}<p class="settings-saved" role="status">{{ ("Saved " ~ saved ~ (" setting." if saved == 1 else " settings.")) if saved else "Nothing changed." }}</p>{% endif %}
+    {% if rows|selectattr("error")|list %}<p class="field-error" role="alert">Nothing was saved. Fix the marked settings and save again.</p>{% endif %}
+    {% for row in rows %}{% include "_setting_row.html" %}{% endfor %}
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Save {{ group[1] }}</button>
+      {% if has_resettable %}<a class="btn" href="/admin/settings/reset?group={{ group[0] }}">Reset this group to defaults</a>{% endif %}
+    </div>
+  </form>
+  {% endif %}
+</div>
 {% endblock %}

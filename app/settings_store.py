@@ -3,6 +3,7 @@ module declares which keys exist, what they mean and their defaults, so a value
 that was never set still has a sensible answer and the admin page knows what to
 show. Values marked TBC in docs/plan.md live here, never in code."""
 
+import re
 from dataclasses import dataclass
 from typing import Optional
 
@@ -18,6 +19,56 @@ class SettingDef:
     kind: str  # "team": a team id, empty for none; "minutes": a whole number; "percent": 1 to 99; "vote_percent": 1 to 100; "flag": on or off; "count": a whole number, 1 to 1000; "hour": a whole number, 0 to 23; "clock": a time of day written 09:00 or 17:30; "time_zone": an IANA time zone name, blank for the default; "email": one email address, blank for none; "region": one of england-and-wales, scotland, northern-ireland; "dates": a list of dates (2026-12-25, separated by commas or spaces), blank for none; "off_minutes": a whole number of minutes, 0 is off; "regex": a regular expression with the named groups the setting says
     description: str
     default: str = ""
+    group: str = ""  # one of GROUP_KEYS: the group of the Settings page this belongs to, declared with the setting (a test fails if it is missing)
+
+    @property
+    def has_default(self) -> bool:
+        """A setting whose default is blank has no default to go back to (Reset leaves it alone)."""
+        return self.default != ""
+
+    @property
+    def unit(self) -> str:
+        """The unit shown after the input: a trailing "(minutes)" of the label, else what the kind implies."""
+        match = _TRAILING_UNIT.search(self.label)
+        if match:
+            return "%" if match.group(1) == "percent" else match.group(1)
+        return {"minutes": "minutes", "off_minutes": "minutes", "percent": "%", "vote_percent": "%"}.get(self.kind, "")
+
+    @property
+    def display_label(self) -> str:
+        """The label without its trailing unit, which is shown after the input instead."""
+        return _TRAILING_UNIT.sub("", self.label)
+
+
+_TRAILING_UNIT = re.compile(r"\s*\((minutes|hours|days|MB|MB in all|characters|attempts|codes|percent|HH:MM|0 to 23)\)$")
+
+GROUP_SERVICE = "service-levels"
+GROUP_RESOLVING = "resolving-and-closing"
+GROUP_MSP = "msp"
+GROUP_MAIL = "mail"
+GROUP_TEAMS = "teams"
+GROUP_APPROVALS = "approvals"
+GROUP_NOTIFICATIONS = "notifications"
+GROUP_PORTAL = "portal-and-uploads"
+GROUP_SIGN_IN = "sign-in-and-sessions"
+GROUP_DATA = "data-protection-and-reports"
+GROUP_OTHER = "other"
+
+# The groups of the Settings page, in the order shown: (key, title, one line under the title).
+GROUPS: tuple[tuple[str, str, str], ...] = (
+    (GROUP_SERVICE, "Service levels", "Response and resolution targets per priority, when a ticket counts as at risk, and the due-date lead times. Changing a target never rewrites existing tickets."),
+    (GROUP_RESOLVING, "Resolving and closing", "What happens after a ticket is resolved, chasing requesters who have gone quiet, and bulk resolve."),
+    (GROUP_MSP, "MSP", "The managed service provider: where tickets go, the evening handoff, business hours, bank holidays and how its mail is read."),
+    (GROUP_MAIL, "Mail", "Inbound mail limits, the automatic email cap and the mail subscription."),
+    (GROUP_TEAMS, "Teams", "The Teams bot: when copies wait, how long a question waits and the flood guard."),
+    (GROUP_APPROVALS, "Approvals", "Approval links, the default pass share and reminders."),
+    (GROUP_NOTIFICATIONS, "Notifications", "What requesters are told, and when an unread bell notification also goes to Teams."),
+    (GROUP_PORTAL, "Portal and uploads", "What requesters and agents can attach."),
+    (GROUP_SIGN_IN, "Sign-in and sessions", "Idle time, session length, emergency passwords and linking another account."),
+    (GROUP_DATA, "Data protection and reports", "Limits on reports and on the subject access export."),
+    (GROUP_OTHER, "Other", "Settings that belong with none of the groups above."),
+)
+GROUP_KEYS = tuple(key for key, _title, _text in GROUPS)
 
 
 DEFAULT_TRIAGE_TEAM = "default_triage_team_id"
@@ -119,6 +170,7 @@ def _sla_definitions() -> dict[str, SettingDef]:
                 key=key,
                 label=f"{priority.upper()} {label} target (minutes)",
                 kind="minutes",
+                group=GROUP_SERVICE,
                 description=(
                     f"How long a {priority.upper()} ticket may wait for its {label}. The clock runs "
                     "24/7 and stops while the ticket is Awaiting user (a Due date never moves because of the wait). Placeholder value until the "
@@ -132,6 +184,7 @@ def _sla_definitions() -> dict[str, SettingDef]:
 REGISTRY: dict[str, SettingDef] = {
     DEFAULT_TRIAGE_TEAM: SettingDef(
         key=DEFAULT_TRIAGE_TEAM,
+        group=GROUP_OTHER,
         label="Default triage team",
         kind="team",
         description=(
@@ -142,6 +195,7 @@ REGISTRY: dict[str, SettingDef] = {
     **_sla_definitions(),
     TELL_REQUESTER_RAISED_FOR: SettingDef(
         key=TELL_REQUESTER_RAISED_FOR,
+        group=GROUP_NOTIFICATIONS,
         label="Tell the requester when an agent raises a ticket for them",
         kind="flag",
         description=(
@@ -153,6 +207,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     TEAMS_UNREAD_MINUTES: SettingDef(
         key=TEAMS_UNREAD_MINUTES,
+        group=GROUP_NOTIFICATIONS,
         label="Unread notifications are also sent to Teams after (minutes)",
         kind="minutes",
         description=(
@@ -165,6 +220,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     TEAMS_HOLD_WHILE_ACTIVE_MINUTES: SettingDef(
         key=TEAMS_HOLD_WHILE_ACTIVE_MINUTES,
+        group=GROUP_TEAMS,
         label="Teams copies wait while the person is active in the app (minutes)",
         kind="off_minutes",
         description=(
@@ -177,6 +233,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     TEAMS_PENDING_CHOICE_HOURS: SettingDef(
         key=TEAMS_PENDING_CHOICE_HOURS,
+        group=GROUP_TEAMS,
         label="Teams intake: how long a question about which request a message is for waits (hours)",
         kind="count",
         description=(
@@ -187,6 +244,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     REPLY_ATTACH_MAX_MB: SettingDef(
         key=REPLY_ATTACH_MAX_MB,
+        group=GROUP_PORTAL,
         label="Agent replies: most attachments on one email to the requester (MB in all)",
         kind="count",
         description=(
@@ -199,6 +257,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     REQUESTER_UPLOAD_TOTAL_MB: SettingDef(
         key=REQUESTER_UPLOAD_TOTAL_MB,
+        group=GROUP_PORTAL,
         label="Portal: most files a requester can add to one reply or new request (MB in all)",
         kind="count",
         description=(
@@ -210,6 +269,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     REPLY_HELD_FILE_HOURS: SettingDef(
         key=REPLY_HELD_FILE_HOURS,
+        group=GROUP_PORTAL,
         label="Agent replies: how long files wait for the preview to be confirmed (hours)",
         kind="count",
         description=(
@@ -220,6 +280,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     APPROVAL_LINK_MINUTES: SettingDef(
         key=APPROVAL_LINK_MINUTES,
+        group=GROUP_APPROVALS,
         label="How long an emailed approve/decline link works (minutes)",
         kind="minutes",
         description=(
@@ -230,6 +291,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     FEEDBACK_LINK_MINUTES: SettingDef(
         key=FEEDBACK_LINK_MINUTES,
+        group=GROUP_RESOLVING,
         label="How long the emailed feedback link works (minutes)",
         kind="minutes",
         description=(
@@ -240,6 +302,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     AUTOMATIC_EMAIL_CAP: SettingDef(
         key=AUTOMATIC_EMAIL_CAP,
+        group=GROUP_MAIL,
         label="Automatic emails to one ticket's requester, at most per day",
         kind="count",
         description=(
@@ -251,6 +314,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     INBOUND_MAX_PER_SENDER_HOUR: SettingDef(
         key=INBOUND_MAX_PER_SENDER_HOUR,
+        group=GROUP_MAIL,
         label="Inbound mail: most tickets and replies from one sender in an hour",
         kind="count",
         description=(
@@ -262,6 +326,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     INBOUND_MAX_ATTACHMENTS: SettingDef(
         key=INBOUND_MAX_ATTACHMENTS,
+        group=GROUP_MAIL,
         label="Inbound mail: most attachments kept from one email",
         kind="count",
         description="Files beyond this many on one email are not kept; the ticket notes which were skipped. Placeholder.",
@@ -269,6 +334,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     INBOUND_MAX_CC: SettingDef(
         key=INBOUND_MAX_CC,
+        group=GROUP_MAIL,
         label="Inbound mail: most Cc addresses made followers from one email",
         kind="count",
         description=(
@@ -279,6 +345,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     TEAMS_MAX_PER_PERSON_HOUR: SettingDef(
         key=TEAMS_MAX_PER_PERSON_HOUR,
+        group=GROUP_TEAMS,
         label="Teams intake: most tickets and replies from one person in an hour",
         kind="count",
         description=(
@@ -290,6 +357,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     GRAPH_SUBSCRIPTION_MINUTES: SettingDef(
         key=GRAPH_SUBSCRIPTION_MINUTES,
+        group=GROUP_MAIL,
         label="Mail subscription lifetime when created or renewed (minutes)",
         kind="minutes",
         description=(
@@ -301,6 +369,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     GRAPH_RENEW_MARGIN_MINUTES: SettingDef(
         key=GRAPH_RENEW_MARGIN_MINUTES,
+        group=GROUP_MAIL,
         label="Renew the mail subscription when this little time is left (minutes)",
         kind="minutes",
         description=(
@@ -311,6 +380,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     MAIL_BACKFILL_DAYS: SettingDef(
         key=MAIL_BACKFILL_DAYS,
+        group=GROUP_MAIL,
         label="Mail catch-up: how many days back a restarted sync looks",
         kind="count",
         description=(
@@ -323,6 +393,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     JOB_LEASE_MINUTES: SettingDef(
         key=JOB_LEASE_MINUTES,
+        group=GROUP_OTHER,
         label="Recurring jobs: how long a run may hold its job (minutes)",
         kind="minutes",
         description=(
@@ -334,6 +405,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     JOB_RETRY_MINUTES: SettingDef(
         key=JOB_RETRY_MINUTES,
+        group=GROUP_OTHER,
         label="Recurring jobs: wait before retrying a failed run (minutes)",
         kind="minutes",
         description="After a failure the job is tried again after this long, or at its next normal time if that is sooner.",
@@ -341,6 +413,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     JOB_LATE_MINUTES: SettingDef(
         key=JOB_LATE_MINUTES,
+        group=GROUP_OTHER,
         label="Recurring jobs: how overdue counts as late (minutes)",
         kind="minutes",
         description=(
@@ -351,6 +424,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     SESSION_IDLE_MINUTES: SettingDef(
         key=SESSION_IDLE_MINUTES,
+        group=GROUP_SIGN_IN,
         label="Sign-in: idle timeout (minutes)",
         kind="minutes",
         description=(
@@ -361,6 +435,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     BREAK_GLASS_IDLE_MINUTES: SettingDef(
         key=BREAK_GLASS_IDLE_MINUTES,
+        group=GROUP_SIGN_IN,
         label="Break-glass sign-in: idle timeout (minutes)",
         kind="minutes",
         description=(
@@ -371,6 +446,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     SESSION_MAX_DAYS: SettingDef(
         key=SESSION_MAX_DAYS,
+        group=GROUP_SIGN_IN,
         label="Sign-in: longest a session can last (days)",
         kind="count",
         description="Even an active session ends this long after sign-in, and the person signs in again. Placeholder 14, TBC. More than 365 counts as 365.",
@@ -378,6 +454,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     EMERGENCY_PASSWORD_MIN_LENGTH: SettingDef(
         key=EMERGENCY_PASSWORD_MIN_LENGTH,
+        group=GROUP_SIGN_IN,
         label="Emergency password: shortest allowed (characters)",
         kind="count",
         description=(
@@ -388,6 +465,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     LINK_CODE_MINUTES: SettingDef(
         key=LINK_CODE_MINUTES,
+        group=GROUP_SIGN_IN,
         label="Link another account: minutes an emailed code stays valid (minutes)",
         kind="count",
         description="The 6-digit code emailed to prove a second address is yours (My settings > Link another account). Placeholder 15, TBC.",
@@ -395,6 +473,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     LINK_CODE_ATTEMPTS: SettingDef(
         key=LINK_CODE_ATTEMPTS,
+        group=GROUP_SIGN_IN,
         label="Link another account: wrong tries allowed per emailed code (attempts)",
         kind="count",
         description="After this many wrong entries the code no longer works and a new one must be asked for. Placeholder 5, TBC.",
@@ -402,6 +481,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     LINK_CODE_PER_USER_HOUR: SettingDef(
         key=LINK_CODE_PER_USER_HOUR,
+        group=GROUP_SIGN_IN,
         label="Link another account: codes one person may ask for per hour (codes)",
         kind="count",
         description="Stops anyone using the form to email many addresses. Placeholder 5, TBC.",
@@ -409,6 +489,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     LINK_CODE_PER_ADDRESS_HOUR: SettingDef(
         key=LINK_CODE_PER_ADDRESS_HOUR,
+        group=GROUP_SIGN_IN,
         label="Link another account: codes one address may be sent per hour (codes)",
         kind="count",
         description="Across everyone, so one mailbox cannot be flooded. Placeholder 3, TBC.",
@@ -416,6 +497,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     SESSION_KEEP_DAYS: SettingDef(
         key=SESSION_KEEP_DAYS,
+        group=GROUP_SIGN_IN,
         label="Sign-in: days to keep ended sessions (days)",
         kind="count",
         description="A daily job deletes the record of a session this long after it expired or was signed out. Placeholder 30, TBC.",
@@ -423,6 +505,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     PRESENCE_RETRY_MINUTES: SettingDef(
         key=PRESENCE_RETRY_MINUTES,
+        group=GROUP_TEAMS,
         label="Out-of-office lookups: wait before retrying a person who could not be read (minutes)",
         kind="minutes",
         description=(
@@ -433,6 +516,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     ENTRA_CHECK_TIME: SettingDef(
         key=ENTRA_CHECK_TIME,
+        group=GROUP_SIGN_IN,
         label="Entra account check: time of the nightly run (HH:MM)",
         kind="clock",
         description=(
@@ -444,6 +528,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     APPROVAL_DEFAULT_PASS_PERCENT: SettingDef(
         key=APPROVAL_DEFAULT_PASS_PERCENT,
+        group=GROUP_APPROVALS,
         label="New request types: share of the group that must approve (percent)",
         kind="vote_percent",
         description=(
@@ -454,6 +539,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     APPROVAL_REMINDERS_ENABLED: SettingDef(
         key=APPROVAL_REMINDERS_ENABLED,
+        group=GROUP_APPROVALS,
         label="Approval reminders: send them",
         kind="flag",
         description=(
@@ -465,6 +551,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     APPROVAL_REMIND_AFTER_DAYS: SettingDef(
         key=APPROVAL_REMIND_AFTER_DAYS,
+        group=GROUP_APPROVALS,
         label="Approval reminders: first reminder after (days)",
         kind="count",
         description="An approver who has not answered is first reminded this many days after the request was sent to them. Placeholder.",
@@ -472,6 +559,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     APPROVAL_REMIND_EVERY_DAYS: SettingDef(
         key=APPROVAL_REMIND_EVERY_DAYS,
+        group=GROUP_APPROVALS,
         label="Approval reminders: repeat every (days)",
         kind="count",
         description="After the first reminder, an approver who still has not answered is reminded again this many days after the last one. Placeholder.",
@@ -479,6 +567,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     APPROVAL_MAX_REMINDERS: SettingDef(
         key=APPROVAL_MAX_REMINDERS,
+        group=GROUP_APPROVALS,
         label="Approval reminders: most reminders to one approver",
         kind="count",
         description="Each approver is reminded at most this many times about one request, then left alone. Placeholder.",
@@ -486,6 +575,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     APPROVAL_ESCALATE_AFTER_DAYS: SettingDef(
         key=APPROVAL_ESCALATE_AFTER_DAYS,
+        group=GROUP_APPROVALS,
         label="Approval reminders: tell the super admins after (days)",
         kind="count",
         description=(
@@ -496,6 +586,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     AUTO_CLOSE_ENABLED: SettingDef(
         key=AUTO_CLOSE_ENABLED,
+        group=GROUP_RESOLVING,
         label="Auto-close: close old resolved tickets",
         kind="flag",
         description=(
@@ -506,6 +597,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     AUTO_CLOSE_AFTER_DAYS: SettingDef(
         key=AUTO_CLOSE_AFTER_DAYS,
+        group=GROUP_RESOLVING,
         label="Auto-close: close a resolved ticket after (days)",
         kind="count",
         description=(
@@ -516,6 +608,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     CHASE_ENABLED: SettingDef(
         key=CHASE_ENABLED,
+        group=GROUP_RESOLVING,
         label="Chase: chase tickets waiting on the requester",
         kind="flag",
         description=(
@@ -526,6 +619,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     CHASE_AFTER_DAYS: SettingDef(
         key=CHASE_AFTER_DAYS,
+        group=GROUP_RESOLVING,
         label="Chase: send the chase email after (days)",
         kind="count",
         description="A ticket in Awaiting user this long with no reply is emailed \"Is this still an issue?\". Placeholder.",
@@ -533,6 +627,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     CHASE_RESOLVE_AFTER_DAYS: SettingDef(
         key=CHASE_RESOLVE_AFTER_DAYS,
+        group=GROUP_RESOLVING,
         label="Chase: resolve automatically after the chase email (days)",
         kind="count",
         description=(
@@ -543,6 +638,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     REQUIRED_BY_LEAD_DAYS: SettingDef(
         key=REQUIRED_BY_LEAD_DAYS,
+        group=GROUP_SERVICE,
         label="Queue lead time (calendar days), when the request type has none",
         kind="count",
         description=(
@@ -554,6 +650,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     DUE_DAYS_BEFORE_REQUIRED_BY: SettingDef(
         key=DUE_DAYS_BEFORE_REQUIRED_BY,
+        group=GROUP_SERVICE,
         label="Due date: days before Required by, when the request type has none",
         kind="count",
         description=(
@@ -565,6 +662,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     SCHEDULED_MORNING_HOUR: SettingDef(
         key=SCHEDULED_MORNING_HOUR,
+        group=GROUP_SERVICE,
         label="Scheduled tickets: the hour that counts as the morning of the Due date (0 to 23)",
         kind="hour",
         description=(
@@ -575,6 +673,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     DEFAULT_TIME_ZONE: SettingDef(
         key=DEFAULT_TIME_ZONE,
+        group=GROUP_OTHER,
         label="Default time zone",
         kind="time_zone",
         description=(
@@ -586,6 +685,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     TIME_ZONE_REFRESH_DAYS: SettingDef(
         key=TIME_ZONE_REFRESH_DAYS,
+        group=GROUP_OTHER,
         label="Requesters' time zones: read their Outlook mailbox again after (days)",
         kind="count",
         description=(
@@ -596,6 +696,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     TIME_ZONE_RETRY_HOURS: SettingDef(
         key=TIME_ZONE_RETRY_HOURS,
+        group=GROUP_OTHER,
         label="Requesters' time zones: try again after a failed lookup after (hours)",
         kind="count",
         description=(
@@ -606,6 +707,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     MSP_ADDRESS: SettingDef(
         key=MSP_ADDRESS,
+        group=GROUP_MSP,
         label="MSP: the address tickets are sent to",
         kind="email",
         description=(
@@ -616,6 +718,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     MSP_HANDOFF_HOUR: SettingDef(
         key=MSP_HANDOFF_HOUR,
+        group=GROUP_MSP,
         label="MSP: the hour of the automatic handoff (0 to 23)",
         kind="hour",
         description=(
@@ -626,6 +729,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     MSP_BUSINESS_MORNING_HOUR: SettingDef(
         key=MSP_BUSINESS_MORNING_HOUR,
+        group=GROUP_MSP,
         label="MSP: the hour business starts again, Monday to Friday (0 to 23)",
         kind="hour",
         description=(
@@ -636,6 +740,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     MSP_BANK_HOLIDAYS: SettingDef(
         key=MSP_BANK_HOLIDAYS,
+        group=GROUP_MSP,
         label="MSP: extra closure days, when there is no business morning",
         kind="dates",
         description=(
@@ -647,6 +752,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     BANK_HOLIDAY_REGION: SettingDef(
         key=BANK_HOLIDAY_REGION,
+        group=GROUP_MSP,
         label="Bank holidays: gov.uk region",
         kind="region",
         description=(
@@ -658,6 +764,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     BANK_HOLIDAY_FAIL_DAYS: SettingDef(
         key=BANK_HOLIDAY_FAIL_DAYS,
+        group=GROUP_MSP,
         label="Bank holidays: fail the fetch job after this many days without a good fetch",
         kind="count",
         description=(
@@ -668,6 +775,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     MSP_HANDOFF_WARN_MINUTES: SettingDef(
         key=MSP_HANDOFF_WARN_MINUTES,
+        group=GROUP_MSP,
         label="MSP: warn the assignee this many minutes before the automatic handoff",
         kind="off_minutes",
         description=(
@@ -678,6 +786,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     MSP_BUSINESS_START: SettingDef(
         key=MSP_BUSINESS_START,
+        group=GROUP_MSP,
         label="MSP: business hours start (HH:MM)",
         kind="clock",
         description=(
@@ -689,6 +798,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     MSP_BUSINESS_END: SettingDef(
         key=MSP_BUSINESS_END,
+        group=GROUP_MSP,
         label="MSP: business hours end (HH:MM)",
         kind="clock",
         description="See the start of business hours. Placeholder: 17:30. An end before the start makes every moment out of hours.",
@@ -696,6 +806,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     MSP_ATTACH_MAX_MB: SettingDef(
         key=MSP_ATTACH_MAX_MB,
+        group=GROUP_MSP,
         label="MSP: most attachments sent with a ticket (MB in all)",
         kind="count",
         description=(
@@ -706,6 +817,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     MSP_SUBJECT_PATTERN: SettingDef(
         key=MSP_SUBJECT_PATTERN,
+        group=GROUP_MSP,
         label="MSP: the pattern of the subject of the MSP's mail",
         kind="regex",
         description=(
@@ -718,6 +830,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     MSP_ACK_MATCH_DAYS: SettingDef(
         key=MSP_ACK_MATCH_DAYS,
+        group=GROUP_MSP,
         label="MSP: how many days back an acknowledgement is matched by its title",
         kind="count",
         description=(
@@ -728,6 +841,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     MSP_ACK_ALERT_MINUTES: SettingDef(
         key=MSP_ACK_ALERT_MINUTES,
+        group=GROUP_MSP,
         label="MSP: tell the assignee when it has not confirmed a ticket after (minutes)",
         kind="off_minutes",
         description=(
@@ -738,6 +852,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     MAX_SUB_TICKETS: SettingDef(
         key=MAX_SUB_TICKETS,
+        group=GROUP_OTHER,
         label="Sub-tickets: most on one ticket",
         kind="count",
         description=(
@@ -748,6 +863,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     BULK_RESOLVE_MAX: SettingDef(
         key=BULK_RESOLVE_MAX,
+        group=GROUP_RESOLVING,
         label="Bulk resolve: most tickets in one go",
         kind="count",
         description="The most tickets an agent can resolve together with one note. Placeholder.",
@@ -755,6 +871,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     SLA_AT_RISK_PERCENT: SettingDef(
         key=SLA_AT_RISK_PERCENT,
+        group=GROUP_SERVICE,
         label="SLA 'at risk' threshold (percent)",
         kind="percent",
         description="A ticket shows amber when this share of its target time or less is left.",
@@ -762,6 +879,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     REPORT_MAX_DAYS: SettingDef(
         key=REPORT_MAX_DAYS,
+        group=GROUP_DATA,
         label="Reports: longest date range (days)",
         kind="count",
         description="The longest date range a report will run for (app/reports.py). A longer range is refused, to keep the queries quick. Placeholder.",
@@ -769,6 +887,7 @@ REGISTRY: dict[str, SettingDef] = {
     ),
     SUBJECT_ACCESS_MAX_MB: SettingDef(
         key=SUBJECT_ACCESS_MAX_MB,
+        group=GROUP_DATA,
         label="Subject access export: most attachment data in one export (MB)",
         kind="count",
         description=(
@@ -814,3 +933,14 @@ def set_setting(session: Session, key: str, value: str) -> None:
     else:
         row.value = value
         session.add(row)
+
+
+def group_definitions(group: str) -> list[SettingDef]:
+    """The settings of one group, in the order they are declared."""
+    return [d for d in REGISTRY.values() if d.group == group]
+
+
+def search_definitions(query: str) -> list[SettingDef]:
+    """Settings whose label or help text holds every word of the query (any case)."""
+    words = query.lower().split()
+    return [d for d in REGISTRY.values() if all(w in f"{d.label} {d.description}".lower() for w in words)]

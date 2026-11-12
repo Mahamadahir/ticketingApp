@@ -727,3 +727,31 @@ th { color: var(--muted); font-weight: 600; }
   .users-panel { flex-basis: 100%; max-width: none; }
 }
 .users-pending { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
+/* The Settings page (9J) */
+.settings-search { margin-bottom: 16px; max-width: 640px; align-items: flex-end; }
+.settings-layout { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+.settings-groups { flex: 1 1 180px; max-width: 230px; display: flex; flex-direction: column; gap: 2px; }
+.grp {
+  display: flex; align-items: center; min-height: 32px; padding: 6px 10px; box-sizing: border-box;
+  border-radius: 6px; color: var(--text); text-decoration: none; font-size: 14px;
+}
+.grp:hover { background: var(--raised); color: var(--text); }
+.grp.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.settings-panel { flex: 999 1 420px; min-width: 0; padding: 22px 24px; box-sizing: border-box; }
+.settings-panel h2 { margin: 0 0 4px; font-size: 18px; }
+.settings-panel > .note { margin: 0 0 10px; }
+.settings-saved { margin: 0 0 8px; color: var(--green); font-weight: 600; }
+.settings-found { list-style: none; margin: 0; padding: 0; }
+.setting {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px 20px;
+  padding: 14px 0; border-top: 1px solid var(--border); align-items: start;
+}
+.setting-text { display: flex; flex-direction: column; gap: 4px; }
+.setting-label { font-weight: 600; }
+.setting-help { color: var(--muted); font-size: 13px; }
+.setting-default { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.setting-input { display: flex; flex-direction: column; gap: 4px; }
+.setting-control { display: flex; align-items: center; gap: 8px; }
+.setting-control input, .setting-control select { flex: 1 1 auto; min-width: 0; }
+.setting-unit { color: var(--muted); font-size: 13px; white-space: nowrap; }
+.settings-panel .form-actions { padding-top: 16px; border-top: 1px solid var(--border); }

@@ -228,11 +228,11 @@ def test_review_refusals(client, db_session):
 def test_the_default_triage_team_setting_is_saved_audited_and_validated(client, db_session):
     desk = create_team(db_session, "Service Desk")
     admin(client)
-    assert "Default triage team" in client.get("/admin/settings").text
+    assert "Default triage team" in client.get("/admin/settings?group=other").text
 
     assert client.post("/admin/settings", data={"key": DEFAULT_TRIAGE_TEAM, "value": str(desk.id)}, follow_redirects=False).status_code == 303
     assert db_session.get(Setting, DEFAULT_TRIAGE_TEAM).value == str(desk.id)
-    assert f'value="{desk.id}" selected' in client.get("/admin/settings").text
+    assert f'value="{desk.id}" selected' in client.get("/admin/settings?group=other").text
     assert [a.action for a in db_session.exec(select(AuditLog).where(AuditLog.entity_type == "setting"))] == ["changed"]
 
     client.post("/admin/settings", data={"key": DEFAULT_TRIAGE_TEAM, "value": str(desk.id)})  # unchanged: not logged again
