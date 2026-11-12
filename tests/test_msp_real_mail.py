@@ -559,3 +559,26 @@ def test_the_title_window_is_measured_from_the_time_the_mail_is_taken_not_the_wa
     handoff_email(db_session, second, subject="Second")
     late = graph_raw("Ticket#7000999/Second -- has been received", msp_headers(), body="<p>none</p>", html=True)
     assert take(db_session, late, IN_HOURS + timedelta(days=8)).outcome == IGNORED_MSP  # outside it
+
+
+def test_a_handoff_sent_after_the_mail_is_not_matched_by_title(db_session):
+    """The far side of the window (#225): a handoff dated after the mail's own time is not one it can acknowledge."""
+    ticket = sent_ticket(db_session)
+    handoff_email(db_session, ticket, subject="Printer offline on floor 3", sent_at=IN_HOURS + timedelta(hours=1))
+    raw = acknowledgement(subject="Ticket#7000237/Printer offline on floor 3 -- has been received", body="<p>no reference</p>")
+    assert take(db_session, raw, IN_HOURS).outcome == IGNORED_MSP  # the handoff is an hour in this mail's future
+    assert len(unmatched(db_session)) == 1
+    db_session.refresh(ticket)
+    assert ticket.msp_ticket_number is None
+
+
+def test_the_title_window_includes_both_of_its_ends(db_session):
+    ticket = sent_ticket(db_session)
+    handoff_email(db_session, ticket, subject="Printer offline on floor 3", sent_at=IN_HOURS)
+    raw = acknowledgement(subject="Ticket#7000237/Printer offline on floor 3 -- has been received", body="<p>no reference</p>")
+    assert take(db_session, raw, IN_HOURS).ticket.id == ticket.id  # sent at the very moment: inside (sent_at <= now)
+
+    second = sent_ticket(db_session, subject="Second")
+    handoff_email(db_session, second, subject="Second", sent_at=IN_HOURS)
+    late = graph_raw("Ticket#7000999/Second -- has been received", msp_headers(), body="<p>none</p>", html=True)
+    assert take(db_session, late, IN_HOURS + timedelta(days=7)).ticket.id == second.id  # exactly N days later: inside

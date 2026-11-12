@@ -854,15 +854,19 @@ def ticket_of_acknowledgement(
 ) -> tuple[Optional[Ticket], Optional[str]]:
     """The ticket an acknowledgement is about: our [INC-n] reference in its title or its body (`reference_of` reads one,
     app/inbound.py's), otherwise the one ticket whose email to the MSP, sent in the last N days (a setting), had exactly
-    this title as its subject. More than one such ticket, or none, is no match. Only a ticket that was sent to the MSP."""
+    this title as its subject. The window is closed at both ends, `now - N days <= sent_at <= now`: a handoff sent after
+    the mail's own time is not one it can be an acknowledgement of. More than one such ticket, or none, is no match. Only
+    a ticket that was sent to the MSP."""
     for text in (title, body):
         ticket = reference_of(session, text)
         if ticket is not None and sent_to_msp(session, ticket):
             return ticket, "reference"
-    since = (now or datetime.now(timezone.utc)) - timedelta(days=count_setting(session, MSP_ACK_MATCH_DAYS))
+    now = now or datetime.now(timezone.utc)
+    since = now - timedelta(days=count_setting(session, MSP_ACK_MATCH_DAYS))
     rows = session.exec(
         select(OutboundEmail.ticket_id, OutboundEmail.subject).where(
             OutboundEmail.kind == MSP_HANDOFF, OutboundEmail.sent_at.is_not(None), OutboundEmail.sent_at >= since,
+            OutboundEmail.sent_at <= now,
             func.regexp_replace(func.btrim(OutboundEmail.subject), r"\s+", " ", "g") == " ".join(title.split()),
         )
     ).all()
