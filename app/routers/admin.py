@@ -681,7 +681,8 @@ def list_teams(
     ticket_counts = dict(
         session.exec(select(Ticket.team_id, func.count(Ticket.id)).group_by(Ticket.team_id)).all()
     )
-    selected = session.get(Team, _query_id(team)) if _query_id(team) is not None else None
+    selected_id = _query_id(team)
+    selected = session.get(Team, selected_id) if selected_id is not None else None
     selected_members = (
         session.exec(
             select(User, TeamMembership.level)
@@ -835,9 +836,9 @@ def list_categories(
     teams = session.exec(select(Team).order_by(Team.name)).all()
     mains = sorted((c for c in categories if c.parent_id is None), key=lambda c: (c.is_other, c.name.lower()))
     subs: dict[int, list[Category]] = {}
-    for category in categories:
-        if category.parent_id is not None:
-            subs.setdefault(category.parent_id, []).append(category)
+    for child in categories:
+        if child.parent_id is not None:
+            subs.setdefault(child.parent_id, []).append(child)
     by_id = {c.id: c for c in categories}
     chosen = by_id.get(chosen_id)
     team_names = {team.id: team.name for team in teams}

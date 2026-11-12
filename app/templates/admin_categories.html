@@ -44,9 +44,9 @@
                 <span class="person-name">&rarr; {{ sub.name }}</span>
               </a>
             </td>
-            <td class="users-teams">{{ teams_by_id[main.team_id].name if main.team_id else "" }} (from {{ main.name }})</td>
+            <td class="users-teams">{% if main.team_id %}{{ teams_by_id[main.team_id].name }} (from {{ main.name }}){% else %}No team yet{% endif %}</td>
             <td>{{ escalation_text[sub.id] }}</td>
-            <td>{{ cat_chip(sub) }}</td>
+            <td>{% if sub.is_active and not main.is_active %}<span class="chip t-amber">Hidden: {{ main.name }} is off</span>{% else %}{{ cat_chip(sub) }}{% endif %}</td>
           </tr>
           {% endfor %}
           {% else %}
