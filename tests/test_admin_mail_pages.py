@@ -72,3 +72,12 @@ def test_outbound_mail_shows_a_state_chip_per_email_and_no_invented_actions(clie
     assert "table-box" in page and "Retry" not in page.replace("Retrying", "") and "Cancel" not in page
     waiting = client.get("/admin/outbound-mail", params={"waiting": "true"}).text
     assert "s@example.com" not in waiting and "w@example.com" in waiting and "Clear filters" in waiting
+
+
+def test_outbound_mail_waiting_filter_with_nothing_waiting_says_so(client, db_session):
+    admin(client, db_session)
+    now = datetime.now(timezone.utc)
+    db_session.add(OutboundEmail(kind="acknowledgement", to_address="s@example.com", subject="s", body="b", attempts=1, sent_at=now, created_at=now))
+    db_session.commit()
+    page = client.get("/admin/outbound-mail", params={"waiting": "true"}).text
+    assert "Nothing waiting" in page and "No emails yet" not in page

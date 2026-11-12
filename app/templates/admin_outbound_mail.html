@@ -53,7 +53,11 @@
   </table>
 </div>
 {% else %}
+{% if waiting %}
+<div class="empty-state"><strong>Nothing waiting.</strong><span>Every queued email has been sent or given up on.</span></div>
+{% else %}
 <div class="empty-state"><strong>No emails yet.</strong><span>Emails the app queues will be listed here.</span></div>
+{% endif %}
 {% endif %}
 
 {% include "_pagination.html" %}
