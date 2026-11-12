@@ -97,6 +97,7 @@ from app.email_templates import (
     REGISTRY as EMAIL_TEMPLATES,
     TemplateError,
     current_text,
+    customised_keys,
     definition as email_template_def,
     is_customised,
     render_preview,
@@ -1151,9 +1152,10 @@ def _email_templates_list(request: Request, user: User, session: Session):
     """The list page: every template under the audience it is for, with a chip when it differs from the default.
     The wording is edited on its own page (`/admin/email-templates/{key}`)."""
     groups = []
+    customised = customised_keys(session)
     for audience_key, title, blurb in AUDIENCES:
         rows = [
-            {"defn": defn, "customised": is_customised(session, defn.key)}
+            {"defn": defn, "customised": defn.key in customised}
             for defn in EMAIL_TEMPLATES.values() if AUDIENCE_OF[defn.key] == audience_key
         ]
         groups.append({"key": audience_key, "title": title, "blurb": blurb, "rows": rows})

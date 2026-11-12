@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.models import EmailTemplate, Ticket
 
@@ -619,6 +619,11 @@ def render_preview(defn: TemplateDef, subject: Optional[str], body: str) -> Rend
 
 def is_customised(session: Session, key: str) -> bool:
     return session.get(EmailTemplate, key) is not None
+
+
+def customised_keys(session: Session) -> set[str]:
+    """The keys of every template that differs from its default, in one query (for the list page)."""
+    return set(session.exec(select(EmailTemplate.key)).all())
 
 
 def save_template(session: Session, key: str, subject: Optional[str], body: str, editor_email: str) -> Optional[EmailTemplate]:
