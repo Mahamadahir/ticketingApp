@@ -436,12 +436,12 @@ def test_an_admin_can_deactivate_and_reactivate_a_user_and_it_is_audited(client,
 
     agent = an_agent(db_session, "ann@example.com", "Ann")
     login_as(client, "admin@example.com")
-    assert "Deactivate" in client.get("/admin/users").text
+    assert "Deactivate" in client.get(f"/admin/users?user={agent.id}").text
 
     client.post(f"/admin/users/{agent.id}/active", data={"is_active": "false"}, follow_redirects=False)
     db_session.expire_all()
     assert db_session.get(User, agent.id).is_active is False
-    assert "Activate" in client.get("/admin/users").text
+    assert "Activate" in client.get(f"/admin/users?user={agent.id}").text
 
     client.post(f"/admin/users/{agent.id}/active", data={"is_active": "true"}, follow_redirects=False)
     db_session.expire_all()

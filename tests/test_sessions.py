@@ -395,11 +395,15 @@ def test_a_deactivated_user_cannot_sign_in_through_entra(client, db_session, mon
 
 
 def test_the_admin_users_page_shows_the_oid_and_session_count(client, db_session):
-    db_session.add(User(email="x@example.com", display_name="X", entra_object_id=OID))
+    person = User(email="x@example.com", display_name="X", entra_object_id=OID)
+    db_session.add(person)
     db_session.commit()
-    login_as(client, "admin@example.com")
-    text = client.get("/admin/users").text
-    assert OID in text and "Sign out everywhere" in text and "1 signed-in session" in text
+    admin_id = login_as(client, "admin@example.com")
+    text = client.get(f"/admin/users?user={person.id}").text
+    assert OID in text and "Sign out everywhere" in text and "0 signed-in sessions" in text
+    # the signed-in admin holds the one live session, shown on their own panel
+    assert "1 signed-in session" in client.get(f"/admin/users?user={admin_id}").text
+
 
 
 def test_a_very_short_idle_timeout_still_keeps_an_active_session_alive(client, db_session):

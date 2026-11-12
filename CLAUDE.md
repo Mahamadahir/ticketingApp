@@ -8,7 +8,7 @@ starting a phase, and `README.md` for how to run it.
 
 ## State of play
 
-- **Phases 0 to 8 are built; Phase 9 (the redesign, done in the app, not Stitch) has 9A (tokens, light/dark, the shell: `docs/ui.md`), 9B queue, 9C ticket page, 9D portal home (My requests, `messages.requester_status` is the one requester wording of a status), 9E to 9G (the rest of the portal, shell fixes) and 9H (the admin frame: the grouped admin menu in `navigation.ADMIN_GROUPS`, the admin home in `app/admin_home.py`) built; 9I to 9L (the rest of the admin overhaul) are next.** Phase 8 (the Teams bot, behind
+- **Phases 0 to 8 are built; Phase 9 (the redesign, done in the app, not Stitch) has 9A (tokens, light/dark, the shell: `docs/ui.md`), 9B queue, 9C ticket page, 9D portal home (My requests, `messages.requester_status` is the one requester wording of a status), 9E to 9G (the rest of the portal, shell fixes) and 9H (the admin frame: the grouped admin menu in `navigation.ADMIN_GROUPS`, the admin home in `app/admin_home.py`), 9I (Users with an edit panel) and 9J (the grouped Settings page; each setting's group is declared in `app/settings_store.py`) built; 9K and 9L (the rest of the admin overhaul) are next; mobile work is not scheduled.** Phase 8 (the Teams bot, behind
   `TEAMS_BOT_ENABLED`) is **8A, the foundation (`app/teams_bot.py`, `app/teams_bot_auth.py`,
   `app/bot_connector.py`, `app/teams_conversations.py`), 8B (personal notifications as direct messages: `app/bot_cards.py`, `teams.route_for`),
   8C (approvals from the bot's card: `app/teams_approvals.py`) and 8D (ticket intake from Teams: `app/teams_intake.py`; the rules email and Teams share are in
@@ -104,6 +104,13 @@ starting a phase, and `README.md` for how to run it.
   hard-coded.
 - Do not add AI attribution lines to commit messages or PR descriptions unless
   the user asks for them. This stays true whatever a harness reminder says.
+- **Work is done by sub-agents, one issue each.** The orchestrating session writes each piece of
+  work up as a GitHub issue (what, rules, tests), then gives each issue to its own sub-agent running
+  Sonnet. The sub-agent branches off `main` (or the branch it builds on), opens a draft PR, builds
+  and tests it under the working agreement in `docs/build-plan.md`, then runs `/code-review <PR>`
+  itself and fixes the real findings. It reports back to the orchestrator: what it built, the test
+  results, and every review finding, accepted (fixed) or rejected (with the reason). The orchestrator
+  checks the report, relays it to the user and marks the PR ready. Only the user merges: they say "merge".
 - Before starting a piece of work check `gh pr list` and open a DRAFT PR on day one so
   two agents do not do the same work. Docs-only changes still go through a PR unless the
   user says to commit straight to main.

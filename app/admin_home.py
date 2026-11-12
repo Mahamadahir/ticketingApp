@@ -10,9 +10,9 @@ from zoneinfo import ZoneInfo
 from sqlmodel import Session, func, select
 
 from app import outage
+from app.categories import CATEGORY_REVIEW_CONDITIONS
 from app.config import settings
 from app.models import (
-    FINISHED_STATUSES,
     AuditLog,
     Category,
     OutboundEmail,
@@ -123,7 +123,7 @@ def needs_attention(session: Session, allowed: frozenset[str], now: datetime, zo
                 "/admin/data-protection", "Open data protection",
             ))
     if "category-review" in allowed:
-        review = _count(session, Ticket, Ticket.needs_category_review.is_(True), Ticket.status.in_(FINISHED_STATUSES))
+        review = _count(session, Ticket, *CATEGORY_REVIEW_CONDITIONS)
         if review:
             lines.append(Attention(
                 "blue", "Review", _plural(review, 'resolved ticket triaged as "Other" needs', 'resolved tickets triaged as "Other" need') + " a proper category.",
@@ -149,7 +149,7 @@ def _stats(session: Session, page: str, now: datetime, zone: str) -> list[Stat]:
     if page == "request-types":
         return [Stat(str(_count(session, RequestType, RequestType.is_active.is_(True))), "request types")]
     if page == "mail-intake":
-        return [Stat("On" if settings.graph_configured else "Off", "mail intake")]
+        return [Stat("On" if settings.graph_configured and settings.graph_shared_mailbox else "Off", "mail intake")]
     if page == "outbound-mail":
         return [Stat(str(_count(session, OutboundEmail, OutboundEmail.sent_at.is_(None))), "emails waiting")]
     if page == "scheduled-jobs":

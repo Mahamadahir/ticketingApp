@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from app.templating import templates
 from sqlalchemy import or_
@@ -24,9 +24,11 @@ from app import emergency, linked_identities as links, outage
 from app.audit import log_action
 from app.admin_home import area_cards, needs_attention
 from app.auth import get_current_user, hash_password, require_permission, require_roles
+from app.user_filters import USER_STATUS_LABELS, filter_users
 from app.permissions import ASSIGNABLE_ROLES, MANAGE_REQUEST_TEMPLATES, PERMISSIONS
 from app.sla import impact_options, urgency_options
 from app.categories import (
+    CATEGORY_REVIEW_CONDITIONS,
     CategoryError,
     create_category,
     ensure_other,
@@ -200,6 +202,11 @@ def admin_home(request: Request, user: User = Depends(get_current_user), session
     )
 
 
+def _panel_url(user_id: int) -> str:
+    """After a change to one person the page opens on that person's panel again."""
+    return f"/admin/users?user={user_id}"
+
+
 @router.get("/users", response_class=HTMLResponse)
 def list_users(
     request: Request,
@@ -207,6 +214,12 @@ def list_users(
     inactive: Optional[str] = None,
     link_error: str = "",
     aliases: int = 0,
+    q: str = "",
+    role: str = "",
+    team: str = "",
+    status: str = "",
+    selected_id: str = Query("", alias="user"),
+    new: str = "",
     user: User = Depends(require_super_admin),
     session: Session = Depends(get_session),
 ):
@@ -220,11 +233,21 @@ def list_users(
             .where(Ticket.assigned_agent_id == User.id, Ticket.status.not_in(FINISHED_STATUSES))
             .exists(),
         )
+    query = filter_users(query, q, role, team, status)
     users_page = paginate(session, query, page, request.query_params)
     teams = session.exec(select(Team).order_by(Team.name)).all()
-    teams_by_id = {team.id: team for team in teams}
+    teams_by_id = {team_row.id: team_row for team_row in teams}
 
+    # The person whose panel is open (a person outside the current filter or page can still be opened).
+    # `user` and `new` are read leniently: a hand-edited value that means nothing is "nobody", not an error page.
+    creating = new.strip() not in ("", "0")
+    user_id = int(selected_id) if selected_id.isascii() and selected_id.isdigit() and int(selected_id) < 2**31 else None
+    selected = session.get(User, user_id) if user_id else None
+    if creating:
+        selected = None
     user_ids = [u.id for u in users_page.items]
+    if selected is not None and selected.id not in user_ids:
+        user_ids.append(selected.id)
     memberships: dict[int, list[TeamMembership]] = {}
     if user_ids:
         rows = session.exec(select(TeamMembership).where(TeamMembership.user_id.in_(user_ids))).all()
@@ -235,6 +258,25 @@ def list_users(
     if user_ids:
         for row in session.exec(select(UserPermission).where(UserPermission.user_id.in_(user_ids))).all():
             granted.setdefault(row.user_id, set()).add(row.permission)
+
+    merged_into = {
+        link.secondary_user_id: link.main_user_id
+        for link in session.exec(
+            select(LinkedIdentity).where(LinkedIdentity.status == links.ACTIVE, LinkedIdentity.secondary_user_id.in_(user_ids))
+        ).all()
+    } if user_ids else {}
+    # The accounts merged into the selected person, for the panel's "Linked identities" section.
+    merged_in: list[User] = []
+    if selected is not None:
+        for link in session.exec(
+            select(LinkedIdentity).where(LinkedIdentity.status == links.ACTIVE, LinkedIdentity.main_user_id == selected.id)
+        ).all():
+            other = session.get(User, link.secondary_user_id) if link.secondary_user_id else None
+            if other is not None:
+                merged_in.append(other)
+
+    # A row's link keeps the filters and the page, and adds the person.
+    row_query = {key: value for key, value in request.query_params.items() if key not in ("user", "new", "link_error") and value}
 
     return templates.TemplateResponse(
         request,
@@ -250,17 +292,19 @@ def list_users(
             "memberships": memberships,
             "levels": list(MembershipLevel),
             "roles": list(UserRole),
+            "statuses": USER_STATUS_LABELS,
+            "filters": {"q": q.strip(), "role": role, "team": team.strip(), "status": status},
+            "row_query": row_query,
+            "selected": selected,
+            "selected_missing": bool(selected_id) and selected is None and not creating,
+            "creating": creating,
+            "merged_in": merged_in,
             "now": datetime.now(timezone.utc),
             "live_sessions": live_session_counts(session, user_ids),
             "pending_links": links.rows_for(session, links.PENDING),
             "active_links": links.rows_for(session, links.ACTIVE, aliases=bool(aliases), limit=200),
             "show_aliases": bool(aliases),
-            "merged_into": {
-                link.secondary_user_id: link.main_user_id
-                for link in session.exec(
-                    select(LinkedIdentity).where(LinkedIdentity.status == links.ACTIVE, LinkedIdentity.secondary_user_id.in_(user_ids))
-                ).all()
-            } if user_ids else {},
+            "merged_into": merged_into,
             "link_error": link_error,
             "user": user,
         },
@@ -394,7 +438,7 @@ def update_user(
 
     session.add(target)
     session.commit()
-    return RedirectResponse("/admin/users", status_code=303)
+    return RedirectResponse(_panel_url(user_id), status_code=303)
 
 
 @router.post("/users/{user_id}/permissions")
@@ -431,7 +475,7 @@ def set_user_permissions(
             session.delete(row)
             log_action(session, admin.email, "user", target.id, "permission_revoked", key)
     session.commit()
-    return RedirectResponse("/admin/users", status_code=303)
+    return RedirectResponse(_panel_url(user_id), status_code=303)
 
 
 @router.post("/users/{user_id}/memberships")
@@ -464,7 +508,7 @@ def set_membership(
         membership.level = level
         session.add(membership)
     session.commit()
-    return RedirectResponse("/admin/users", status_code=303)
+    return RedirectResponse(_panel_url(user_id), status_code=303)
 
 
 @router.post("/users/{user_id}/memberships/{team_id}/remove")
@@ -485,7 +529,7 @@ def remove_membership(
     )
     session.delete(membership)
     session.commit()
-    return RedirectResponse("/admin/users", status_code=303)
+    return RedirectResponse(_panel_url(user_id), status_code=303)
 
 
 @router.post("/users/{user_id}/active")
@@ -514,7 +558,7 @@ def set_user_active(
         else:
             start_waiting_rounds(session, admin.email)  # a request waiting for approvers may now have one (#161)
         session.commit()
-    return RedirectResponse("/admin/users", status_code=303)
+    return RedirectResponse(_panel_url(user_id), status_code=303)
 
 
 @router.post("/users/{user_id}/sign-out")
@@ -530,7 +574,7 @@ def sign_out_user_everywhere(
     ended = revoke_user_sessions(session, target.id)
     log_action(session, admin.email, "user", target.id, "signed_out_everywhere", f"by a super admin; {ended} ended")
     session.commit()
-    return RedirectResponse("/admin/users", status_code=303)
+    return RedirectResponse(_panel_url(user_id), status_code=303)
 
 
 @router.post("/users/{user_id}/clear-oid")
@@ -551,7 +595,7 @@ def clear_user_object_id(
     session.add(target)
     revoke_user_sessions(session, target.id)
     session.commit()
-    return RedirectResponse("/admin/users", status_code=303)
+    return RedirectResponse(_panel_url(user_id), status_code=303)
 
 
 @router.post("/users/{user_id}/unlock")
@@ -573,7 +617,7 @@ def unlock_user(
     target.locked_until = None
     session.add(target)
     session.commit()
-    return RedirectResponse("/admin/users", status_code=303)
+    return RedirectResponse(_panel_url(user_id), status_code=303)
 
 
 @router.post("/users")
@@ -611,7 +655,7 @@ def create_local_user(
         session.add(TeamMembership(user_id=local_user.id, team_id=team.id, level=level))
         log_action(session, admin.email, "user", local_user.id, "membership_added", f"{team.name}: {level.value}")
     session.commit()
-    return RedirectResponse("/admin/users", status_code=303)
+    return RedirectResponse(_panel_url(local_user.id), status_code=303)
 
 
 @router.get("/teams", response_class=HTMLResponse)
@@ -1729,7 +1773,7 @@ def _review_queue(session: Session) -> list[Ticket]:
     return list(
         session.exec(
             select(Ticket)
-            .where(Ticket.needs_category_review.is_(True), Ticket.status.in_(FINISHED_STATUSES))
+            .where(*CATEGORY_REVIEW_CONDITIONS)
             .order_by(Ticket.resolved_at.desc(), Ticket.id.desc())
         ).all()
     )
