@@ -114,3 +114,19 @@ def test_feedback_is_filters_and_a_table_with_rating_chips(client, db_session, d
     ann = login_as(client, "agent@example.com", "Agent Ann")
     sign_in(client, "admin@example.com", "Admin Alice")
     assert "empty-state" in client.get("/admin/feedback", params={"agent": ann, "rating": "2"}).text
+
+
+def test_scheduled_jobs_chip_follows_the_health_rules_for_overdue_and_retired_jobs(client, db_session, monkeypatch):
+    from datetime import timedelta
+    from app.models import ScheduledJob
+
+    admin(client, db_session)
+    monkeypatch.setattr(scheduled_jobs, "SCHEDULED_JOBS", [failing_job("late-one")])
+    monkeypatch.setattr("app.routers.admin.SCHEDULED_JOBS", scheduled_jobs.SCHEDULED_JOBS)
+    now = datetime.now(timezone.utc)
+    db_session.add(ScheduledJob(name="late-one", next_run_at=now - timedelta(days=2), last_success_at=now - timedelta(days=3)))
+    db_session.add(ScheduledJob(name="gone-job", next_run_at=now, failures_in_a_row=2, last_error="x"))
+    db_session.commit()
+    page = client.get("/admin/scheduled-jobs").text
+    assert 'chip t-amber">Overdue' in page and 'chip t-gray">Retired' in page
+    assert 'chip t-green">Worked' not in page and 'chip t-red">Failing' not in page

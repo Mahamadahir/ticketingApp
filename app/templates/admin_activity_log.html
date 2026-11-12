@@ -40,7 +40,7 @@
         <td>{{ row.event_type.replace("_", " ") }}</td>
         <td>{{ row.actor_email or "(not signed in)" }}</td>
         <td>{% if row.path %}{{ row.method }} {{ row.path }}{% endif %}</td>
-        <td>{% if row.status_code %}<span class="chip {{ 't-red' if row.status_code >= 500 else ('t-amber' if row.status_code >= 400 else 't-green') }}">{{ row.status_code }}</span>{% endif %}</td>
+        <td>{% if row.status_code %}<span class="chip {{ 't-red' if row.status_code >= 500 else ('t-amber' if row.status_code >= 400 else ('t-gray' if row.status_code >= 300 else 't-green')) }}">{{ row.status_code }}</span>{% endif %}</td>
         <td>{{ row.ip or "" }}</td>
         <td title="{{ row.user_agent or '' }}">{{ (row.user_agent or "")[:40] }}</td>
         <td>{{ row.detail or "" }}</td>

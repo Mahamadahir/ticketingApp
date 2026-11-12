@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Admin: Recurring jobs{% endblock %}
+{% block title %}Admin: Scheduled jobs{% endblock %}
 {% block content %}
 {# 9L: the jobs as a table with a last-result chip. There is no run-now route today (the worker runs each job when it is due),
    so none is drawn here. #}
@@ -27,8 +27,10 @@
         <td>{{ intervals.get(row.name, "retired") }}</td>
         <td>{{ row.last_started_at|local_time if row.last_started_at else "never" }}</td>
         <td>
-          {% if row.failures_in_a_row %}<span class="chip t-red">Failing</span>
+          {% if row.name not in registered %}<span class="chip t-gray">Retired</span>
+          {% elif row.failures_in_a_row %}<span class="chip t-red">Failing</span>
           {% elif row.lease_expires_at and row.lease_expires_at <= now %}<span class="chip t-amber">Did not finish</span>
+          {% elif row.name in overdue %}<span class="chip t-amber">Overdue</span>
           {% elif row.last_success_at %}<span class="chip t-green">Worked</span>
           {% else %}<span class="chip t-gray">Never run</span>{% endif %}
           <br /><span class="muted small">{% if row.last_success_at %}last success {{ row.last_success_at|local_time }}{% else %}no success yet{% endif %}</span>

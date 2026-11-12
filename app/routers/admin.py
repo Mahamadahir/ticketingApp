@@ -150,7 +150,7 @@ from app.models import (
     UserRole,
 )
 from app.pagination import paginate
-from app.scheduled_jobs import SCHEDULED_JOBS, status_line, timing
+from app.scheduled_jobs import SCHEDULED_JOBS, job_health, status_line, timing
 from app.settings_store import (
     BANK_HOLIDAY_REGION,
     APPROVAL_DEFAULT_PASS_PERCENT,
@@ -2326,11 +2326,13 @@ def view_scheduled_jobs(
     and why it last failed, under one status line."""
     now = datetime.now(timezone.utc)
     rows = session.exec(select(ScheduledJob).order_by(ScheduledJob.name)).all()
+    late, registered = timing(session, JOB_LATE_MINUTES), {job.name for job in SCHEDULED_JOBS}
     return templates.TemplateResponse(
         request,
         "admin_scheduled_jobs.html",
         {
-            "rows": rows, "status": status_line(rows, now, timing(session, JOB_LATE_MINUTES), {job.name for job in SCHEDULED_JOBS}),
+            "rows": rows, "status": status_line(rows, now, late, registered),
+            "overdue": set(job_health(rows, now, late, registered).overdue), "registered": registered,
             "intervals": {job.name: _every_text(job.every_seconds) for job in SCHEDULED_JOBS}, "now": now, "user": user,
         },
     )

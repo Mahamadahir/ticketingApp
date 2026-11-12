@@ -9,6 +9,7 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from sqlmodel import Session, select
 
 from app import anonymisation
+from app.admin_home import BLOB_DELETE_FAILURES_TO_SHOW
 from app.auth import require_permission
 from app.database import get_session
 from app.models import PendingBlobDelete, User
@@ -30,6 +31,7 @@ def _page(request: Request, user: User, session: Session, *, address: str = "", 
         request, "admin_data_protection.html",
         {
             "user": user, "max_mb": count_setting(session, SUBJECT_ACCESS_MAX_MB), "address": address, "error": error,
+            "blob_failures_to_show": BLOB_DELETE_FAILURES_TO_SHOW,
             "waiting_deletes": session.exec(select(PendingBlobDelete).order_by(PendingBlobDelete.created_at).limit(20)).all(),
         },
         status_code=status,
