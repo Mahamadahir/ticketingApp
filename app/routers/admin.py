@@ -958,14 +958,20 @@ def _set_escalation(session: Session, admin: User, category: Category, choice: s
 @router.get("/canned", response_class=HTMLResponse)
 def list_canned(
     request: Request,
+    chosen: Optional[str] = Query(None, alias="response"),
+    new: Optional[str] = None,
     user: User = Depends(require_super_admin),
     session: Session = Depends(get_session),
 ):
+    responses = all_canned(session)
+    selected = next((r for r in responses if str(r.id) == (chosen or "").strip()), None)
     return templates.TemplateResponse(
         request,
         "admin_canned.html",
         {
-            "responses": all_canned(session),
+            "selected": selected,
+            "creating": bool(new) and selected is None,
+            "responses": responses,
             "placeholders": PLACEHOLDERS,
             "max_title_length": MAX_TITLE_LENGTH,
             "max_message_length": MAX_MESSAGE_LENGTH,
@@ -987,7 +993,7 @@ def add_canned(
         raise HTTPException(status_code=400, detail=str(error))
     log_action(session, admin.email, "canned_response", canned.id, "created", canned.title)
     session.commit()
-    return RedirectResponse("/admin/canned", status_code=303)
+    return RedirectResponse(f"/admin/canned?response={canned.id}", status_code=303)
 
 
 @router.post("/canned/{canned_id}")
@@ -1019,7 +1025,7 @@ def edit_canned(
             "activated" if canned.is_active else "deactivated", canned.title,
         )
     session.commit()
-    return RedirectResponse("/admin/canned", status_code=303)
+    return RedirectResponse(f"/admin/canned?response={canned.id}", status_code=303)
 
 
 # ---- Never-follow list (4B-2) ----------------------------------------------------------
@@ -1517,7 +1523,7 @@ def add_request_type(
         raise HTTPException(status_code=400, detail=str(error))
     log_action(session, admin.email, "request_type", request_type.id, "created", request_type.name)
     session.commit()
-    return RedirectResponse("/admin/request-types", status_code=303)
+    return RedirectResponse(f"/admin/request-types?type={request_type.id}", status_code=303)
 
 
 @router.post("/request-types/{type_id}")
@@ -1596,7 +1602,7 @@ def edit_request_type(
             "activated" if request_type.is_active else "deactivated", request_type.name,
         )
     session.commit()
-    return RedirectResponse("/admin/request-types", status_code=303)
+    return RedirectResponse(f"/admin/request-types?type={type_id}", status_code=303)
 
 
 def _get_question(session: Session, question_id: int) -> RequestTypeQuestion:
@@ -1650,7 +1656,7 @@ def add_subrequest_template(
         raise HTTPException(status_code=400, detail=str(error))
     log_action(session, admin.email, "request_type", request_type.id, "subrequest_template_added", describe_template(session, template))
     session.commit()
-    return RedirectResponse("/admin/request-types", status_code=303)
+    return RedirectResponse(f"/admin/request-types?type={type_id}", status_code=303)
 
 
 def _get_template(session: Session, template_id: int) -> RequestSubTemplate:
@@ -1692,7 +1698,7 @@ def edit_subrequest_template(
         f"{before} -> {describe_template(session, template)}, available {template.is_active}",
     )
     session.commit()
-    return RedirectResponse("/admin/request-types", status_code=303)
+    return RedirectResponse(f"/admin/request-types?type={template.request_type_id}", status_code=303)
 
 
 @router.post("/request-types/subrequest-templates/{template_id}/move")
@@ -1708,7 +1714,7 @@ def move_subrequest_template(
     if move_template(session, template, direction == "up"):
         log_action(session, admin.email, "request_type", template.request_type_id, "subrequest_template_moved", f"{template.subject_pattern} {direction}")
     session.commit()
-    return RedirectResponse("/admin/request-types", status_code=303)
+    return RedirectResponse(f"/admin/request-types?type={template.request_type_id}", status_code=303)
 
 
 @router.post("/request-types/subrequest-templates/{template_id}/delete")
@@ -1722,7 +1728,7 @@ def delete_subrequest_template(
     delete_sub_template(session, template)
     log_action(session, admin.email, "request_type", type_id, "subrequest_template_deleted", detail)
     session.commit()
-    return RedirectResponse("/admin/request-types", status_code=303)
+    return RedirectResponse(f"/admin/request-types?type={type_id}", status_code=303)
 
 
 @router.post("/request-types/{type_id}/questions")
@@ -1748,7 +1754,7 @@ def add_type_question(
         f"{question.label} ({QUESTION_KINDS[question.kind]}{', required' if question.is_required else ''})",
     )
     session.commit()
-    return RedirectResponse("/admin/request-types", status_code=303)
+    return RedirectResponse(f"/admin/request-types?type={type_id}", status_code=303)
 
 
 @router.post("/request-types/questions/{question_id}")
@@ -1774,7 +1780,7 @@ def edit_type_question(
             f"{before[0]!r} -> {question.label!r}, required {question.is_required}, available {question.is_active}",
         )
     session.commit()
-    return RedirectResponse("/admin/request-types", status_code=303)
+    return RedirectResponse(f"/admin/request-types?type={question.request_type_id}", status_code=303)
 
 
 @router.post("/request-types/questions/{question_id}/move")
@@ -1790,7 +1796,7 @@ def move_type_question(
     if move_question(session, question, direction == "up"):
         log_action(session, admin.email, "request_type", question.request_type_id, "question_moved", f"{question.label} {direction}")
     session.commit()
-    return RedirectResponse("/admin/request-types", status_code=303)
+    return RedirectResponse(f"/admin/request-types?type={question.request_type_id}", status_code=303)
 
 
 @router.post("/request-types/questions/{question_id}/delete")
@@ -1808,7 +1814,7 @@ def delete_type_question(
         raise HTTPException(status_code=400, detail=str(error))
     log_action(session, admin.email, "request_type", type_id, "question_deleted", label)
     session.commit()
-    return RedirectResponse("/admin/request-types", status_code=303)
+    return RedirectResponse(f"/admin/request-types?type={type_id}", status_code=303)
 
 
 # ---- Category review ("Other" tickets, after resolution) ------------------------

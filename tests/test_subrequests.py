@@ -188,7 +188,7 @@ def test_an_admin_adds_edits_orders_and_deletes_templates_with_audit(client, db_
     assert made.condition_groups == [[condition(department.id, "equals", "Finance"), condition(laptop.id, "equals", "yes")]]
     second = post_template(client, request_type, it, laptops, subject_pattern="Phone for {Name}")
     assert second.status_code == 303 and len(db_session.exec(select(RequestSubTemplate)).all()) == 2
-    page = client.get("/admin/request-types").text
+    page = client.get(f"/admin/request-types?type={request_type.id}").text  # the editor (9K)
     assert "Sub-request templates for New starter" in page and "Laptop for {Name}" in page and "Department = Finance" in page
 
     edited = client.post(

@@ -1,32 +1,75 @@
 {% extends "base.html" %}
 {% block title %}Admin: Canned responses{% endblock %}
 {% block content %}
+{# Admin > Canned responses (9K): the list beside the panel of the response chosen (?response=<id>) or the new-response panel (?new=1).
+   The forms post to their existing routes with their existing field names. #}
+<header class="users-head">
+  <div class="admin-head">
+    <h1>Canned responses</h1>
+    <p>Ready-made replies agents can drop into the email box on a ticket. Choose one to edit it.</p>
+  </div>
+  <a class="btn btn-primary users-new" href="/admin/canned?new=1">New canned response</a>
+</header>
 
-<h2>Canned responses</h2>
-<p class="note">
-  Ready-made replies agents can drop into the email box on a ticket. Picking one only fills the box:
-  the agent reads, edits and sends it. These placeholders are filled in for the ticket:
-  {% for p in placeholders %}<code>{{ p }}</code>{{ ", " if not loop.last else "" }}{% endfor %}.
-  Switching one off hides it from agents; the wording is kept here.
-</p>
+<div class="users-cols">
+  <div class="users-list">
+    <div class="table-box">
+      <table class="table users-table">
+        <caption class="sr-only">Canned responses</caption>
+        <thead>
+          <tr><th scope="col">Title</th><th scope="col">Status</th></tr>
+        </thead>
+        <tbody>
+          {% for r in responses %}
+          <tr {% if selected and selected.id == r.id %}class="sel"{% endif %}>
+            <td><a class="person-cell" href="/admin/canned?response={{ r.id }}"{% if selected and selected.id == r.id %} aria-current="true"{% endif %}><span class="person-name">{{ r.title }}</span><span class="person-email">{{ r.body|truncate(90) }}</span></a></td>
+            <td><span class="chip {{ 't-green' if r.is_active else 't-gray' }}">{{ "Available" if r.is_active else "Off" }}</span></td>
+          </tr>
+          {% else %}
+          <tr><td colspan="2"><div class="empty-state"><strong>No canned responses yet.</strong><span>Create one with New canned response.</span></div></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="note">
+      Picking one only fills the box: the agent reads, edits and sends it. These placeholders are filled in for the ticket:
+      {% for p in placeholders %}<code>{{ p }}</code>{{ ", " if not loop.last else "" }}{% endfor %}.
+      Switching one off hides it from agents; the wording is kept here.
+    </p>
+  </div>
 
-{% for r in responses %}
-<form method="post" action="/admin/canned/{{ r.id }}">
-  <fieldset>
-    <label>Title <input type="text" name="title" value="{{ r.title }}" maxlength="{{ max_title_length }}" required /></label>
-    <label>Text <textarea name="body" rows="4" maxlength="{{ max_message_length }}" required>{{ r.body }}</textarea></label>
-    <label><input type="checkbox" name="is_active" {{ "checked" if r.is_active else "" }} /> Available to agents</label>
-    <button type="submit">Save</button>
-  </fieldset>
-</form>
-{% else %}
-<p>No canned responses yet.</p>
-{% endfor %}
-
-<h3>New canned response</h3>
-<form method="post" action="/admin/canned">
-  <label>Title <input type="text" name="title" maxlength="{{ max_title_length }}" required /></label>
-  <label>Text <textarea name="body" rows="4" maxlength="{{ max_message_length }}" required></textarea></label>
-  <button type="submit">Create</button>
-</form>
+  {% if creating %}
+  <aside class="card users-panel" aria-label="New canned response">
+    <h2>New canned response</h2>
+    <form method="post" action="/admin/canned">
+      <div class="form-grid">
+        <label class="field">Title <input type="text" name="title" maxlength="{{ max_title_length }}" required /></label>
+        <label class="field">Text <textarea name="body" rows="6" maxlength="{{ max_message_length }}" required></textarea></label>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Create</button>
+        <a class="btn" href="/admin/canned">Cancel</a>
+      </div>
+    </form>
+  </aside>
+  {% elif selected %}
+  <aside class="card users-panel" aria-label="{{ selected.title }}">
+    <div class="up-person">
+      <div class="up-who"><h2>{{ selected.title }}</h2></div>
+      <a class="icon-btn up-close" href="/admin/canned" aria-label="Close the panel">&times;</a>
+    </div>
+    <form method="post" action="/admin/canned/{{ selected.id }}">
+      <div class="form-grid">
+        <label class="field">Title <input type="text" name="title" value="{{ selected.title }}" maxlength="{{ max_title_length }}" required /></label>
+        <label class="field">Text <textarea name="body" rows="8" maxlength="{{ max_message_length }}" required>{{ selected.body }}</textarea></label>
+        <label class="check"><input type="checkbox" name="is_active" {{ "checked" if selected.is_active else "" }} /> Available to agents</label>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Save</button>
+        <a class="btn" href="/admin/canned">Close</a>
+      </div>
+    </form>
+  </aside>
+  {% endif %}
+</div>
 {% endblock %}
