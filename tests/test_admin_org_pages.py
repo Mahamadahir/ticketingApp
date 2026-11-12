@@ -61,6 +61,7 @@ def test_teams_page_empty_state(client, db_session):
 def test_approval_groups_page_has_header_table_and_a_panel_per_group(client, db_session):
     boss_id = boss(client, db_session)
     group = create_group(db_session, "Managers")
+    db_session.commit()
     add_member(db_session, group, "boss@example.com")
     db_session.commit()
 
@@ -168,3 +169,28 @@ def test_a_sub_team_panel_says_the_parents_members_work_it_too(client, db_sessio
     db_session.commit()
     assert "Every member of Support also works this team" in panel(client.get(f"/admin/teams?team={sub.id}").text)
     assert "Every member of" not in panel(client.get(f"/admin/teams?team={support.id}").text)
+
+
+def test_a_query_value_that_means_nothing_is_ignored(client, db_session):
+    boss(client, db_session)
+    for url in ("/admin/teams?team=99999999999", "/admin/teams?team=abc", "/admin/approval-groups?group=99999999999",
+                "/admin/categories?category=99999999999"):
+        assert client.get(url).status_code == 200, url
+    for url in ("/admin/teams?new=0", "/admin/teams?new=false", "/admin/approval-groups?new=0"):
+        assert "<aside" not in client.get(url).text, url
+    assert "<aside" in client.get("/admin/teams?new=1").text
+
+
+def test_saving_in_a_panel_comes_back_to_that_panel(client, db_session):
+    boss(client, db_session)
+    support = create_team(db_session, "Support")
+    group = create_group(db_session, "Managers")
+    db_session.commit()
+    posted = client.post(f"/admin/teams/{support.id}/msp-handoff", data={"included": "on"}, follow_redirects=False)
+    assert posted.status_code == 303, posted.text[:200]
+    assert posted.headers["location"] == f"/admin/teams?team={support.id}"
+    posted = client.post(f"/admin/approval-groups/{group.id}/rename", data={"name": "Heads"}, follow_redirects=False)
+    assert posted.status_code == 303, (posted.status_code, posted.text[:200])
+    assert posted.headers["location"] == f"/admin/approval-groups?group={group.id}"
+    posted = client.post("/admin/teams", data={"name": "Network"}, follow_redirects=False)
+    assert re.fullmatch(r"/admin/teams\?team=\d+", posted.headers["location"])
