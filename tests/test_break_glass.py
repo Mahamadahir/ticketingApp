@@ -314,9 +314,10 @@ def test_break_glass_sessions_use_the_shorter_idle_timeout(client, db_session, i
 def test_admin_users_marks_it_and_points_to_the_command(client, db_session, issued):
     admin = TestClient(app)
     set_role(db_session, login_as(admin, "admin@example.com"), UserRole.SUPER_ADMIN)
-    page = admin.get("/admin/users").text
-    assert "(break-glass)" in page and "python -m app.breakglass reset breakglass1" in page
     user_id = reload(db_session).id
+    assert "Break-glass" in admin.get("/admin/users").text  # the list marks it
+    page = admin.get(f"/admin/users?user={user_id}").text  # its panel points to the command
+    assert "Break-glass" in page and "python -m app.breakglass reset breakglass1" in page
     assert admin.post(f"/admin/users/{user_id}", data={"role": "agent"}).status_code == 400
     assert reload(db_session).role == UserRole.SUPER_ADMIN
     assert issued.password not in page and issued.totp_secret not in page
