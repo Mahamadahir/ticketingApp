@@ -162,15 +162,17 @@ def test_a_template_that_stopped_validating_falls_back_to_the_default(db_session
 # ---- The admin page and preview -------------------------------------------------------------------
 
 
-def test_the_page_lists_every_template_with_a_sample_preview(client, db_session):
+def test_the_page_lists_every_template_and_the_editor_shows_its_sample_preview(client, db_session):
     admin(client, db_session)
     page = client.get("/admin/email-templates").text
     for defn in et.REGISTRY.values():
         assert defn.label in page
-    assert "INC-1042" in page and "Reset to default" not in page
+    editor = client.get("/admin/email-templates/approval_waived").text
+    assert "INC-1042" in editor and "Reset to default" not in editor
     save(client, "approval_waived", "Going ahead, {reference}.")
-    page = client.get("/admin/email-templates").text
-    assert "Reset to default" in page and "Going ahead, INC-1042." in page
+    editor = client.get("/admin/email-templates/approval_waived").text
+    assert "Reset to default" in editor and "Going ahead, INC-1042." in editor
+    assert "Changed" in client.get("/admin/email-templates").text
 
 
 def test_the_preview_shows_sample_data_or_the_problem_and_saves_nothing(client, db_session):
@@ -307,3 +309,33 @@ def test_the_waived_notice_reads_as_it_always_did(client, db_session, dev_mail):
     assert db_session.get(Message, row.message_id).body == (
         "Your request is going ahead: IT has let it through without waiting for further approval."
     )
+
+
+# ---- 9L: the list by audience and the full-page editor ----------------------------------------------------------------
+
+
+def test_every_template_has_exactly_one_audience():
+    assert set(et.AUDIENCE_OF) == set(et.REGISTRY)
+    assert set(et.AUDIENCE_OF.values()) <= {key for key, _title, _blurb in et.AUDIENCES}
+
+
+def test_the_list_groups_templates_by_audience_and_links_each_editor(client, db_session):
+    admin(client, db_session)
+    page = client.get("/admin/email-templates").text
+    assert page.index("Requesters") < page.index("Legal pages")
+    assert page.index("Approval overdue (to super admins)") > page.index(">Admins<")
+    assert 'href="/admin/email-templates/approval_waived"' in page and '<link rel="stylesheet"' in page
+
+
+def test_the_editor_is_a_page_with_placeholders_a_preview_and_posts_to_the_same_routes(client, db_session):
+    admin(client, db_session)
+    page = client.get("/admin/email-templates/approval_declined")
+    assert page.status_code == 200 and "{reason_text}" in page.text and "Preview with sample data" in page.text
+    assert 'action="/admin/email-templates/approval_declined"' in page.text
+    assert 'hx-post="/admin/email-templates/approval_declined/preview"' in page.text
+    assert client.get("/admin/email-templates/nope").status_code == 404
+
+
+def test_the_editor_is_for_super_admins_only(client, db_session):
+    login_as(client, "agent@example.com")
+    assert client.get("/admin/email-templates/approval_waived").status_code in (401, 403)

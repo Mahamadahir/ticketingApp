@@ -1,36 +1,42 @@
 {% extends "base.html" %}
 {% block title %}Admin: Never-follow list{% endblock %}
 {% block content %}
-
-<h2>Never-follow list</h2>
+{# 9L: the list in a table box, the add form in the 9G form layout. Routes and field names are unchanged. #}
+<header class="admin-head">
+  <h1>Never-follow list</h1>
+  <p>Addresses that must never be copied on a ticket: the shared mailbox and its aliases, and distribution lists.</p>
+</header>
 <p class="note">
-  Addresses that must never be copied on a ticket: the shared mailbox and its aliases, and
-  distribution lists. A Cc of a listed address on inbound mail is skipped, and nobody can add one
+  A Cc of a listed address on inbound mail is skipped, and nobody can add one
   as a follower by hand. Addresses are matched exactly (upper or lower case makes no difference);
   a whole domain cannot be listed. Removing an address allows it again, and followers already on
   tickets are left as they are.
 </p>
 
 {% if rows %}
-<table>
-  <thead><tr><th>Address</th><th>Reason</th><th>Added by</th><th>Added</th><th></th></tr></thead>
-  <tbody>
-  {% for r in rows %}
-  <tr>
-    <td>{{ r.email }}</td><td>{{ r.reason }}</td><td>{{ r.added_by }}</td><td>{{ r.created_at|local_date }}</td>
-    <td><form method="post" action="/admin/never-follow/{{ r.id }}/remove"><button type="submit">Remove</button></form></td>
-  </tr>
-  {% endfor %}
-  </tbody>
-</table>
+<div class="table-box">
+  <table class="table">
+    <thead><tr><th>Address</th><th>Reason</th><th>Added by</th><th>Added</th><th><span class="sr-only">Actions</span></th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+    <tr>
+      <td>{{ r.email }}</td><td>{{ r.reason }}</td><td>{{ r.added_by }}</td><td>{{ r.created_at|local_date }}</td>
+      <td><form method="post" action="/admin/never-follow/{{ r.id }}/remove"><button type="submit" class="btn">Remove<span class="sr-only"> {{ r.email }}</span></button></form></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
 {% else %}
-<p>No addresses yet.</p>
+<div class="empty-state"><strong>No addresses yet.</strong><span>Add the shared mailbox and any distribution list below.</span></div>
 {% endif %}
 
-<h3>Add an address</h3>
-<form method="post" action="/admin/never-follow">
-  <label>Email address <input type="email" name="email" maxlength="254" required /></label>
-  <label>Reason <input type="text" name="reason" maxlength="{{ max_reason_length }}" /></label>
-  <button type="submit">Add</button>
+<form method="post" action="/admin/never-follow" class="card mail-form" aria-labelledby="nf-add">
+  <h2 id="nf-add">Add an address</h2>
+  <div class="form-grid">
+    <label class="field">Email address <input type="email" name="email" maxlength="254" required /></label>
+    <label class="field">Reason <input type="text" name="reason" maxlength="{{ max_reason_length }}" /></label>
+  </div>
+  <div class="form-actions"><button type="submit" class="btn btn-primary">Add</button></div>
 </form>
 {% endblock %}

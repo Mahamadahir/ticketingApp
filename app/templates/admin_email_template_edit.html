@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Admin: Email template: {{ defn.label }}{% endblock %}
+{% block content %}
+{# 9L: the full-page editor of one email template. The form posts to the existing save route, Reset to default to the existing
+   reset route, and the preview (htmx, as before) sits beside the editor on a wide screen and below it on a narrow one. #}
+<header class="admin-head">
+  <p><a href="/admin/email-templates">&larr; Email templates</a></p>
+  <h1>{{ defn.label }}{% if customised %} <span class="chip t-amber">Changed from the default</span>{% endif %}</h1>
+  <p>{{ defn.description }}</p>
+</header>
+
+<div class="tpl-editor">
+  <form method="post" action="/admin/email-templates/{{ defn.key }}" id="tpl-{{ defn.key }}" class="card tpl-form"
+        hx-post="/admin/email-templates/{{ defn.key }}/preview" hx-trigger="input changed delay:400ms"
+        hx-target="#preview-{{ defn.key }}" hx-swap="innerHTML">
+    {% if error %}<p class="field-error" role="alert">Not saved: {{ error }}</p>{% endif %}
+    <div class="form-grid">
+      {% if defn.subject_editable %}
+      <label class="field field-wide">Subject <input type="text" name="subject" value="{{ subject }}" maxlength="{{ max_subject_length }}" required /></label>
+      {% else %}
+      <p class="note field-wide">The subject is the ticket's own, so replies find their way back to it.</p>
+      {% endif %}
+      <label class="field field-wide">Text <textarea name="body" rows="12" maxlength="{{ max_body_length }}" required>{{ body }}</textarea></label>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Save</button>
+      {% if customised %}<button type="submit" class="btn" formaction="/admin/email-templates/{{ defn.key }}/reset" formnovalidate>Reset to default</button>{% endif %}
+      <a class="btn" href="/admin/email-templates">Back to the list</a>
+    </div>
+
+    <section class="tpl-placeholders" aria-labelledby="tpl-ph">
+      <h2 id="tpl-ph">Placeholders you can use</h2>
+      {% if defn.body_placeholders %}
+      <ul>
+        {% for name, meaning in defn.body_placeholders.items() %}<li><code>{{ "{" ~ name ~ "}" }}</code>: {{ meaning }}</li>{% endfor %}
+      </ul>
+      {% else %}
+      <p class="muted">None. This text is used as written.</p>
+      {% endif %}
+      {% if defn.subject_editable %}
+      <p class="note">In the subject: {% for name in defn.subject_placeholders %}<code>{{ "{" ~ name ~ "}" }}</code>{{ ", " if not loop.last else "" }}{% endfor %}.</p>
+      {% endif %}
+    </section>
+  </form>
+
+  <aside class="card tpl-preview" aria-labelledby="tpl-pv">
+    <h2 id="tpl-pv">Preview</h2>
+    <div id="preview-{{ defn.key }}" aria-live="polite">{% with preview=preview, error=error %}{% include "_email_template_preview.html" %}{% endwith %}</div>
+  </aside>
+</div>
+{% endblock %}

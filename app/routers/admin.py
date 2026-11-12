@@ -90,11 +90,14 @@ from app.canned import (
 )
 from app.config import settings
 from app.email_templates import (
+    AUDIENCE_OF,
+    AUDIENCES,
     MAX_BODY_LENGTH as MAX_EMAIL_BODY_LENGTH,
     MAX_SUBJECT_LENGTH as MAX_EMAIL_SUBJECT_LENGTH,
     REGISTRY as EMAIL_TEMPLATES,
     TemplateError,
     current_text,
+    customised_keys,
     definition as email_template_def,
     is_customised,
     render_preview,
@@ -147,7 +150,7 @@ from app.models import (
     UserRole,
 )
 from app.pagination import paginate
-from app.scheduled_jobs import SCHEDULED_JOBS, status_line, timing
+from app.scheduled_jobs import SCHEDULED_JOBS, job_health, status_line, timing
 from app.settings_store import (
     BANK_HOLIDAY_REGION,
     APPROVAL_DEFAULT_PASS_PERCENT,
@@ -1145,31 +1148,46 @@ MAX_FORM_TEXT = 50000  # a generous cap on posted template text; the real limits
 # ---- Email templates (4T) --------------------------------------------------------------
 
 
-def _email_templates_page(
-    request: Request, user: User, session: Session, error: Optional[str] = None,
-    draft_key: Optional[str] = None, draft_subject: str = "", draft_body: str = "",
+def _email_templates_list(request: Request, user: User, session: Session):
+    """The list page: every template under the audience it is for, with a chip when it differs from the default.
+    The wording is edited on its own page (`/admin/email-templates/{key}`)."""
+    groups = []
+    customised = customised_keys(session)
+    for audience_key, title, blurb in AUDIENCES:
+        rows = [
+            {"defn": defn, "customised": defn.key in customised}
+            for defn in EMAIL_TEMPLATES.values() if AUDIENCE_OF[defn.key] == audience_key
+        ]
+        groups.append({"key": audience_key, "title": title, "blurb": blurb, "rows": rows})
+    return templates.TemplateResponse(request, "admin_email_templates.html", {"groups": groups, "user": user})
+
+
+def _email_template_editor(
+    request: Request, user: User, session: Session, key: str, error: Optional[str] = None,
+    draft_subject: str = "", draft_body: str = "", drafted: bool = False,
 ):
-    """The list page. After a refused save the admin's own text is shown again in that template's
-    form, with the reason, so nothing typed is lost."""
-    rows = []
-    for defn in EMAIL_TEMPLATES.values():
-        subject, body = current_text(session, defn.key)
-        subject = subject or ""
-        if defn.key == draft_key:
-            subject, body = draft_subject, draft_body
-        try:
-            preview, problem = render_preview(defn, subject, body), None
-        except TemplateError as exc:
-            preview, problem = None, str(exc)
-        rows.append({
-            "defn": defn, "subject": subject, "body": body, "customised": is_customised(session, defn.key),
-            "preview": preview, "error": problem if defn.key == draft_key else None,
-        })
+    """The editor page of one template. After a refused save the admin's own text is shown again, with the
+    reason, so nothing typed is lost."""
+    defn = EMAIL_TEMPLATES.get(key)
+    if defn is None:
+        raise HTTPException(status_code=404, detail="Email template not found")
+    subject, body = current_text(session, key)
+    subject = subject or ""
+    if drafted:
+        subject, body = draft_subject, draft_body
+    try:
+        preview, problem = render_preview(defn, subject, body), None
+    except TemplateError as exc:
+        preview, problem = None, str(exc)
     return templates.TemplateResponse(
         request,
-        "admin_email_templates.html",
-        {"rows": rows, "max_subject_length": MAX_EMAIL_SUBJECT_LENGTH, "max_body_length": MAX_EMAIL_BODY_LENGTH, "user": user},
-        status_code=400 if error or draft_key else 200,
+        "admin_email_template_edit.html",
+        {
+            "defn": defn, "subject": subject, "body": body, "customised": is_customised(session, key),
+            "preview": preview, "error": problem if drafted else None, "audience": AUDIENCE_OF[key],
+            "max_subject_length": MAX_EMAIL_SUBJECT_LENGTH, "max_body_length": MAX_EMAIL_BODY_LENGTH, "user": user,
+        },
+        status_code=400 if drafted else 200,
     )
 
 
@@ -1179,7 +1197,17 @@ def list_email_templates(
     user: User = Depends(require_super_admin),
     session: Session = Depends(get_session),
 ):
-    return _email_templates_page(request, user, session)
+    return _email_templates_list(request, user, session)
+
+
+@router.get("/email-templates/{key}", response_class=HTMLResponse)
+def edit_email_template(
+    request: Request,
+    key: str,
+    user: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    return _email_template_editor(request, user, session, key)
 
 
 @router.post("/email-templates/{key}/preview", response_class=HTMLResponse)
@@ -1215,7 +1243,7 @@ def save_email_template(
         save_template(session, key, subject, body, admin.email)
     except TemplateError as error:
         session.rollback()
-        return _email_templates_page(request, admin, session, str(error), key, subject, body)
+        return _email_template_editor(request, admin, session, key, str(error), subject, body, drafted=True)
     after = current_text(session, key)
     if after != before:
         changed = [name for name, a, b in (("subject", before[0], after[0]), ("text", before[1], after[1])) if a != b]
@@ -2261,16 +2289,29 @@ def view_mail_intake(
     flood_recent = session.exec(
         select(InboundMail).where(InboundMail.outcome == IGNORED_FLOOD).order_by(InboundMail.created_at.desc()).limit(10)
     ).all()
+    last_received = session.exec(select(func.max(InboundMail.created_at))).one()
+    warnings = health_warnings(session, now)
     return templates.TemplateResponse(
         request,
         "admin_mail_intake.html",
         {
             "subscription": subscription, "sync": sync, "waiting": waiting, "oldest": oldest, "now": now,
             "flood_day": flood_day, "flood_total": flood_total, "flood_recent": flood_recent,
-            "warnings": health_warnings(session, now),
+            "warnings": warnings, "last_received": last_received,
+            "subscription_problem": any(w.startswith("Mail subscription") for w in warnings),
+            "catch_up_problem": any(w.startswith("Mail catch-up") for w in warnings),
             "user": user,
         },
     )
+
+
+def _every_text(seconds: int) -> str:
+    """How often a job is due, for the jobs page: "5 minutes", "1 hour", "1 day"."""
+    for size, unit in ((86400, "day"), (3600, "hour"), (60, "minute")):
+        if seconds >= size and seconds % size == 0:
+            count = seconds // size
+            return f"{count} {unit}{'' if count == 1 else 's'}"
+    return f"{seconds} second{'' if seconds == 1 else 's'}"
 
 
 # ---- Recurring jobs -------------------------------------------------------------------------------
@@ -2285,10 +2326,15 @@ def view_scheduled_jobs(
     and why it last failed, under one status line."""
     now = datetime.now(timezone.utc)
     rows = session.exec(select(ScheduledJob).order_by(ScheduledJob.name)).all()
+    late, registered = timing(session, JOB_LATE_MINUTES), {job.name for job in SCHEDULED_JOBS}
     return templates.TemplateResponse(
         request,
         "admin_scheduled_jobs.html",
-        {"rows": rows, "status": status_line(rows, now, timing(session, JOB_LATE_MINUTES), {job.name for job in SCHEDULED_JOBS}), "now": now, "user": user},
+        {
+            "rows": rows, "status": status_line(rows, now, late, registered),
+            "overdue": set(job_health(rows, now, late, registered).overdue), "registered": registered,
+            "intervals": {job.name: _every_text(job.every_seconds) for job in SCHEDULED_JOBS}, "now": now, "user": user,
+        },
     )
 
 

@@ -1,68 +1,101 @@
 {% extends "base.html" %}
 {% block title %}Admin: Mail intake{% endblock %}
 {% block content %}
-
-<h2>Mail intake</h2>
+{# 9L: status cards (subscription, catch-up, last mail received, waiting) and the table of mail set aside. Read only; the
+   settings for both jobs are under Settings. #}
+<header class="admin-head">
+  <h1>Mail intake</h1>
+  <p>Is mail from the shared mailbox reaching the app?</p>
+</header>
 <p class="note">
-  How mail from the shared mailbox reaches the app: Microsoft tells the public app about new mail
+  Microsoft tells the public app about new mail
   (the subscription), and the worker also asks every few minutes for anything that was missed (the catch-up).
   Times are in your time zone. Settings for both are under Settings.
 </p>
 
 {% if warnings %}
-<ul>
-  {% for warning in warnings %}<li>{{ warning }}</li>{% endfor %}
-</ul>
+<section class="card intake-warnings" aria-label="Problems found">
+  <ul class="attention-list">
+    {% for warning in warnings %}<li class="attention"><span class="chip t-amber">Check</span> <span class="attention-text">{{ warning }}</span></li>{% endfor %}
+  </ul>
+</section>
 {% else %}
-<p>No problems found.</p>
+<p class="attention-clear" role="status"><span class="chip t-green">OK</span> No problems found.</p>
 {% endif %}
 
-<h3>Subscription</h3>
-{% if subscription %}
-<table>
-  <tbody>
-    <tr><th>Resource</th><td>{{ subscription.resource }}</td></tr>
-    <tr><th>Subscription id</th><td>{{ subscription.subscription_id or "none" }}</td></tr>
-    <tr><th>Expires</th><td>{{ subscription.expires_at|local_time if subscription.expires_at else "unknown" }}</td></tr>
-    <tr><th>Last created or renewed</th><td>{{ subscription.last_renewed_at|local_time if subscription.last_renewed_at else "never" }}</td></tr>
-    <tr><th>Last checked</th><td>{{ subscription.last_checked_at|local_time if subscription.last_checked_at else "never" }}</td></tr>
-    <tr><th>Last error</th><td>{% if subscription.last_error %}{{ subscription.last_error }} ({{ subscription.last_error_at|local_time }}){% else %}none{% endif %}</td></tr>
-  </tbody>
-</table>
-{% else %}
-<p>The worker has not set up a subscription (it is off, or has not run yet).</p>
-{% endif %}
+<div class="intake-cards">
+  <section class="card intake-card" aria-labelledby="in-sub">
+    <div class="card-header">
+      <h2 id="in-sub">Subscription</h2>
+      {% if not subscription %}<span class="chip t-gray">Not set up</span>
+      {% elif subscription_problem %}<span class="chip t-amber">Needs attention</span>
+      {% else %}<span class="chip t-green">Healthy</span>{% endif %}
+    </div>
+    {% if subscription %}
+    <dl class="dl">
+      <dt>Resource</dt><dd>{{ subscription.resource }}</dd>
+      <dt>Subscription id</dt><dd>{{ subscription.subscription_id or "none" }}</dd>
+      <dt>Expires</dt><dd>{{ subscription.expires_at|local_time if subscription.expires_at else "unknown" }}</dd>
+      <dt>Last created or renewed</dt><dd>{{ subscription.last_renewed_at|local_time if subscription.last_renewed_at else "never" }}</dd>
+      <dt>Last checked</dt><dd>{{ subscription.last_checked_at|local_time if subscription.last_checked_at else "never" }}</dd>
+      <dt>Last error</dt><dd>{% if subscription.last_error %}{{ subscription.last_error }} ({{ subscription.last_error_at|local_time }}){% else %}none{% endif %}</dd>
+    </dl>
+    {% else %}
+    <p class="muted">The worker has not set up a subscription (it is off, or has not run yet).</p>
+    {% endif %}
+  </section>
 
-<h3>Catch-up</h3>
-{% if sync %}
-<table>
-  <tbody>
-    <tr><th>Last completed</th><td>{{ sync.last_synced_at|local_time if sync.last_synced_at else "never" }}</td></tr>
-    <tr><th>New messages found at that run</th><td>{{ sync.last_handed_over }}</td></tr>
-    <tr><th>Part way through a long run</th><td>{{ "yes" if sync.resume_link else "no" }}</td></tr>
-    <tr><th>Last error</th><td>{% if sync.last_error %}{{ sync.last_error }} ({{ sync.last_error_at|local_time }}){% else %}none{% endif %}</td></tr>
-  </tbody>
-</table>
-{% else %}
-<p>The catch-up has not run (it is off, or has not run yet).</p>
-{% endif %}
+  <section class="card intake-card" aria-labelledby="in-sync">
+    <div class="card-header">
+      <h2 id="in-sync">Catch-up</h2>
+      {% if not sync %}<span class="chip t-gray">Not run</span>
+      {% elif catch_up_problem %}<span class="chip t-red">Last run failed</span>
+      {% else %}<span class="chip t-green">Healthy</span>{% endif %}
+    </div>
+    {% if sync %}
+    <dl class="dl">
+      <dt>Last completed</dt><dd>{{ sync.last_synced_at|local_time if sync.last_synced_at else "never" }}</dd>
+      <dt>New messages found at that run</dt><dd>{{ sync.last_handed_over }}</dd>
+      <dt>Part way through a long run</dt><dd>{{ "yes" if sync.resume_link else "no" }}</dd>
+      <dt>Last error</dt><dd>{% if sync.last_error %}{{ sync.last_error }} ({{ sync.last_error_at|local_time }}){% else %}none{% endif %}</dd>
+    </dl>
+    {% else %}
+    <p class="muted">The catch-up has not run (it is off, or has not run yet).</p>
+    {% endif %}
+  </section>
 
-<h3>Received, not yet processed</h3>
-<p>{{ waiting }} message notification{{ "" if waiting == 1 else "s" }}{% if oldest %}, the oldest from {{ oldest|local_time }}{% endif %}.</p>
+  <section class="card intake-card" aria-labelledby="in-last">
+    <div class="card-header"><h2 id="in-last">Last mail received</h2></div>
+    <p class="intake-big">{{ last_received|local_time if last_received else "Nothing yet" }}</p>
+    <p class="muted">The most recent mail the intake handled, whatever came of it.</p>
+  </section>
 
-<h3>Set aside as a probable loop</h3>
-<p>
-  {{ flood_day }} mail{{ "" if flood_day == 1 else "s" }} in the last 24 hours, {{ flood_total }} in all, from a sender who passed the
-  limit of tickets and replies in an hour (Settings, "Inbound mail"). Nothing was made from them.
-</p>
-{% if flood_recent %}
-<table>
-  <thead><tr><th>Received</th><th>Sender</th></tr></thead>
-  <tbody>
-    {% for row in flood_recent %}
-    <tr><td>{{ row.created_at|local_time }}</td><td>{{ row.sender or "unknown" }}</td></tr>
-    {% endfor %}
-  </tbody>
-</table>
-{% endif %}
+  <section class="card intake-card" aria-labelledby="in-wait">
+    <div class="card-header"><h2 id="in-wait">Received, not yet processed</h2></div>
+    <p class="intake-big">{{ waiting }}</p>
+    <p class="muted">{{ waiting }} message notification{{ "" if waiting == 1 else "s" }}{% if oldest %}, the oldest from {{ oldest|local_time }}{% endif %}.</p>
+  </section>
+</div>
+
+<section class="mail-section" aria-labelledby="in-flood">
+  <h2 id="in-flood">Set aside as a probable loop</h2>
+  <p class="note">
+    {{ flood_day }} mail{{ "" if flood_day == 1 else "s" }} in the last 24 hours, {{ flood_total }} in all, from a sender who passed the
+    limit of tickets and replies in an hour (Settings, "Inbound mail"). Nothing was made from them.
+  </p>
+  {% if flood_recent %}
+  <div class="table-box">
+    <table class="table">
+      <thead><tr><th>Received</th><th>Sender</th></tr></thead>
+      <tbody>
+        {% for row in flood_recent %}
+        <tr><td>{{ row.created_at|local_time }}</td><td>{{ row.sender or "unknown" }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state"><strong>Nothing set aside.</strong><span>Mail from a sender who floods the mailbox would be listed here.</span></div>
+  {% endif %}
+</section>
 {% endblock %}
