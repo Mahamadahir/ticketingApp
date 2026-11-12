@@ -172,7 +172,8 @@
         "needs_attention"
       ],
       "imported_by": [
-        "app.routers.admin"
+        "app.routers.admin",
+        "app.routers.data_protection"
       ],
       "imports": [
         "app.categories",
@@ -4450,6 +4451,7 @@
         "app.main"
       ],
       "imports": [
+        "app.admin_home",
         "app.anonymisation",
         "app.auth",
         "app.database",

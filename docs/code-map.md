@@ -413,7 +413,7 @@ File: `app/admin_home.py`
 - Classes: `AreaCard`, `Attention`, `Stat`
 - Functions: `area_cards`, `needs_attention`
 - Imports: `app.categories`, `app.config`, `app.models`, `app.navigation`, `app.outage`, `app.scheduled_jobs`, `app.settings_store`, `app.subscriptions`, `app.teams`, `app.time_zones`
-- Imported by: `app.routers.admin`
+- Imported by: `app.routers.admin`, `app.routers.data_protection`
 - Tests: `test_admin_frame.py`
 
 ### `app.anonymisation`
@@ -1185,7 +1185,7 @@ Admin > Data protection (issue #175): the subject access export. Opened by the `
 File: `app/routers/data_protection.py`
 - Functions: `anonymise_confirm`, `anonymise_preview`, `show`, `subject_access`
 - Routes: GET `/admin/data-protection`, POST `/admin/data-protection/anonymise`, POST `/admin/data-protection/anonymise/preview`, POST `/admin/data-protection/subject-access`
-- Imports: `app.anonymisation`, `app.auth`, `app.database`, `app.models`, `app.permissions`, `app.settings_store`, `app.storage`, `app.subject_access`, `app.templating`
+- Imports: `app.admin_home`, `app.anonymisation`, `app.auth`, `app.database`, `app.models`, `app.permissions`, `app.settings_store`, `app.storage`, `app.subject_access`, `app.templating`
 - Imported by: `app.main`
 - Tests: none
 
