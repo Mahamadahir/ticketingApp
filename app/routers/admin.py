@@ -658,9 +658,19 @@ def create_local_user(
     return RedirectResponse(_panel_url(local_user.id), status_code=303)
 
 
+def _query_id(value: Optional[str]) -> Optional[int]:
+    """An id from a page's query string (?team=, ?category=): a value that means nothing is ignored, not a 400."""
+    try:
+        return int((value or "").strip())
+    except ValueError:
+        return None
+
+
 @router.get("/teams", response_class=HTMLResponse)
 def list_teams(
     request: Request,
+    team: Optional[str] = None,
+    new: Optional[str] = None,
     user: User = Depends(require_super_admin),
     session: Session = Depends(get_session),
 ):
@@ -671,10 +681,24 @@ def list_teams(
     ticket_counts = dict(
         session.exec(select(Ticket.team_id, func.count(Ticket.id)).group_by(Ticket.team_id)).all()
     )
+    selected = session.get(Team, _query_id(team)) if _query_id(team) is not None else None
+    selected_members = (
+        session.exec(
+            select(User, TeamMembership.level)
+            .join(TeamMembership, TeamMembership.user_id == User.id)
+            .where(TeamMembership.team_id == selected.id)
+            .order_by(User.display_name)
+        ).all()
+        if selected is not None
+        else []
+    )
     return templates.TemplateResponse(
         request,
         "admin_teams.html",
         {
+            "selected": selected,
+            "selected_members": selected_members,
+            "creating": bool(new) and selected is None,
             "teams": teams,
             "teams_by_id": {team.id: team for team in teams},
             "member_counts": member_counts,
@@ -799,9 +823,12 @@ def view_audit_log(
 @router.get("/categories", response_class=HTMLResponse)
 def list_categories(
     request: Request,
+    category: Optional[str] = None,
+    new: Optional[str] = None,
     user: User = Depends(require_super_admin),
     session: Session = Depends(get_session),
 ):
+    chosen_id = _query_id(category)
     ensure_other(session)
     session.commit()
     categories = session.exec(select(Category).order_by(Category.name)).all()
@@ -811,10 +838,22 @@ def list_categories(
     for category in categories:
         if category.parent_id is not None:
             subs.setdefault(category.parent_id, []).append(category)
+    by_id = {c.id: c for c in categories}
+    chosen = by_id.get(chosen_id)
+    team_names = {team.id: team.name for team in teams}
+    escalation_text = {}
+    for c in categories:
+        if c.parent_id is not None and c.escalation_inherits:
+            escalation_text[c.id] = "Same as " + by_id[c.parent_id].name
+        else:
+            escalation_text[c.id] = team_names.get(c.escalation_team_id, "MSP") if c.escalation_team_id else "MSP"
     return templates.TemplateResponse(
         request,
         "admin_categories.html",
         {
+            "selected": chosen,
+            "creating": new if new in ("main", "sub") and chosen is None else None,
+            "escalation_text": escalation_text,
             "mains": mains,
             "subs": subs,
             "teams": teams,
@@ -1244,14 +1283,20 @@ def reset_email_template(
 @router.get("/approval-groups", response_class=HTMLResponse)
 def list_approval_groups(
     request: Request,
+    group: Optional[str] = None,
+    new: Optional[str] = None,
     user: User = Depends(require_super_admin),
     session: Session = Depends(get_session),
 ):
+    groups = [(g, members_of(session, g.id), types_using(session, g.id)) for g in all_groups(session)]
+    selected = next((row for row in groups if str(row[0].id) == (group or "").strip()), None)
     return templates.TemplateResponse(
         request,
         "admin_approval_groups.html",
         {
-            "groups": [(g, members_of(session, g.id), types_using(session, g.id)) for g in all_groups(session)],
+            "selected": selected,
+            "creating": bool(new) and selected is None,
+            "groups": groups,
             "max_name_length": MAX_GROUP_NAME_LENGTH,
             "max_notice_length": MAX_NOTICE_LENGTH,
             "user": user,

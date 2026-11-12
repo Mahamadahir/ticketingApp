@@ -1,38 +1,100 @@
 {% extends "base.html" %}
 {% block title %}Admin: Teams{% endblock %}
 {% block content %}
-
-<h2>Teams</h2>
-<div class="team-cards">
-  {% for team in teams %}
-  <div class="team-card">
-    <div class="team-card-name">{{ team.name }}</div>
-    {% if team.parent_team_id %}<div>Sub-team of {{ teams_by_id[team.parent_team_id].name }}</div>{% endif %}
-    <div>{{ member_counts.get(team.id, 0) }} members</div>
-    <div>{{ ticket_counts.get(team.id, 0) }} tickets</div>
-    <form method="post" action="/admin/teams/{{ team.id }}/msp-handoff">
-      <label><input type="checkbox" name="included" value="1" {{ "checked" if team.msp_handoff_included else "" }} />
-        Include in the automatic MSP handoff</label>
-      <button type="submit">Save</button>
-    </form>
+{# Admin > Teams (9K): the list beside the panel of the team chosen (?team=<id>) or the new-team panel (?new=1).
+   The forms post to their existing routes with their existing field names. #}
+<header class="users-head">
+  <div class="admin-head">
+    <h1>Teams</h1>
+    <p>Choose a team to see its members and whether it is in the automatic MSP handoff.</p>
   </div>
-  {% else %}
-  <p>No teams yet &mdash; create one below.</p>
-  {% endfor %}
+  <a class="btn btn-primary users-new" href="/admin/teams?new=1">New team</a>
+</header>
+
+<div class="users-cols">
+  <div class="users-list">
+    <div class="table-box">
+      <table class="table users-table">
+        <caption class="sr-only">Teams</caption>
+        <thead>
+          <tr><th scope="col">Team</th><th scope="col">Members</th><th scope="col">Tickets</th><th scope="col">MSP handoff</th></tr>
+        </thead>
+        <tbody>
+          {% for team in teams %}
+          <tr {% if selected and selected.id == team.id %}class="sel"{% endif %}>
+            <td>
+              <a class="person-cell" href="/admin/teams?team={{ team.id }}"{% if selected and selected.id == team.id %} aria-current="true"{% endif %}>
+                <span class="person-name">{{ team.name }}</span>
+                {% if team.parent_team_id %}<span class="person-email">Sub-team of {{ teams_by_id[team.parent_team_id].name }}</span>{% endif %}
+              </a>
+            </td>
+            <td>{{ member_counts.get(team.id, 0) }}</td>
+            <td>{{ ticket_counts.get(team.id, 0) }}</td>
+            <td><span class="chip {{ 't-green' if team.msp_handoff_included else 't-gray' }}">{{ "Included" if team.msp_handoff_included else "Not included" }}</span></td>
+          </tr>
+          {% else %}
+          <tr><td colspan="4"><div class="empty-state"><strong>No teams yet.</strong><span>Create one with New team.</span></div></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="note">The automatic MSP handoff takes the open tickets of included teams that are due to breach before the next business morning, unless the assigned agent has put them on hold. Tickets of a team that is not included are never sent automatically; an agent can still send them by hand. The address, the time and the holidays are under Settings.</p>
+  </div>
+
+  {% if creating %}
+  <aside class="card users-panel" aria-label="New team">
+    <h2>New team</h2>
+    <p class="note">A sub-team (for example 2nd line under Support) is worked by its own members, and every member of the parent team gets the same level on its tickets. Sub-teams go one level deep.</p>
+    <form method="post" action="/admin/teams">
+      <div class="form-grid">
+        <label class="field">Name <input type="text" name="name" required /></label>
+        <label class="field">Sub-team of
+          <select name="parent_team_id">
+            <option value="">(none, a main team)</option>
+            {% for team in teams if not team.parent_team_id %}<option value="{{ team.id }}">{{ team.name }}</option>{% endfor %}
+          </select>
+        </label>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Create team</button>
+        <a class="btn" href="/admin/teams">Cancel</a>
+      </div>
+    </form>
+  </aside>
+  {% elif selected %}
+  <aside class="card users-panel" aria-label="{{ selected.name }}">
+    <div class="up-person">
+      <div class="up-who">
+        <h2>{{ selected.name }}</h2>
+        {% if selected.parent_team_id %}<span class="person-email">Sub-team of {{ teams_by_id[selected.parent_team_id].name }}</span>{% endif %}
+      </div>
+      <a class="icon-btn up-close" href="/admin/teams" aria-label="Close the panel">&times;</a>
+    </div>
+
+    <section class="up-section" aria-labelledby="tp-handoff">
+      <h3 id="tp-handoff">MSP handoff</h3>
+      <form method="post" action="/admin/teams/{{ selected.id }}/msp-handoff" class="up-perms">
+        <label><input type="checkbox" name="included" value="1" {{ "checked" if selected.msp_handoff_included else "" }} />
+          Include in the automatic MSP handoff</label>
+        <div class="up-actions"><button type="submit" class="btn btn-primary">Save</button></div>
+      </form>
+    </section>
+
+    <section class="up-section" aria-labelledby="tp-members">
+      <h3 id="tp-members">Members ({{ selected_members|length }})</h3>
+      {% for member, level in selected_members %}
+      <p>{{ member.display_name or member.email }} <span class="person-email">{{ member.email }}</span> <span class="chip t-gray">{{ level.value }}</span></p>
+      {% else %}
+      <p class="note">No members yet.</p>
+      {% endfor %}
+      <p class="note">Add or remove people, and change their level, in <a href="/admin/users?team={{ selected.id }}">Users</a>.</p>
+    </section>
+
+    <section class="up-section" aria-labelledby="tp-numbers">
+      <h3 id="tp-numbers">Tickets</h3>
+      <p>{{ ticket_counts.get(selected.id, 0) }} ticket{{ "" if ticket_counts.get(selected.id, 0) == 1 else "s" }} in this team.</p>
+    </section>
+  </aside>
+  {% endif %}
 </div>
-
-<p class="note">The automatic MSP handoff takes the open tickets of included teams that are due to breach before the next business morning, unless the assigned agent has put them on hold. Tickets of a team that is not included are never sent automatically; an agent can still send them by hand. The address, the time and the holidays are under Settings.</p>
-
-<h2>New team</h2>
-<p class="note">A sub-team (for example 2nd line under Support) is worked by its own members, and every member of the parent team gets the same level on its tickets. Sub-teams go one level deep.</p>
-<form method="post" action="/admin/teams">
-  <label>Name <input type="text" name="name" required /></label>
-  <label>Sub-team of
-    <select name="parent_team_id">
-      <option value="">(none, a main team)</option>
-      {% for team in teams if not team.parent_team_id %}<option value="{{ team.id }}">{{ team.name }}</option>{% endfor %}
-    </select>
-  </label>
-  <button type="submit">Create team</button>
-</form>
 {% endblock %}

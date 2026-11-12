@@ -1,107 +1,190 @@
 {% extends "base.html" %}
 {% block title %}Admin: Categories{% endblock %}
 {% block content %}
+{# Admin > Categories (9K): the tree beside the panel of the category chosen (?category=<id>) or a create form (?new=main, ?new=sub).
+   The forms post to their existing routes with their existing field names. #}
+{% macro cat_chip(c) %}<span class="chip {{ 't-green' if c.is_active else 't-gray' }}">{{ "Active" if c.is_active else "Off" }}</span>{% endmacro %}
 
-<h2>Categories</h2>
-<p class="note">
-  The category chosen at triage decides which team gets the ticket. A main category belongs to a team;
-  a sub-category uses its parent's team. "Other" is for tickets nothing fits: they are worked normally,
-  then reviewed under Category review after they are resolved. Switching a category off hides it from
-  triage; tickets already in it are untouched.
-</p>
-<p class="note">
-  "Escalates to" is where the Escalate button sends a triaged ticket in that category. Every category
-  starts on the MSP; a sub-category follows its main category unless you pick something else. Escalating to the MSP is
-  Send to MSP: the ticket stays in its team with the status With MSP (set the MSP address under Settings first). If the
-  ticket is already with the chosen team, the next step is the MSP.
-</p>
+<header class="users-head">
+  <div class="admin-head">
+    <h1>Categories</h1>
+    <p>The category chosen at triage decides which team gets the ticket. Choose one to change its team, where it escalates to, or switch it off.</p>
+  </div>
+  <div class="users-new up-actions">
+    <a class="btn" href="/admin/categories?new=sub">New sub-category</a>
+    <a class="btn btn-primary" href="/admin/categories?new=main">New main category</a>
+  </div>
+</header>
 
-<table>
-  <thead>
-    <tr><th>Category</th><th>Team</th><th>Escalates to</th><th>In use</th><th></th></tr>
-  </thead>
-  <tbody>
-    {% for main in mains %}
-    <tr>
-      <form method="post" action="/admin/categories/{{ main.id }}">
-        <td><b>{{ main.name }}</b>{% if main.is_other %} <i>(for tickets nothing fits)</i>{% endif %}</td>
-        <td>
+<div class="users-cols">
+  <div class="users-list">
+    <div class="table-box">
+      <table class="table users-table">
+        <caption class="sr-only">Categories</caption>
+        <thead>
+          <tr><th scope="col">Category</th><th scope="col">Team</th><th scope="col">Escalates to</th><th scope="col">Status</th></tr>
+        </thead>
+        <tbody>
+          {% for main in mains %}
+          <tr {% if selected and selected.id == main.id %}class="sel"{% endif %}>
+            <td>
+              <a class="person-cell" href="/admin/categories?category={{ main.id }}"{% if selected and selected.id == main.id %} aria-current="true"{% endif %}>
+                <span class="person-name">{{ main.name }}</span>
+                {% if main.is_other %}<span class="person-email">For tickets nothing fits</span>{% endif %}
+              </a>
+            </td>
+            <td>{{ teams_by_id[main.team_id].name if main.team_id else "No team yet" }}</td>
+            <td>{{ escalation_text[main.id] }}</td>
+            <td>{% if main.is_other %}<span class="chip t-blue">Always on</span>{% else %}{{ cat_chip(main) }}{% endif %}</td>
+          </tr>
+          {% for sub in subs.get(main.id, []) %}
+          <tr {% if selected and selected.id == sub.id %}class="sel"{% endif %}>
+            <td class="cat-sub">
+              <a class="person-cell" href="/admin/categories?category={{ sub.id }}"{% if selected and selected.id == sub.id %} aria-current="true"{% endif %}>
+                <span class="person-name">&rarr; {{ sub.name }}</span>
+              </a>
+            </td>
+            <td class="users-teams">{{ teams_by_id[main.team_id].name if main.team_id else "" }} (from {{ main.name }})</td>
+            <td>{{ escalation_text[sub.id] }}</td>
+            <td>{{ cat_chip(sub) }}</td>
+          </tr>
+          {% endfor %}
+          {% else %}
+          <tr><td colspan="4"><div class="empty-state"><strong>No categories yet.</strong><span>Create one with New main category.</span></div></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="note">
+      A main category belongs to a team; a sub-category uses its parent's team. "Other" is for tickets nothing fits: they are worked normally,
+      then reviewed under Category review after they are resolved. Switching a category off hides it from
+      triage; tickets already in it are untouched.
+    </p>
+    <p class="note">
+      "Escalates to" is where the Escalate button sends a triaged ticket in that category. Every category
+      starts on the MSP; a sub-category follows its main category unless you pick something else. Escalating to the MSP is
+      Send to MSP: the ticket stays in its team with the status With MSP (set the MSP address under Settings first). If the
+      ticket is already with the chosen team, the next step is the MSP.
+    </p>
+  </div>
+
+  {% if creating == "main" %}
+  <aside class="card users-panel" aria-label="New main category">
+    <h2>New main category</h2>
+    <form method="post" action="/admin/categories">
+      <div class="form-grid">
+        <label class="field">Name <input type="text" name="name" maxlength="80" required /></label>
+        <label class="field">Team
+          <select name="team_id" required>
+            <option value="">Choose a team</option>
+            {% for t in teams %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
+          </select>
+        </label>
+        <label class="field">Escalates to
+          <select name="escalation">
+            <option value="msp">MSP (escalating sends the ticket to the MSP)</option>
+            {% for t in teams %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
+          </select>
+        </label>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Create</button>
+        <a class="btn" href="/admin/categories">Cancel</a>
+      </div>
+    </form>
+  </aside>
+  {% elif creating == "sub" %}
+  <aside class="card users-panel" aria-label="New sub-category">
+    <h2>New sub-category</h2>
+    <form method="post" action="/admin/categories">
+      <div class="form-grid">
+        <label class="field">Under
+          <select name="parent_id" required>
+            <option value="">Choose a main category</option>
+            {% for main in mains if not main.is_other %}<option value="{{ main.id }}">{{ main.name }}</option>{% endfor %}
+          </select>
+        </label>
+        <label class="field">Name <input type="text" name="name" maxlength="80" required /></label>
+        <label class="field">Escalates to
+          <select name="escalation">
+            <option value="inherit">Same as its main category</option>
+            <option value="msp">MSP</option>
+            {% for t in teams %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
+          </select>
+        </label>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Create</button>
+        <a class="btn" href="/admin/categories">Cancel</a>
+      </div>
+    </form>
+  </aside>
+  {% elif selected %}
+  {% set c = selected %}
+  {% set parent = (mains | selectattr("id", "equalto", c.parent_id) | first) if c.parent_id else none %}
+  <aside class="card users-panel" aria-label="{{ c.name }}">
+    <div class="up-person">
+      <div class="up-who">
+        <h2>{{ c.name }}</h2>
+        <span class="person-email">{% if parent %}Sub-category of {{ parent.name }}{% elif c.is_other %}For tickets nothing fits{% else %}Main category{% endif %}</span>
+      </div>
+      <a class="icon-btn up-close" href="/admin/categories" aria-label="Close the panel">&times;</a>
+    </div>
+    <form method="post" action="/admin/categories/{{ c.id }}">
+      {% if not parent %}
+      <section class="up-section" aria-labelledby="cat-team">
+        <h3 id="cat-team">Team</h3>
+        <label class="field"><span class="sr-only">Team</span>
           <select name="team_id">
-            <option value="">{{ "No team yet (uses the default triage team)" if main.is_other else "Choose a team" }}</option>
+            <option value="">{{ "No team yet (uses the default triage team)" if c.is_other else "Choose a team" }}</option>
             {% for t in teams %}
-            <option value="{{ t.id }}" {{ "selected" if main.team_id == t.id else "" }}>{{ t.name }}</option>
+            <option value="{{ t.id }}" {{ "selected" if c.team_id == t.id else "" }}>{{ t.name }}</option>
             {% endfor %}
           </select>
-        </td>
-        <td>
-          <select name="escalation">
-            <option value="msp" {{ "selected" if main.escalation_team_id is none else "" }}>MSP</option>
-            {% for t in teams %}
-            <option value="{{ t.id }}" {{ "selected" if main.escalation_team_id == t.id else "" }}>{{ t.name }}</option>
-            {% endfor %}
-          </select>
-        </td>
-        <td>{% if main.is_other %}always{% else %}<input type="checkbox" name="is_active" {{ "checked" if main.is_active else "" }} />{% endif %}</td>
-        <td><button type="submit">Save</button></td>
-      </form>
-    </tr>
-    {% for sub in subs.get(main.id, []) %}
-    <tr>
-      <form method="post" action="/admin/categories/{{ sub.id }}">
-        <td>&nbsp;&nbsp;&rarr; {{ sub.name }}</td>
-        <td>{{ teams_by_id[main.team_id].name if main.team_id else "" }} <i>(from {{ main.name }})</i></td>
-        <td>
-          <select name="escalation">
-            <option value="inherit" {{ "selected" if sub.escalation_inherits else "" }}>Same as {{ main.name }}</option>
-            <option value="msp" {{ "selected" if not sub.escalation_inherits and sub.escalation_team_id is none else "" }}>MSP</option>
-            {% for t in teams %}
-            <option value="{{ t.id }}" {{ "selected" if not sub.escalation_inherits and sub.escalation_team_id == t.id else "" }}>{{ t.name }}</option>
-            {% endfor %}
-          </select>
-        </td>
-        <td><input type="checkbox" name="is_active" {{ "checked" if sub.is_active else "" }} /></td>
-        <td><button type="submit">Save</button></td>
-      </form>
-    </tr>
-    {% endfor %}
-    {% endfor %}
-  </tbody>
-</table>
+        </label>
+      </section>
+      {% else %}
+      <section class="up-section" aria-labelledby="cat-team">
+        <h3 id="cat-team">Team</h3>
+        <p>{{ teams_by_id[parent.team_id].name if parent.team_id else "No team yet" }} <span class="note">(from {{ parent.name }})</span></p>
+      </section>
+      {% endif %}
 
-<h3>New main category</h3>
-<form method="post" action="/admin/categories">
-  <label>Name <input type="text" name="name" maxlength="80" required /></label>
-  <label>Team
-    <select name="team_id" required>
-      <option value="">Choose a team</option>
-      {% for t in teams %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
-    </select>
-  </label>
-  <label>Escalates to
-    <select name="escalation">
-      <option value="msp">MSP (escalating sends the ticket to the MSP)</option>
-      {% for t in teams %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
-    </select>
-  </label>
-  <button type="submit">Create</button>
-</form>
+      <section class="up-section" aria-labelledby="cat-esc">
+        <h3 id="cat-esc">Escalates to</h3>
+        <label class="field"><span class="sr-only">Escalates to</span>
+          <select name="escalation">
+            {% if parent %}
+            <option value="inherit" {{ "selected" if c.escalation_inherits else "" }}>Same as {{ parent.name }}</option>
+            <option value="msp" {{ "selected" if not c.escalation_inherits and c.escalation_team_id is none else "" }}>MSP</option>
+            {% for t in teams %}
+            <option value="{{ t.id }}" {{ "selected" if not c.escalation_inherits and c.escalation_team_id == t.id else "" }}>{{ t.name }}</option>
+            {% endfor %}
+            {% else %}
+            <option value="msp" {{ "selected" if c.escalation_team_id is none else "" }}>MSP</option>
+            {% for t in teams %}
+            <option value="{{ t.id }}" {{ "selected" if c.escalation_team_id == t.id else "" }}>{{ t.name }}</option>
+            {% endfor %}
+            {% endif %}
+          </select>
+        </label>
+      </section>
 
-<h3>New sub-category</h3>
-<form method="post" action="/admin/categories">
-  <label>Under
-    <select name="parent_id" required>
-      <option value="">Choose a main category</option>
-      {% for main in mains if not main.is_other %}<option value="{{ main.id }}">{{ main.name }}</option>{% endfor %}
-    </select>
-  </label>
-  <label>Name <input type="text" name="name" maxlength="80" required /></label>
-  <label>Escalates to
-    <select name="escalation">
-      <option value="inherit">Same as its main category</option>
-      <option value="msp">MSP</option>
-      {% for t in teams %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
-    </select>
-  </label>
-  <button type="submit">Create</button>
-</form>
+      <section class="up-section" aria-labelledby="cat-use">
+        <h3 id="cat-use">In use</h3>
+        {% if c.is_other %}
+        <p class="note">Other is always on.</p>
+        {% else %}
+        <label><input type="checkbox" name="is_active" {{ "checked" if c.is_active else "" }} /> Available at triage</label>
+        {% endif %}
+      </section>
+
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Save</button>
+        <a class="btn" href="/admin/categories">Cancel</a>
+      </div>
+    </form>
+  </aside>
+  {% endif %}
+</div>
 {% endblock %}
