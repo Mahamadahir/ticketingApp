@@ -223,7 +223,7 @@ def test_the_new_type_form_is_prefilled_from_the_settings(client, db_session):
     set_setting(db_session, APPROVAL_DEFAULT_PASS_PERCENT, "75")
     db_session.commit()
 
-    page = client.get(f"/admin/request-types?type={request_type.id}").text  # the editor (9K)
+    page = client.get("/admin/request-types?new=1").text  # the new-type form (9K)
 
     assert 'name="pass_percent" value="75"' in page
 

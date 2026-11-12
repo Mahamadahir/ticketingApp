@@ -971,13 +971,13 @@ def list_canned(
     session: Session = Depends(get_session),
 ):
     responses = all_canned(session)
-    selected = next((r for r in responses if str(r.id) == (chosen or "").strip()), None)
+    selected = next((r for r in responses if r.id == _query_id(chosen)), None)
     return templates.TemplateResponse(
         request,
         "admin_canned.html",
         {
             "selected": selected,
-            "creating": bool(new) and selected is None,
+            "creating": _wants_new(new) and selected is None,
             "responses": responses,
             "placeholders": PLACEHOLDERS,
             "max_title_length": MAX_TITLE_LENGTH,
@@ -1459,10 +1459,14 @@ def _defaults_from_form(team_id, category_id, impact, urgency) -> TypeDefaults:
 @router.get("/request-types", response_class=HTMLResponse)
 def list_request_types(
     request: Request,
+    chosen: Optional[str] = Query(None, alias="type"),
+    new: Optional[str] = None,
     user: User = Depends(require_request_templates),
     session: Session = Depends(get_session),
 ):
     types = all_request_types(session)
+    type_id = _query_id(chosen)
+    selected = next((t for t in types if t.id == type_id), None)  # a value that means nothing shows the list
     sub_templates = all_templates_by_type(session)
     all_sub = [t for group in sub_templates.values() for t in group]
     question_labels = {q.id: q.label for group in all_questions_by_type(session).values() for q in group}
@@ -1471,6 +1475,8 @@ def list_request_types(
         "admin_request_types.html",
         {
             "types": types,
+            "selected": selected,
+            "creating": _wants_new(new) and selected is None,
             "groups": all_groups(session),
             "default_pass": get_setting(session, APPROVAL_DEFAULT_PASS_PERCENT),
             "default_due_days": get_setting(session, DUE_DAYS_BEFORE_REQUIRED_BY),

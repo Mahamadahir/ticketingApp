@@ -88,3 +88,12 @@ def test_the_canned_page_has_header_table_and_panels(client, db_session):
 def test_the_canned_empty_state(client, db_session):
     admin(client, db_session)
     assert "No canned responses yet." in client.get("/admin/canned").text
+
+
+def test_a_query_value_that_means_nothing_shows_the_list(client, db_session):
+    admin(client, db_session)
+    make(db_session, "New starter")
+    for url in ("/admin/request-types?type=99999999999", "/admin/request-types?type=abc", "/admin/request-types?new=0",
+                "/admin/canned?response=99999999999", "/admin/canned?new=0"):
+        page = client.get(url)
+        assert page.status_code == 200 and "<form" not in page.text.split("</header>")[1].split("<table")[0], url
