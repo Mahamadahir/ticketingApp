@@ -762,3 +762,15 @@ th { color: var(--muted); font-weight: 600; }
 .review-form .field > select { width: 100%; box-sizing: border-box; }
 .review-form details { margin: 0; }
 .review-form summary { cursor: pointer; color: var(--accent); margin-bottom: 8px; }
+/* Admin overhaul 9K part 2: Request types editor and Canned responses (they reuse the Users list-and-panel classes) */
+.check { display: flex; align-items: flex-start; gap: 8px; font-size: 14px; }
+.check input { margin-top: 3px; }
+.rt-editor { margin-bottom: 20px; padding: 20px 24px; }
+.rt-editor > form > .up-section:first-child, .rt-editor > .up-section:first-child { border-top: 0; padding-top: 0; }
+.rt-title { margin: 0 0 6px; font-size: 16px; }
+.rt-sub { margin: 18px 0 8px; font-size: 14px; }
+.rt-item { padding: 14px 0; border-top: 1px solid var(--border); }
+.rt-item-actions { align-items: center; margin-top: 8px; }
+.rt-danger { color: var(--red); }
+.rt-help { margin-top: 16px; }
+.rt-help summary { cursor: pointer; color: var(--accent); }

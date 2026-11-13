@@ -149,8 +149,8 @@ def test_the_percentage_is_between_1_and_100(client, db_session, pass_percent):
 
 def test_there_is_no_fail_percentage_on_the_form(client, db_session):
     admin(client, db_session)
-    make(db_session, "Access")
-    page = client.get("/admin/request-types").text
+    kind = make(db_session, "Access")
+    page = client.get(f"/admin/request-types?type={kind.id}").text  # the editor (9K)
     assert "fail_percent" not in page and "Percent to fail" not in page and "Percent to pass" in page
 
 
@@ -223,7 +223,7 @@ def test_the_new_type_form_is_prefilled_from_the_settings(client, db_session):
     set_setting(db_session, APPROVAL_DEFAULT_PASS_PERCENT, "75")
     db_session.commit()
 
-    page = client.get("/admin/request-types").text
+    page = client.get("/admin/request-types?new=1").text  # the new-type form (9K)
 
     assert 'name="pass_percent" value="75"' in page
 
