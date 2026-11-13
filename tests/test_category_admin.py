@@ -255,7 +255,7 @@ def test_other_can_be_given_a_team_from_the_page_exactly_as_the_form_posts_it(cl
     admin(client)
     client.get("/admin/categories")  # seeds Other
     other = db_session.exec(select(Category).where(Category.is_other.is_(True))).one()
-    assert 'name="is_active"' not in client.get("/admin/categories").text.split("for tickets nothing fits")[1].split("</tr>")[0]
+    assert 'name="is_active"' not in client.get(f"/admin/categories?category={other.id}").text  # the panel (9K) of Other has no tick-box
 
     response = client.post(f"/admin/categories/{other.id}", data={"team_id": str(desk.id)}, follow_redirects=False)
 

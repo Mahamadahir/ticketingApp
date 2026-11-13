@@ -755,3 +755,10 @@ th { color: var(--muted); font-weight: 600; }
 .setting-control input, .setting-control select { flex: 1 1 auto; min-width: 0; }
 .setting-unit { color: var(--muted); font-size: 13px; white-space: nowrap; }
 .settings-panel .form-actions { padding-top: 16px; border-top: 1px solid var(--border); }
+/* Admin overhaul 9K: Teams, Approval groups, Categories, Category review (they reuse the Users list-and-panel classes above) */
+.table td.cat-sub { padding-left: 32px; }
+.review-table { min-width: 640px; }
+.review-form { display: flex; flex-direction: column; gap: 8px; max-width: 420px; }
+.review-form .field > select { width: 100%; box-sizing: border-box; }
+.review-form details { margin: 0; }
+.review-form summary { cursor: pointer; color: var(--accent); margin-bottom: 8px; }

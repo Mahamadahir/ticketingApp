@@ -1,45 +1,62 @@
 {% extends "base.html" %}
 {% block title %}Admin: Category review{% endblock %}
 {% block content %}
+{# Admin > Category review (9K): the queue of resolved "Other" tickets as a table, the reclassify form inline in each row. #}
+<header class="users-head">
+  <div class="admin-head">
+    <h1>Category review</h1>
+    <p>Tickets triaged as "Other" and now resolved: give each a proper category so the next one like it has a home.</p>
+  </div>
+</header>
 
-<h2>Category review</h2>
-<p class="note">
-  Tickets triaged as "Other" and now resolved. They were worked normally; give each a proper category
-  (choose one, or create a new one) so the next ticket like it has a home and reports are accurate.
-  This changes the ticket's category only, not its team.
-</p>
-
-{% for ticket in tickets %}
-<div class="review-item">
-  <p><a href="/tickets/{{ ticket.number }}"><b>{{ ticket.reference }}</b> {{ ticket.subject }}</a>
-    &middot; {{ ticket.status.value }}</p>
-  <form method="post" action="/admin/category-review/{{ ticket.number }}">
-    <label>Existing category
-      <select name="category_id">
-        <option value="">Choose a category</option>
-        {% for option, label in category_options %}<option value="{{ option.id }}">{{ label }}</option>{% endfor %}
-      </select>
-    </label>
-    <details>
-      <summary>or create a new one</summary>
-      <label>Name <input type="text" name="new_category_name" maxlength="80" /></label>
-      <label>Under
-        <select name="new_category_parent_id">
-          <option value="">Nothing: a new main category</option>
-          {% for main in main_categories %}<option value="{{ main.id }}">{{ main.name }}</option>{% endfor %}
-        </select>
-      </label>
-      <label>Team (main category only)
-        <select name="new_category_team_id">
-          <option value="">Choose a team</option>
-          {% for t in teams %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
-        </select>
-      </label>
-    </details>
-    <button type="submit">Save category</button>
-  </form>
+{% if tickets %}
+<div class="table-box">
+  <table class="table review-table">
+    <caption class="sr-only">Resolved tickets waiting for a category</caption>
+    <thead>
+      <tr><th scope="col">Ticket</th><th scope="col">Status</th><th scope="col">Give it a category</th></tr>
+    </thead>
+    <tbody>
+      {% for ticket in tickets %}
+      <tr>
+        <td><a class="person-cell" href="/tickets/{{ ticket.number }}"><span class="person-name">{{ ticket.reference }}</span><span class="person-email">{{ ticket.subject }}</span></a></td>
+        <td><span class="chip t-gray">{{ ticket.status.value }}</span></td>
+        <td>
+          <form method="post" action="/admin/category-review/{{ ticket.number }}" class="review-form">
+            <label class="field">Existing category
+              <select name="category_id">
+                <option value="">Choose a category</option>
+                {% for option, label in category_options %}<option value="{{ option.id }}">{{ label }}</option>{% endfor %}
+              </select>
+            </label>
+            <details>
+              <summary>or create a new one</summary>
+              <div class="form-grid">
+                <label class="field">Name <input type="text" name="new_category_name" maxlength="80" /></label>
+                <label class="field">Under
+                  <select name="new_category_parent_id">
+                    <option value="">Nothing: a new main category</option>
+                    {% for main in main_categories %}<option value="{{ main.id }}">{{ main.name }}</option>{% endfor %}
+                  </select>
+                </label>
+                <label class="field">Team (main category only)
+                  <select name="new_category_team_id">
+                    <option value="">Choose a team</option>
+                    {% for t in teams %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
+                  </select>
+                </label>
+              </div>
+            </details>
+            <div><button type="submit" class="btn btn-primary">Save category</button></div>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
 </div>
+<p class="note">This changes the ticket's category only, not its team.</p>
 {% else %}
-<p>Nothing waiting for review.</p>
-{% endfor %}
+<div class="empty-state"><strong>Nothing waiting for review.</strong><span>Resolved "Other" tickets appear here.</span></div>
+{% endif %}
 {% endblock %}

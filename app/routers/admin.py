@@ -658,9 +658,25 @@ def create_local_user(
     return RedirectResponse(_panel_url(local_user.id), status_code=303)
 
 
+def _query_id(value: Optional[str]) -> Optional[int]:
+    """An id from a page's query string (?team=, ?category=): a value that means nothing is ignored, not a 400."""
+    try:
+        number = int((value or "").strip())
+    except ValueError:
+        return None
+    return number if 0 < number < 2**31 else None  # beyond the integer column's range it matches nothing
+
+
+def _wants_new(value: Optional[str]) -> bool:
+    """?new= on a list-and-panel page: any value but empty, 0, false or no opens the create panel."""
+    return (value or "").strip().lower() not in ("", "0", "false", "no")
+
+
 @router.get("/teams", response_class=HTMLResponse)
 def list_teams(
     request: Request,
+    team: Optional[str] = None,
+    new: Optional[str] = None,
     user: User = Depends(require_super_admin),
     session: Session = Depends(get_session),
 ):
@@ -671,10 +687,25 @@ def list_teams(
     ticket_counts = dict(
         session.exec(select(Ticket.team_id, func.count(Ticket.id)).group_by(Ticket.team_id)).all()
     )
+    selected_id = _query_id(team)
+    selected = session.get(Team, selected_id) if selected_id is not None else None
+    selected_members = (
+        session.exec(
+            select(User, TeamMembership.level)
+            .join(TeamMembership, TeamMembership.user_id == User.id)
+            .where(TeamMembership.team_id == selected.id)
+            .order_by(User.display_name)
+        ).all()
+        if selected is not None
+        else []
+    )
     return templates.TemplateResponse(
         request,
         "admin_teams.html",
         {
+            "selected": selected,
+            "selected_members": selected_members,
+            "creating": _wants_new(new) and selected is None,
             "teams": teams,
             "teams_by_id": {team.id: team for team in teams},
             "member_counts": member_counts,
@@ -700,7 +731,7 @@ def set_team_msp_handoff(
         session.add(team)
         log_action(session, admin.email, "team", team.id, "msp_handoff_included" if want else "msp_handoff_excluded", team.name)
         session.commit()
-    return RedirectResponse("/admin/teams", status_code=303)
+    return RedirectResponse(f"/admin/teams?team={team_id}", status_code=303)
 
 
 @router.post("/teams")
@@ -726,7 +757,7 @@ def create_team(
     session.flush()
     log_action(session, admin.email, "team", team.id, "created", f"{name} (sub-team of {parent.name})" if parent else name)
     session.commit()
-    return RedirectResponse("/admin/teams", status_code=303)
+    return RedirectResponse(f"/admin/teams?team={team.id}", status_code=303)
 
 
 @router.get("/feedback", response_class=HTMLResponse)
@@ -799,22 +830,37 @@ def view_audit_log(
 @router.get("/categories", response_class=HTMLResponse)
 def list_categories(
     request: Request,
+    category: Optional[str] = None,
+    new: Optional[str] = None,
     user: User = Depends(require_super_admin),
     session: Session = Depends(get_session),
 ):
+    chosen_id = _query_id(category)
     ensure_other(session)
     session.commit()
     categories = session.exec(select(Category).order_by(Category.name)).all()
     teams = session.exec(select(Team).order_by(Team.name)).all()
     mains = sorted((c for c in categories if c.parent_id is None), key=lambda c: (c.is_other, c.name.lower()))
     subs: dict[int, list[Category]] = {}
-    for category in categories:
-        if category.parent_id is not None:
-            subs.setdefault(category.parent_id, []).append(category)
+    for child in categories:
+        if child.parent_id is not None:
+            subs.setdefault(child.parent_id, []).append(child)
+    by_id = {c.id: c for c in categories}
+    chosen = by_id.get(chosen_id)
+    team_names = {team.id: team.name for team in teams}
+    escalation_text = {}
+    for c in categories:
+        if c.parent_id is not None and c.escalation_inherits:
+            escalation_text[c.id] = "Same as " + by_id[c.parent_id].name
+        else:
+            escalation_text[c.id] = team_names.get(c.escalation_team_id, "MSP") if c.escalation_team_id else "MSP"
     return templates.TemplateResponse(
         request,
         "admin_categories.html",
         {
+            "selected": chosen,
+            "creating": new if new in ("main", "sub") and chosen is None else None,
+            "escalation_text": escalation_text,
             "mains": mains,
             "subs": subs,
             "teams": teams,
@@ -847,7 +893,7 @@ def add_category(
             f"{path_of(session, category)}: {_escalation_label(session, category)}",
         )
     session.commit()
-    return RedirectResponse("/admin/categories", status_code=303)
+    return RedirectResponse(f"/admin/categories?category={category.id}", status_code=303)
 
 
 @router.post("/categories/{category_id}")
@@ -888,7 +934,7 @@ def update_category(
 
     session.add(category)
     session.commit()
-    return RedirectResponse("/admin/categories", status_code=303)
+    return RedirectResponse(f"/admin/categories?category={category_id}", status_code=303)
 
 
 def _escalation_label(session: Session, category: Category) -> str:
@@ -1244,14 +1290,20 @@ def reset_email_template(
 @router.get("/approval-groups", response_class=HTMLResponse)
 def list_approval_groups(
     request: Request,
+    group: Optional[str] = None,
+    new: Optional[str] = None,
     user: User = Depends(require_super_admin),
     session: Session = Depends(get_session),
 ):
+    groups = [(g, members_of(session, g.id), types_using(session, g.id)) for g in all_groups(session)]
+    selected = next((row for row in groups if row[0].id == _query_id(group)), None)
     return templates.TemplateResponse(
         request,
         "admin_approval_groups.html",
         {
-            "groups": [(g, members_of(session, g.id), types_using(session, g.id)) for g in all_groups(session)],
+            "selected": selected,
+            "creating": _wants_new(new) and selected is None,
+            "groups": groups,
             "max_name_length": MAX_GROUP_NAME_LENGTH,
             "max_notice_length": MAX_NOTICE_LENGTH,
             "user": user,
@@ -1272,7 +1324,7 @@ def add_approval_group(
         raise HTTPException(status_code=400, detail=str(error))
     log_action(session, admin.email, "approval_group", group.id, "created", group.name)
     session.commit()
-    return RedirectResponse("/admin/approval-groups", status_code=303)
+    return RedirectResponse(f"/admin/approval-groups?group={group.id}", status_code=303)
 
 
 @router.post("/approval-groups/{group_id}/rename")
@@ -1294,7 +1346,7 @@ def rename_approval_group(
     if before != group.name:
         log_action(session, admin.email, "approval_group", group.id, "renamed", f"{before!r} -> {group.name!r}")
     session.commit()
-    return RedirectResponse("/admin/approval-groups", status_code=303)
+    return RedirectResponse(f"/admin/approval-groups?group={group_id}", status_code=303)
 
 
 @router.post("/approval-groups/{group_id}/notice")
@@ -1316,7 +1368,7 @@ def set_approval_group_notice(
     if before != group.request_notice:
         log_action(session, admin.email, "approval_group", group.id, "notice_changed", group.request_notice or "(default wording)")
     session.commit()
-    return RedirectResponse("/admin/approval-groups", status_code=303)
+    return RedirectResponse(f"/admin/approval-groups?group={group_id}", status_code=303)
 
 
 @router.post("/approval-groups/{group_id}/members")
@@ -1337,7 +1389,7 @@ def add_approval_group_member(
     log_action(session, admin.email, "approval_group", group.id, "member_added", member.email)
     start_waiting_rounds(session, admin.email)  # a request waiting for approvers starts its round at once (#161)
     session.commit()
-    return RedirectResponse("/admin/approval-groups", status_code=303)
+    return RedirectResponse(f"/admin/approval-groups?group={group_id}", status_code=303)
 
 
 @router.post("/approval-groups/{group_id}/members/{user_id}/remove")
@@ -1357,7 +1409,7 @@ def remove_approval_group_member(
         raise HTTPException(status_code=400, detail=str(error))
     log_action(session, admin.email, "approval_group", group.id, "member_removed", member.email)
     session.commit()
-    return RedirectResponse("/admin/approval-groups", status_code=303)
+    return RedirectResponse(f"/admin/approval-groups?group={group_id}", status_code=303)
 
 
 # ---- Request types (Service Requests) --------------------------------------------

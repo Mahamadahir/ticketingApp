@@ -335,7 +335,7 @@ def test_inactive_people_cannot_be_approvers_or_get_permissions(client, db_sessi
 
     assert [u.id for u in members_of(db_session, group.id)] == [active.id]
     assert members_of(db_session, group.id, active_only=True) == []
-    assert "inactive: not counted as a voter" in client.get("/admin/approval-groups").text
+    assert "inactive: not counted as a voter" in client.get(f"/admin/approval-groups?group={group.id}").text
     refused = client.post(f"/admin/users/{inactive.id}/permissions", data={"permissions": "manage_request_templates"})
     assert refused.status_code == 400
 
