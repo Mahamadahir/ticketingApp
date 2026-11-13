@@ -97,10 +97,10 @@ def test_a_bad_escalation_choice_refuses_the_whole_category(client, db_session):
 def test_the_creation_forms_ask_for_it(client, db_session):
     create_team(db_session, "Support")
     admin(client)
-    page = client.get("/admin/categories").text
-    new_forms = page.split("New main category")[1]
-    assert new_forms.count('name="escalation"') == 2  # one in each creation form
-    assert 'value="inherit"' in new_forms.split("New sub-category")[1]
+    main_form = client.get("/admin/categories?new=main").text  # the creation forms are panels (9K)
+    sub_form = client.get("/admin/categories?new=sub").text
+    assert main_form.count('name="escalation"') == 1 and sub_form.count('name="escalation"') == 1  # one in each creation form
+    assert 'value="inherit"' in sub_form
 
 
 def test_a_ticket_in_a_new_category_escalates_where_it_was_created_to_go(client, db_session):

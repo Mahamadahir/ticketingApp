@@ -292,6 +292,7 @@
       "summary": "Approval groups (phase 4C-1): named sets of people who vote on requests.",
       "tables": [],
       "tests": [
+        "tests/test_admin_org_pages.py",
         "tests/test_approval_groups.py",
         "tests/test_approval_reminders.py",
         "tests/test_approvals.py",
@@ -2499,6 +2500,8 @@
         "tests/test_admin.py",
         "tests/test_admin_frame.py",
         "tests/test_admin_mail_pages.py",
+        "tests/test_admin_org_pages.py",
+        "tests/test_admin_request_types_page.py",
         "tests/test_admin_settings.py",
         "tests/test_admin_users_page.py",
         "tests/test_anonymisation.py",
@@ -6740,6 +6743,13 @@
         "rule": "access-in-visibility"
       },
       {
+        "allowed": "Admin pages are behind require_super_admin and count or list memberships for the admin tables; there is no per-agent access decision to make.",
+        "detail": "select(TeamMembership) in a route",
+        "file": "app/routers/admin.py",
+        "in": "list_teams",
+        "rule": "access-in-visibility"
+      },
+      {
         "allowed": "Admin pages are behind require_super_admin (super admins see every ticket): team ticket counts, the category review queue and ticket lookups for the outbound mail table.",
         "detail": "select(Ticket) in a route",
         "file": "app/routers/admin.py",
@@ -7178,6 +7188,8 @@
     "tests/test_admin.py",
     "tests/test_admin_frame.py",
     "tests/test_admin_mail_pages.py",
+    "tests/test_admin_org_pages.py",
+    "tests/test_admin_request_types_page.py",
     "tests/test_admin_settings.py",
     "tests/test_admin_users_page.py",
     "tests/test_anonymisation.py",

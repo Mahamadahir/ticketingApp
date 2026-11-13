@@ -31,7 +31,7 @@ def test_an_admin_creates_a_group_adds_and_removes_members_with_audit(client, db
         assert client.post(f"/admin/approval-groups/{group.id}/members", data={"email": email}, follow_redirects=False).status_code == 303
     db_session.expire_all()
     assert [u.email for u in members_of(db_session, group.id)] == ["boss@example.com", "lead@example.com"]
-    page = client.get("/admin/approval-groups").text
+    page = client.get(f"/admin/approval-groups?group={group.id}").text  # members are in the group's panel (9K)
     assert "Managers" in page and "Big Boss" in page and "lead@example.com" in page
 
     boss = db_session.exec(select(User).where(User.email == "boss@example.com")).one()
@@ -110,8 +110,9 @@ def test_the_last_member_of_a_group_an_active_type_uses_cannot_be_removed(client
 
 def test_the_page_says_which_types_use_a_group(client, db_session):
     admin(client, db_session)
-    make(db_session, "Access")
-    assert "Used by: Access" in client.get("/admin/approval-groups").text
+    kind = make(db_session, "Access")
+    assert "Access" in client.get("/admin/approval-groups").text  # the list's Used by column
+    assert "Used by: Access" in client.get(f"/admin/approval-groups?group={kind.approval_group_id}").text
 
 
 def test_only_super_admins_manage_groups(client, db_session):
