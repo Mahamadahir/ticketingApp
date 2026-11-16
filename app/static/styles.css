@@ -474,11 +474,18 @@ th { color: var(--muted); font-weight: 600; }
 .outage-banner a { color: inherit; font-weight: 600; }
 
 /* The admin frame (9H): the admin menu as a second column beside the page. */
-.admin-frame { display: flex; align-items: stretch; flex: 1 1 auto; min-width: 0; }
+/* The column's background and right border are painted on the frame, so they run the full page height behind the sticky menu. */
+.admin-frame {
+  display: flex; align-items: stretch; flex: 1 1 auto; min-width: 0;
+  background: linear-gradient(to right, var(--raised) 215px, var(--border) 215px, var(--border) 216px, transparent 216px);
+}
 .admin-frame > .content { flex: 1 1 auto; min-width: 0; box-sizing: border-box; }
 .admin-nav {
   flex: 0 0 216px; box-sizing: border-box; padding: 18px 12px;
   background: var(--raised); border-right: 1px solid var(--border);
+  /* 9M: stays in view while the page scrolls, like the sidebar; a menu taller than the window scrolls on its own. */
+  position: sticky; top: 0; align-self: flex-start; max-height: 100vh; max-height: 100dvh;
+  overflow-y: auto; overscroll-behavior: contain;
 }
 .admin-nav ul { list-style: none; margin: 0; padding: 0; }
 .admin-group-title {
@@ -494,8 +501,9 @@ th { color: var(--muted); font-weight: 600; }
 .admin-home-link { font-weight: 700; font-size: 15px; }
 /* Too narrow for two columns beside the sidebar: the admin menu sits above the page, its groups side by side. */
 @media (max-width: 1000px) {
-  .admin-frame { flex-direction: column; }
+  .admin-frame { flex-direction: column; background: none; }
   .admin-nav {
+    position: static; align-self: stretch; max-height: none; overflow-y: visible;
     flex: none; border-right: 0; border-bottom: 1px solid var(--border); padding: 12px 16px;
     display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 0 16px;
   }

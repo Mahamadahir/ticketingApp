@@ -470,6 +470,18 @@ def test_the_sidebar_is_fixed_to_the_viewport_and_only_its_navigation_scrolls():
     assert "position: static" in stacked and "height: auto" in stacked
 
 
+def test_the_admin_menu_stays_in_view_beside_the_page_and_is_static_when_it_sits_above_it():
+    nav = re.search(r"\n\.admin-nav \{.*?\n\}", CSS, re.S).group(0)
+    for rule in ("position: sticky", "top: 0", "align-self: flex-start", "max-height: 100vh", "max-height: 100dvh", "overflow-y: auto"):
+        assert rule in nav
+    # The column's background runs the full page height from the frame, not only as tall as the menu.
+    frame = re.search(r"\n\.admin-frame \{.*?\n\}", CSS, re.S).group(0)
+    assert "var(--raised)" in frame and "var(--border)" in frame
+    # Above the page (1000px and below): static, full width, scrolling with the page.
+    stacked = re.search(r"@media \(max-width: 1000px\) \{.*?\n\}", CSS, re.S).group(0)
+    assert "position: static" in stacked and "max-height: none" in stacked and "background: none" in stacked
+
+
 def test_admin_users_forms_use_the_form_layout_with_their_field_names(client, db_session):
     set_role(db_session, login_as(client, "boss@example.com"), UserRole.SUPER_ADMIN)
     page = client.get("/admin/users?new=1").text  # the new-account panel
