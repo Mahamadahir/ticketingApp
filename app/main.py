@@ -38,7 +38,7 @@ class AppStaticFiles(StaticFiles):
 
     async def get_response(self, path, scope):
         response = await super().get_response(path, scope)
-        if response.status_code != 200:
+        if response.status_code not in (200, 304):  # a revalidation answer carries the header too
             return response
         name = path.replace("\\", "/")
         versioned = (name.startswith("vendor/") and name.endswith(".js")) or (name.startswith("fonts/") and name.endswith(".woff2"))

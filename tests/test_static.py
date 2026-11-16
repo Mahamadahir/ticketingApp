@@ -72,3 +72,17 @@ def test_a_versioned_stylesheet_address_is_cached_for_a_year_and_the_bare_one_is
 def test_vendor_and_fonts_keep_their_long_cache(client):
     for path in ("/static/vendor/htmx-2.0.11.min.js", "/static/fonts/Inter-4.0-variable.woff2"):
         assert client.get(path).headers["cache-control"] == "public, max-age=31536000, immutable"
+
+
+def test_a_revalidated_stylesheet_keeps_its_cache_header(client):
+    href, _ = _link(client.get("/auth/login").text, "styles.css")
+    etag = client.get(href).headers["etag"]
+    again = client.get(href, headers={"If-None-Match": etag})
+    assert again.status_code == 304 and again.headers["cache-control"] == "public, max-age=31536000, immutable"
+    bare = client.get("/static/styles.css", headers={"If-None-Match": etag})
+    assert bare.status_code == 304 and bare.headers["cache-control"] == "no-cache"
+
+
+def test_a_missing_stylesheet_falls_back_to_the_bare_address(monkeypatch, tmp_path):
+    monkeypatch.setattr(static_url, "STATIC_DIR", tmp_path)
+    assert static_url.static_url("gone.css") == "/static/gone.css"

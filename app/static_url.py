@@ -28,4 +28,7 @@ def file_version(path: Path) -> str:
 
 def static_url(name: str) -> str:
     """{{ static_url("styles.css") }}: the versioned address of a file directly in app/static."""
-    return f"/static/{name}?v={file_version(STATIC_DIR / name)}"
+    try:
+        return f"/static/{name}?v={file_version(STATIC_DIR / name)}"
+    except OSError:  # a missing file is an unstyled page and a 404 for the CSS, not a page that fails to render
+        return f"/static/{name}"
