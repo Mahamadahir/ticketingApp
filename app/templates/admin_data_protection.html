@@ -1,39 +1,74 @@
 {% extends "base.html" %}
 {% block title %}Admin: Data protection{% endblock %}
 {% block content %}
+{# 9L: two cards, the subject access export and anonymisation (which keeps its preview and typed-confirmation steps on the next
+   page), then the stored files that could not be deleted yet. Routes and field names are unchanged. #}
+<header class="admin-head">
+  <h1>Data protection</h1>
+  <p>Subject access exports and anonymising a requester.</p>
+</header>
 
-<h2>Data protection</h2>
+<div class="dp-cards">
+  <section class="card dp-card" aria-labelledby="dp-sar">
+    <h2 id="dp-sar">Subject access export</h2>
+    <p class="note">
+      Everything held on one person, as a ZIP. Enter any address they have; their linked addresses and old addresses
+      are included. The ZIP holds the account record, the tickets they raised, follow or are copied on (the messages
+      the requester may see, plus their form answers, rating and comments), approval votes, notifications, preferences,
+      sign-in activity, audit entries, and the files they sent. Internal notes are in a separate file, to decide on
+      before anything is disclosed. Staff work is listed by reference only.
+    </p>
+    <p class="note">
+      The file is built when you press the button, sent to you and then deleted: it is not kept on the server and
+      there is no link to share. Each export is recorded in the audit log. Attachments are added up to
+      {{ max_mb }} MB (Admin &gt; Settings); anything over is listed with its size.
+    </p>
+    {% if error %}<p class="field-error" role="alert">{{ error }}</p>{% endif %}
+    <form method="post" action="/admin/data-protection/subject-access">
+      <div class="form-grid">
+        <label class="field field-wide">Email address <input type="email" name="address" maxlength="254" required value="{{ address or '' }}" /></label>
+      </div>
+      <div class="form-actions"><button type="submit" class="btn btn-primary">Download export</button></div>
+    </form>
+  </section>
 
-<h3>Subject access export</h3>
-<p class="note">
-  Everything held on one person, as a ZIP. Enter any address they have; their linked addresses and old addresses
-  are included. The ZIP holds the account record, the tickets they raised, follow or are copied on (the messages
-  the requester may see, plus their form answers, rating and comments), approval votes, notifications, preferences,
-  sign-in activity, audit entries, and the files they sent. Internal notes are in a separate file, to decide on
-  before anything is disclosed. Staff work is listed by reference only.
-</p>
-<p class="note">
-  The file is built when you press the button, sent to you and then deleted: it is not kept on the server and
-  there is no link to share. Each export is recorded in the audit log. Attachments are added up to
-  {{ max_mb }} MB (Admin &gt; Settings); anything over is listed with its size.
-</p>
-{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
-<form method="post" action="/admin/data-protection/subject-access">
-  <label>Email address <input type="email" name="address" maxlength="254" required value="{{ address or '' }}" /></label>
-  <button type="submit">Download export</button>
-</form>
+  <section class="card dp-card" aria-labelledby="dp-anon">
+    <h2 id="dp-anon">Anonymise a requester</h2>
+    <p class="note">
+      Keeps their tickets and removes the person: name, email address, files, what they wrote and what was emailed to
+      them. Enter any address they have; their linked and old addresses are included. You see exactly what will change
+      before anything does. <strong>This cannot be undone.</strong> Agents and super admins are not anonymised here.
+    </p>
+    <form method="post" action="/admin/data-protection/anonymise/preview">
+      <div class="form-grid">
+        <label class="field field-wide">Email address <input type="email" name="address" maxlength="254" required /></label>
+        <label class="field-check field-wide"><input type="checkbox" name="close_open" value="true" /> Close open tickets first</label>
+      </div>
+      <div class="form-actions"><button type="submit" class="btn btn-primary">Show what will change</button></div>
+    </form>
+  </section>
+</div>
 
-<h3>Anonymise a requester</h3>
-<p class="note">
-  Keeps their tickets and removes the person: name, email address, files, what they wrote and what was emailed to
-  them. Enter any address they have; their linked and old addresses are included. You see exactly what will change
-  before anything does. <strong>This cannot be undone.</strong> Agents and super admins are not anonymised here.
-</p>
-{% if waiting_deletes %}<p class="note" role="status">{{ waiting_deletes|length }} stored file(s) from earlier anonymisations could not be deleted yet; the recurring job "blob-cleanup" retries them every hour. If this does not clear, the storage permission is the first thing to check.</p>
-<ul>{% for w in waiting_deletes %}<li>{{ w.blob_key }}: tried {{ w.attempts }} time(s){% if w.last_error %}, last error: {{ w.last_error }}{% endif %}</li>{% endfor %}</ul>{% endif %}
-<form method="post" action="/admin/data-protection/anonymise/preview">
-  <label>Email address <input type="email" name="address" maxlength="254" required /></label>
-  <label><input type="checkbox" name="close_open" value="true" /> Close open tickets first</label>
-  <button type="submit">Show what will change</button>
-</form>
+<section class="mail-section" aria-labelledby="dp-wait">
+  <h2 id="dp-wait">Stored files waiting to be deleted</h2>
+  {% if waiting_deletes %}
+  <p class="note" role="status">{{ waiting_deletes|length }} stored file(s) from earlier anonymisations could not be deleted yet; the recurring job "blob-cleanup" retries them every hour. If this does not clear, the storage permission is the first thing to check.</p>
+  <div class="table-box">
+    <table class="table">
+      <thead><tr><th>Stored file</th><th>Tries</th><th>Last error</th></tr></thead>
+      <tbody>
+        {% for w in waiting_deletes %}
+        <tr>
+          <td>{{ w.blob_key }}</td>
+          <td><span class="chip {{ 't-red' if w.attempts >= blob_failures_to_show else 't-amber' }}">tried {{ w.attempts }} time(s)</span></td>
+          <td>{% if w.last_error %}last error: {{ w.last_error }}{% else %}none{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state"><strong>Nothing waiting.</strong><span>Files from anonymised requesters are deleted straight away.</span></div>
+  {% endif %}
+</section>
 {% endblock %}

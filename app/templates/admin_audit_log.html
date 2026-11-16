@@ -1,12 +1,14 @@
 {% extends "base.html" %}
 {% block title %}Admin: Audit log{% endblock %}
 {% block content %}
+{# 9L: the filter bar in the 9G layout, then the table with paging. Filters and their names are unchanged. #}
+<header class="admin-head">
+  <h1>Audit log</h1>
+  <p>The named actions on tickets, users, teams and settings: who did what, and to what.</p>
+</header>
 
-<h2>Audit log</h2>
-
-<form class="filter-form" method="get" action="/admin/audit-log">
-  <label>
-    Type
+<form class="filter-bar" method="get" action="/admin/audit-log" role="search" aria-label="Filter the audit log">
+  <label class="field">Type
     <select name="entity_type">
       <option value="">All</option>
       {% for t in entity_types %}
@@ -14,8 +16,7 @@
       {% endfor %}
     </select>
   </label>
-  <label>
-    Done by
+  <label class="field">Done by
     <select name="actor">
       <option value="">Anyone</option>
       {% for a in actors %}
@@ -23,8 +24,7 @@
       {% endfor %}
     </select>
   </label>
-  <label>
-    Done to user
+  <label class="field">Done to user
     <select name="subject_user_id">
       <option value="">Any user</option>
       {% for u in users %}
@@ -32,36 +32,32 @@
       {% endfor %}
     </select>
   </label>
-  <button type="submit">Filter</button>
-  <a href="/admin/audit-log">Clear</a>
+  <button type="submit" class="btn btn-primary">Filter</button>
+  <a class="btn" href="/admin/audit-log">Clear</a>
 </form>
 
-<table>
-  <thead>
-    <tr>
-      <th>Time</th>
-      <th>Actor</th>
-      <th>Action</th>
-      <th>Entity</th>
-      <th>Detail</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for entry in page.items %}
-    <tr>
-      <td>{{ entry.created_at|local_time(seconds=True) }}</td>
-      <td>{{ entry.actor_email }}</td>
-      <td><span class="badge">{{ entry.action }}</span></td>
-      <td>{{ entry.entity_type }} #{{ entry.entity_id }}</td>
-      <td>{{ entry.detail or "" }}</td>
-    </tr>
-    {% else %}
-    <tr>
-      <td colspan="5">No audit entries yet.</td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+{% if page.items %}
+<div class="table-box">
+  <table class="table log-table">
+    <thead>
+      <tr><th>Time</th><th>Actor</th><th>Action</th><th>Entity</th><th>Detail</th></tr>
+    </thead>
+    <tbody>
+      {% for entry in page.items %}
+      <tr>
+        <td>{{ entry.created_at|local_time(seconds=True) }}</td>
+        <td>{{ entry.actor_email }}</td>
+        <td><span class="chip t-gray">{{ entry.action }}</span></td>
+        <td>{{ entry.entity_type }} #{{ entry.entity_id }}</td>
+        <td>{{ entry.detail or "" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="empty-state"><strong>No audit entries yet.</strong><span>Named actions on tickets, users and teams are recorded here.</span></div>
+{% endif %}
 
 {% include "_pagination.html" %}
 {% endblock %}

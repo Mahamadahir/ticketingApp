@@ -1,33 +1,58 @@
 {% extends "base.html" %}
 {% block title %}Admin: Outage mode{% endblock %}
 {% block content %}
-
-<h2>Outage mode</h2>
+{# 9L: a status card with the on and off actions (their rules are unchanged: only a break-glass account switches it on, any
+   super admin switches it off), then who is ready. #}
+<header class="admin-head">
+  <h1>Outage mode</h1>
+  <p>For when Microsoft (Entra) sign-in is down.</p>
+</header>
 <p class="note">
-  For when Microsoft (Entra) sign-in is down. While it is on, agents can sign in on the sign-in page with the emergency
+  While it is on, agents can sign in on the sign-in page with the emergency
   password they set in advance, and every page shows a banner. Only a break-glass account can switch it on; any super
   admin can switch it off. Switching it off ends every emergency session, clears every emergency password that was used
   during the outage and emails those agents asking for a new one. Every switch is audited and tells the super admins.
 </p>
-{% if message %}<p role="status">{{ message }}</p>{% endif %}
+{% if message %}<p class="outage-message" role="status">{{ message }}</p>{% endif %}
 
-{% if status %}
-<p><strong>Outage mode is ON</strong>{% if status.since %} since {{ status.since|local_time }}{% endif %}{% if status.by %}, switched on by {{ status.by }}{% endif %}.</p>
-<form method="post" action="/admin/outage/off"><button type="submit">Switch outage mode off</button></form>
-{% else %}
-<p><strong>Outage mode is off.</strong></p>
-{% if user.is_break_glass %}
-<form method="post" action="/admin/outage/on"><button type="submit">Switch outage mode on</button></form>
-{% else %}
-<p class="note">You are signed in with an ordinary account, so you cannot switch it on. Sign in with a break-glass account at /auth/break-glass.</p>
-{% endif %}
-{% endif %}
+<div class="outage-cards">
+  <section class="card outage-card" aria-labelledby="out-status">
+    <div class="card-header">
+      <h2 id="out-status">Status</h2>
+      {% if status %}<span class="chip t-red">On</span>{% else %}<span class="chip t-green">Off</span>{% endif %}
+    </div>
+    {% if status %}
+    <p><strong>Outage mode is ON</strong>{% if status.since %} since {{ status.since|local_time }}{% endif %}{% if status.by %}, switched on by {{ status.by }}{% endif %}.</p>
+    <dl class="dl">
+      <dt>Switched on by</dt><dd>{{ status.by or "unknown" }}</dd>
+      <dt>Since</dt><dd>{{ status.since|local_time if status.since else "unknown" }}</dd>
+    </dl>
+    <div class="form-actions">
+      <form method="post" action="/admin/outage/off"><button type="submit" class="btn btn-danger">Switch outage mode off</button></form>
+    </div>
+    {% else %}
+    <p><strong>Outage mode is off.</strong></p>
+    {% if user.is_break_glass %}
+    <div class="form-actions">
+      <form method="post" action="/admin/outage/on"><button type="submit" class="btn btn-danger">Switch outage mode on</button></form>
+    </div>
+    {% else %}
+    <p class="note">You are signed in with an ordinary account, so you cannot switch it on. Sign in with a break-glass account at /auth/break-glass.</p>
+    {% endif %}
+    {% endif %}
+  </section>
 
-<h3>Who is ready</h3>
-<p>{{ with_count }} active agent(s) have an emergency password.{% if without %} {{ without|length }} do not:{% endif %}</p>
-{% if without %}
-<ul>
-  {% for person in without %}<li>{{ person.display_name }} ({{ person.email }})</li>{% endfor %}
-</ul>
-{% endif %}
+  <section class="card outage-card" aria-labelledby="out-ready">
+    <div class="card-header">
+      <h2 id="out-ready">Who is ready</h2>
+      {% if without %}<span class="chip t-amber">{{ without|length }} without</span>{% else %}<span class="chip t-green">Everyone</span>{% endif %}
+    </div>
+    <p>{{ with_count }} active agent(s) have an emergency password.{% if without %} {{ without|length }} do not:{% endif %}</p>
+    {% if without %}
+    <ul class="outage-without">
+      {% for person in without %}<li>{{ person.display_name }} ({{ person.email }})</li>{% endfor %}
+    </ul>
+    {% endif %}
+  </section>
+</div>
 {% endblock %}

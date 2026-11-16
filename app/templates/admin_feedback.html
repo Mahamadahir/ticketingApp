@@ -1,13 +1,14 @@
 {% extends "base.html" %}
 {% block title %}Admin: Feedback{% endblock %}
 {% block content %}
+{# 9L: filters and a table. Who may open the page and what is shown are unchanged (app/feedback.py). #}
+<header class="admin-head">
+  <h1>Feedback</h1>
+  <p>Ratings and comments from requesters, kept with the agent who resolved the ticket. Comments are personal data.</p>
+</header>
 
-<h2>Feedback</h2>
-<p class="note">Ratings and comments from requesters, kept with the agent who resolved the ticket. Comments are personal data.</p>
-
-<form class="filter-form" method="get" action="/admin/feedback">
-  <label>
-    Agent
+<form class="filter-bar" method="get" action="/admin/feedback" role="search" aria-label="Filter feedback">
+  <label class="field">Agent
     <select name="agent">
       <option value="">Any agent</option>
       {% for a in agents %}
@@ -15,8 +16,7 @@
       {% endfor %}
     </select>
   </label>
-  <label>
-    Rating
+  <label class="field">Rating
     <select name="rating">
       <option value="">Any</option>
       {% for n in range(5, 0, -1) %}
@@ -24,28 +24,32 @@
       {% endfor %}
     </select>
   </label>
-  <button type="submit">Filter</button>
-  <a href="/admin/feedback">Clear</a>
+  <button type="submit" class="btn btn-primary">Filter</button>
+  <a class="btn" href="/admin/feedback">Clear</a>
 </form>
 
-<table>
-  <thead>
-    <tr><th>Time</th><th>Ticket</th><th>Resolved by</th><th>Rating</th><th>Comment</th></tr>
-  </thead>
-  <tbody>
-    {% for f, t in page.items %}
-    <tr>
-      <td>{{ f.created_at|local_time }}</td>
-      <td><a href="/tickets/{{ t.number }}">{{ t.reference }}</a> {{ t.subject }}</td>
-      <td>{% if f.resolved_by_id %}{% set a = names.get(f.resolved_by_id) %}{{ (a.display_name or a.email) if a else "Unknown" }}{% else %}Resolved automatically{% endif %}</td>
-      <td>{{ f.rating }} / 5</td>
-      <td>{{ f.comment }}</td>
-    </tr>
-    {% else %}
-    <tr><td colspan="5">No feedback yet.</td></tr>
-    {% endfor %}
-  </tbody>
-</table>
+{% if page.items %}
+<div class="table-box">
+  <table class="table log-table">
+    <thead>
+      <tr><th>Time</th><th>Ticket</th><th>Resolved by</th><th>Rating</th><th>Comment</th></tr>
+    </thead>
+    <tbody>
+      {% for f, t in page.items %}
+      <tr>
+        <td>{{ f.created_at|local_time }}</td>
+        <td><a href="/tickets/{{ t.number }}">{{ t.reference }}</a> {{ t.subject }}</td>
+        <td>{% if f.resolved_by_id %}{% set a = names.get(f.resolved_by_id) %}{{ (a.display_name or a.email) if a else "Unknown" }}{% else %}Resolved automatically{% endif %}</td>
+        <td><span class="chip {{ 't-green' if f.rating >= 4 else ('t-amber' if f.rating == 3 else 't-red') }}">{{ f.rating }} / 5</span></td>
+        <td>{{ f.comment }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="empty-state"><strong>No feedback yet.</strong><span>Ratings appear here when requesters rate a resolved ticket.</span></div>
+{% endif %}
 
 {% include "_pagination.html" %}
 {% endblock %}

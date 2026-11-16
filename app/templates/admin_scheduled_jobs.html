@@ -1,33 +1,50 @@
 {% extends "base.html" %}
-{% block title %}Admin: Recurring jobs{% endblock %}
+{% block title %}Admin: Scheduled jobs{% endblock %}
 {% block content %}
-
-<h2>Recurring jobs</h2>
+{# 9L: the jobs as a table with a last-result chip. There is no run-now route today (the worker runs each job when it is due),
+   so none is drawn here. #}
+<header class="admin-head">
+  <h1>Scheduled jobs</h1>
+  <p>The recurring jobs that must not be missed: auto-close, chase, reminders and the rest.</p>
+</header>
 <p class="note">
-  Jobs that must not be missed (auto-close, chase, reminders) are driven by a table: a late run happens once,
+  Jobs that must not be missed are driven by a table: a late run happens once,
   a failed run is retried, and a run the worker died in is picked up again. Times are in your time zone. The timings are under Settings.
 </p>
 
-<p><strong>{{ status }}</strong></p>
+<p class="job-status" role="status"><strong>{{ status }}</strong></p>
 
 {% if rows %}
-<table>
-  <thead>
-    <tr><th>Job</th><th>Next due</th><th>Last started</th><th>Last success</th><th>Held by</th><th>Failures in a row</th><th>Last error</th></tr>
-  </thead>
-  <tbody>
-    {% for row in rows %}
-    <tr>
-      <td>{{ row.name }}</td>
-      <td>{{ row.next_run_at|local_time }}</td>
-      <td>{{ row.last_started_at|local_time if row.last_started_at else "never" }}</td>
-      <td>{{ row.last_success_at|local_time if row.last_success_at else "never" }}</td>
-      <td>{% if row.lease_owner %}{{ row.lease_owner }} until {{ row.lease_expires_at|local_time }}{% else %}nobody{% endif %}</td>
-      <td>{{ row.failures_in_a_row }}</td>
-      <td>{% if row.last_error %}{{ row.last_error }} ({{ row.last_error_at|local_time }}{% if row.last_success_at and row.last_success_at > row.last_error_at %}, since worked{% endif %}){% else %}none{% endif %}</td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+<div class="table-box">
+  <table class="table job-table">
+    <thead>
+      <tr><th>Job</th><th>Every</th><th>Last started</th><th>Last result</th><th>Next due</th><th>Held by</th><th>Failures in a row</th><th>Last error</th></tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td><strong>{{ row.name }}</strong></td>
+        <td>{{ intervals.get(row.name, "retired") }}</td>
+        <td>{{ row.last_started_at|local_time if row.last_started_at else "never" }}</td>
+        <td>
+          {% if row.name not in registered %}<span class="chip t-gray">Retired</span>
+          {% elif row.failures_in_a_row %}<span class="chip t-red">Failing</span>
+          {% elif row.lease_expires_at and row.lease_expires_at <= now %}<span class="chip t-amber">Did not finish</span>
+          {% elif row.name in overdue %}<span class="chip t-amber">Overdue</span>
+          {% elif row.last_success_at %}<span class="chip t-green">Worked</span>
+          {% else %}<span class="chip t-gray">Never run</span>{% endif %}
+          <br /><span class="muted small">{% if row.last_success_at %}last success {{ row.last_success_at|local_time }}{% else %}no success yet{% endif %}</span>
+        </td>
+        <td>{{ row.next_run_at|local_time }}</td>
+        <td>{% if row.lease_owner %}{{ row.lease_owner }} until {{ row.lease_expires_at|local_time }}{% else %}nobody{% endif %}</td>
+        <td>{{ row.failures_in_a_row }}</td>
+        <td>{% if row.last_error %}{{ row.last_error }} ({{ row.last_error_at|local_time }}{% if row.last_success_at and row.last_success_at > row.last_error_at %}, since worked{% endif %}){% else %}none{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="empty-state"><strong>No recurring jobs have run yet.</strong><span>The worker adds each job here the first time it ticks.</span></div>
 {% endif %}
 {% endblock %}
