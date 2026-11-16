@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 from html import escape
-from urllib.parse import urlencode
+from urllib.parse import parse_qs, urlencode
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.exception_handlers import http_exception_handler, request_validation_exception_handler
@@ -16,6 +16,7 @@ from app.auth import NotAuthenticated, get_current_user
 from app.visibility import NoTicketAccess
 from app.config import settings, unsafe_setting_errors
 from app.log_redaction import redact_approval_tokens
+from app.static_url import STATIC_DIR, file_version
 from app.sessions import COOKIE_MAX_AGE_SECONDS
 from app.telemetry import start_telemetry
 from app.models import User, UserRole
@@ -31,13 +32,22 @@ async def lifespan(app: FastAPI):
 
 
 class AppStaticFiles(StaticFiles):
-    """Static files, with long caching for vendor/ scripts and fonts/: those files carry their version in the name."""
+    """Static files with explicit caching. vendor/ scripts and fonts/ carry their version in the name and get a year,
+    immutable. Our own stylesheets get the same when asked for with the current `?v=` hash (app/static_url.py); a
+    stale or missing `?v=` gets no-cache (always revalidated), so a wrong address can never pin old content."""
 
     async def get_response(self, path, scope):
         response = await super().get_response(path, scope)
+        if response.status_code not in (200, 304):  # a revalidation answer carries the header too
+            return response
         name = path.replace("\\", "/")
         versioned = (name.startswith("vendor/") and name.endswith(".js")) or (name.startswith("fonts/") and name.endswith(".woff2"))
-        if versioned and response.status_code == 200:
+        if name.endswith(".css") and "/" not in name:
+            asked = parse_qs(scope.get("query_string", b"").decode("latin-1")).get("v", [])
+            versioned = asked == [file_version(STATIC_DIR / name)]
+            if not versioned:
+                response.headers["Cache-Control"] = "no-cache"
+        if versioned:
             response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
         return response
 

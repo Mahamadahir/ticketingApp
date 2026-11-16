@@ -60,8 +60,8 @@
   <meta name="color-scheme" content="{{ 'light dark' if theme == 'system' else theme }}" />
   <title>{% block title %}IT Support Ticketing{% endblock %}</title>
   <link rel="preload" href="/static/fonts/Inter-4.0-variable.woff2" as="font" type="font/woff2" crossorigin />
-  <link rel="stylesheet" href="/static/tokens.css" />
-  <link rel="stylesheet" href="/static/styles.css" />
+  <link rel="stylesheet" href="{{ static_url('tokens.css') }}" />
+  <link rel="stylesheet" href="{{ static_url('styles.css') }}" />
   <script src="/static/vendor/htmx-2.0.11.min.js"></script>
 </head>
 <body>
