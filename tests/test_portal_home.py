@@ -399,7 +399,7 @@ def test_the_empty_states(client, db_session):
 def test_the_portal_frame_menu_closes_on_escape_and_outside_click(client, db_session):
     login_as(client, "jo@example.com")
     page = client.get("/portal").text
-    assert 'querySelector(".person-menu")' in page and "Escape" in page
+    assert 'details.person-menu, details.bell-menu' in page and "Escape" in page
 
 
 def test_the_portal_frame(client, db_session):

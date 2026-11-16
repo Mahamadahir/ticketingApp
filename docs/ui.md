@@ -64,8 +64,17 @@ permissions in `app/permissions.py` (Reports for `view_reports`; Admin for a sup
 permission opens; Canned responses for a super admin) and counts what they can see through `app/visibility.py`. A template
 only draws what it is given. The routes still enforce access themselves.
 
-The bell keeps its contract: the link polls `/notifications/count` every 30 seconds (`data-poll`) into a screen-reader
-label ("Notifications (3)"), and the red number on the icon follows that text.
+The bell is a dropdown (#237): `details.bell-menu` whose `summary.icon-btn` is the bell and whose `div.bell-panel` (the person menu panel
+look) holds `#bell-latest` and a `View more` link to `/notifications`. The rows come from `GET /notifications/latest` (the latest five
+`visible_to` notifications, `notifications_latest.html`, no frame, `no-store`), fetched by htmx each time the panel opens (`toggle`) and never
+on page load; each row is a `form` POST to `/notifications/{id}/open` (unread rows are bold, have a dot and an `Unread:` screen-reader
+prefix), and opening the dropdown marks nothing read. Without script the panel still holds View more. The one script at the foot of
+`base.html` serves every `details.person-menu` and `details.bell-menu`: Escape closes and returns focus to the summary, a click outside
+closes, choosing a link closes, and opening one closes the other. `data-quiet` (like `data-poll`) marks a background request that must not
+clear the flash area or swap in a sign-in redirect.
+
+The bell keeps its contract: its summary polls `/notifications/count` every 30 seconds (`data-poll`) into a screen-reader
+label ("Notifications (3)"), and the red number on the icon follows that text. The poll swaps only that label, so an open dropdown stays open.
 
 Accessibility built into the shell (WCAG 2.2 AA): a skip link to `#main-content`; landmarks (`header`, `nav`, `main`,
 `role="search"`); `aria-current="page"` on the current item (the fill is not the only signal); `:focus-visible` rings;

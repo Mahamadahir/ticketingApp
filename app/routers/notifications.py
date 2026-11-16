@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from app.templating import templates
+from app.templating import is_htmx, templates
 from sqlmodel import Session, select
 
 from app.auth import get_current_user, get_current_user_passively
@@ -18,6 +18,21 @@ router = APIRouter(prefix="/notifications", tags=["notifications"])
 signed_in = get_current_user
 
 
+def newest_first(session: Session, user: User):
+    """What the page and the bell dropdown both list: this person's visible notifications, newest first."""
+    return (
+        select(Notification)
+        .where(visible_to(session, user))
+        .order_by(Notification.created_at.desc(), Notification.id.desc())
+    )
+
+
+def texts_of(session: Session, notifications) -> dict[int, str]:
+    """The wording of each, by notification id, with the ticket's current reference filled in."""
+    references = bell_references(session, notifications)
+    return {n.id: notification_text(n, references.get(n.ticket_id)) for n in notifications}
+
+
 @router.get("", response_class=HTMLResponse)
 def list_notifications(
     request: Request,
@@ -25,19 +40,32 @@ def list_notifications(
     user: User = Depends(signed_in),
     session: Session = Depends(get_session),
 ):
-    query = (
-        select(Notification)
-        .where(visible_to(session, user))
-        .order_by(Notification.created_at.desc(), Notification.id.desc())
-    )
-    notifications = paginate(session, query, page, request.query_params)
+    notifications = paginate(session, newest_first(session, user), page, request.query_params)
     tickets = bell_tickets(session, user, notifications.items)
-    references = bell_references(session, notifications.items)
-    texts = {n.id: notification_text(n, references.get(n.ticket_id)) for n in notifications.items}
+    texts = texts_of(session, notifications.items)
     return templates.TemplateResponse(
         request,
         "notifications.html",
         {"page": notifications, "tickets": tickets, "texts": texts, "unread": count_unread(session, user), "user": user, "portal_kinds": PORTAL_KINDS},
+    )
+
+
+BELL_ITEMS = 5  # what the bell's dropdown shows; the rest are on /notifications (View more)
+
+
+@router.get("/latest", response_class=HTMLResponse)
+def latest_notifications(
+    request: Request,
+    user: User = Depends(signed_in),
+    session: Session = Depends(get_session),
+):
+    """The bell dropdown's list (htmx, loaded when it opens): the latest few this person can see, same rules and
+    wording as the page. Reading it marks nothing read; a row's own POST does."""
+    if not is_htmx(request):
+        return RedirectResponse("/notifications", status_code=303)  # only the dropdown's rows, never a page of their own
+    latest = session.exec(newest_first(session, user).limit(BELL_ITEMS)).all()
+    return templates.TemplateResponse(
+        request, "notifications_latest.html", {"items": latest, "texts": texts_of(session, latest)}, headers={"Cache-Control": "no-store"}
     )
 
 

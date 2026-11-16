@@ -348,7 +348,7 @@ def test_the_bell_shows_the_unread_count_and_keeps_the_poll(client, db_session):
     assert re.search(r'id="bell-count" aria-hidden="true">2</span>', page.text)
     # Same polling contract as before the redesign: the count endpoint, every 30 seconds, never wiping a message.
     assert 'hx-get="/notifications/count"' in page.text and "every 30s" in page.text and "data-poll" in page.text
-    assert 'aria-label' not in re.search(r'<a href="/notifications".*?</a>', page.text, re.S).group(0)  # its text names it
+    assert 'aria-label' not in re.search(r'<summary class="icon-btn" data-poll.*?</summary>', page.text, re.S).group(0)  # its text names it
 
 
 def test_the_bell_is_in_the_portal_frame_too(client, db_session):
@@ -513,4 +513,4 @@ def test_pressing_enter_in_the_time_zone_box_submits_use_this_time_zone_not_the_
 def test_choosing_a_link_in_the_person_menu_closes_it(client, db_session):
     agent(client, db_session)
     page = client.get("/tickets").text
-    assert 'event.target.closest(".person-menu-panel a")' in page and "Escape" in page
+    assert 'closest(".person-menu-panel a, .bell-panel a")' in page and "Escape" in page
