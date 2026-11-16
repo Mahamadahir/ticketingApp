@@ -111,7 +111,7 @@ starting a phase, and `README.md` for how to run it.
   itself and fixes the real findings. It reports back to the orchestrator: what it built, the test
   results, and every review finding, accepted (fixed) or rejected (with the reason). The orchestrator
   checks the report, relays it to the user and marks the PR ready. Sub-agents work in their own worktrees, so their
-  changes never reach the user's checkout (`C:\Projects	icketingApp`), which the local WSL app serves with auto-reload.
+  changes never reach the user's checkout (`C:\Projects\ticketingApp`), which the local WSL app serves with auto-reload.
   So when a PR is ready, the orchestrator puts the user's checkout on that PR's latest commit (`git fetch` then
   `git switch --detach origin/<branch>`) for them to preview, says what to look at, and after the decision puts it back
   on `main` and pulls (`docker compose restart worker` if job code changed). Never while the checkout has the user's
