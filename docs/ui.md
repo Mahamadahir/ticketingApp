@@ -7,7 +7,16 @@ issues move each page onto the classes below.
 
 Files: `app/static/tokens.css` (tokens, the Inter font face), `app/static/styles.css` (shell, components, older page
 classes), `app/templates/base.html` (the shell), `app/navigation.py` (what the navigation holds), `app/theme.py`
-(the theme setting), `app/static/fonts/` (Inter and its licence).
+(the theme setting), `app/static/fonts/` (Inter and its licence), `app/static_url.py` (the versioned stylesheet address).
+
+**Stylesheet addresses (#234).** `base.html` links both stylesheets through `{{ static_url('styles.css') }}`, which gives
+`/static/styles.css?v=<first 8 hex digits of the file's SHA-256>`; never type a hash or a bare `/static/...css` link in a
+template. A versioned address that carries the file's current hash is served `public, max-age=31536000, immutable`; a bare
+address, or one with an old hash (a page rendered before a deploy), is served `no-cache`. `vendor/` and `fonts/` keep their year
+of caching (the version is in the file name). Local editing rule: the hash is recomputed only when the file's size or
+modification time changes (one `stat` per page render, no read), so a deployed app computes it once and, locally, saving a CSS
+file shows on the next page load with no restart and no hard refresh (the compose reload override restarts on Python changes
+only, and does not need to restart for CSS).
 
 ## Tokens
 

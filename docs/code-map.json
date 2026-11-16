@@ -1981,6 +1981,7 @@
         "app.routers.tickets",
         "app.routers.webhooks",
         "app.sessions",
+        "app.static_url",
         "app.telemetry",
         "app.templating",
         "app.visibility"
@@ -5756,6 +5757,26 @@
       ]
     },
     {
+      "classes": [],
+      "file": "app/static_url.py",
+      "functions": [
+        "file_version",
+        "static_url"
+      ],
+      "imported_by": [
+        "app.main",
+        "app.templating"
+      ],
+      "imports": [],
+      "module": "app.static_url",
+      "routes": [],
+      "summary": "The address of one of our own stylesheets, with a version taken from its contents.",
+      "tables": [],
+      "tests": [
+        "tests/test_static.py"
+      ]
+    },
+    {
       "classes": [
         "BlobStorage",
         "InvalidKey",
@@ -6317,6 +6338,7 @@
         "app.permissions",
         "app.presence",
         "app.request_icons",
+        "app.static_url",
         "app.theme",
         "app.time_zones",
         "app.visibility"

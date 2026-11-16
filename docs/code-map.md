@@ -831,7 +831,7 @@ File: `app/main.py`
 
 - Classes: `AppStaticFiles`
 - Functions: `build_app`, `handle_http_exception`, `handle_no_ticket_access`, `handle_not_authenticated`, `handle_validation_error`, `lifespan`, `root`
-- Imports: `app.activity`, `app.auth`, `app.config`, `app.log_redaction`, `app.models`, `app.routers.action_links`, `app.routers.admin`, `app.routers.approvals`, `app.routers.attachments`, `app.routers.auth`, `app.routers.bulk_resolve`, `app.routers.data_protection`, `app.routers.dev_tools`, `app.routers.feedback`, `app.routers.health`, `app.routers.legal`, `app.routers.link_account`, `app.routers.msp_mail`, `app.routers.my_settings`, `app.routers.notifications`, `app.routers.portal`, `app.routers.reports`, `app.routers.teams_bot`, `app.routers.tickets`, `app.routers.webhooks`, `app.sessions`, `app.telemetry`, `app.templating`, `app.visibility`
+- Imports: `app.activity`, `app.auth`, `app.config`, `app.log_redaction`, `app.models`, `app.routers.action_links`, `app.routers.admin`, `app.routers.approvals`, `app.routers.attachments`, `app.routers.auth`, `app.routers.bulk_resolve`, `app.routers.data_protection`, `app.routers.dev_tools`, `app.routers.feedback`, `app.routers.health`, `app.routers.legal`, `app.routers.link_account`, `app.routers.msp_mail`, `app.routers.my_settings`, `app.routers.notifications`, `app.routers.portal`, `app.routers.reports`, `app.routers.teams_bot`, `app.routers.tickets`, `app.routers.webhooks`, `app.sessions`, `app.static_url`, `app.telemetry`, `app.templating`, `app.visibility`
 - Imported by: none
 - Tests: `conftest.py`, `test_action_links.py`, `test_anonymisation.py`, `test_attachments.py`, `test_break_glass.py`, `test_entra_check.py`, `test_health.py`, `test_htmx_errors.py`, `test_outage_mode.py`, `test_portal_new.py`, `test_portal_request.py`, `test_public_surface.py`, `test_reply_files.py`, `test_sessions.py`, `test_subject_access.py`, `test_teams_bot.py`, `test_teams_hold.py`, `test_triage.py`
 
@@ -1383,6 +1383,15 @@ File: `app/splitting.py`
 - Imported by: `app.auto_close_chase`, `app.bulk_resolve`, `app.closing`, `app.due_today`, `app.intake`, `app.messages`, `app.msp`, `app.msp_actions`, `app.reopening`, `app.resolution`, `app.routers.bulk_resolve`, `app.routers.portal`, `app.routers.tickets`, `app.subrequests`, `app.ticket_service`
 - Tests: `test_auto_close_chase.py`, `test_scheduled_status.py`, `test_split_family.py`, `test_splitting.py`, `test_subrequests.py`, `test_with_supplier.py`
 
+### `app.static_url`
+
+The address of one of our own stylesheets, with a version taken from its contents.  
+File: `app/static_url.py`
+- Functions: `file_version`, `static_url`
+- Imports: none
+- Imported by: `app.main`, `app.templating`
+- Tests: `test_static.py`
+
 ### `app.storage`
 
 Where attachment bytes live (docs/plan.md, "Storage decisions").  
@@ -1523,7 +1532,7 @@ File: `app/telemetry.py`
 The one place the Jinja2 environment is built, so every router renders the same way.  
 File: `app/templating.py`
 - Functions: `is_htmx`
-- Imports: `app.backdating`, `app.database`, `app.forms`, `app.models`, `app.navigation`, `app.outage`, `app.permissions`, `app.presence`, `app.request_icons`, `app.theme`, `app.time_zones`, `app.visibility`
+- Imports: `app.backdating`, `app.database`, `app.forms`, `app.models`, `app.navigation`, `app.outage`, `app.permissions`, `app.presence`, `app.request_icons`, `app.static_url`, `app.theme`, `app.time_zones`, `app.visibility`
 - Imported by: `app.main`, `app.routers.action_links`, `app.routers.admin`, `app.routers.approvals`, `app.routers.auth`, `app.routers.bulk_resolve`, `app.routers.data_protection`, `app.routers.feedback`, `app.routers.legal`, `app.routers.link_account`, `app.routers.msp_mail`, `app.routers.my_settings`, `app.routers.notifications`, `app.routers.portal`, `app.routers.reports`, `app.routers.tickets`, `app.subject_access`
 - Tests: `test_reply_files.py`, `test_ticket_page.py`
 
