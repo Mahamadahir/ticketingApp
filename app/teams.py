@@ -308,6 +308,8 @@ def notification_post(session: Session, post: TeamsPost, bot_refused: bool = Fal
     notification = session.get(Notification, post.notification_id) if post.notification_id else None
     if notification is None:
         raise Unsendable("Notification not found")
+    if notification.dismissed_at is not None:
+        raise Unsendable("The person dismissed the notification")  # dismissed means gone, even after the copy was queued (#239)
     person = session.get(User, notification.user_id)
     if person is None:
         raise Unsendable("Person not found")

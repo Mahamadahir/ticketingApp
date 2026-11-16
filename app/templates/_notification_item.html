@@ -1,0 +1,31 @@
+{# One notification, as the bell dropdown's list item (where == "bell") or the page's table row (where == "page"). The Open/Mark read
+   button and the Dismiss button are separate forms (a form cannot hold a form). Dismiss works without script (a plain POST that
+   returns to the page); with htmx the row is swapped for "Dismissed. Undo" (_notification_undo.html). Needs n, text, where and, on the page, label. #}
+{% if where == "bell" %}
+<li>
+  <form method="post" action="/notifications/{{ n.id }}/open">
+    <button type="submit" class="bell-row{% if not n.read_at %} bell-unread{% endif %}">
+      <span class="bell-text">{% if not n.read_at %}<span class="bell-dot" aria-hidden="true"></span><span class="sr-only">Unread: </span>{% endif %}{{ text }}</span>
+      <span class="bell-when">{{ n.created_at|local_time }}</span>
+    </button>
+  </form>
+  <form method="post" action="/notifications/{{ n.id }}/dismiss" class="bell-dismiss-form" hx-post="/notifications/{{ n.id }}/dismiss" hx-target="closest li" hx-swap="outerHTML" data-quiet>
+    <input type="hidden" name="from" value="bell">
+    <button type="submit" class="dismiss-btn" aria-label="Dismiss: {{ text }}" title="Dismiss"><span aria-hidden="true">&times;</span></button>
+  </form>
+</li>
+{% else %}
+<tr>
+  <td>{{ n.created_at|local_time }}</td>
+  <td>{% if not n.read_at %}<b>{{ text }}</b>{% else %}{{ text }}{% endif %}</td>
+  <td>
+    <form method="post" action="/notifications/{{ n.id }}/open" class="inline-form">
+      <button type="submit" class="button-outline">{{ label }}</button>
+    </form>
+    <form method="post" action="/notifications/{{ n.id }}/dismiss" class="inline-form" hx-post="/notifications/{{ n.id }}/dismiss" hx-target="closest tr" hx-swap="outerHTML" data-quiet>
+      <input type="hidden" name="from" value="page">
+      <button type="submit" class="dismiss-btn" aria-label="Dismiss: {{ text }}" title="Dismiss"><span aria-hidden="true">&times;</span></button>
+    </form>
+  </td>
+</tr>
+{% endif %}

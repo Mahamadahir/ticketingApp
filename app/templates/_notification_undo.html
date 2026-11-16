@@ -1,0 +1,27 @@
+{# What a dismissed row becomes while the person can still change their mind (htmx only; without script the page shows the same offer in
+   its banner). `expired`: the Undo came too late, the keep-dismissed days had passed. Needs n, text and where. #}
+{% if where == "bell" %}
+<li class="bell-undo">
+  {% if expired %}<span role="status">Dismissed for good. It can no longer be restored.</span>
+  {% else %}
+  <span role="status">Dismissed.</span>
+  <form method="post" action="/notifications/{{ n.id }}/undo" hx-post="/notifications/{{ n.id }}/undo" hx-target="closest li" hx-swap="outerHTML" data-quiet>
+    <input type="hidden" name="from" value="bell">
+    <button type="submit" class="button-outline" aria-label="Undo: {{ text }}">Undo</button>
+  </form>
+  {% endif %}
+</li>
+{% else %}
+<tr class="notification-undo">
+  <td colspan="3">
+    {% if expired %}<span role="status">Dismissed for good. It can no longer be restored.</span>
+    {% else %}
+    <span role="status">Dismissed: {{ text }}</span>
+    <form method="post" action="/notifications/{{ n.id }}/undo" class="inline-form" hx-post="/notifications/{{ n.id }}/undo" hx-target="closest tr" hx-swap="outerHTML" data-quiet>
+      <input type="hidden" name="from" value="page">
+      <button type="submit" class="button-outline" aria-label="Undo: {{ text }}">Undo</button>
+    </form>
+    {% endif %}
+  </td>
+</tr>
+{% endif %}

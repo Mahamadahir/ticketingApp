@@ -11,23 +11,39 @@
   For tickets you work as an agent, you are only told about tickets you can open; if a ticket moves to a team you are not in, its notifications are hidden (and not counted) until you can open it again.
 </p>
 
+{# What the last dismiss, Clear all read or Undo did: the offer to Undo it lasts the "keep dismissed" days. #}
+{% if undo_one %}
+<div class="notice-bar" role="status">
+  <span>Dismissed: {{ undo_text }}</span>
+  <form method="post" action="/notifications/{{ undo_one.id }}/undo" class="inline-form"><button type="submit" class="button-outline" aria-label="Undo: {{ undo_text }}">Undo</button></form>
+</div>
+{% endif %}
+{% if undo_batch %}
+<div class="notice-bar" role="status">
+  <span>{{ batch_count }} read notification{{ "" if batch_count == 1 else "s" }} cleared.</span>
+  <form method="post" action="/notifications/undo-clear" class="inline-form"><input type="hidden" name="batch" value="{{ undo_batch }}"><button type="submit" class="button-outline">Undo</button></form>
+</div>
+{% endif %}
+{% if nothing_to_clear %}<p class="note" role="status">There were no read notifications to clear.</p>{% endif %}
+{% if restored is not none %}<p class="note" role="status">{% if restored %}{{ restored }} notification{{ "" if restored == 1 else "s" }} restored.{% else %}Nothing to restore: it was kept only for a short time after it was dismissed and has been deleted.{% endif %}</p>{% endif %}
+
+<div class="notification-actions">
 {% if unread %}
 <form method="post" action="/notifications/read-all"><button type="submit" class="button-outline">Mark all {{ unread }} as read</button></form>
 {% endif %}
+{% if read_count %}
+<form method="post" action="/notifications/clear-read"><button type="submit" class="button-outline">Clear all read ({{ read_count }})</button></form>
+{% endif %}
+</div>
 
 <table>
   <thead><tr><th>When</th><th>What</th><th></th></tr></thead>
   <tbody>
     {% for n in page.items %}
-    <tr>
-      <td>{{ n.created_at|local_time }}</td>
-      <td>{% if not n.read_at %}<b>{{ texts[n.id] }}</b>{% else %}{{ texts[n.id] }}{% endif %}</td>
-      <td>
-        <form method="post" action="/notifications/{{ n.id }}/open" class="inline-form">
-          <button type="submit" class="button-outline">{{ "Open" if tickets.get(n.ticket_id) or n.kind in portal_kinds else "Mark read" }}</button>
-        </form>
-      </td>
-    </tr>
+    {% set text = texts[n.id] %}
+    {% set label = open_label(n, tickets) %}
+    {% set where = "page" %}
+    {% include "_notification_item.html" %}
     {% else %}
     <tr><td colspan="3">Nothing yet.</td></tr>
     {% endfor %}

@@ -435,3 +435,19 @@ def test_link_codes_and_follow_dates_are_exported(client, db_session, world):
     assert b"secret-hash" not in archive.read("account.json")
     shared = {t["number"]: t for t in part(archive, "tickets.json")}[world["shared"].number]
     assert len(shared["following_since"]) == 1
+
+
+def test_a_dismissed_notification_is_still_in_the_export(client, db_session, world):
+    """Dismissed only hides a notification; it exists until the purge job deletes it (#239), so it is the person's data."""
+    from datetime import datetime, timezone
+
+    from app.models import Notification
+
+    moment = datetime(2026, 11, 15, 10, 0, tzinfo=timezone.utc)
+    db_session.add(Notification(user_id=world["ann"].id, kind="assigned", text="Ann dismissed this", read_at=moment, dismissed_at=moment))
+    db_session.add(Notification(user_id=world["ann"].id, kind="assigned", text="Ann kept this"))
+    db_session.commit()
+    admin_client(client, db_session)
+    rows = {n["text"]: n for n in part(export(client), "notifications.json")}
+    assert rows["Ann dismissed this"]["dismissed_at"] == "2026-11-15T10:00:00+00:00"
+    assert rows["Ann kept this"]["dismissed_at"] is None

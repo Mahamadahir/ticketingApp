@@ -378,7 +378,7 @@ def _approvals(session: Session, person: Person) -> list[dict]:
 
 def _notifications(session: Session, person: Person) -> list[dict]:
     return [
-        {"kind": n.kind, "ticket": f"#{number}" if number else None, "text": n.text, "created_at": n.created_at, "read_at": n.read_at}
+        {"kind": n.kind, "ticket": f"#{number}" if number else None, "text": n.text, "created_at": n.created_at, "read_at": n.read_at, "dismissed_at": n.dismissed_at}
         for n, number in session.exec(
             select(Notification, Ticket.number)
             .join(Ticket, Ticket.id == Notification.ticket_id, isouter=True)
