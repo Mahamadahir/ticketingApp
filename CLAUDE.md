@@ -110,7 +110,12 @@ starting a phase, and `README.md` for how to run it.
   and tests it under the working agreement in `docs/build-plan.md`, then runs `/code-review <PR>`
   itself and fixes the real findings. It reports back to the orchestrator: what it built, the test
   results, and every review finding, accepted (fixed) or rejected (with the reason). The orchestrator
-  checks the report, relays it to the user and marks the PR ready. Only the user merges: they say "merge".
+  checks the report, relays it to the user and marks the PR ready. Sub-agents work in their own worktrees, so their
+  changes never reach the user's checkout (`C:\Projects\ticketingApp`), which the local WSL app serves with auto-reload.
+  So when a PR is ready, the orchestrator puts the user's checkout on that PR's latest commit (`git fetch` then
+  `git switch --detach origin/<branch>`) for them to preview, says what to look at, and after the decision puts it back
+  on `main` and pulls (`docker compose restart worker` if job code changed). Never while the checkout has the user's
+  own uncommitted changes (ask first); one PR at a time. Only the user merges: they say "merge".
 - Before starting a piece of work check `gh pr list` and open a DRAFT PR on day one so
   two agents do not do the same work. Docs-only changes still go through a PR unless the
   user says to commit straight to main.

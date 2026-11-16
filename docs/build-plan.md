@@ -281,7 +281,8 @@ with `createReply` (sendMail returns no id, so a sent message has none).
    That sub-agent builds the PR, then runs `/code-review N` on it before the PR is marked ready, fixes
    the real findings and explains the rejected ones, and reports to the orchestrator: what was built,
    the test results, and each finding accepted or rejected with why. The orchestrator relays the report
-   to the user and marks the PR ready.
+   to the user, marks the PR ready and puts the user's checkout on the PR's latest commit (detached) so the
+   local WSL app shows it for a preview before "merge"; afterwards the checkout goes back to `main` (see CLAUDE.md).
    To stop two agents starting the same work, run `gh pr list` before starting, and open a
    **draft** PR on day one with a title that says what it is; mark it ready when done. Docs-only
    changes still go through a PR (docs-only PRs run no CI, so they merge quickly).
