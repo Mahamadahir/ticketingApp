@@ -479,7 +479,7 @@ def test_the_admin_menu_stays_in_view_beside_the_page_and_is_static_when_it_sits
     assert "var(--raised)" in frame and "var(--border)" in frame
     # Above the page (1000px and below): static, full width, scrolling with the page.
     stacked = re.search(r"@media \(max-width: 1000px\) \{.*?\n\}", CSS, re.S).group(0)
-    assert "position: static" in stacked and "max-height: none" in stacked and "background: none" in stacked
+    assert "position: static" in stacked and "max-height: none" in stacked and "align-self: stretch" in stacked and "background: none" in stacked
 
 
 def test_admin_users_forms_use_the_form_layout_with_their_field_names(client, db_session):

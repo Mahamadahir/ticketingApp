@@ -476,14 +476,15 @@ th { color: var(--muted); font-weight: 600; }
 /* The admin frame (9H): the admin menu as a second column beside the page. */
 /* The column's background and right border are painted on the frame, so they run the full page height behind the sticky menu. */
 .admin-frame {
+  --admin-nav-w: 216px;
   display: flex; align-items: stretch; flex: 1 1 auto; min-width: 0;
-  background: linear-gradient(to right, var(--raised) 215px, var(--border) 215px, var(--border) 216px, transparent 216px);
+  background: linear-gradient(to right, var(--raised) calc(var(--admin-nav-w) - 1px), var(--border) calc(var(--admin-nav-w) - 1px), var(--border) var(--admin-nav-w), transparent var(--admin-nav-w));
 }
 .admin-frame > .content { flex: 1 1 auto; min-width: 0; box-sizing: border-box; }
 .admin-nav {
-  flex: 0 0 216px; box-sizing: border-box; padding: 18px 12px;
+  flex: 0 0 var(--admin-nav-w); box-sizing: border-box; padding: 18px 12px;
   background: var(--raised); border-right: 1px solid var(--border);
-  /* 9M: stays in view while the page scrolls, like the sidebar; a menu taller than the window scrolls on its own. */
+  /* #232: stays in view while the page scrolls, like the sidebar; a menu taller than the window scrolls on its own. */
   position: sticky; top: 0; align-self: flex-start; max-height: 100vh; max-height: 100dvh;
   overflow-y: auto; overscroll-behavior: contain;
 }
