@@ -492,3 +492,44 @@ def test_the_settings_are_validated(client, db_session):
     db_session.expire_all()
     assert get_setting(db_session, NOTIFICATION_KEEP_DISMISSED_DAYS) == "10" and get_setting(db_session, NOTIFICATION_DELETE_AFTER_DAYS) == "10"
     assert post_group(client, **{NOTIFICATION_DELETE_AFTER_DAYS: "9"}).status_code == 400  # now shorter than the stored 10-day window
+
+
+# ---- Review follow-ups ------------------------------------------------------------------------------------------
+
+
+def test_a_post_being_sent_is_never_waited_for_and_its_notification_is_left_for_the_next_run(db_session, person):
+    from sqlmodel import Session
+
+    from app.database import engine
+
+    busy = row(db_session, person, "busy", dismissed_days=2)
+    free = row(db_session, person, "free", dismissed_days=2)
+    db_session.add(TeamsPost(kind="notification", notification_id=busy))
+    db_session.commit()
+    with Session(engine) as sender:  # the sender holds its post locked while it talks to Teams
+        sender.exec(select(TeamsPost).where(TeamsPost.notification_id == busy).with_for_update()).all()
+        assert purge_notifications(db_session, NOW) == 1  # returns at once; no lock wait
+        db_session.commit()
+    assert remaining(db_session) == ["busy"] and free
+    assert purge_notifications(db_session, NOW) == 1  # the next run, the sender done
+    db_session.commit()
+    assert remaining(db_session) == []
+
+
+def test_made_up_numbers_in_the_banner_and_undo_addresses_do_not_crash(client, db_session):
+    agent_with(client, db_session, 1)
+    assert client.get("/notifications?cleared=99999999999999999999").status_code == 422
+    assert client.get("/notifications?cleared=4611686018427387904").status_code == 200  # in range but no such batch: shows nothing
+    assert client.post("/notifications/undo-clear", data={"batch": 99999999999999999999}).status_code == 422
+    assert client.post("/notifications/99999999999999999999/dismiss").status_code == 422
+    assert client.get("/notifications?dismissed=99999999999999999999").status_code == 422
+
+
+def test_the_banner_is_not_carried_to_the_next_page(client, db_session):
+    agent_with(client, db_session, 60)
+    make_read(db_session, "Note 1")
+    batch = int(client.post("/notifications/clear-read", follow_redirects=False).headers["location"].split("=")[1])
+    page = client.get(f"/notifications?cleared={batch}").text
+    assert "cleared." in page
+    links = re.findall(r'href="([^"]*page=[^"]*)"', page)
+    assert links and not any("cleared" in link for link in links)

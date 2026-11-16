@@ -288,6 +288,7 @@ def mark_all_read(session: Session, user: User) -> int:
     )
     return result.rowcount
 
+
 def dismiss(session: Session, user: User, notification_id: int, now: Optional[datetime] = None) -> Optional[Notification]:
     """Dismisses one of the user's own notifications (#239): it is hidden from the bell, the page, the count and the Teams
     copy, and counts as read. None when it is not theirs, is Teams-only or is about a ticket they can no longer open.
@@ -340,11 +341,11 @@ def clear_read(session: Session, user: User, now: Optional[datetime] = None) -> 
     return now, result.rowcount
 
 
-def undo_clear_read(session: Session, user: User, batch: datetime, now: Optional[datetime] = None) -> int:
+def undo_clear_read(session: Session, user: User, batch: Optional[datetime], now: Optional[datetime] = None) -> int:
     """Restores what one Clear all read cleared: the user's own rows whose `dismissed_at` is exactly `batch`, while that
     is still within the undo window. Returns how many. Does not commit."""
     now = now or datetime.now(timezone.utc)
-    if batch <= now - timedelta(days=count_setting(session, NOTIFICATION_KEEP_DISMISSED_DAYS)):
+    if batch is None or batch <= now - timedelta(days=count_setting(session, NOTIFICATION_KEEP_DISMISSED_DAYS)):
         return 0
     result = session.exec(
         update(Notification)
@@ -759,5 +760,9 @@ def batch_number(moment: datetime) -> int:
     return (moment - _EPOCH) // timedelta(microseconds=1)
 
 
-def batch_moment(number: int) -> datetime:
-    return _EPOCH + timedelta(microseconds=number)
+def batch_moment(number: int) -> Optional[datetime]:
+    """The moment a batch number names, or None for one that is not a date at all (a made-up number is no batch)."""
+    try:
+        return _EPOCH + timedelta(microseconds=number)
+    except OverflowError:
+        return None

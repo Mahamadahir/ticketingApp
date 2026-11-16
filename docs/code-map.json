@@ -1164,6 +1164,7 @@
         "tests/test_inbound_mail.py",
         "tests/test_linking.py",
         "tests/test_mail_subscriptions.py",
+        "tests/test_notification_dismiss.py",
         "tests/test_notification_followup.py",
         "tests/test_outbound_mail.py",
         "tests/test_scheduled_jobs.py",
@@ -2850,6 +2851,7 @@
       "summary": "The notification purge (#239): the recurring job `notification-purge` that deletes notifications for good.",
       "tables": [],
       "tests": [
+        "tests/test_auto_close_chase.py",
         "tests/test_notification_dismiss.py"
       ]
     },

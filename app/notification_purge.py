@@ -16,7 +16,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from sqlalchemy import delete, or_
+from sqlalchemy import delete, or_, true
 from sqlmodel import Session, select
 
 from app.models import Notification, TeamsPost
@@ -49,14 +49,26 @@ def purge_notifications(session: Session, now: Optional[datetime] = None) -> int
     now = now or datetime.now(timezone.utc)
     due = due_for_purge(session, now)
     total = 0
+    skipped: set[int] = set()  # notifications whose Teams post is being sent right now: left for the next run
     for _ in range(MAX_BATCHES):
         ids = list(
             session.exec(
-                select(Notification.id).where(due).order_by(Notification.id).limit(BATCH).with_for_update(skip_locked=True)
+                select(Notification.id)
+                .where(due, Notification.id.not_in(skipped) if skipped else true())
+                .order_by(Notification.id).limit(BATCH).with_for_update(skip_locked=True)
             ).all()
         )
         if not ids:
             break
+        # The sender holds its posts locked while it talks to Teams; never wait for it (and so never stall the batch).
+        posted = set(session.exec(select(TeamsPost.notification_id).where(TeamsPost.notification_id.in_(ids))).all())
+        free = set(session.exec(select(TeamsPost.notification_id).where(TeamsPost.notification_id.in_(ids)).with_for_update(skip_locked=True)).all())
+        busy = posted - free
+        if busy:
+            skipped |= busy
+            ids = [i for i in ids if i not in busy]
+            if not ids:
+                continue
         session.exec(delete(TeamsPost).where(TeamsPost.notification_id.in_(ids)))
         session.exec(delete(Notification).where(Notification.id.in_(ids)))
         session.flush()

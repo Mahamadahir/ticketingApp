@@ -2,7 +2,7 @@
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Path, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from app.templating import is_htmx, templates
 from sqlalchemy import func
@@ -69,13 +69,14 @@ def count_read(session: Session, user: User) -> int:
 def list_notifications(
     request: Request,
     page: int = 1,
-    dismissed: Optional[int] = None,
-    cleared: Optional[int] = None,
-    restored: Optional[int] = None,
+    dismissed: Optional[int] = Query(None, ge=1, le=2**31 - 1),
+    cleared: Optional[int] = Query(None, ge=0, le=2**62),
+    restored: Optional[int] = Query(None, ge=0, le=10**6),
     user: User = Depends(signed_in),
     session: Session = Depends(get_session),
 ):
-    notifications = paginate(session, newest_first(session, user), page, request.query_params)
+    paging = {k: v for k, v in request.query_params.items() if k not in ("dismissed", "cleared", "restored")}  # a banner is for one view, not for every page
+    notifications = paginate(session, newest_first(session, user), page, paging)
     tickets = bell_tickets(session, user, notifications.items)
     texts = texts_of(session, notifications.items)
     # What a dismiss, a Clear all read or an Undo just did (the query says which; the data says whether it still holds, so
@@ -86,8 +87,8 @@ def list_notifications(
         if row is not None and in_undo_window(session, row):
             undo_one, undo_text = row, texts_of(session, [row])[row.id]
     undo_batch = batch_count = None
-    if cleared:
-        moment = batch_moment(cleared)
+    moment = batch_moment(cleared) if cleared else None
+    if moment is not None:
         found = count_in_batch(session, user, moment)
         if found:
             undo_batch, batch_count = cleared, found
@@ -184,7 +185,7 @@ def clear_all_read(
 
 @router.post("/undo-clear")
 def undo_clear_all_read(
-    batch: int = Form(...),
+    batch: int = Form(..., ge=0, le=2**62),
     user: User = Depends(signed_in),
     session: Session = Depends(get_session),
 ):
@@ -197,7 +198,7 @@ def undo_clear_all_read(
 @router.post("/{notification_id}/dismiss")
 def dismiss_notification(
     request: Request,
-    notification_id: int,
+    notification_id: int = Path(..., ge=1, le=2**31 - 1),
     origin: str = Form("page", alias="from"),
     user: User = Depends(signed_in),
     session: Session = Depends(get_session),
@@ -216,7 +217,7 @@ def dismiss_notification(
 @router.post("/{notification_id}/undo")
 def undo_notification(
     request: Request,
-    notification_id: int,
+    notification_id: int = Path(..., ge=1, le=2**31 - 1),
     origin: str = Form("page", alias="from"),
     user: User = Depends(signed_in),
     session: Session = Depends(get_session),
