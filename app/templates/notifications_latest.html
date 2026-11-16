@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{# The bell dropdown's rows (htmx partial, no frame). Each row is its own POST form, so choosing one marks it read and goes to it, as the page's Open button does; nothing here marks anything read. #}
+{% block content %}
+{% if items %}
+<ul class="bell-list">
+  {% for n in items %}
+  <li>
+    <form method="post" action="/notifications/{{ n.id }}/open">
+      <button type="submit" class="bell-row{% if not n.read_at %} bell-unread{% endif %}">
+        <span class="bell-text">{% if not n.read_at %}<span class="bell-dot" aria-hidden="true"></span><span class="sr-only">Unread: </span>{% endif %}{{ texts[n.id] }}</span>
+        <span class="bell-when">{{ n.created_at|local_time }}</span>
+      </button>
+    </form>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="bell-empty">No notifications yet</p>
+{% endif %}
+{% endblock %}

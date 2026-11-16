@@ -41,6 +41,30 @@ def list_notifications(
     )
 
 
+BELL_ITEMS = 5  # what the bell's dropdown shows; the rest are on /notifications (View more)
+
+
+@router.get("/latest", response_class=HTMLResponse)
+def latest_notifications(
+    request: Request,
+    user: User = Depends(signed_in),
+    session: Session = Depends(get_session),
+):
+    """The bell dropdown's list (htmx, loaded when it opens): the latest few this person can see, same rules and
+    wording as the page. Reading it marks nothing read; a row's own POST does."""
+    latest = session.exec(
+        select(Notification)
+        .where(visible_to(session, user))
+        .order_by(Notification.created_at.desc(), Notification.id.desc())
+        .limit(BELL_ITEMS)
+    ).all()
+    references = bell_references(session, latest)
+    texts = {n.id: notification_text(n, references.get(n.ticket_id)) for n in latest}
+    return templates.TemplateResponse(
+        request, "notifications_latest.html", {"items": latest, "texts": texts}, headers={"Cache-Control": "no-store"}
+    )
+
+
 @router.get("/count", response_class=HTMLResponse)
 def unread_count(
     user: User = Depends(get_current_user_passively),  # the poll is not the person being active (app/auth.py)

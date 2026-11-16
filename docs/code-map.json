@@ -2517,6 +2517,7 @@
         "tests/test_auto_close_chase.py",
         "tests/test_backdating.py",
         "tests/test_bell_access.py",
+        "tests/test_bell_dropdown.py",
         "tests/test_break_glass.py",
         "tests/test_bulk_resolve.py",
         "tests/test_canned.py",
@@ -4792,6 +4793,7 @@
       "classes": [],
       "file": "app/routers/notifications.py",
       "functions": [
+        "latest_notifications",
         "list_notifications",
         "open_notification",
         "read_all",
@@ -4819,6 +4821,11 @@
           "handler": "unread_count",
           "method": "GET",
           "path": "/notifications/count"
+        },
+        {
+          "handler": "latest_notifications",
+          "method": "GET",
+          "path": "/notifications/latest"
         },
         {
           "handler": "read_all",
@@ -7210,6 +7217,7 @@
     "tests/test_auto_close_chase.py",
     "tests/test_backdating.py",
     "tests/test_bell_access.py",
+    "tests/test_bell_dropdown.py",
     "tests/test_break_glass.py",
     "tests/test_bulk_resolve.py",
     "tests/test_canned.py",

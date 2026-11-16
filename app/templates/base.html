@@ -40,11 +40,19 @@
     {% else %}{{ icon("M3 5h18v11H3zM8 20h8M12 16v4") }}{% endif %}
   </button>
 </form>
-<a href="/notifications" class="icon-btn" data-poll hx-get="/notifications/count" hx-trigger="load, every 30s" hx-target="find .bell-label" hx-swap="innerHTML">
-  {{ icon("M6 8a6 6 0 1112 0c0 7 3 8 3 8H3s3-1 3-8M10 20a2 2 0 004 0") }}
-  <span class="sr-only bell-label">Notifications{% if shell.unread %} ({{ shell.unread }}){% endif %}</span>
-  <span class="count-badge" id="bell-count" aria-hidden="true"{% if not shell.unread %} hidden{% endif %}>{{ shell.unread }}</span>
-</a>
+<details class="bell-menu">
+  {# The summary is the bell: the poll swaps only the label inside it, never the panel. Without script the panel still holds View more. #}
+  <summary class="icon-btn" data-poll hx-get="/notifications/count" hx-trigger="load, every 30s" hx-target="find .bell-label" hx-swap="innerHTML">
+    {{ icon("M6 8a6 6 0 1112 0c0 7 3 8 3 8H3s3-1 3-8M10 20a2 2 0 004 0") }}
+    <span class="sr-only bell-label">Notifications{% if shell.unread %} ({{ shell.unread }}){% endif %}</span>
+    <span class="count-badge" id="bell-count" aria-hidden="true"{% if not shell.unread %} hidden{% endif %}>{{ shell.unread }}</span>
+  </summary>
+  <div class="bell-panel">
+    {# Loaded each time the dropdown opens (not on every page): GET /notifications/latest, five rows, nothing marked read. #}
+    <div id="bell-latest" data-quiet hx-get="/notifications/latest" hx-trigger="toggle[target.open] from:closest details" hx-swap="innerHTML"></div>
+    <a class="bell-more" href="/notifications">View more</a>
+  </div>
+</details>
 {% if with_raise %}<a class="btn btn-primary btn-lg" href="/portal/new">{{ icon("M12 5v14M5 12h14", 16, 2.2) }} Raise ticket</a>{% endif %}
 {%- endmacro %}
 {% if htmx_partial %}{% block content %}{% endblock %}{% else %}
@@ -197,16 +205,26 @@
   </script>
   {% endif %}
   <script>
-    // The person menu (either frame) is a <details>: close it on a click elsewhere or Escape.
+    // The person menu and the bell are <details> (either frame): close one on a click elsewhere or Escape, and only one is open at a time.
     (function () {
-      var menu = document.querySelector(".person-menu");
-      if (!menu) { return; }
+      var menus = Array.prototype.slice.call(document.querySelectorAll("details.person-menu, details.bell-menu"));
+      if (!menus.length) { return; }
+      menus.forEach(function (menu) {
+        menu.addEventListener("toggle", function () {
+          if (menu.open) { menus.forEach(function (other) { if (other !== menu) { other.open = false; } }); }
+        });
+      });
       // A click outside closes it, and so does choosing a link (one to a place on the page you are already on changes nothing else).
       document.addEventListener("click", function (event) {
-        if (menu.open && (!menu.contains(event.target) || event.target.closest(".person-menu-panel a"))) { menu.open = false; }
+        menus.forEach(function (menu) {
+          if (menu.open && (!menu.contains(event.target) || event.target.closest(".person-menu-panel a, .bell-panel a"))) { menu.open = false; }
+        });
       });
       document.addEventListener("keydown", function (event) {
-        if (event.key === "Escape" && menu.open) { menu.open = false; menu.querySelector("summary").focus(); }
+        if (event.key !== "Escape") { return; }
+        menus.forEach(function (menu) {
+          if (menu.open) { menu.open = false; menu.querySelector("summary").focus(); }
+        });
       });
     })();
   </script>
@@ -215,8 +233,8 @@
     // let our error messages (4xx responses that name #flash as their target) show,
     // because htmx ignores 4xx responses by default.
     document.body.addEventListener("htmx:beforeRequest", function (event) {
-      // The bell polls in the background; that must not wipe a message the person is reading.
-      if (event.detail.elt && event.detail.elt.hasAttribute("data-poll")) { return; }
+      // The bell polls in the background (and fills its dropdown); that must not wipe a message the person is reading.
+      if (event.detail.elt && (event.detail.elt.hasAttribute("data-poll") || event.detail.elt.hasAttribute("data-quiet"))) { return; }
       var flash = document.getElementById("flash");
       if (flash) { flash.innerHTML = ""; }
     });
@@ -224,7 +242,7 @@
       var xhr = event.detail.xhr;
       // The bell polls on its own. If the session has ended it is redirected to the sign-in page,
       // which must not be swapped into the menu.
-      if (event.detail.elt && event.detail.elt.hasAttribute("data-poll") && /\/auth\//.test(xhr.responseURL || "")) {
+      if (event.detail.elt && (event.detail.elt.hasAttribute("data-poll") || event.detail.elt.hasAttribute("data-quiet")) && /\/auth\//.test(xhr.responseURL || "")) {
         event.detail.shouldSwap = false;
         return;
       }
