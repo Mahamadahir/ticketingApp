@@ -4795,8 +4795,10 @@
       "functions": [
         "latest_notifications",
         "list_notifications",
+        "newest_first",
         "open_notification",
         "read_all",
+        "texts_of",
         "unread_count"
       ],
       "imported_by": [

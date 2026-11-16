@@ -1265,7 +1265,7 @@ File: `app/routers/my_settings.py`
 
 The bell: a person's notifications (phase 2A; everyone since #122 and #130). Own notifications only.  
 File: `app/routers/notifications.py`
-- Functions: `latest_notifications`, `list_notifications`, `open_notification`, `read_all`, `unread_count`
+- Functions: `latest_notifications`, `list_notifications`, `newest_first`, `open_notification`, `read_all`, `texts_of`, `unread_count`
 - Routes: GET `/notifications`, GET `/notifications/count`, GET `/notifications/latest`, POST `/notifications/read-all`, POST `/notifications/{notification_id}/open`
 - Imports: `app.auth`, `app.database`, `app.models`, `app.notifications`, `app.pagination`, `app.templating`
 - Imported by: `app.main`

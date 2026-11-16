@@ -127,3 +127,9 @@ def test_the_menus_script_covers_the_bell_and_the_person_menu(client, db_session
     assert "Escape" in page and 'closest(".person-menu-panel a, .bell-panel a")' in page
     assert 'addEventListener("toggle"' in page  # opening one closes the other
     assert 'hasAttribute("data-quiet")' in page  # filling the dropdown must not clear the flash area either
+
+
+def test_opening_the_partial_address_directly_goes_to_the_page(client, db_session):
+    agent_with(client, db_session, 1)
+    direct = client.get("/notifications/latest", follow_redirects=False)  # no HX-Request: a pasted link or a prefetch
+    assert direct.status_code == 303 and direct.headers["location"] == "/notifications"

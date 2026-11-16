@@ -232,9 +232,11 @@
     // Forms swap <main> with htmx. Clear any earlier message when one is sent, and
     // let our error messages (4xx responses that name #flash as their target) show,
     // because htmx ignores 4xx responses by default.
+    // The bell polls in the background (data-poll) and fills its dropdown (data-quiet): neither is the person acting.
+    function inBackground(elt) { return !!elt && (elt.hasAttribute("data-poll") || elt.hasAttribute("data-quiet")); }
     document.body.addEventListener("htmx:beforeRequest", function (event) {
-      // The bell polls in the background (and fills its dropdown); that must not wipe a message the person is reading.
-      if (event.detail.elt && (event.detail.elt.hasAttribute("data-poll") || event.detail.elt.hasAttribute("data-quiet"))) { return; }
+      // That must not wipe a message the person is reading.
+      if (inBackground(event.detail.elt)) { return; }
       var flash = document.getElementById("flash");
       if (flash) { flash.innerHTML = ""; }
     });
@@ -242,7 +244,7 @@
       var xhr = event.detail.xhr;
       // The bell polls on its own. If the session has ended it is redirected to the sign-in page,
       // which must not be swapped into the menu.
-      if (event.detail.elt && (event.detail.elt.hasAttribute("data-poll") || event.detail.elt.hasAttribute("data-quiet")) && /\/auth\//.test(xhr.responseURL || "")) {
+      if (inBackground(event.detail.elt) && /\/auth\//.test(xhr.responseURL || "")) {
         event.detail.shouldSwap = false;
         return;
       }
