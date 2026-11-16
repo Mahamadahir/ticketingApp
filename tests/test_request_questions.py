@@ -153,7 +153,7 @@ def test_the_kind_of_a_question_cannot_change_and_the_page_lists_the_questions(c
     request_type = make(db_session)
     asked = question(db_session, request_type, "Needs a laptop", "yes_no")
     admin(client, db_session)
-    page = client.get("/admin/request-types")
+    page = client.get(f"/admin/request-types?type={request_type.id}")  # the editor (9K)
     assert page.status_code == 200 and "Needs a laptop" in page.text and "Yes / no" in page.text
     update_question(db_session, asked, "Needs a laptop?", "ignored", False, True)
     assert (asked.kind, asked.options) == ("yes_no", [])

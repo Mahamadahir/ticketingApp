@@ -1,55 +1,110 @@
 {% extends "base.html" %}
 {% block title %}Admin: Approval groups{% endblock %}
 {% block content %}
+{# Admin > Approval groups (9K): the list beside the panel of the group chosen (?group=<id>) or the new-group panel (?new=1).
+   The forms post to their existing routes with their existing field names. #}
+<header class="users-head">
+  <div class="admin-head">
+    <h1>Approval groups</h1>
+    <p>A group is the set of people who vote on a kind of request. A request type (Admin &gt; Request types) points at one group.</p>
+  </div>
+  <a class="btn btn-primary users-new" href="/admin/approval-groups?new=1">New approval group</a>
+</header>
 
-<h2>Approval groups</h2>
-<p class="note">
-  A group is the set of people who vote on a kind of request. A request type (Admin &gt; Request types) points at one
-  group. Members need an account (they sign in once first); they need not be agents, managers are typical.
-  When a request is triaged, the members at that moment become its voters and the number is fixed: adding or
-  removing people later does not change a request already waiting, although someone removed can no longer answer it.
-  A super admin can waive a request that can then never be decided.
-</p>
+<div class="users-cols">
+  <div class="users-list">
+    <div class="table-box">
+      <table class="table users-table">
+        <caption class="sr-only">Approval groups</caption>
+        <thead>
+          <tr><th scope="col">Group</th><th scope="col">Members</th><th scope="col">Used by</th></tr>
+        </thead>
+        <tbody>
+          {% for g, members, types in groups %}
+          <tr {% if selected and selected[0].id == g.id %}class="sel"{% endif %}>
+            <td><a class="person-cell" href="/admin/approval-groups?group={{ g.id }}"{% if selected and selected[0].id == g.id %} aria-current="true"{% endif %}><span class="person-name">{{ g.name }}</span></a></td>
+            <td>{{ members|length }}</td>
+            <td class="users-teams">{% for t in types %}{{ t.name }}{% if not t.is_active %} (off){% endif %}{{ ", " if not loop.last else "" }}{% else %}No request type{% endfor %}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="3"><div class="empty-state"><strong>No approval groups yet.</strong><span>Create one with New approval group.</span></div></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="note">
+      Members need an account (they sign in once first); they need not be agents, managers are typical.
+      When a request is triaged, the members at that moment become its voters and the number is fixed: adding or
+      removing people later does not change a request already waiting, although someone removed can no longer answer it.
+      A super admin can waive a request that can then never be decided. The pass percentage is one setting for every group, under
+      <a href="/admin/settings?group=approvals">Settings</a>.
+    </p>
+  </div>
 
-{% for g, members, types in groups %}
-<fieldset>
-  <legend>{{ g.name }}</legend>
-  <form method="post" action="/admin/approval-groups/{{ g.id }}/rename">
-    <label>Name <input type="text" name="name" value="{{ g.name }}" maxlength="{{ max_name_length }}" required /></label>
-    <button type="submit">Rename</button>
-  </form>
-  <form method="post" action="/admin/approval-groups/{{ g.id }}/notice">
-    <label>Notice on the New request form (blank: "This needs approval before we start.")
-      <input type="text" name="request_notice" value="{{ g.request_notice or '' }}" maxlength="{{ max_notice_length }}" />
-    </label>
-    <button type="submit">Save notice</button>
-  </form>
-  <p>Used by: {% for t in types %}{{ t.name }}{% if not t.is_active %} (off){% endif %}{{ ", " if not loop.last else "" }}{% else %}no request type{% endfor %}</p>
-  <p>Members ({{ members|length }}):</p>
-  <ul>
-    {% for m in members %}
-    <li>
-      {{ m.display_name or m.email }} ({{ m.email }}){% if not m.is_active %} (inactive: not counted as a voter){% endif %}
-      <form method="post" action="/admin/approval-groups/{{ g.id }}/members/{{ m.id }}/remove" style="display:inline">
-        <button type="submit" class="button-outline">Remove</button>
+  {% if creating %}
+  <aside class="card users-panel" aria-label="New approval group">
+    <h2>New approval group</h2>
+    <form method="post" action="/admin/approval-groups">
+      <div class="form-grid">
+        <label class="field">Name <input type="text" name="name" maxlength="{{ max_name_length }}" required /></label>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Create</button>
+        <a class="btn" href="/admin/approval-groups">Cancel</a>
+      </div>
+    </form>
+  </aside>
+  {% elif selected %}
+  {% set g = selected[0] %}
+  {% set members = selected[1] %}
+  {% set types = selected[2] %}
+  <aside class="card users-panel" aria-label="{{ g.name }}">
+    <div class="up-person">
+      <div class="up-who"><h2>{{ g.name }}</h2></div>
+      <a class="icon-btn up-close" href="/admin/approval-groups" aria-label="Close the panel">&times;</a>
+    </div>
+
+    <section class="up-section" aria-labelledby="ag-name">
+      <h3 id="ag-name">Name</h3>
+      <form method="post" action="/admin/approval-groups/{{ g.id }}/rename" class="up-inline">
+        <label class="field">Name <input type="text" name="name" value="{{ g.name }}" maxlength="{{ max_name_length }}" required /></label>
+        <button type="submit" class="btn btn-primary">Rename</button>
       </form>
-    </li>
-    {% else %}
-    <li>No members yet.</li>
-    {% endfor %}
-  </ul>
-  <form method="post" action="/admin/approval-groups/{{ g.id }}/members">
-    <label>Add a member (email address) <input type="email" name="email" required /></label>
-    <button type="submit">Add</button>
-  </form>
-</fieldset>
-{% else %}
-<p>No approval groups yet.</p>
-{% endfor %}
+    </section>
 
-<h3>New approval group</h3>
-<form method="post" action="/admin/approval-groups">
-  <label>Name <input type="text" name="name" maxlength="{{ max_name_length }}" required /></label>
-  <button type="submit">Create</button>
-</form>
+    <section class="up-section" aria-labelledby="ag-notice">
+      <h3 id="ag-notice">Request notice</h3>
+      <form method="post" action="/admin/approval-groups/{{ g.id }}/notice" class="up-inline">
+        <label class="field">Notice on the New request form (blank: "This needs approval before we start.")
+          <input type="text" name="request_notice" value="{{ g.request_notice or '' }}" maxlength="{{ max_notice_length }}" />
+        </label>
+        <button type="submit" class="btn btn-primary">Save notice</button>
+      </form>
+    </section>
+
+    <section class="up-section" aria-labelledby="ag-used">
+      <h3 id="ag-used">Used by</h3>
+      <p>Used by: {% for t in types %}{{ t.name }}{% if not t.is_active %} (off){% endif %}{{ ", " if not loop.last else "" }}{% else %}no request type{% endfor %}</p>
+    </section>
+
+    <section class="up-section" aria-labelledby="ag-members">
+      <h3 id="ag-members">Members ({{ members|length }})</h3>
+      {% for m in members %}
+      <div class="up-team">
+        <span class="up-team-name">{{ m.display_name or m.email }} ({{ m.email }}){% if not m.is_active %} <span class="chip t-gray">inactive: not counted as a voter</span>{% endif %}</span>
+        <form method="post" action="/admin/approval-groups/{{ g.id }}/members/{{ m.id }}/remove" class="up-inline">
+          <button type="submit" class="btn" aria-label="Remove {{ m.display_name or m.email }}">Remove</button>
+        </form>
+      </div>
+      {% else %}
+      <p class="note">No members yet.</p>
+      {% endfor %}
+      <form method="post" action="/admin/approval-groups/{{ g.id }}/members" class="up-inline">
+        <label class="field">Add a member (email address) <input type="email" name="email" required /></label>
+        <button type="submit" class="btn">Add</button>
+      </form>
+    </section>
+  </aside>
+  {% endif %}
+</div>
 {% endblock %}

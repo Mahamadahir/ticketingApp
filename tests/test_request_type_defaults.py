@@ -253,7 +253,7 @@ def test_an_admin_saves_the_defaults_and_it_is_audited(client, db_session):
     assert (request_type.default_impact, request_type.default_urgency) == ("low", "medium")
     entry = db_session.exec(select(AuditLog).where(AuditLog.entity_type == "request_type", AuditLog.action == "edited")).one()
     assert "defaults" in entry.detail and "Service Desk" in entry.detail and "Hardware" in entry.detail
-    page = client.get("/admin/request-types").text
+    page = client.get(f"/admin/request-types?type={request_type.id}").text  # the editor (9K)
     assert 'name="default_category_id"' in page and f'value="{category.id}" selected' in page
 
 
@@ -460,7 +460,7 @@ def test_a_switched_off_default_category_stays_chosen_on_the_edit_form_and_savin
     db_session.commit()
     admin(client, db_session)
 
-    page = client.get("/admin/request-types").text
+    page = client.get(f"/admin/request-types?type={request_type.id}").text  # the editor (9K)
     assert f'<option value="{category.id}" selected>Hardware (switched off)</option>' in page
     assert "Not self-triaging" in page
 
@@ -476,7 +476,7 @@ def test_a_switched_off_default_category_stays_chosen_on_the_edit_form_and_savin
 
 def test_the_admin_page_says_which_types_triage_themselves(client, db_session):
     team, category = world(db_session)
-    typed(db_session, team, category)
+    request_type = typed(db_session, team, category)
     admin(client, db_session)
 
-    assert "this request triages itself" in client.get("/admin/request-types").text
+    assert "this request triages itself" in client.get(f"/admin/request-types?type={request_type.id}").text

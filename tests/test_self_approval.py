@@ -163,7 +163,7 @@ def test_the_admin_form_sets_the_switch_with_an_audit_entry(client, db_session):
     assert save_type(client, db_session, admin, kind, approvers_may_self_approve="on").status_code == 303
     assert db_session.get(RequestType, kind.id).approvers_may_self_approve is True
     assert any("approvers may approve their own requests False -> True" in (a.detail or "") for a in db_session.exec(select(AuditLog)).all())
-    assert "approvers_may_self_approve" in client.get("/admin/request-types").text
+    assert "approvers_may_self_approve" in client.get(f"/admin/request-types?type={kind.id}").text
 
 
 def test_the_portal_and_the_ticket_page_show_the_self_approval(client, db_session):

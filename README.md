@@ -191,9 +191,12 @@ docker compose up --build
 
 Then open http://localhost:8000. You'll land on `/auth/login`.
 
-`docker-compose.override.yml` (read by Compose on its own) mounts `app/` and `migrations/` into the container and
-runs uvicorn with `--reload`, so a code change shows without a rebuild. Run `docker compose restart worker` after
-changing job code, and rebuild after a dependency change.
+`docker-compose.override.yml` (read by Compose on its own) mounts `app/` and `migrations/` into the `app` and `worker`
+containers and sets `UVICORN_RELOAD=true`, so `docker-entrypoint.sh` runs one uvicorn with `--reload` (the same
+entrypoint, so `RUN_MIGRATIONS=false` in `.env` still skips the migration). A code change shows in the web app
+without a rebuild. The worker does not reload by itself: run `docker compose restart worker` after changing job
+code. Rebuild after a dependency change, and once after pulling a change to `docker-entrypoint.sh` (it is baked
+into the image, not mounted).
 
 `.env.example` sets `ENV=dev`. Staging and production must set
 `ENV=staging` or `ENV=production`: outside dev the app refuses to start

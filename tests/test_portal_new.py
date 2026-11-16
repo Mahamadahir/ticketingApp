@@ -110,7 +110,8 @@ def test_an_admin_chooses_the_icon_in_the_request_type_form(client, db_session):
     request_type = make(db_session, "Laptop", "A new laptop")
     admin(client, db_session)
     form = {"name": "Laptop", "description": "A new laptop", "approval_group_id": request_type.approval_group_id, "pass_percent": 51, "is_active": "on"}
-    assert 'name="icon"' in client.get("/admin/request-types").text and 'value="printer"' in client.get("/admin/request-types").text
+    editor = client.get(f"/admin/request-types?type={request_type.id}").text  # the editor (9K)
+    assert 'name="icon"' in editor and 'value="printer"' in editor
     assert client.post(f"/admin/request-types/{request_type.id}", data={**form, "icon": "laptop"}).status_code == 200
     db_session.expire_all()
     assert db_session.get(RequestType, request_type.id).icon == "laptop"
