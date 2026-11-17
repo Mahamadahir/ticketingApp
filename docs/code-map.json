@@ -192,7 +192,8 @@
       "summary": "The admin home (9H, #212): what needs a look first, then one card per admin group with a couple of real counts and",
       "tables": [],
       "tests": [
-        "tests/test_admin_frame.py"
+        "tests/test_admin_frame.py",
+        "tests/test_notification_dismiss.py"
       ]
     },
     {
@@ -2950,7 +2951,8 @@
         "retire_read_for_teams",
         "undo_clear_read",
         "undo_dismiss",
-        "visible_to"
+        "visible_to",
+        "withdraw_teams_copies"
       ],
       "imported_by": [
         "app.approval_reminders",
@@ -6052,7 +6054,8 @@
     {
       "classes": [
         "BotDelivery",
-        "Unsendable"
+        "Unsendable",
+        "Withdrawn"
       ],
       "file": "app/teams.py",
       "functions": [

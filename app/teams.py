@@ -190,6 +190,11 @@ class Unsendable(Exception):
     message is the reason kept on the row."""
 
 
+class Withdrawn(Unsendable):
+    """The person dismissed the notification after its copy was queued: not a failure. The sender drops the post quietly
+    (no give-up, no failure count, nothing on the admin home)."""
+
+
 def new_ticket_post(session: Session, post: TeamsPost, bot_refused: bool = False) -> dict:
     ticket = session.get(Ticket, post.ticket_id) if post.ticket_id else None
     if ticket is None:
@@ -309,7 +314,7 @@ def notification_post(session: Session, post: TeamsPost, bot_refused: bool = Fal
     if notification is None:
         raise Unsendable("Notification not found")
     if notification.dismissed_at is not None:
-        raise Unsendable("The person dismissed the notification")  # dismissed means gone, even after the copy was queued (#239)
+        raise Withdrawn("The person dismissed the notification")  # dismissed means gone, even after the copy was queued (#239)
     person = session.get(User, notification.user_id)
     if person is None:
         raise Unsendable("Person not found")
@@ -464,6 +469,9 @@ def deliver_pending(
             continue
         try:
             payload = builder(session, post)
+        except Withdrawn:
+            session.delete(post)  # dismissed after it was queued (a race with dismiss, which already deletes unsent copies): nothing to report
+            continue
         except Unsendable as reason:
             give_up(post, str(reason))
             gave_up(session, post)

@@ -19,11 +19,11 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional
 
-from sqlalchemy import and_, exists, func, or_, update
+from sqlalchemy import and_, delete, exists, func, or_, update
 from sqlmodel import Session, select
 
 from app.identity import my_ticket_condition, people_for_addresses, person_for_address
-from app.models import FINISHED_STATUSES, Message, Notification, Ticket, TicketStatus, User, UserRole, UserSession
+from app.models import FINISHED_STATUSES, Message, Notification, TeamsPost, Ticket, TicketStatus, User, UserRole, UserSession
 from app.notification_settings import IN_APP, TEAMS, is_enabled, offers, wants_approval_email
 from app.settings_store import NOTIFICATION_KEEP_DISMISSED_DAYS, TEAMS_HOLD_WHILE_ACTIVE_MINUTES, TEAMS_UNREAD_MINUTES, count_setting, get_int_setting
 from app.visibility import Access, access_context, team_members, ticket_access, visible_ticket_condition
@@ -289,6 +289,13 @@ def mark_all_read(session: Session, user: User) -> int:
     return result.rowcount
 
 
+def withdraw_teams_copies(session: Session, notification_ids) -> None:
+    """Deletes the Teams copies of these notifications that have not been sent: dismissing a notification withdraws its
+    copy, quietly (nothing was sent, so nothing is lost, and it is never a failure or "given up"). Undo does not queue it
+    again: a dismissed notification is also read, and a Teams copy is only for an unread one. Does not commit."""
+    session.exec(delete(TeamsPost).where(TeamsPost.notification_id.in_(notification_ids), TeamsPost.sent_at.is_(None)))
+
+
 def dismiss(session: Session, user: User, notification_id: int, now: Optional[datetime] = None) -> Optional[Notification]:
     """Dismisses one of the user's own notifications (#239): it is hidden from the bell, the page, the count and the Teams
     copy, and counts as read. None when it is not theirs, is Teams-only or is about a ticket they can no longer open.
@@ -304,6 +311,8 @@ def dismiss(session: Session, user: User, notification_id: int, now: Optional[da
         if notification.read_at is None:
             notification.read_at = now
         session.add(notification)
+        session.flush()
+        withdraw_teams_copies(session, [notification.id])
     return notification
 
 
@@ -333,6 +342,7 @@ def clear_read(session: Session, user: User, now: Optional[datetime] = None) -> 
     """Clear all read (#239): dismisses every read, not yet dismissed notification the user can see, all with the same
     `dismissed_at`, which is the batch Undo restores. Returns (that moment, how many). Does not commit."""
     now = now or datetime.now(timezone.utc)
+    withdraw_teams_copies(session, select(Notification.id).where(visible_to(session, user), Notification.read_at.is_not(None)))
     result = session.exec(
         update(Notification)
         .where(visible_to(session, user), Notification.read_at.is_not(None))

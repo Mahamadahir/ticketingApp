@@ -354,10 +354,91 @@ def test_a_copy_already_queued_is_not_sent_once_dismissed(client, db_session, wa
     post = teams.queue_notification(db_session, waiting_copy)
     db_session.commit()
     monkeypatch.setattr(teams, "notifications_on", lambda: True)
-    dismiss(client, waiting_copy)
-    db_session.expire_all()
+    row = fresh(db_session, "Note 1")
+    row.dismissed_at = NOW  # not through the route: that now deletes the unsent copy (see the race test below), this is the copy that got past it
+    db_session.add(row)
+    db_session.commit()
     with pytest.raises(teams.Unsendable, match="dismissed"):
         teams.notification_post(db_session, db_session.get(TeamsPost, post.id))
+
+
+# ---- A dismissed notification's queued Teams copy goes quietly, never as a failure ------------------------------
+
+
+def queued(db_session, text):
+    from app import teams
+
+    post = teams.queue_notification(db_session, fresh(db_session, text))
+    db_session.commit()
+    return post.id
+
+
+def posts(db_session):
+    db_session.expire_all()
+    return db_session.exec(select(TeamsPost)).all()
+
+
+def test_dismissing_withdraws_the_queued_copy_and_nothing_is_given_up(client, db_session, waiting_copy):
+    from app.admin_home import needs_attention
+    from tests.test_admin_frame import EVERY_PAGE
+
+    queued(db_session, "Note 1")
+    dismiss(client, waiting_copy)
+    assert posts(db_session) == []
+    assert not any("Teams post" in line.text for line in needs_attention(db_session, EVERY_PAGE, datetime.now(timezone.utc), "UTC"))
+
+
+def test_a_copy_that_was_already_sent_is_kept_when_dismissed(client, db_session, waiting_copy):
+    post_id = queued(db_session, "Note 1")
+    post = db_session.get(TeamsPost, post_id)
+    post.sent_at = NOW
+    db_session.add(post)
+    db_session.commit()
+    dismiss(client, waiting_copy)
+    assert [p.id for p in posts(db_session)] == [post_id]
+
+
+def test_clear_all_read_withdraws_the_queued_copies_of_its_batch_only(client, db_session):
+    agent_with(client, db_session, 3)
+    make_read(db_session, "Note 1", "Note 2")
+    queued(db_session, "Note 1")
+    queued(db_session, "Note 2")
+    kept = queued(db_session, "Note 3")  # unread: not part of the batch
+    client.post("/notifications/clear-read", follow_redirects=False)
+    assert [p.id for p in posts(db_session)] == [kept]
+
+
+def test_the_race_a_copy_picked_up_after_the_dismiss_is_dropped_not_failed(client, db_session, waiting_copy, monkeypatch):
+    from app import teams
+
+    monkeypatch.setattr(teams, "notifications_on", lambda: True)
+    monkeypatch.setattr(teams.settings, "teams_new_ticket_webhook_url", "https://example.invalid/hook")
+    post_id = queued(db_session, "Note 1")
+    fresh_row = fresh(db_session, "Note 1")
+    fresh_row.dismissed_at = NOW  # dismissed behind the back of the delete (the race)
+    db_session.add(fresh_row)
+    db_session.commit()
+    sent = []
+    result = teams.deliver_pending(db_session, send=sent.append, bot_send=sent.append, now=NOW)
+    db_session.commit()
+    assert result == (0, 0) and sent == []
+    assert db_session.get(TeamsPost, post_id) is None
+
+
+def test_a_genuinely_unsendable_copy_is_still_given_up(client, db_session, waiting_copy, monkeypatch):
+    from app import teams
+
+    monkeypatch.setattr(teams, "notifications_on", lambda: True)
+    monkeypatch.setattr(teams.settings, "teams_new_ticket_webhook_url", "https://example.invalid/hook")
+    post_id = queued(db_session, "Note 1")
+    person = db_session.get(User, fresh(db_session, "Note 1").user_id)
+    person.is_active = False
+    db_session.add(person)
+    db_session.commit()
+    assert teams.deliver_pending(db_session, send=lambda p: None, bot_send=lambda d: None, now=NOW) == (0, 1)
+    db_session.commit()
+    post = db_session.get(TeamsPost, post_id)
+    assert (post.attempts, post.last_error) == (teams.MAX_ATTEMPTS, "The person is no longer active")
 
 
 # ---- The purge --------------------------------------------------------------------------------------------------

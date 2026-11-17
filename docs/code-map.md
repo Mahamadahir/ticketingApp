@@ -420,7 +420,7 @@ File: `app/admin_home.py`
 - Functions: `area_cards`, `needs_attention`
 - Imports: `app.categories`, `app.config`, `app.models`, `app.navigation`, `app.outage`, `app.scheduled_jobs`, `app.settings_store`, `app.subscriptions`, `app.teams`, `app.time_zones`
 - Imported by: `app.routers.admin`, `app.routers.data_protection`
-- Tests: `test_admin_frame.py`
+- Tests: `test_admin_frame.py`, `test_notification_dismiss.py`
 
 ### `app.anonymisation`
 
@@ -930,7 +930,7 @@ File: `app/notification_settings.py`
 
 In-app notifications (phase 2A): the bell. Something happens that an agent should know about,  
 File: `app/notifications.py`
-- Functions: `batch_moment`, `batch_number`, `bell_references`, `bell_tickets`, `can_be_told_about`, `clear_read`, `count_in_batch`, `count_unread`, `default_teams_delay`, `dismiss`, `drop_due_for_teams`, `due_for_teams`, `hand_to_teams`, `in_undo_window`, `mark_all_read`, `mark_read`, `mentioned_in`, `notification_text`, `notify`, `notify_account_deactivated`, `notify_agent_emailed`, `notify_approval_outcome`, `notify_approval_overdue`, `notify_approval_reminder`, `notify_approval_waiting`, `notify_approval_withdrawn`, `notify_assigned`, `notify_break_glass_sign_in`, `notify_chase_given_up`, `notify_due_today`, `notify_link_requested`, `notify_mentions`, `notify_msp_handed_off`, `notify_msp_handoff_warning`, `notify_msp_unacknowledged`, `notify_no_active_approvers`, `notify_outage_mode`, `notify_reopened`, `notify_reply`, `notify_requesters`, `notify_status_for_requesters`, `notify_subrequests_created`, `retire_read_for_teams`, `undo_clear_read`, `undo_dismiss`, `visible_to`
+- Functions: `batch_moment`, `batch_number`, `bell_references`, `bell_tickets`, `can_be_told_about`, `clear_read`, `count_in_batch`, `count_unread`, `default_teams_delay`, `dismiss`, `drop_due_for_teams`, `due_for_teams`, `hand_to_teams`, `in_undo_window`, `mark_all_read`, `mark_read`, `mentioned_in`, `notification_text`, `notify`, `notify_account_deactivated`, `notify_agent_emailed`, `notify_approval_outcome`, `notify_approval_overdue`, `notify_approval_reminder`, `notify_approval_waiting`, `notify_approval_withdrawn`, `notify_assigned`, `notify_break_glass_sign_in`, `notify_chase_given_up`, `notify_due_today`, `notify_link_requested`, `notify_mentions`, `notify_msp_handed_off`, `notify_msp_handoff_warning`, `notify_msp_unacknowledged`, `notify_no_active_approvers`, `notify_outage_mode`, `notify_reopened`, `notify_reply`, `notify_requesters`, `notify_status_for_requesters`, `notify_subrequests_created`, `retire_read_for_teams`, `undo_clear_read`, `undo_dismiss`, `visible_to`, `withdraw_teams_copies`
 - Imports: `app.approvals`, `app.followers`, `app.identity`, `app.models`, `app.notification_settings`, `app.settings_store`, `app.visibility`
 - Imported by: `app.approval_reminders`, `app.approvals`, `app.auto_close_chase`, `app.bot_cards`, `app.closing`, `app.due_today`, `app.emergency`, `app.entra_check`, `app.escalation`, `app.jobs`, `app.linked_identities`, `app.messages`, `app.msp`, `app.navigation`, `app.outage`, `app.reopening`, `app.resolution`, `app.routers.auth`, `app.routers.bulk_resolve`, `app.routers.feedback`, `app.routers.msp_mail`, `app.routers.my_settings`, `app.routers.notifications`, `app.routers.tickets`, `app.subrequests`, `app.teams`, `app.ticket_service`, `app.triage`
 - Tests: `test_bell_access.py`, `test_closing_email.py`, `test_due_date.py`, `test_due_date_review.py`, `test_entra_check.py`, `test_inbound_mail.py`, `test_notification_dismiss.py`, `test_notifications.py`, `test_reply_notification.py`, `test_requester_bell.py`, `test_shell.py`, `test_teams_approvals.py`, `test_teams_copy.py`, `test_teams_copy_sending.py`, `test_teams_dm.py`, `test_teams_hold.py`
@@ -1465,7 +1465,7 @@ File: `app/team_activity.py`
 Teams channel posts (phase 2D): a card in the support channel for each new ticket.  
 File: `app/teams.py`
 
-- Classes: `BotDelivery`, `Unsendable`
+- Classes: `BotDelivery`, `Unsendable`, `Withdrawn`
 - Functions: `backoff_minutes`, `can_deliver`, `can_message_requester`, `deliver_pending`, `describe_failure`, `gave_up`, `give_up`, `has_chat_with_bot`, `is_app_removed`, `is_permanent`, `link_for`, `mention_name`, `message`, `new_ticket_card`, `new_ticket_post`, `notification_card`, `notification_post`, `notifications_on`, `plain`, `portal_link`, `post_card`, `queue_new_ticket`, `queue_notification`, `queue_requester_message`, `record_failure`, `requester_message_post`, `route_for`, `send_bot`, `ticket_link`
 - Imports: `app.action_links`, `app.bot_cards`, `app.bot_connector`, `app.config`, `app.identity`, `app.messages`, `app.models`, `app.notifications`, `app.person_data`, `app.reply_channel`, `app.teams_conversations`
 - Imported by: `app.admin_home`, `app.approval_reminders`, `app.auto_close_chase`, `app.bot_cards`, `app.bot_connector`, `app.inbound`, `app.jobs`, `app.linked_identities`, `app.mail`, `app.reply_channel`, `app.routers.admin`, `app.ticket_service`
