@@ -789,7 +789,8 @@ def _set_status_from_message(
 def _later_posts(session: Session, ticket: Ticket, user: User, seen: Optional[str], confirm: Optional[str]) -> list:
     """The emails to the requester and internal notes other agents posted after the sender's page was loaded (the hidden `seen`
     field), unless the sender has already said to send anyway. A request with no `seen` gets no check: there is nothing to
-    compare with, and every form on the page carries it. Advisory, not a lock: a message that lands between this check and
+    compare with. The email and note composers carry it; the resolve and close
+    forms (which also email the requester) do not, so they are not checked. Advisory, not a lock: a message that lands between this check and
     the send is not caught."""
     if confirm:
         return []
@@ -927,8 +928,9 @@ def discard_email_draft(
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
-    """Keep editing: the files held for the preview that was just closed are dropped now, not left to expire."""
-    ticket = _get_ticket(session, number, user)
+    """Keep editing: the files held for the preview that was just closed are dropped now, not left to expire. Also the send
+    warning's Cancel. Only ever the caller's own draft, so reading access is enough (a note-only agent can cancel too)."""
+    ticket = _get_ticket(session, number, user, Access.READ)
     reply_files.discard(session, ticket, user, draft)
     session.commit()
     return HTMLResponse("")
@@ -1053,7 +1055,8 @@ def add_ticket_note(
         raise HTTPException(status_code=400, detail="The files for this note are no longer held. Add the note again.")
     later = _later_posts(session, ticket, user, seen, confirm)
     if later:
-        token = draft if held_rows else reply_files.hold(session, storage, ticket, user, new_files)
+        # Only files are held (hold() also drops this agent's other unconfirmed draft, an email preview's files).
+        token = draft if held_rows else (reply_files.hold(session, storage, ticket, user, new_files) if new_files else None)
         session.commit()  # the held files outlive this request; nothing else is recorded
         names = [row.filename for row in held_rows] + [item.filename for item in new_files]
         fields = [("body", body), ("next_status", next_status), ("due_on", due_on), ("due_reason", due_reason), ("draft", token)]

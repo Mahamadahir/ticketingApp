@@ -589,3 +589,34 @@ def test_the_presence_table_migrates_up_and_down(scratch):
     assert rows(connect, "SELECT to_regclass('ticket_presence')") == [(None,)]
     alembic("upgrade", "head")
     alembic("check")
+
+
+def test_a_held_back_note_keeps_its_files_in_the_composer_too(client, second, db_session, storage):
+    ticket = ticket_for_email(client, db_session)
+    colleague(second, db_session, ticket)
+    seen = seen_on(client, ticket)
+    second.post(f"/tickets/{ticket.number}/note", data={"body": "Bob's note"})
+    held = client.post(
+        f"/tickets/{ticket.number}/note", data={"body": "Ann", "seen": seen},
+        files=[("files", ("plan.pdf", b"%PDF-1.7\n" + b"x" * 200, "application/pdf"))],
+    )
+    assert held.text.count('name="draft"') == 2  # Send anyway's form and the note form itself
+
+
+def test_a_held_back_note_without_files_leaves_an_email_preview_draft_alone(client, second, db_session, storage):
+    from app.models import ReplyHeldFile
+
+    ticket = ticket_for_email(client, db_session)
+    colleague(second, db_session, ticket)
+    seen = seen_on(client, ticket)
+    client.post(
+        f"/tickets/{ticket.number}/email/preview", data={"body": "Hi"},
+        files=[("files", ("plan.pdf", b"%PDF-1.7\n" + b"x" * 200, "application/pdf"))],
+    )
+    second.post(f"/tickets/{ticket.number}/note", data={"body": "Bob's note"})
+
+    held = client.post(f"/tickets/{ticket.number}/note", data={"body": "Ann", "seen": seen})
+
+    assert "Not sent yet" in held.text
+    db_session.expire_all()
+    assert len(db_session.exec(select(ReplyHeldFile)).all()) == 1  # the email preview's file is still held

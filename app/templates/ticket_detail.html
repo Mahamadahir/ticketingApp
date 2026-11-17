@@ -536,6 +536,7 @@
       <textarea name="body" rows="4" maxlength="{{ max_message_length }}" placeholder="Internal note (agents only, does not triage the ticket)..." required>
 {{- compose.body if compose and compose.mode == "note" else "" -}}</textarea>
       <input type="hidden" name="seen" value="{{ latest_post_id }}" />
+      {% if compose and compose.mode == "note" and compose.draft %}<input type="hidden" name="draft" value="{{ compose.draft }}" />{% endif %}
       {% with attach_id = "note-files" %}{% include "_attach_control.html" %}{% endwith %}
       <div class="tp-compose-row">
         {% with blank_label = "No change (" ~ ticket.status.value.replace("_", " ") ~ ")" %}{% include "_next_status.html" %}{% endwith %}

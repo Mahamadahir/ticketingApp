@@ -60,7 +60,9 @@
   window.addEventListener("pageshow", function (event) { if (event.persisted) { checkInNow(); } });
   // A change of what they are doing shows sooner than the next interval: focus moving into the composer, a panel opening or closing.
   document.addEventListener("focusin", function (event) {
-    if (event.target.closest && event.target.closest(".tp-composer")) { checkInNow(); }
+    var composer = event.target.closest && event.target.closest(".tp-composer");
+    // Only on moving into the composer, not on every field inside it.
+    if (composer && !(event.relatedTarget && composer.contains(event.relatedTarget))) { checkInNow(); }
   });
   document.addEventListener("toggle", function (event) {
     if (event.target.matches && event.target.matches("details.tp-action, details.tp-item")) { checkInNow(); }
