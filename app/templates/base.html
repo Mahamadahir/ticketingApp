@@ -255,8 +255,9 @@
     });
     document.body.addEventListener("htmx:afterSwap", function (event) {
       // The bell's text is "Notifications (3)"; the red number on the icon follows it.
-      var elt = event.detail.elt;
-      if (!elt || !elt.hasAttribute("data-poll")) { return; }
+      // The event is fired on the swap target (the label), not on the element that asked, so find the bell from the target.
+      var elt = event.target && event.target.closest ? event.target.closest("[data-poll]") : null;
+      if (!elt) { return; }
       var label = elt.querySelector(".bell-label");
       var badge = document.getElementById("bell-count");
       if (!label || !badge) { return; }

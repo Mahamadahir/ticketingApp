@@ -132,6 +132,18 @@ def test_the_bell_recounts_when_something_is_dismissed(client, db_session):
     assert 'hx-trigger="load, every 30s, bell-count from:body"' in client.get("/notifications").text
 
 
+def test_the_badge_follows_the_label_from_the_swap_target_not_from_detail_elt(client, db_session):
+    """htmx 2 fires htmx:afterSwap on the swap target (the label), and its detail.elt is not the bell, so the handler that copies
+    the count to the red badge must find the bell from event.target. It once read detail.elt and the badge only moved on refresh.
+    (Found in a real browser; there is no JS runner here, so this pins the markup the fix relies on.)"""
+    agent_with(client, db_session, 1)
+    html = client.get("/notifications").text
+    handler = html[html.index('"htmx:afterSwap"'):]
+    assert 'event.target.closest("[data-poll]")' in handler
+    assert "event.detail.elt" not in handler
+    assert 'hx-target="find .bell-label"' in html and 'class="sr-only bell-label"' in html
+
+
 # ---- Undo -------------------------------------------------------------------------------------------------------
 
 
