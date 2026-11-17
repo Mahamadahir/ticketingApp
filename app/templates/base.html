@@ -40,6 +40,18 @@
     {% else %}{{ icon("M3 5h18v11H3zM8 20h8M12 16v4") }}{% endif %}
   </button>
 </form>
+{% if with_raise %}
+<details class="activity-menu">
+  {# Team activity (#243), the console only: the same details pattern as the bell, its body loaded each time it opens. Without script it is just the link to the full page. #}
+  <summary class="icon-btn" aria-label="Team activity" title="Team activity">
+    {{ icon("M3 12h4l3-8 4 16 3-8h4") }}
+  </summary>
+  <div class="activity-panel">
+    <div id="activity-body" data-quiet hx-get="/tickets/activity/latest" hx-trigger="toggle[target.open] from:closest details" hx-swap="innerHTML"></div>
+    <a class="activity-more" href="/tickets/activity">Open full activity &rarr;</a>
+  </div>
+</details>
+{% endif %}
 <details class="bell-menu">
   {# The summary is the bell: the poll swaps only the label inside it, never the panel. Without script the panel still holds View more. #}
   <summary class="icon-btn" data-poll hx-get="/notifications/count" hx-trigger="load, every 30s" hx-target="find .bell-label" hx-swap="innerHTML">
@@ -205,9 +217,9 @@
   </script>
   {% endif %}
   <script>
-    // The person menu and the bell are <details> (either frame): close one on a click elsewhere or Escape, and only one is open at a time.
+    // The person menu, the bell and the Activity button are <details> (the Activity button in the console only): close one on a click elsewhere or Escape, and only one is open at a time.
     (function () {
-      var menus = Array.prototype.slice.call(document.querySelectorAll("details.person-menu, details.bell-menu"));
+      var menus = Array.prototype.slice.call(document.querySelectorAll("details.person-menu, details.bell-menu, details.activity-menu"));
       if (!menus.length) { return; }
       menus.forEach(function (menu) {
         menu.addEventListener("toggle", function () {
@@ -217,7 +229,7 @@
       // A click outside closes it, and so does choosing a link (one to a place on the page you are already on changes nothing else).
       document.addEventListener("click", function (event) {
         menus.forEach(function (menu) {
-          if (menu.open && (!menu.contains(event.target) || event.target.closest(".person-menu-panel a, .bell-panel a"))) { menu.open = false; }
+          if (menu.open && (!menu.contains(event.target) || event.target.closest(".person-menu-panel a, .bell-panel a, .activity-panel a"))) { menu.open = false; }
         });
       });
       document.addEventListener("keydown", function (event) {

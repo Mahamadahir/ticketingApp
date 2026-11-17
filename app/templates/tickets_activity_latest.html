@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% from "_activity_card.html" import card %}
+{# The top-bar Activity pop-over's body (htmx partial, no frame): quick filters, the latest cards in compact form, the link to the full page. #}
+{% block content %}
+<div class="act-chips" role="group" aria-label="Show">
+  {% for value, label in chips %}
+  <button type="button" class="chip act-chip{{ ' act-chip-on' if kind == value else '' }}" aria-pressed="{{ 'true' if kind == value else 'false' }}" data-quiet hx-get="/tickets/activity/latest{{ '?kind=' ~ value if value else '' }}" hx-target="#activity-body" hx-swap="innerHTML">{{ label }}</button>
+  {% endfor %}
+</div>
+{% if cards %}
+<div class="act-list">{% for c in cards %}{{ card(c, true) }}{% endfor %}</div>
+{% else %}
+<p class="act-empty">Nothing yet</p>
+{% endif %}
+{% endblock %}

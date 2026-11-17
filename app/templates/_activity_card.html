@@ -1,0 +1,32 @@
+{# One card of the team activity (the page and the pop-over). It only draws a Card that app/team_activity.py built; compact is the pop-over's form: the summary only, the whole card a link to the ticket. #}
+{% macro card(c, compact=false) -%}
+{% set ticket = c.ticket %}
+{% set step = c.steps[0] %}
+{% if compact and ticket %}<a class="act-card act-compact act-{{ c.role }}" href="/tickets/{{ ticket.number }}">{% else %}<article class="act-card act-{{ c.role }}">{% endif %}
+  <span class="act-avatars" aria-hidden="true">{% for line in c.lines %}<span class="avatar act-avatar">{{ (line.name or "System")|initials }}</span>{% endfor %}</span>
+  <span class="act-body">
+    <span class="act-top">
+      <span class="act-title"><strong>{{ c.title }}</strong>{% if c.role == "agent" %} worked on{% elif c.single %} · {{ step.phrase }} on{% else %} on{% endif %}
+        {% if ticket %}{% if compact %}<span class="act-ref">{{ ticket.reference }}</span>{% else %}<a class="act-ref" href="/tickets/{{ ticket.number }}">{{ ticket.reference }}</a>{% endif %} {{ ticket.subject }}{% endif %}</span>
+      <span class="act-time">{{ c.span }}</span>
+    </span>
+    {% if c.role == "agent" and c.lines|length > 1 %}
+      {% for line in c.lines %}<span class="act-line"><strong>{{ line.name }}:</strong> {{ line.summary }}</span>{% endfor %}
+    {% elif c.role == "agent" %}
+      <span class="act-line">{{ c.lines[0].summary }}</span>
+    {% endif %}
+    {% if c.single and step.excerpt and not compact %}<span class="act-excerpt{{ ' act-note' if step.group == 'notes' else '' }}">{{ step.excerpt }}</span>{% endif %}
+    {% if not compact %}<span class="act-meta"><span class="chip t-gray">{{ c.team_name }}</span></span>{% endif %}
+    {% if not compact and not c.single %}
+    <details class="act-steps">
+      <summary>{{ c.steps|length }} steps</summary>
+      <ol>
+        {% for s in c.steps %}
+        <li class="act-step{{ ' act-note' if s.group == 'notes' else '' }}"><time>{{ s.clock }}</time> <span>{% if c.lines|length > 1 %}<strong>{{ c.name_of(s) }}</strong> {% endif %}{{ s.text }}</span></li>
+        {% endfor %}
+      </ol>
+    </details>
+    {% endif %}
+  </span>
+{% if compact and ticket %}</a>{% else %}</article>{% endif %}
+{%- endmacro %}
