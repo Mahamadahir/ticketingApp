@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 from app.attachments import NewFile, store_attachment
@@ -387,6 +388,39 @@ def requester_visible_messages(session: Session, ticket: Ticket) -> list[Message
             select(Message).where(Message.ticket_id.in_(ids), *_PUBLIC).order_by(Message.created_at, Message.id)
         ).all()
     )
+
+
+EXCERPT_LENGTH = 200
+
+
+def latest_message_id(session: Session, ticket: Ticket) -> int:
+    """The newest message on this ticket (0 for none). The agent page carries it in a hidden field, so the send can tell what
+    was posted after the page loaded (`posts_since`)."""
+    return session.exec(select(func.max(Message.id)).where(Message.ticket_id == ticket.id)).one() or 0
+
+
+def posts_since(session: Session, ticket: Ticket, agent: User, seen: int) -> list[Message]:
+    """What other agents posted on this ticket after the page the agent has open was loaded (`seen` is the newest message id
+    that page showed): emails to the requester and internal notes, never the agent's own and never an automatic notice. An
+    email counts only if it is one the requester may see (`requester_visible_messages`), so the warning cannot show a
+    requester-hidden message as if it had gone out. This ticket's own messages only: a part of a split request is not told
+    about its siblings' mail."""
+    emailed = {m.id for m in requester_visible_messages(session, ticket) if m.ticket_id == ticket.id and m.id > seen}
+    later = session.exec(
+        select(Message)
+        .where(Message.ticket_id == ticket.id, Message.id > seen, Message.author_user_id.is_not(None), Message.author_user_id != agent.id)
+        .order_by(Message.id)
+    ).all()
+    return [
+        m for m in later
+        if m.direction == MessageDirection.INTERNAL or (m.direction == MessageDirection.OUTBOUND and m.id in emailed)
+    ]
+
+
+def excerpt(text: str, length: int = EXCERPT_LENGTH) -> str:
+    """The start of a message on one line, for a warning."""
+    flat = " ".join((text or "").split())
+    return flat if len(flat) <= length else flat[: length - 1].rstrip() + "..."
 
 
 def not_requester_visible_messages(session: Session, ticket: Ticket) -> list[Message]:

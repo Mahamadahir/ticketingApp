@@ -4,14 +4,15 @@ from typing import Optional
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from app.templating import templates
 from sqlalchemy import func, or_
 from sqlmodel import Session, select
 
 from app import reply_files
 from app.audit import log_action
-from app.auth import require_roles
+from app import ticket_presence
+from app.auth import get_current_user_passively, require_roles
 from app.database import get_session
 from app.feedback import feedback_for_ticket
 from app.forms import MAX_MESSAGE_LENGTH, answers_from_pairs, form_answers, optional_int
@@ -92,11 +93,14 @@ from app.messages import (
     email_requester,
     chosen_status,
     default_status_after_email,
+    excerpt,
     is_triaged,
+    latest_message_id,
+    posts_since,
     preview_email,
     status_choices,
 )
-from app.models import FINISHED_STATUSES, CannedResponse, Category, Message, RequestType, Team, Ticket, TicketSource, TicketStatus, TicketType, User, UserRole
+from app.models import FINISHED_STATUSES, CannedResponse, Category, Message, MessageDirection, RequestType, Team, Ticket, TicketSource, TicketStatus, TicketType, User, UserRole
 from app.attachments import files_by_message
 from app.pagination import paginate
 from app.team_activity import KIND_LABELS, Kind, describe as describe_activity, feed_query
@@ -782,6 +786,83 @@ def _set_status_from_message(
         )
 
 
+def _later_posts(session: Session, ticket: Ticket, user: User, seen: Optional[str], confirm: Optional[str]) -> list:
+    """The emails to the requester and internal notes other agents posted after the sender's page was loaded (the hidden `seen`
+    field), unless the sender has already said to send anyway. A request with no `seen` gets no check: there is nothing to
+    compare with, and every form on the page carries it. Advisory, not a lock: a message that lands between this check and
+    the send is not caught."""
+    if confirm:
+        return []
+    last_seen = optional_int(seen)
+    if last_seen is None:
+        return []
+    return posts_since(session, ticket, user, last_seen)
+
+
+def _send_warning(
+    ticket: Ticket, mode: str, later: list, body: str, fields: list[tuple[str, Optional[str]]], files: list[str],
+) -> dict:
+    """What the page draws when a send was held back: the agent's text (kept in the composer), who posted what since, and the
+    form that resubmits the same send with `confirm` (Send anyway). `fields` are the hidden values that form carries."""
+    return {
+        "mode": mode,
+        "body": body,
+        "later": [
+            {"who": m.sender, "at": m.created_at, "email": m.direction == MessageDirection.OUTBOUND, "excerpt": excerpt(m.body)}
+            for m in later
+        ],
+        "action": f"/tickets/{ticket.number}/{'email' if mode == 'email' else 'note'}",
+        "fields": [(name, value) for name, value in fields if value not in (None, "")] + [("confirm", "1")],
+        "files": files,
+        "draft": next((value for name, value in fields if name == "draft" and value), None),
+    }
+
+
+@router.post("/{number}/presence", response_class=HTMLResponse)
+def presence_check_in(
+    number: int,
+    request: Request,
+    activity: str = Form("viewing", max_length=20),
+    doing: str = Form("", max_length=400),
+    shown: str = Form("", max_length=64),
+    # Passive: the page checks in by itself every few seconds, so it is not the person being active; an open tab nobody is
+    # looking at must not keep a sign-in alive (same reason as the bell's count, app/auth.py).
+    user: User = Depends(get_current_user_passively),
+    session: Session = Depends(get_session),
+):
+    """The ticket page's check-in: records what this agent is doing here and answers with the strip of who else is on the ticket,
+    or with nothing (204) when it would read the same as what the page already shows (`shown`), so the live region is left
+    alone. Agents only, and only for a ticket they can open."""
+    if user.role not in ticket_presence.AGENT_ROLES:
+        raise HTTPException(status_code=403, detail="Not permitted")
+    ticket = _get_ticket(session, number, user, Access.READ)
+    ticket_presence.check_in(session, ticket, user, activity, doing)
+    session.commit()
+    others = ticket_presence.others_here(session, ticket, user)
+    now_shown = ticket_presence.digest(others)
+    if now_shown == shown:
+        return Response(status_code=204, headers={"Cache-Control": "no-store"})
+    return templates.TemplateResponse(
+        request, "_presence_strip.html", {"others": others, "shown": now_shown}, headers={"Cache-Control": "no-store"}
+    )
+
+
+@router.post("/{number}/presence/leave")
+def presence_leave(
+    number: int,
+    user: User = Depends(get_current_user_passively),  # a beacon sent as the page closes
+    session: Session = Depends(get_session),
+):
+    """The page was closed or left (navigator.sendBeacon on pagehide): this agent's row goes now instead of after the
+    gone-after time. It only ever removes the caller's own row, so it needs no access check."""
+    if user.role in ticket_presence.AGENT_ROLES:
+        ticket = get_by_number(session, number)
+        if ticket is not None:
+            ticket_presence.leave(session, ticket, user)
+            session.commit()
+    return Response(status_code=204)
+
+
 @router.post("/{number}/email/preview", response_class=HTMLResponse)
 def preview_email_user(
     number: int,
@@ -792,6 +873,7 @@ def preview_email_user(
     next_status: Optional[str] = Form(None),
     due_on: Optional[str] = Form(None, max_length=20),
     due_reason: Optional[str] = Form(None, max_length=600),
+    seen: Optional[str] = Form(None, max_length=20),
     files: list[UploadFile] = File(default=[]),
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
@@ -833,6 +915,7 @@ def preview_email_user(
             "next_status": next_status,
             "due_on": due_on,
             "due_reason": due_reason,
+            "seen": seen,
         },
     )
 
@@ -862,6 +945,8 @@ def email_user(
     due_on: Optional[str] = Form(None, max_length=20),
     due_reason: Optional[str] = Form(None, max_length=600),
     draft: Optional[str] = Form(None, max_length=100),
+    seen: Optional[str] = Form(None, max_length=20),
+    confirm: Optional[str] = Form(None, max_length=5),
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
     storage: Storage = Depends(get_storage),
@@ -871,8 +956,18 @@ def email_user(
     Not available until the ticket is triaged. "cc_form" is sent by the page's form
     so that ticking nobody means copying nobody; a request without it copies every
     follower. "next_status" is the status the agent picked in the form (Awaiting user unless they
-    chose otherwise); a request without it gets the same default."""
+    chose otherwise); a request without it gets the same default.
+
+    "seen" is the newest message id the agent's page showed. If another agent has emailed the requester or added a note since,
+    nothing is sent: the page comes back with the text kept and a warning (Send anyway resubmits with "confirm")."""
     ticket = _get_ticket(session, number, user)
+
+    later = _later_posts(session, ticket, user, seen, confirm) if is_triaged(ticket) else []
+    if later:
+        names = [row.filename for row in reply_files.held(session, ticket, user, draft)]
+        fields = [("body", body), ("cc_form", cc_form), *[("cc", address) for address in cc], ("next_status", next_status),
+                  ("due_on", due_on), ("due_reason", due_reason), ("draft", draft)]
+        return _render_ticket_detail(request, ticket, user, session, compose=_send_warning(ticket, "email", later, body, fields, names))
 
     held_rows = reply_files.held(session, ticket, user, draft, lock=True)
     if draft and not held_rows:
@@ -925,6 +1020,9 @@ def add_ticket_note(
     next_status: Optional[str] = Form(None),
     due_on: Optional[str] = Form(None, max_length=20),
     due_reason: Optional[str] = Form(None, max_length=600),
+    draft: Optional[str] = Form(None, max_length=100),
+    seen: Optional[str] = Form(None, max_length=20),
+    confirm: Optional[str] = Form(None, max_length=5),
     files: list[UploadFile] = File(default=[]),
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
@@ -932,7 +1030,9 @@ def add_ticket_note(
 ):
     """An internal note, visible to agents only; its files are too (never in the portal or an email). Allowed at any stage, including
     on an untriaged ticket the agent has not claimed, and never triages it. The agent may also pick
-    the ticket's next status; left alone, a note never changes it."""
+    the ticket's next status; left alone, a note never changes it. Like the email, it is held back with a warning when another
+    agent emailed the requester or added a note after the agent's page was loaded ("seen"); the files chosen are held with
+    the draft (app/reply_files.py) so Send anyway still attaches them."""
     ticket = _get_ticket(session, number, user, Access.READ)
     levels = access_context(session, user)
     if not may_add_note(user, ticket, levels):
@@ -948,12 +1048,27 @@ def add_ticket_note(
         new_files = reply_files.read_uploads(session, files)
     except reply_files.FilesRefused as error:
         raise HTTPException(status_code=400, detail=str(error))
+    held_rows = reply_files.held(session, ticket, user, draft, lock=True)
+    if draft and not held_rows:
+        raise HTTPException(status_code=400, detail="The files for this note are no longer held. Add the note again.")
+    later = _later_posts(session, ticket, user, seen, confirm)
+    if later:
+        token = draft if held_rows else reply_files.hold(session, storage, ticket, user, new_files)
+        session.commit()  # the held files outlive this request; nothing else is recorded
+        names = [row.filename for row in held_rows] + [item.filename for item in new_files]
+        fields = [("body", body), ("next_status", next_status), ("due_on", due_on), ("due_reason", due_reason), ("draft", token)]
+        return _render_ticket_detail(request, ticket, user, session, compose=_send_warning(ticket, "note", later, body, fields, names))
+    try:
+        new_files = reply_files.take(storage, held_rows) + new_files
+    except reply_files.FilesRefused as error:
+        raise HTTPException(status_code=400, detail=str(error))
     if new_status == TicketStatus.SCHEDULED:
         _ask_for_scheduled_date(session, ticket, user, due_on, due_reason)  # before the note, so a refusal leaves nothing
     note = add_note(session, ticket, user, body, files=new_files, storage=storage)
     log_action(session, user.email, "ticket", ticket.id, "note_added", body[:200])
     _set_status_from_message(session, ticket, user, new_status, due_on, due_reason)
     notify_mentions(session, ticket, note, user)
+    reply_files.release(session, held_rows)  # the files are attached now, so the stored copies stay
     session.commit()
     session.refresh(ticket)
 
@@ -1638,7 +1753,10 @@ def _may_close(session: Session, ticket: Ticket) -> bool:
     return _may(check_can_close, CloseError, session, ticket)
 
 
-def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session: Session) -> HTMLResponse:
+def _render_ticket_detail(
+    request: Request, ticket: Ticket, user: User, session: Session, compose: Optional[dict] = None
+) -> HTMLResponse:
+    """`compose` is set when a send was held back (`_send_warning`): the composer then opens on that mode with the text kept."""
     ticket_approval = current_approval(session, ticket)
     ticket_votes = votes_of(session, ticket_approval)
     team = session.get(Team, ticket.team_id) if ticket.team_id else None
@@ -1700,6 +1818,7 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
     now = datetime.now(timezone.utc)
     at_risk = at_risk_percent(session)
     sla_now = sla_view(ticket, now, at_risk)
+    presence_others = ticket_presence.others_here(session, ticket, user, now)
 
     return templates.TemplateResponse(
         request,
@@ -1814,5 +1933,12 @@ def _render_ticket_detail(request: Request, ticket: Ticket, user: User, session:
             "can_work": can_work,
             "can_claim": can_claim,
             "user": user,
+            # Who else is on this ticket (app/ticket_presence.py): drawn with the page, then refreshed by its check-in.
+            "presence_others": presence_others,
+            "presence_shown": ticket_presence.digest(presence_others),
+            "presence_interval": ticket_presence.check_in_seconds(session),
+            # The newest message this page shows; the send compares it with the ticket (_later_posts).
+            "latest_post_id": latest_message_id(session, ticket),
+            "compose": compose,
         },
     )

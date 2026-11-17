@@ -54,6 +54,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/a4e7b19c3d58_ticket_presence.py",
+        "revision": "a4e7b19c3d58"
+      },
+      {
         "file": "migrations/versions/c239d1a7e5b3_notification_dismissed_at.py",
         "revision": "c239d1a7e5b3"
       },
@@ -68,17 +72,13 @@
       {
         "file": "migrations/versions/d7a3f19e5c28_message_channel_reply_files.py",
         "revision": "d7a3f19e5c28"
-      },
-      {
-        "file": "migrations/versions/cbf4e82d802a_user_theme.py",
-        "revision": "cbf4e82d802a"
       }
     ],
-    "count": 70,
+    "count": 71,
     "heads": [
       {
-        "file": "migrations/versions/c239d1a7e5b3_notification_dismissed_at.py",
-        "revision": "c239d1a7e5b3"
+        "file": "migrations/versions/a4e7b19c3d58_ticket_presence.py",
+        "revision": "a4e7b19c3d58"
       }
     ]
   },
@@ -1938,6 +1938,7 @@
         "tests/test_reply_files.py",
         "tests/test_resolution.py",
         "tests/test_teams_followups.py",
+        "tests/test_ticket_presence.py",
         "tests/test_withdraw.py"
       ]
     },
@@ -2010,6 +2011,7 @@
         "tests/test_subject_access.py",
         "tests/test_teams_bot.py",
         "tests/test_teams_hold.py",
+        "tests/test_ticket_presence.py",
         "tests/test_triage.py"
       ]
     },
@@ -2033,12 +2035,15 @@
         "chosen_status",
         "default_status_after_email",
         "email_requester",
+        "excerpt",
         "in_a_split",
         "is_triaged",
         "it_support_label",
         "kind_label",
+        "latest_message_id",
         "mail_subject",
         "not_requester_visible_messages",
+        "posts_since",
         "preview_email",
         "record_inbound",
         "record_msp_message",
@@ -2115,7 +2120,8 @@
         "tests/test_scheduled_status.py",
         "tests/test_split_family.py",
         "tests/test_teams_followups.py",
-        "tests/test_teams_intake.py"
+        "tests/test_teams_intake.py",
+        "tests/test_ticket_presence.py"
       ]
     },
     {
@@ -2172,6 +2178,7 @@
         "TicketEvent",
         "TicketFeedback",
         "TicketFollower",
+        "TicketPresence",
         "TicketSource",
         "TicketStatus",
         "TicketType",
@@ -2276,6 +2283,7 @@
         "app.templating",
         "app.thanks_rules",
         "app.theme",
+        "app.ticket_presence",
         "app.ticket_service",
         "app.time_zones",
         "app.triage",
@@ -2484,6 +2492,10 @@
           "table": "ticketfollower"
         },
         {
+          "class": "TicketPresence",
+          "table": "ticket_presence"
+        },
+        {
           "class": "User",
           "table": "user"
         },
@@ -2605,6 +2617,7 @@
         "tests/test_thanks_rules.py",
         "tests/test_ticket_core.py",
         "tests/test_ticket_page.py",
+        "tests/test_ticket_presence.py",
         "tests/test_ticket_urls.py",
         "tests/test_tickets_rbac.py",
         "tests/test_time_zones.py",
@@ -3438,7 +3451,8 @@
       "tables": [],
       "tests": [
         "tests/test_portal_request.py",
-        "tests/test_reply_files.py"
+        "tests/test_reply_files.py",
+        "tests/test_ticket_presence.py"
       ]
     },
     {
@@ -5132,6 +5146,8 @@
         "msp_forward_dismiss",
         "msp_hold",
         "msp_hold_release",
+        "presence_check_in",
+        "presence_leave",
         "preview_close",
         "preview_email_user",
         "preview_msp_forward",
@@ -5195,6 +5211,7 @@
         "app.subrequests",
         "app.team_activity",
         "app.templating",
+        "app.ticket_presence",
         "app.ticket_service",
         "app.time_zones",
         "app.triage",
@@ -5348,6 +5365,16 @@
           "path": "/tickets/{number}/note"
         },
         {
+          "handler": "presence_check_in",
+          "method": "POST",
+          "path": "/tickets/{number}/presence"
+        },
+        {
+          "handler": "presence_leave",
+          "method": "POST",
+          "path": "/tickets/{number}/presence/leave"
+        },
+        {
           "handler": "change_priority",
           "method": "POST",
           "path": "/tickets/{number}/priority"
@@ -5495,7 +5522,8 @@
         "app.reply_files",
         "app.sessions",
         "app.settings_store",
-        "app.teams_pending"
+        "app.teams_pending",
+        "app.ticket_presence"
       ],
       "module": "app.scheduled_jobs",
       "routes": [],
@@ -5516,7 +5544,8 @@
         "tests/test_reply_files.py",
         "tests/test_scheduled_jobs.py",
         "tests/test_sessions.py",
-        "tests/test_teams_followups.py"
+        "tests/test_teams_followups.py",
+        "tests/test_ticket_presence.py"
       ]
     },
     {
@@ -5637,6 +5666,7 @@
         "app.subscriptions",
         "app.teams_intake",
         "app.teams_pending",
+        "app.ticket_presence",
         "app.ticket_service",
         "app.time_zones"
       ],
@@ -5698,6 +5728,7 @@
         "tests/test_teams_followups.py",
         "tests/test_teams_hold.py",
         "tests/test_teams_intake.py",
+        "tests/test_ticket_presence.py",
         "tests/test_time_zones.py",
         "tests/test_triage.py"
       ]
@@ -5891,7 +5922,8 @@
         "tests/test_storage.py",
         "tests/test_subject_access.py",
         "tests/test_teams_followups.py",
-        "tests/test_teams_intake.py"
+        "tests/test_teams_intake.py",
+        "tests/test_ticket_presence.py"
       ]
     },
     {
@@ -6489,6 +6521,38 @@
     },
     {
       "classes": [
+        "Here"
+      ],
+      "file": "app/ticket_presence.py",
+      "functions": [
+        "check_in",
+        "check_in_seconds",
+        "clean_action",
+        "digest",
+        "gone_after_seconds",
+        "leave",
+        "others_here",
+        "purge_expired"
+      ],
+      "imported_by": [
+        "app.routers.tickets",
+        "app.scheduled_jobs"
+      ],
+      "imports": [
+        "app.models",
+        "app.settings_store",
+        "app.visibility"
+      ],
+      "module": "app.ticket_presence",
+      "routes": [],
+      "summary": "Ticket presence (issue #246): who else has this ticket open, and what they are doing on it.",
+      "tables": [],
+      "tests": [
+        "tests/test_ticket_presence.py"
+      ]
+    },
+    {
+      "classes": [
         "AwaitingApproval",
         "ClosingNeedsNotes",
         "NotTriaged",
@@ -6750,6 +6814,7 @@
         "app.routers.tickets",
         "app.subrequests",
         "app.templating",
+        "app.ticket_presence",
         "app.triage"
       ],
       "imports": [
@@ -7403,6 +7468,7 @@
     "tests/test_thanks_rules.py",
     "tests/test_ticket_core.py",
     "tests/test_ticket_page.py",
+    "tests/test_ticket_presence.py",
     "tests/test_ticket_urls.py",
     "tests/test_tickets_rbac.py",
     "tests/test_time_zones.py",
