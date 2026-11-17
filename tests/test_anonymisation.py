@@ -156,6 +156,7 @@ def test_it_removes_the_person_and_keeps_the_tickets(client, db_session, storage
     own, alias, shared, copied, carol = (world[k] for k in ("own", "alias", "shared", "copied", "carol"))
     ann_id = world["ann"].id
     db.add(Notification(user_id=ann_id, kind="assigned", text="Ann has a bell", actor_email="ann@a.example"))
+    db.add(Notification(user_id=ann_id, kind="assigned", text="Ann dismissed this", dismissed_at=datetime.now(timezone.utc)))  # dismissed still exists until the purge (#239)
     db.add(RequesterTimeZone(email="ann@b.example", time_zone="Europe/London"))
     db.add(UserPermission(user_id=ann_id, permission="view_reports"))
     db.get(User, ann_id).theme = "dark"  # a setting of hers (9A); nothing of it is kept

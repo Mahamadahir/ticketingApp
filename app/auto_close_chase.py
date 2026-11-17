@@ -37,7 +37,7 @@ from sqlalchemy import func
 from sqlmodel import Session, select
 
 from app.audit import log_action
-from app.models import Notification, OutboundEmail, Ticket, TicketEvent, TicketStatus
+from app.models import AuditLog, Notification, OutboundEmail, Ticket, TicketEvent, TicketStatus
 from app.mail import give_up
 from app.notifications import CHASE_GIVEN_UP, notify_chase_given_up
 from app.outbox import CHASE, is_on, queue_chase
@@ -236,6 +236,13 @@ def _report_one(session: Session, ticket_id: int) -> None:
             Notification.ticket_id == ticket.id, Notification.kind == CHASE_GIVEN_UP, Notification.created_at >= email.created_at
         ).limit(1)
     ).first()
+    if told is None:  # the bell entry may have been dismissed and purged (#239); the audit line is what outlasts it
+        told = session.exec(
+            select(AuditLog.id).where(
+                AuditLog.entity_type == "ticket", AuditLog.entity_id == ticket.id, AuditLog.action == AUDIT_CHASE_GIVEN_UP,
+                AuditLog.created_at >= email.created_at,
+            ).limit(1)
+        ).first()
     if told is None and notify_chase_given_up(session, ticket):
         log_action(session, AUDIT_ACTOR, "ticket", ticket.id, AUDIT_CHASE_GIVEN_UP, email.last_error or "")
 

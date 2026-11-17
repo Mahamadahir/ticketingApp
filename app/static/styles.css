@@ -856,6 +856,24 @@ th { color: var(--muted); font-weight: 600; }
 .bell-empty { margin: 0; padding: 12px; color: var(--muted); font-size: 14px; }
 .bell-more { display: block; padding: 10px 12px; border-top: 1px solid var(--border); border-radius: 0 0 var(--radius) var(--radius); text-align: center; font-weight: 600; text-decoration: none; }
 .bell-more:hover { background: var(--raised); }
+/* Dismiss (#239): a row is the open button and a small x beside it; Undo replaces a dismissed row. */
+.bell-list li { display: flex; align-items: stretch; gap: 2px; }
+.bell-list li > form:first-child { flex: 1; min-width: 0; }
+.dismiss-btn {
+  min-width: 44px; min-height: 44px; padding: 0 10px; border: 0; border-radius: var(--radius); background: transparent;
+  color: var(--muted); font: inherit; font-size: 20px; line-height: 1; cursor: pointer;
+}
+.dismiss-btn:hover { background: var(--raised); color: var(--text); }
+.bell-undo { align-items: center; justify-content: space-between; padding: 4px 12px; font-size: 14px; color: var(--muted); }
+.notification-undo td { color: var(--muted); }
+.notification-undo form { margin-left: 8px; }
+.notification-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
+.notification-actions form { margin: 0; }
+.notice-bar {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 12px; padding: 10px 12px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+}
+.notice-bar form { margin: 0; }
 @media (max-width: 720px) {
   /* The bell can wrap to the left of a narrow bar: anchor the panel to the bar instead, inside the page's gutters. */
   .topbar { position: relative; }

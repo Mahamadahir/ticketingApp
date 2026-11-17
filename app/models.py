@@ -812,6 +812,8 @@ class Notification(SQLModel, table=True):
             "ix_notification_teams_due", "created_at",
             postgresql_where=text("teams_wanted AND teams_handled_at IS NULL"),
         ),
+        # The purge job looks only for dismissed rows (app/notification_purge.py).
+        Index("ix_notification_dismissed", "dismissed_at", postgresql_where=text("dismissed_at IS NOT NULL")),
     )
 
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -822,6 +824,11 @@ class Notification(SQLModel, table=True):
     text: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), index=True)
     read_at: Optional[datetime] = Field(default=None)
+    # When the person dismissed it (#239). A dismissed row is gone from the bell, the page, the count and the Teams copy
+    # (app/notifications.py visible_to is the one rule) but is kept until the purge job deletes it: Undo clears this,
+    # and the subject access export still lists it. Clear all read gives every row it clears the same value, so one
+    # Undo restores that batch.
+    dismissed_at: Optional[datetime] = Field(default=None)
     # Whether it shows in the bell. False when the person turned the bell off for this event but
     # still wants Teams: such a row is written already read, so the bell never counts it.
     bell: bool = Field(default=True, sa_column_kwargs={"server_default": "true"})

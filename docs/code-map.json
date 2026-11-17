@@ -54,6 +54,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/c239d1a7e5b3_notification_dismissed_at.py",
+        "revision": "c239d1a7e5b3"
+      },
+      {
         "file": "migrations/versions/c4f7a2b9e813_request_type_icon_and_approval_notice.py",
         "revision": "c4f7a2b9e813"
       },
@@ -68,17 +72,13 @@
       {
         "file": "migrations/versions/cbf4e82d802a_user_theme.py",
         "revision": "cbf4e82d802a"
-      },
-      {
-        "file": "migrations/versions/8f193a5c2d17_teams_follow_ups.py",
-        "revision": "8f193a5c2d17"
       }
     ],
-    "count": 69,
+    "count": 70,
     "heads": [
       {
-        "file": "migrations/versions/c4f7a2b9e813_request_type_icon_and_approval_notice.py",
-        "revision": "c4f7a2b9e813"
+        "file": "migrations/versions/c239d1a7e5b3_notification_dismissed_at.py",
+        "revision": "c239d1a7e5b3"
       }
     ]
   },
@@ -192,7 +192,8 @@
       "summary": "The admin home (9H, #212): what needs a look first, then one card per admin group with a couple of real counts and",
       "tables": [],
       "tests": [
-        "tests/test_admin_frame.py"
+        "tests/test_admin_frame.py",
+        "tests/test_notification_dismiss.py"
       ]
     },
     {
@@ -1164,6 +1165,7 @@
         "tests/test_inbound_mail.py",
         "tests/test_linking.py",
         "tests/test_mail_subscriptions.py",
+        "tests/test_notification_dismiss.py",
         "tests/test_notification_followup.py",
         "tests/test_outbound_mail.py",
         "tests/test_scheduled_jobs.py",
@@ -2222,6 +2224,7 @@
         "app.msp_actions",
         "app.navigation",
         "app.never_follow",
+        "app.notification_purge",
         "app.notification_settings",
         "app.notifications",
         "app.outage",
@@ -2550,6 +2553,7 @@
         "tests/test_msp_mail.py",
         "tests/test_msp_real_mail.py",
         "tests/test_never_follow.py",
+        "tests/test_notification_dismiss.py",
         "tests/test_notification_followup.py",
         "tests/test_notification_settings.py",
         "tests/test_notifications.py",
@@ -2829,6 +2833,30 @@
       ]
     },
     {
+      "classes": [],
+      "file": "app/notification_purge.py",
+      "functions": [
+        "due_for_purge",
+        "purge_notifications",
+        "retention_days"
+      ],
+      "imported_by": [
+        "app.scheduled_jobs"
+      ],
+      "imports": [
+        "app.models",
+        "app.settings_store"
+      ],
+      "module": "app.notification_purge",
+      "routes": [],
+      "summary": "The notification purge (#239): the recurring job `notification-purge` that deletes notifications for good.",
+      "tables": [],
+      "tests": [
+        "tests/test_auto_close_chase.py",
+        "tests/test_notification_dismiss.py"
+      ]
+    },
+    {
       "classes": [
         "EventType",
         "InvalidDelay"
@@ -2878,14 +2906,20 @@
       "classes": [],
       "file": "app/notifications.py",
       "functions": [
+        "batch_moment",
+        "batch_number",
         "bell_references",
         "bell_tickets",
         "can_be_told_about",
+        "clear_read",
+        "count_in_batch",
         "count_unread",
         "default_teams_delay",
+        "dismiss",
         "drop_due_for_teams",
         "due_for_teams",
         "hand_to_teams",
+        "in_undo_window",
         "mark_all_read",
         "mark_read",
         "mentioned_in",
@@ -2915,7 +2949,10 @@
         "notify_status_for_requesters",
         "notify_subrequests_created",
         "retire_read_for_teams",
-        "visible_to"
+        "undo_clear_read",
+        "undo_dismiss",
+        "visible_to",
+        "withdraw_teams_copies"
       ],
       "imported_by": [
         "app.approval_reminders",
@@ -2967,6 +3004,7 @@
         "tests/test_due_date_review.py",
         "tests/test_entra_check.py",
         "tests/test_inbound_mail.py",
+        "tests/test_notification_dismiss.py",
         "tests/test_notifications.py",
         "tests/test_reply_notification.py",
         "tests/test_requester_bell.py",
@@ -4794,12 +4832,18 @@
       "classes": [],
       "file": "app/routers/notifications.py",
       "functions": [
+        "clear_all_read",
+        "count_read",
+        "dismiss_notification",
         "latest_notifications",
         "list_notifications",
         "newest_first",
+        "open_label",
         "open_notification",
         "read_all",
         "texts_of",
+        "undo_clear_all_read",
+        "undo_notification",
         "unread_count"
       ],
       "imported_by": [
@@ -4821,6 +4865,11 @@
           "path": "/notifications"
         },
         {
+          "handler": "clear_all_read",
+          "method": "POST",
+          "path": "/notifications/clear-read"
+        },
+        {
           "handler": "unread_count",
           "method": "GET",
           "path": "/notifications/count"
@@ -4836,9 +4885,24 @@
           "path": "/notifications/read-all"
         },
         {
+          "handler": "undo_clear_all_read",
+          "method": "POST",
+          "path": "/notifications/undo-clear"
+        },
+        {
+          "handler": "dismiss_notification",
+          "method": "POST",
+          "path": "/notifications/{notification_id}/dismiss"
+        },
+        {
           "handler": "open_notification",
           "method": "POST",
           "path": "/notifications/{notification_id}/open"
+        },
+        {
+          "handler": "undo_notification",
+          "method": "POST",
+          "path": "/notifications/{notification_id}/undo"
         }
       ],
       "summary": "The bell: a person's notifications (phase 2A; everyone since #122 and #130). Own notifications only.",
@@ -5427,6 +5491,7 @@
         "app.entra_check",
         "app.models",
         "app.msp",
+        "app.notification_purge",
         "app.reply_files",
         "app.sessions",
         "app.settings_store",
@@ -5447,6 +5512,7 @@
         "tests/test_handoff_bells_holidays.py",
         "tests/test_msp.py",
         "tests/test_msp_mail.py",
+        "tests/test_notification_dismiss.py",
         "tests/test_reply_files.py",
         "tests/test_scheduled_jobs.py",
         "tests/test_sessions.py",
@@ -5548,6 +5614,7 @@
         "app.messages",
         "app.msp",
         "app.never_follow",
+        "app.notification_purge",
         "app.notifications",
         "app.presence",
         "app.raising",
@@ -5607,6 +5674,7 @@
         "tests/test_msp_mail.py",
         "tests/test_msp_real_mail.py",
         "tests/test_never_follow.py",
+        "tests/test_notification_dismiss.py",
         "tests/test_notification_followup.py",
         "tests/test_outage_mode.py",
         "tests/test_outbound_mail.py",
@@ -5986,7 +6054,8 @@
     {
       "classes": [
         "BotDelivery",
-        "Unsendable"
+        "Unsendable",
+        "Withdrawn"
       ],
       "file": "app/teams.py",
       "functions": [
@@ -6058,6 +6127,7 @@
         "tests/test_auto_close_chase.py",
         "tests/test_inbound_mail.py",
         "tests/test_linked_identities.py",
+        "tests/test_notification_dismiss.py",
         "tests/test_outbound_mail.py",
         "tests/test_teams.py",
         "tests/test_teams_approvals.py",
@@ -7277,6 +7347,7 @@
     "tests/test_msp_mail.py",
     "tests/test_msp_real_mail.py",
     "tests/test_never_follow.py",
+    "tests/test_notification_dismiss.py",
     "tests/test_notification_followup.py",
     "tests/test_notification_settings.py",
     "tests/test_notifications.py",

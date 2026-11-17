@@ -73,6 +73,15 @@ prefix), and opening the dropdown marks nothing read. Without script the panel s
 closes, choosing a link closes, and opening one closes the other. `data-quiet` (like `data-poll`) marks a background request that must not
 clear the flash area or swap in a sign-in redirect.
 
+Dismiss (#239): each row, in the dropdown and on `/notifications`, is its Open form plus a second form with `button.dismiss-btn` (an `x`,
+`aria-label="Dismiss: <text>"`); the two are siblings because a form cannot hold a form (`_notification_item.html` draws both, as a
+`li` in the dropdown and a `tr` on the page). Dismiss is a POST: without script it returns to the page, which shows `.notice-bar` "Dismissed: <text>" with an Undo
+button; with htmx the row is swapped for `_notification_undo.html` ("Dismissed." and Undo, or "Dismissed for good" when the window has passed) and
+`HX-Trigger: bell-count` makes the bell's summary recount. Undo swaps the row back. The page also has **Clear all read (N)** beside Mark all as read
+(only while something read is there to clear); it returns to the page with a `.notice-bar` "N read notifications cleared" and an Undo that restores that batch.
+Dismissed rows are hidden by `visible_to`, so the list, the count and the Teams copy all agree; the purge job deletes them after the
+"Keep dismissed notifications for" days (Admin > Settings > Notifications).
+
 The bell keeps its contract: its summary polls `/notifications/count` every 30 seconds (`data-poll`) into a screen-reader
 label ("Notifications (3)"), and the red number on the icon follows that text. The poll swaps only that label, so an open dropdown stays open.
 
