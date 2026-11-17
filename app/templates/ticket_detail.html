@@ -5,16 +5,16 @@
 {# One action of the header bar: a disclosure that opens its panel under the button (native <details>, so the keyboard
    works without a script). Opening one closes the others (the shared name). #}
 {% macro action(label, primary=false, wide=false, doing="") %}
-<details class="tp-action" name="ticket-action"{% if doing %} data-doing="{{ doing }}"{% endif %}>
+<details class="tp-action" name="ticket-action">
   <summary class="btn{{ ' btn-primary' if primary else '' }}">{{ label }}</summary>
-  <div class="tp-panel{{ ' tp-panel-wide' if wide else '' }}">{{ caller() }}</div>
+  <div class="tp-panel{{ ' tp-panel-wide' if wide else '' }}"{% if doing %} data-doing="{{ doing }}"{% endif %}>{{ caller() }}</div>
 </details>
 {% endmacro %}
 {# One item of the More actions menu: a nested disclosure. #}
 {% macro item(label, doing="") %}
-<details class="tp-item"{% if doing %} data-doing="{{ doing }}"{% endif %}>
+<details class="tp-item">
   <summary>{{ label }}</summary>
-  <div class="tp-item-body">{{ caller() }}</div>
+  <div class="tp-item-body"{% if doing %} data-doing="{{ doing }}"{% endif %}>{{ caller() }}</div>
 </details>
 {% endmacro %}
 {% set triaged_actions = ticket.triaged_at and ticket.status.value != "awaiting_approval" %}

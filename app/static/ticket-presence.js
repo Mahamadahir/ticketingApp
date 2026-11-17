@@ -13,7 +13,8 @@
   }
 
   function doingOf(panel) {
-    var said = panel.getAttribute("data-doing");
+    var body = panel.querySelector(":scope > .tp-panel, :scope > .tp-item-body");
+    var said = body && body.getAttribute("data-doing");
     if (said) { return said; }
     var summary = panel.querySelector("summary");
     return "using " + (summary ? summary.textContent.trim() : "an action");
