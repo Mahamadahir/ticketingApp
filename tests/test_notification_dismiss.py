@@ -609,6 +609,18 @@ def test_a_post_being_sent_is_never_waited_for_and_its_notification_is_left_for_
     assert remaining(db_session) == []
 
 
+def test_dismissing_never_waits_for_a_copy_the_sender_is_sending(client, db_session, waiting_copy):
+    from sqlmodel import Session
+
+    from app.database import engine
+
+    post_id = queued(db_session, "Note 1")
+    with Session(engine) as sender:  # the sender holds its post locked while it talks to Teams
+        sender.exec(select(TeamsPost).where(TeamsPost.id == post_id).with_for_update()).all()
+        assert dismiss(client, waiting_copy).status_code == 303  # returns at once; no lock wait
+    assert [p.id for p in posts(db_session)] == [post_id]  # being sent now, so left alone
+
+
 def test_made_up_numbers_in_the_banner_and_undo_addresses_do_not_crash(client, db_session):
     agent_with(client, db_session, 1)
     assert client.get("/notifications?cleared=99999999999999999999").status_code == 422

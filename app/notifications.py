@@ -293,7 +293,9 @@ def withdraw_teams_copies(session: Session, notification_ids) -> None:
     """Deletes the Teams copies of these notifications that have not been sent: dismissing a notification withdraws its
     copy, quietly (nothing was sent, so nothing is lost, and it is never a failure or "given up"). Undo does not queue it
     again: a dismissed notification is also read, and a Teams copy is only for an unread one. Does not commit."""
-    session.exec(delete(TeamsPost).where(TeamsPost.notification_id.in_(notification_ids), TeamsPost.sent_at.is_(None)))
+    # Never waits: a copy the sender holds locked is being sent right now (it keeps its lock during the Teams call), so it is left alone.
+    unlocked = select(TeamsPost.id).where(TeamsPost.notification_id.in_(notification_ids), TeamsPost.sent_at.is_(None)).with_for_update(skip_locked=True)
+    session.exec(delete(TeamsPost).where(TeamsPost.id.in_(unlocked)))
 
 
 def dismiss(session: Session, user: User, notification_id: int, now: Optional[datetime] = None) -> Optional[Notification]:
