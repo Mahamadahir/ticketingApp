@@ -269,9 +269,15 @@ Described in `infra/README.md`, "GitHub Actions identity". In short:
 
 1. On `ticketing-deploy-staging` add a **federated credential**: issuer
    `https://token.actions.githubusercontent.com`, audience `api://AzureADTokenExchange`,
-   subject `repo:Mahamadahir/ticketingApp:environment:staging` (and one for `production`
-   later). The subject must match the repository and GitHub Environment names exactly,
-   capitals included.
+   subject `repo:Mahamadahir@173347748/ticketingApp@1405286021:environment:staging` (and
+   one for `production` later). GitHub puts the numeric owner and repository IDs in this
+   repository's subject: the first Deploy run (17 Nov 2026) failed with `AADSTS700213` against
+   the plain `repo:Mahamadahir/ticketingApp:environment:staging`. The subject must match
+   exactly, capitals included; a failed run's `azure/login` step prints it ("subject claim").
+
+   ```bash
+   az ad app federated-credential create --id <AZURE_CLIENT_ID> --parameters '{"name":"github-staging","issuer":"https://token.actions.githubusercontent.com","subject":"repo:Mahamadahir@173347748/ticketingApp@1405286021:environment:staging","audiences":["api://AzureADTokenExchange"]}'
+   ```
 2. On `rg-ticketing-staging` grant its service principal
    (`az ad sp show --id <appId> --query id -o tsv` gives the object id):
    - **Contributor**;

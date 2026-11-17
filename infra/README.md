@@ -199,7 +199,10 @@ subscription IDs as GitHub Environment variables. No secrets are needed for Azur
 
 One federated credential per environment: issuer
 `https://token.actions.githubusercontent.com`, audience `api://AzureADTokenExchange`,
-subject `repo:<owner>/<repo>:environment:staging` (and `...:environment:production`).
+subject `repo:<owner>@<owner id>/<repo>@<repo id>:environment:staging` (and
+`...:environment:production`). This repository's GitHub tokens carry the numeric owner and
+repository IDs; the plain `repo:<owner>/<repo>:...` form fails with `AADSTS700213`. The
+exact subject is printed by the `azure/login` step ("subject claim") of a failed run.
 The subject must match the GitHub Environment name exactly.
 
 **GitHub setup** (Settings > Environments), for both `staging` and `production`:
