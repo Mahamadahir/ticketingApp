@@ -513,4 +513,4 @@ def test_pressing_enter_in_the_time_zone_box_submits_use_this_time_zone_not_the_
 def test_choosing_a_link_in_the_person_menu_closes_it(client, db_session):
     agent(client, db_session)
     page = client.get("/tickets").text
-    assert 'closest(".person-menu-panel a, .bell-panel a")' in page and "Escape" in page
+    assert 'closest(".person-menu-panel a, .bell-panel a, .activity-panel a")' in page and "Escape" in page
