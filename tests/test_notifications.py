@@ -192,7 +192,9 @@ def test_the_bell_counts_unread_and_the_page_lists_only_my_own(client, db_sessio
     login_as(client, "bob@example.com")
     assert client.get("/notifications/count").text == "Notifications (2)"
     page = client.get("/notifications").text
-    assert page.count("mentioned you on") == 2 and "Cat" not in page
+    import re
+    shown = re.sub(r'aria-label="[^"]*"', "", page)  # the Dismiss buttons (#239) name the row in an attribute; count what is shown
+    assert shown.count("mentioned you on") == 2 and "Cat" not in page
     assert page.index("<b>Agent Ann mentioned you on") >= 0
 
     client.post("/auth/logout")

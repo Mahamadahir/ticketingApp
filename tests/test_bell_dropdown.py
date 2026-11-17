@@ -27,7 +27,7 @@ def agent_with(client, db_session, count, **extra):
 
 def test_the_dropdown_shows_the_latest_five_newest_first(client, db_session):
     agent_with(client, db_session, 7)
-    texts = re.findall(r"Note \d+", client.get("/notifications/latest", headers=HX).text)
+    texts = re.findall(r"Note \d+", re.sub(r'aria-label="[^"]*"', "", client.get("/notifications/latest", headers=HX).text))  # not the Dismiss names (#239)
     assert texts == ["Note 7", "Note 6", "Note 5", "Note 4", "Note 3"]  # the 6th and 7th oldest are not shown
 
 

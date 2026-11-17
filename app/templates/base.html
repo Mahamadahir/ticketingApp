@@ -54,7 +54,7 @@
 {% endif %}
 <details class="bell-menu">
   {# The summary is the bell: the poll swaps only the label inside it, never the panel. Without script the panel still holds View more. #}
-  <summary class="icon-btn" data-poll hx-get="/notifications/count" hx-trigger="load, every 30s" hx-target="find .bell-label" hx-swap="innerHTML">
+  <summary class="icon-btn" data-poll hx-get="/notifications/count" hx-trigger="load, every 30s, bell-count from:body" hx-target="find .bell-label" hx-swap="innerHTML">
     {{ icon("M6 8a6 6 0 1112 0c0 7 3 8 3 8H3s3-1 3-8M10 20a2 2 0 004 0") }}
     <span class="sr-only bell-label">Notifications{% if shell.unread %} ({{ shell.unread }}){% endif %}</span>
     <span class="count-badge" id="bell-count" aria-hidden="true"{% if not shell.unread %} hidden{% endif %}>{{ shell.unread }}</span>
@@ -267,8 +267,9 @@
     });
     document.body.addEventListener("htmx:afterSwap", function (event) {
       // The bell's text is "Notifications (3)"; the red number on the icon follows it.
-      var elt = event.detail.elt;
-      if (!elt || !elt.hasAttribute("data-poll")) { return; }
+      // The event is fired on the swap target (the label), not on the element that asked, so find the bell from the target.
+      var elt = event.target && event.target.closest ? event.target.closest("[data-poll]") : null;
+      if (!elt) { return; }
       var label = elt.querySelector(".bell-label");
       var badge = document.getElementById("bell-count");
       if (!label || !badge) { return; }

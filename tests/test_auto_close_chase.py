@@ -640,6 +640,25 @@ def test_a_given_up_chase_tells_the_assignee_once(db_session, dev_mail):
     assert fresh(db_session, ticket).status == TicketStatus.AWAITING_USER
 
 
+def test_a_dismissed_and_purged_given_up_notice_is_not_sent_again(db_session, dev_mail):
+    """The bell entry is the person's to dismiss and the purge job deletes it (#239); the chase must still count as reported."""
+    from app.notification_purge import purge_notifications
+
+    team = create_team(db_session, "Desk")
+    pat = agent_in(db_session, team, "pat@example.com")
+    given_up_chase(db_session, team_id=team.id, assigned_agent_id=pat.id)
+    chase_job(db_session, 4)
+    [note] = given_up_notes(db_session)
+    note.dismissed_at = datetime(2020, 1, 1, tzinfo=timezone.utc)
+    db_session.add(note)
+    db_session.commit()
+    assert purge_notifications(db_session) >= 1
+    db_session.commit()
+    assert given_up_notes(db_session) == []
+    chase_job(db_session, 5)
+    assert given_up_notes(db_session) == []  # not told again
+
+
 def test_an_unassigned_ticket_tells_the_team(db_session, dev_mail):
     team = create_team(db_session, "Desk")
     pat = agent_in(db_session, team, "pat@example.com")

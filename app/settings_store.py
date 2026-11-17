@@ -76,6 +76,9 @@ TELL_REQUESTER_RAISED_FOR = "tell_requester_when_raised_for_them"
 APPROVAL_LINK_MINUTES = "approval_link_minutes"
 FEEDBACK_LINK_MINUTES = "feedback_link_minutes"
 TEAMS_UNREAD_MINUTES = "teams_unread_minutes"
+NOTIFICATION_KEEP_DISMISSED_DAYS = "notification_keep_dismissed_days"
+NOTIFICATION_DELETE_AFTER_DAYS = "notification_delete_after_days"
+MIN_NOTIFICATION_DELETE_DAYS = 7  # the age limit is never set shorter than a week
 AUTOMATIC_EMAIL_CAP = "automatic_email_cap_per_ticket"
 INBOUND_MAX_PER_SENDER_HOUR = "inbound_max_per_sender_hour"
 INBOUND_MAX_ATTACHMENTS = "inbound_max_attachments"
@@ -218,6 +221,29 @@ REGISTRY: dict[str, SettingDef] = {
             "once Teams is connected."
         ),
         default="5",
+    ),
+    NOTIFICATION_KEEP_DISMISSED_DAYS: SettingDef(
+        key=NOTIFICATION_KEEP_DISMISSED_DAYS,
+        group=GROUP_NOTIFICATIONS,
+        label="Keep dismissed notifications for (days)",
+        kind="count",
+        description=(
+            "A notification a person dismisses is hidden at once but kept for this long so they can Undo it; a daily job then "
+            "deletes it for good. The retention periods are placeholders until confirmed with the data protection lead."
+        ),
+        default="1",
+    ),
+    NOTIFICATION_DELETE_AFTER_DAYS: SettingDef(
+        key=NOTIFICATION_DELETE_AFTER_DAYS,
+        group=GROUP_NOTIFICATIONS,
+        label="Delete notifications after (days)",
+        kind="count",
+        description=(
+            "A daily job deletes every notification this long after it was created, read, unread or dismissed. At least 7, and "
+            "never less than the number of days dismissed notifications are kept. The retention periods are placeholders until "
+            "confirmed with the data protection lead."
+        ),
+        default="180",
     ),
     TEAMS_HOLD_WHILE_ACTIVE_MINUTES: SettingDef(
         key=TEAMS_HOLD_WHILE_ACTIVE_MINUTES,

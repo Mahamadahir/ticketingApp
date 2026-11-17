@@ -19,13 +19,13 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional
 
-from sqlalchemy import and_, exists, func, or_, update
+from sqlalchemy import and_, delete, exists, func, or_, update
 from sqlmodel import Session, select
 
 from app.identity import my_ticket_condition, people_for_addresses, person_for_address
-from app.models import FINISHED_STATUSES, Message, Notification, Ticket, TicketStatus, User, UserRole, UserSession
+from app.models import FINISHED_STATUSES, Message, Notification, TeamsPost, Ticket, TicketStatus, User, UserRole, UserSession
 from app.notification_settings import IN_APP, TEAMS, is_enabled, offers, wants_approval_email
-from app.settings_store import TEAMS_HOLD_WHILE_ACTIVE_MINUTES, TEAMS_UNREAD_MINUTES, count_setting, get_int_setting
+from app.settings_store import NOTIFICATION_KEEP_DISMISSED_DAYS, TEAMS_HOLD_WHILE_ACTIVE_MINUTES, TEAMS_UNREAD_MINUTES, count_setting, get_int_setting
 from app.visibility import Access, access_context, team_members, ticket_access, visible_ticket_condition
 
 ASSIGNED = "assigned"
@@ -208,10 +208,18 @@ def notify_reply(session: Session, ticket: Ticket, replier_email: str) -> list[N
     return made
 
 
-def visible_to(session: Session, user: User):
-    """The SQL condition for the notifications this user may still see: their own, leaving out
+def visible_to(session: Session, user: User, include_dismissed: bool = False):
+    """The SQL condition for the notifications this user may still see: their own, not dismissed (#239: dismissed means
+    gone from the bell, the page, the count and the Teams copy, so this is the one place that says so), leaving out
     those about a ticket they can no longer open (it moved to another team). A notification would
-    otherwise keep showing the subject of a ticket they have lost access to."""
+    otherwise keep showing the subject of a ticket they have lost access to. `include_dismissed` is for Undo only,
+    which has to find what was dismissed."""
+    rule = _visible_ignoring_dismissal(session, user)
+    return rule if include_dismissed else and_(Notification.dismissed_at.is_(None), rule)
+
+
+def _visible_ignoring_dismissal(session: Session, user: User):
+    """What visible_to says before dismissal is considered."""
     # The portal entries open in the portal, so they need no agent access: being asked to vote always counts, and
     # the requester kinds only while the person is still the requester or a follower (a ticket they no longer follow
     # must not keep showing its subject).
@@ -280,6 +288,94 @@ def mark_all_read(session: Session, user: User) -> int:
     )
     return result.rowcount
 
+
+def withdraw_teams_copies(session: Session, notification_ids) -> None:
+    """Deletes the Teams copies of these notifications that have not been sent: dismissing a notification withdraws its
+    copy, quietly (nothing was sent, so nothing is lost, and it is never a failure or "given up"). Undo does not queue it
+    again: a dismissed notification is also read, and a Teams copy is only for an unread one. Does not commit."""
+    # Never waits: a copy the sender holds locked is being sent right now (it keeps its lock during the Teams call), so it is left alone.
+    unlocked = select(TeamsPost.id).where(TeamsPost.notification_id.in_(notification_ids), TeamsPost.sent_at.is_(None)).with_for_update(skip_locked=True)
+    session.exec(delete(TeamsPost).where(TeamsPost.id.in_(unlocked)))
+
+
+def dismiss(session: Session, user: User, notification_id: int, now: Optional[datetime] = None) -> Optional[Notification]:
+    """Dismisses one of the user's own notifications (#239): it is hidden from the bell, the page, the count and the Teams
+    copy, and counts as read. None when it is not theirs, is Teams-only or is about a ticket they can no longer open.
+    Dismissing one that is already dismissed changes nothing, so a double click is harmless. Does not commit."""
+    notification = session.exec(
+        select(Notification).where(Notification.id == notification_id, visible_to(session, user, include_dismissed=True))
+    ).first()
+    if notification is None:
+        return None
+    now = now or datetime.now(timezone.utc)
+    if notification.dismissed_at is None:
+        notification.dismissed_at = now
+        if notification.read_at is None:
+            notification.read_at = now
+        session.add(notification)
+        session.flush()
+        withdraw_teams_copies(session, [notification.id])
+    return notification
+
+
+def in_undo_window(session: Session, notification: Notification, now: Optional[datetime] = None) -> bool:
+    """Whether a dismissed notification may still be undone: it was dismissed within the "keep dismissed" days (after
+    that the purge job deletes it, and until it runs the window is still enforced here)."""
+    if notification.dismissed_at is None:
+        return False
+    now = now or datetime.now(timezone.utc)
+    return notification.dismissed_at > now - timedelta(days=count_setting(session, NOTIFICATION_KEEP_DISMISSED_DAYS))
+
+
+def undo_dismiss(session: Session, user: User, notification_id: int, now: Optional[datetime] = None) -> Optional[Notification]:
+    """Brings back a dismissed notification of the user's (it stays read). None when it is not theirs or no longer exists
+    (the purge job deleted it); a notification outside the undo window is left dismissed and returned unchanged, so
+    the caller can tell "nothing to restore" from "not yours". Does not commit."""
+    notification = session.exec(
+        select(Notification).where(Notification.id == notification_id, visible_to(session, user, include_dismissed=True))
+    ).first()
+    if notification is not None and in_undo_window(session, notification, now):
+        notification.dismissed_at = None
+        session.add(notification)
+    return notification
+
+
+def clear_read(session: Session, user: User, now: Optional[datetime] = None) -> tuple[datetime, int]:
+    """Clear all read (#239): dismisses every read, not yet dismissed notification the user can see, all with the same
+    `dismissed_at`, which is the batch Undo restores. Returns (that moment, how many). Does not commit."""
+    now = now or datetime.now(timezone.utc)
+    withdraw_teams_copies(session, select(Notification.id).where(visible_to(session, user), Notification.read_at.is_not(None)))
+    result = session.exec(
+        update(Notification)
+        .where(visible_to(session, user), Notification.read_at.is_not(None))
+        .values(dismissed_at=now)
+    )
+    return now, result.rowcount
+
+
+def undo_clear_read(session: Session, user: User, batch: Optional[datetime], now: Optional[datetime] = None) -> int:
+    """Restores what one Clear all read cleared: the user's own rows whose `dismissed_at` is exactly `batch`, while that
+    is still within the undo window. Returns how many. Does not commit."""
+    now = now or datetime.now(timezone.utc)
+    if batch is None or batch <= now - timedelta(days=count_setting(session, NOTIFICATION_KEEP_DISMISSED_DAYS)):
+        return 0
+    result = session.exec(
+        update(Notification)
+        .where(visible_to(session, user, include_dismissed=True), Notification.dismissed_at == batch)
+        .values(dismissed_at=None)
+    )
+    return result.rowcount
+
+
+def count_in_batch(session: Session, user: User, batch: datetime) -> int:
+    """How many of the user's notifications one Clear all read dismissed and are still dismissed."""
+    return session.exec(
+        select(func.count()).select_from(Notification).where(
+            visible_to(session, user, include_dismissed=True), Notification.dismissed_at == batch
+        )
+    ).one()
+
+
 # ---- The Teams copy (phase 2C-ii) -----------------------------------------------------------------------
 #
 # An agent can choose, per event, to be told in the bell, in Teams, or both. A notification that wants
@@ -307,7 +403,7 @@ def retire_read_for_teams(session: Session, now: Optional[datetime] = None) -> i
             Notification.teams_wanted.is_(True),
             Notification.teams_handled_at.is_(None),
             Notification.bell.is_(True),
-            Notification.read_at.is_not(None),
+            or_(Notification.read_at.is_not(None), Notification.dismissed_at.is_not(None)),  # dismissing also marks read; this keeps it true if that ever changes
         )
         .values(teams_handled_at=now)
     )
@@ -339,6 +435,7 @@ def due_for_teams(session: Session, now: Optional[datetime] = None, limit: int =
             .where(
                 Notification.teams_wanted.is_(True),
                 Notification.teams_handled_at.is_(None),
+                Notification.dismissed_at.is_(None),  # dismissed means gone, the Teams copy included (#239)
                 or_(Notification.bell.is_(False), unread_and_idle),
             )
             .order_by(Notification.id)
@@ -664,3 +761,20 @@ def notify_due_today(session: Session, ticket: Ticket) -> Optional[Notification]
     if agent is None or not _can_open(session, agent, ticket):
         return None
     return notify(session, agent, DUE_TODAY, ticket, f"{REF} {ticket.subject} is due today", None)
+
+
+_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+
+def batch_number(moment: datetime) -> int:
+    """A Clear all read batch as a whole number (microseconds since 1970), safe in a URL and a form field and exact, so
+    it matches `dismissed_at` as the database stores it."""
+    return (moment - _EPOCH) // timedelta(microseconds=1)
+
+
+def batch_moment(number: int) -> Optional[datetime]:
+    """The moment a batch number names, or None for one that is not a date at all (a made-up number is no batch)."""
+    try:
+        return _EPOCH + timedelta(microseconds=number)
+    except OverflowError:
+        return None

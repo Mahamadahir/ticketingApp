@@ -157,8 +157,11 @@ from app.settings_store import (
     DUE_DAYS_BEFORE_REQUIRED_BY,
     REQUIRED_BY_LEAD_DAYS,
     JOB_LATE_MINUTES,
+    MIN_NOTIFICATION_DELETE_DAYS,
     MSP_BUSINESS_END,
     MSP_BUSINESS_START,
+    NOTIFICATION_DELETE_AFTER_DAYS,
+    NOTIFICATION_KEEP_DISMISSED_DAYS,
     GROUP_KEYS,
     GROUPS,
     REGISTRY,
@@ -1971,6 +1974,20 @@ def _clean_setting_value(session: Session, definition, value: str, submitted: di
     if definition.kind == "count":
         if not (value.isascii() and value.isdigit()) or not 1 <= int(value) <= 1000:
             raise ValueError("Enter a whole number from 1 to 1000")
+    if key in (NOTIFICATION_KEEP_DISMISSED_DAYS, NOTIFICATION_DELETE_AFTER_DAYS):
+        # Deleting for good: the age limit is at least a week and never shorter than the dismissed window, so the pair cannot
+        # be saved in the order the purge would read as "delete everything".
+        if key == NOTIFICATION_DELETE_AFTER_DAYS and int(value) < MIN_NOTIFICATION_DELETE_DAYS:
+            raise ValueError(f"Enter at least {MIN_NOTIFICATION_DELETE_DAYS} days")
+        other_key = NOTIFICATION_DELETE_AFTER_DAYS if key == NOTIFICATION_KEEP_DISMISSED_DAYS else NOTIFICATION_KEEP_DISMISSED_DAYS
+        other_raw = (submitted or {}).get(other_key)
+        if other_raw is None:
+            other_raw = get_setting(session, other_key)
+        other = other_raw.strip()
+        if other.isascii() and other.isdigit():
+            keep, delete = (int(value), int(other)) if key == NOTIFICATION_KEEP_DISMISSED_DAYS else (int(other), int(value))
+            if keep > delete:
+                raise ValueError("Dismissed notifications cannot be kept longer than notifications are kept at all")
     if definition.kind == "off_minutes":
         if not (value.isascii() and value.isdigit()) or not 0 <= int(value) <= 525600:
             raise ValueError("Enter a whole number of minutes, 0 to 525600 (0 is off)")

@@ -231,6 +231,7 @@ COLUMNS: dict[str, ColumnUse] = {
     "notification.user_id": _use(SUBJECT, USER_ID, "the person's bell", anon=DELETE),
     "notification.actor_email": _use(OTHER, EMAIL, "who caused the notification", anon=SCRUB),
     "notification.text": _use(TEXT, FREE_TEXT, "the person's bell", anon=SCRUB),
+    "notification.dismissed_at": _use(NOT_PERSON, LABEL, "when the person dismissed it; a dismissed row still exists (and is exported and anonymised like any other) until the purge job deletes it", anon=WITH_ROW),
     "outboundemail.to_address": _use(SUBJECT, EMAIL, "emails sent to the person (subject and addresses, not the body)", anon=REPLACE),
     "outboundemail.cc": _use(SUBJECT, EMAIL, "a comma-separated list", anon=REMOVE),
     "outboundemail.subject": _use(TEXT, FREE_TEXT, "emails sent to the person", anon=SCRUB),
