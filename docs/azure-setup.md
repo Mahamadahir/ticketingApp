@@ -63,7 +63,7 @@ below are marked:
 "Allow user to only assign selected roles to selected principals", limited to **AcrPull, AcrPush,
 Key Vault Secrets User, Storage Blob Data Contributor and Storage Blob Delegator** (role IDs
 `7f951dda-4ed3-4680-a7ca-43fe172d538d`, `8311e382-0749-4cb8-b61a-304f252e45ec`,
-`4633458b-17de-406a-b58b-ae56cf9b3dff`, `ba92f5b4-2d11-453d-a403-e96b0029c9fe`,
+`4633458b-17de-408a-b874-0445c86b69e6`, `ba92f5b4-2d11-453d-a403-e96b0029c9fe`,
 `db58b8e5-c6ad-4a2a-8342-4190687cbf4a`; the portal's Conditions tab avoids typing them). The
 GitHub identity gets **Contributor** and AcrPush, never Owner, so a compromised workflow cannot
 take the group over. It does not hold the restricted role (5.2), so it deploys with

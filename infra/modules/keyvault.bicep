@@ -35,7 +35,7 @@ param teamsNewTicketWebhookUrl string = ''
 @description('Optional. The Teams bot\'s client secret, only when the bot is an Entra app registration and not a managed identity. The public app and the worker identities are its readers.')
 param teamsBotClientSecret string = ''
 
-var secretsUserRoleId = '4633458b-17de-406a-b58b-ae56cf9b3dff'
+var secretsUserRoleId = '4633458b-17de-408a-b874-0445c86b69e6'
 
 // One entry per (identity, secret) pair.
 var grants = flatten(map(secretReaders, reader => map(reader.secrets, secretName => {
