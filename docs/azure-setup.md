@@ -43,7 +43,7 @@ below are marked:
 | 1.4 The deployer's own rights on the group | [Owner] | done: Owner on the group (17 Nov 2026), with the condition that excludes the privileged roles |
 | 1.5 Check quota | [Owner] or anyone with Reader on the subscription | not needed: the first deploy hit no quota or SKU error |
 | 2 `what-if` | [Contributor] | done: 20 to create, no template errors |
-| 2 Platform deploy | [Owner] (the deployer, from their own shell, `ASSIGN_ROLES` unset) | partly done (`platform-1`): network, Postgres, Container Apps environment, monitoring, identities, alerts. Registry, storage and Key Vault: `platform-2`, now the deployer is Owner |
+| 2 Platform deploy | [Owner] (the deployer, from their own shell, `ASSIGN_ROLES` unset) | nearly done. `platform-1`: network, Postgres, Container Apps environment, monitoring, identities, alerts. `platform-2` (17 Nov 2026): registry and storage with their role assignments; Key Vault failed (`RoleDefinitionDoesNotExist`: the template had a wrong Key Vault Secrets User ID, now fixed). Next: `platform-3` from the fixed template |
 | 3 App registrations and secrets | [Entra admin] (or Application Developer for creating them) | done: `ticketing-sso-staging`, `ticketing-graph-staging`, `ticketing-deploy-staging`; secrets in GitHub and IT Glue, expire Nov 2027 |
 | 3 Admin consent for the Graph permissions | [Global admin] or Privileged Role Administrator | done (`Presence.Read.All`, `User.Read.All`; Mail is granted in Exchange, step 4) |
 | 4 Shared mailbox and scoping | [Exchange admin] | done: `itsupport-staging@vardags.com`, Mail.Read and Mail.Send scoped to it |
