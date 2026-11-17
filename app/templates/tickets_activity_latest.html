@@ -7,8 +7,13 @@
   <button type="button" class="chip act-chip{{ ' act-chip-on' if kind == value else '' }}" aria-pressed="{{ 'true' if kind == value else 'false' }}" data-quiet hx-get="/tickets/activity/latest{{ '?kind=' ~ value if value else '' }}" hx-target="#activity-body" hx-swap="innerHTML">{{ label }}</button>
   {% endfor %}
 </div>
-{% if cards %}
-<div class="act-list">{% for c in cards %}{{ card(c, true) }}{% endfor %}</div>
+{% if days %}
+{% for day in days %}
+<section class="act-day">
+  <h2 class="act-day-head">{{ day.label }}</h2>
+  <div class="act-list">{% for c in day.cards %}{{ card(c, true) }}{% endfor %}</div>
+</section>
+{% endfor %}
 {% else %}
 <p class="act-empty">Nothing yet</p>
 {% endif %}

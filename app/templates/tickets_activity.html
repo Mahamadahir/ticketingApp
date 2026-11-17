@@ -31,7 +31,7 @@
     <button type="submit" class="btn">Filter</button>
   </form>
 
-  {% if older %}<p><a href="/tickets/activity">&larr; Back to the latest</a></p>{% endif %}
+  {% if latest %}<p><a href="{{ latest }}">&larr; Back to the latest</a></p>{% endif %}
   {% for day in timeline.days %}
   <section class="act-day" aria-labelledby="act-day-{{ loop.index }}">
     <h2 class="act-day-head" id="act-day-{{ loop.index }}">{{ day.label }}</h2>

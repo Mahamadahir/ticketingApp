@@ -99,7 +99,7 @@ from app.messages import (
 from app.models import FINISHED_STATUSES, CannedResponse, Category, Message, RequestType, Team, Ticket, TicketSource, TicketStatus, TicketType, User, UserRole
 from app.attachments import files_by_message
 from app.pagination import paginate
-from app.team_activity import KIND_LABELS, POPOVER_CARDS, Kind, load_timeline, person_choices
+from app.team_activity import KIND_LABELS, POPOVER_CARDS, Day, Kind, load_timeline, person_choices
 from app.sla import (
     impact_options,
     urgency_options,
@@ -318,6 +318,7 @@ def team_activity(
     all_teams = session.exec(select(Team).order_by(Team.name)).all()
     teams = all_teams if user.role == UserRole.SUPER_ADMIN else [t for t in all_teams if t.id in levels]
     filters = {"team_id": team_choice or "", "kind": kind_choice.value if kind_choice else "", "person": person_choice or ""}
+    latest = "/tickets/activity" + ("?" + urlencode({k: v for k, v in filters.items() if v}) if any(filters.values()) else "")
     earlier = "?" + urlencode({**{k: v for k, v in filters.items() if v}, "before": timeline.earlier.isoformat()}) if timeline.earlier else None
     return templates.TemplateResponse(
         request,
@@ -331,7 +332,7 @@ def team_activity(
             "person": person_choice or "",
             "kinds": [(k.value, label) for k, label in KIND_LABELS.items()],
             "earlier": earlier,
-            "older": bool(before),
+            "latest": latest if before else None,
             "user": user,
         },
     )
@@ -354,10 +355,15 @@ def team_activity_latest(
         session, visible_ticket_condition(user, levels), zone_for_user(session, user), kind=kind_choice,
         steps=POPOVER_CARDS * 3, min_cards=POPOVER_CARDS,
     )
-    cards = timeline.cards[:POPOVER_CARDS]
+    days, shown = [], 0  # the first POPOVER_CARDS cards, still under their day headings
+    for day in timeline.days:
+        if shown >= POPOVER_CARDS:
+            break
+        days.append(Day(day.label, day.cards[: POPOVER_CARDS - shown]))
+        shown += len(days[-1].cards)
     return templates.TemplateResponse(
         request, "tickets_activity_latest.html",
-        {"cards": cards, "chips": ACTIVITY_CHIPS, "kind": kind_choice.value if kind_choice else ""},
+        {"days": days, "chips": ACTIVITY_CHIPS, "kind": kind_choice.value if kind_choice else ""},
         headers={"Cache-Control": "no-store"},
     )
 

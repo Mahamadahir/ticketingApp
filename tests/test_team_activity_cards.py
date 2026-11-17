@@ -350,3 +350,61 @@ def test_the_queue_no_longer_has_its_own_team_activity_button(client, db_session
     queue = client.get("/tickets").text.split("<main", 1)[1]
 
     assert "Team activity" not in queue and 'href="/tickets/activity"' not in queue
+
+
+# ---- Review fixes ------------------------------------------------------------------------------------------------
+
+
+class Row:
+    def __init__(self, **fields):
+        self.__dict__.update(
+            dict(kind="event", what="created", from_value=None, to_value=None, detail=None, actor=None, requester="req@x.com",
+                 author_id=None, agent=False, ticket_id=1, at=T0, row_id=1) | fields
+        )
+
+
+def test_who_took_a_step_is_by_whether_they_are_an_agent_not_by_being_the_requester():
+    from app.team_activity import role_of, step_of
+
+    assert role_of(Row(actor="req@x.com")) == ROLE_REQUESTER
+    assert role_of(Row(actor="approver@x.com")) == ROLE_REQUESTER  # anyone who is not an agent stands alone
+    assert role_of(Row(actor="req@x.com", agent=True)) == ROLE_AGENT  # an agent working a ticket they raised for themselves
+    assert role_of(Row(actor=None)) == ROLE_SYSTEM
+    automatic = Row(kind="message", what="outbound", actor="itsupport@x.com", author_id=None)  # an automatic email
+    assert role_of(automatic) == ROLE_SYSTEM and step_of(automatic, {}).person is None
+
+
+def test_an_agent_working_a_ticket_they_raised_for_themselves_still_gets_one_session(client, db_session):
+    team, category, _ = desk(client, db_session)
+    response = raise_it(
+        client, subject="My own laptop", for_email="agent@example.com", category_id=category.id, impact="low", urgency="low"
+    )
+    assert response.status_code == 204, response.text
+    ticket = ticket_named(db_session, "My own laptop")
+    client.post(f"/tickets/{ticket.number}/note", data={"body": "Mine to fix"})
+
+    page = feed(client, kind="events").text
+
+    assert 'class="act-card act-requester"' not in page.replace("Requester replied", "")  # no event became a requester card
+    assert cards_in(page) == 1 and "worked on" in page
+
+
+def test_the_popover_keeps_the_day_headings_and_back_to_latest_keeps_the_filters(client, db_session, monkeypatch):
+    import app.team_activity as ta
+
+    monkeypatch.setattr(ta, "LOAD_STEPS", 2)
+    team, category, _ = desk(client, db_session)
+    classified(client, category, "Old and new")
+    ticket = ticket_named(db_session, "Old and new")
+    bodies = ["Fresh", "Older", "Oldest", "Ancient"]
+    for body in bodies:
+        client.post(f"/tickets/{ticket.number}/note", data={"body": body})
+    spread(db_session, ticket, [0, 30, 55, 80], bodies)
+
+    popover = client.get("/tickets/activity/latest?kind=notes", headers={"HX-Request": "true"}).text
+    assert ">Today<" in popover and ">Yesterday<" in popover
+
+    first = feed(client, kind="notes").text
+    link = re.search(r'href="(\?[^"]*before=[^"]*)"[^>]*>Show earlier', first).group(1).replace("&amp;", "&")
+    second = client.get("/tickets/activity" + link).text
+    assert 'href="/tickets/activity?kind=notes">&larr; Back to the latest' in second

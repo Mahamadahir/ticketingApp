@@ -22,6 +22,7 @@ from sqlalchemy import Integer, String, case, cast, func, literal, null, union_a
 from sqlmodel import Session, select
 
 from app.models import Message, MessageDirection, Ticket, TicketEvent, User
+from app.notification_settings import AGENT_ROLES
 from app.settings_store import ACTIVITY_GROUP_MINUTES, count_setting
 from app.time_zones import format_long_date, valid_zone
 
@@ -59,8 +60,10 @@ def feed_query(
             TicketEvent.detail.label("detail"),
             Ticket.requester_email.label("requester"),
             cast(null(), Integer).label("author_id"),
+            case((User.id.is_(None), False), else_=User.role.in_(AGENT_ROLES)).label("agent"),
         )
         .join(Ticket, Ticket.id == TicketEvent.ticket_id)
+        .join(User, func.lower(User.email) == func.lower(TicketEvent.actor_email), isouter=True)
     )
     messages = (
         select(
@@ -78,6 +81,7 @@ def feed_query(
             ).label("detail"),
             Ticket.requester_email.label("requester"),
             Message.author_user_id.label("author_id"),
+            Message.author_user_id.is_not(None).label("agent"),
         )
         .join(Ticket, Ticket.id == Message.ticket_id)
         .join(User, User.id == Message.author_user_id, isouter=True)
@@ -230,7 +234,7 @@ class Card:
     def title(self) -> str:
         """Who the card is about: one name, "A and B" or "A, B and C"; the requester; or the system."""
         if self.role == ROLE_REQUESTER:
-            return self.requester_name or "The requester"
+            return self.lines[0].name or self.requester_name or "The requester"
         if self.role == ROLE_SYSTEM:
             return "System"
         names = self.people
@@ -330,7 +334,9 @@ def role_of(row) -> str:
         return ROLE_AGENT if row.author_id is not None else ROLE_SYSTEM  # no author: an automatic email, the MSP
     if not actor:
         return ROLE_SYSTEM
-    return ROLE_REQUESTER if actor == (row.requester or "").lower() else ROLE_AGENT
+    # An agent's event is theirs even on a ticket they raised for themselves; anyone else (the requester, an approver)
+    # stands alone.
+    return ROLE_AGENT if row.agent else ROLE_REQUESTER
 
 
 def step_of(row, names: Mapping[str, str]) -> Step:
@@ -338,8 +344,11 @@ def step_of(row, names: Mapping[str, str]) -> Step:
         group = "notes" if row.what.lower() == MessageDirection.INTERNAL.value else "conversation"
     else:
         group = "events"
+    role = role_of(row)
+    # A system step has no person, whatever address an automatic email was sent from.
+    person = None if role == ROLE_SYSTEM else (row.actor or "").lower() or None
     return Step(
-        ticket_id=row.ticket_id, at=row.at, role=role_of(row), person=(row.actor or "").lower() or None, group=group,
+        ticket_id=row.ticket_id, at=row.at, role=role, person=person, group=group,
         phrase=phrase_of(row, names), text=describe(row), excerpt=(row.detail or "") if row.kind == "message" else "",
         kind=row.kind, row_id=row.row_id,
     )
@@ -399,15 +408,17 @@ def load_timeline(
     while True:
         newest = _fetch(session, visible, filters, before=before, limit=steps)
         since = _aware(newest[-1].at) if len(newest) >= steps else None
+        rows = list(_fetch(session, visible, filters, before=before, since=since))
         while True:
-            rows = _fetch(session, visible, filters, before=before, since=since)
             cards = group_steps([step_of(r, {}) for r in rows], gap)
             if since is None:
                 break
             edge = [c.start for c in cards if c.role == ROLE_AGENT and _aware(c.start) < since + gap]
             if not edge:
                 break
-            since = min(_aware(e) for e in edge) - gap
+            reached = min(_aware(e) for e in edge) - gap
+            rows += _fetch(session, visible, filters, before=since, since=reached)  # only the stretch not yet read
+            since = reached
         more = since is not None and bool(_fetch(session, visible, filters, before=since, limit=1))
         if len(cards) >= min_cards or not more or steps >= LOAD_STEPS * 8:
             break
@@ -452,8 +463,6 @@ def _lookups(session: Session, rows) -> tuple[dict[str, str], dict[int, Ticket],
 
 def person_choices(session: Session, visible, team_id: Optional[int] = None) -> list[User]:
     """The agents whose steps appear in this viewer's feed (the choices of the person filter)."""
-    from app.notification_settings import AGENT_ROLES
-
     feed = feed_query(visible, team_id).subquery()
     actors = select(func.lower(feed.c.actor)).distinct()
     query = select(User).where(func.lower(User.email).in_(actors), User.role.in_(AGENT_ROLES)).order_by(User.display_name)
