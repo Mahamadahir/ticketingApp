@@ -29,6 +29,9 @@ param deployWorker bool = false
 
 // ---- Access -----------------------------------------------------------------
 
+@description('Write the role assignments (each app identity to the registry, its own vault secrets and storage). The deploy workflow sets false: its identity has Contributor only, so a person with Owner runs the template with true whenever an identity or a secret is added (infra/README.md, "Role assignments").')
+param assignRoles bool = true
+
 @minLength(1)
 @description('Office and VPN ranges allowed to reach the web app, e.g. ["203.0.113.0/24"]. Required, so nobody opens the agent console to the internet by leaving it out. To really allow everyone (a staging test), say so with "0.0.0.0/0".')
 param webAllowedCidrs array
@@ -217,6 +220,7 @@ module registry 'modules/registry.bicep' = {
     location: location
     tags: tags
     name: 'acr${prefix}${environmentName}${suffix}'
+    assignRoles: assignRoles
     pullPrincipalIds: [
       identityWeb.properties.principalId
       identityPublic.properties.principalId
@@ -256,6 +260,7 @@ module storage 'modules/storage.bicep' = {
     coolAfterDays: attachmentsCoolAfterDays
     // Attachments are handled by the web app (uploads, viewing) and the worker
     // (mail ingestion). The public app and the migrate job never touch files.
+    assignRoles: assignRoles
     accessPrincipalIds: [
       identityWeb.properties.principalId
       identityWorker.properties.principalId
@@ -270,6 +275,7 @@ module keyvault 'modules/keyvault.bicep' = {
     tags: tags
     name: keyVaultName
     purgeProtection: purgeProtection
+    assignRoles: assignRoles
     secretReaders: secretReaders
     databaseUrl: 'postgresql+psycopg2://${dbAdminLogin}:${uriComponent(postgresAdminPassword)}@${postgres.outputs.fqdn}:5432/${dbName}?sslmode=require'
     sessionSecretKey: sessionSecretKey

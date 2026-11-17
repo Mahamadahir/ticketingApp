@@ -10,6 +10,8 @@ param purgeProtection bool
 
 @description('Which identity may read which secrets: [{ principalId, secrets: [name, ...] }]. Every secret listed must exist.')
 param secretReaders array
+@description('False skips the role assignments (the deploy workflow, whose identity cannot write them). True writes them.')
+param assignRoles bool = true
 
 @secure()
 param databaseUrl string
@@ -136,7 +138,7 @@ resource readTargets 'Microsoft.KeyVault/vaults/secrets@2023-07-01' existing = [
 ]
 
 resource readers 'Microsoft.Authorization/roleAssignments@2022-04-01' = [
-  for (reader, i) in grants: {
+  for (reader, i) in grants: if (assignRoles) {
     scope: readTargets[i]
     name: guid(readTargets[i].id, reader.principalId, secretsUserRoleId)
     properties: {
