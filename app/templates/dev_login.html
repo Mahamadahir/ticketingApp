@@ -1,23 +1,26 @@
 {% extends "base.html" %}
 {% block title %}Dev sign-in{% endblock %}
 {% block content %}
-<div class="login-page">
-    <h1>Dev sign-in</h1>
-    <p>
+<div class="signin">
+  <section class="card signin-card" aria-labelledby="signin-title">
+    <h1 id="signin-title" class="signin-title">Dev sign-in</h1>
+    <p class="signin-help">
+      <span class="chip t-gray">Development</span>
       SSO isn't configured (no <code>SSO_TENANT_ID</code>/<code>SSO_CLIENT_ID</code>/<code>SSO_CLIENT_SECRET</code>
       in the environment), so sign-in is a plain form for local testing. Set those variables once the
       Entra ID app registration exists and this form stops being reachable.
     </p>
-    <form method="post" action="/auth/dev-login">
-      <label>
+    <form class="signin-form" method="post" action="/auth/dev-login">
+      <label class="field">
         Email
         <input type="email" name="email" required />
       </label>
-      <label>
+      <label class="field">
         Display name
         <input type="text" name="display_name" required />
       </label>
-      <button type="submit">Sign in</button>
+      <button class="btn btn-lg btn-block btn-primary" type="submit">Sign in</button>
     </form>
+  </section>
 </div>
 {% endblock %}

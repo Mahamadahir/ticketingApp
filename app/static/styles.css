@@ -443,7 +443,6 @@ a.button:hover { background: var(--accent); color: var(--accent-text); filter: b
 .note { color: var(--muted); font-size: 0.9rem; }
 .error { color: var(--red); font-weight: 600; }
 
-.login-page { max-width: 400px; margin: 3rem auto; }
 
 table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: 0.5rem; border-bottom: 1px solid var(--border); }
@@ -880,3 +879,25 @@ th { color: var(--muted); font-weight: 600; }
   .bell-menu { position: static; }
   .bell-panel { left: 16px; right: 16px; width: auto; }
 }
+
+/* ---- Sign-in pages (#251): login, break-glass and dev sign-in, in the Bare frame. One centred card. -------------- */
+
+.signin { display: flex; justify-content: center; padding: 8px 0 0; }
+.signin-card { width: 100%; max-width: 420px; box-sizing: border-box; padding: 28px 28px 24px; display: flex; flex-direction: column; gap: 16px; }
+.signin-title { font-size: 24px; margin: 0; }
+.signin-sub { margin: -12px 0 0; color: var(--muted); }
+.signin-h2 { font-size: 16px; margin: 0; }
+.signin-help, .signin-small { margin: 0; color: var(--muted); font-size: 13px; }
+.signin-form { display: flex; flex-direction: column; gap: 14px; margin: 0; }
+.signin-form .field > input { width: 100%; box-sizing: border-box; min-height: 36px; }
+.signin-notice { margin: 0; padding: 10px 12px; border-radius: var(--radius); border: 1px solid; font-size: 14px; line-height: 1.45; }
+.signin-warn { color: var(--amber); background: var(--amber-bg); border-color: var(--amber); }
+.signin-error { color: var(--red); background: var(--red-bg); border-color: var(--red); }
+.signin-outage { display: flex; flex-direction: column; gap: 14px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
+.signin-ms { gap: 10px; }
+.signin-logo { flex: none; }
+.signin-more { border-top: 1px solid var(--border); padding-top: 12px; }
+.signin-more > summary { cursor: pointer; font-weight: 600; min-height: 32px; display: flex; align-items: center; color: var(--accent); }
+.signin-more-body { display: flex; flex-direction: column; gap: 16px; padding-top: 12px; }
+.signin-dev { border-top: 1px solid var(--border); padding-top: 12px; }
+@media (max-width: 480px) { .signin-card { padding: 20px 16px; } }
