@@ -37,6 +37,8 @@ NOT_WORTH_A_ROW = {"unknown_account", "account_locked"}
 # Break-glass: also not an unreadable stored secret (it can be hit without limit until someone runs `reset`).
 BREAK_GLASS_NOT_WORTH_A_ROW = NOT_WORTH_A_ROW | {"secret_unreadable"}
 
+SSO_NOT_FINISHED = "Microsoft sign-in did not finish. Try again, or contact IT if it keeps happening."
+
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
@@ -60,7 +62,19 @@ def sso_start(request: Request):
 
 
 @router.get("/callback")
-def callback(request: Request, code: str, state: str, session: Session = Depends(get_session)):
+def callback(
+    request: Request,
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+    error_subcode: str | None = None,
+    session: Session = Depends(get_session),
+):
+    # A cancelled or refused Microsoft prompt comes back with `error` and no `code` (#251). It gets a page, never a 4xx
+    # JSON body. Only the error code is read and kept: `error_description` can carry account details and is never used.
+    if error or not code:
+        return _sso_not_finished(request, session, state, error, error_subcode)
+    state = state or ""
     # Linking a second identity (My settings > Link another account) comes back to this same redirect URI, with
     # its own state, tied to the signed-in person. It is never a sign-in.
     link_flow = request.session.get(LINK_FLOW_KEY)
@@ -285,6 +299,26 @@ def _refuse_inactive(session: Session, request: Request, user: User, how: str) -
     )
     session.commit()
     return RedirectResponse("/auth/login?" + urlencode({"error": sessions.INACTIVE_MESSAGE}), status_code=303)
+
+
+def _sso_not_finished(
+    request: Request, session: Session, state: str | None, error: str | None, error_subcode: str | None
+) -> RedirectResponse:
+    """The Microsoft reply carried an error or no code: back to the page the person started from, with a fixed message."""
+    cancelled = error == "access_denied" and error_subcode in (None, "", "cancel")
+    link_flow = request.session.get(LINK_FLOW_KEY)
+    if state and isinstance(link_flow, dict) and secrets.compare_digest(state.encode(), str(link_flow.get("state", "")).encode()):
+        request.session.pop(LINK_FLOW_KEY, None)
+        message = "Linking was cancelled." if cancelled else SSO_NOT_FINISHED
+        return RedirectResponse("/settings/link-account?" + urlencode({"error": message}), status_code=303)
+    # Only an error that carries the pending state ends it: a forged link to this URL cannot cancel someone's real sign-in.
+    started = request.session.get("oauth_state")
+    if started and state and secrets.compare_digest(state.encode(), str(started).encode()):
+        request.session.pop("oauth_state", None)  # a sign-in was really started; anything else is noise and gets no row
+        code_only = "".join(c for c in (error or "no_code") if c.isalnum() or c == "_")[:60] or "unknown"
+        _sso_failed(session, request, f"idp_error: {code_only}")
+    message = "Sign-in was cancelled." if cancelled else SSO_NOT_FINISHED
+    return RedirectResponse("/auth/login?" + urlencode({"error": message}), status_code=303)
 
 
 def _sso_failed(session: Session, request: Request, reason: str) -> None:

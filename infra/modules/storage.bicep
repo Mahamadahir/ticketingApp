@@ -12,6 +12,8 @@ param containerName string
 param coolAfterDays int = 365
 @description('Principal ids of the identities that read and write attachments. Only apps that handle files belong here.')
 param accessPrincipalIds array
+@description('False skips the role assignments (the deploy workflow, whose identity cannot write them). True writes them.')
+param assignRoles bool = true
 
 var blobDataContributorRoleId = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
 var blobDelegatorRoleId = 'db58b8e5-c6ad-4a2a-8342-4190687cbf4a'
@@ -115,7 +117,7 @@ resource lifecycle 'Microsoft.Storage/storageAccounts/managementPolicies@2023-05
 }
 
 resource dataContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = [
-  for principalId in accessPrincipalIds: {
+  for principalId in accessPrincipalIds: if (assignRoles) {
     scope: account
     name: guid(account.id, principalId, blobDataContributorRoleId)
     properties: {
@@ -128,7 +130,7 @@ resource dataContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = 
 
 // Needed to request the user delegation key that signs SAS links.
 resource delegator 'Microsoft.Authorization/roleAssignments@2022-04-01' = [
-  for principalId in accessPrincipalIds: {
+  for principalId in accessPrincipalIds: if (assignRoles) {
     scope: account
     name: guid(account.id, principalId, blobDelegatorRoleId)
     properties: {
