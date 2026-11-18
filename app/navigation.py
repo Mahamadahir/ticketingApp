@@ -26,6 +26,7 @@ ICONS = {
     "triage": "M4 4h16v6H4zM4 14h10v6H4z",
     "approvals": "M9 12l2 2 4-4M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z",
     "msp": "M4 7h16M4 12h16M4 17h10M18 15l3 2-3 2",
+    "activity": "M3 12h4l3-8 4 16 3-8h4",
     "reports": "M5 20V10M12 20V4M19 20v-7",
     "canned": "M5 4h11a3 3 0 013 3v13H8a3 3 0 01-3-3z",
     "admin": "M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.6 1.6 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.6 1.6 0 00-1.8-.3 1.6 1.6 0 00-1 1.5V21a2 2 0 01-4 0v-.1a1.6 1.6 0 00-1-1.5 1.6 1.6 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.6 1.6 0 00.3-1.8 1.6 1.6 0 00-1.5-1H3a2 2 0 010-4h.1a1.6 1.6 0 001.5-1 1.6 1.6 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.6 1.6 0 001.8.3H9a1.6 1.6 0 001-1.5V3a2 2 0 014 0v.1a1.6 1.6 0 001 1.5 1.6 1.6 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.6 1.6 0 00-.3 1.8V9a1.6 1.6 0 001.5 1H21a2 2 0 010 4h-.1a1.6 1.6 0 00-1.5 1z",
@@ -192,6 +193,7 @@ def _agent_items(session: Session, user: User) -> list[tuple]:
         ("approvals", "Approvals", "/portal/approvals", "approvals", count_pending_for(session, user), "amber"),
         ("msp", "MSP mail", "/msp-mail", "msp", _count(session, unmatched_query()), "gray"),
     ]
+    items.append(("activity", "Team activity", "/tickets/activity", "activity", None, "gray"))  # opens the side drawer
     if has_permission(session, user, "view_reports"):
         items.append(("reports", "Reports", "/reports", "reports", None, "gray"))
     if user.role == UserRole.SUPER_ADMIN:

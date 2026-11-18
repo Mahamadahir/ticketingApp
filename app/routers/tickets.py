@@ -5,7 +5,7 @@ from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
-from app.templating import templates
+from app.templating import is_htmx, templates
 from sqlalchemy import func, or_
 from sqlmodel import Session, select
 
@@ -99,7 +99,15 @@ from app.messages import (
 from app.models import FINISHED_STATUSES, CannedResponse, Category, Message, RequestType, Team, Ticket, TicketSource, TicketStatus, TicketType, User, UserRole
 from app.attachments import files_by_message
 from app.pagination import paginate
-from app.team_activity import KIND_LABELS, Kind, describe as describe_activity, feed_query
+from app.team_activity import (
+    DRAWER_CARDS,
+    KIND_LABELS,
+    Day,
+    Kind,
+    count_steps_today,
+    load_timeline,
+    person_choices,
+)
 from app.sla import (
     impact_options,
     urgency_options,
@@ -272,46 +280,136 @@ def list_tickets(
     )
 
 
+ACTIVITY_TABS = (("team", "Whole team"), ("mine", "My activity"))
+
+
+def _activity_tab(tab: Optional[str]) -> str:
+    if tab in (None, "", "team"):
+        return "team"
+    if tab == "mine":
+        return "mine"
+    raise HTTPException(status_code=422, detail="Unknown tab")
+
+
+ACTIVITY_CHIPS = (("", "All"), (Kind.EVENTS.value, "Changes"), (Kind.CONVERSATION.value, "Emails"), (Kind.NOTES.value, "Notes"))
+
+
+def _activity_filters(team_id: Optional[str], kind: Optional[str]):
+    # The filter form sends a blank value for "all", which is no filter, not an error.
+    try:
+        return optional_int(team_id), (Kind(kind) if kind and kind.strip() else None)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Unknown team or kind")
+
+
+def _activity_before(before: Optional[str]) -> Optional[datetime]:
+    """The "Show earlier" cursor: an ISO moment this feed wrote itself, so anything else is a bad request."""
+    if not before:
+        return None
+    try:
+        moment = datetime.fromisoformat(before)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Unknown moment")
+    return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
+
+
 @router.get("/activity", response_class=HTMLResponse)
 def team_activity(
     request: Request,
     team_id: Optional[str] = None,
     kind: Optional[str] = None,
-    page: int = 1,
+    person: Optional[str] = None,
+    before: Optional[str] = None,
+    tab: Optional[str] = None,
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
-    """Everything that happened on the tickets this agent can open, newest first: ticket
-    events, emails and replies, and internal notes. Access is the ticket list's, so a
-    ticket moved to another team leaves the feed of everyone outside that team."""
-    # The filter form sends a blank value for "all", which is no filter, not an error.
-    try:
-        team_choice = optional_int(team_id)
-        kind_choice = Kind(kind) if kind and kind.strip() else None
-    except ValueError:
-        raise HTTPException(status_code=422, detail="Unknown team or kind")
+    """What happened on the tickets this agent can open, as cards (a session is one card; see app/team_activity.py),
+    newest first under day headings. Access is the ticket list's, so a ticket moved to another team leaves the feed of
+    everyone outside that team. "Show earlier" loads the next stretch of time (`before`), never splitting a card."""
+    team_choice, kind_choice = _activity_filters(team_id, kind)
+    tab_choice = _activity_tab(tab)
+    me = user.email.lower()
+    # "My activity" is the viewer's own steps; the Person filter is for the whole team.
+    person_choice = me if tab_choice == "mine" else ((person or "").strip().lower() or None)
     levels = access_context(session, user)
-    feed = paginate(
-        session, feed_query(visible_ticket_condition(user, levels), team_choice, kind_choice), page,
-        request.query_params,
+    visible = visible_ticket_condition(user, levels)
+    zone = zone_for_user(session, user)
+    timeline = load_timeline(
+        session, visible, zone, team_id=team_choice, kind=kind_choice, person=person_choice,
+        before=_activity_before(before), viewer=me,
     )
-    ids = {row.ticket_id for row in feed.items}
-    tickets = {t.id: t for t in session.exec(select(Ticket).where(Ticket.id.in_(ids))).all()} if ids else {}
     all_teams = session.exec(select(Team).order_by(Team.name)).all()
     teams = all_teams if user.role == UserRole.SUPER_ADMIN else [t for t in all_teams if t.id in levels]
+    filters = {
+        "team_id": team_choice or "", "kind": kind_choice.value if kind_choice else "",
+        "person": "" if tab_choice == "mine" else (person_choice or ""), "tab": "mine" if tab_choice == "mine" else "",
+    }
+    tab_links = {  # the tabs keep the team and kind filters; the Person filter belongs to the whole team
+        value: "/tickets/activity" + (
+            "?" + urlencode(q) if (q := {k: v for k, v in {**filters, "person": "", "tab": "mine" if value == "mine" else ""}.items() if v}) else ""
+        )
+        for value, _label in ACTIVITY_TABS
+    }
+    latest = "/tickets/activity" + ("?" + urlencode({k: v for k, v in filters.items() if v}) if any(filters.values()) else "")
+    earlier = "?" + urlencode({**{k: v for k, v in filters.items() if v}, "before": timeline.earlier.isoformat()}) if timeline.earlier else None
     return templates.TemplateResponse(
         request,
         "tickets_activity.html",
         {
-            "page": feed,
-            "entries": [(row, tickets.get(row.ticket_id), describe_activity(row)) for row in feed.items],
+            "timeline": timeline,
             "teams": teams,
-            "teams_by_id": {t.id: t for t in all_teams},
+            "people": person_choices(session, visible, team_choice),
             "team_id": team_choice,
-            "kind": kind_choice.value if kind_choice else "",
+            "kind": filters["kind"],
+            "person": "" if tab_choice == "mine" else (person_choice or ""),
+            "tab": tab_choice,
+            "tabs": ACTIVITY_TABS,
+            "tab_links": tab_links,
+            "mine_count": count_steps_today(session, visible, me, zone),
             "kinds": [(k.value, label) for k, label in KIND_LABELS.items()],
+            "earlier": earlier,
+            "latest": latest if before else None,
             "user": user,
         },
+    )
+
+
+@router.get("/activity/latest", response_class=HTMLResponse)
+def team_activity_latest(
+    request: Request,
+    kind: Optional[str] = None,
+    tab: Optional[str] = None,
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """The side drawer's body (htmx, loaded each time it opens): the tabs, the filter chips and about 15 of the latest
+    cards, same access and grouping as the page. No frame, never cached, no refreshing on its own."""
+    if not is_htmx(request):
+        return RedirectResponse("/tickets/activity", status_code=303)  # only the drawer's body, never a page of its own
+    _, kind_choice = _activity_filters(None, kind)
+    tab_choice = _activity_tab(tab)
+    me = user.email.lower()
+    levels = access_context(session, user)
+    visible = visible_ticket_condition(user, levels)
+    zone = zone_for_user(session, user)
+    timeline = load_timeline(
+        session, visible, zone, kind=kind_choice, person=me if tab_choice == "mine" else None, viewer=me,
+        steps=DRAWER_CARDS * 3, min_cards=DRAWER_CARDS,
+    )
+    days, shown = [], 0  # the first DRAWER_CARDS cards, still under their day headings
+    for day in timeline.days:
+        if shown >= DRAWER_CARDS:
+            break
+        days.append(Day(day.label, day.cards[: DRAWER_CARDS - shown]))
+        shown += len(days[-1].cards)
+    return templates.TemplateResponse(
+        request, "tickets_activity_latest.html",
+        {
+            "days": days, "chips": ACTIVITY_CHIPS, "kind": kind_choice.value if kind_choice else "", "tab": tab_choice,
+            "tabs": ACTIVITY_TABS, "mine_count": count_steps_today(session, visible, me, zone),
+        },
+        headers={"Cache-Control": "no-store"},
     )
 
 

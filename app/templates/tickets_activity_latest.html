@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% from "_activity_card.html" import card %}
+{# The side drawer's body (htmx partial, no frame): the tabs, the filter chips and the latest cards. Loaded each time the drawer opens; it never refreshes on its own. #}
+{% block content %}
+<div class="act-tabs" role="group" aria-label="Whose activity">
+  {% for value, label in tabs %}
+  <button type="button" class="act-tab" aria-pressed="{{ 'true' if tab == value else 'false' }}" data-quiet hx-get="/tickets/activity/latest?tab={{ value }}{{ '&kind=' ~ kind if kind else '' }}" hx-target="#activity-body" hx-swap="innerHTML">{{ label }}{% if value == "mine" %} <span class="chip t-gray" title="Your steps today">{{ mine_count }}</span>{% endif %}</button>
+  {% endfor %}
+</div>
+<div class="act-chips" role="group" aria-label="Show">
+  {% for value, label in chips %}
+  <button type="button" class="chip act-chip{{ ' act-chip-on' if kind == value else '' }}" aria-pressed="{{ 'true' if kind == value else 'false' }}" data-quiet hx-get="/tickets/activity/latest?tab={{ tab }}{{ '&kind=' ~ value if value else '' }}" hx-target="#activity-body" hx-swap="innerHTML">{{ label }}</button>
+  {% endfor %}
+</div>
+<div class="act-sheet-list">
+{% if days %}
+{% for day in days %}
+<section class="act-day">
+  <h3 class="act-day-head">{{ day.label }}</h3>
+  <div class="act-list">{% for c in day.cards %}{{ card(c) }}{% endfor %}</div>
+</section>
+{% endfor %}
+{% else %}
+<p class="act-empty">Nothing yet</p>
+{% endif %}
+</div>
+{% endblock %}

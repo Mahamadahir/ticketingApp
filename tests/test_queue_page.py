@@ -168,7 +168,8 @@ def test_assignee_and_channel_and_team_activity(client, db_session):
     triaged(db_session, desk, category, "Someone's")
     page = client.get("/tickets").text
     assert '<span class="muted">Unassigned</span>' in page
-    assert 'href="/tickets/activity"' in page
+    assert 'class="btn">Team activity</a>' not in page  # the button moved to the top bar (#243); the page has no copy of it
+    assert 'aria-label="Team activity"' not in page  # nor in the top bar any more: the sidebar item opens the drawer
     assert "Desk &middot; Hardware" in page or "Desk · Hardware" in page
     assert "Channel" in page and '<option value="email">Email</option>' in page
 

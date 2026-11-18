@@ -1,48 +1,57 @@
 {% extends "base.html" %}
+{% from "_activity_card.html" import card %}
 {% block title %}Team activity{% endblock %}
 {% block content %}
-<p><a href="/tickets">&larr; back to tickets</a></p>
-<h2>Team activity</h2>
-<p class="note">
-  Everything happening on the tickets you can open, newest first: changes, emails and replies, and internal
-  notes. It follows the same access as the ticket list, so a ticket moved to another team leaves your feed.
-  (The audit log in Admin covers settings and accounts, and the activity log covers sign-ins.)
-</p>
+{# Team activity (#243): steps folded into cards by app/team_activity.py, newest first under day headings. #}
+<div class="act-page">
+  <div class="admin-head">
+    <h1>Team activity</h1>
+    <p>What is happening on the tickets you can open, newest first. One person's steps on one ticket are one card, a line for each step. It follows the same access as the queue, so a ticket moved to another team leaves your feed.</p>
+  </div>
 
-<form method="get" action="/tickets/activity" class="filters">
-  <label>Team
-    <select name="team_id">
-      <option value="">All I can see</option>
-      {% for t in teams %}<option value="{{ t.id }}" {{ "selected" if team_id == t.id else "" }}>{{ t.name }}</option>{% endfor %}
-    </select>
-  </label>
-  <label>Show
-    <select name="kind">
-      <option value="">Everything</option>
-      {% for value, label in kinds %}<option value="{{ value }}" {{ "selected" if kind == value else "" }}>{{ label }}</option>{% endfor %}
-    </select>
-  </label>
-  <button type="submit">Filter</button>
-</form>
-
-<table>
-  <thead>
-    <tr><th>When</th><th>Ticket</th><th>Team</th><th>Who</th><th>What</th></tr>
-  </thead>
-  <tbody>
-    {% for row, ticket, text in entries %}
-    <tr>
-      <td>{{ row.at|local_time }}</td>
-      <td>{% if ticket %}<a href="/tickets/{{ ticket.number }}">{{ ticket.reference }}</a> {{ ticket.subject }}{% endif %}</td>
-      <td>{{ teams_by_id[ticket.team_id].name if ticket and ticket.team_id and ticket.team_id in teams_by_id else "Unassigned" }}</td>
-      <td>{{ row.actor or "system" }}</td>
-      <td>{{ text }}</td>
-    </tr>
-    {% else %}
-    <tr><td colspan="5">Nothing yet.</td></tr>
+  <div class="act-tabs" role="group" aria-label="Whose activity">
+    {% for value, label in tabs %}
+    <a class="act-tab" href="{{ tab_links[value] }}" aria-current="{{ 'true' if tab == value else 'false' }}">{{ label }}{% if value == "mine" %} <span class="chip t-gray" title="Your steps today">{{ mine_count }}</span>{% endif %}</a>
     {% endfor %}
-  </tbody>
-</table>
+  </div>
 
-{% include "_pagination.html" %}
+  <form method="get" action="/tickets/activity" class="filter-bar">
+    <input type="hidden" name="tab" value="{{ tab if tab == 'mine' else '' }}" />
+    <label class="field">Team
+      <select name="team_id">
+        <option value="">All I can see</option>
+        {% for t in teams %}<option value="{{ t.id }}" {{ "selected" if team_id == t.id else "" }}>{{ t.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="field">Show
+      <select name="kind">
+        <option value="">Everything</option>
+        {% for value, label in kinds %}<option value="{{ value }}" {{ "selected" if kind == value else "" }}>{{ label }}</option>{% endfor %}
+      </select>
+    </label>
+    {% if tab != "mine" %}
+    <label class="field">Person
+      <select name="person">
+        <option value="">Everyone</option>
+        {% for p in people %}<option value="{{ p.email }}" {{ "selected" if person == p.email.lower() else "" }}>{{ p.display_name }}</option>{% endfor %}
+      </select>
+    </label>
+    {% endif %}
+    <button type="submit" class="btn">Filter</button>
+  </form>
+
+  {% if latest %}<p><a href="{{ latest }}">&larr; Back to the latest</a></p>{% endif %}
+  {% for day in timeline.days %}
+  <section class="act-day" aria-labelledby="act-day-{{ loop.index }}">
+    <h2 class="act-day-head" id="act-day-{{ loop.index }}">{{ day.label }}</h2>
+    <div class="act-cards">
+      {% for c in day.cards %}{{ card(c) }}{% endfor %}
+    </div>
+  </section>
+  {% else %}
+  <div class="empty-state"><strong>Nothing yet</strong>No steps match.</div>
+  {% endfor %}
+
+  {% if earlier %}<p class="act-earlier"><a class="btn" href="{{ earlier }}">Show earlier</a></p>{% endif %}
+</div>
 {% endblock %}
