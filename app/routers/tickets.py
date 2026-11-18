@@ -99,7 +99,15 @@ from app.messages import (
 from app.models import FINISHED_STATUSES, CannedResponse, Category, Message, RequestType, Team, Ticket, TicketSource, TicketStatus, TicketType, User, UserRole
 from app.attachments import files_by_message
 from app.pagination import paginate
-from app.team_activity import KIND_LABELS, POPOVER_CARDS, Day, Kind, load_timeline, person_choices
+from app.team_activity import (
+    DRAWER_CARDS,
+    KIND_LABELS,
+    Day,
+    Kind,
+    count_steps_today,
+    load_timeline,
+    person_choices,
+)
 from app.sla import (
     impact_options,
     urgency_options,
@@ -272,6 +280,17 @@ def list_tickets(
     )
 
 
+ACTIVITY_TABS = (("team", "Whole team"), ("mine", "My activity"))
+
+
+def _activity_tab(tab: Optional[str]) -> str:
+    if tab in (None, "", "team"):
+        return "team"
+    if tab == "mine":
+        return "mine"
+    raise HTTPException(status_code=422, detail="Unknown tab")
+
+
 ACTIVITY_CHIPS = (("", "All"), (Kind.EVENTS.value, "Changes"), (Kind.CONVERSATION.value, "Emails"), (Kind.NOTES.value, "Notes"))
 
 
@@ -301,6 +320,7 @@ def team_activity(
     kind: Optional[str] = None,
     person: Optional[str] = None,
     before: Optional[str] = None,
+    tab: Optional[str] = None,
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
@@ -308,16 +328,29 @@ def team_activity(
     newest first under day headings. Access is the ticket list's, so a ticket moved to another team leaves the feed of
     everyone outside that team. "Show earlier" loads the next stretch of time (`before`), never splitting a card."""
     team_choice, kind_choice = _activity_filters(team_id, kind)
-    person_choice = (person or "").strip().lower() or None
+    tab_choice = _activity_tab(tab)
+    me = user.email.lower()
+    # "My activity" is the viewer's own steps; the Person filter is for the whole team.
+    person_choice = me if tab_choice == "mine" else ((person or "").strip().lower() or None)
     levels = access_context(session, user)
     visible = visible_ticket_condition(user, levels)
+    zone = zone_for_user(session, user)
     timeline = load_timeline(
-        session, visible, zone_for_user(session, user), team_id=team_choice, kind=kind_choice, person=person_choice,
-        before=_activity_before(before),
+        session, visible, zone, team_id=team_choice, kind=kind_choice, person=person_choice,
+        before=_activity_before(before), viewer=me,
     )
     all_teams = session.exec(select(Team).order_by(Team.name)).all()
     teams = all_teams if user.role == UserRole.SUPER_ADMIN else [t for t in all_teams if t.id in levels]
-    filters = {"team_id": team_choice or "", "kind": kind_choice.value if kind_choice else "", "person": person_choice or ""}
+    filters = {
+        "team_id": team_choice or "", "kind": kind_choice.value if kind_choice else "",
+        "person": "" if tab_choice == "mine" else (person_choice or ""), "tab": "mine" if tab_choice == "mine" else "",
+    }
+    tab_links = {  # the tabs keep the team and kind filters; the Person filter belongs to the whole team
+        value: "/tickets/activity" + (
+            "?" + urlencode(q) if (q := {k: v for k, v in {**filters, "person": "", "tab": "mine" if value == "mine" else ""}.items() if v}) else ""
+        )
+        for value, _label in ACTIVITY_TABS
+    }
     latest = "/tickets/activity" + ("?" + urlencode({k: v for k, v in filters.items() if v}) if any(filters.values()) else "")
     earlier = "?" + urlencode({**{k: v for k, v in filters.items() if v}, "before": timeline.earlier.isoformat()}) if timeline.earlier else None
     return templates.TemplateResponse(
@@ -329,7 +362,11 @@ def team_activity(
             "people": person_choices(session, visible, team_choice),
             "team_id": team_choice,
             "kind": filters["kind"],
-            "person": person_choice or "",
+            "person": "" if tab_choice == "mine" else (person_choice or ""),
+            "tab": tab_choice,
+            "tabs": ACTIVITY_TABS,
+            "tab_links": tab_links,
+            "mine_count": count_steps_today(session, visible, me, zone),
             "kinds": [(k.value, label) for k, label in KIND_LABELS.items()],
             "earlier": earlier,
             "latest": latest if before else None,
@@ -342,28 +379,36 @@ def team_activity(
 def team_activity_latest(
     request: Request,
     kind: Optional[str] = None,
+    tab: Optional[str] = None,
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
-    """The top-bar Activity pop-over's body (htmx, loaded when it opens): about 15 of the latest cards in their compact
-    form, same access and grouping as the page. No frame, never cached."""
+    """The side drawer's body (htmx, loaded each time it opens): the tabs, the filter chips and about 15 of the latest
+    cards, same access and grouping as the page. No frame, never cached, no refreshing on its own."""
     if not is_htmx(request):
-        return RedirectResponse("/tickets/activity", status_code=303)  # only the pop-over's body, never a page of its own
+        return RedirectResponse("/tickets/activity", status_code=303)  # only the drawer's body, never a page of its own
     _, kind_choice = _activity_filters(None, kind)
+    tab_choice = _activity_tab(tab)
+    me = user.email.lower()
     levels = access_context(session, user)
+    visible = visible_ticket_condition(user, levels)
+    zone = zone_for_user(session, user)
     timeline = load_timeline(
-        session, visible_ticket_condition(user, levels), zone_for_user(session, user), kind=kind_choice,
-        steps=POPOVER_CARDS * 3, min_cards=POPOVER_CARDS,
+        session, visible, zone, kind=kind_choice, person=me if tab_choice == "mine" else None, viewer=me,
+        steps=DRAWER_CARDS * 3, min_cards=DRAWER_CARDS,
     )
-    days, shown = [], 0  # the first POPOVER_CARDS cards, still under their day headings
+    days, shown = [], 0  # the first DRAWER_CARDS cards, still under their day headings
     for day in timeline.days:
-        if shown >= POPOVER_CARDS:
+        if shown >= DRAWER_CARDS:
             break
-        days.append(Day(day.label, day.cards[: POPOVER_CARDS - shown]))
+        days.append(Day(day.label, day.cards[: DRAWER_CARDS - shown]))
         shown += len(days[-1].cards)
     return templates.TemplateResponse(
         request, "tickets_activity_latest.html",
-        {"days": days, "chips": ACTIVITY_CHIPS, "kind": kind_choice.value if kind_choice else ""},
+        {
+            "days": days, "chips": ACTIVITY_CHIPS, "kind": kind_choice.value if kind_choice else "", "tab": tab_choice,
+            "tabs": ACTIVITY_TABS, "mine_count": count_steps_today(session, visible, me, zone),
+        },
         headers={"Cache-Control": "no-store"},
     )
 

@@ -6,10 +6,17 @@
 <div class="act-page">
   <div class="admin-head">
     <h1>Team activity</h1>
-    <p>What is happening on the tickets you can open, newest first. One person's steps on one ticket are one card; open a card to see each step. It follows the same access as the queue, so a ticket moved to another team leaves your feed.</p>
+    <p>What is happening on the tickets you can open, newest first. One person's steps on one ticket are one card, a line for each step. It follows the same access as the queue, so a ticket moved to another team leaves your feed.</p>
+  </div>
+
+  <div class="act-tabs" role="group" aria-label="Whose activity">
+    {% for value, label in tabs %}
+    <a class="act-tab" href="{{ tab_links[value] }}" aria-current="{{ 'true' if tab == value else 'false' }}">{{ label }}{% if value == "mine" %} <span class="chip t-gray" title="Your steps today">{{ mine_count }}</span>{% endif %}</a>
+    {% endfor %}
   </div>
 
   <form method="get" action="/tickets/activity" class="filter-bar">
+    <input type="hidden" name="tab" value="{{ tab if tab == 'mine' else '' }}" />
     <label class="field">Team
       <select name="team_id">
         <option value="">All I can see</option>
@@ -22,12 +29,14 @@
         {% for value, label in kinds %}<option value="{{ value }}" {{ "selected" if kind == value else "" }}>{{ label }}</option>{% endfor %}
       </select>
     </label>
+    {% if tab != "mine" %}
     <label class="field">Person
       <select name="person">
         <option value="">Everyone</option>
         {% for p in people %}<option value="{{ p.email }}" {{ "selected" if person == p.email.lower() else "" }}>{{ p.display_name }}</option>{% endfor %}
       </select>
     </label>
+    {% endif %}
     <button type="submit" class="btn">Filter</button>
   </form>
 

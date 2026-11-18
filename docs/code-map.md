@@ -1456,7 +1456,7 @@ The team activity feed: everything that happened on the tickets an agent can ope
 File: `app/team_activity.py`
 
 - Classes: `Card`, `Day`, `Kind`, `Line`, `Step`, `Timeline`
-- Functions: `day_heading`, `describe`, `feed_query`, `gap_of`, `group_steps`, `load_timeline`, `person_choices`, `phrase_of`, `role_of`, `step_of`
+- Functions: `count_steps_today`, `day_heading`, `describe`, `feed_query`, `gap_of`, `group_steps`, `load_timeline`, `person_choices`, `phrase_of`, `role_of`, `status_chip`, `step_of`
 - Imports: `app.models`, `app.notification_settings`, `app.settings_store`, `app.time_zones`
 - Imported by: `app.routers.tickets`
 - Tests: `test_msp_mail.py`, `test_team_activity.py`, `test_team_activity_cards.py`

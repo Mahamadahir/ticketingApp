@@ -6048,6 +6048,7 @@
       ],
       "file": "app/team_activity.py",
       "functions": [
+        "count_steps_today",
         "day_heading",
         "describe",
         "feed_query",
@@ -6057,6 +6058,7 @@
         "person_choices",
         "phrase_of",
         "role_of",
+        "status_chip",
         "step_of"
       ],
       "imported_by": [

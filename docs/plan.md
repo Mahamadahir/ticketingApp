@@ -875,13 +875,14 @@ time zone, ordered by each card's latest step. A session is the steps by the sam
 ticket, each no more than the gap after the previous one (the setting "Group activity steps within",
 Admin > Settings > Other, 30 minutes). When several people act on one ticket within the gap it is one
 card for the ticket with a line per person. Requester replies and system steps (automatic jobs, the MSP,
-automatic emails) are cards of their own and never fold into an agent's session. A card expands
-(`details`) to each step with its time and the email or note excerpt. The grouping is one function,
+automatic emails) are cards of their own and never fold into an agent's session. A card draws each step as a
+sentence on its own line (status chips, the note in an amber quote, the first line of an email). The grouping is one function,
 `group_steps`. "Show earlier" replaces page numbers: a load takes the newest 150 steps older than a
 cursor and then reaches further back until no session could continue past its far end, so a card is never
-split across two loads (it may load slightly more than 150). The top bar has an Activity button beside the
-bell (console only) opening a pop-over of the latest 15 cards in compact form, with All, Changes, Emails and
-Notes chips and a link to the full page; there is no "new since you last looked" mark.
+split across two loads (it may load slightly more than 150). A "Team activity" item in the console sidebar
+opens a slide-over drawer of the latest 15 cards, with Whole team and My activity tabs, All, Changes, Emails and
+Notes chips and a link to the full page; it loads when opened and does not refresh itself; there is no "new since
+you last looked" mark.
 
 **Search** across subject, messages, requester and reference using Postgres
 full-text search.

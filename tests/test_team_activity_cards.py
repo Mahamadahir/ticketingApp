@@ -1,12 +1,12 @@
 """Team activity as session cards (#243): the one grouping function (unit tests, no database), the page, the "Show
-earlier" rule, the top-bar pop-over and the Activity button."""
+earlier" rule, the side drawer and the sidebar item."""
 
 import re
 from datetime import datetime, timedelta, timezone
 
 from sqlmodel import select
 
-from app.models import Message, MessageDirection, Ticket, User, UserRole
+from app.models import Message, MessageDirection, Ticket, TicketEvent, User, UserRole
 from app.settings_store import ACTIVITY_GROUP_MINUTES, GROUP_OTHER, REGISTRY, set_setting
 from app.team_activity import (
     ROLE_AGENT,
@@ -123,7 +123,7 @@ def second_agent(client, db_session, team, name="Bea Brown", email="bea@example.
     set_role(db_session, agent_id, UserRole.AGENT, team.id)
 
 
-def test_one_persons_steps_on_one_ticket_are_one_expandable_card(client, db_session):
+def test_one_persons_steps_on_one_ticket_are_one_card_with_a_line_per_step(client, db_session):
     team, category, _ = desk(client, db_session)
     classified(client, category, "Printer on fire")
     ticket = ticket_named(db_session, "Printer on fire")
@@ -131,15 +131,14 @@ def test_one_persons_steps_on_one_ticket_are_one_expandable_card(client, db_sess
     client.post(f"/tickets/{ticket.number}/note", data={"body": "Fuser again"})
 
     page = feed(client).text
-    agent_card = page[page.index("Agent Ann"):]
+    agent_card = re.search(r'<article class="act-card act-agent">.*?</article>', page, re.S).group(0)
 
-    assert "worked on" in page and "Printer on fire" in page
-    assert "Agent Ann" in page and '<details class="act-steps">' in page
-    assert re.search(r"\d+ steps", page)
-    assert "Emailed the requester" in page and "Added a note" in page  # the summary line
-    assert "Triaged" in page
+    assert "Printer on fire" in agent_card and "<details" not in agent_card
+    assert '<strong class="act-who">You</strong>' in agent_card  # the viewer's own steps
+    assert agent_card.count('<li class="act-step">') >= 3  # triaged, emailed, noted: a line each
+    assert "Emailed the requester" in agent_card and "Added an internal note" in agent_card
     assert "On our way" in agent_card and "Fuser again" in agent_card  # the steps, with their excerpts, inside the card
-    assert page.count('<details class="act-steps">') == 1  # the requester's description is a card without one
+    assert re.search(r'class="act-quote act-note">Fuser again<', agent_card)  # the note in its amber quote block
 
 
 def test_two_people_on_one_ticket_within_the_gap_share_one_card_with_a_line_each(client, db_session):
@@ -150,11 +149,14 @@ def test_two_people_on_one_ticket_within_the_gap_share_one_card_with_a_line_each
     second_agent(client, db_session, team)
     client.post(f"/tickets/{ticket.number}/note", data={"body": "Bea fixed"})
 
+    client.post("/auth/logout")
+    login_as(client, "agent@example.com", "Agent Ann")
     page = feed(client, kind="notes").text
 
     assert cards_in(page) == 1
-    assert "Agent Ann and Bea Brown worked on" in page or "Agent Ann" in page and "Bea Brown" in page
-    assert "<strong>Agent Ann:</strong> Added a note" in page and "<strong>Bea Brown:</strong> Added a note" in page
+    assert "You and Bea Brown" in page  # the viewer is Ann: "You"
+    assert page.count("Added an internal note") == 2 and "Ann looked" in page and "Bea fixed" in page
+    assert '<strong class="act-by">You</strong>' in page and '<strong class="act-by">Bea Brown</strong>' in page
 
 
 def test_the_gap_is_a_setting(client, db_session):
@@ -186,7 +188,7 @@ def test_a_requester_reply_is_its_own_card_between_an_agents_sessions(client, db
     page = feed(client).text
 
     requester_card = re.search(r'<article class="act-card act-requester">.*?</article>', page, re.S).group(0)
-    assert "Requester replied" in requester_card and "It is smoking" in requester_card and "<details" not in requester_card
+    assert "Replied by email" in requester_card and "It is smoking" in requester_card and "<details" not in requester_card
     assert cards_in(page) == 2
 
 
@@ -249,7 +251,7 @@ def test_cards_are_under_today_and_yesterday_headings_newest_first(client, db_se
     assert page.index(">Today<") < page.index("Fresh") < page.index(">Yesterday<") < page.index("Stale")
 
 
-def test_another_teams_ticket_is_not_in_the_page_or_the_popover(client, db_session):
+def test_another_teams_ticket_is_not_in_the_page_or_the_drawer(client, db_session):
     team, category, _ = desk(client, db_session)
     other = create_team(db_session, "Network")
     elsewhere = create_category(db_session, other, "Wireless")
@@ -257,8 +259,8 @@ def test_another_teams_ticket_is_not_in_the_page_or_the_popover(client, db_sessi
     classified(client, elsewhere, "Theirs")
 
     assert "Theirs" not in feed(client).text
-    popover = client.get("/tickets/activity/latest", headers={"HX-Request": "true"}).text
-    assert "Mine" in popover and "Theirs" not in popover
+    drawer = client.get("/tickets/activity/latest", headers={"HX-Request": "true"}).text
+    assert "Mine" in drawer and "Theirs" not in drawer
 
 
 # ---- Show earlier never splits a card ---------------------------------------------------------------------------
@@ -290,7 +292,11 @@ def test_show_earlier_never_cuts_a_card_in_two(client, db_session, monkeypatch):
 # ---- The pop-over and the button ---------------------------------------------------------------------------------
 
 
-def test_the_popover_is_a_compact_frameless_uncached_partial_of_about_15_cards(client, db_session):
+def hx(client, path):
+    return client.get(path, headers={"HX-Request": "true"})
+
+
+def test_the_drawer_body_is_a_frameless_uncached_partial_of_about_15_cards(client, db_session):
     team, category, _ = desk(client, db_session)
     classified(client, category, "Busy")
     ticket = ticket_named(db_session, "Busy")
@@ -302,54 +308,122 @@ def test_the_popover_is_a_compact_frameless_uncached_partial_of_about_15_cards(c
         db_session.add(message)
     db_session.commit()
 
-    response = client.get("/tickets/activity/latest", headers={"HX-Request": "true"})
+    response = hx(client, "/tickets/activity/latest")
 
     assert response.status_code == 200 and response.headers["Cache-Control"] == "no-store"
     page = response.text
     assert "<html" not in page and "<nav" not in page  # no frame
-    assert page.count('class="act-card act-compact') == 15
-    assert "<details" not in page and "act-steps" not in page  # compact: the summary line only, no expanding
+    assert page.count('<article class="act-card') == 15
+    assert "<details" not in page
     assert f'href="/tickets/{ticket.number}"' in page
-    for label in ("All", "Changes", "Emails", "Notes"):
+    for label in ("All", "Changes", "Emails", "Notes"):  # the filter chips are ours, not the template's
         assert f">{label}</button>" in page
-    assert "Note 19" not in page  # a summary line, not the excerpt
+    assert "Auto-refresh" not in page and "every 30s" not in page  # it never refreshes itself
 
-    only_notes = client.get("/tickets/activity/latest?kind=notes", headers={"HX-Request": "true"}).text
-    assert 'aria-pressed="true" data-quiet hx-get="/tickets/activity/latest?kind=notes"' in only_notes
-    assert client.get("/tickets/activity/latest?kind=gossip", headers={"HX-Request": "true"}).status_code == 422
+    only_notes = hx(client, "/tickets/activity/latest?kind=notes").text
+    assert 'aria-pressed="true" data-quiet hx-get="/tickets/activity/latest?tab=team&amp;kind=notes"' in only_notes
+    assert hx(client, "/tickets/activity/latest?kind=gossip").status_code == 422
+    assert hx(client, "/tickets/activity/latest?tab=everyone").status_code == 422
 
 
-def test_the_popover_route_is_not_a_page_and_is_for_agents_only(client, db_session):
+def test_the_drawer_route_is_not_a_page_and_is_for_agents_only(client, db_session):
     desk(client, db_session)
     response = client.get("/tickets/activity/latest", follow_redirects=False)
     assert response.status_code == 303 and response.headers["location"] == "/tickets/activity"
     client.post("/auth/logout")
     login_as(client, "jo@example.com")
-    assert client.get("/tickets/activity/latest", headers={"HX-Request": "true"}).status_code == 403
+    assert hx(client, "/tickets/activity/latest").status_code == 403
 
 
-def test_the_activity_button_is_in_the_console_frame_beside_the_bell_and_not_in_the_portal(client, db_session):
+def test_team_activity_is_a_sidebar_item_that_opens_the_drawer_and_the_top_bar_button_is_gone(client, db_session):
     desk(client, db_session)
 
     console = client.get("/tickets").text
-    assert 'aria-label="Team activity"' in console and 'class="activity-menu"' in console
-    assert console.index('class="activity-menu"') < console.index('class="bell-menu"')
-    assert 'hx-get="/tickets/activity/latest"' in console and "Open full activity" in console
-    assert "details.activity-menu" in console  # the menu script closes it on Escape and a click elsewhere, one at a time
+    sidebar = console.split('class="topbar"', 1)[0]
+    assert re.search(r'<a href="/tickets/activity" class="navlink" data-act-open[^>]*>', sidebar)  # a real link without script
+    assert 'id="activity-drawer"' in console and 'hx-get="/tickets/activity/latest"' in console
+    assert 'hx-trigger="act-open"' in console and "Open full activity page" in console
+    assert 'aria-label="Close team activity"' in console and "Escape" in console and "data-act-close" in console
+    assert 'class="activity-menu"' not in console and "activity-panel" not in console and 'title="Team activity"' not in console
+    assert "event.ctrlKey || event.metaKey" in console  # a modifier-click still follows the link
 
     client.post("/auth/logout")
     login_as(client, "jo@example.com")
     portal = client.get("/portal").text
-    assert 'class="activity-menu"' not in portal and 'aria-label="Team activity"' not in portal
+    assert "data-act-open" not in portal and 'id="activity-drawer"' not in portal
 
 
-def test_the_queue_no_longer_has_its_own_team_activity_button(client, db_session):
+def test_the_queue_page_itself_has_no_team_activity_button(client, db_session):
     team, category, _ = desk(client, db_session)
     classified(client, category, "Anything")
 
-    queue = client.get("/tickets").text.split("<main", 1)[1]
+    queue = client.get("/tickets").text.split("<main", 1)[1].split("<script", 1)[0]
 
     assert "Team activity" not in queue and 'href="/tickets/activity"' not in queue
+
+
+def test_the_drawer_tabs_whole_team_by_default_and_my_activity_is_only_the_viewers_steps_with_a_count(client, db_session):
+    team, category, _ = desk(client, db_session)
+    classified(client, category, "Shared work")
+    ticket = ticket_named(db_session, "Shared work")
+    client.post(f"/tickets/{ticket.number}/note", data={"body": "Ann looked"})
+    second_agent(client, db_session, team)
+    client.post(f"/tickets/{ticket.number}/note", data={"body": "Bea fixed"})
+    client.post(f"/tickets/{ticket.number}/email", data={"body": "Bea writes"})
+    client.post("/auth/logout")
+    login_as(client, "agent@example.com", "Agent Ann")
+
+    team_tab = hx(client, "/tickets/activity/latest").text
+    assert 'aria-pressed="true" data-quiet hx-get="/tickets/activity/latest?tab=team"' in team_tab  # Whole team is the default
+    assert "Ann looked" in team_tab and "Bea fixed" in team_tab and "Bea writes" in team_tab
+
+    mine = hx(client, "/tickets/activity/latest?tab=mine").text
+    assert 'aria-pressed="true" data-quiet hx-get="/tickets/activity/latest?tab=mine"' in mine
+    assert "Ann looked" in mine and "Bea fixed" not in mine and "Bea writes" not in mine
+    assert "Bea Brown</strong>" not in mine and '<strong class="act-who">You</strong>' in mine
+    count = re.search(r'title="Your steps today">(\d+)<', mine).group(1)
+    assert int(count) >= 2  # triaged and the note, at least
+    assert hx(client, "/tickets/activity/latest?tab=mine&kind=notes").text.count("<article") == 1
+
+    page = client.get("/tickets/activity?tab=mine").text
+    assert "Ann looked" in page and "Bea fixed" not in page and 'href="/tickets/activity?tab=mine"' in page
+
+
+def test_each_step_kind_is_drawn_as_its_sentence(client, db_session):
+    team, category, _ = desk(client, db_session)
+    classified(client, category, "Sentences")
+    ticket = ticket_named(db_session, "Sentences")
+    client.post(f"/tickets/{ticket.number}/note", data={"body": "Device enrolled"})
+    client.post(f"/tickets/{ticket.number}/email", data={"body": "On our way\nSecond line"})
+    me = db_session.exec(select(User).where(User.email == "agent@example.com")).one()
+    db_session.add(TicketEvent(ticket_id=ticket.id, event_type="status_changed", actor_email=me.email, from_value="new", to_value="with_msp"))
+    db_session.add(TicketEvent(ticket_id=ticket.id, event_type="assigned", actor_email=me.email, to_value=me.email))
+    db_session.add(TicketEvent(ticket_id=ticket.id, event_type="status_changed", actor_email=me.email, from_value="in_progress", to_value="resolved"))
+    db_session.commit()
+
+    page = hx(client, "/tickets/activity/latest").text
+    card = re.search(r'<article class="act-card act-agent">.*?</article>', page, re.S).group(0)
+
+    assert re.search(r'Updated status: <span class="chip t-gray">New</span> <span class="act-arrow"[^>]*>&rarr;</span> <span class="chip t-blue">With MSP</span>', card)
+    assert re.search(r'Added an internal note<blockquote class="act-quote act-note">Device enrolled</blockquote>', card)
+    assert re.search(r'Emailed the requester<span class="act-first-line">On our way</span>', card) and "Second line" not in card
+    assert "Assigned to <strong>Agent Ann</strong> (You)" in card
+    assert re.search(r'Marked as <span class="chip t-green">Resolved</span>', card)
+
+
+def test_an_assignment_to_someone_else_has_no_you(client, db_session):
+    team, category, _ = desk(client, db_session)
+    classified(client, category, "Handover")
+    ticket = ticket_named(db_session, "Handover")
+    login_as(client, "bea@example.com", "Bea Brown")
+    client.post("/auth/logout")
+    login_as(client, "agent@example.com", "Agent Ann")
+    db_session.add(TicketEvent(ticket_id=ticket.id, event_type="assigned", actor_email="agent@example.com", to_value="bea@example.com"))
+    db_session.commit()
+
+    card = hx(client, "/tickets/activity/latest").text
+
+    assert "Assigned to <strong>Bea Brown</strong>" in card and "Bea Brown</strong> (You)" not in card
 
 
 # ---- Review fixes ------------------------------------------------------------------------------------------------
@@ -386,10 +460,10 @@ def test_an_agent_working_a_ticket_they_raised_for_themselves_still_gets_one_ses
     page = feed(client, kind="events").text
 
     assert 'class="act-card act-requester"' not in page.replace("Requester replied", "")  # no event became a requester card
-    assert cards_in(page) == 1 and "worked on" in page
+    assert cards_in(page) == 1 and '<strong class="act-who">You</strong>' in page
 
 
-def test_the_popover_keeps_the_day_headings_and_back_to_latest_keeps_the_filters(client, db_session, monkeypatch):
+def test_the_drawer_keeps_the_day_headings_and_back_to_latest_keeps_the_filters(client, db_session, monkeypatch):
     import app.team_activity as ta
 
     monkeypatch.setattr(ta, "LOAD_STEPS", 2)
@@ -401,8 +475,8 @@ def test_the_popover_keeps_the_day_headings_and_back_to_latest_keeps_the_filters
         client.post(f"/tickets/{ticket.number}/note", data={"body": body})
     spread(db_session, ticket, [0, 30, 55, 80], bodies)
 
-    popover = client.get("/tickets/activity/latest?kind=notes", headers={"HX-Request": "true"}).text
-    assert ">Today<" in popover and ">Yesterday<" in popover
+    drawer = client.get("/tickets/activity/latest?kind=notes", headers={"HX-Request": "true"}).text
+    assert ">Today<" in drawer and ">Yesterday<" in drawer
 
     first = feed(client, kind="notes").text
     link = re.search(r'href="(\?[^"]*before=[^"]*)"[^>]*>Show earlier', first).group(1).replace("&amp;", "&")

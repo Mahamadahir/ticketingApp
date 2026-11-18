@@ -120,11 +120,11 @@ def test_the_bell_is_a_details_in_both_frames_with_the_poll_contract_on_its_summ
         assert page.count('class="bell-menu"') == 1, frame
 
 
-def test_the_menus_script_covers_the_bell_the_person_menu_and_the_activity_menu(client, db_session):
+def test_the_menus_script_covers_the_bell_and_the_person_menu(client, db_session):
     agent_with(client, db_session, 1)
     page = client.get("/tickets").text
-    assert 'querySelectorAll("details.person-menu, details.bell-menu, details.activity-menu")' in page
-    assert "Escape" in page and 'closest(".person-menu-panel a, .bell-panel a, .activity-panel a")' in page
+    assert 'querySelectorAll("details.person-menu, details.bell-menu")' in page
+    assert "Escape" in page and 'closest(".person-menu-panel a, .bell-panel a")' in page
     assert 'addEventListener("toggle"' in page  # opening one closes the other
     assert 'hasAttribute("data-quiet")' in page  # filling the dropdown must not clear the flash area either
 

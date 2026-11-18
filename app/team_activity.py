@@ -144,7 +144,7 @@ def describe(row) -> str:
 
 # ---- Sessions: steps folded into cards ----------------------------------------------------------------------
 #
-# The feed above is one row per step. The page and the top-bar pop-over show cards instead. Everything that decides
+# The feed above is one row per step. The page and the side drawer show cards instead. Everything that decides
 # what a card is lives in group_steps below and nowhere else; the templates only draw the cards they are given.
 #
 # A *session* is the steps by agents on one ticket, each no more than the gap (the setting, 30 minutes by default)
@@ -159,8 +159,8 @@ ROLE_SYSTEM = "system"
 
 # "Show earlier" loads this many steps at a time (then reaches further back only so that no card is cut in two).
 LOAD_STEPS = 150
-# The pop-over shows about this many of the latest cards.
-POPOVER_CARDS = 15
+# The side drawer shows about this many of the latest cards.
+DRAWER_CARDS = 15
 
 
 @dataclass
@@ -178,6 +178,13 @@ class Step:
     kind: str = "event"
     row_id: int = 0
     clock: str = ""  # HH:MM in the viewer's zone, filled in when a timeline is built
+    # What the card draws as a sentence (see _activity_card.html): the event type or, for a message, its direction.
+    what: str = ""
+    from_chip: Optional[tuple[str, str]] = None  # (label, tone) of a status change's old status
+    to_chip: Optional[tuple[str, str]] = None  # ... and of the new one
+    assignee: str = ""  # who an assignment is to, by name
+    assignee_you: bool = False  # ... and whether that is the viewer
+    first_line: str = ""  # the first line of an email, shown under its sentence
 
 
 @dataclass
@@ -186,7 +193,8 @@ class Line:
 
     person: Optional[str]
     steps: list[Step]
-    name: str = ""
+    name: str = ""  # what the card says: "You" for the viewer
+    real_name: str = ""  # their name, for the initials
 
     @property
     def summary(self) -> str:
@@ -339,7 +347,14 @@ def role_of(row) -> str:
     return ROLE_AGENT if row.agent else ROLE_REQUESTER
 
 
-def step_of(row, names: Mapping[str, str]) -> Step:
+def status_chip(value: Optional[str]) -> tuple[str, str]:
+    """(label, chip tone) of a status, the tones the ticket page uses: green Resolved, blue With MSP, gray the rest."""
+    value = (value or "none").lower()
+    label = value.replace("_", " ").capitalize().replace("msp", "MSP")
+    return label, "green" if value == "resolved" else ("blue" if value == "with_msp" else "gray")
+
+
+def step_of(row, names: Mapping[str, str], viewer: Optional[str] = None) -> Step:
     if row.kind == "message":
         group = "notes" if row.what.lower() == MessageDirection.INTERNAL.value else "conversation"
     else:
@@ -347,10 +362,20 @@ def step_of(row, names: Mapping[str, str]) -> Step:
     role = role_of(row)
     # A system step has no person, whatever address an automatic email was sent from.
     person = None if role == ROLE_SYSTEM else (row.actor or "").lower() or None
+    event = row.kind == "event"
+    to_address = (row.to_value or "").lower()
+    status = event and row.what == "status_changed"
+    assigned = event and row.what == "assigned"
     return Step(
         ticket_id=row.ticket_id, at=row.at, role=role, person=person, group=group,
         phrase=phrase_of(row, names), text=describe(row), excerpt=(row.detail or "") if row.kind == "message" else "",
         kind=row.kind, row_id=row.row_id,
+        what=row.what if event else row.what.lower(),
+        from_chip=status_chip(row.from_value) if status and row.from_value else None,
+        to_chip=status_chip(row.to_value) if status else None,
+        assignee=names.get(to_address, row.to_value or "") if assigned else "",
+        assignee_you=assigned and bool(viewer) and to_address == viewer,
+        first_line=((row.detail or "").strip().splitlines() or [""])[0] if not event else "",
     )
 
 
@@ -391,6 +416,7 @@ def load_timeline(
     steps: Optional[int] = None,
     min_cards: int = 0,
     now: Optional[datetime] = None,
+    viewer: Optional[str] = None,
 ) -> Timeline:
     """The cards for one stretch of time, under day headings, for the viewer's zone.
 
@@ -399,7 +425,7 @@ def load_timeline(
     earlier step could still belong to it). The next load starts from that far end (`earlier`): this load holds the
     steps at or after it, the next one those strictly before it. A busy stretch therefore loads a few more steps than
     asked for, never fewer than a whole card. `min_cards` makes the load larger until it holds that many cards (the
-    pop-over)."""
+    drawer). `viewer` is the viewer's address: their steps are written as "You", and an assignment to them "(You)"."""
     steps = steps or LOAD_STEPS
     zone = valid_zone(zone) or "UTC"
     now = now or datetime.now(timezone.utc)
@@ -424,7 +450,8 @@ def load_timeline(
             break
         steps *= 2
     people, tickets, teams = _lookups(session, rows)
-    cards = group_steps([step_of(r, people) for r in rows], gap)  # again, now that the names are known
+    viewer = (viewer or "").lower() or None
+    cards = group_steps([step_of(r, people, viewer) for r in rows], gap)  # again, now that the names are known
     days: list[Day] = []
     for card in cards:
         card.ticket = tickets.get(card.ticket_id)
@@ -433,7 +460,8 @@ def load_timeline(
         if card.ticket is not None:
             card.requester_name = people.get(card.ticket.requester_email.lower(), card.ticket.requester_email)
         for line in card.lines:
-            line.name = people.get(line.person or "", line.person or "System")
+            line.real_name = people.get(line.person or "", line.person or "System")
+            line.name = "You" if viewer and line.person == viewer else line.real_name
         for step in card.steps:
             step.clock = _clock(step.at, zone)
         first, last = card.steps[0].clock, card.steps[-1].clock
@@ -467,3 +495,12 @@ def person_choices(session: Session, visible, team_id: Optional[int] = None) -> 
     actors = select(func.lower(feed.c.actor)).distinct()
     query = select(User).where(func.lower(User.email).in_(actors), User.role.in_(AGENT_ROLES)).order_by(User.display_name)
     return list(session.exec(query).all())
+
+
+def count_steps_today(session: Session, visible, person: str, zone: str, now: Optional[datetime] = None) -> int:
+    """How many steps this address took today (the day in the viewer's zone), on the tickets the viewer can see."""
+    tz = ZoneInfo(valid_zone(zone) or "UTC")
+    now = _aware(now or datetime.now(timezone.utc))
+    midnight = datetime.combine(now.astimezone(tz).date(), datetime.min.time(), tzinfo=tz)
+    feed = feed_query(visible, person=person, since=midnight).subquery()
+    return session.exec(select(func.count()).select_from(feed)).one()

@@ -40,10 +40,10 @@ def test_the_feed_shows_events_emails_replies_and_notes_newest_first(client, db_
     page = feed(client).text
 
     assert ticket.reference in page and "Printer jam" in page
-    assert "emailed the requester: Have you tried turning it off?" in page
-    assert "added an internal note: Probably the fuser" in page
-    assert "Requester replied" in page and "It is smoking" in page  # the description logged for them: a card of its own
-    assert "triaged" in page and "created" in page
+    assert "Emailed the requester" in page and "Have you tried turning it off?" in page
+    assert "Added an internal note" in page and "Probably the fuser" in page
+    assert "Replied by email" in page and "It is smoking" in page  # the description logged for them: a card of its own
+    assert "Triaged" in page and "Created" in page
     # The agent's session is the newer card, the requester's description the older one; inside a card the steps run oldest first.
     assert page.index("Have you tried") < page.index("Probably the fuser") < page.index("It is smoking")
     assert '<span class="chip t-gray">Service Desk</span>' in page

@@ -193,7 +193,7 @@ def test_inter_is_self_hosted_with_its_licence(client):
 # ---- The navigation ---------------------------------------------------------------------------------------
 
 
-AGENT_ITEMS = ["Queue", "My tickets", "Untriaged", "Approvals", "MSP mail", "My requests", "My feedback", "Settings", "Appearance"]
+AGENT_ITEMS = ["Queue", "My tickets", "Untriaged", "Approvals", "MSP mail", "Team activity", "My requests", "My feedback", "Settings", "Appearance"]
 
 
 def test_an_agent_sees_the_work_items_and_nothing_they_may_not_open(client, db_session):
@@ -208,7 +208,7 @@ def test_an_agent_sees_the_work_items_and_nothing_they_may_not_open(client, db_s
 def test_a_super_admin_also_sees_reports_canned_responses_and_admin(client, db_session):
     set_role(db_session, login_as(client, "boss@example.com"), UserRole.SUPER_ADMIN)
     links = nav_links(client.get("/tickets"))
-    assert list(links) == ["Queue", "My tickets", "Untriaged", "Approvals", "MSP mail", "Reports", "Canned responses", "Admin", "My requests", "My feedback", "Settings", "Appearance"]
+    assert list(links) == ["Queue", "My tickets", "Untriaged", "Approvals", "MSP mail", "Team activity", "Reports", "Canned responses", "Admin", "My requests", "My feedback", "Settings", "Appearance"]
     assert links["Reports"] == "/reports" and links["Canned responses"] == "/admin/canned" and links["Admin"] == "/admin"
 
 
@@ -217,7 +217,7 @@ def test_view_reports_alone_adds_reports_and_nothing_else(client, db_session):
     db_session.add(UserPermission(user_id=agent_id, permission="view_reports"))
     db_session.commit()
     links = nav_links(client.get("/tickets"))
-    assert list(links) == ["Queue", "My tickets", "Untriaged", "Approvals", "MSP mail", "Reports", "My requests", "My feedback", "Settings", "Appearance"]
+    assert list(links) == ["Queue", "My tickets", "Untriaged", "Approvals", "MSP mail", "Team activity", "Reports", "My requests", "My feedback", "Settings", "Appearance"]
 
 
 @pytest.mark.parametrize("permission,destination", [("manage_request_templates", "/admin/request-types"), ("data_protection", "/admin/data-protection")])
@@ -513,4 +513,4 @@ def test_pressing_enter_in_the_time_zone_box_submits_use_this_time_zone_not_the_
 def test_choosing_a_link_in_the_person_menu_closes_it(client, db_session):
     agent(client, db_session)
     page = client.get("/tickets").text
-    assert 'closest(".person-menu-panel a, .bell-panel a, .activity-panel a")' in page and "Escape" in page
+    assert 'closest(".person-menu-panel a, .bell-panel a")' in page and "Escape" in page

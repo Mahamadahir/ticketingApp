@@ -2,7 +2,7 @@
 <svg aria-hidden="true" focusable="false" width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="{{ width }}" stroke-linecap="round" stroke-linejoin="round"><path d="{{ path }}"></path></svg>
 {%- endmacro %}
 {% macro nav_item(item) -%}
-<a href="{{ item.href }}" class="navlink"{% if item.active %} aria-current="page"{% endif %}>
+<a href="{{ item.href }}" class="navlink"{% if item.key == "activity" %} data-act-open aria-haspopup="dialog"{% endif %}{% if item.active %} aria-current="page"{% endif %}>
   {{ icon(item.icon) }}
   <span class="navlink-label">{{ item.label }}</span>
   {% if item.count %}<span class="chip t-{{ item.tone }}"><span class="sr-only">{{ item.label }}: </span>{{ item.count }}</span>{% endif %}
@@ -40,18 +40,6 @@
     {% else %}{{ icon("M3 5h18v11H3zM8 20h8M12 16v4") }}{% endif %}
   </button>
 </form>
-{% if with_raise %}
-<details class="activity-menu">
-  {# Team activity (#243), the console only: the same details pattern as the bell, its body loaded each time it opens. Without script it is just the link to the full page. #}
-  <summary class="icon-btn" aria-label="Team activity" title="Team activity">
-    {{ icon("M3 12h4l3-8 4 16 3-8h4") }}
-  </summary>
-  <div class="activity-panel">
-    <div id="activity-body" data-quiet hx-get="/tickets/activity/latest" hx-trigger="toggle[target.open] from:closest details" hx-swap="innerHTML"></div>
-    <a class="activity-more" href="/tickets/activity">Open full activity &rarr;</a>
-  </div>
-</details>
-{% endif %}
 <details class="bell-menu">
   {# The summary is the bell: the poll swaps only the label inside it, never the panel. Without script the panel still holds View more. #}
   <summary class="icon-btn" data-poll hx-get="/notifications/count" hx-trigger="load, every 30s, bell-count from:body" hx-target="find .bell-label" hx-swap="innerHTML">
@@ -104,6 +92,22 @@
       </nav>
       <div class="sidebar-person">
         {{ person_menu(shell, viewer, initials, true) }}
+      </div>
+    </div>
+    {# Team activity (#243): the slide-over drawer the sidebar item opens (the console only). Its body is loaded by htmx each
+       time it opens; without script, or with a modifier-click, the sidebar item is a plain link to the full page. #}
+    <div class="act-drawer" id="activity-drawer" hidden>
+      <div class="act-backdrop" data-act-close></div>
+      <div class="act-sheet" role="dialog" aria-modal="true" aria-labelledby="act-drawer-title" tabindex="-1">
+        <div class="act-sheet-head">
+          <div>
+            <h2 id="act-drawer-title">Team activity</h2>
+            <p>What is happening on the tickets you can open</p>
+          </div>
+          <button type="button" class="icon-btn" data-act-close aria-label="Close team activity">{{ icon("M6 6l12 12M18 6L6 18", 18, 2) }}</button>
+        </div>
+        <div id="activity-body" class="act-sheet-body" data-quiet hx-get="/tickets/activity/latest" hx-trigger="act-open" hx-swap="innerHTML"></div>
+        <div class="act-sheet-foot"><a href="/tickets/activity">Open full activity page &rarr;</a></div>
       </div>
     </div>
     <div class="app-main">
@@ -216,10 +220,53 @@
     })();
   </script>
   {% endif %}
+  {% if shell.kind == "console" %}
   <script>
-    // The person menu, the bell and the Activity button are <details> (the Activity button in the console only): close one on a click elsewhere or Escape, and only one is open at a time.
+    // The Team activity drawer (console only). The sidebar item is a link to the full page; a plain click opens the drawer instead.
     (function () {
-      var menus = Array.prototype.slice.call(document.querySelectorAll("details.person-menu, details.bell-menu, details.activity-menu"));
+      var drawer = document.getElementById("activity-drawer");
+      var opener = document.querySelector("[data-act-open]");
+      if (!drawer || !opener) { return; }
+      var sheet = drawer.querySelector(".act-sheet");
+      function focusable() { return Array.prototype.slice.call(sheet.querySelectorAll("a[href], button:not([disabled])")); }
+      function open() {
+        drawer.hidden = false;
+        document.documentElement.classList.add("act-open");
+        sheet.focus();
+        if (window.htmx) { htmx.trigger("#activity-body", "act-open"); }
+      }
+      function close() {
+        if (drawer.hidden) { return; }
+        drawer.hidden = true;
+        document.documentElement.classList.remove("act-open");
+        opener.focus();
+      }
+      opener.addEventListener("click", function (event) {
+        if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) { return; }
+        event.preventDefault();
+        open();
+      });
+      drawer.addEventListener("click", function (event) {
+        if (event.target.closest("[data-act-close]")) { close(); }
+      });
+      document.addEventListener("keydown", function (event) {
+        if (drawer.hidden) { return; }
+        if (event.key === "Escape") { event.preventDefault(); close(); return; }
+        if (event.key !== "Tab") { return; }
+        // Keep Tab inside the open drawer.
+        var items = focusable();
+        if (!items.length) { return; }
+        var first = items[0], last = items[items.length - 1];
+        if (event.shiftKey && (document.activeElement === first || document.activeElement === sheet)) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+      });
+    })();
+  </script>
+  {% endif %}
+  <script>
+    // The person menu and the bell are <details>: close one on a click elsewhere or Escape, and only one is open at a time.
+    (function () {
+      var menus = Array.prototype.slice.call(document.querySelectorAll("details.person-menu, details.bell-menu"));
       if (!menus.length) { return; }
       menus.forEach(function (menu) {
         menu.addEventListener("toggle", function () {
@@ -229,7 +276,7 @@
       // A click outside closes it, and so does choosing a link (one to a place on the page you are already on changes nothing else).
       document.addEventListener("click", function (event) {
         menus.forEach(function (menu) {
-          if (menu.open && (!menu.contains(event.target) || event.target.closest(".person-menu-panel a, .bell-panel a, .activity-panel a"))) { menu.open = false; }
+          if (menu.open && (!menu.contains(event.target) || event.target.closest(".person-menu-panel a, .bell-panel a"))) { menu.open = false; }
         });
       });
       document.addEventListener("keydown", function (event) {
