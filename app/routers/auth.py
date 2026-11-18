@@ -311,8 +311,10 @@ def _sso_not_finished(
         request.session.pop(LINK_FLOW_KEY, None)
         message = "Linking was cancelled." if cancelled else SSO_NOT_FINISHED
         return RedirectResponse("/settings/link-account?" + urlencode({"error": message}), status_code=303)
-    started = request.session.pop("oauth_state", None)
-    if started:  # a sign-in was really started; a cookie-less hit is noise and gets no row
+    # Only an error that carries the pending state ends it: a forged link to this URL cannot cancel someone's real sign-in.
+    started = request.session.get("oauth_state")
+    if started and state and secrets.compare_digest(state.encode(), str(started).encode()):
+        request.session.pop("oauth_state", None)  # a sign-in was really started; anything else is noise and gets no row
         code_only = "".join(c for c in (error or "no_code") if c.isalnum() or c == "_")[:60] or "unknown"
         _sso_failed(session, request, f"idp_error: {code_only}")
     message = "Sign-in was cancelled." if cancelled else SSO_NOT_FINISHED

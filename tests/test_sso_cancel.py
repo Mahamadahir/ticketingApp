@@ -88,3 +88,12 @@ def test_a_cancelled_link_returns_to_the_link_page_and_links_nothing(client, db_
     assert db_session.exec(select(LinkedIdentity)).first() is None
     assert db_session.exec(select(User)).all().__len__() == 1  # still only Ann, no second account was made
     assert client.get("/tickets", follow_redirects=False).status_code != 401  # still signed in as Ann, not someone else
+
+
+def test_a_forged_error_does_not_end_a_pending_sign_in(client, db_session, seen):
+    client.get("/auth/sso/start", follow_redirects=False)
+    forged = client.get("/auth/callback?error=access_denied", follow_redirects=False)
+    assert forged.status_code == 303 and failures(db_session) == []
+    # The real sign-in's state still works (it gets as far as the token exchange, which the fixture forbids).
+    with pytest.raises(AssertionError, match="no token exchange"):
+        client.get(f"/auth/callback?code=c&state={seen['state']}", follow_redirects=False)
