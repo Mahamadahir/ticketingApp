@@ -1,0 +1,30 @@
+{# One card of the team activity (the page and the side drawer). It only draws a Card that app/team_activity.py built: the head (avatars, who, the time), the ticket, then one line per step written as a sentence. #}
+{% macro chip(pair) -%}<span class="chip t-{{ pair[1] }}">{{ pair[0] }}</span>{%- endmacro %}
+{% macro step_line(c, s) -%}
+{% if c.lines|length > 1 %}<strong class="act-by">{{ c.name_of(s) }}</strong> {% endif %}
+{%- if s.kind == "message" -%}
+  {%- if s.group == "notes" -%}Added an internal note{%- elif s.what == "outbound" -%}Emailed the requester{%- elif s.what == "inbound" -%}Replied by email{%- elif s.what == "msp" -%}Message from the MSP{%- else -%}{{ s.phrase }}{%- endif -%}
+  {%- if s.group == "notes" and s.excerpt %}<blockquote class="act-quote act-note">{{ s.excerpt }}</blockquote>
+  {%- elif s.first_line %}<span class="act-first-line">{{ s.first_line }}</span>{% endif -%}
+{%- elif s.what == "status_changed" -%}
+  {%- if s.to_chip and s.to_chip[0] in ("Resolved", "Closed") -%}Marked as {{ chip(s.to_chip) }}
+  {%- else -%}Updated status: {% if s.from_chip %}{{ chip(s.from_chip) }} <span class="act-arrow" aria-label="to">&rarr;</span> {% endif %}{{ chip(s.to_chip) }}{%- endif -%}
+{%- elif s.what == "assigned" -%}
+  {%- if s.assignee -%}Assigned to <strong>{{ s.assignee }}</strong>{% if s.assignee_you %} (You){% endif %}{%- else -%}Unassigned{%- endif -%}
+{%- else -%}{{ s.phrase }}{%- endif -%}
+{%- endmacro %}
+{% macro card(c) -%}
+{% set ticket = c.ticket %}
+<article class="act-card act-{{ c.role }}">
+  <div class="act-head">
+    <span class="act-avatars" aria-hidden="true">{% for line in c.lines %}<span class="avatar act-avatar">{{ (line.real_name or line.name or "System")|initials }}</span>{% endfor %}</span>
+    <strong class="act-who">{{ c.title }}</strong>
+    <span class="act-time">{{ c.span }}</span>
+  </div>
+  {% if ticket %}<p class="act-ticket"><a class="act-ref" href="/tickets/{{ ticket.number }}">{{ ticket.reference }}</a> {{ ticket.subject }} <span class="chip t-gray">{{ c.team_name }}</span></p>{% endif %}
+  <ul class="act-steps">
+    {% for s in c.steps %}<li class="act-step">{% if not c.single %}<time>{{ s.clock }}</time>{% endif %}<span class="act-sentence">{{ step_line(c, s) }}</span></li>
+    {% endfor %}
+  </ul>
+</article>
+{%- endmacro %}

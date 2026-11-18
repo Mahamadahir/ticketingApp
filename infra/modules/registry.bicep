@@ -6,6 +6,8 @@ param tags object
 param name string
 @description('Principal ids of the app identities that pull images.')
 param pullPrincipalIds array
+@description('False skips the role assignments (the deploy workflow, whose identity cannot write them). True writes them.')
+param assignRoles bool = true
 
 var acrPullRoleId = '7f951dda-4ed3-4680-a7ca-43fe172d538d'
 
@@ -22,7 +24,7 @@ resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
 }
 
 resource pull 'Microsoft.Authorization/roleAssignments@2022-04-01' = [
-  for principalId in pullPrincipalIds: {
+  for principalId in pullPrincipalIds: if (assignRoles) {
     scope: registry
     name: guid(registry.id, principalId, acrPullRoleId)
     properties: {

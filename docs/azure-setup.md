@@ -20,12 +20,14 @@ The commands below are bash; the PowerShell steps (Exchange) run in Cloud Shell'
 
 ## Who does what
 
-The person running the deploy (the **deployer**) has **Contributor** on `rg-ticketing-staging`
-only, and is also the Entra, Exchange and Global admin and the GitHub admin. Contributor creates
-and changes every resource in the group but **cannot create role assignments**, and has no
-rights on the subscription itself. The deployer has been promised **Owner on the group** (not
-yet granted, Nov 2026); once it lands, every [Owner] step below that is scoped to the group is
-theirs. The steps below are marked:
+The person running the deploy (the **deployer**) has **Owner on `rg-ticketing-staging`** (granted
+17 Nov 2026, before that Contributor), and is also the Entra, Exchange and Global admin and the
+GitHub admin, with no rights on the subscription itself. The Owner grant carries the portal's
+default condition: the deployer can assign any role **except** the privileged ones (Owner, User
+Access Administrator, Role Based Access Control Administrator). Every [Owner] step below that
+is scoped to the group is theirs, except giving the GitHub identity the restricted
+role-assignment role, which is why the Deploy workflow skips role assignments (5.2). The steps
+below are marked:
 
 - **[Contributor]**: the deployer can do it with Contributor on the group.
 - **[Owner]**: needs someone with Owner (or User Access Administrator) on the subscription or
@@ -38,19 +40,20 @@ theirs. The steps below are marked:
 |---|---|---|
 | 1.2 Register resource providers | [Owner] (subscription) | done: all nine registered |
 | 1.3 Create the resource group | [Owner] | done, with tags |
-| 1.4 The deployer's own rights on the group | [Owner] | Contributor granted; Owner on the group requested, not yet granted |
+| 1.4 The deployer's own rights on the group | [Owner] | done: Owner on the group (17 Nov 2026), with the condition that excludes the privileged roles |
 | 1.5 Check quota | [Owner] or anyone with Reader on the subscription | not needed: the first deploy hit no quota or SKU error |
 | 2 `what-if` | [Contributor] | done: 20 to create, no template errors |
-| 2 Platform deploy | [Contributor] **plus** the restricted role-assignment role (1.4), or an [Owner] runs it | partly done (`platform-1`): network, Postgres, Container Apps environment, monitoring, identities, alerts. Registry, storage and Key Vault wait for the role grant |
+| 2 Platform deploy | [Owner] (the deployer, from their own shell, `ASSIGN_ROLES` unset) | done. `platform-1`: network, Postgres, Container Apps environment, monitoring, identities, alerts. `platform-2` (17 Nov 2026): registry and storage; Key Vault failed on a wrong Key Vault Secrets User role ID (fixed). `platform-3` (17 Nov 2026): everything |
 | 3 App registrations and secrets | [Entra admin] (or Application Developer for creating them) | done: `ticketing-sso-staging`, `ticketing-graph-staging`, `ticketing-deploy-staging`; secrets in GitHub and IT Glue, expire Nov 2027 |
 | 3 Admin consent for the Graph permissions | [Global admin] or Privileged Role Administrator | done (`Presence.Read.All`, `User.Read.All`; Mail is granted in Exchange, step 4) |
 | 4 Shared mailbox and scoping | [Exchange admin] | done: `itsupport-staging@vardags.com`, Mail.Read and Mail.Send scoped to it |
-| 5.1 Federated credential on the GitHub app registration | [Entra admin] or the registration's owner | done (`environment:staging`) |
-| 5.2 Contributor and the restricted role for the GitHub identity | [Owner] | waiting for the Owner grant |
-| 5.2 AcrPush for the GitHub identity | [Owner], or the deployer once they hold the restricted role (AcrPush is in its list) | after the registry exists |
-| 6 GitHub Environments, variables and secrets | [GitHub admin] | done for `staging` (Graph and SSO included; Teams not yet) |
+| 5.1 Federated credential on the GitHub app registration | [Entra admin] or the registration's owner | done: `github-staging-ids`, the subject with the owner and repository IDs (18 Nov 2026); the plain-name one is unused |
+| 5.2 Contributor for the GitHub identity | [Owner] | done (17 Nov 2026) |
+| 5.2 The restricted role-assignment role for the GitHub identity | the subscription's Owner (the deployer's conditional Owner refuses it) | not granted; the workflow runs with `ASSIGN_ROLES=false` instead (infra/README.md, "Role assignments") |
+| 5.2 AcrPush for the GitHub identity | [Owner] | done (17 Nov 2026) |
+| 6 GitHub Environments, variables and secrets | [GitHub admin] | done for `staging` (SSO included; `GRAPH_CLIENT_ID`, `GRAPH_TENANT_ID` and `GRAPH_SHARED_MAILBOX` still to set before mail is switched on; Teams not yet) |
 | 7 Teams Workflows webhook | the Teams channel owner | not started (optional) |
-| 8 Run the Deploy workflow | [GitHub admin] (the workflow uses the GitHub identity) | after 2 and 5.2 |
+| 8 Run the Deploy workflow | [GitHub admin] (the workflow uses the GitHub identity) | done: run 44269591675 (18 Nov 2026) built, pushed, migrated and rolled out all three apps; `/health` ok on the public app. The first attempt stalled because Azure suspended the Container Apps environment (`ManagedClusterSuspended`, "unknown reasons"); it recovered by itself within about 30 minutes |
 | 9 Checks | the deployer, with the MSP for the end-to-end mail checks | |
 | 10 Budget alert on the group | [Contributor] | done: `budget-ticketing-staging`, 100 a month, to `ALERT_EMAIL` |
 | 10 Delete the group | [Contributor] (on the group) | |
@@ -60,11 +63,12 @@ theirs. The steps below are marked:
 "Allow user to only assign selected roles to selected principals", limited to **AcrPull, AcrPush,
 Key Vault Secrets User, Storage Blob Data Contributor and Storage Blob Delegator** (role IDs
 `7f951dda-4ed3-4680-a7ca-43fe172d538d`, `8311e382-0749-4cb8-b61a-304f252e45ec`,
-`4633458b-17de-406a-b58b-ae56cf9b3dff`, `ba92f5b4-2d11-453d-a403-e96b0029c9fe`,
+`4633458b-17de-408a-b874-0445c86b69e6`, `ba92f5b4-2d11-453d-a403-e96b0029c9fe`,
 `db58b8e5-c6ad-4a2a-8342-4190687cbf4a`; the portal's Conditions tab avoids typing them). The
-GitHub identity gets **Contributor** plus that same restricted role, never Owner, so a
-compromised workflow cannot take the group over. With that, every other Azure step here is
-[Contributor].
+GitHub identity gets **Contributor** and AcrPush, never Owner, so a compromised workflow cannot
+take the group over. It does not hold the restricted role (5.2), so it deploys with
+`ASSIGN_ROLES=false` and the deployer writes the role assignments by hand when an identity or a
+secret is added (infra/README.md, "Role assignments").
 
 **Not covered by Owner on the group** (ask only when needed): purging a deleted Key Vault
 (subscription scope, see step 10), creating `rg-ticketing-production`, quota requests, policy
@@ -134,6 +138,10 @@ read -rsp "Postgres admin password: " POSTGRES_ADMIN_PASSWORD && echo && export 
 # first time only; afterwards paste the saved values from IT Glue
 export SESSION_SECRET_KEY=$(openssl rand -hex 32) INTERNAL_SESSION_SECRET_KEY=$(openssl rand -hex 32) GRAPH_WEBHOOK_CLIENT_STATE=$(openssl rand -hex 16)
 export ALERT_EMAIL='<the monitored address>' WEB_ALLOWED_CIDRS='<CIDRs, comma separated>'
+# Once they exist (step 3), the SSO and Graph secrets too: which Key Vault secrets exist and who
+# may read them follows from them, and the Deploy workflow cannot add those grants later.
+read -rsp "SSO_CLIENT_SECRET: " SSO_CLIENT_SECRET && echo && export SSO_CLIENT_SECRET
+read -rsp "GRAPH_CLIENT_SECRET: " GRAPH_CLIENT_SECRET && echo && export GRAPH_CLIENT_SECRET
 
 # check: expect pw 24+, s:64, i:64, g:32
 echo "$ALERT_EMAIL | $WEB_ALLOWED_CIDRS | pw:${#POSTGRES_ADMIN_PASSWORD} s:${#SESSION_SECRET_KEY} i:${#INTERNAL_SESSION_SECRET_KEY} g:${#GRAPH_WEBHOOK_CLIENT_STATE}"
@@ -158,7 +166,7 @@ name, the storage account name).
 
 | App registration | Purpose | Permissions (application unless noted) | Redirect URI |
 |---|---|---|---|
-| **ticketing-sso-staging** | Agents sign in with Microsoft | delegated `openid`, `profile`, `email` | `https://<staging web address>/auth/callback` |
+| **ticketing-sso-staging** | Agents sign in with Microsoft | delegated Microsoft Graph `User.Read` (what `app/auth.py` asks for), plus `openid`, `profile`, `offline_access`, which the sign-in library adds. **Grant admin consent**: the tenant does not let users consent, so without it sign-in stops at "needs permission ... that only an admin can grant" | `https://<staging web address>/auth/callback` |
 | **ticketing-graph-staging** | The app reads and sends the shared mailbox, checks presence | In Entra: `Presence.Read.All`, `User.Read.All` (admin consent). **Not** `Mail.Read` / `Mail.Send`: those are granted in Exchange for the one mailbox (step 4). `MailboxSettings.Read` only for the later requester time-zone feature | none |
 | **ticketing-deploy-staging** | GitHub Actions deploys with OIDC | none in Entra; Azure roles in step 5 | none |
 
@@ -261,16 +269,30 @@ Described in `infra/README.md`, "GitHub Actions identity". In short:
 
 1. On `ticketing-deploy-staging` add a **federated credential**: issuer
    `https://token.actions.githubusercontent.com`, audience `api://AzureADTokenExchange`,
-   subject `repo:Mahamadahir/ticketingApp:environment:staging` (and one for `production`
-   later). The subject must match the repository and GitHub Environment names exactly,
-   capitals included.
+   subject `repo:Mahamadahir@173347748/ticketingApp@1405286021:environment:staging` (and
+   one for `production` later). GitHub puts the numeric owner and repository IDs in this
+   repository's subject: the first Deploy run (17 Nov 2026) failed with `AADSTS700213` against
+   the plain `repo:Mahamadahir/ticketingApp:environment:staging`. The subject must match
+   exactly, capitals included; a failed run's `azure/login` step prints it ("subject claim").
+
+   ```bash
+   az ad app federated-credential create --id <AZURE_CLIENT_ID> --parameters '{"name":"github-staging","issuer":"https://token.actions.githubusercontent.com","subject":"repo:Mahamadahir@173347748/ticketingApp@1405286021:environment:staging","audiences":["api://AzureADTokenExchange"]}'
+   ```
 2. On `rg-ticketing-staging` grant its service principal
    (`az ad sp show --id <appId> --query id -o tsv` gives the object id):
    - **Contributor**;
-   - **Role Based Access Control Administrator**, with the same condition as the deployer's
-     (AcrPull, AcrPush, Key Vault Secrets User, Storage Blob Data Contributor, Storage Blob
-     Delegator), never Owner;
    - **AcrPush** on the registry created in step 2.
+
+   It does not get the role-assignment role: the deployer's Owner grant excludes it, so the
+   workflow deploys with `ASSIGN_ROLES=false`. To change that later, the subscription's Owner
+   grants it **Role Based Access Control Administrator** limited to the five roles above, and
+   the `ASSIGN_ROLES` variable is set to `true` (infra/README.md, "Role assignments").
+
+   ```bash
+   GH_SP=$(az ad sp show --id <AZURE_CLIENT_ID> --query id -o tsv)
+   az role assignment create --assignee-object-id $GH_SP --assignee-principal-type ServicePrincipal --role Contributor --scope /subscriptions/<subscription id>/resourceGroups/rg-ticketing-staging
+   az role assignment create --assignee-object-id $GH_SP --assignee-principal-type ServicePrincipal --role AcrPush --scope $(az acr list -g rg-ticketing-staging --query '[0].id' -o tsv)
+   ```
 
 ## 6. GitHub Environments
 

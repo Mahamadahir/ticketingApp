@@ -1,3 +1,6 @@
+import re
+from datetime import datetime, timedelta, timezone
+
 from sqlmodel import select
 
 from app.models import MembershipLevel, Message, MessageDirection, Ticket, UserRole
@@ -37,12 +40,13 @@ def test_the_feed_shows_events_emails_replies_and_notes_newest_first(client, db_
     page = feed(client).text
 
     assert ticket.reference in page and "Printer jam" in page
-    assert "emailed the requester: Have you tried turning it off?" in page
-    assert "added an internal note: Probably the fuser" in page
-    assert "message from the requester: It is smoking" in page  # the description logged for them
-    assert "triaged" in page and "created" in page
-    assert page.index("Probably the fuser") < page.index("Have you tried") < page.index("It is smoking")
-    assert "<td>Service Desk</td>" in page
+    assert "Emailed the requester" in page and "Have you tried turning it off?" in page
+    assert "Added an internal note" in page and "Probably the fuser" in page
+    assert "Replied by email" in page and "It is smoking" in page  # the description logged for them: a card of its own
+    assert "Triaged" in page and "Created" in page
+    # The agent's session is the newer card, the requester's description the older one; inside a card the steps run oldest first.
+    assert page.index("Have you tried") < page.index("Probably the fuser") < page.index("It is smoking")
+    assert '<span class="chip t-gray">Service Desk</span>' in page
     assert "agent@example.com" in page or "Agent Ann" in page
 
 
@@ -141,7 +145,7 @@ def test_an_untriaged_ticket_shows_unassigned_as_its_team(client, db_session):
 
     page = feed(client).text
 
-    assert "No team yet" in page and "<td>Unassigned</td>" in page
+    assert "No team yet" in page and '<span class="chip t-gray">Unassigned</span>' in page
 
 
 def test_the_kind_filter(client, db_session):
@@ -177,18 +181,30 @@ def test_long_messages_are_cut_to_an_excerpt(client, db_session):
     assert "y" * 160 + "..." not in feed(client, kind="notes").text  # exactly 160 is not cut
 
 
-def test_the_feed_pages_and_keeps_its_filters(client, db_session):
+def test_show_earlier_loads_the_next_stretch_and_keeps_its_filters(client, db_session, monkeypatch):
+    import app.team_activity as ta
+
+    monkeypatch.setattr(ta, "LOAD_STEPS", 10)
     team, category, _ = desk(client, db_session)
     classified(client, category, "Busy")
     ticket = ticket_named(db_session, "Busy")
-    for i in range(55):
+    for i in range(25):
         client.post(f"/tickets/{ticket.number}/note", data={"body": f"Note {i:02d}"})
+    # One note an hour, so each is a card of its own (beyond the gap), newest first.
+    notes = db_session.exec(select(Message).where(Message.direction == MessageDirection.INTERNAL).order_by(Message.id)).all()
+    for n, message in enumerate(notes):
+        message.created_at = datetime.now(timezone.utc) - timedelta(hours=100 - n)
+        db_session.add(message)
+    db_session.commit()
 
     first = feed(client, kind="notes").text
-    assert "Note 54" in first and "Note 04" not in first
-    second = feed(client, kind="notes", page=2).text
-    assert "Note 04" in second and "Note 54" not in second
-    assert "kind=notes" in first.replace("&amp;", "&")
+    assert "Note 24" in first and "Note 15" in first and "Note 14" not in first
+    link = re.search(r'href="(\?[^"]*before=[^"]*)"[^>]*>Show earlier', first).group(1).replace("&amp;", "&")
+    assert "kind=notes" in link
+    second = client.get("/tickets/activity" + link).text
+    assert "Note 14" in second and "Note 05" in second and "Note 04" not in second
+    assert "Note 15" not in second and "Back to the latest" in second
+    assert feed(client, before="not a moment").status_code == 422
 
 
 def test_describe_reads_events_and_messages():

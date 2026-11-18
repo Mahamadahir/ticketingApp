@@ -48,7 +48,8 @@ has no image yet), and no apps or job are deployed.
 
 1. Create the resource group and give your deploying identity Owner (or
    Contributor plus User Access Administrator) on it. The templates create role
-   assignments, so Contributor alone is not enough.
+   assignments, so Contributor alone is not enough. Leave `ASSIGN_ROLES` unset
+   (see "Role assignments").
 2. Set the secrets in your shell (never in a file in the repo):
 
    ```powershell
@@ -198,7 +199,10 @@ subscription IDs as GitHub Environment variables. No secrets are needed for Azur
 
 One federated credential per environment: issuer
 `https://token.actions.githubusercontent.com`, audience `api://AzureADTokenExchange`,
-subject `repo:<owner>/<repo>:environment:staging` (and `...:environment:production`).
+subject `repo:<owner>@<owner id>/<repo>@<repo id>:environment:staging` (and
+`...:environment:production`). This repository's GitHub tokens carry the numeric owner and
+repository IDs; the plain `repo:<owner>/<repo>:...` form fails with `AADSTS700213`. The
+exact subject is printed by the `azure/login` step ("subject claim") of a failed run.
 The subject must match the GitHub Environment name exactly.
 
 **GitHub setup** (Settings > Environments), for both `staging` and `production`:
@@ -216,6 +220,7 @@ The subject must match the GitHub Environment name exactly.
 | Variable | `GRAPH_SUBSCRIPTION_ENABLED`, `MAIL_CATCH_UP_ENABLED`, `INBOUND_ENABLED` | optional; `true` turns on, on the worker only (phases 3B/3C: the Graph subscription pointing at the public app's `/webhooks/graph/notifications`, the missed-mail sweep, and turning fetched mail into replies and tickets). Off by default |
 | Variable | `WEB_BASE_URL`, `PUBLIC_BASE_URL` | optional; custom domains of the web and public apps. Empty: the generated Azure addresses |
 | Variable | `HEALTH_URL` | optional extra base URL to probe |
+| Variable | `ASSIGN_ROLES` | optional; unset means `false` in the workflow (see "Role assignments"). `true` only once the identity holds the restricted Role Based Access Control Administrator |
 | Secret | `POSTGRES_ADMIN_PASSWORD`, `SESSION_SECRET_KEY`, `INTERNAL_SESSION_SECRET_KEY`, `GRAPH_WEBHOOK_CLIENT_STATE` | required, same values as the platform deploy |
 | Secret | `SSO_CLIENT_SECRET`, `GRAPH_CLIENT_SECRET`, `TEAMS_NEW_TICKET_WEBHOOK_URL`, `TEAMS_BOT_CLIENT_SECRET` | optional; supply on every deploy once set, or the revision loses them |
 
@@ -226,20 +231,35 @@ deploy (README above) must have run first: the workflow expects the registry to 
 Grant it, on each resource group:
 
 - **Contributor**, to create and update the resources.
-- **Role Based Access Control Administrator**, restricted with a condition to
-  assigning only AcrPull, Key Vault Secrets User, Storage Blob Data Contributor
-  and Storage Blob Delegator. The templates write role assignments on every
-  deploy (identities to registry, vault secrets and storage). Contributor
-  cannot do that, so without this the first redeploy from CI fails with an
-  authorization error. The condition stops the pipeline granting itself Owner.
 - **AcrPush** on each registry, to push images.
 
 Contributor also covers what the workflow does besides deploying: listing the
 registry, job and apps, updating the job image, and starting and reading job
 executions.
 
-The alternative is to move all role assignments into a separate template run
-by hand, and keep the pipeline at Contributor.
+### Role assignments
+
+The templates give each app identity AcrPull on the registry, Key Vault Secrets
+User on each of its own secrets, and the two Storage Blob roles. Contributor
+cannot write role assignments, so the workflow deploys with `ASSIGN_ROLES=false`
+(`assignRoles` in the template) and skips them. The person with Owner on the
+group writes them by deploying from their own shell with `ASSIGN_ROLES` unset:
+the platform deploy above, and again **whenever an identity or a secret is
+added**, before the workflow deploys the change. Otherwise the new revision
+cannot read its new secret and fails to start. That covers the first time
+`SSO_CLIENT_SECRET`, `GRAPH_CLIENT_SECRET`, `TEAMS_NEW_TICKET_WEBHOOK_URL` or
+`TEAMS_BOT_CLIENT_SECRET` is set. For that run, set the same secrets and
+switches as the GitHub Environment holds (which secrets exist, and who may read
+them, follows from them) and leave `IMAGE` unset: the apps are not touched, and
+the next workflow deploy wires the new secret in.
+
+To hand this to the pipeline instead, grant its identity **Role Based Access
+Control Administrator** on the group, restricted with the condition "Allow user
+to only assign selected roles to selected principals" to AcrPull, AcrPush, Key
+Vault Secrets User, Storage Blob Data Contributor and Storage Blob Delegator (so
+it cannot grant itself Owner), then set the `ASSIGN_ROLES` variable to `true`
+in the GitHub Environment. An Owner grant made with the portal's default
+condition cannot give out that role; the subscription's Owner has to.
 
 ## Teams and out-of-office (phase 2)
 

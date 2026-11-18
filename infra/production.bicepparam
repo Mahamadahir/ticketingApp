@@ -14,6 +14,10 @@ param deployPublicApp = empty(deployPublicAppRaw) ? false : deployPublicAppRaw =
 var deployWorkerRaw = toLower(trim(readEnvironmentVariable('DEPLOY_WORKER', '')))
 param deployWorker = empty(deployWorkerRaw) ? false : deployWorkerRaw == 'true'
 
+// Role assignments: written unless ASSIGN_ROLES is 'false'. The deploy workflow sets false (its identity cannot
+// write them); a person with Owner deploys with it unset when an identity or a secret is added (infra/README.md).
+param assignRoles = toLower(trim(readEnvironmentVariable('ASSIGN_ROLES', 'true'))) != 'false'
+
 // Office and VPN ranges, comma separated, e.g. WEB_ALLOWED_CIDRS=203.0.113.0/24.
 // Required: the deploy fails without it, so production is never opened by omission.
 param webAllowedCidrs = filter(map(split(readEnvironmentVariable('WEB_ALLOWED_CIDRS'), ','), cidr => trim(cidr)), cidr => !empty(cidr))

@@ -859,15 +859,30 @@ prefilled and can be changed.
 assignment, priority change, SLA pause, reopen and MSP handoff with time and
 actor, for reporting.
 
-**Team activity** (agreed 14 Oct 2026, in addition to the audit log). Agents get an activity
-section, `/tickets/activity`, showing everything happening on the tickets they can open, newest
+**Team activity** (agreed 14 Oct 2026, in addition to the audit log; redesigned 17 Nov 2026, #243). Agents get an activity
+section, `/tickets/activity`, showing what is happening on the tickets they can open, newest
 first: ticket events, emails to and replies from the requester, and internal notes. It uses the
 ticket list's access (`visible_ticket_condition`), so it is the agent's teams plus the shared
 untriaged queue, and a ticket moved to another team leaves the feed of everyone outside that team,
-history included. Filters: team and kind (changes, emails and replies, notes). The audit log
+history included. Filters, which apply to steps (a card shows only the steps that match and drops out
+if none do): team, kind (changes, emails and replies, notes) and person. The audit log
 (Admin) stays the system-wide record of settings, accounts and categories, and the activity log
 the record of sign-ins; this is the work on tickets, for the people doing it. Built (13-14 Oct 2026,
-`app/team_activity.py`). Later: per-person filter, and a link from a ticket to its own history.
+`app/team_activity.py`); the per-person filter is done (#243). A link from a ticket to its own history
+is not wanted: the ticket page already shows all of a ticket's activity.
+The page shows **session cards** (#243), under day headings (Today, Yesterday, a date) in the viewer's
+time zone, ordered by each card's latest step. A session is the steps by the same person on the same
+ticket, each no more than the gap after the previous one (the setting "Group activity steps within",
+Admin > Settings > Other, 30 minutes). When several people act on one ticket within the gap it is one
+card for the ticket with a line per person. Requester replies and system steps (automatic jobs, the MSP,
+automatic emails) are cards of their own and never fold into an agent's session. A card draws each step as a
+sentence on its own line (status chips, the note in an amber quote, the first line of an email). The grouping is one function,
+`group_steps`. "Show earlier" replaces page numbers: a load takes the newest 150 steps older than a
+cursor and then reaches further back until no session could continue past its far end, so a card is never
+split across two loads (it may load slightly more than 150). A "Team activity" item in the console sidebar
+opens a slide-over drawer of the latest 15 cards, with Whole team and My activity tabs, All, Changes, Emails and
+Notes chips and a link to the full page; it loads when opened and does not refresh itself; there is no "new since
+you last looked" mark.
 
 **Search** across subject, messages, requester and reference using Postgres
 full-text search.

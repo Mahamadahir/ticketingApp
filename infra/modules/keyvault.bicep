@@ -10,6 +10,8 @@ param purgeProtection bool
 
 @description('Which identity may read which secrets: [{ principalId, secrets: [name, ...] }]. Every secret listed must exist.')
 param secretReaders array
+@description('False skips the role assignments (the deploy workflow, whose identity cannot write them). True writes them.')
+param assignRoles bool = true
 
 @secure()
 param databaseUrl string
@@ -33,7 +35,7 @@ param teamsNewTicketWebhookUrl string = ''
 @description('Optional. The Teams bot\'s client secret, only when the bot is an Entra app registration and not a managed identity. The public app and the worker identities are its readers.')
 param teamsBotClientSecret string = ''
 
-var secretsUserRoleId = '4633458b-17de-406a-b58b-ae56cf9b3dff'
+var secretsUserRoleId = '4633458b-17de-408a-b874-0445c86b69e6'
 
 // One entry per (identity, secret) pair.
 var grants = flatten(map(secretReaders, reader => map(reader.secrets, secretName => {
@@ -136,7 +138,7 @@ resource readTargets 'Microsoft.KeyVault/vaults/secrets@2023-07-01' existing = [
 ]
 
 resource readers 'Microsoft.Authorization/roleAssignments@2022-04-01' = [
-  for (reader, i) in grants: {
+  for (reader, i) in grants: if (assignRoles) {
     scope: readTargets[i]
     name: guid(readTargets[i].id, reader.principalId, secretsUserRoleId)
     properties: {

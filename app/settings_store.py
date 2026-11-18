@@ -123,6 +123,7 @@ APPROVAL_ESCALATE_AFTER_DAYS = "approval_escalate_after_days"
 AUTO_CLOSE_ENABLED = "auto_close_enabled"
 AUTO_CLOSE_AFTER_DAYS = "auto_close_after_days"
 CHASE_ENABLED = "chase_enabled"
+ACTIVITY_GROUP_MINUTES = "activity_group_minutes"
 CHASE_AFTER_DAYS = "chase_after_days"
 CHASE_RESOLVE_AFTER_DAYS = "chase_resolve_after_days"
 BULK_RESOLVE_MAX = "bulk_resolve_max_tickets"
@@ -433,6 +434,18 @@ REGISTRY: dict[str, SettingDef] = {
             "than the slowest job takes. Placeholder until the real jobs exist."
         ),
         default="10",
+    ),
+    ACTIVITY_GROUP_MINUTES: SettingDef(
+        key=ACTIVITY_GROUP_MINUTES,
+        group=GROUP_OTHER,
+        label="Group activity steps within (minutes)",
+        kind="minutes",
+        description=(
+            "Team activity folds an agent's steps on one ticket into one card while each is no more than this long after "
+            "the one before. When several agents work one ticket within this time they share one card. Only the grouping "
+            "changes, never what is recorded."
+        ),
+        default="30",
     ),
     JOB_RETRY_MINUTES: SettingDef(
         key=JOB_RETRY_MINUTES,

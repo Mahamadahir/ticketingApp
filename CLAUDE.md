@@ -73,8 +73,11 @@ starting a phase, and `README.md` for how to run it.
   (backdating relies on it); the backdating tests use that real path.
 - **Staging is partly deployed (Nov 2026); nothing else is.** In `rg-ticketing-staging` the
   owner has deployed the network, Postgres, the Container Apps environment, monitoring,
-  identities and alerts; the registry, storage and Key Vault wait for an Owner role grant, and
-  no app has been deployed or migrated there yet. Entra app registrations, Graph consent, the
+  identities and alerts; the registry, storage and Key Vault come with the next platform deploy
+  (the owner now has Owner on the group, conditional: no privileged roles), and no app has been
+  deployed or migrated there yet. The Deploy workflow's identity has Contributor only, so it
+  deploys with `ASSIGN_ROLES=false` and skips role assignments; the owner writes them by hand
+  when an identity or a secret is added (`infra/README.md`, "Role assignments"). Entra app registrations, Graph consent, the
   staging shared mailbox (`itsupport-staging@vardags.com`, mail scoped to it) and the GitHub
   `staging` environment are done; progress is tracked in `docs/azure-setup.md`. Development and
   tests stay local with `docker compose` and `pytest`.
