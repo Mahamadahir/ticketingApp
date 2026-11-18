@@ -43,17 +43,17 @@ below are marked:
 | 1.4 The deployer's own rights on the group | [Owner] | done: Owner on the group (17 Nov 2026), with the condition that excludes the privileged roles |
 | 1.5 Check quota | [Owner] or anyone with Reader on the subscription | not needed: the first deploy hit no quota or SKU error |
 | 2 `what-if` | [Contributor] | done: 20 to create, no template errors |
-| 2 Platform deploy | [Owner] (the deployer, from their own shell, `ASSIGN_ROLES` unset) | nearly done. `platform-1`: network, Postgres, Container Apps environment, monitoring, identities, alerts. `platform-2` (17 Nov 2026): registry and storage with their role assignments; Key Vault failed (`RoleDefinitionDoesNotExist`: the template had a wrong Key Vault Secrets User ID, now fixed). Next: `platform-3` from the fixed template |
+| 2 Platform deploy | [Owner] (the deployer, from their own shell, `ASSIGN_ROLES` unset) | done. `platform-1`: network, Postgres, Container Apps environment, monitoring, identities, alerts. `platform-2` (17 Nov 2026): registry and storage; Key Vault failed on a wrong Key Vault Secrets User role ID (fixed). `platform-3` (17 Nov 2026): everything |
 | 3 App registrations and secrets | [Entra admin] (or Application Developer for creating them) | done: `ticketing-sso-staging`, `ticketing-graph-staging`, `ticketing-deploy-staging`; secrets in GitHub and IT Glue, expire Nov 2027 |
 | 3 Admin consent for the Graph permissions | [Global admin] or Privileged Role Administrator | done (`Presence.Read.All`, `User.Read.All`; Mail is granted in Exchange, step 4) |
 | 4 Shared mailbox and scoping | [Exchange admin] | done: `itsupport-staging@vardags.com`, Mail.Read and Mail.Send scoped to it |
-| 5.1 Federated credential on the GitHub app registration | [Entra admin] or the registration's owner | done (`environment:staging`) |
+| 5.1 Federated credential on the GitHub app registration | [Entra admin] or the registration's owner | done: `github-staging-ids`, the subject with the owner and repository IDs (18 Nov 2026); the plain-name one is unused |
 | 5.2 Contributor for the GitHub identity | [Owner] | done (17 Nov 2026) |
 | 5.2 The restricted role-assignment role for the GitHub identity | the subscription's Owner (the deployer's conditional Owner refuses it) | not granted; the workflow runs with `ASSIGN_ROLES=false` instead (infra/README.md, "Role assignments") |
-| 5.2 AcrPush for the GitHub identity | [Owner] | after the registry exists |
-| 6 GitHub Environments, variables and secrets | [GitHub admin] | done for `staging` (Graph and SSO included; Teams not yet) |
+| 5.2 AcrPush for the GitHub identity | [Owner] | done (17 Nov 2026) |
+| 6 GitHub Environments, variables and secrets | [GitHub admin] | done for `staging` (SSO included; `GRAPH_CLIENT_ID`, `GRAPH_TENANT_ID` and `GRAPH_SHARED_MAILBOX` still to set before mail is switched on; Teams not yet) |
 | 7 Teams Workflows webhook | the Teams channel owner | not started (optional) |
-| 8 Run the Deploy workflow | [GitHub admin] (the workflow uses the GitHub identity) | after 2 and 5.2 |
+| 8 Run the Deploy workflow | [GitHub admin] (the workflow uses the GitHub identity) | done: run 44269591675 (18 Nov 2026) built, pushed, migrated and rolled out all three apps; `/health` ok on the public app. The first attempt stalled because Azure suspended the Container Apps environment (`ManagedClusterSuspended`, "unknown reasons"); it recovered by itself within about 30 minutes |
 | 9 Checks | the deployer, with the MSP for the end-to-end mail checks | |
 | 10 Budget alert on the group | [Contributor] | done: `budget-ticketing-staging`, 100 a month, to `ALERT_EMAIL` |
 | 10 Delete the group | [Contributor] (on the group) | |
