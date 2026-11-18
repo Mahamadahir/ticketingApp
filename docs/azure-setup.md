@@ -166,7 +166,7 @@ name, the storage account name).
 
 | App registration | Purpose | Permissions (application unless noted) | Redirect URI |
 |---|---|---|---|
-| **ticketing-sso-staging** | Agents sign in with Microsoft | delegated `openid`, `profile`, `email` | `https://<staging web address>/auth/callback` |
+| **ticketing-sso-staging** | Agents sign in with Microsoft | delegated Microsoft Graph `User.Read` (what `app/auth.py` asks for), plus `openid`, `profile`, `offline_access`, which the sign-in library adds. **Grant admin consent**: the tenant does not let users consent, so without it sign-in stops at "needs permission ... that only an admin can grant" | `https://<staging web address>/auth/callback` |
 | **ticketing-graph-staging** | The app reads and sends the shared mailbox, checks presence | In Entra: `Presence.Read.All`, `User.Read.All` (admin consent). **Not** `Mail.Read` / `Mail.Send`: those are granted in Exchange for the one mailbox (step 4). `MailboxSettings.Read` only for the later requester time-zone feature | none |
 | **ticketing-deploy-staging** | GitHub Actions deploys with OIDC | none in Entra; Azure roles in step 5 | none |
 
