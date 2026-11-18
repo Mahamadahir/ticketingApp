@@ -1,6 +1,7 @@
 """#246: who else is on a ticket (the strip and its check-in, app/ticket_presence.py) and the warning before a send that another agent
 got in ahead of (the hidden `seen` field, app/messages.posts_since)."""
 
+import re
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -9,7 +10,7 @@ from sqlmodel import select
 
 from app import mail, reply_files, scheduled_jobs, ticket_presence
 from app.main import app
-from app.models import Attachment, Message, MessageDirection, TicketPresence, User, UserRole, UserSession
+from app.models import Attachment, Message, MessageDirection, TeamMembership, TicketPresence, TicketStatus, User, UserRole, UserSession
 from app.settings_store import (
     GROUPS,
     PRESENCE_CHECK_IN_SECONDS,
@@ -18,7 +19,7 @@ from app.settings_store import (
     set_setting,
 )
 from app.storage import LocalStorage, get_storage
-from tests.conftest import login_as, set_role
+from tests.conftest import create_team, login_as, set_role
 from tests.test_approval_groups_migration import rows, scratch  # noqa: F401  (scratch is a fixture)
 from tests.test_email_preview import ticket_for_email
 
@@ -620,3 +621,118 @@ def test_a_held_back_note_without_files_leaves_an_email_preview_draft_alone(clie
     assert "Not sent yet" in held.text
     db_session.expire_all()
     assert len(db_session.exec(select(ReplyHeldFile)).all()) == 1  # the email preview's file is still held
+
+
+# ---- The Resolve and Close warning (#246, the addition) ---------------------------------------------------
+
+
+def act(client, ticket, verb, **extra):
+    notes = "resolution_notes" if verb == "resolve" else "closing_notes"
+    return client.post(f"/tickets/{ticket.number}/{verb}", data={notes: "Done it", **extra})
+
+
+def status_of(db_session, ticket):
+    db_session.expire_all()
+    return db_session.get(type(ticket), ticket.id).status
+
+
+@pytest.mark.parametrize("verb,done", [("resolve", TicketStatus.RESOLVED), ("close", TicketStatus.CLOSED)])
+def test_resolve_and_close_are_held_back_while_another_agent_is_writing(client, second, db_session, verb, done):
+    ticket = ticket_for_email(client, db_session)
+    colleague(second, db_session, ticket)
+    check_in(second, ticket, "email")
+    before = status_of(db_session, ticket)
+    count = len(messages_of(db_session, ticket))
+
+    response = act(client, ticket, verb)
+
+    assert response.status_code == 200
+    page = response.text
+    assert "Bob Rowe is writing an email to the requester." in page
+    assert f"{verb.capitalize()} anyway" in page and ">Cancel</a>" in page and "Done it" in page
+    assert status_of(db_session, ticket) == before and len(messages_of(db_session, ticket)) == count  # nothing happened
+
+    # Resolve anyway: the same fields, plus confirm, and it completes.
+    fields = dict(re.findall(r'name="(\w+)" value="([^"]*)"', page[page.index('id="action-warning"'):]))
+    assert fields["confirm"] == "1" and fields[f"{'resolution' if verb == 'resolve' else 'closing'}_notes"] == "Done it"
+    assert act(client, ticket, verb, confirm="1").status_code == 200
+    assert status_of(db_session, ticket) == done
+
+
+def test_the_anyway_form_carries_every_field_through_unchanged(client, second, db_session):
+    ticket = ticket_for_email(client, db_session)
+    colleague(second, db_session, ticket)
+    check_in(second, ticket, "note")
+
+    page = client.post(
+        f"/tickets/{ticket.number}/resolve",
+        data={"resolution_notes": "Fixed", "cc_form": "1", "cc": ["a@example.com", "b@example.com"], "tell_msp": "1", "msp_offered": "1"},
+    ).text
+
+    assert "Bob Rowe is writing an internal note." in page
+    held = page[page.index('id="action-warning"'):]
+    for name, value in (("resolution_notes", "Fixed"), ("cc_form", "1"), ("cc", "a@example.com"), ("cc", "b@example.com"),
+                        ("tell_msp", "1"), ("msp_offered", "1"), ("confirm", "1")):
+        assert f'name="{name}" value="{value}"' in held
+
+
+def test_an_open_panel_counts_as_doing_something(client, second, db_session):
+    ticket = ticket_for_email(client, db_session)
+    colleague(second, db_session, ticket)
+    check_in(second, ticket, "action", "re-assigning it")
+
+    assert "Bob Rowe is re-assigning it." in act(client, ticket, "resolve").text
+
+
+@pytest.mark.parametrize("verb", ["resolve", "close"])
+def test_no_warning_when_the_other_agent_is_only_viewing(client, second, db_session, verb):
+    ticket = ticket_for_email(client, db_session)
+    colleague(second, db_session, ticket)
+    check_in(second, ticket, "viewing")
+
+    assert "action-warning" not in act(client, ticket, verb).text
+    assert status_of(db_session, ticket) in (TicketStatus.RESOLVED, TicketStatus.CLOSED)
+
+
+@pytest.mark.parametrize("verb", ["resolve", "close"])
+def test_no_warning_when_their_presence_has_expired(client, second, db_session, verb):
+    ticket = ticket_for_email(client, db_session)
+    colleague(second, db_session, ticket)
+    check_in(second, ticket, "email")
+    age_every_row(db_session, 600)
+
+    assert "action-warning" not in act(client, ticket, verb).text
+    assert status_of(db_session, ticket) in (TicketStatus.RESOLVED, TicketStatus.CLOSED)
+
+
+@pytest.mark.parametrize("verb", ["resolve", "close"])
+def test_never_warned_about_yourself(client, db_session, verb):
+    ticket = ticket_for_email(client, db_session)
+    check_in(client, ticket, "email")
+
+    assert "action-warning" not in act(client, ticket, verb).text
+    assert status_of(db_session, ticket) in (TicketStatus.RESOLVED, TicketStatus.CLOSED)
+
+
+def test_someone_who_can_no_longer_open_the_ticket_does_not_hold_it_back(client, second, db_session):
+    ticket = ticket_for_email(client, db_session)
+    other_team = create_team(db_session, "Elsewhere")
+    colleague(second, db_session, ticket)
+    check_in(second, ticket, "email")
+    bob = db_session.exec(select(User).where(User.email == "bob@example.com")).one()
+    for membership in db_session.exec(select(TeamMembership).where(TeamMembership.user_id == bob.id)).all():
+        db_session.delete(membership)
+    db_session.commit()
+    set_role(db_session, bob.id, UserRole.AGENT, other_team.id)
+
+    assert "action-warning" not in act(client, ticket, "resolve").text
+
+
+def test_the_resolve_preview_is_not_held_back(client, second, db_session):
+    ticket = ticket_for_email(client, db_session)
+    colleague(second, db_session, ticket)
+    check_in(second, ticket, "email")
+
+    response = client.post(f"/tickets/{ticket.number}/resolve/preview", data={"resolution_notes": "Done it"})
+
+    assert response.status_code == 200 and "Check before resolving" in response.text

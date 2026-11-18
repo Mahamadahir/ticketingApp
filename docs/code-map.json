@@ -6525,6 +6525,7 @@
       ],
       "file": "app/ticket_presence.py",
       "functions": [
+        "busy_others",
         "check_in",
         "check_in_seconds",
         "clean_action",

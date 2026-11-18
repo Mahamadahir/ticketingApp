@@ -1578,7 +1578,7 @@ Ticket presence (issue #246): who else has this ticket open, and what they are d
 File: `app/ticket_presence.py`
 
 - Classes: `Here`
-- Functions: `check_in`, `check_in_seconds`, `clean_action`, `digest`, `gone_after_seconds`, `leave`, `others_here`, `purge_expired`
+- Functions: `busy_others`, `check_in`, `check_in_seconds`, `clean_action`, `digest`, `gone_after_seconds`, `leave`, `others_here`, `purge_expired`
 - Imports: `app.models`, `app.settings_store`, `app.visibility`
 - Imported by: `app.routers.tickets`, `app.scheduled_jobs`
 - Tests: `test_ticket_presence.py`

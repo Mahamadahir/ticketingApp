@@ -819,6 +819,27 @@ def _send_warning(
     }
 
 
+def _busy_warning(
+    session: Session, ticket: Ticket, user: User, verb: str, confirm: Optional[str], notes: str,
+    fields: list[tuple[str, Optional[str]]],
+) -> Optional[dict]:
+    """The hold on a Resolve or Close while another agent is doing something on the ticket (not just viewing it), read from live
+    presence when the form is posted (#246). None when `confirm` says to go ahead, or nobody else is busy. `fields` are the hidden
+    values the "anyway" form resubmits unchanged. Advisory, like the send warning. Bulk resolve is not checked."""
+    if confirm:
+        return None
+    busy = ticket_presence.busy_others(session, ticket, user)
+    if not busy:
+        return None
+    return {
+        "verb": verb,
+        "who": [f"{item.user.display_name} {item.sentence}" for item in busy],
+        "notes": notes,
+        "action": f"/tickets/{ticket.number}/{verb.lower()}",
+        "fields": [(name, value) for name, value in fields if value not in (None, "")] + [("confirm", "1")],
+    }
+
+
 @router.post("/{number}/presence", response_class=HTMLResponse)
 def presence_check_in(
     number: int,
@@ -1198,6 +1219,7 @@ def resolve(
     tell_msp: Optional[str] = Form(None),
     msp_offered: Optional[str] = Form(None),
     take_back_linked: Optional[str] = Form(None),
+    confirm: Optional[str] = Form(None, max_length=5),
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
@@ -1205,6 +1227,13 @@ def resolve(
     agent left ticked, through app/resolution.py. The two MSP tick boxes of the preview (tell the MSP it is no
     longer needed; take back the linked tickets that went With MSP with this one) are app/msp_actions.py's."""
     ticket = _get_ticket(session, number, user)
+    hold = _busy_warning(
+        session, ticket, user, "Resolve", confirm, resolution_notes.strip(),
+        [("resolution_notes", resolution_notes), ("cc_form", cc_form), *[("cc", address) for address in cc], ("tell_msp", tell_msp),
+         ("msp_offered", msp_offered), ("take_back_linked", take_back_linked)],
+    )
+    if hold:
+        return _render_ticket_detail(request, ticket, user, session, hold=hold)
     try:
         resolve_ticket(
             session, ticket, user, resolution_notes, cc_emails=cc if cc_form else None,
@@ -1260,12 +1289,20 @@ def close(
     tell_msp: Optional[str] = Form(None),
     msp_offered: Optional[str] = Form(None),
     take_back_linked: Optional[str] = Form(None),
+    confirm: Optional[str] = Form(None, max_length=5),
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
     """Close a ticket that was not resolved, with notes (required). Emails the requester, copying the
     followers the agent left ticked, through app/closing.py. The MSP tick boxes are as for resolving."""
     ticket = _get_ticket(session, number, user)
+    hold = _busy_warning(
+        session, ticket, user, "Close", confirm, closing_notes.strip(),
+        [("closing_notes", closing_notes), ("cc_form", cc_form), *[("cc", address) for address in cc], ("tell_msp", tell_msp),
+         ("msp_offered", msp_offered), ("take_back_linked", take_back_linked)],
+    )
+    if hold:
+        return _render_ticket_detail(request, ticket, user, session, hold=hold)
     try:
         close_ticket(
             session, ticket, user, closing_notes, cc_emails=cc if cc_form else None,
@@ -1757,7 +1794,7 @@ def _may_close(session: Session, ticket: Ticket) -> bool:
 
 
 def _render_ticket_detail(
-    request: Request, ticket: Ticket, user: User, session: Session, compose: Optional[dict] = None
+    request: Request, ticket: Ticket, user: User, session: Session, compose: Optional[dict] = None, hold: Optional[dict] = None
 ) -> HTMLResponse:
     """`compose` is set when a send was held back (`_send_warning`): the composer then opens on that mode with the text kept."""
     ticket_approval = current_approval(session, ticket)
@@ -1943,5 +1980,6 @@ def _render_ticket_detail(
             # The newest message this page shows; the send compares it with the ticket (_later_posts).
             "latest_post_id": latest_message_id(session, ticket),
             "compose": compose,
+            "hold": hold,
         },
     )

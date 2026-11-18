@@ -32,6 +32,23 @@
 </div>
 <script src="{{ static_url('ticket-presence.js') }}"></script>
 
+{% if hold %}
+{# Resolve or Close held back: another agent is doing something on this ticket right now (#246). Nothing was recorded or sent. #}
+<div class="tp-warn" role="alert" id="action-warning">
+  <p><b>Not {{ "resolved" if hold.verb == "Resolve" else "closed" }} yet.</b></p>
+  <ul class="tp-warn-list">{% for line in hold.who %}<li>{{ line }}.</li>{% endfor %}</ul>
+  <p>Your {{ "resolution" if hold.verb == "Resolve" else "closing" }} notes, so they are not lost:</p>
+  <pre class="message-body">{{ hold.notes }}</pre>
+  <div class="tp-warn-actions">
+    <form method="post" action="{{ hold.action }}" hx-post="{{ hold.action }}" hx-target="main" hx-swap="innerHTML" hx-disabled-elt="find button[type=submit]">
+      {% for name, value in hold.fields %}<input type="hidden" name="{{ name }}" value="{{ value }}" />{% endfor %}
+      <button type="submit" class="btn btn-primary">{{ hold.verb }} anyway</button>
+    </form>
+    <a class="btn" href="/tickets/{{ ticket.number }}" hx-on:click="event.preventDefault(); document.getElementById('action-warning').remove()">Cancel</a>
+  </div>
+</div>
+{% endif %}
+
 <header class="tp-head">
   <div class="tp-title">
     <div class="tp-meta">

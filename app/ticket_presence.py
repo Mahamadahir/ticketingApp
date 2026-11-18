@@ -110,6 +110,12 @@ def others_here(session: Session, ticket: Ticket, viewer: User, now: Optional[da
     return sorted(found, key=lambda item: (item.user.display_name.lower(), item.user.id))
 
 
+def busy_others(session: Session, ticket: Ticket, viewer: User, now: Optional[datetime] = None) -> list[Here]:
+    """The other agents here now who are doing something on the ticket rather than only looking at it (writing an email or a
+    note, or a panel open). What the Resolve and Close warning is about (#246); the same rules as `others_here`."""
+    return [item for item in others_here(session, ticket, viewer, now) if item.activity != VIEWING]
+
+
 def digest(others: list[Here]) -> str:
     """A short fingerprint of what the strip says, so a poll that would draw the same strip can be answered with nothing and
     the live region is not touched (the screen reader is not told again)."""
