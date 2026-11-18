@@ -842,7 +842,8 @@
       "tests": [
         "tests/test_break_glass.py",
         "tests/test_entra_check.py",
-        "tests/test_outage_mode.py"
+        "tests/test_outage_mode.py",
+        "tests/test_signin_pages.py"
       ]
     },
     {
@@ -1091,6 +1092,8 @@
         "tests/test_resolution.py",
         "tests/test_security.py",
         "tests/test_sessions.py",
+        "tests/test_signin_pages.py",
+        "tests/test_sso_cancel.py",
         "tests/test_teams.py",
         "tests/test_teams_approvals.py",
         "tests/test_teams_bot.py",
@@ -2586,9 +2589,11 @@
         "tests/test_self_approval.py",
         "tests/test_sessions.py",
         "tests/test_shell.py",
+        "tests/test_signin_pages.py",
         "tests/test_sla.py",
         "tests/test_split_family.py",
         "tests/test_splitting.py",
+        "tests/test_sso_cancel.py",
         "tests/test_status_follows_conversation.py",
         "tests/test_subject_access.py",
         "tests/test_subrequests.py",
@@ -3051,7 +3056,8 @@
       "tests": [
         "tests/test_admin_frame.py",
         "tests/test_admin_system_log_pages.py",
-        "tests/test_outage_mode.py"
+        "tests/test_outage_mode.py",
+        "tests/test_signin_pages.py"
       ]
     },
     {
@@ -4431,6 +4437,7 @@
       "tests": [
         "tests/test_activity_log.py",
         "tests/test_sessions.py",
+        "tests/test_sso_cancel.py",
         "tests/test_visibility.py"
       ]
     },
@@ -4702,7 +4709,8 @@
       "summary": "My settings > Link another account (phase 6E, #165): a signed-in person adds a second identity of their own.",
       "tables": [],
       "tests": [
-        "tests/test_linked_identities.py"
+        "tests/test_linked_identities.py",
+        "tests/test_sso_cancel.py"
       ]
     },
     {
@@ -7381,9 +7389,11 @@
     "tests/test_self_approval.py",
     "tests/test_sessions.py",
     "tests/test_shell.py",
+    "tests/test_signin_pages.py",
     "tests/test_sla.py",
     "tests/test_split_family.py",
     "tests/test_splitting.py",
+    "tests/test_sso_cancel.py",
     "tests/test_static.py",
     "tests/test_status_follows_conversation.py",
     "tests/test_storage.py",

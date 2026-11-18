@@ -1,55 +1,76 @@
 {% extends "base.html" %}
 {% block title %}Sign in{% endblock %}
+{# The local account form, written once: open on its own when Microsoft is not configured, else inside a disclosure. #}
+{% macro local_form(primary) %}
+<form class="signin-form" method="post" action="/auth/local-login">
+  <p class="signin-help">For accounts without a Microsoft identity, created by an admin.</p>
+  <label class="field">
+    Email
+    <input type="email" name="email" required />
+  </label>
+  <label class="field">
+    Password
+    <input type="password" name="password" required />
+  </label>
+  <button class="btn btn-lg btn-block{% if primary %} btn-primary{% endif %}" type="submit">Sign in</button>
+</form>
+{% endmacro %}
 {% block content %}
-<div class="login-page">
-    <h1>IT Support Ticketing</h1>
+{% set outage = outage_status() %}
+<div class="signin">
+  <section class="card signin-card" aria-labelledby="signin-title">
+    <h1 id="signin-title" class="signin-title">Sign in</h1>
+    <p class="signin-sub">IT Support Ticketing</p>
 
     {% if error %}
-    <p class="error">{{ error }}</p>
+    <p class="signin-notice signin-error" role="alert"><strong>Could not sign in.</strong> {{ error }}</p>
+    {% endif %}
+
+    {% if outage %}
+    <section class="signin-outage" aria-labelledby="signin-outage-title">
+      <p class="signin-notice signin-warn"><span class="chip t-amber">Outage mode</span> Outage mode is on, so Microsoft sign-in may not work.</p>
+      <h2 id="signin-outage-title" class="signin-h2">Emergency sign-in (agents)</h2>
+      <form class="signin-form" method="post" action="/auth/emergency-login">
+        <p class="signin-help">Use your user name (your Microsoft sign-in address) and the emergency password you set in advance.</p>
+        <label class="field">
+          User name (UPN)
+          <input type="text" name="upn" autocomplete="username" required />
+        </label>
+        <label class="field">
+          Emergency password
+          <input type="password" name="password" autocomplete="current-password" required />
+        </label>
+        <button class="btn btn-lg btn-block btn-primary" type="submit">Sign in with emergency password</button>
+      </form>
+    </section>
     {% endif %}
 
     {% if sso_configured %}
-    <a class="button" href="/auth/sso/start">Sign in with Microsoft</a>
+    <a class="btn btn-lg btn-block signin-ms{% if not outage %} btn-primary{% endif %}" href="/auth/sso/start">
+      {# Microsoft's four-square mark in its own colours: the one documented exception to "tokens only" (docs/ui.md). #}
+      <svg class="signin-logo" width="18" height="18" viewBox="0 0 21 21" aria-hidden="true" focusable="false">
+        <rect x="1" y="1" width="9" height="9" fill="#f25022" /><rect x="11" y="1" width="9" height="9" fill="#7fba00" />
+        <rect x="1" y="11" width="9" height="9" fill="#00a4ef" /><rect x="11" y="11" width="9" height="9" fill="#ffb900" />
+      </svg>
+      Sign in with Microsoft
+    </a>
+    <details class="signin-more">
+      <summary>Other ways to sign in</summary>
+      <div class="signin-more-body">
+        <h2 class="signin-h2">Local account</h2>
+        {{ local_form(false) }}
+        <p class="signin-small"><a href="/auth/break-glass">Emergency (break-glass) sign-in</a></p>
+      </div>
+    </details>
+    {% else %}
+    <h2 class="signin-h2">Local account</h2>
+    {{ local_form(not outage) }}
+    <p class="signin-small"><a href="/auth/break-glass">Emergency (break-glass) sign-in</a></p>
     {% endif %}
+
     {% if dev_login_enabled %}
-    <p class="note">
-      Development environment.
-      <a href="/auth/dev-login">Use dev sign-in</a>.
-    </p>
+    <p class="signin-small signin-dev"><span class="chip t-gray">Development</span> This is a development environment. <a href="/auth/dev-login">Use dev sign-in</a>.</p>
     {% endif %}
-
-    {% if outage_status() %}
-    <hr />
-    <h2>Emergency sign-in (agents)</h2>
-    <p class="note">Outage mode is on. Sign in with your user name (your Microsoft sign-in address) and the emergency password you set in advance.</p>
-    <form method="post" action="/auth/emergency-login">
-      <label>
-        User name (UPN)
-        <input type="text" name="upn" autocomplete="username" required />
-      </label>
-      <label>
-        Emergency password
-        <input type="password" name="password" autocomplete="current-password" required />
-      </label>
-      <button type="submit">Sign in with emergency password</button>
-    </form>
-    {% endif %}
-
-    <hr />
-
-    <h2>Local account</h2>
-    <p class="note">For accounts without a Microsoft tenant identity, created by an admin.</p>
-    <form method="post" action="/auth/local-login">
-      <label>
-        Email
-        <input type="email" name="email" required />
-      </label>
-      <label>
-        Password
-        <input type="password" name="password" required />
-      </label>
-      <button type="submit">Sign in</button>
-    </form>
-    <p class="note"><a href="/auth/break-glass">Emergency (break-glass) sign-in</a></p>
+  </section>
 </div>
 {% endblock %}
