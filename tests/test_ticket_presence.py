@@ -736,3 +736,42 @@ def test_the_resolve_preview_is_not_held_back(client, second, db_session):
     response = client.post(f"/tickets/{ticket.number}/resolve/preview", data={"resolution_notes": "Done it"})
 
     assert response.status_code == 200 and "Check before resolving" in response.text
+
+
+def test_files_chosen_on_a_second_held_round_join_the_held_ones(client, second, db_session, storage):
+    from app.models import ReplyHeldFile
+
+    ticket = ticket_for_email(client, db_session)
+    colleague(second, db_session, ticket)
+    seen = seen_on(client, ticket)
+    second.post(f"/tickets/{ticket.number}/note", data={"body": "Bob's note"})
+    first = client.post(
+        f"/tickets/{ticket.number}/note", data={"body": "Ann", "seen": seen},
+        files=[("files", ("one.pdf", b"%PDF-1.7\n" + b"x" * 200, "application/pdf"))],
+    )
+    draft = first.text.split('name="draft" value="')[1].split('"')[0]
+
+    again = client.post(
+        f"/tickets/{ticket.number}/note", data={"body": "Ann", "seen": seen, "draft": draft},
+        files=[("files", ("two.pdf", b"%PDF-1.7\n" + b"y" * 200, "application/pdf"))],
+    )
+
+    assert "one.pdf" in again.text and "two.pdf" in again.text
+    new_draft = again.text.split('name="draft" value="')[1].split('"')[0]
+    db_session.expire_all()
+    assert sorted(row.filename for row in db_session.exec(select(ReplyHeldFile)).all()) == ["one.pdf", "two.pdf"]
+    client.post(f"/tickets/{ticket.number}/note", data={"body": "Ann", "seen": seen, "confirm": "1", "draft": new_draft})
+    db_session.expire_all()
+    assert sorted(a.filename for a in db_session.exec(select(Attachment)).all()) == ["one.pdf", "two.pdf"]
+
+
+def test_cancel_also_clears_the_draft_from_the_note_form(client, second, db_session, storage):
+    ticket = ticket_for_email(client, db_session)
+    colleague(second, db_session, ticket)
+    seen = seen_on(client, ticket)
+    second.post(f"/tickets/{ticket.number}/note", data={"body": "Bob's note"})
+    held = client.post(
+        f"/tickets/{ticket.number}/note", data={"body": "Ann", "seen": seen},
+        files=[("files", ("plan.pdf", b"%PDF-1.7\n" + b"x" * 200, "application/pdf"))],
+    )
+    assert ".tp-compose-note input[name=draft]" in held.text

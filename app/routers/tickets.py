@@ -1077,7 +1077,16 @@ def add_ticket_note(
     later = _later_posts(session, ticket, user, seen, confirm)
     if later:
         # Only files are held (hold() also drops this agent's other unconfirmed draft, an email preview's files).
-        token = draft if held_rows else (reply_files.hold(session, storage, ticket, user, new_files) if new_files else None)
+        if held_rows and not new_files:
+            token = draft
+        elif held_rows or new_files:  # files chosen on a second round join the ones already held, under one new token
+            try:
+                again = reply_files.take(storage, held_rows)
+            except reply_files.FilesRefused as error:
+                raise HTTPException(status_code=400, detail=str(error))
+            token = reply_files.hold(session, storage, ticket, user, again + new_files)
+        else:
+            token = None
         session.commit()  # the held files outlive this request; nothing else is recorded
         names = [row.filename for row in held_rows] + [item.filename for item in new_files]
         fields = [("body", body), ("next_status", next_status), ("due_on", due_on), ("due_reason", due_reason), ("draft", token)]

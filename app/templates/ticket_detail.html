@@ -489,7 +489,7 @@
       </form>
       {# Cancel: with scripts it drops the warning (and the held files); without, it is a link to the thread, and the text is already in the box. #}
       <a class="btn" href="#thread"
-         {% if compose.draft %}hx-post="/tickets/{{ ticket.number }}/email/discard" hx-vals='{"draft": "{{ compose.draft }}"}' hx-target="#send-warning" hx-swap="delete"{% else %}hx-on:click="document.getElementById('send-warning').remove()"{% endif %}>Cancel</a>
+         {% if compose.draft %}hx-post="/tickets/{{ ticket.number }}/email/discard" hx-vals='{"draft": "{{ compose.draft }}"}' hx-target="#send-warning" hx-swap="delete" hx-on:click="document.querySelectorAll('.tp-compose-note input[name=draft]').forEach(function (e) { e.remove(); })"{% else %}hx-on:click="document.getElementById('send-warning').remove()"{% endif %}>Cancel</a>
     </div>
   </div>
   {% endif %}
