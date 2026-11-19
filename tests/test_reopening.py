@@ -127,9 +127,9 @@ def test_the_status_buttons_reopen_a_resolved_ticket_the_same_way(client, db_ses
 
 def test_the_page_offers_reopen_only_on_a_resolved_ticket(client, db_session):
     ticket, team, ann_id = assigned_ticket(client, db_session)
-    assert "/reopen" not in client.get(f"/tickets/{ticket.number}").text
+    assert "/reopen" not in client.get(f"/tickets/{ticket.number}?action=reopen").text
     ticket = finish(db_session, ticket)
-    assert f"/tickets/{ticket.number}/reopen" in client.get(f"/tickets/{ticket.number}").text
+    assert f"/tickets/{ticket.number}/reopen" in client.get(f"/tickets/{ticket.number}?action=reopen").text
 
 
 # ---- A reply on a Resolved ticket -----------------------------------------------------------------
@@ -344,7 +344,7 @@ def test_a_reopened_ticket_is_reclosed_with_a_reason(client, db_session, key):
     ticket, team, ann_id = assigned_ticket(client, db_session)
     ticket = finish(db_session, ticket)
     reopen(client, ticket)
-    assert "Reclose" in client.get(f"/tickets/{ticket.number}").text
+    assert "Close it again because" in client.get(f"/tickets/{ticket.number}?action=reclose").text
 
     assert reclose(client, ticket, key).status_code == 200
 

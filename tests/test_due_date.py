@@ -218,7 +218,7 @@ def test_only_agents_who_work_the_ticket_can_move_due(client, db_session):
 
     client.post("/auth/logout")
     agent(client, db_session, member_of=[team])
-    assert f'hx-post="/tickets/{ticket.number}/due"' in client.get(f"/tickets/{ticket.number}").text
+    assert f'hx-post="/tickets/{ticket.number}/due"' in client.get(f"/tickets/{ticket.number}?edit=due").text
     assert client.post(f"/tickets/{ticket.number}/due", data=data).status_code == 200
 
 
@@ -278,7 +278,7 @@ def test_the_forms_ask_for_the_date_and_the_preview_carries_it(client, db_sessio
     team, _, _ = desk(client, db_session)
     ticket = worked(db_session, team, due_on=today() + timedelta(days=3))
 
-    page = client.get(f"/tickets/{ticket.number}").text
+    page = client.get(f"/tickets/{ticket.number}?edit=status").text + client.get(f"/tickets/{ticket.number}?edit=due").text + client.get(f"/tickets/{ticket.number}?action=email").text + client.get(f"/tickets/{ticket.number}?action=note").text
     assert page.count('name="due_on"') >= 4  # status buttons, Due form, email and note dropdowns
     preview = client.post(
         f"/tickets/{ticket.number}/email/preview",
@@ -522,7 +522,7 @@ def test_the_triage_form_shows_required_by_only_for_a_kind_that_offers_it_and_du
     _, ticket = untriaged(db_session, plain)
     agent(client, db_session)
 
-    page = client.get(f"/tickets/{ticket.number}").text
+    page = client.get(f"/tickets/{ticket.number}?action=triage").text
     assert 'name="due_on"' in page and 'name="required_by"' not in page and 'hx-get="/tickets/triage-dates' in page
 
     offers = offering(db_session, "Room")

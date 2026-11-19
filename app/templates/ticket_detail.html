@@ -198,10 +198,11 @@
   </section>
 
   {# 2. Triage: type, category, impact and urgency, and the priority worked out from them. A pencil edits a row in place. #}
-  <section class="card tp-card tp-box" id="box-triage" aria-labelledby="triage-heading">
-    <h2 id="triage-heading">Triage</h2>
+  <section class="card tp-card tp-box" id="box-triage" aria-labelledby="triage-box-heading">
+    <h2 id="triage-box-heading">Triage</h2>
     {% if not ticket.triaged_at %}
     <p class="muted">Not triaged yet.{% if can_triage %} Use Triage above.{% endif %}</p>
+    {% if request_info %}<dl class="dl tp-dl"><dt>Request</dt><dd>{{ request_info[0].name }}{% if request_info[1] %} (approval group: {{ request_info[1].name }}){% endif %}</dd></dl>{% endif %}
     {% else %}
     <dl class="dl tp-dl">
       <dt>Type</dt>
@@ -284,15 +285,20 @@
     <dl class="dl tp-dl">
       <dt>Status</dt>
       {% if editing == "status" %}
-      <dd><form class="tp-form tp-edit" method="post" action="/tickets/{{ ticket.number }}/status/edit" hx-post="/tickets/{{ ticket.number }}/status/edit" hx-target="main" hx-swap="innerHTML" data-doing="changing the status">
-        <label>Status
-          <select name="status">
-            <option value="in_progress" {{ "selected" if ticket.status.value == "in_progress" else "" }}>In progress</option>
-            <option value="awaiting_user" {{ "selected" if ticket.status.value == "awaiting_user" else "" }}>Awaiting user</option>
-          </select>
-        </label>
-        <p class="note">Awaiting user pauses the SLA clock. Resolve and Close are actions above; other statuses come with an email or a note.</p>
-        <div class="tp-edit-actions"><button type="submit" class="btn btn-primary">Save</button>{{ cancel_edit("box-sla") }}</div>
+      <dd><form class="tp-form tp-edit" method="post" action="/tickets/{{ ticket.number }}/status" hx-post="/tickets/{{ ticket.number }}/status" hx-target="main" hx-swap="innerHTML" data-doing="changing the status">
+        <div class="tp-status-buttons">
+          {% for s in statuses %}
+          {% if s.value == "resolved" %}<button type="button" disabled class="button-active">resolved</button>
+          {% elif s.value == "closed" and can_close %}<button type="button" disabled class="button-outline" title="Use Close in the ticket actions: it needs notes and emails the requester">closed</button>{% else %}
+          <button type="submit" name="status" value="{{ s.value }}" class="{{ 'button-active' if ticket.status == s else 'button-outline' }}">{{ s.value.replace("_", " ") }}</button>{% endif %}
+          {% endfor %}
+        </div>
+        <label>Scheduled needs a date: Due
+          <input type="date" name="due_on" value="{{ ticket.due_on.isoformat() if ticket.due_on else "" }}" /></label>
+        <label>Why the date is being moved (only if you change it)
+          <input type="text" name="due_reason" maxlength="500" /></label>
+        <p class="note">Resolve is an action above: it takes notes and emails the requester.</p>
+        <div class="tp-edit-actions">{{ cancel_edit("box-sla") }}</div>
       </form></dd>
       {% else %}
       <dd class="tp-val"><span>{{ status_label }}</span>{% if editable.status %}{{ pencil("box-sla", "status", "status") }}{% endif %}</dd>

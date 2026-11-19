@@ -172,12 +172,12 @@ def test_backdating_leaves_an_event_and_an_audit_entry_saying_who_and_what(clien
 def test_the_ticket_page_shows_the_dates_and_that_it_was_backdated(client, db_session):
     ticket, _ = triaged_ticket(client, db_session)
     plain = client.get(f"/tickets/{ticket.number}").text
-    assert "<dt>Reported</dt>" in plain and "backdated</span>" not in plain
+    assert "Reported by" in plain and "Backdated</span>" not in plain
 
     post(client, ticket, reported_at=ago(days=2).strftime(FORMAT))
     page = client.get(f"/tickets/{ticket.number}").text
 
-    assert "backdated</span>" in page and "Backdate (log after the fact)" in page
+    assert "Backdated</span>" in page and "Backdate (log after the fact)" in client.get(f"/tickets/{ticket.number}?action=backdate").text
 
 
 # ---- SLA ---------------------------------------------------------------------------------------
@@ -193,7 +193,7 @@ def test_a_backdated_ticket_has_no_deadlines_and_no_sla_and_stays_that_way(clien
     assert ticket.first_response_due_at is None and ticket.resolution_due_at is None
     assert sla.sla_view(ticket, datetime.now(timezone.utc), 25).state == "none"
     # Changing the priority later does not bring the clock back.
-    client.post(f"/tickets/{ticket.number}/priority", data={"impact": "low", "urgency": "low"})
+    client.post(f"/tickets/{ticket.number}/priority", data={"impact": "low", "urgency": "low", "reason": "test"})
     db_session.refresh(ticket)
     assert ticket.priority == "p4" and ticket.resolution_due_at is None
     assert "SLA:" not in client.get(f"/tickets/{ticket.number}").text
@@ -243,7 +243,7 @@ def test_a_ticket_the_requester_opened_themselves_cannot_be_backdated(client, db
 def test_the_form_is_offered_on_a_ticket_an_agent_raised_for_someone(client, db_session):
     ticket, _ = triaged_ticket(client, db_session)
 
-    assert "Backdate (log after the fact)" in client.get(f"/tickets/{ticket.number}").text
+    assert "Backdate (log after the fact)" in client.get(f"/tickets/{ticket.number}?action=backdate").text
 
 
 def test_the_dates_parse_only_in_the_expected_form():
@@ -318,7 +318,7 @@ def test_saving_the_prefilled_form_untouched_changes_nothing_even_with_seconds_s
     assert ticket.reported_at.second or ticket.reported_at.microsecond  # stored with seconds, the form shows minutes
     due = ticket.resolution_due_at
 
-    page = client.get(f"/tickets/{ticket.number}").text
+    page = client.get(f"/tickets/{ticket.number}?action=backdate").text
     reported = ticket.reported_at.strftime(FORMAT)
     resolved = ticket.resolved_at.strftime(FORMAT)
     assert f'value="{reported}"' in page and f'value="{resolved}"' in page

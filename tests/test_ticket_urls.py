@@ -44,7 +44,7 @@ def test_every_agent_action_is_addressed_by_number(client, db_session):
     assert client.post(f"/tickets/{NUMBER}/note", data={"body": "n"}).status_code == 200
     assert client.post(f"/tickets/{NUMBER}/assign").status_code == 200
     assert client.post(f"/tickets/{NUMBER}/status", data={"status": "in_progress"}).status_code == 200
-    assert client.post(f"/tickets/{NUMBER}/priority", data={"impact": "low", "urgency": "low"}).status_code == 200
+    assert client.post(f"/tickets/{NUMBER}/priority", data={"impact": "low", "urgency": "low", "reason": "test"}).status_code == 200
     assert client.post(f"/tickets/{NUMBER}/email", data={"body": "hello"}).status_code == 200
     assert client.post(f"/tickets/{NUMBER}/followers", data={"email": "cc@example.com"}).status_code == 200
     escalatable(db_session, ticket)
@@ -55,7 +55,7 @@ def test_every_agent_action_is_addressed_by_number(client, db_session):
 
     valid_forms = {
         "note": {"body": "n"}, "assign": {}, "status": {"status": "open"},
-        "priority": {"impact": "low", "urgency": "low"}, "email": {"body": "hello"},
+        "priority": {"impact": "low", "urgency": "low", "reason": "test"}, "email": {"body": "hello"},
         "escalate": {"reason": "x"}, "reassign": {"team_id": desk.id}, "link": {"parent_number": "1"},
         "unlink": {}, "followers": {"email": "x@example.com"},
     }
@@ -72,8 +72,8 @@ def test_the_pages_link_to_the_number(client, db_session):
     detail = client.get(f"/tickets/{NUMBER}").text
 
     assert f'href="/tickets/{NUMBER}"' in listing and f'href="/tickets/{ticket.id}"' not in listing
-    assert f'hx-post="/tickets/{NUMBER}/note"' in detail
-    assert f'/tickets/{ticket.id}/' not in detail
+    assert f'hx-post="/tickets/{NUMBER}/note"' in client.get(f"/tickets/{NUMBER}?action=note").text
+    assert f'/tickets/{ticket.id}/' not in detail and f'/tickets/{ticket.id}?' not in detail
 
 
 def test_an_unknown_or_out_of_range_number_is_a_404_not_a_server_error(client, db_session):

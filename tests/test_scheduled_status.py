@@ -50,7 +50,7 @@ def test_an_agent_can_reach_and_leave_the_status_by_hand(client, db_session):
     ticket = triaged(db_session, team)
     agent_for(client, db_session, team)
 
-    page = client.get(f"/tickets/{ticket.number}").text
+    page = client.get(f"/tickets/{ticket.number}?edit=status").text
     assert 'value="scheduled"' in page and ">scheduled<" in page
     assert schedule(client, ticket).status_code == 200
     assert status_of(db_session, ticket) == SCHEDULED
@@ -68,7 +68,7 @@ def test_the_dropdown_offers_it_and_a_note_can_set_it(client, db_session):
     ticket = triaged(db_session, team)
     assert SCHEDULED in STATUS_CHOICES and SCHEDULED in status_choices(db_session, ticket)
     agent_for(client, db_session, team)
-    assert client.get(f"/tickets/{ticket.number}").text.count('<option value="scheduled"') >= 1
+    assert client.get(f"/tickets/{ticket.number}?action=note").text.count('<option value="scheduled"') >= 1
 
     note = client.post(
         f"/tickets/{ticket.number}/note", data={"body": "Booked for Friday", "next_status": "scheduled", "due_on": tomorrow()}

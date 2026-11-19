@@ -124,7 +124,7 @@ def test_an_email_records_who_was_copied_at_send_time(client, db_session):
     client.post(f"/tickets/{ticket.number}/followers", data={"email": "boss@example.org"})
     client.post(f"/tickets/{ticket.number}/followers", data={"email": "peer@example.org"})
 
-    page = client.get(f"/tickets/{ticket.number}").text
+    page = client.get(f"/tickets/{ticket.number}?action=email").text
     for address in ("boss@example.org", "peer@example.org"):
         assert f'name="cc" value="{address}" checked' in page
     client.post(f"/tickets/{ticket.number}/email", data={"body": "First update"})
@@ -568,7 +568,7 @@ def test_an_internal_follower_is_always_copied(client, db_session):
     client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "Flagging this"})
     client.post(f"/tickets/{ticket.number}/followers", data={"email": "boss@example.org"})
 
-    page = client.get(f"/tickets/{ticket.number}").text
+    page = client.get(f"/tickets/{ticket.number}?action=email").text
     assert 'value="escalator@example.com" checked disabled' in page and "always copied" in page
 
     emailed(client, ticket, cc_form="1")  # nothing ticked, and the disabled box is never sent

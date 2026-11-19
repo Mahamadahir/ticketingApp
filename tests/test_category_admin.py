@@ -139,7 +139,7 @@ def test_a_switched_off_category_disappears_from_triage_but_keeps_its_tickets(cl
     db_session.commit()
     agent_id = login_as(client, "agent@example.com")
     set_role(db_session, agent_id, UserRole.AGENT, desk.id)
-    assert "Old stuff" in client.get(f"/tickets/{ticket.number}").text
+    assert "Old stuff" in client.get(f"/tickets/{ticket.number}?action=triage").text
     client.post("/auth/logout")
 
     admin(client)
@@ -147,7 +147,7 @@ def test_a_switched_off_category_disappears_from_triage_but_keeps_its_tickets(cl
     client.post("/auth/logout")
 
     login_as(client, "agent@example.com")
-    assert "Old stuff" not in client.get(f"/tickets/{ticket.number}").text
+    assert "Old stuff" not in client.get(f"/tickets/{ticket.number}?action=triage").text
 
 
 # ---- Category review --------------------------------------------------------------

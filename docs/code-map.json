@@ -5162,7 +5162,6 @@
         "close",
         "discard_email_draft",
         "edit_category",
-        "edit_status",
         "edit_type",
         "email_user",
         "escalate_ticket",
@@ -5480,11 +5479,6 @@
           "handler": "change_status",
           "method": "POST",
           "path": "/tickets/{number}/status"
-        },
-        {
-          "handler": "edit_status",
-          "method": "POST",
-          "path": "/tickets/{number}/status/edit"
         },
         {
           "handler": "take_back_from_msp_route",

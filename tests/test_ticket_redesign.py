@@ -159,6 +159,11 @@ def test_a_read_only_agent_gets_only_the_note_chip_and_nothing_without_a_note():
     assert chips(can_work=False, can_note=False).keys() == []
 
 
+def test_a_reopened_ticket_that_is_open_again_offers_reclose_beside_resolve():
+    row, _ = labels(chips(can_reclose=True))
+    assert "Reclose" in row and "Resolve" in row
+
+
 def test_the_more_button_is_left_out_when_it_holds_nothing():
     assert chips(can_backdate=False, can_close=False).more == []
 
@@ -672,18 +677,21 @@ def test_the_service_level_box_holds_the_clocks_due_required_by_status_and_hold(
     assert 'id="msp-heading"' not in page(client, ticket).text
 
 
-def test_the_status_pencil_offers_only_in_progress_and_awaiting_user(client, db_session):
+def test_the_status_pencil_offers_every_status_an_agent_could_set_before_but_not_resolved_or_closed(client, db_session):
     ticket, _ = triaged_ticket(client, db_session)
     form = sla_box(page(client, ticket, edit="status").text)
 
-    assert re.findall(r'<option value="(\w+)"', form) == ["in_progress", "awaiting_user"]
-    assert f'action="/tickets/{ticket.number}/status/edit"' in form
+    offered = re.findall(r'<button type="submit" name="status" value="(\w+)"', form)
+    assert "in_progress" in offered and "awaiting_user" in offered and "scheduled" in offered and "with_supplier" in offered
+    assert "resolved" not in offered and "closed" not in offered and "new" not in offered
+    assert 'name="due_on"' in form  # Scheduled still needs its date
+    assert f'action="/tickets/{ticket.number}/status"' in form
 
 
-@pytest.mark.parametrize("status", ["in_progress", "awaiting_user"])
-def test_those_two_statuses_can_be_set_in_place_and_are_recorded(client, db_session, status):
+@pytest.mark.parametrize("status", ["in_progress", "awaiting_user", "with_supplier"])
+def test_a_status_can_be_set_in_place_and_is_recorded(client, db_session, status):
     ticket, _ = triaged_ticket(client, db_session)
-    ok = client.post(f"/tickets/{ticket.number}/status/edit", data={"status": status})
+    ok = client.post(f"/tickets/{ticket.number}/status", data={"status": status})
     db_session.refresh(ticket)
 
     assert ok.status_code == 200 and ticket.status.value == status
@@ -691,20 +699,33 @@ def test_those_two_statuses_can_be_set_in_place_and_are_recorded(client, db_sess
     assert audits(db_session, "status_changed")
 
 
-@pytest.mark.parametrize("status", ["resolved", "closed", "scheduled", "with_supplier", "with_msp", "open", "new"])
-def test_no_other_status_can_be_set_in_place(client, db_session, status):
+def test_resolved_and_new_still_cannot_be_set_by_the_status_form(client, db_session):
     ticket, _ = triaged_ticket(client, db_session)
     before = ticket.status
-    response = client.post(f"/tickets/{ticket.number}/status/edit", data={"status": status})
+    for status in ("resolved", "new"):
+        assert client.post(f"/tickets/{ticket.number}/status", data={"status": status}).status_code == 400
     db_session.refresh(ticket)
-    assert response.status_code == 400 and ticket.status == before
+    assert ticket.status == before
 
 
-def test_a_finished_ticket_has_no_status_pencil(client, db_session):
+def test_a_resolved_ticket_shows_its_status_pencil_so_it_can_be_closed_by_hand(client, db_session):
     ticket, _ = triaged_ticket(client, db_session)
     save(db_session, ticket, status=TicketStatus.RESOLVED, resolved_at=datetime.now(timezone.utc), resolution_notes="x")
-    assert "?edit=status" not in sla_box(page(client, ticket).text)
-    assert '<option value="in_progress"' not in sla_box(page(client, ticket, edit="status").text)  # ?edit= for it opens nothing
+    assert "?edit=status" in sla_box(page(client, ticket).text)
+    assert 'name="status" value="closed"' in sla_box(page(client, ticket, edit="status").text)
+
+
+def test_a_blank_reason_for_a_priority_or_category_change_is_refused_and_changes_nothing(client, db_session):
+    ticket, desk = triaged_ticket(client, db_session)
+    other = create_category(db_session, desk, "Software")
+    before = (ticket.priority, ticket.category_id)
+    for reason in (None, "", "   "):
+        data = {"impact": "low", "urgency": "low"} | ({"reason": reason} if reason is not None else {})
+        assert client.post(f"/tickets/{ticket.number}/priority", data=data).status_code == 400
+        data = {"category_id": other.id} | ({"reason": reason} if reason is not None else {})
+        assert client.post(f"/tickets/{ticket.number}/category", data=data).status_code == 400
+    db_session.refresh(ticket)
+    assert (ticket.priority, ticket.category_id) == before
 
 
 def test_due_and_required_by_edit_in_place_under_the_existing_rules(client, db_session):

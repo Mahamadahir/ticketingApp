@@ -120,8 +120,8 @@ def action_chips(
         chips.primary = Chip("reopen", "Reopen", primary=True)
     elif triaged_actions and can_reclose:
         chips.primary = Chip("reclose", "Reclose", primary=True)
-    if triaged_actions and can_reopen and can_reclose:
-        chips.row.append(Chip("reclose", "Reclose"))
+    if triaged_actions and can_reclose and (chips.primary is None or chips.primary.key != "reclose"):
+        chips.row.append(Chip("reclose", "Reclose"))  # a reopened ticket that is open again can be closed again as well as resolved
 
     if can_backdate:
         chips.more.append(Chip("backdate", "Backdate"))

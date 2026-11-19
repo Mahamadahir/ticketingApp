@@ -88,9 +88,9 @@ def test_the_picker_lists_only_active_responses_on_a_triaged_ticket(client, db_s
     db_session.commit()
     db_session.refresh(untriaged)
 
-    page = client.get(f"/tickets/{ticket.number}").text
+    page = client.get(f"/tickets/{ticket.number}?action=email").text
     assert "Visible one" in page and "Switched off" not in page
-    assert "Visible one" not in client.get(f"/tickets/{untriaged.number}").text  # cannot email yet
+    assert "Visible one" not in client.get(f"/tickets/{untriaged.number}?action=email").text  # cannot email yet
 
 
 def test_picking_fills_the_box_with_placeholders_and_appends_to_what_was_typed(client, db_session):

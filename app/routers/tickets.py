@@ -711,26 +711,6 @@ def edit_type(
     return _render_ticket_detail(request, ticket, user, session)
 
 
-# The only statuses the Service level box sets in place. Resolve and Close are actions (they take notes and email the
-# requester); Scheduled needs a date and the others (With supplier ...) are chosen with an email or a note.
-INLINE_STATUSES = (TicketStatus.IN_PROGRESS, TicketStatus.AWAITING_USER)
-
-
-@router.post("/{number}/status/edit", response_class=HTMLResponse)
-def edit_status(
-    number: int,
-    request: Request,
-    status: TicketStatus = Form(...),
-    user: User = Depends(require_roles(*AGENT_ROLES)),
-    session: Session = Depends(get_session),
-):
-    """The Status pencil of the Service level box (#254): In progress or Awaiting user only. Everything else a status change
-    needs is refused here; the rules of the change itself (approvals, sub-tickets, the SLA clock) are `change_status`'s."""
-    if status not in INLINE_STATUSES:
-        raise HTTPException(status_code=400, detail="Only In progress or Awaiting user can be set here; use Resolve or Close for those")
-    return change_status(number, request, status, None, None, user, session)
-
-
 @router.post("/{number}/attachments/{attachment_id}/rename", response_class=HTMLResponse)
 def rename_file(
     number: int,
@@ -2163,7 +2143,7 @@ def _render_ticket_detail(
     else:
         card = action if action in chips.keys() else None
     can_edit_triage = can_work and triaged and unfinished
-    can_edit_status = can_edit_triage and triaged_actions and ticket.status != TicketStatus.WITH_MSP
+    can_edit_status = can_work and triaged_actions
     can_set_required_by = (offers_required_by(session, ticket) or ticket.required_by is not None) and may_set_required_by(user, ticket, levels)
     can_set_due = may_set_due(user, ticket, levels)
     editable = {

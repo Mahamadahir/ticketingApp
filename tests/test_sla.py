@@ -101,7 +101,7 @@ def test_changing_priority_moves_the_deadlines_and_records_who_and_what(client, 
     ticket, _ = triaged_ticket(client, db_session, "low", "low")
     old_due = ticket.resolution_due_at
 
-    response = client.post(f"/tickets/{ticket.number}/priority", data={"impact": "high", "urgency": "high"})
+    response = client.post(f"/tickets/{ticket.number}/priority", data={"impact": "high", "urgency": "high", "reason": "Business stopped"})
 
     assert response.status_code == 200
     db_session.refresh(ticket)
@@ -110,7 +110,7 @@ def test_changing_priority_moves_the_deadlines_and_records_who_and_what(client, 
     assert event.actor_email == "agent@example.com"
     assert event.from_value.startswith("P4") and event.to_value.startswith("P1")
     audit = db_session.exec(select(AuditLog).where(AuditLog.action == "priority_changed")).all()
-    assert len(audit) == 1 and "P1" in audit[0].detail
+    assert len(audit) == 1 and "P1" in audit[0].detail and "Business stopped" in audit[0].detail
 
 
 def test_setting_the_same_priority_again_changes_and_records_nothing(client, db_session):
@@ -309,7 +309,7 @@ def test_the_list_and_ticket_pages_show_priority_and_the_countdown(client, db_se
 
     # The queue words the same clock for scanning ("42m to first response"); the ticket page keeps its own sentence.
     assert "P1" in listing and "to first response" in listing
-    assert "<dt>Priority</dt><dd>P1</dd>" in detail and "SLA: first response due in" in detail
+    assert "<dt>Priority</dt>" in detail and "P1" in detail.split("<dt>Priority</dt>")[1].split("</dd>")[0] and "SLA: first response due in" in detail
 
 
 def test_a_ticket_triaged_before_priorities_existed_still_lists_and_opens(client, db_session):
@@ -322,7 +322,7 @@ def test_a_ticket_triaged_before_priorities_existed_still_lists_and_opens(client
 
     assert client.get("/tickets").status_code == 200
     detail = client.get(f"/tickets/{old.number}")
-    assert detail.status_code == 200 and "<dt>Priority</dt><dd>Not set</dd>" in detail.text
+    assert detail.status_code == 200 and "<dt>Priority</dt>" in detail.text and "Not set" in detail.text.split("<dt>Priority</dt>")[1].split("</dd>")[0]
 
 
 def test_requesters_never_see_priority_or_sla(client, db_session):

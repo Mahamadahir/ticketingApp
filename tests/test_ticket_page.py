@@ -55,7 +55,7 @@ def test_an_untriaged_ticket_offers_the_triage_card_and_no_resolve(client, db_se
     agent(client, db_session, member_of=[desk])
     html = page(client, ticket)
 
-    assert 'id="triage-heading"' in html  # the Triage box of the right-hand column
+    assert 'id="triage-box-heading"' in html  # the Triage box of the right-hand column
     assert 'id="triage-form"' in client.get(f"/tickets/{ticket.number}?action=triage").text  # the Triage card
     assert bar_buttons(html) == ["Email user", "Add note", "Assign to me", "Triage", "Send to MSP"]
     assert "Resolve" not in bar_buttons(html) and "Reopen" not in bar_buttons(html)

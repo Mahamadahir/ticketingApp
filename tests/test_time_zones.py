@@ -248,13 +248,13 @@ def ticket_in_a_team(client, db_session, zone=None, source="browser"):
 def test_the_ticket_page_shows_times_in_the_viewers_zone_with_the_label(client, db_session):
     ticket = ticket_in_a_team(client, db_session, zone="Asia/Tokyo")
     page = client.get(f"/tickets/{ticket.number}").text
-    assert "<dt>Reported</dt><dd>26 Oct" in page and "01:00 JST" in page
-    assert "UTC" not in page.split("<dt>Reported</dt>")[1].split("</dd>")[0]
+    assert "Reported by email &middot; 26 Oct" in page and "01:00 JST" in page
+    assert "UTC" not in page.split("Reported by")[1].split("</p>")[0]
 
 
 def test_someone_with_no_zone_yet_sees_the_default(client, db_session):
     ticket = ticket_in_a_team(client, db_session)
-    assert "<dt>Reported</dt><dd>25 Oct" in client.get(f"/tickets/{ticket.number}").text
+    assert "Reported by email &middot; 25 Oct" in client.get(f"/tickets/{ticket.number}").text
     assert "16:00 GMT" in client.get(f"/tickets/{ticket.number}").text
     set_setting(db_session, DEFAULT_TIME_ZONE, "Asia/Tokyo")
     db_session.commit()
@@ -535,6 +535,6 @@ def test_the_backdate_form_is_shown_and_read_in_the_agents_own_zone(client, db_s
     ticket.source = TicketSource.AGENT
     db_session.add(ticket)
     db_session.commit()
-    page = client.get(f"/tickets/{ticket.number}").text
+    page = client.get(f"/tickets/{ticket.number}?action=backdate").text
     assert 'name="reported_at" value="2026-10-26T01:00"' in page  # 16:00 UTC is 01:00 the next day in Tokyo
     assert "times in your time zone (Asia/Tokyo)" in page

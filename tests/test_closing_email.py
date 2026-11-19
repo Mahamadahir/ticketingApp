@@ -128,7 +128,7 @@ def test_the_helper_raises_close_error_before_changing_anything(client, db_sessi
 
 def test_the_status_buttons_refuse_to_close_and_the_page_offers_close(client, db_session):
     ticket = ticket_for_email(client, db_session)
-    page = client.get(f"/tickets/{ticket.number}").text
+    page = client.get(f"/tickets/{ticket.number}?action=close").text + client.get(f"/tickets/{ticket.number}?edit=status").text
     assert "Preview closing" in page and 'name="status" value="closed"' not in page
     response = client.post(f"/tickets/{ticket.number}/status", data={"status": "closed", "resolution_notes": NOTES})
     assert response.status_code == 400 and "Close action" in response.text
@@ -189,8 +189,8 @@ def test_closing_a_resolved_ticket_by_hand_sends_no_second_email(client, db_sess
     ticket = ticket_for_email(client, db_session)
     resolve(client, ticket)
     assert len(outbound(db_session, ticket)) == 1
-    assert 'name="status" value="closed"' in client.get(f"/tickets/{ticket.number}").text
-    assert "Preview closing" not in client.get(f"/tickets/{ticket.number}").text
+    assert 'name="status" value="closed"' in client.get(f"/tickets/{ticket.number}?edit=status").text
+    assert "Preview closing" not in client.get(f"/tickets/{ticket.number}?action=close").text
 
     assert client.post(f"/tickets/{ticket.number}/status", data={"status": "closed"}).status_code == 200
 

@@ -297,8 +297,8 @@ def test_a_ticket_stays_with_its_inactive_assignee_and_says_so(client, db_sessio
     db_session.add(ticket)
     db_session.commit()
     page = client.get(f"/tickets/{ticket.number}").text
-    assert "<dt>Assigned</dt><dd>gone (inactive)</dd>" in page and "assigned to gone (inactive)" in page
-    rest = client.get(f"/tickets/{ticket.number}").text.replace("<dd>gone (inactive)</dd>", "").replace("assigned to gone (inactive)", "")
+    assert "Assigned to <b>gone (inactive)</b>" in page
+    rest = client.get(f"/tickets/{ticket.number}").text.replace("Assigned to <b>gone (inactive)</b>", "")
     assert "(inactive)" not in rest
     # moving it within the team keeps the inactive assignee rather than silently dropping them
     other = create_team(db_session, "Other")
