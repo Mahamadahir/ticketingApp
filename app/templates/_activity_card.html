@@ -3,7 +3,7 @@
 {% macro step_line(c, s) -%}
 {% if c.lines|length > 1 %}<strong class="act-by">{{ c.name_of(s) }}</strong> {% endif %}
 {%- if s.kind == "message" -%}
-  {%- if s.group == "notes" -%}Added an internal note{%- elif s.what == "outbound" -%}Emailed the requester{%- elif s.what == "inbound" -%}Replied by email{%- elif s.what == "msp" -%}Message from the MSP{%- else -%}{{ s.phrase }}{%- endif -%}
+  {%- if s.what == "visible_note" -%}Added a note the requester can see{%- elif s.group == "notes" -%}Added an internal note{%- elif s.what == "outbound" -%}Emailed the requester{%- elif s.what == "inbound" -%}Replied by email{%- elif s.what == "msp" -%}Message from the MSP{%- else -%}{{ s.phrase }}{%- endif -%}
   {%- if s.group == "notes" and s.excerpt %}<blockquote class="act-quote act-note">{{ s.excerpt }}</blockquote>
   {%- elif s.first_line %}<span class="act-first-line">{{ s.first_line }}</span>{% endif -%}
 {%- elif s.what == "status_changed" -%}

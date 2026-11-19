@@ -212,6 +212,8 @@ def _entry(message: Message, zone: str) -> str:
         who = f"internal note by {message.sender}"
     elif message.msp_forward is not None:
         who = f"the MSP ({message.sender})"
+    elif message.visible_note:
+        who = f"note shown to the user, not emailed ({message.sender})"
     elif message.direction == MessageDirection.OUTBOUND:
         who = f"email sent by IT ({message.sender})"
     else:

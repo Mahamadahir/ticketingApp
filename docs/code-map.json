@@ -54,6 +54,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/b6d83f21a9c4_visible_note_and_attachment_name.py",
+        "revision": "b6d83f21a9c4"
+      },
+      {
         "file": "migrations/versions/a4e7b19c3d58_ticket_presence.py",
         "revision": "a4e7b19c3d58"
       },
@@ -68,17 +72,13 @@
       {
         "file": "migrations/versions/b3e8d1f46a72_request_type_featured.py",
         "revision": "b3e8d1f46a72"
-      },
-      {
-        "file": "migrations/versions/d7a3f19e5c28_message_channel_reply_files.py",
-        "revision": "d7a3f19e5c28"
       }
     ],
-    "count": 71,
+    "count": 72,
     "heads": [
       {
-        "file": "migrations/versions/a4e7b19c3d58_ticket_presence.py",
-        "revision": "a4e7b19c3d58"
+        "file": "migrations/versions/b6d83f21a9c4_visible_note_and_attachment_name.py",
+        "revision": "b6d83f21a9c4"
       }
     ]
   },
@@ -444,7 +444,9 @@
     {
       "classes": [
         "AttachmentRejected",
-        "NewFile"
+        "NewFile",
+        "RenameRefused",
+        "TicketFile"
       ],
       "file": "app/attachments.py",
       "functions": [
@@ -457,9 +459,12 @@
         "is_inline_type",
         "keys_in_use",
         "lock_blob",
+        "rename_attachment",
         "serving_headers",
+        "shown_name",
         "store_attachment",
         "store_blob",
+        "ticket_files",
         "try_lock_blob"
       ],
       "imported_by": [
@@ -492,7 +497,8 @@
         "tests/test_inbound_mail.py",
         "tests/test_msp_mail.py",
         "tests/test_reply_files.py",
-        "tests/test_subject_access.py"
+        "tests/test_subject_access.py",
+        "tests/test_ticket_redesign.py"
       ]
     },
     {
@@ -1568,6 +1574,7 @@
         "app.reply_channel",
         "app.routers.auth",
         "app.routers.portal",
+        "app.routers.tickets",
         "app.teams",
         "app.teams_approvals",
         "app.teams_conversations",
@@ -2015,6 +2022,7 @@
         "tests/test_teams_bot.py",
         "tests/test_teams_hold.py",
         "tests/test_ticket_presence.py",
+        "tests/test_ticket_redesign.py",
         "tests/test_triage.py"
       ]
     },
@@ -2033,6 +2041,7 @@
         "about_labels",
         "about_text",
         "add_note",
+        "add_visible_note",
         "agent_timeline",
         "attach_files",
         "chosen_status",
@@ -2124,7 +2133,8 @@
         "tests/test_split_family.py",
         "tests/test_teams_followups.py",
         "tests/test_teams_intake.py",
-        "tests/test_ticket_presence.py"
+        "tests/test_ticket_presence.py",
+        "tests/test_ticket_redesign.py"
       ]
     },
     {
@@ -2624,6 +2634,7 @@
         "tests/test_ticket_core.py",
         "tests/test_ticket_page.py",
         "tests/test_ticket_presence.py",
+        "tests/test_ticket_redesign.py",
         "tests/test_ticket_urls.py",
         "tests/test_tickets_rbac.py",
         "tests/test_time_zones.py",
@@ -2942,6 +2953,7 @@
         "in_undo_window",
         "mark_all_read",
         "mark_read",
+        "mentionable_agents",
         "mentioned_in",
         "notification_text",
         "notify",
@@ -3033,7 +3045,8 @@
         "tests/test_teams_copy.py",
         "tests/test_teams_copy_sending.py",
         "tests/test_teams_dm.py",
-        "tests/test_teams_hold.py"
+        "tests/test_teams_hold.py",
+        "tests/test_ticket_redesign.py"
       ]
     },
     {
@@ -3226,7 +3239,8 @@
       "tests": [
         "tests/test_anonymisation.py",
         "tests/test_subject_access.py",
-        "tests/test_teams_followups.py"
+        "tests/test_teams_followups.py",
+        "tests/test_ticket_redesign.py"
       ]
     },
     {
@@ -5147,11 +5161,15 @@
         "change_status",
         "close",
         "discard_email_draft",
+        "edit_category",
+        "edit_status",
+        "edit_type",
         "email_user",
         "escalate_ticket",
         "fill_from_canned",
         "link",
         "list_tickets",
+        "mention_candidates",
         "msp_forward",
         "msp_forward_dismiss",
         "msp_hold",
@@ -5167,6 +5185,7 @@
         "reassign",
         "reclose",
         "remove_ticket_follower",
+        "rename_file",
         "reopen",
         "resolve",
         "send_ticket_to_msp",
@@ -5199,6 +5218,7 @@
         "app.feedback",
         "app.followers",
         "app.forms",
+        "app.identity",
         "app.linking",
         "app.messages",
         "app.models",
@@ -5222,6 +5242,7 @@
         "app.subrequests",
         "app.team_activity",
         "app.templating",
+        "app.ticket_actions",
         "app.ticket_presence",
         "app.ticket_service",
         "app.time_zones",
@@ -5291,6 +5312,11 @@
           "path": "/tickets/{number}/assign"
         },
         {
+          "handler": "rename_file",
+          "method": "POST",
+          "path": "/tickets/{number}/attachments/{attachment_id}/rename"
+        },
+        {
           "handler": "backdate",
           "method": "POST",
           "path": "/tickets/{number}/backdate"
@@ -5299,6 +5325,11 @@
           "handler": "fill_from_canned",
           "method": "GET",
           "path": "/tickets/{number}/canned"
+        },
+        {
+          "handler": "edit_category",
+          "method": "POST",
+          "path": "/tickets/{number}/category"
         },
         {
           "handler": "close",
@@ -5349,6 +5380,11 @@
           "handler": "link",
           "method": "POST",
           "path": "/tickets/{number}/link"
+        },
+        {
+          "handler": "mention_candidates",
+          "method": "GET",
+          "path": "/tickets/{number}/mentions"
         },
         {
           "handler": "msp_forward",
@@ -5446,6 +5482,11 @@
           "path": "/tickets/{number}/status"
         },
         {
+          "handler": "edit_status",
+          "method": "POST",
+          "path": "/tickets/{number}/status/edit"
+        },
+        {
           "handler": "take_back_from_msp_route",
           "method": "POST",
           "path": "/tickets/{number}/take-back-from-msp"
@@ -5459,6 +5500,11 @@
           "handler": "triage",
           "method": "POST",
           "path": "/tickets/{number}/triage"
+        },
+        {
+          "handler": "edit_type",
+          "method": "POST",
+          "path": "/tickets/{number}/type"
         },
         {
           "handler": "unlink",
@@ -5764,6 +5810,7 @@
         "apply_impact_urgency",
         "at_risk_percent",
         "describe_priority",
+        "header_sla",
         "impact_options",
         "note_first_response",
         "on_status_change",
@@ -5809,6 +5856,7 @@
         "tests/test_scheduled_status.py",
         "tests/test_sla.py",
         "tests/test_ticket_page.py",
+        "tests/test_ticket_redesign.py",
         "tests/test_with_supplier.py"
       ]
     },
@@ -5941,7 +5989,8 @@
         "tests/test_subject_access.py",
         "tests/test_teams_followups.py",
         "tests/test_teams_intake.py",
-        "tests/test_ticket_presence.py"
+        "tests/test_ticket_presence.py",
+        "tests/test_ticket_redesign.py"
       ]
     },
     {
@@ -6558,6 +6607,27 @@
     },
     {
       "classes": [
+        "Chip",
+        "Chips"
+      ],
+      "file": "app/ticket_actions.py",
+      "functions": [
+        "action_chips"
+      ],
+      "imported_by": [
+        "app.routers.tickets"
+      ],
+      "imports": [],
+      "module": "app.ticket_actions",
+      "routes": [],
+      "summary": "The action chips of the agent ticket page (#254): which actions the header offers for a ticket in its present state, and",
+      "tables": [],
+      "tests": [
+        "tests/test_ticket_redesign.py"
+      ]
+    },
+    {
+      "classes": [
         "Here"
       ],
       "file": "app/ticket_presence.py",
@@ -6755,7 +6825,9 @@
       ],
       "file": "app/triage.py",
       "functions": [
+        "change_category",
         "change_type",
+        "clean_reason",
         "move_ticket",
         "reassign_ticket",
         "set_assignee",
@@ -7014,6 +7086,12 @@
         "detail": "select() on Message",
         "file": "app/anonymisation.py",
         "in": "step_message_body",
+        "rule": "messages-via-messages-module"
+      },
+      {
+        "detail": "select() on Message",
+        "file": "app/attachments.py",
+        "in": "ticket_files",
         "rule": "messages-via-messages-module"
       },
       {
@@ -7512,6 +7590,7 @@
     "tests/test_ticket_core.py",
     "tests/test_ticket_page.py",
     "tests/test_ticket_presence.py",
+    "tests/test_ticket_redesign.py",
     "tests/test_ticket_urls.py",
     "tests/test_tickets_rbac.py",
     "tests/test_time_zones.py",

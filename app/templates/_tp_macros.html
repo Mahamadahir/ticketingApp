@@ -1,0 +1,33 @@
+{# Small pieces of the agent ticket page (#254), imported "with context" so each sees `ticket`, `card` and the rest.
+   Every one is a plain link first (it works without scripts); with htmx the same address is fetched and only the card, the chip
+   row or the box is swapped (hx-select), so the page's other state is left alone. #}
+
+{# A chip of the header row: a link to the card it opens, the open one marked. #}
+{% macro chip_link(c) %}
+<a class="btn{{ ' btn-primary' if c.primary else '' }}{{ ' on' if card == c.key else '' }}"
+   href="/tickets/{{ ticket.number }}?action={{ c.key }}#tp-card"
+   hx-get="/tickets/{{ ticket.number }}?action={{ c.key }}" hx-target="#tp-card" hx-select="#tp-card" hx-select-oob="#tp-chips"
+   hx-swap="outerHTML" hx-push-url="false"{% if card == c.key %} aria-current="true"{% endif %}>{{ c.label }}</a>
+{% endmacro %}
+
+{# Cancel on a card: puts the empty slot back (the same page without ?action=). #}
+{% macro cancel_card() %}
+<a class="btn" href="/tickets/{{ ticket.number }}"
+   hx-get="/tickets/{{ ticket.number }}" hx-target="#tp-card" hx-select="#tp-card" hx-select-oob="#tp-chips"
+   hx-swap="outerHTML" hx-push-url="false">Cancel</a>
+{% endmacro %}
+
+{# The pencil on a box row: opens that row as a form in place. #}
+{% macro pencil(box, key, what) %}
+<a class="icon-btn tp-pencil" href="/tickets/{{ ticket.number }}?edit={{ key }}#{{ box }}"
+   hx-get="/tickets/{{ ticket.number }}?edit={{ key }}" hx-target="#{{ box }}" hx-select="#{{ box }}"
+   hx-swap="outerHTML" hx-push-url="false" aria-label="Edit {{ what }}">
+  <svg aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"></path></svg>
+</a>
+{% endmacro %}
+
+{# Cancel on an edit form: the same box without ?edit=. #}
+{% macro cancel_edit(box) %}
+<a class="btn" href="/tickets/{{ ticket.number }}#{{ box }}"
+   hx-get="/tickets/{{ ticket.number }}" hx-target="#{{ box }}" hx-select="#{{ box }}" hx-swap="outerHTML" hx-push-url="false">Cancel</a>
+{% endmacro %}

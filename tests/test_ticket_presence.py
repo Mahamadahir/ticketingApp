@@ -88,7 +88,9 @@ def test_the_page_is_drawn_with_the_strip_already_in_it(client, second, db_sessi
 
     assert 'id="presence"' in page and 'role="status"' in page and 'aria-live="polite"' in page
     assert "Agent Ann" in page and "is viewing this ticket" in page
-    assert page.index('id="presence"') < page.index('class="tp-head"')  # above the ticket header
+    head = page.split('<header class="tp-head">')[1].split("</header>")[0]
+    assert 'id="presence"' in head  # in the header, under the info line (#254); it was a strip above the header before
+    assert head.index('class="tp-info"') < head.index('id="presence"') < head.index('id="tp-chips"')
     assert f'hx-post="/tickets/{ticket.number}/presence"' in page and "every 15s" in page
 
 
@@ -129,13 +131,20 @@ def test_the_action_name_is_one_short_line_and_escaped(client, second, db_sessio
     assert len(row.action_name) <= ticket_presence.MAX_ACTION_LENGTH and "\n" not in row.action_name
 
 
-def test_every_action_panel_names_what_it_is_doing(client, db_session):
-    """The names come from the panels (data-doing), which the page's script reads; none is listed in the script."""
-    ticket = ticket_for_email(client, db_session)
+def test_every_action_card_names_what_it_is_doing(client, db_session):
+    """The names come from the open card (data-doing), which the page's script reads; none is listed in the script. The two
+    composers have none: they count only once something is typed."""
+    ticket = ticket_for_email(client, db_session)  # raised by an agent, so it can be backdated
     page = client.get(f"/tickets/{ticket.number}").text
-    for doing in ("assigning", "escalating", "sending to the MSP", "resolving", "changing the status", "linking it", "splitting it",
-                  "backdating it", "closing it", "using More actions"):
-        assert f'data-doing="{doing}"' in page, doing
+    keys = re.findall(r"\?action=(\w+)#tp-card", page)
+    assert {"reassign", "escalate", "msp", "resolve", "link", "split", "backdate", "close"} <= set(keys)
+    for key, doing in (("reassign", "re-assigning"), ("escalate", "escalating"), ("msp", "sending to the MSP"), ("resolve", "resolving"),
+                       ("link", "linking it"), ("split", "splitting it"), ("backdate", "backdating it"), ("close", "closing it")):
+        assert f'data-doing="{doing}"' in client.get(f"/tickets/{ticket.number}?action={key}").text, key
+    for key in ("email", "note"):
+        card = client.get(f"/tickets/{ticket.number}?action={key}").text
+        assert f'data-compose="{key}"' in card and "data-doing=" not in card.split('id="tp-card"')[1].split('class="tp-body"')[0]
+    assert 'data-doing="editing the category"' in client.get(f"/tickets/{ticket.number}?edit=category").text  # a box row being edited counts too
     script = client.get("/static/ticket-presence.js").text
     assert "re-assigning" not in script and "escalating" not in script  # no list of names in the script
 
@@ -377,15 +386,16 @@ def test_the_gone_after_setting_is_used(client, second, db_session):
 # ---- The send warning --------------------------------------------------------------------------------------
 
 
-def seen_on(client, ticket):
-    page = client.get(f"/tickets/{ticket.number}").text
+def seen_on(client, ticket, card="email"):
+    page = client.get(f"/tickets/{ticket.number}?action={card}").text
     return page.split('name="seen" value="')[1].split('"')[0]
 
 
 def test_every_send_form_carries_what_the_page_saw(client, db_session):
     ticket = ticket_for_email(client, db_session)
-    page = client.get(f"/tickets/{ticket.number}").text
-    assert page.count('name="seen"') == 2  # the email form (carried to the preview) and the note form
+    for card in ("email", "note"):  # the email form (carried to the preview) and the note form, each in its own card
+        page = client.get(f"/tickets/{ticket.number}?action={card}").text
+        assert page.count('name="seen"') == 1, card
 
 
 def test_the_preview_carries_what_the_page_saw_to_the_send(client, db_session):
@@ -410,7 +420,7 @@ def test_an_email_is_held_back_when_another_agent_emailed_after_the_page_loaded(
     assert "Send anyway" in page and ">Cancel</a>" in page
     assert "Ann&#39;s draft text</textarea>" in page  # the draft is kept in the composer
     assert messages_of(db_session, ticket) == before  # nothing was sent or recorded
-    assert 'id="mode-email" checked' in page and 'id="mode-note" checked' not in page
+    assert 'data-compose="email"' in page and 'data-compose="note"' not in page  # the email card is the one open
 
 
 def test_send_anyway_sends_it_and_cancel_does_not(client, second, db_session):

@@ -225,6 +225,7 @@ COLUMNS: dict[str, ColumnUse] = {
     "message.author_user_id": _use(SUBJECT, USER_ID, "messages written by an account (agents: listed by reference)", anon=KEEP),
     "message.body": _use(TEXT, FREE_TEXT, "the thread", anon=BLANK),
     "attachment.filename": _use(NOT_PERSON, LABEL, "a file name; the file goes with its message", anon=WITH_ROW),
+    "attachment.display_name": _use(NOT_PERSON, LABEL, "the name an agent gave the file on the ticket page (#254); the original is attachment.filename", anon=WITH_ROW),
     "attachment.uploaded_by_id": _use(SUBJECT, USER_ID, "files the person uploaded", anon=DELETE),
     # approvals and feedback
     "approvalvote.voter_id": _use(SUBJECT, USER_ID, "approval votes", anon=KEEP),

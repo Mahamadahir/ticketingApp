@@ -4,30 +4,23 @@
 (function () {
   if (window.ticketPresenceVals) { return; }
 
-  // The panel an open action names itself by: the nested menu entry if one is open, else the action. Each panel says what it is
-  // doing in its own data-doing attribute; one that does not is called "using <its button>".
+  // What the person has open: an action's card (#tp-card) or a box row being edited, each of which says what it is doing in its own
+  // data-doing attribute (the words after the name in the strip). The composers have none: they count only once something is typed.
   function openPanel() {
-    var action = document.querySelector("details.tp-action[open]");
-    if (!action) { return null; }
-    return action.querySelector("details.tp-item[open]") || action;
+    return document.querySelector("#tp-card [data-doing], #tp-card[data-doing], .tp-box [data-doing]");
   }
 
   function doingOf(panel) {
-    var body = panel.querySelector(":scope > .tp-panel, :scope > .tp-item-body");
-    var said = body && body.getAttribute("data-doing");
-    if (said) { return said; }
-    var summary = panel.querySelector("summary");
-    return "using " + (summary ? summary.textContent.trim() : "an action");
+    return panel.getAttribute("data-doing") || "using an action";
   }
 
-  function composing(panelSelector, radioId) {
-    var panel = document.querySelector(panelSelector);
-    if (!panel) { return false; }
-    if (panel.contains(document.activeElement)) { return true; }
-    var radio = document.getElementById(radioId);
-    var box = panel.querySelector("textarea[name=body]");
+  function composing(kind) {
+    var card = document.querySelector('[data-compose="' + kind + '"]');
+    if (!card) { return false; }
+    if (card.contains(document.activeElement)) { return true; }
+    var box = card.querySelector("textarea[name=body]");
     // A draft in the open tab counts as writing, even while they look at something else.
-    return !!(radio && radio.checked && box && box.value.trim());
+    return !!(box && box.value.trim());
   }
 
   // What the check-in sends: the activity, the action's name, and the fingerprint of the strip now on the page.
@@ -38,9 +31,9 @@
     if (panel) {
       vals.activity = "action";
       vals.doing = doingOf(panel);
-    } else if (composing(".tp-compose-email", "mode-email")) {
+    } else if (composing("email")) {
       vals.activity = "email";
-    } else if (composing(".tp-compose-note", "mode-note")) {
+    } else if (composing("note")) {
       vals.activity = "note";
     }
     return vals;
@@ -65,7 +58,9 @@
     // Only on moving into the composer, not on every field inside it.
     if (composer && !(event.relatedTarget && composer.contains(event.relatedTarget))) { checkInNow(); }
   });
-  document.addEventListener("toggle", function (event) {
-    if (event.target.matches && event.target.matches("details.tp-action, details.tp-item")) { checkInNow(); }
-  }, true);
+  // Opening or cancelling a card, or a box row's edit form, fetches the ticket page itself; say so at once.
+  document.body.addEventListener("htmx:afterSettle", function (event) {
+    var path = (event.detail && event.detail.requestConfig && event.detail.requestConfig.path) || "";
+    if (/^\/tickets\/\d+(\?|$)/.test(path)) { checkInNow(); }
+  });
 })();

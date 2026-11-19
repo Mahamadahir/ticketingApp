@@ -1409,8 +1409,8 @@ it open and what they are doing, and the server holds back an email or a note if
   rows are removed by the `presence-cleanup` recurring job (hourly); reading filters on the age, so a row the job has not reached is
   never shown. Both timings are settings in the "Ticket page" group.
 - **Activities.** Viewing (the page is open, a background tab included), writing an email to the requester, writing an internal note
-  (the composer is focused, or holds a draft in the open mode), or in an action: the open `details.tp-action` panel, or the open item
-  inside More actions, names itself in `data-doing`.
+  (the open composer card is focused, or holds a draft), or in an action: the open action card (`#tp-card`, or a right-hand box row
+  being edited) names itself in `data-doing` (#254).
 - **Who is listed.** Only agents; never yourself; only people who can open the ticket now (`app/visibility.py`, asked again each time),
   and only to someone who can. The check-in is refused for a requester and nothing in the portal reads it.
 - **Passive.** The check-in uses `get_current_user_passively`, like the bell's count: an open tab nobody is looking at must not keep a

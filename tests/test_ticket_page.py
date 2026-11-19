@@ -23,14 +23,19 @@ def page(client, ticket):
 
 
 def bar_buttons(html):
-    """The labels of the header's action bar (the summaries of the disclosures and the plain buttons)."""
-    bar = html.split('aria-label="Ticket actions"')[1].split("</header>")[0]
-    return re.findall(r'<summary class="btn[^"]*">([^<]+)</summary>', bar)
+    """The labels of the header's chip row (#254): links to a card, and plain buttons like Assign to me."""
+    if 'id="tp-chips"' not in html:
+        return []
+    row = html.split('id="tp-chips"')[1].split("</nav>")[0].split('class="tp-more"')[0]
+    return [re.sub(r"\s+", " ", t).strip() for t in re.findall(r"<(?:a|button)\b[^>]*>([^<]+)</(?:a|button)>", row) if t.strip()]
 
 
 def menu_items(html):
-    menu = html.split('class="tp-menu"')[1].split("</header>")[0]
-    return [re.sub(r"\s+", " ", text).strip() for text in re.findall(r"<summary>([^<]+)</summary>", menu)]
+    """The items under the small more button."""
+    if 'class="tp-more"' not in html:
+        return []
+    menu = html.split('class="tp-more"')[1].split("</nav>")[0]
+    return [re.sub(r"\s+", " ", text).strip() for text in re.findall(r"<a\b[^>]*>([^<]+)</a>", menu) if text.strip()]
 
 
 def save(db_session, ticket, **fields):
@@ -41,7 +46,7 @@ def save(db_session, ticket, **fields):
     db_session.refresh(ticket)
 
 
-# ---- Which actions show, by state -------------------------------------------------------------------------------
+# ---- Which actions show, by state (the rules themselves are tested in tests/test_ticket_redesign.py) -------------
 
 
 def test_an_untriaged_ticket_offers_the_triage_card_and_no_resolve(client, db_session):
@@ -50,11 +55,11 @@ def test_an_untriaged_ticket_offers_the_triage_card_and_no_resolve(client, db_se
     agent(client, db_session, member_of=[desk])
     html = page(client, ticket)
 
-    assert 'id="triage-heading"' in html and 'id="triage-form"' in html
-    assert bar_buttons(html) == ["Escalate", "Send to MSP", "More actions"]  # Assign to me is a plain button for an agent
+    assert 'id="triage-heading"' in html  # the Triage box of the right-hand column
+    assert 'id="triage-form"' in client.get(f"/tickets/{ticket.number}?action=triage").text  # the Triage card
+    assert bar_buttons(html) == ["Email user", "Add note", "Assign to me", "Triage", "Send to MSP"]
     assert "Resolve" not in bar_buttons(html) and "Reopen" not in bar_buttons(html)
-    assert "Change status" not in menu_items(html) and "Close" not in menu_items(html)
-    assert "Assign to me" in html
+    assert "Close" not in menu_items(html)
 
 
 def test_a_super_admin_can_assign_an_untriaged_ticket_from_the_bar(client, db_session):
@@ -64,19 +69,18 @@ def test_a_super_admin_can_assign_an_untriaged_ticket_from_the_bar(client, db_se
     set_role(db_session, admin, UserRole.SUPER_ADMIN)
     html = page(client, ticket)
 
-    assert bar_buttons(html)[0] == "Assign"
-    assert "Assign to (without triaging)" in html
+    assert "Assign" in bar_buttons(html)
+    assert "Assign to (without triaging)" in client.get(f"/tickets/{ticket.number}?action=assign").text
 
 
 def test_an_assigned_open_ticket_offers_the_working_actions(client, db_session):
     ticket, _ = triaged_ticket(client, db_session)
     html = page(client, ticket)
 
-    assert bar_buttons(html) == ["Assign", "Escalate", "Send to MSP", "More actions", "Resolve"]  # nobody holds it yet
+    assert bar_buttons(html) == ["Email user", "Add note", "Assign to me", "Assign", "Escalate", "Send to MSP", "Link", "Split", "Resolve"]  # nobody holds it yet
     assert 'id="triage-form"' not in html
-    items = menu_items(html)
-    assert items[0] == "Change status" and "Close" in items and "Split ticket" in items and "Link" in items
-    assert "Take back from MSP" not in items and "Reopen" not in bar_buttons(html)
+    assert menu_items(html) == ["Close"]  # Backdate only for a ticket an agent raised for someone
+    assert "Take back from MSP" not in menu_items(html) and "Reopen" not in bar_buttons(html)
 
 
 def test_a_ticket_with_the_msp_offers_take_back_and_shows_the_msp_card(client, db_session):
@@ -84,19 +88,19 @@ def test_a_ticket_with_the_msp_offers_take_back_and_shows_the_msp_card(client, d
     save(db_session, ticket, status=TicketStatus.WITH_MSP, msp_ticket_number="MSP-4821")
     html = page(client, ticket)
 
-    assert "Take back from MSP" in menu_items(html)
+    assert "Take back" in bar_buttons(html) and "Send to MSP" not in bar_buttons(html)
     assert 'id="msp-heading"' in html and "MSP ticket #MSP-4821" in html
     assert "With MSP" in html.split('class="tp-meta"')[1].split("</div>")[0]
 
 
-def test_a_linked_ticket_offers_unlink_in_the_linked_card_and_no_link_form(client, db_session):
+def test_a_linked_ticket_offers_unlink_in_the_linked_card_and_no_link_chip(client, db_session):
     ticket, desk = triaged_ticket(client, db_session)
-    assert "Link" in menu_items(page(client, ticket))
+    assert "Link" in bar_buttons(page(client, ticket))
     problem = new_ticket(db_session, desk, ticket_type="problem")
     save(db_session, ticket, linked_parent_id=problem.id)
     html = page(client, ticket)
 
-    assert "Link" not in menu_items(html) and f'hx-post="/tickets/{ticket.number}/unlink"' in html
+    assert "Link" not in bar_buttons(html) and f'hx-post="/tickets/{ticket.number}/unlink"' in html
     assert 'id="linked-heading"' in html and problem.reference in html
 
 
@@ -104,7 +108,7 @@ def test_a_ticket_without_the_msp_has_no_msp_card_or_take_back(client, db_sessio
     ticket, _ = triaged_ticket(client, db_session)
     html = page(client, ticket)
 
-    assert 'id="msp-heading"' not in html and "Take back from MSP" not in menu_items(html)
+    assert 'id="msp-heading"' not in html and "Take back" not in bar_buttons(html)
 
 
 def test_a_resolved_ticket_offers_reopen_not_resolve(client, db_session):
@@ -114,7 +118,7 @@ def test_a_resolved_ticket_offers_reopen_not_resolve(client, db_session):
     labels = bar_buttons(html)
 
     assert "Reopen" in labels and "Resolve" not in labels
-    assert '<summary class="btn btn-primary">Reopen</summary>' in html  # the primary action once there is nothing to resolve
+    assert re.search(r'<a class="btn btn-primary[^"]*"\s+href="[^"]*action=reopen[^>]*>Reopen</a>', html)  # the primary action once there is nothing to resolve
     assert 'id="resolution-heading"' in html and "Replaced the roller" in html
     assert "Close" not in menu_items(html)  # Close is for a ticket that is not resolved (check_can_close)
 
@@ -135,9 +139,9 @@ def test_a_split_original_offers_split_and_lists_its_parts_and_a_part_offers_nei
     html = page(client, original)
 
     assert 'id="linked-heading"' in html and "Sub-tickets" in html and first.reference in html
-    assert "Split ticket" in menu_items(html)
+    assert "Split" in bar_buttons(html)
     part = page(client, first)
-    assert "Split ticket" not in menu_items(part) and f"Split from" in part
+    assert "Split" not in bar_buttons(part) and f"Split from" in part
 
 
 def test_a_read_only_agent_gets_no_action_bar(client, db_session):
@@ -150,47 +154,48 @@ def test_a_read_only_agent_gets_no_action_bar(client, db_session):
 
     assert "You have read-only access" in html
     assert 'aria-label="Ticket actions"' not in html
-    assert 'class="card tp-composer"' not in html or "mode-email" not in html
+    assert 'data-compose=' not in client.get(f"/tickets/{original.number}?action=email").text
 
 
-# ---- The More actions menu --------------------------------------------------------------------------------------
+# ---- The more button --------------------------------------------------------------------------------------------
 
 
-def test_the_more_menu_and_its_items_are_disclosures_the_keyboard_can_open(client, db_session):
+def test_the_more_button_is_a_disclosure_the_keyboard_can_open_and_the_old_menu_is_gone(client, db_session):
     ticket, _ = triaged_ticket(client, db_session)
     html = page(client, ticket)
 
-    # A <details> with a <summary> is focusable and opens with Enter or Space, with no script; the shared name closes the others.
-    assert re.search(r'<details class="tp-action" name="ticket-action">\s*<summary class="btn">More actions</summary>', html)
-    assert html.count('<details class="tp-action" name="ticket-action">') == len(bar_buttons(html))
-    assert len(menu_items(html)) >= 4
+    # A <details> with a <summary> is focusable and opens with Enter or Space, with no script; its items are links to a card.
+    assert re.search(r'<details class="tp-more">\s*<summary class="btn icon-btn" aria-label="More actions">', html)
+    assert "More actions</summary>" not in html and "tp-panel" not in html and "tp-action" not in html
+    assert len(menu_items(html)) == 1
 
 
-# ---- The composer -----------------------------------------------------------------------------------------------
+# ---- The composer cards -----------------------------------------------------------------------------------------
 
 
-def test_the_composer_starts_on_email_user_for_a_triaged_ticket_with_both_forms(client, db_session):
+def test_the_email_card_has_the_email_form_and_the_note_card_the_note_form(client, db_session):
     ticket, _ = triaged_ticket(client, db_session)
-    html = page(client, ticket)
+    email = client.get(f"/tickets/{ticket.number}?action=email").text
+    note = client.get(f"/tickets/{ticket.number}?action=note").text
 
-    assert re.search(r'id="mode-email"\s*checked', html) and not re.search(r'id="mode-note"\s*checked', html)
-    assert 'for="mode-email">Email user</label>' in html and "Internal note</label>" in html
-    assert f'hx-post="/tickets/{ticket.number}/email/preview"' in html and f'hx-post="/tickets/{ticket.number}/note"' in html
-    assert 'name="next_status"' in html and 'id="email-body"' in html and 'id="email-preview"' in html
-    assert "Goes to me@example.com and is copied to 0 followers." in html
-    assert "Only agents can see internal notes." in html
-    assert "Preview message</button>" in html and "Add note</button>" in html
+    assert 'data-compose="email"' in email and 'data-compose="note"' not in email
+    assert f'hx-post="/tickets/{ticket.number}/email/preview"' in email and 'name="next_status"' in email
+    assert 'id="email-body"' in email and 'id="email-preview"' in email
+    assert "Goes to me@example.com and is copied to 0 followers." in email and "Preview message</button>" in email
+    assert 'data-compose="note"' in note and f'hx-post="/tickets/{ticket.number}/note"' in note
+    assert "Only agents can see internal notes." in note and "Add note</button>" in note and 'name="next_status"' in note
 
 
-def test_the_composer_starts_on_internal_note_when_the_ticket_cannot_be_emailed_yet(client, db_session):
+def test_the_email_card_of_an_untriaged_ticket_says_to_triage_first_and_the_note_card_still_works(client, db_session):
     desk = create_team(db_session, "Service Desk")
     ticket = new_ticket(db_session, desk)
     agent(client, db_session, member_of=[desk])
-    html = page(client, ticket)
+    email = client.get(f"/tickets/{ticket.number}?action=email").text
+    note = client.get(f"/tickets/{ticket.number}?action=note").text
 
-    assert re.search(r'id="mode-note"\s*checked', html) and not re.search(r'id="mode-email"\s*checked', html)
-    assert "Triage this ticket before emailing the requester." in html
-    assert f'hx-post="/tickets/{ticket.number}/email/preview"' not in html
+    assert "Triage this ticket before emailing the requester." in email
+    assert f'hx-post="/tickets/{ticket.number}/email/preview"' not in email
+    assert f'hx-post="/tickets/{ticket.number}/note"' in note
 
 
 # ---- Internal notes and files in the timeline -------------------------------------------------------------------

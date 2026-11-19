@@ -61,6 +61,7 @@ def _record(
     channel: str,
     author_user_id: Optional[int] = None,
     cc: Optional[str] = None,
+    visible_note: bool = False,
 ) -> Message:
     """The one place a Message is built, so the invariants cannot drift: an
     internal note is always agents-only, any new message touches the ticket, and every message records its
@@ -80,6 +81,7 @@ def _record(
         author_user_id=author_user_id,
         cc=cc,
         channel=channel,
+        visible_note=visible_note,
     )
     session.add(message)
     ticket.updated_at = datetime.now(timezone.utc)
@@ -300,6 +302,23 @@ def add_note(
     return note
 
 
+def add_visible_note(
+    session: Session, ticket: Ticket, author: User, body: str, files: Optional[list[NewFile]] = None,
+    storage: Optional[Storage] = None,
+) -> Message:
+    """An agent's note the requester may see in the portal (#254, "Visible to the requester"), for a small update that does
+    not need an email. It is an outbound public message, so `requester_visible_messages` (the portal, followers) is what
+    shows it, and it waits there until the ticket is triaged. It is deliberately NOT queued as mail, not sent to Teams, never
+    rings the requester's bell and does not count as the first response (that stays an email): the point of it is a quiet
+    entry in the portal. Its files are shown to the requester with it."""
+    note = _record(
+        session, ticket, sender=author.display_name, body=body, author_user_id=author.id,
+        direction=MessageDirection.OUTBOUND, visibility=MessageVisibility.PUBLIC, channel=AGENT, visible_note=True,
+    )
+    attach_files(session, ticket, note, author, files, storage)
+    return note
+
+
 def record_inbound(
     session: Session,
     ticket: Ticket,
@@ -381,13 +400,15 @@ _PUBLIC = (
 def requester_visible_messages(session: Session, ticket: Ticket) -> list[Message]:
     """The only messages the requester may see, in time order. Public only, and
     never an internal note even if one were wrongly marked public. A ticket that was
-    split shows its family's shared conversation (see _shared_conversation)."""
-    ids = [ticket.id] + [other.id for other in _shared_conversation(session, ticket)]
-    return list(
-        session.exec(
-            select(Message).where(Message.ticket_id.in_(ids), *_PUBLIC).order_by(Message.created_at, Message.id)
-        ).all()
-    )
+    split shows its family's shared conversation (see _shared_conversation).
+    An agent's visible note (`add_visible_note`) waits here until its ticket is triaged, as every message to the
+    requester does; this is the only place that rule is written."""
+    family = [ticket, *_shared_conversation(session, ticket)]
+    query = select(Message).where(Message.ticket_id.in_([t.id for t in family]), *_PUBLIC)
+    untriaged = [t.id for t in family if not is_triaged(t)]
+    if untriaged:
+        query = query.where(~(Message.visible_note.is_(True) & Message.ticket_id.in_(untriaged)))
+    return list(session.exec(query.order_by(Message.created_at, Message.id)).all())
 
 
 EXCERPT_LENGTH = 200
@@ -413,7 +434,7 @@ def posts_since(session: Session, ticket: Ticket, agent: User, seen: int) -> lis
     ).all()
     return [
         m for m in later
-        if m.direction == MessageDirection.INTERNAL or (m.direction == MessageDirection.OUTBOUND and m.id in emailed)
+        if m.direction == MessageDirection.INTERNAL or m.visible_note or (m.direction == MessageDirection.OUTBOUND and m.id in emailed)
     ]
 
 
@@ -672,6 +693,8 @@ def kind_label(message: Message, sender_kind: Optional[str] = None) -> str:
     only: who may see the message is decided by `requester_visible_messages`, never by this."""
     who = "follower" if sender_kind == "follower" else "requester"
     channel = message.channel
+    if message.visible_note:
+        return "Note visible to requester"
     if message.direction == MessageDirection.OUTBOUND:
         return {
             EMAIL: "Email to requester", TEAMS_CHANNEL: "Teams reply to requester", SYSTEM: "Automatic message to requester",

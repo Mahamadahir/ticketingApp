@@ -18,7 +18,7 @@ from enum import Enum
 from typing import Mapping, Optional, Sequence
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import Integer, String, case, cast, func, literal, null, union_all
+from sqlalchemy import Integer, String, case, cast, func, literal, null, or_, union_all
 from sqlmodel import Session, select
 
 from app.models import Message, MessageDirection, Ticket, TicketEvent, User
@@ -71,7 +71,11 @@ def feed_query(
             Message.created_at.label("at"),
             Message.id.label("row_id"),
             Message.ticket_id.label("ticket_id"),
-            case((Message.msp_forward.is_not(None), "msp"), else_=cast(Message.direction, String)).label("what"),
+            case(
+                (Message.msp_forward.is_not(None), "msp"),
+                (Message.visible_note.is_(True), "visible_note"),  # an agent's note the requester can see (#254)
+                else_=cast(Message.direction, String),
+            ).label("what"),
             func.coalesce(User.email, Message.sender).label("actor"),
             cast(null(), String).label("from_value"),
             cast(null(), String).label("to_value"),
@@ -89,9 +93,9 @@ def feed_query(
     if kind == Kind.EVENTS:
         branches = [events]
     elif kind == Kind.CONVERSATION:
-        branches = [messages.where(Message.direction != MessageDirection.INTERNAL)]
+        branches = [messages.where(Message.direction != MessageDirection.INTERNAL, Message.visible_note.is_(False))]
     elif kind == Kind.NOTES:
-        branches = [messages.where(Message.direction == MessageDirection.INTERNAL)]
+        branches = [messages.where(or_(Message.direction == MessageDirection.INTERNAL, Message.visible_note.is_(True)))]
     else:
         branches = [events, messages]
 
@@ -125,6 +129,7 @@ _MESSAGE_WHAT = {
     MessageDirection.OUTBOUND.value: "emailed the requester",
     MessageDirection.INBOUND.value: "message from the requester",
     MessageDirection.INTERNAL.value: "added an internal note",
+    "visible_note": "added a note the requester can see",
 }
 
 
@@ -311,6 +316,7 @@ def phrase_of(row, names: Mapping[str, str]) -> str:
             MessageDirection.OUTBOUND.value: "Emailed the requester",
             MessageDirection.INBOUND.value: "Requester replied",
             MessageDirection.INTERNAL.value: "Added a note",
+            "visible_note": "Added a note the requester can see",
         }.get(what, what.capitalize())
     if row.what == "triaged":
         priority = _PRIORITY.search(row.detail or "")
@@ -356,7 +362,7 @@ def status_chip(value: Optional[str]) -> tuple[str, str]:
 
 def step_of(row, names: Mapping[str, str], viewer: Optional[str] = None) -> Step:
     if row.kind == "message":
-        group = "notes" if row.what.lower() == MessageDirection.INTERNAL.value else "conversation"
+        group = "notes" if row.what.lower() in (MessageDirection.INTERNAL.value, "visible_note") else "conversation"
     else:
         group = "events"
     role = role_of(row)
