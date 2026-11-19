@@ -270,7 +270,7 @@ def plan_files(session: Session, files: list[Attachment]) -> tuple[str, list[int
             left.append(f)
 
     def line(f: Attachment) -> str:
-        return f"- {f.filename} ({max(1, round(f.size / 1024))} KB)"
+        return f"- {f.display_name or f.filename} ({max(1, round(f.size / 1024))} KB)"
 
     parts = []
     if attached:

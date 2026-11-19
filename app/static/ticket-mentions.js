@@ -93,10 +93,11 @@
   function ask(area) {
     var textarea = textareaOf(area);
     var token = tokenAt(textarea);
+    ++asked;  // any answer still on its way is stale from here on
     if (!token) { hide(area); return; }
     var url = area.getAttribute("data-mention-url");
     if (!url || !window.fetch) { return; }
-    var mine = ++asked;
+    var mine = asked;
     fetch(url + "?q=" + encodeURIComponent(token.query), { credentials: "same-origin", headers: { Accept: "application/json" } })
       .then(function (response) { return response.ok ? response.json() : { agents: [] }; })
       .then(function (data) { if (mine === asked && document.activeElement === textarea) { show(area, data.agents || []); } })

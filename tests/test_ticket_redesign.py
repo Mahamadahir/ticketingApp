@@ -658,6 +658,14 @@ def test_changing_the_type_records_the_event_and_the_audit_and_keeps_the_number(
     assert len(events_of(db_session, ticket, "type_changed")) == 1
 
 
+def test_the_type_of_a_request_waiting_for_approval_cannot_be_changed(client, db_session):
+    ticket, _ = triaged_ticket(client, db_session)
+    save(db_session, ticket, status=TicketStatus.AWAITING_APPROVAL)
+    assert client.post(f"/tickets/{ticket.number}/type", data={"ticket_type": "problem"}).status_code == 400
+    db_session.refresh(ticket)
+    assert ticket.type.value != "problem" and 'action="/tickets/%d/type"' % ticket.number not in page(client, ticket, edit="type").text
+
+
 # ---- The Service level box -------------------------------------------------------------------------------------
 
 

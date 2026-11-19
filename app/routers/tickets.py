@@ -701,6 +701,8 @@ def edit_type(
         raise HTTPException(status_code=400, detail="Triage the ticket first; triage sets its type")
     if ticket.status in FINISHED_STATUSES:
         raise HTTPException(status_code=400, detail="A resolved or closed ticket's type can no longer be changed")
+    if ticket.status == TicketStatus.AWAITING_APPROVAL:
+        raise HTTPException(status_code=400, detail="The type cannot be changed while the request waits for approval")
     previous = ticket.type
     change_type(session, ticket, ticket_type, user.email)
     if ticket.type != previous:
@@ -2147,7 +2149,7 @@ def _render_ticket_detail(
     can_set_required_by = (offers_required_by(session, ticket) or ticket.required_by is not None) and may_set_required_by(user, ticket, levels)
     can_set_due = may_set_due(user, ticket, levels)
     editable = {
-        "type": can_edit_triage, "category": can_edit_triage, "priority": can_edit_triage, "status": can_edit_status,
+        "type": can_edit_triage and ticket.status != TicketStatus.AWAITING_APPROVAL, "category": can_edit_triage, "priority": can_edit_triage, "status": can_edit_status,
         "due": can_set_due, "required_by": can_set_required_by,
     }
     files = ticket_files(session, user, levels, ticket)
