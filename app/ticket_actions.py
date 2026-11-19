@@ -89,7 +89,10 @@ def action_chips(
     if can_note:
         chips.row.append(Chip("note", "Add note"))
     if not can_work:
-        return chips  # read-only: a note while the ticket is untriaged, and nothing else
+        if can_triage:
+            # Any agent can triage an untriaged ticket they can see (visibility.may_triage), without working it.
+            chips.row.append(Chip("triage", "Triage", primary=True))
+        return chips  # otherwise read-only: a note while the ticket is untriaged, and nothing else
 
     if not assigned and can_self_assign:
         chips.row.append(Chip("assign_me", "Assign to me", post=True))

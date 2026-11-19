@@ -397,7 +397,7 @@ def test_the_page_offers_resolve_only_when_resolving_would_work(client, db_sessi
     first, second = subs_of(db_session, original)
     resolve(client, first)
     resolve(client, second)
-    assert "Preview resolution" in client.get(f"/tickets/{original.number}").text
+    assert "Preview resolution" in client.get(f"/tickets/{original.number}?action=resolve").text
 
 
 def test_a_resolved_ticket_shows_resolved_as_its_current_status_without_a_way_to_set_it(client, db_session):
