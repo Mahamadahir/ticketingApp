@@ -204,6 +204,12 @@ COLUMNS: dict[str, ColumnUse] = {
         "when the preview is confirmed or expires, and by anonymisation", anon=DELETE,
     ),
     "reply_held_file.user_id": _use(STAFF, USER_ID),
+    "ticket_presence.user_id": _use(
+        STAFF, USER_ID, "which agent has a ticket page open right now; a row lives about a minute and is deleted when the page is "
+        "left or by the hourly presence-cleanup job, so it is never part of a subject access export and anonymisation has nothing to do",
+    ),
+    "ticket_presence.activity": _use(NOT_PERSON, LABEL, "viewing, email, note or action; names no one"),
+    "ticket_presence.action_name": _use(NOT_PERSON, LABEL, "the name of the action panel an agent has open (\"Re-assign\"); names no one"),
     "message.channel": _use(NOT_PERSON, LABEL, "where the message came from or went (email, portal, teams, agent, system); names no one", anon=KEEP),
     "teamsintake.activity_key": _use(NOT_PERSON, LABEL, "one-way hash of an object id and a Teams activity id; names no one and holds no words"),
     "anonymised_requester.address_hash": _use(NOT_PERSON, LABEL, "keyed one-way hash of an anonymised address; the only trace of it, kept so a repeat is recognised"),

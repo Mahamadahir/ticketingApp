@@ -48,6 +48,7 @@ from app.models import ScheduledJob
 from app.msp import run_msp_ack_alerts, run_msp_forwards, run_msp_handoff
 from app.notification_purge import purge_notifications
 from app.reply_files import expire as expire_reply_files
+from app.ticket_presence import purge_expired as purge_ticket_presence
 from app.sessions import purge_ended_sessions
 from app.teams_pending import expire_pending
 from app.settings_store import JOB_LATE_MINUTES, JOB_LEASE_MINUTES, JOB_RETRY_MINUTES, REGISTRY, get_int_setting
@@ -79,6 +80,7 @@ SCHEDULED_JOBS: list[ScheduledJobDef] = [
     ScheduledJobDef("msp-forwards", 300, run_msp_forwards),  # MSP mail left waiting for an agent goes to the user once business hours end
     ScheduledJobDef("msp-handoff", 300, run_msp_handoff),  # every 5 minutes: the handoff starts within 5 minutes of its hour
     ScheduledJobDef("notification-purge", 86400, purge_notifications),  # deletes dismissed notifications past the undo window and every notification past its age limit, with their Teams posts (app/notification_purge.py)
+    ScheduledJobDef("presence-cleanup", 3600, purge_ticket_presence),  # deletes ticket presence rows past the "gone after" time (app/ticket_presence.py)
     ScheduledJobDef("reply-files", 3600, expire_reply_files),  # drops files held for an email preview that was never confirmed (app/reply_files.py)
     ScheduledJobDef("scheduled-due", 900, run_scheduled_due),
     ScheduledJobDef("session-cleanup", 86400, purge_ended_sessions),  # deletes sign-in sessions that ended `session_keep_days` ago

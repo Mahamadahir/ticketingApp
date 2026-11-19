@@ -1036,6 +1036,21 @@ class ReplyHeldFile(SQLModel, table=True):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class TicketPresence(SQLModel, table=True):
+    """Who has an agent's ticket page open, and what they are doing on it (app/ticket_presence.py). One row per person and
+    ticket, written by the page's check-in and deleted when they leave or by the `presence-cleanup` job. Short-lived: a row
+    older than the "gone after" setting counts for nothing and is removed within the hour. In the database, not in memory,
+    because the app runs several replicas."""
+
+    __tablename__ = "ticket_presence"
+
+    ticket_id: int = Field(foreign_key="ticket.id", primary_key=True)
+    user_id: int = Field(foreign_key="user.id", primary_key=True)
+    activity: str  # viewing, email, note or action (app/ticket_presence.py ACTIVITIES)
+    action_name: Optional[str] = Field(default=None)  # for "action": what the open panel calls itself ("Re-assign")
+    last_seen_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), index=True)
+
+
 class MspUnmatchedMail(SQLModel, table=True):
     """Mail from the MSP that matched no ticket (app/msp.py `park_unmatched`), kept for an agent to link to a ticket or
     dismiss. `status` is open, linked or dismissed. `verified` is whether Microsoft's compauth verdict was pass."""

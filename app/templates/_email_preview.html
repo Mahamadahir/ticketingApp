@@ -36,6 +36,7 @@
     {% if next_status %}<input type="hidden" name="next_status" value="{{ next_status }}" />{% endif %}
     {% if due_on %}<input type="hidden" name="due_on" value="{{ due_on }}" />{% endif %}
     {% if due_reason %}<input type="hidden" name="due_reason" value="{{ due_reason }}" />{% endif %}
+    {% if seen %}<input type="hidden" name="seen" value="{{ seen }}" />{% endif %}
     <button type="submit">Send message</button>
     {% if draft %}
     <button type="button" class="button-outline" hx-post="/tickets/{{ ticket.number }}/email/discard" hx-vals='{"draft": "{{ draft }}"}'

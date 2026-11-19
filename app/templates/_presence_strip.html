@@ -1,0 +1,11 @@
+{# Who else is on this ticket (app/ticket_presence.py). Drawn inside #presence on the agent ticket page and swapped in by its
+   check-in. `data-shown` fingerprints what is drawn, so a poll that would draw the same answers 204 and this is not touched. #}
+<div class="tp-presence-body" data-shown="{{ shown }}">
+  {% if others %}
+  <ul class="tp-presence-list">
+    {% for here in others %}
+    <li class="tp-presence-item"><span class="avatar tp-avatar" aria-hidden="true">{{ here.user.display_name|initials }}</span><span><b>{{ here.user.display_name }}</b> {{ here.sentence }}</span></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</div>

@@ -4,23 +4,50 @@
 {% from "_triage_selects.html" import impact_select, urgency_select, category_select %}
 {# One action of the header bar: a disclosure that opens its panel under the button (native <details>, so the keyboard
    works without a script). Opening one closes the others (the shared name). #}
-{% macro action(label, primary=false, wide=false) %}
+{% macro action(label, primary=false, wide=false, doing="") %}
 <details class="tp-action" name="ticket-action">
   <summary class="btn{{ ' btn-primary' if primary else '' }}">{{ label }}</summary>
-  <div class="tp-panel{{ ' tp-panel-wide' if wide else '' }}">{{ caller() }}</div>
+  <div class="tp-panel{{ ' tp-panel-wide' if wide else '' }}"{% if doing %} data-doing="{{ doing }}"{% endif %}>{{ caller() }}</div>
 </details>
 {% endmacro %}
 {# One item of the More actions menu: a nested disclosure. #}
-{% macro item(label) %}
+{% macro item(label, doing="") %}
 <details class="tp-item">
   <summary>{{ label }}</summary>
-  <div class="tp-item-body">{{ caller() }}</div>
+  <div class="tp-item-body"{% if doing %} data-doing="{{ doing }}"{% endif %}>{{ caller() }}</div>
 </details>
 {% endmacro %}
 {% set triaged_actions = ticket.triaged_at and ticket.status.value != "awaiting_approval" %}
 {% set status_label = ticket.status.value.replace("_", " ")|capitalize|replace("msp", "MSP") %}
 <div class="tp">
 <p class="tp-crumbs"><a href="/tickets">&larr; back to tickets</a></p>
+
+{# Who else is on this ticket (#246). The page checks in with what the agent is doing (app/static/ticket-presence.js) and the answer
+   is this strip, or 204 when it would read the same. Self-contained, so the header redesign can move it. Agents only. #}
+<div id="presence" class="tp-presence" role="status" aria-live="polite" aria-atomic="true" data-poll
+     data-leave="/tickets/{{ ticket.number }}/presence/leave"
+     hx-post="/tickets/{{ ticket.number }}/presence" hx-trigger="load, every {{ presence_interval }}s, presence-now"
+     hx-vals="js:{...ticketPresenceVals()}" hx-swap="innerHTML">
+  {% with others = presence_others, shown = presence_shown %}{% include "_presence_strip.html" %}{% endwith %}
+</div>
+<script src="{{ static_url('ticket-presence.js') }}"></script>
+
+{% if hold %}
+{# Resolve or Close held back: another agent is doing something on this ticket right now (#246). Nothing was recorded or sent. #}
+<div class="tp-warn" role="alert" id="action-warning">
+  <p><b>Not {{ "resolved" if hold.verb == "Resolve" else "closed" }} yet.</b></p>
+  <ul class="tp-warn-list">{% for line in hold.who %}<li>{{ line }}.</li>{% endfor %}</ul>
+  <p>Your {{ "resolution" if hold.verb == "Resolve" else "closing" }} notes, so they are not lost:</p>
+  <pre class="message-body">{{ hold.notes }}</pre>
+  <div class="tp-warn-actions">
+    <form method="post" action="{{ hold.action }}" hx-post="{{ hold.action }}" hx-target="main" hx-swap="innerHTML" hx-disabled-elt="find button[type=submit]">
+      {% for name, value in hold.fields %}<input type="hidden" name="{{ name }}" value="{{ value }}" />{% endfor %}
+      <button type="submit" class="btn btn-primary">{{ hold.verb }} anyway</button>
+    </form>
+    <a class="btn" href="/tickets/{{ ticket.number }}" hx-on:click="event.preventDefault(); document.getElementById('action-warning').remove()">Cancel</a>
+  </div>
+</div>
+{% endif %}
 
 <header class="tp-head">
   <div class="tp-title">
@@ -52,7 +79,7 @@
     {% endif %}
 
     {% if not ticket.triaged_at and user.role.value == "super_admin" %}
-    {% call action("Assign") %}
+    {% call action("Assign", doing="assigning") %}
     <form class="tp-form" hx-post="/tickets/{{ ticket.number }}/assign" hx-target="main" hx-swap="innerHTML">
       <label>Assign to (without triaging)
         <select name="agent_id">
@@ -67,7 +94,7 @@
     {% endif %}
 
     {% if can_reassign %}
-    {% call action("Re-assign" if assigned_agent else "Assign") %}
+    {% call action("Re-assign" if assigned_agent else "Assign", doing="re-assigning" if assigned_agent else "assigning") %}
     <form class="tp-form" hx-post="/tickets/{{ ticket.number }}/reassign" hx-target="main" hx-swap="innerHTML">
       <label>Team
         <select name="team_id" hx-get="/tickets/agents-for-team" hx-trigger="change" hx-target="#reassign-agent">
@@ -89,7 +116,7 @@
     {% endcall %}
     {% endif %}
 
-    {% call action("Escalate") %}
+    {% call action("Escalate", doing="escalating") %}
     {% if escalation_is_msp %}
     <p class="note">The escalation target for this category is the MSP: use Send to MSP above.</p>
     {% elif escalation_team %}
@@ -103,7 +130,7 @@
     {% endif %}
     {% endcall %}
 
-    {% call action("Send to MSP") %}
+    {% call action("Send to MSP", doing="sending to the MSP") %}
     {% if msp_blocked %}
     <p class="note">Cannot send to the MSP: {{ msp_blocked }}</p>
     {% else %}
@@ -119,10 +146,10 @@
     {% endif %}
     {% endcall %}
 
-    {% call action("More actions", wide=true) %}
+    {% call action("More actions", wide=true, doing="using More actions") %}
     <div class="tp-menu">
       {% if triaged_actions %}
-      {% call item("Change status") %}
+      {% call item("Change status", doing="changing the status") %}
       <form class="tp-form" hx-post="/tickets/{{ ticket.number }}/status" hx-target="main" hx-swap="innerHTML">
         <div class="tp-status-buttons">
           {% for s in statuses %}
@@ -140,7 +167,7 @@
       {% endif %}
 
       {% if can_set_priority %}
-      {% call item("Impact and urgency") %}
+      {% call item("Impact and urgency", doing="changing impact and urgency") %}
       <form class="tp-form" hx-post="/tickets/{{ ticket.number }}/priority" hx-target="main" hx-swap="innerHTML">
         <label>Impact
           <select name="impact">
@@ -158,7 +185,7 @@
       {% endif %}
 
       {% if can_set_required_by %}
-      {% call item("Required by") %}
+      {% call item("Required by", doing="setting Required by") %}
       <form class="tp-form" hx-post="/tickets/{{ ticket.number }}/required-by" hx-target="main" hx-swap="innerHTML">
         <label>Required by ({{ "recorded only: a backdated ticket has no SLA, so a past date is allowed" if ticket.is_backdated else "Due follows it unless you have set Due by hand; not in the past, UTC" }}; blank to remove)
           <input type="date" name="required_by" value="{{ ticket.required_by.isoformat() if ticket.required_by else "" }}" /></label>
@@ -168,7 +195,7 @@
       {% endif %}
 
       {% if can_set_due %}
-      {% call item("Due date") %}
+      {% call item("Due date", doing="setting the Due date") %}
       <form class="tp-form" hx-post="/tickets/{{ ticket.number }}/due" hx-target="main" hx-swap="innerHTML">
         <label>Due (the SLA target is the end of this day in {{ requester_zone }}; never after Required by; blank puts it back to the default)
           <input type="date" name="due_on" value="{{ ticket.due_on.isoformat() if ticket.due_on else "" }}" /></label>
@@ -180,7 +207,7 @@
       {% endif %}
 
       {% if not parent and not has_hidden_parent and can_link %}
-      {% call item("Link") %}
+      {% call item("Link", doing="linking it") %}
       <form class="tp-form" hx-post="/tickets/{{ ticket.number }}/link" hx-target="main" hx-swap="innerHTML">
         <label>Link under a Major Incident or Problem (ticket number, e.g. 1042)
           <input type="text" name="parent_number" maxlength="40" required />
@@ -191,7 +218,7 @@
       {% endif %}
 
       {% if can_split %}
-      {% call item("Split ticket") %}
+      {% call item("Split ticket", doing="splitting it") %}
       <p class="note">Each part with a subject becomes its own ticket, triaged like this one (type, category, impact, urgency, team); amend or assign it on its own page. Leave unused parts blank; a part with details needs a subject. A ticket needs at least two sub-tickets in all and at most {{ max_sub_tickets }} (sub-requests made automatically count too).</p>
       <form class="tp-form" hx-post="/tickets/{{ ticket.number }}/split" hx-target="main" hx-swap="innerHTML">
         {% for i in split_slots %}
@@ -206,7 +233,7 @@
       {% endif %}
 
       {% if can_backdate %}
-      {% call item("Backdate (log after the fact)") %}
+      {% call item("Backdate (log after the fact)", doing="backdating it") %}
       <p class="note">Enter when it was reported or fixed: up to 30 days back, never in the future, times in your time zone ({{ viewer_zone() }}). A backdated ticket counts towards volume but is left out of SLA figures. Leave a box blank to keep that date.</p>
       <form class="tp-form" hx-post="/tickets/{{ ticket.number }}/backdate" hx-target="main" hx-swap="innerHTML">
         <label>Reported <input type="datetime-local" name="reported_at" value="{{ ticket.reported_at|local_input }}" /></label>
@@ -219,7 +246,7 @@
       {% endif %}
 
       {% if not ticket.msp_hold and can_hold %}
-      {% call item("Hold (keep out of the MSP handoff)") %}
+      {% call item("Hold (keep out of the MSP handoff)", doing="holding it back from the MSP handoff") %}
       <form class="tp-form" hx-post="/tickets/{{ ticket.number }}/msp-hold" hx-target="main" hx-swap="innerHTML">
         <p class="note">Hold keeps this ticket out of the automatic MSP handoff. It lasts until you or someone else releases it.</p>
         <button type="submit" class="btn">Hold (keep out of the MSP handoff)</button>
@@ -228,7 +255,7 @@
       {% endif %}
 
       {% if can_take_back_from_msp %}
-      {% call item("Take back from MSP") %}
+      {% call item("Take back from MSP", doing="taking it back from the MSP") %}
       <form class="tp-form" hx-post="/tickets/{{ ticket.number }}/take-back-from-msp/preview" hx-target="#take-back-preview" hx-swap="innerHTML">
         <p class="note">Moves the ticket to In progress (or Open if nobody is assigned). You can tell the MSP it is no longer needed.</p>
         <button type="submit" class="btn">Preview</button>
@@ -238,7 +265,7 @@
       {% endif %}
 
       {% if triaged_actions and can_close %}
-      {% call item("Close") %}
+      {% call item("Close", doing="closing it") %}
       <form class="tp-form" hx-post="/tickets/{{ ticket.number }}/close/preview" hx-target="#close-preview" hx-swap="innerHTML"
             hx-on:input="document.getElementById('close-preview').innerHTML = ''">
         <label>Closing notes (why it is being closed; they go into the email to the requester)
@@ -265,7 +292,7 @@
     {% endcall %}
 
     {% if triaged_actions and can_resolve %}
-    {% call action("Resolve", primary=true, wide=true) %}
+    {% call action("Resolve", primary=true, wide=true, doing="resolving") %}
     <form class="tp-form" hx-post="/tickets/{{ ticket.number }}/resolve/preview" hx-target="#resolve-preview" hx-swap="innerHTML"
           hx-on:input="document.getElementById('resolve-preview').innerHTML = ''">
       <label>Resolution notes (what was done to fix it; they go into the email to the requester)
@@ -290,7 +317,7 @@
     {% endif %}
 
     {% if triaged_actions and can_reopen %}
-    {% call action("Reopen", primary=not can_resolve) %}
+    {% call action("Reopen", primary=not can_resolve, doing="reopening") %}
     <form class="tp-form" hx-post="/tickets/{{ ticket.number }}/reopen" hx-target="main" hx-swap="innerHTML">
       <label>Why is it being reopened?
         <textarea name="reason" rows="2" maxlength="{{ max_reason_length }}" required></textarea>
@@ -301,7 +328,7 @@
     {% endif %}
 
     {% if triaged_actions and can_reclose %}
-    {% call action("Reclose") %}
+    {% call action("Reclose", doing="reclosing") %}
     <form class="tp-form" hx-post="/tickets/{{ ticket.number }}/reclose" hx-target="main" hx-swap="innerHTML">
       <label>Close it again because
         <select name="reason" required>
@@ -439,8 +466,33 @@
 {% endif %}
 
 {% if can_work or can_note %}
-{% set start_on_note = not can_email and can_note %}
+{% set start_on_note = (compose.mode == "note") if compose else (not can_email and can_note) %}
 <section class="card tp-composer" aria-label="Reply">
+  {% if compose %}
+  {# A send was held back: another agent posted after this page loaded (#246). Nothing was sent; the text is kept below. #}
+  <div class="tp-warn" role="alert" id="send-warning">
+    <p><b>Not sent yet.</b> Since you opened this ticket:</p>
+    <ul class="tp-warn-list">
+      {% for post in compose.later %}
+      <li>
+        <b>{{ post.who }}</b> {{ "emailed the requester" if post.email else "added an internal note" }} at {{ post.at|local_time }}
+        <p class="tp-warn-excerpt">{{ post.excerpt }}</p>
+      </li>
+      {% endfor %}
+    </ul>
+    {% if compose.files %}<p>Your attached file{{ "" if compose.files|length == 1 else "s" }} ({{ compose.files|join(", ") }}) {{ "is" if compose.files|length == 1 else "are" }} kept.</p>{% endif %}
+    <p>The thread below shows what was added. Send anyway if yours still needs to go, or cancel and read it first; your text stays in the box either way.</p>
+    <div class="tp-warn-actions">
+      <form method="post" action="{{ compose.action }}" hx-post="{{ compose.action }}" hx-target="main" hx-swap="innerHTML" hx-disabled-elt="find button[type=submit]">
+        {% for name, value in compose.fields %}<input type="hidden" name="{{ name }}" value="{{ value }}" />{% endfor %}
+        <button type="submit" class="btn btn-primary">Send anyway</button>
+      </form>
+      {# Cancel: with scripts it drops the warning (and the held files); without, it is a link to the thread, and the text is already in the box. #}
+      <a class="btn" href="#thread"
+         {% if compose.draft %}hx-post="/tickets/{{ ticket.number }}/email/discard" hx-vals='{"draft": "{{ compose.draft }}"}' hx-target="#send-warning" hx-swap="delete" hx-on:click="document.querySelectorAll('.tp-compose-note input[name=draft]').forEach(function (e) { e.remove(); })"{% else %}hx-on:click="document.getElementById('send-warning').remove()"{% endif %}>Cancel</a>
+    </div>
+  </div>
+  {% endif %}
   {% if can_work %}<input type="radio" class="tp-mode sr-only" name="reply-mode" id="mode-email" {{ "" if start_on_note else "checked" }} />{% endif %}
   {% if can_note %}<input type="radio" class="tp-mode sr-only" name="reply-mode" id="mode-note" {{ "checked" if start_on_note else "" }} />{% endif %}
   <div class="segmented tp-segmented">
@@ -455,7 +507,8 @@
     <form class="tp-form" hx-post="/tickets/{{ ticket.number }}/email/preview" hx-target="#email-preview" hx-swap="innerHTML"
           hx-encoding="multipart/form-data" hx-on:input="document.getElementById('email-preview').innerHTML = ''">
       <p class="tp-hint">Goes to {{ ticket.requester_email }} and is copied to {{ cc_candidates|length }} follower{{ "" if cc_candidates|length == 1 else "s" }}.</p>
-      {% with body = "" %}{% include "_email_body.html" %}{% endwith %}
+      {% with body = compose.body if compose and compose.mode == "email" else "" %}{% include "_email_body.html" %}{% endwith %}
+      <input type="hidden" name="seen" value="{{ latest_post_id }}" />
       {% if cc_candidates %}
       <fieldset>
         <legend>Copy this email to</legend>
@@ -497,7 +550,10 @@
   <div class="tp-compose tp-compose-note">
     <form class="tp-form" hx-post="/tickets/{{ ticket.number }}/note" hx-target="main" hx-swap="innerHTML" hx-encoding="multipart/form-data">
       <p class="tp-hint">Only agents can see internal notes.</p>
-      <textarea name="body" rows="4" maxlength="{{ max_message_length }}" placeholder="Internal note (agents only, does not triage the ticket)..." required></textarea>
+      <textarea name="body" rows="4" maxlength="{{ max_message_length }}" placeholder="Internal note (agents only, does not triage the ticket)..." required>
+{{- compose.body if compose and compose.mode == "note" else "" -}}</textarea>
+      <input type="hidden" name="seen" value="{{ latest_post_id }}" />
+      {% if compose and compose.mode == "note" and compose.draft %}<input type="hidden" name="draft" value="{{ compose.draft }}" />{% endif %}
       {% with attach_id = "note-files" %}{% include "_attach_control.html" %}{% endwith %}
       <div class="tp-compose-row">
         {% with blank_label = "No change (" ~ ticket.status.value.replace("_", " ") ~ ")" %}{% include "_next_status.html" %}{% endwith %}

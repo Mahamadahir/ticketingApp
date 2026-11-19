@@ -880,6 +880,24 @@ th { color: var(--muted); font-weight: 600; }
   .bell-panel { left: 16px; right: 16px; width: auto; }
 }
 
+/* Ticket presence (#246): who else is on this ticket, and the warning before a send that another agent got in ahead of.
+   Self-contained so the header redesign (#244) can move it. Tokens only. */
+.tp-presence-list {
+  list-style: none; margin: 0; padding: 8px 12px; display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center;
+  background: var(--blue-bg); color: var(--blue); border: 1px solid var(--border); border-radius: var(--radius);
+}
+.tp-presence-item { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; }
+.tp-presence-item .tp-avatar { width: 24px; height: 24px; font-size: 11px; flex: none; }
+.tp-warn {
+  display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; background: var(--amber-bg); color: var(--amber);
+  border: 1px solid var(--note-border); border-left: 4px solid var(--amber); border-radius: var(--radius);
+}
+.tp-warn p { margin: 0; }
+.tp-warn-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.tp-warn-excerpt { margin: 2px 0 0; color: var(--text); overflow-wrap: anywhere; }
+.tp-warn-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.tp-warn-actions form { margin: 0; }
+
 /* Team activity (#243): the session cards on the page and in the side drawer the sidebar item opens. 9A tokens only. */
 .act-page { max-width: 960px; }
 .act-day { margin: 0 0 20px; }

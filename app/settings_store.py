@@ -40,7 +40,7 @@ class SettingDef:
         return _TRAILING_UNIT.sub("", self.label)
 
 
-_TRAILING_UNIT = re.compile(r"\s*\((minutes|hours|days|MB|MB in all|characters|attempts|codes|percent|HH:MM|0 to 23)\)$")
+_TRAILING_UNIT = re.compile(r"\s*\((minutes|seconds|hours|days|MB|MB in all|characters|attempts|codes|percent|HH:MM|0 to 23)\)$")
 
 GROUP_SERVICE = "service-levels"
 GROUP_RESOLVING = "resolving-and-closing"
@@ -52,6 +52,7 @@ GROUP_NOTIFICATIONS = "notifications"
 GROUP_PORTAL = "portal-and-uploads"
 GROUP_SIGN_IN = "sign-in-and-sessions"
 GROUP_DATA = "data-protection-and-reports"
+GROUP_TICKET_PAGE = "ticket-page"
 GROUP_OTHER = "other"
 
 # The groups of the Settings page, in the order shown: (key, title, one line under the title).
@@ -66,6 +67,7 @@ GROUPS: tuple[tuple[str, str, str], ...] = (
     (GROUP_PORTAL, "Portal and uploads", "What requesters and agents can attach."),
     (GROUP_SIGN_IN, "Sign-in and sessions", "Idle time, session length, emergency passwords and linking another account."),
     (GROUP_DATA, "Data protection and reports", "Limits on reports and on the subject access export."),
+    (GROUP_TICKET_PAGE, "Ticket page", "How the agent ticket page shows who else has the ticket open."),
     (GROUP_OTHER, "Other", "Settings that belong with none of the groups above."),
 )
 GROUP_KEYS = tuple(key for key, _title, _text in GROUPS)
@@ -95,6 +97,9 @@ SUBJECT_ACCESS_MAX_MB = "subject_access_max_mb"
 GRAPH_SUBSCRIPTION_MINUTES = "graph_subscription_minutes"
 GRAPH_RENEW_MARGIN_MINUTES = "graph_renew_margin_minutes"
 MAIL_BACKFILL_DAYS = "mail_backfill_days"
+# Ticket presence (issue #246, app/ticket_presence.py)
+PRESENCE_CHECK_IN_SECONDS = "ticket_presence_check_in_seconds"
+PRESENCE_GONE_AFTER_SECONDS = "ticket_presence_gone_after_seconds"
 JOB_LEASE_MINUTES = "scheduled_job_lease_minutes"
 JOB_RETRY_MINUTES = "scheduled_job_retry_minutes"
 JOB_LATE_MINUTES = "scheduled_job_late_minutes"
@@ -460,6 +465,30 @@ REGISTRY: dict[str, SettingDef] = {
             "runs once, and the audit log records that it was late."
         ),
         default="3",
+    ),
+    PRESENCE_CHECK_IN_SECONDS: SettingDef(
+        key=PRESENCE_CHECK_IN_SECONDS,
+        group=GROUP_TICKET_PAGE,
+        label="Ticket presence: check-in interval (seconds)",
+        kind="count",
+        description=(
+            "An agent's open ticket page tells the server what they are doing this often, and shows who else is on the ticket. "
+            "Shorter shows a colleague sooner but makes more requests. The check-in does not count as the person being active, "
+            "so it never keeps a sign-in alive. Applies to pages opened after the change."
+        ),
+        default="15",
+    ),
+    PRESENCE_GONE_AFTER_SECONDS: SettingDef(
+        key=PRESENCE_GONE_AFTER_SECONDS,
+        group=GROUP_TICKET_PAGE,
+        label="Ticket presence: gone after (seconds)",
+        kind="count",
+        description=(
+            "Someone who has not checked in for this long is no longer shown as being on the ticket (for example a closed laptop). "
+            "Leaving the page removes them at once. Keep it at least twice the check-in interval; a browser can slow a background "
+            "tab's timer, so a tab left in the background may drop off before it checks in again."
+        ),
+        default="45",
     ),
     SESSION_IDLE_MINUTES: SettingDef(
         key=SESSION_IDLE_MINUTES,
