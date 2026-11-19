@@ -83,7 +83,8 @@ starting a phase, and `README.md` for how to run it.
   tests stay local with `docker compose` and `pytest`.
 - Hosting is Azure (Container Apps, PostgreSQL Flexible Server, Blob Storage,
   Key Vault), defined in Bicep under `infra/`. The earlier AWS/EC2 plan is dead. The deploy
-  workflow (`.github/workflows/deploy.yml`) has not run yet.
+  workflow (`.github/workflows/deploy.yml`) deploys every push to `main` to staging (not docs-only
+  changes); production is only ever a manual run (`staging-then-production`).
 
 ## Working rules
 
