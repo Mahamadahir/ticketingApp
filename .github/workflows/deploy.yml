@@ -1,8 +1,7 @@
 name: Deploy
 
-# DRAFT: written but never run. It cannot be proved without an Azure subscription,
-# so the first run on staging is also its test (see "Staging checklist" in
-# docs/build-plan.md). Setup it needs is in infra/README.md.
+# Every push to main deploys to staging (never production); a manual run can
+# also deploy staging then production. Setup it needs is in infra/README.md.
 #
 # Nothing here is hard-coded: Azure IDs, the resource group and every setting
 # come from the GitHub Environment (variables and secrets); the registry and
@@ -19,11 +18,11 @@ on:
         options:
           - staging
           - staging-then-production
-  # To deploy every push to main to staging (never production), remove the
-  # leading '#' from the next three lines.
-  # push:
-  #   branches: [main]
-  #   paths-ignore: ["docs/**", "**/*.md", "*.md"]
+  # Every push to main deploys to staging only (the environment list below is
+  # ["staging"] for anything but a manual staging-then-production run).
+  push:
+    branches: [main]
+    paths-ignore: ["docs/**", "**/*.md", "*.md"]
 
 permissions:
   contents: read
