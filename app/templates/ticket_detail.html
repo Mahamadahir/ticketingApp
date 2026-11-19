@@ -27,7 +27,7 @@
 <div id="presence" class="tp-presence" role="status" aria-live="polite" aria-atomic="true" data-poll
      data-leave="/tickets/{{ ticket.number }}/presence/leave"
      hx-post="/tickets/{{ ticket.number }}/presence" hx-trigger="load, every {{ presence_interval }}s, presence-now"
-     hx-vals="js:ticketPresenceVals()" hx-swap="innerHTML">
+     hx-vals="js:{...ticketPresenceVals()}" hx-swap="innerHTML">
   {% with others = presence_others, shown = presence_shown %}{% include "_presence_strip.html" %}{% endwith %}
 </div>
 <script src="{{ static_url('ticket-presence.js') }}"></script>
