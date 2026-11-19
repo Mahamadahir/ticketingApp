@@ -246,7 +246,7 @@ def test_confirming_attaches_the_files_to_the_message_and_the_email_carries_them
 
     built = mail.build_message_mail(db_session, row)
     assert [(n, t, d) for n, t, d in built.files] == [("quote.pdf", "application/pdf", PDF), ("jam.png", "image/png", PNG)]
-    assert built.body.startswith("Please see the attached") and "could NOT" not in built.body
+    assert built.body.endswith("\n\nPlease see the attached") and "could NOT" not in built.body
 
     sent = {}
     monkeypatch.setattr(mail.graph_client, "send_mail", lambda *a, **k: sent.update(args=a, kwargs=k))

@@ -548,8 +548,9 @@ AUDIENCES: tuple[tuple[str, str, str], ...] = (
 AUDIENCE_OF: dict[str, str] = {
     "raised_for": "requester", "acknowledgement": "requester", "follower_update": "requester", "resolution": "requester",
     "closed": "requester", "chase": "requester", "auto_resolve_note": "requester", "link_code": "requester",
-    "msp_forward": "requester", "header_agent": "requester", "header_automatic": "requester", "header_reply": "requester", "msp_sent_notice": "requester", "approval_approved": "requester",
+    "msp_forward": "requester", "msp_sent_notice": "requester", "approval_approved": "requester",
     "approval_declined": "requester", "approval_waived": "requester",
+    "header_agent": "requester", "header_automatic": "requester", "header_reply": "requester",
     "approval_request": "agent", "approval_reminder": "agent", "approval_withdrawn": "agent",
     "emergency_password_reset": "agent", "msp_handoff": "agent", "msp_no_longer_needed": "agent",
     "approval_overdue": "admin",
