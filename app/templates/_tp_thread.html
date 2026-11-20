@@ -24,6 +24,7 @@
         {%- if box.kind == "note" %}<svg aria-hidden="true" focusable="false" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V8a4 4 0 018 0v3"></path></svg>
         {%- elif box.kind == "visible_note" %}<svg aria-hidden="true" focusable="false" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>{% endif -%}
         {{ box.chip }}</span>
+      {% if box.alert %}<span class="chip t-red">{{ box.alert }}</span>{% endif %}
       {% if box.source %}<span class="muted small">[{{ box.source.reference }} {{ box.source.subject }}]</span>{% endif %}
       <time class="tp-when">{{ box.at|local_time }}</time>
       {% if box.can_manage %}
@@ -39,6 +40,15 @@
             <form method="post" action="{{ menu_base }}{{ box.message.id }}/visibility" hx-post="{{ menu_base }}{{ box.message.id }}/visibility" hx-target="main" hx-swap="innerHTML">
               <input type="hidden" name="visible" value="0" />
               <button type="submit" class="btn btn-primary">Hide it</button>
+            </form>
+          </details>
+          {% elif box.files %}
+          <details class="tp-hide">
+            <summary class="btn">Show to the requester</summary>
+            <p class="note">The {{ "file" if box.files|length == 1 else box.files|length ~ " files" }} attached to this note will be visible to the requester too.</p>
+            <form method="post" action="{{ menu_base }}{{ box.message.id }}/visibility" hx-post="{{ menu_base }}{{ box.message.id }}/visibility" hx-target="main" hx-swap="innerHTML">
+              <input type="hidden" name="visible" value="1" />
+              <button type="submit" class="btn btn-primary">Show it</button>
             </form>
           </details>
           {% else %}

@@ -75,6 +75,7 @@ class Box:
     is_visible_note: bool = False
     deleted_by: Optional[str] = None
     deleted_at: Optional[datetime] = None
+    alert: Optional[str] = None  # a red chip beside the kind chip (MSP mail whose sender was not verified)
     waits_for_triage: bool = False  # a visible note on an untriaged ticket: the requester sees it once triaged
 
 
@@ -166,8 +167,7 @@ def _sentence(e: TicketEvent, n: Names) -> str:
     if t == "answer_changed":
         return f"Updated the answer to {detail or 'a question'}" + (f": {to}." if to else " (it was cleared).")
     if t == "note_visibility_changed":
-        what = "Made a note visible to the requester." if to == "visible" else "Hid a note from the requester."
-        return what + (f' It began: "{detail}"' if detail else "")
+        return "Made a note visible to the requester." if to == "visible" else "Hid a note from the requester."
     if t == "created":
         return f"Created the ticket{' (' + detail + ')' if detail else ''}."
     if t == "request_type":
@@ -324,30 +324,25 @@ def _message_box(
             kind=VISIBLE_NOTE, title="Added a note", chip=chip, tone=tone, body=m.body, can_manage=manage, is_visible_note=True,
             lines=["Shown in the portal. Not sent by email."], waits_for_triage=not ticket.triaged_at, **base,
         )
-    if m.direction == MessageDirection.OUTBOUND:
-        chip, tone = CHIPS[EMAIL_OUT]
-        extra = [f"Copied: {m.cc}"] if m.cc else []
-        if m.msp_forward:
-            chip, tone = "From the MSP", "blue"
-            extra = {
-                "pending": ["The user was not on it; agents only until forwarded."], "forwarded": ["Forwarded to the user."],
-                "dismissed": ["Not forwarded."], "internal": ["An acknowledgement; agents only."],
-            }.get(m.msp_forward, [])
-        return Box(kind=EMAIL_OUT, title=_outbound_title(m), chip=chip, tone=tone, body=m.body, extra=extra, **base)
-    # Inbound: the requester, a follower, or the MSP.
-    chip, tone = CHIPS[EMAIL_IN]
-    extra = []
-    title = _inbound_title(m, m.id == first_inbound_id, item.sender_kind == "follower")
     if m.msp_forward:
-        chip, tone, title = "From the MSP", "blue", "MSP mail"
+        # MSP mail is stored as an outbound message (app/msp.py), so it is told apart by `msp_forward`, before direction.
         extra = {
             "pending": ["The user was not on it; agents only until forwarded."], "forwarded": ["Forwarded to the user."],
             "dismissed": ["Not forwarded."], "internal": ["An acknowledgement; agents only."],
         }.get(m.msp_forward, [])
-        if m.msp_unverified:
-            extra.append("The sender was not verified.")
-    body, quoted = (split_quoted(m.body) if m.channel == EMAIL and not m.msp_forward else (m.body, None))
-    return Box(kind=EMAIL_IN, title=title, chip=chip, tone=tone, body=body, quoted=quoted, extra=extra, **base)
+        return Box(
+            kind=EMAIL_IN, title="MSP mail", chip="From the MSP", tone="blue", body=m.body, extra=extra,
+            alert="sender not verified" if m.msp_unverified else None, **base,
+        )
+    if m.direction == MessageDirection.OUTBOUND:
+        chip, tone = CHIPS[EMAIL_OUT]
+        extra = [f"Copied: {m.cc}"] if m.cc else []
+        return Box(kind=EMAIL_OUT, title=_outbound_title(m), chip=chip, tone=tone, body=m.body, extra=extra, **base)
+    # Inbound: the requester or a follower.
+    chip, tone = CHIPS[EMAIL_IN]
+    title = _inbound_title(m, m.id == first_inbound_id, item.sender_kind == "follower")
+    body, quoted = split_quoted(m.body) if m.channel == EMAIL else (m.body, None)
+    return Box(kind=EMAIL_IN, title=title, chip=chip, tone=tone, body=body, quoted=quoted, **base)
 
 
 # ---- events ---------------------------------------------------------------------------------------------------

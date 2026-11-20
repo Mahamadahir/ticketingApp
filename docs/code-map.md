@@ -45,7 +45,6 @@ any change that adds, removes or renames modules, routes, models, jobs, settings
 - `messages-via-messages-module` app/subject_access.py in `_ticket_roles`: select() on Message
 - `messages-via-messages-module` app/team_activity.py in `feed_query`: select() on Message (allowed: The agent team activity feed lists messages (including notes) of tickets the agent can open, filtered by visible_ticket_condition; the requester never sees it.)
 - `messages-via-messages-module` app/thanks_rules.py in `_reply_that_reopened`: select() on Message
-- `messages-via-messages-module` app/visibility.py in `may_view_attachment`: select() on Message
 - `tickets-via-ticket-service` app/subrequests.py in `preview`: builds Ticket(...) directly
 
 ## Routes

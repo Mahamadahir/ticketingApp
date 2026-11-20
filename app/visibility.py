@@ -262,9 +262,10 @@ def may_view_attachment(
     The file of a deleted note (#255) is served to nobody, at once, while its note waits for the purge."""
     from app.models import Message  # here: only this function needs it
 
-    if attachment.message_id is not None and session.exec(
-        select(Message.deleted_at).where(Message.id == attachment.message_id)
-    ).first() is not None:
+    # `get` answers from the session when the message is already loaded (the ticket page loads its thread first), so a page of
+    # many files does not ask once per file.
+    message = session.get(Message, attachment.message_id) if attachment.message_id is not None else None
+    if message is not None and message.deleted_at is not None:
         return False
     if user.role in (UserRole.AGENT, UserRole.SUPER_ADMIN) and ticket_access(user, ticket, levels) >= Access.READ:
         return True

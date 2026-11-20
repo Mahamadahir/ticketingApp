@@ -320,7 +320,7 @@ def add_visible_note(
     return note
 
 
-EVENT_NOTE_VISIBILITY = "note_visibility_changed"  # to_value: visible or hidden; detail: the start of the note
+EVENT_NOTE_VISIBILITY = "note_visibility_changed"  # to_value: visible or hidden (never the note's words: the note may be deleted later)
 
 
 class NoteError(Exception):
@@ -349,7 +349,7 @@ def set_note_visible(session: Session, ticket: Ticket, note: Message, actor: Use
     else:
         note.direction, note.visibility, note.visible_note = MessageDirection.INTERNAL, MessageVisibility.AGENTS_ONLY, False
     session.add(note)
-    record_event(session, ticket, EVENT_NOTE_VISIBILITY, actor.email, to_value="visible" if visible else "hidden", detail=excerpt(note.body, 80))
+    record_event(session, ticket, EVENT_NOTE_VISIBILITY, actor.email, to_value="visible" if visible else "hidden")
     log_action(session, actor.email, "ticket", ticket.id, "note_made_visible" if visible else "note_hidden", f"message {note.id}")
     return True
 
@@ -464,17 +464,16 @@ _PUBLIC = (
 )
 
 
-def requester_visible_messages(session: Session, ticket: Ticket, include_deleted: bool = False) -> list[Message]:
+def requester_visible_messages(session: Session, ticket: Ticket) -> list[Message]:
     """The only messages the requester may see, in time order. Public only, and
     never an internal note even if one were wrongly marked public. A ticket that was
     split shows its family's shared conversation (see _shared_conversation).
     An agent's visible note (`add_visible_note`) waits here until its ticket is triaged, as every message to the
     requester does; this is the only place that rule is written. A deleted note (#255) is never shown to the requester,
-    whatever it was before; `include_deleted` is for the one caller that must still list it, the subject access export."""
+    whatever it was before. A deleted note that was visible therefore falls to `not_requester_visible_messages`, which is
+    where the subject access export lists it (still, until the purge)."""
     family = [ticket, *_shared_conversation(session, ticket)]
-    query = select(Message).where(Message.ticket_id.in_([t.id for t in family]), *_PUBLIC)
-    if not include_deleted:
-        query = query.where(Message.deleted_at.is_(None))
+    query = select(Message).where(Message.ticket_id.in_([t.id for t in family]), Message.deleted_at.is_(None), *_PUBLIC)
     untriaged = [t.id for t in family if not is_triaged(t)]
     if untriaged:
         query = query.where(~(Message.visible_note.is_(True) & Message.ticket_id.in_(untriaged)))

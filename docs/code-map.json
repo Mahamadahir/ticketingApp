@@ -7287,12 +7287,6 @@
         "rule": "messages-via-messages-module"
       },
       {
-        "detail": "select() on Message",
-        "file": "app/visibility.py",
-        "in": "may_view_attachment",
-        "rule": "messages-via-messages-module"
-      },
-      {
         "detail": "builds Ticket(...) directly",
         "file": "app/subrequests.py",
         "in": "preview",

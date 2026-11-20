@@ -419,6 +419,33 @@ def test_asking_for_the_state_it_is_already_in_changes_nothing(client, db_sessio
     assert not events_of(db_session, ticket, EVENT_NOTE_VISIBILITY)
 
 
+def test_showing_a_note_that_has_files_warns_that_the_files_become_visible_too(client, db_session, storage):
+    ticket, _ = triaged_ticket(client, db_session)
+    me = db_session.exec(select(User).where(User.email == "agent@example.com")).one()
+    note = add_note(db_session, ticket, me, "Note with a log")
+    store_attachment(db_session, storage, ticket=ticket, filename="log.txt", data=b"log", message=note, uploaded_by=me)
+    db_session.commit()
+    assert "The file attached to this note will be visible to the requester too." in thread_html(client, ticket)
+
+
+def test_msp_mail_keeps_its_label_and_the_unverified_warning(client, db_session):
+    ticket, _ = triaged_ticket(client, db_session)
+    add(db_session, ticket, "From the supplier", MessageDirection.OUTBOUND, channel=EMAIL, sender="MSP Desk", msp_forward="pending", msp_unverified=True)
+    box = next(b for b in boxes(thread_html(client, ticket)) if "From the supplier" in b)
+    assert "From the MSP" in box and "MSP mail" in box and "sender not verified" in box and "Emailed the requester" not in box
+    assert "agents only until forwarded" in box
+
+
+def test_a_note_visibility_event_never_holds_the_notes_words(client, db_session):
+    ticket, _ = triaged_ticket(client, db_session)
+    client.post(f"/tickets/{ticket.number}/note", data={"body": "A secret password hunter2"})
+    note = newest(db_session, ticket)
+    client.post(f"/tickets/{ticket.number}/notes/{note.id}/visibility", data={"visible": "1"})
+    event = events_of(db_session, ticket, EVENT_NOTE_VISIBILITY)[0]
+    client.post(f"/tickets/{ticket.number}/notes/{note.id}/delete")
+    assert event.detail is None and "hunter2" not in thread_html(client, ticket)
+
+
 # ---- Delete and Undo ---------------------------------------------------------------------------------------------
 
 
