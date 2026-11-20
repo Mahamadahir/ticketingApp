@@ -292,14 +292,15 @@ def test_the_closed_default_still_says_a_reply_opens_a_new_ticket():
 
 
 def latest_reply(db_session, ticket):
-    return [r for r in rows(db_session, outbox.REPLY) if r.ticket_id == ticket.id][-1]
+    candidates = [r for r in rows(db_session, outbox.REPLY) if r.ticket_id == ticket.id]
+    return max(candidates, key=lambda r: r.id)
 
 
 def reply_lines(body):
     return body.lower().count("reply to this email")
 
 
-def test_each_of_the_five_built_emails_has_the_reply_line_once(client, db_session, dev_mail):
+def test_the_raised_for_chase_and_resolution_emails_have_the_reply_line_once(client, db_session, dev_mail):
     from app.resolution import auto_resolution_note
 
     ticket = fresh(db_session, ticket_for_email(client, db_session))
@@ -323,17 +324,21 @@ def test_each_of_the_five_built_emails_has_the_reply_line_once(client, db_sessio
     built = mail.build_message_mail(db_session, latest_reply(db_session, ticket))
     assert reply_lines(built.body) == 1 and "tell us or reopen the ticket." in built.body
 
-    ticket = fresh(db_session, ticket)
-    ticket.status = TicketStatus.OPEN
-    db_session.add(ticket)
-    db_session.commit()
-    resolve_ticket(db_session, ticket, None, auto_resolution_note(db_session, ticket, 3))
-    db_session.commit()
-    built = mail.build_message_mail(db_session, latest_reply(db_session, ticket))
-    assert reply_lines(built.body) == 1 and "resolved automatically." in built.body
 
-    ticket = fresh(db_session, ticket)
+def test_the_closing_email_has_the_reply_line_once(client, db_session, dev_mail):
+    ticket = fresh(db_session, ticket_for_email(client, db_session))
     close_ticket(db_session, ticket, agent_of(db_session), "All done")
     db_session.commit()
     built = mail.build_message_mail(db_session, latest_reply(db_session, ticket))
     assert reply_lines(built.body) == 1 and "your reply will open a new ticket linked to this one." in built.body
+
+
+def test_an_automatic_resolution_email_has_the_reply_line_once(client, db_session, dev_mail):
+    from app.resolution import auto_resolution_note
+
+    ticket = fresh(db_session, ticket_for_email(client, db_session))
+    resolve_ticket(db_session, ticket, None, auto_resolution_note(db_session, ticket, 3))
+    db_session.commit()
+    [row] = [r for r in rows(db_session, outbox.NOTICE) if r.ticket_id == ticket.id]
+    built = mail.build_message_mail(db_session, row)
+    assert reply_lines(built.body) == 1 and "resolved automatically." in built.body
