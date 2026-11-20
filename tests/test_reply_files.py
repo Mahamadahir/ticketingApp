@@ -64,7 +64,7 @@ def confirm(client, ticket, page, **extra):
 
 def test_the_composer_has_an_attach_control_on_both_forms_and_the_new_button_label(client, db_session, storage):
     ticket = ticket_for_email(client, db_session)
-    page = client.get(f"/tickets/{ticket.number}").text
+    page = client.get(f"/tickets/{ticket.number}?action=email").text + client.get(f"/tickets/{ticket.number}?action=note").text
     assert page.count('type="file"') == 2 and page.count('name="files"') == 2
     assert 'id="email-files"' in page and 'id="note-files"' in page and "multiple" in page
     assert page.count('hx-encoding="multipart/form-data"') == 2

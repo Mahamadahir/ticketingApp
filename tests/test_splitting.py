@@ -211,7 +211,9 @@ def test_a_split_error_reaches_the_agent_through_htmx(client, db_session):
         headers={"HX-Request": "true"},
     )
 
-    assert response.headers.get("HX-Retarget") == "#flash" and "at least 2" in response.text
+    # Inside the Split card, with what was typed kept (#254).
+    assert "HX-Retarget" not in response.headers and 'id="tp-card-error"' in response.text and "at least 2" in response.text
+    assert 'value="Only"' in response.text
 
 
 def test_two_splits_made_at_once_cannot_go_past_the_limit(client, db_session):

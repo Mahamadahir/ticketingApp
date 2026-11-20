@@ -65,8 +65,18 @@ def _htmx_error(message: str, status_code: int) -> HTMLResponse:
     )
 
 
+def _htmx_error_in_preview(message: str, status_code: int, target: str) -> HTMLResponse:
+    """A card's Preview button asks for its preview into a box inside the card (#msp-preview, #close-preview ...). A refusal
+    shows in that same box, so it is in the card and the form above it is untouched."""
+    return HTMLResponse(f'<p class="error" role="alert">{escape(message)}</p>', status_code=status_code,
+                        headers={"HX-Retarget": f"#{target}", "HX-Reswap": "innerHTML"})
+
+
 async def handle_http_exception(request: Request, exc: StarletteHTTPException):
     if is_htmx(request) and 400 <= exc.status_code < 500:
+        target = request.headers.get("hx-target", "")
+        if target.endswith("-preview") and target.replace("-", "").isalpha():
+            return _htmx_error_in_preview(str(exc.detail), exc.status_code, target)
         return _htmx_error(str(exc.detail), exc.status_code)
     return await http_exception_handler(request, exc)
 

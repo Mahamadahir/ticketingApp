@@ -459,7 +459,7 @@ def test_the_triage_form_lists_what_the_rules_produce_ticked_and_the_others_unti
     page = client.get("/tickets/triage-subrequests", params=params).text
     assert f'value="{one.id}" checked' in page and f'value="{two.id}" checked' not in page
     assert client.get("/tickets/triage-subrequests", params={"number": ticket.number}).text.count("checked") == 0
-    assert "hx-get=\"/tickets/triage-subrequests" in client.get(f"/tickets/{ticket.number}").text
+    assert "hx-get=\"/tickets/triage-subrequests" in client.get(f"/tickets/{ticket.number}?action=triage").text
 
 
 def test_the_agent_can_untick_a_sub_request_and_add_an_extra(client, db_session):

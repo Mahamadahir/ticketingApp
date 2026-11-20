@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timezone
 
 from sqlmodel import select
@@ -143,7 +144,11 @@ def test_you_cannot_link_under_a_parent_you_cannot_see_and_the_answer_does_not_r
     missing = link(client, child, "MI-99999")
 
     assert refused.status_code == missing.status_code == 400
-    assert refused.text == missing.text
+    # The same message in the same place; only the number typed back into the box differs.
+    def shown(response):
+        return re.search(r'id="tp-card-error">([^<]*)<', response.text).group(1)
+
+    assert shown(refused) == shown(missing) == "No ticket with that number"
 
 
 def test_a_viewer_of_the_parent_sees_only_the_linked_tickets_they_could_open(client, db_session):
@@ -293,7 +298,9 @@ def test_a_link_error_reaches_the_agent_through_htmx(client, db_session):
         f"/tickets/{child.number}/link", data={"parent_number": "MI-99999"}, headers={"HX-Request": "true"}
     )
 
-    assert response.headers.get("HX-Retarget") == "#flash" and "No ticket with that number" in response.text
+    # The message is in the Link card (re-drawn open, typed number kept), not at the top of the page (#254).
+    assert response.status_code == 200 and "HX-Retarget" not in response.headers
+    assert 'role="alert" id="tp-card-error">No ticket with that number' in response.text and 'value="MI-99999"' in response.text
 
 
 def test_two_links_made_at_once_cannot_build_a_chain(client, db_session):

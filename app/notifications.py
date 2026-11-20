@@ -162,6 +162,42 @@ def mentioned_in(session: Session, ticket: Ticket, body: str, author: User) -> l
     return found
 
 
+_MENTION_WORD = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+
+
+def mentionable_agents(session: Session, ticket: Ticket, author: User, query: str = "", limit: int = 8) -> list[tuple[User, str]]:
+    """The agents the note composer's @ list offers (#254): active agents and super admins who can open this ticket
+    (`ticket_access` in app/visibility.py, the same test `mentioned_in` ends with), never the author, whose name or address
+    starts with what has been typed after the @. Each comes with the text to insert after the @: the part of the address
+    before the @, or the whole address when another agent shares that part (the same rule `mentioned_in` reads back, so what is
+    inserted notifies exactly that person). Someone whose address cannot be written as a mention is not offered."""
+    agents = session.exec(select(User).where(User.role.in_(AGENT_ROLES), User.is_active)).all()
+    locals_seen: dict[str, int] = {}
+    for agent in agents:
+        local = agent.email.lower().partition("@")[0]
+        locals_seen[local] = locals_seen.get(local, 0) + 1
+    typed = (query or "").strip().lower()
+    found: list[tuple[User, str]] = []
+    levels_cache: dict[int, object] = {}
+    for agent in sorted(agents, key=lambda a: ((a.display_name or a.email).lower(), a.id)):
+        if agent.id == author.id:
+            continue
+        email = agent.email.lower()
+        local = email.partition("@")[0]
+        words = [part for part in re.split(r"[\s._-]+", f"{agent.display_name or ''} {local}".lower()) if part]
+        if typed and not (email.startswith(typed) or any(word.startswith(typed) for word in words) or (agent.display_name or "").lower().startswith(typed)):
+            continue
+        insert = local if locals_seen[local] == 1 else email
+        if not (_MENTION_WORD.fullmatch(local) and (insert == local or _MENTION_WORD.fullmatch(insert.partition("@")[0]))):
+            continue
+        levels = levels_cache.setdefault(agent.id, access_context(session, agent))
+        if ticket_access(agent, ticket, levels) >= Access.READ:
+            found.append((agent, insert))
+        if len(found) >= limit:
+            break
+    return found
+
+
 def notify_mentions(
     session: Session, ticket: Ticket, note: Message, author: User, text: Optional[str] = None
 ) -> list[Notification]:

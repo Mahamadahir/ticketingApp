@@ -450,6 +450,10 @@ class Message(SQLModel, table=True):
     # app/messages._record, the one place a Message is built. Null on rows from before it was recorded that could not be
     # worked out; the kind chip then has no channel in its words ("From requester").
     channel: Optional[str] = Field(default=None)
+    # An agent's note the requester may see in the portal (#254, "Visible to the requester"): an outbound public message
+    # that was never emailed, never sent to Teams and never rang the bell. Set only by app/messages.add_visible_note; who
+    # sees it is still decided by requester_visible_messages (which also holds it back until the ticket is triaged).
+    visible_note: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     ticket: Ticket = Relationship(back_populates="messages")
@@ -468,6 +472,9 @@ class Attachment(SQLModel, table=True):
     # The message it arrived with or was attached to; None for a file added to the ticket itself.
     message_id: Optional[int] = Field(default=None, foreign_key="message.id", index=True)
     filename: str
+    # The name an agent gave the file on the ticket page (#254). Only what is shown and what a download is called; `filename`
+    # stays as the file arrived. None: not renamed.
+    display_name: Optional[str] = Field(default=None)
     size: int
     content_type: str
     content_hash: str  # sha-256, hex

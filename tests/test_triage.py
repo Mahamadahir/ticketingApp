@@ -228,10 +228,10 @@ def test_the_triage_panel_is_only_offered_on_untriaged_tickets(client, db_sessio
     agent(client, db_session, member_of=[desk])
     category = create_category(db_session, desk)
 
-    assert 'id="triage-heading">Triage</h2>' in client.get(f"/tickets/{ticket.number}").text
+    assert 'id="triage-form"' in client.get(f"/tickets/{ticket.number}?action=triage").text
     triage(client, ticket, category)
     page = client.get(f"/tickets/{ticket.number}").text
-    assert 'id="triage-heading"' not in page and "<dt>Category</dt><dd>Hardware</dd>" in page
+    assert 'id="triage-form"' not in client.get(f"/tickets/{ticket.number}?action=triage").text and "<dt>Category</dt>" in page and "Hardware" in page.split("<dt>Category</dt>")[1].split("</dd>")[0]
 
 
 def test_other_goes_to_the_default_triage_team_and_waits_for_review(client, db_session):
@@ -452,13 +452,13 @@ def test_assign_to_me_is_only_offered_while_unassigned_and_reassign_replaces_it(
     ticket = triaged_ticket(db_session, desk)
 
     page = client.get(f"/tickets/{ticket.number}").text
-    assert "Assign to me" in page and ">Assign</button>" in page
+    assert "Assign to me" in page and ">Assign</a>" in page
 
     ticket.assigned_agent_id = agent_id
     db_session.add(ticket)
     db_session.commit()
     page = client.get(f"/tickets/{ticket.number}").text
-    assert "Assign to me" not in page and ">Re-assign</button>" in page
+    assert "Assign to me" not in page and ">Re-assign</a>" in page
 
 
 def test_the_agent_pickers_return_options_for_a_team_and_for_a_category(client, db_session):
@@ -562,12 +562,12 @@ def test_a_super_admin_can_assign_an_untriaged_ticket_without_triaging_it(client
     client.post("/auth/logout")
     login_as(client, "admin@example.com")
 
-    page = client.get(f"/tickets/{ticket.number}").text
-    assert "Assign to (without triaging)" in page and 'id="triage-heading">Triage</h2>' in page
+    page = client.get(f"/tickets/{ticket.number}?action=assign").text + client.get(f"/tickets/{ticket.number}?action=triage").text
+    assert "Assign to (without triaging)" in page and 'id="triage-form"' in page
 
     assert client.post(f"/tickets/{ticket.number}/assign", data={"agent_id": member_id}).status_code == 200
     db_session.refresh(ticket)
     assert ticket.assigned_agent_id == member_id and ticket.triaged_at is None
 
     triage(client, ticket, create_category(db_session, desk))
-    assert "Assign to (without triaging)" not in client.get(f"/tickets/{ticket.number}").text
+    assert "Assign to (without triaging)" not in client.get(f"/tickets/{ticket.number}?action=assign").text

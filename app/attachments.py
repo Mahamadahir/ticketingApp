@@ -80,14 +80,19 @@ def is_inline_type(content_type: str) -> bool:
     return content_type in INLINE_TYPES
 
 
-def serving_headers(attachment: Attachment) -> dict[str, str]:
+def shown_name(attachment: Attachment) -> str:
+    """What the file is called on the ticket page and in a download: the name an agent gave it, else the one it arrived with."""
+    return attachment.display_name or attachment.filename
+
+
+def serving_headers(attachment: Attachment, download: bool = False) -> dict[str, str]:
     """Headers for a response that streams the file itself. Shown in the page only if the
-    detected type is a safe picture; everything else is forced to download. nosniff stops a
-    browser guessing a more dangerous type from the content."""
-    show = is_inline_type(attachment.content_type)
+    detected type is a safe picture (and the person did not ask to download it); everything else is forced to
+    download. nosniff stops a browser guessing a more dangerous type from the content."""
+    show = is_inline_type(attachment.content_type) and not download
     return {
         "Content-Type": attachment.content_type,
-        "Content-Disposition": content_disposition(attachment.filename, inline=show),
+        "Content-Disposition": content_disposition(shown_name(attachment), inline=show),
         "X-Content-Type-Options": "nosniff",
         # Nothing the file contains may run or load anything, even if it is shown.
         "Content-Security-Policy": "default-src 'none'; sandbox",
@@ -212,6 +217,29 @@ def store_attachment(
     return attachment
 
 
+class RenameRefused(ValueError):
+    """The new name is not acceptable; the message says why and is safe to show."""
+
+
+def rename_attachment(attachment: Attachment, new_name: str) -> Optional[tuple[str, str]]:
+    """Gives a file a new SHOWN name (#254). The name it arrived with stays on the row (`filename`); only `display_name` changes,
+    and so what the page and a download call it. The same rules as a new file's name: no directories or control characters, a
+    sensible length, and not a name that ends in a file type only used to run things. Returns (old shown name, new shown
+    name), or None when nothing changed. Adds nothing to the session beyond the change; the caller records the event and commits."""
+    if not (new_name or "").strip():
+        raise RenameRefused("Give the file a name.")
+    name = clean_filename(new_name)
+    extension = name.rpartition(".")[2].lower() if "." in name else ""
+    if extension in BLOCKED_EXTENSIONS:
+        raise RenameRefused(f"A file cannot be named with .{extension} at the end.")
+    old = shown_name(attachment)
+    if name == old:
+        return None
+    # Back to the name it arrived with is no rename at all.
+    attachment.display_name = None if name == attachment.filename else name
+    return old, name
+
+
 def attachments_of(session: Session, ticket: Ticket) -> list[Attachment]:
     return list(
         session.exec(select(Attachment).where(Attachment.ticket_id == ticket.id).order_by(Attachment.id)).all()
@@ -231,4 +259,36 @@ def files_by_message(session: Session, user: User, levels: AccessContext, messag
         tickets[attachment.ticket_id] = ticket
         if ticket is not None and may_view_attachment(session, user, attachment, ticket, levels):
             files.setdefault(attachment.message_id, []).append(attachment)
+    return files
+
+
+@dataclass
+class TicketFile:
+    """One row of the ticket page's Attachments box: the file, what it is called, and who added it."""
+
+    attachment: Attachment
+    name: str
+    who: str
+    viewable: bool  # a picture: View shows it in the browser; anything else downloads either way
+
+
+def ticket_files(session: Session, user: User, levels: AccessContext, ticket: Ticket) -> list[TicketFile]:
+    """Every file on the ticket, newest first, that this person may download (`may_view_attachment`), with who added it. A file
+    an agent uploaded is theirs by name; one that arrived on a message is the message's sender (the requester, a follower, the MSP)."""
+    rows = session.exec(
+        select(Attachment).where(Attachment.ticket_id == ticket.id).order_by(Attachment.created_at.desc(), Attachment.id.desc())
+    ).all()
+    people = {
+        u.id: u for u in session.exec(select(User).where(User.id.in_({a.uploaded_by_id for a in rows if a.uploaded_by_id}))).all()
+    } if any(a.uploaded_by_id for a in rows) else {}
+    senders = {
+        m.id: m.sender for m in session.exec(select(Message).where(Message.id.in_({a.message_id for a in rows if a.message_id}))).all()
+    } if any(a.message_id for a in rows) else {}
+    files = []
+    for attachment in rows:
+        if not may_view_attachment(session, user, attachment, ticket, levels):
+            continue
+        person = people.get(attachment.uploaded_by_id)
+        who = (person.display_name or person.email) if person is not None else senders.get(attachment.message_id) or "Unknown"
+        files.append(TicketFile(attachment, shown_name(attachment), who, is_inline_type(attachment.content_type)))
     return files

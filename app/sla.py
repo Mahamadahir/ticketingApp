@@ -119,16 +119,16 @@ def apply_impact_urgency(session: Session, ticket: Ticket, impact: Level, urgenc
 
 
 def set_impact_urgency(
-    session: Session, ticket: Ticket, impact: Level, urgency: Level, actor_email: Optional[str]
+    session: Session, ticket: Ticket, impact: Level, urgency: Level, actor_email: Optional[str], reason: Optional[str] = None
 ) -> bool:
     """Records impact and urgency, derives the priority and restarts the deadlines
     from the targets. Returns whether anything changed; an event records the old and
-    new priority when it did."""
+    new priority when it did, and the reason the agent gave (the ticket page asks for one)."""
     previous = describe_priority(ticket)
     if not apply_impact_urgency(session, ticket, impact, urgency):
         return False
     session.add(ticket)
-    record_event(session, ticket, EVENT_PRIORITY_CHANGED, actor_email, previous, describe_priority(ticket))
+    record_event(session, ticket, EVENT_PRIORITY_CHANGED, actor_email, previous, describe_priority(ticket), detail=reason or None)
     return True
 
 
@@ -258,6 +258,17 @@ def queue_sla(ticket: Ticket, view: SlaView, now: datetime) -> QueueSla:
     if dated:
         words += f" · {_date_label(ticket)}"
     return QueueSla("amber" if view.state == "at_risk" else "green", words)
+
+
+def header_sla(ticket: Ticket, view: SlaView, now: datetime) -> QueueSla:
+    """The SLA chip in the ticket page's header (#254): the queue's wording, with a breach saying which clock it is, so the
+    chip reads "Resolution breached 1h 20m ago" rather than only "Breached 1h 20m ago". Everything else is `queue_sla`."""
+    chip = queue_sla(ticket, view, now)
+    if view.state == "breached" and chip.text.startswith("Breached") and ticket.status not in FINISHED_STATUSES:
+        which = {"first response": "First response", "resolution": "Resolution", "required by": "Required by date",
+                 "due": "Due date"}.get(view.which or "", "Resolution")
+        return QueueSla(chip.tone, f"{which} {chip.text[0].lower()}{chip.text[1:]}")
+    return chip
 
 
 @dataclass

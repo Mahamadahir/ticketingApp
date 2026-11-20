@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import RedirectResponse, Response
 from sqlmodel import Session
 
-from app.attachments import is_inline_type, serving_headers
+from app.attachments import is_inline_type, serving_headers, shown_name
 from app.auth import get_current_user
 from app.database import get_session
 from app.models import Attachment, Ticket, User, UserRole
@@ -18,6 +18,7 @@ router = APIRouter(prefix="/attachments", tags=["attachments"])
 @router.get("/{attachment_id}")
 def download(
     attachment_id: int,
+    download: bool = False,
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
     storage: Storage = Depends(get_storage),
@@ -27,7 +28,8 @@ def download(
     for about a minute and a half, with the type and disposition forced by the link; locally the
     bytes are streamed with serving_headers (which also add nosniff and a sandboxing policy that
     the storage origin cannot be made to send: it is a different origin from the app, so a file
-    cannot reach the session either way). Files are held in memory, which the size limit bounds."""
+    cannot reach the session either way). Files are held in memory, which the size limit bounds.
+    `?download=1` (the ticket page's Download) saves a picture instead of showing it (View)."""
     attachment = session.get(Attachment, attachment_id)
     ticket = session.get(Ticket, attachment.ticket_id) if attachment is not None else None
     if attachment is None or ticket is None:
@@ -41,9 +43,9 @@ def download(
 
     url = storage.download_url(
         attachment.blob_key,
-        filename=attachment.filename,
+        filename=shown_name(attachment),
         content_type=attachment.content_type,
-        inline=is_inline_type(attachment.content_type),
+        inline=is_inline_type(attachment.content_type) and not download,
     )
     if url is not None:
         return RedirectResponse(url, status_code=302, headers={"Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer"})
@@ -52,4 +54,4 @@ def download(
     except FileNotFoundError:
         logger.error("Attachment %s has no stored file at %s", attachment.id, attachment.blob_key)
         raise HTTPException(status_code=404, detail="The file is no longer available") from None
-    return Response(content=content, headers=serving_headers(attachment))
+    return Response(content=content, headers=serving_headers(attachment, download=download))
