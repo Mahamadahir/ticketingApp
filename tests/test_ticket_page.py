@@ -57,7 +57,7 @@ def test_an_untriaged_ticket_offers_the_triage_card_and_no_resolve(client, db_se
 
     assert 'id="triage-box-heading"' in html  # the Triage box of the right-hand column
     assert 'id="triage-form"' in client.get(f"/tickets/{ticket.number}?action=triage").text  # the Triage card
-    assert bar_buttons(html) == ["Email user", "Add note", "Assign to me", "Triage", "Send to MSP"]
+    assert bar_buttons(html) == ["Add note", "Assign to me", "Triage", "Send to MSP"]
     assert "Resolve" not in bar_buttons(html) and "Reopen" not in bar_buttons(html)
     assert "Close" not in menu_items(html)
 
@@ -186,14 +186,14 @@ def test_the_email_card_has_the_email_form_and_the_note_card_the_note_form(clien
     assert "Only agents can see internal notes." in note and "Add note</button>" in note and 'name="next_status"' in note
 
 
-def test_the_email_card_of_an_untriaged_ticket_says_to_triage_first_and_the_note_card_still_works(client, db_session):
+def test_the_email_card_of_an_untriaged_ticket_is_not_offered_and_the_note_card_still_works(client, db_session):
     desk = create_team(db_session, "Service Desk")
     ticket = new_ticket(db_session, desk)
     agent(client, db_session, member_of=[desk])
     email = client.get(f"/tickets/{ticket.number}?action=email").text
     note = client.get(f"/tickets/{ticket.number}?action=note").text
 
-    assert "Triage this ticket before emailing the requester." in email
+    assert 'id="tp-card-title"' not in email  # Email user is not offered before triage (the chip is gone too)
     assert f'hx-post="/tickets/{ticket.number}/email/preview"' not in email
     assert f'hx-post="/tickets/{ticket.number}/note"' in note
 

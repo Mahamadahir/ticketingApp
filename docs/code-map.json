@@ -5154,6 +5154,7 @@
         "agent_options_for_team",
         "assign_ticket",
         "backdate",
+        "card_errors",
         "change_answers",
         "change_due",
         "change_priority",

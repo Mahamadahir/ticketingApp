@@ -12,6 +12,9 @@
     {{ cancel_card() }}
   </header>
 
+  {# A refused action (card_errors in app/routers/tickets.py): the message sits here, in the card, and the form keeps what was typed. #}
+  {% if card_error %}<p class="error tp-card-error" role="alert" id="tp-card-error">{{ card_error }}</p>{% endif %}
+
   {% if compose and composer %}
   {# A send was held back: another agent posted after this page loaded (#246). Nothing was sent; the text is kept below. #}
   <div class="tp-warn" role="alert" id="send-warning">
@@ -200,7 +203,7 @@
     <label>Team
       <select name="team_id" hx-get="/tickets/agents-for-team" hx-trigger="change" hx-target="#reassign-agent">
         {% for t in teams %}
-        <option value="{{ t.id }}" {{ "selected" if ticket.team_id == t.id else "" }}>{{ t.name }}</option>
+        <option value="{{ t.id }}" {{ "selected" if (card_values.get('team_id') if card_values.get('team_id') is not none else ticket.team_id) == t.id else "" }}>{{ t.name }}</option>
         {% endfor %}
       </select>
     </label>
@@ -221,7 +224,7 @@
   {% elif escalation_team %}
   <form class="tp-form" method="post" action="/tickets/{{ ticket.number }}/escalate" hx-post="/tickets/{{ ticket.number }}/escalate" hx-target="main" hx-swap="innerHTML">
     <p class="note">Goes to {{ escalation_team.name }}, unassigned. You keep access to this ticket. To hand it to a different team, use Re-assign.</p>
-    <textarea name="reason" maxlength="{{ max_message_length }}" placeholder="Why does this need escalating?" required></textarea>
+    <textarea name="reason" maxlength="{{ max_message_length }}" placeholder="Why does this need escalating?" required>{{ card_values.get('reason', '') }}</textarea>
     <button type="submit" class="btn btn-danger">Escalate to {{ escalation_team.name }}</button>
   </form>
   {% else %}
@@ -253,7 +256,7 @@
   {% elif card == "link" %}
   <form class="tp-form" method="post" action="/tickets/{{ ticket.number }}/link" hx-post="/tickets/{{ ticket.number }}/link" hx-target="main" hx-swap="innerHTML">
     <label>Ticket number of the Major Incident or Problem (for example 1042)
-      <input type="text" name="parent_number" maxlength="40" required />
+      <input type="text" name="parent_number" maxlength="40" value="{{ card_values.get('parent_number', '') }}" required />
     </label>
     <button type="submit" class="btn btn-primary">Link</button>
   </form>
@@ -263,8 +266,8 @@
   <form class="tp-form" method="post" action="/tickets/{{ ticket.number }}/split" hx-post="/tickets/{{ ticket.number }}/split" hx-target="main" hx-swap="innerHTML">
     {% for i in split_slots %}
     <fieldset>
-      <label>Part {{ loop.index }} subject <input type="text" name="subject" maxlength="200" /></label>
-      <label>Details <textarea name="details" maxlength="5000" rows="2"></textarea></label>
+      <label>Part {{ loop.index }} subject <input type="text" name="subject" maxlength="200" value="{{ (card_values.get('subject') or [])[loop.index0] if (card_values.get('subject') or [])|length > loop.index0 else '' }}" /></label>
+      <label>Details <textarea name="details" maxlength="5000" rows="2">{{ (card_values.get('details') or [])[loop.index0] if (card_values.get('details') or [])|length > loop.index0 else '' }}</textarea></label>
     </fieldset>
     {% endfor %}
     <button type="submit" class="btn btn-primary">Split</button>
@@ -273,9 +276,9 @@
   {% elif card == "backdate" %}
   <p class="note">Enter when it was reported or fixed: up to 30 days back, never in the future, times in your time zone ({{ viewer_zone() }}). A backdated ticket counts towards volume but is left out of SLA figures. Leave a box blank to keep that date.</p>
   <form class="tp-form" method="post" action="/tickets/{{ ticket.number }}/backdate" hx-post="/tickets/{{ ticket.number }}/backdate" hx-target="main" hx-swap="innerHTML">
-    <label>Reported <input type="datetime-local" name="reported_at" value="{{ ticket.reported_at|local_input }}" /></label>
+    <label>Reported <input type="datetime-local" name="reported_at" value="{{ card_values.get('reported_at') if card_values.get('reported_at') is not none and card_error else ticket.reported_at|local_input }}" /></label>
     {% if ticket.resolved_at %}
-    <label>Resolved <input type="datetime-local" name="resolved_at" value="{{ ticket.resolved_at|local_input }}" /></label>
+    <label>Resolved <input type="datetime-local" name="resolved_at" value="{{ card_values.get('resolved_at') if card_values.get('resolved_at') is not none and card_error else ticket.resolved_at|local_input }}" /></label>
     {% endif %}
     <button type="submit" class="btn btn-primary">Save dates</button>
   </form>
@@ -327,7 +330,7 @@
   {% elif card == "reopen" %}
   <form class="tp-form" method="post" action="/tickets/{{ ticket.number }}/reopen" hx-post="/tickets/{{ ticket.number }}/reopen" hx-target="main" hx-swap="innerHTML">
     <label>Why is it being reopened?
-      <textarea name="reason" rows="2" maxlength="{{ max_reason_length }}" required></textarea>
+      <textarea name="reason" rows="2" maxlength="{{ max_reason_length }}" required>{{ card_values.get('reason', '') }}</textarea>
     </label>
     <button type="submit" class="btn btn-primary">Reopen ticket</button>
   </form>

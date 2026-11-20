@@ -5,7 +5,7 @@ This decides only what to DRAW. Whether a person may really do an action is deci
 app/permissions.py and each service's own check, which the route runs again when the form is posted); the page passes the
 answers in as plain booleans so the rules for the row can be read, and tested, in one place:
 
-- Email user and Add note come first.
+- Email user (only once triaged) and Add note come first.
 - An untriaged ticket offers Triage in place of Re-assign and Escalate; a triaged one offers Re-assign and Escalate.
 - A ticket at the MSP offers Take back in place of Send to MSP.
 - Link and Split only when the agent may do them.
@@ -84,7 +84,7 @@ def action_chips(
     can_backdate: bool,
 ) -> Chips:
     chips = Chips()
-    if can_work:
+    if can_work and triaged:  # email to the requester is unavailable before triage (app/messages.py)
         chips.row.append(Chip("email", "Email user"))
     if can_note:
         chips.row.append(Chip("note", "Add note"))

@@ -1,3 +1,4 @@
+import functools
 from datetime import datetime, timezone
 from html import escape
 from typing import Optional
@@ -429,6 +430,41 @@ def _get_ticket(session: Session, number: int, user: User, needed: Access = Acce
     return ticket
 
 
+def card_errors(card: str):
+    """A refused action shows its message inside its own card (#254), not at the top of the page. The route runs as before;
+    when it refuses with a 400, 403 or 422 the page is drawn again with that card open, the message in the card and what was
+    typed kept. It is the same for htmx (the page swaps into main) and a plain form post (the status stays the refusal's).
+    If this ticket no longer offers the card (it was triaged meanwhile), the refusal goes out unchanged. What is refused, and
+    why, is decided where it always was; this only decides where the message shows."""
+
+    def wrap(route):
+        @functools.wraps(route)
+        def run(*args, **kwargs):
+            try:
+                return route(*args, **kwargs)
+            except HTTPException as error:
+                if error.status_code not in (400, 403, 422):
+                    raise
+                request, session, user = kwargs.get("request"), kwargs.get("session"), kwargs.get("user")
+                if request is None or session is None or user is None:
+                    raise
+                session.rollback()
+                ticket = get_by_number(session, kwargs["number"])
+                if ticket is None:
+                    raise
+                values = {k: v for k, v in kwargs.items() if isinstance(v, (str, int, list)) and k not in ("number", "request")}
+                response = _render_ticket_detail(
+                    request, ticket, user, session, action=card, card_error=str(error.detail), card_values=values, card_must_open=error,
+                )
+                if not is_htmx(request):
+                    response.status_code = error.status_code
+                return response
+
+        return run
+
+    return wrap
+
+
 def _agent_options(request: Request, members: list[User], blank_label: str) -> HTMLResponse:
     return templates.TemplateResponse(request, "_agent_options.html", {"members": members, "blank_label": blank_label})
 
@@ -548,6 +584,7 @@ def _triage_dates(
 
 
 @router.post("/{number}/triage", response_class=HTMLResponse)
+@card_errors("triage")
 def triage(
     number: int,
     request: Request,
@@ -765,6 +802,7 @@ def mention_candidates(
 
 
 @router.post("/{number}/backdate", response_class=HTMLResponse)
+@card_errors("backdate")
 def backdate(
     number: int,
     request: Request,
@@ -876,6 +914,7 @@ def change_due(
 
 
 @router.post("/{number}/reassign", response_class=HTMLResponse)
+@card_errors("reassign")
 def reassign(
     number: int,
     request: Request,
@@ -1570,6 +1609,7 @@ def close(
 
 
 @router.post("/{number}/reopen", response_class=HTMLResponse)
+@card_errors("reopen")
 def reopen(
     number: int,
     request: Request,
@@ -1591,6 +1631,7 @@ def reopen(
 
 
 @router.post("/{number}/reclose", response_class=HTMLResponse)
+@card_errors("reclose")
 def reclose(
     number: int,
     request: Request,
@@ -1632,6 +1673,7 @@ def waive_approval(
 
 
 @router.post("/{number}/assign", response_class=HTMLResponse)
+@card_errors("assign")
 def assign_ticket(
     number: int,
     request: Request,
@@ -1676,6 +1718,7 @@ def assign_ticket(
 
 
 @router.post("/{number}/escalate", response_class=HTMLResponse)
+@card_errors("escalate")
 def escalate_ticket(
     number: int,
     request: Request,
@@ -1902,6 +1945,7 @@ def msp_forward_dismiss(
 
 
 @router.post("/{number}/link", response_class=HTMLResponse)
+@card_errors("link")
 def link(
     number: int,
     request: Request,
@@ -1950,6 +1994,7 @@ SPLIT_SLOTS = 4  # part boxes on the form; blank subjects are skipped, and a tic
 
 
 @router.post("/{number}/split", response_class=HTMLResponse)
+@card_errors("split")
 def split(
     number: int,
     request: Request,
@@ -2054,7 +2099,8 @@ REPORTED_BY = {
 
 def _render_ticket_detail(
     request: Request, ticket: Ticket, user: User, session: Session, compose: Optional[dict] = None, hold: Optional[dict] = None,
-    action: Optional[str] = None, edit: Optional[str] = None,
+    action: Optional[str] = None, edit: Optional[str] = None, card_error: Optional[str] = None,
+    card_values: Optional[dict] = None, card_must_open: Optional[HTTPException] = None,
 ) -> HTMLResponse:
     """`compose` is set when a send was held back (`_send_warning`): the composer's card then opens with the text kept.
     `action` names the card to open at the top of the main column (app/ticket_actions.py) and `edit` the box row to show as
@@ -2144,6 +2190,8 @@ def _render_ticket_detail(
         card = compose["mode"]  # a held-back send reopens its own composer with the text kept
     else:
         card = action if action in chips.keys() else None
+    if card_must_open is not None and card is None:
+        raise card_must_open  # the card is no longer on offer, so there is nowhere in it to show the message
     can_edit_triage = can_work and triaged and unfinished
     can_edit_status = can_work and triaged_actions
     can_set_required_by = (offers_required_by(session, ticket) or ticket.required_by is not None) and may_set_required_by(user, ticket, levels)
@@ -2289,5 +2337,7 @@ def _render_ticket_detail(
             "latest_post_id": latest_message_id(session, ticket),
             "compose": compose,
             "hold": hold,
+            "card_error": card_error,
+            "card_values": card_values or {},
         },
     )

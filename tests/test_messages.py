@@ -170,7 +170,7 @@ def test_email_user_is_unavailable_until_the_ticket_is_triaged(client, db_sessio
     agent_for(client, db_session, team)
 
     page = client.get(f"/tickets/{ticket.number}?action=email").text
-    assert "Preview message" not in page and "Triage this ticket" in page
+    assert 'id="tp-card-title"' not in page and "/email/preview" not in page  # no Email user card before triage
     assert "Add note" in client.get(f"/tickets/{ticket.number}").text
 
     response = client.post(f"/tickets/{ticket.number}/email", data={"body": "Hello"})

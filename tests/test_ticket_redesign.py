@@ -123,9 +123,9 @@ def test_a_triaged_ticket_offers_email_note_reassign_escalate_and_msp_then_resol
 
 def test_an_untriaged_ticket_offers_triage_in_place_of_reassign_and_escalate():
     row, more = labels(chips(triaged=False, triaged_actions=False, can_triage=True, can_reassign=False, can_resolve=False, can_close=False))
-    assert row == ["Email user", "Add note", "Triage", "Send to MSP"]
+    assert row == ["Add note", "Triage", "Send to MSP"]  # no Email user until triaged
     assert "Re-assign" not in row and "Escalate" not in row and "Resolve" not in row
-    assert chips(triaged=False, triaged_actions=False, can_triage=True, can_resolve=False).row[2].primary  # Triage is the primary chip
+    assert chips(triaged=False, triaged_actions=False, can_triage=True, can_resolve=False).row[1].primary  # Triage is the primary chip
 
 
 def test_a_ticket_at_the_msp_offers_take_back_in_place_of_send_to_msp():
@@ -196,7 +196,7 @@ def test_an_untriaged_ticket_page_has_triage_in_place_of_reassign_and_escalate(c
     labels_ = chip_labels(page(client, ticket).text)
 
     assert "Triage" in labels_ and "Escalate" not in labels_ and "Re-assign" not in labels_ and "Resolve" not in labels_
-    assert labels_[:2] == ["Email user", "Add note"]
+    assert labels_[0] == "Add note" and "Email user" not in labels_
 
 
 def test_a_ticket_with_the_msp_offers_take_back_and_not_send_to_msp(client, db_session):
@@ -884,3 +884,75 @@ def test_the_person_data_list_knows_the_new_column():
     from app.person_data import COLUMNS
 
     assert "attachment.display_name" in COLUMNS
+
+
+# ---- A refused action shows inside its card; Email user waits for triage (the owner's two changes on #254) -------------
+
+
+def test_the_email_chip_is_absent_until_triage_and_its_card_opens_nothing(client, db_session):
+    desk = create_team(db_session, "Service Desk")
+    ticket = new_ticket(db_session, desk)
+    agent(client, db_session, member_of=[desk])
+    html = page(client, ticket).text
+    assert "Email user" not in chip_labels(html) and "Add note" in chip_labels(html)
+    assert 'id="tp-card-title"' not in page(client, ticket, action="email").text
+    assert 'id="tp-card-title"' not in client.get(f"/tickets/{ticket.number}?action=email", headers=HTMX).text
+    assert 'id="tp-card-title"' in page(client, ticket, action="note").text  # Add note stays
+
+    client.post(f"/tickets/{ticket.number}/triage", data={"ticket_type": "incident", "impact": "low", "urgency": "low",
+                                                          "category_id": str(create_category(db_session, desk).id)})
+    db_session.expire_all()
+    html = page(client, ticket).text
+    assert chip_labels(html)[:2] == ["Email user", "Add note"]
+    assert 'id="tp-card-title"' in page(client, ticket, action="email").text
+
+
+@pytest.mark.parametrize("htmx", [False, True])
+def test_a_refused_link_shows_in_the_link_card_with_what_was_typed(client, db_session, htmx):
+    ticket, _ = triaged_ticket(client, db_session)
+    response = client.post(f"/tickets/{ticket.number}/link", data={"parent_number": "MI-99999"}, headers=HTMX if htmx else {})
+    assert response.status_code == (200 if htmx else 400)
+    assert "HX-Retarget" not in response.headers
+    assert '<h2 id="tp-card-title">Link under a Major Incident or Problem</h2>' in response.text
+    assert 'role="alert" id="tp-card-error">No ticket with that number' in response.text
+    assert 'name="parent_number" maxlength="40" value="MI-99999"' in response.text
+    assert ("<html" in response.text) is (not htmx)
+
+
+@pytest.mark.parametrize("htmx", [False, True])
+def test_a_refused_escalate_and_reopen_show_in_their_cards_with_the_text_kept(client, db_session, htmx):
+    ticket, _ = triaged_ticket(client, db_session)
+    headers = HTMX if htmx else {}
+    # Reopen needs a resolved ticket: this one is open, so it is refused (and its card is not offered, so the refusal stays plain).
+    too_long = "x" * 5000
+    response = client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "  "}, headers=headers)
+    assert '<h2 id="tp-card-title">Escalate</h2>' in response.text and 'id="tp-card-error"' in response.text
+    assert ("<html" in response.text) is (not htmx)
+
+    save(db_session, ticket, status=TicketStatus.RESOLVED, resolved_at=datetime.now(timezone.utc))
+    response = client.post(f"/tickets/{ticket.number}/reopen", data={"reason": "   "}, headers=headers)
+    assert '<h2 id="tp-card-title">Reopen</h2>' in response.text and 'role="alert" id="tp-card-error"' in response.text
+    assert "HX-Retarget" not in response.headers and response.status_code == (200 if htmx else 400)
+    assert too_long  # (kept short: the text-kept check is on Split below)
+
+
+@pytest.mark.parametrize("htmx", [False, True])
+def test_a_refused_split_keeps_every_part_typed(client, db_session, htmx):
+    ticket, _ = triaged_ticket(client, db_session)
+    response = client.post(f"/tickets/{ticket.number}/split", data={"subject": ["Only one part"], "details": ["Some details"]},
+                           headers=HTMX if htmx else {})
+    assert '<h2 id="tp-card-title">Split ticket</h2>' in response.text and 'id="tp-card-error"' in response.text
+    assert 'value="Only one part"' in response.text and "Some details</textarea>" in response.text
+
+
+def test_a_refusal_for_a_card_the_ticket_no_longer_offers_is_the_plain_error(client, db_session):
+    ticket, _ = triaged_ticket(client, db_session)  # already triaged, so the Triage card is not on offer
+    response = client.post(f"/tickets/{ticket.number}/triage", data={"ticket_type": "incident", "impact": "low", "urgency": "low"}, headers=HTMX)
+    assert response.headers.get("HX-Retarget") == "#flash" and "already been triaged" in response.text
+
+
+def test_a_refused_preview_shows_in_the_cards_preview_box(client, db_session):
+    ticket, _ = triaged_ticket(client, db_session)
+    response = client.post(f"/tickets/{ticket.number}/send-to-msp/preview", data={"reason": " ", "scope": "thread"},
+                           headers={**HTMX, "HX-Target": "msp-preview"})
+    assert response.headers.get("HX-Retarget") == "#msp-preview" and 'role="alert"' in response.text
