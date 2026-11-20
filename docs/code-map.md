@@ -741,7 +741,7 @@ File: `app/forms.py`
 - Functions: `answers_from_pairs`, `form_answers`, `optional_int`
 - Imports: none
 - Imported by: `app.canned`, `app.closing`, `app.intake`, `app.resolution`, `app.routers.admin`, `app.routers.bulk_resolve`, `app.routers.feedback`, `app.routers.portal`, `app.routers.tickets`, `app.teams_intake`, `app.templating`
-- Tests: `test_canned.py`, `test_pagination_and_limits.py`, `test_resolution.py`
+- Tests: `test_canned.py`, `test_htmx_errors.py`, `test_pagination_and_limits.py`, `test_resolution.py`
 
 ### `app.graph_client`
 
