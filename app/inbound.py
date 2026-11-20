@@ -99,6 +99,7 @@ from app.msp import (
 )
 from app.outbox import is_on, queue_acknowledgement
 from app.storage import Storage
+from app.subscriptions import parse_graph_time
 from app.teams import MAX_ATTEMPTS, MAX_BACKOFF_MINUTES
 from app.ticket_service import create_ticket, get_by_number, record_event
 from app.time_zones import note_requester
@@ -159,6 +160,7 @@ class IncomingMail:
     in_reply_to: list[str] = field(default_factory=list)  # normalised Message-IDs, nearest first
     is_draft: bool = False
     has_attachments: bool = False
+    received_at: Optional[datetime] = None  # when it reached the mailbox (Graph receivedDateTime), UTC
 
 
 @dataclass
@@ -227,6 +229,7 @@ def parse_graph_message(raw: dict) -> IncomingMail:
         in_reply_to=[m for m in (_message_id(r) for r in references) if m],
         is_draft=bool(raw.get("isDraft")),
         has_attachments=bool(raw.get("hasAttachments")),
+        received_at=parse_graph_time(raw.get("receivedDateTime")),
     )
 
 
@@ -449,6 +452,7 @@ def _claim(session: Session, mail: IncomingMail) -> Optional[InboundMail]:
         to_addresses=", ".join(mail.to[:MAX_STORED_RECIPIENTS]) or None,
         cc_addresses=", ".join(mail.cc[:MAX_STORED_RECIPIENTS]) or None,
         outcome="processing",
+        received_at=mail.received_at,
     )
     try:
         with session.begin_nested():

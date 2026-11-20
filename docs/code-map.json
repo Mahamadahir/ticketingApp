@@ -54,6 +54,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/a7d2e9b41c58_inbound_mail_received_at.py",
+        "revision": "a7d2e9b41c58"
+      },
+      {
         "file": "migrations/versions/c255a3f8d1e6_thread_groups_and_deleted_notes.py",
         "revision": "c255a3f8d1e6"
       },
@@ -68,17 +72,13 @@
       {
         "file": "migrations/versions/c239d1a7e5b3_notification_dismissed_at.py",
         "revision": "c239d1a7e5b3"
-      },
-      {
-        "file": "migrations/versions/c4f7a2b9e813_request_type_icon_and_approval_notice.py",
-        "revision": "c4f7a2b9e813"
       }
     ],
-    "count": 73,
+    "count": 74,
     "heads": [
       {
-        "file": "migrations/versions/c255a3f8d1e6_thread_groups_and_deleted_notes.py",
-        "revision": "c255a3f8d1e6"
+        "file": "migrations/versions/a7d2e9b41c58_inbound_mail_received_at.py",
+        "revision": "a7d2e9b41c58"
       }
     ]
   },
@@ -1645,6 +1645,7 @@
         "app.reply_channel",
         "app.settings_store",
         "app.storage",
+        "app.subscriptions",
         "app.teams",
         "app.ticket_service",
         "app.time_zones"
@@ -1655,6 +1656,7 @@
       "tables": [],
       "tests": [
         "tests/test_acknowledgement.py",
+        "tests/test_admin_mail_pages.py",
         "tests/test_anonymisation.py",
         "tests/test_follower_updates.py",
         "tests/test_inbound_mail.py",
@@ -6183,6 +6185,7 @@
     },
     {
       "classes": [
+        "HealthWarning",
         "MailIntake",
         "Outcome",
         "SubscriptionError"
@@ -6192,6 +6195,7 @@
         "catch_up",
         "client_state_fingerprint",
         "describe_failure",
+        "health_problems",
         "health_warnings",
         "keep_subscription_alive",
         "lifetime_minutes",
@@ -6203,6 +6207,7 @@
       ],
       "imported_by": [
         "app.admin_home",
+        "app.inbound",
         "app.jobs",
         "app.routers.admin",
         "app.routers.health"
@@ -6219,6 +6224,7 @@
       "tables": [],
       "tests": [
         "tests/test_admin_frame.py",
+        "tests/test_admin_mail_pages.py",
         "tests/test_mail_subscriptions.py"
       ]
     },
@@ -6938,6 +6944,7 @@
       "summary": "Per-person time zones. Everything is stored and calculated in UTC; only what a person SEES is converted,",
       "tables": [],
       "tests": [
+        "tests/test_admin_mail_pages.py",
         "tests/test_due_date.py",
         "tests/test_msp.py",
         "tests/test_msp_mail.py",
