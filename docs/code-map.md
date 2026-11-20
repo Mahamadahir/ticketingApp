@@ -379,15 +379,15 @@ any change that adds, removes or renames modules, routes, models, jobs, settings
 
 ## Migrations
 
-73 revisions. Head: `c255a3f8d1e6`.
+74 revisions. Head: `a7d2e9b41c58`.
 
 Chain tail (newest first):
 
+- `a7d2e9b41c58` migrations/versions/a7d2e9b41c58_inbound_mail_received_at.py
 - `c255a3f8d1e6` migrations/versions/c255a3f8d1e6_thread_groups_and_deleted_notes.py
 - `b6d83f21a9c4` migrations/versions/b6d83f21a9c4_visible_note_and_attachment_name.py
 - `a4e7b19c3d58` migrations/versions/a4e7b19c3d58_ticket_presence.py
 - `c239d1a7e5b3` migrations/versions/c239d1a7e5b3_notification_dismissed_at.py
-- `c4f7a2b9e813` migrations/versions/c4f7a2b9e813_request_type_icon_and_approval_notice.py
 
 ## Modules
 
@@ -771,9 +771,9 @@ File: `app/inbound.py`
 
 - Classes: `Handled`, `IncomingMail`, `MailSource`
 - Functions: `automatic_reason`, `find_ticket_for`, `ingest_mail`, `load_attachments`, `may_reply`, `msp_auto_reply`, `msp_trust`, `parse_graph_message`, `process_message`, `process_notifications`, `referenced_ticket`
-- Imports: `app.attachments`, `app.audit`, `app.config`, `app.follower_updates`, `app.followers`, `app.graph_client`, `app.identity`, `app.intake`, `app.mail`, `app.models`, `app.msp`, `app.outbox`, `app.reopening`, `app.reply_channel`, `app.settings_store`, `app.storage`, `app.teams`, `app.ticket_service`, `app.time_zones`
+- Imports: `app.attachments`, `app.audit`, `app.config`, `app.follower_updates`, `app.followers`, `app.graph_client`, `app.identity`, `app.intake`, `app.mail`, `app.models`, `app.msp`, `app.outbox`, `app.reopening`, `app.reply_channel`, `app.settings_store`, `app.storage`, `app.subscriptions`, `app.teams`, `app.ticket_service`, `app.time_zones`
 - Imported by: `app.jobs`, `app.routers.admin`, `app.routers.dev_tools`
-- Tests: `test_acknowledgement.py`, `test_anonymisation.py`, `test_follower_updates.py`, `test_inbound_mail.py`, `test_msp_mail.py`, `test_msp_real_mail.py`, `test_never_follow.py`, `test_reopening.py`, `test_thanks_rules.py`, `test_time_zones.py`
+- Tests: `test_acknowledgement.py`, `test_admin_mail_pages.py`, `test_anonymisation.py`, `test_follower_updates.py`, `test_inbound_mail.py`, `test_msp_mail.py`, `test_msp_real_mail.py`, `test_never_follow.py`, `test_reopening.py`, `test_thanks_rules.py`, `test_time_zones.py`
 
 ### `app.intake`
 
@@ -1474,11 +1474,11 @@ File: `app/subrequests.py`
 Keeping mail flowing from the shared mailbox (phase 3C).  
 File: `app/subscriptions.py`
 
-- Classes: `MailIntake`, `Outcome`, `SubscriptionError`
-- Functions: `catch_up`, `client_state_fingerprint`, `describe_failure`, `health_warnings`, `keep_subscription_alive`, `lifetime_minutes`, `mail_folder`, `parse_graph_time`, `record_for_processing`, `renew_margin_minutes`, `subscription_resource`
+- Classes: `HealthWarning`, `MailIntake`, `Outcome`, `SubscriptionError`
+- Functions: `catch_up`, `client_state_fingerprint`, `describe_failure`, `health_problems`, `health_warnings`, `keep_subscription_alive`, `lifetime_minutes`, `mail_folder`, `parse_graph_time`, `record_for_processing`, `renew_margin_minutes`, `subscription_resource`
 - Imports: `app.config`, `app.graph_client`, `app.models`, `app.settings_store`
-- Imported by: `app.admin_home`, `app.jobs`, `app.routers.admin`, `app.routers.health`
-- Tests: `test_admin_frame.py`, `test_mail_subscriptions.py`
+- Imported by: `app.admin_home`, `app.inbound`, `app.jobs`, `app.routers.admin`, `app.routers.health`
+- Tests: `test_admin_frame.py`, `test_admin_mail_pages.py`, `test_mail_subscriptions.py`
 
 ### `app.team_activity`
 
@@ -1653,7 +1653,7 @@ File: `app/time_zones.py`
 - Functions: `clear_manual_zone`, `default_zone`, `end_of_day_for_email`, `end_of_day_for_user`, `end_of_day_utc`, `format_date`, `format_long_date`, `format_moment`, `in_business_hours`, `morning_of`, `next_business_morning`, `note_requester`, `parse_clock`, `parse_dates`, `refresh_requester_zones`, `relative_time`, `scheduled_morning_hour`, `set_browser_zone`, `set_manual_zone`, `valid_zone`, `windows_to_iana`, `zone_choices`, `zone_for_email`, `zone_for_user`
 - Imports: `app.graph_client`, `app.identity`, `app.models`, `app.settings_store`, `app.windows_zones`
 - Imported by: `app.admin_home`, `app.auth`, `app.backdating`, `app.due_today`, `app.entra_check`, `app.inbound`, `app.jobs`, `app.messages`, `app.msp`, `app.report_kit`, `app.reports`, `app.required_by`, `app.routers.admin`, `app.routers.my_settings`, `app.routers.portal`, `app.routers.tickets`, `app.sla`, `app.team_activity`, `app.templating`, `app.ticket_service`
-- Tests: `test_due_date.py`, `test_msp.py`, `test_msp_mail.py`, `test_portal_home.py`, `test_time_zones.py`
+- Tests: `test_admin_mail_pages.py`, `test_due_date.py`, `test_msp.py`, `test_msp_mail.py`, `test_portal_home.py`, `test_time_zones.py`
 
 ### `app.triage`
 

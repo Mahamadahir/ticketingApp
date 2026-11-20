@@ -393,23 +393,40 @@ def _sync_pages(session: Session, graph, intake: MailIntake, state: MailSyncStat
 # ---- Health ---------------------------------------------------------------------------------------
 
 
-def health_warnings(session: Session, now: Optional[datetime] = None) -> list[str]:
-    """What /health reports about mail intake. Empty when nothing is wrong or nothing has been set up
-    (no subscription row means the worker has never managed one)."""
+# What kind of trouble a health warning reports. The admin Mail intake page decides its status chips from these,
+# never from the wording of `text`, so a warning can be reworded without a chip turning green.
+SUBSCRIPTION_PROBLEM = "subscription"
+CATCH_UP_PROBLEM = "catch_up"
+
+
+@dataclass(frozen=True)
+class HealthWarning:
+    kind: str  # SUBSCRIPTION_PROBLEM or CATCH_UP_PROBLEM
+    text: str
+
+
+def health_problems(session: Session, now: Optional[datetime] = None) -> list[HealthWarning]:
+    """What /health reports about mail intake, each with its kind. Empty when nothing is wrong or nothing has
+    been set up (no subscription row means the worker has never managed one)."""
     now = now or _now()
-    warnings = []
+    warnings: list[HealthWarning] = []
     row = session.exec(select(GraphSubscription).where(GraphSubscription.resource == subscription_resource())).first()
     if row is not None:
         expires = _utc(row.expires_at)
         if row.subscription_id is None or expires is None:
-            warnings.append("Mail subscription does not exist yet")
+            warnings.append(HealthWarning(SUBSCRIPTION_PROBLEM, "Mail subscription does not exist yet"))
         elif expires <= now:
-            warnings.append("Mail subscription has expired")
+            warnings.append(HealthWarning(SUBSCRIPTION_PROBLEM, "Mail subscription has expired"))
         elif expires - now < timedelta(minutes=renew_margin_minutes(session)):
-            warnings.append("Mail subscription expires soon and has not been renewed")
+            warnings.append(HealthWarning(SUBSCRIPTION_PROBLEM, "Mail subscription expires soon and has not been renewed"))
         if row.last_error:
-            warnings.append("Mail subscription: the last check failed")
+            warnings.append(HealthWarning(SUBSCRIPTION_PROBLEM, "Mail subscription: the last check failed"))
     sync = session.exec(select(MailSyncState).where(MailSyncState.folder == mail_folder())).first()
     if sync is not None and sync.last_error:
-        warnings.append("Mail catch-up: the last run failed")
+        warnings.append(HealthWarning(CATCH_UP_PROBLEM, "Mail catch-up: the last run failed"))
     return warnings
+
+
+def health_warnings(session: Session, now: Optional[datetime] = None) -> list[str]:
+    """The text of each of `health_problems`, for /health and the admin home."""
+    return [problem.text for problem in health_problems(session, now)]

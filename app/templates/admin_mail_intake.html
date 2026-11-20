@@ -65,9 +65,10 @@
   </section>
 
   <section class="card intake-card" aria-labelledby="in-last">
-    <div class="card-header"><h2 id="in-last">Last mail received</h2></div>
-    <p class="intake-big">{{ last_received|local_time if last_received else "Nothing yet" }}</p>
-    <p class="muted">The most recent mail the intake handled, whatever came of it.</p>
+    <div class="card-header"><h2 id="in-last">Last mail arrived</h2></div>
+    <p class="intake-big">{{ last_arrived|local_time if last_arrived else ("Not recorded" if last_processed else "Nothing yet") }}</p>
+    <p class="muted">When the newest mail reached the mailbox, as the mailbox itself says.</p>
+    <p class="muted">Last processed: {{ last_processed|local_time if last_processed else "nothing yet" }}. That is when the intake last handled a mail, which after an outage can be later than when it arrived.</p>
   </section>
 
   <section class="card intake-card" aria-labelledby="in-wait">
