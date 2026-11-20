@@ -276,3 +276,69 @@ def test_an_inbound_reply_whose_unique_body_is_only_the_new_text_is_recorded_wit
     recorded = db_session.exec(select(Message).where(Message.ticket_id == ticket.id)).all()
     assert any(m.body == "It is still stuck" for m in recorded)
     assert not any(HEADER_RULE in m.body or "Please reply to this email to respond" in m.body for m in recorded)
+
+
+# ---- The default templates do not repeat the header's instruction (#276) ------------------------------
+
+
+@pytest.mark.parametrize("key", ["raised_for", "resolution", "chase", "auto_resolve_note"])
+def test_the_default_no_longer_says_reply_to_this_email(key):
+    assert "reply to this email" not in email_templates.definition(key).body_default.lower()
+
+
+def test_the_closed_default_still_says_a_reply_opens_a_new_ticket():
+    body = email_templates.definition("closed").body_default
+    assert "reply to this email" not in body.lower() and "your reply will open a new ticket linked to this one." in body
+
+
+def latest_reply(db_session, ticket):
+    candidates = [r for r in rows(db_session, outbox.REPLY) if r.ticket_id == ticket.id]
+    return max(candidates, key=lambda r: r.id)
+
+
+def reply_lines(body):
+    return body.lower().count("reply to this email")
+
+
+def test_the_raised_for_chase_and_resolution_emails_have_the_reply_line_once(client, db_session, dev_mail):
+    from app.resolution import auto_resolution_note
+
+    ticket = fresh(db_session, ticket_for_email(client, db_session))
+    [raised] = rows(db_session, outbox.RAISED_FOR)
+    built = mail.build_raised_for_mail(db_session, raised)
+    assert built.body.startswith(header_of(ticket.reference)) and reply_lines(built.body) == 1
+
+    chase = OutboundEmail(kind=outbox.CHASE, ticket_id=ticket.id, to_address="walkin@example.com")
+    db_session.add(chase)
+    ticket.status = TicketStatus.AWAITING_USER
+    ticket.chased_at = datetime.now(timezone.utc)
+    db_session.add(ticket)
+    db_session.commit()
+    built = mail.build_chase_mail(db_session, chase)
+    assert built.body.startswith(header_of(ticket.reference)) and reply_lines(built.body) == 1
+    assert "Let us know. If we do not hear from you" in built.body
+
+    ticket = fresh(db_session, ticket)
+    resolve_ticket(db_session, ticket, agent_of(db_session), "Replaced the roller")
+    db_session.commit()
+    built = mail.build_message_mail(db_session, latest_reply(db_session, ticket))
+    assert reply_lines(built.body) == 1 and "tell us or reopen the ticket." in built.body
+
+
+def test_the_closing_email_has_the_reply_line_once(client, db_session, dev_mail):
+    ticket = fresh(db_session, ticket_for_email(client, db_session))
+    close_ticket(db_session, ticket, agent_of(db_session), "All done")
+    db_session.commit()
+    built = mail.build_message_mail(db_session, latest_reply(db_session, ticket))
+    assert reply_lines(built.body) == 1 and "your reply will open a new ticket linked to this one." in built.body
+
+
+def test_an_automatic_resolution_email_has_the_reply_line_once(client, db_session, dev_mail):
+    from app.resolution import auto_resolution_note
+
+    ticket = fresh(db_session, ticket_for_email(client, db_session))
+    resolve_ticket(db_session, ticket, None, auto_resolution_note(db_session, ticket, 3))
+    db_session.commit()
+    [row] = [r for r in rows(db_session, outbox.NOTICE) if r.ticket_id == ticket.id]
+    built = mail.build_message_mail(db_session, row)
+    assert reply_lines(built.body) == 1 and "resolved automatically." in built.body

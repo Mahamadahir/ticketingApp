@@ -120,8 +120,7 @@ REGISTRY: dict[str, TemplateDef] = {
             description="Sent to a person when an agent raises a ticket on their behalf.",
             body_default=(
                 "{raised_by} has raised a ticket for you with IT Support.\n\n"
-                "Reference: {reference}\nSubject: {subject}\n\n{request_text}\n\n"
-                "Reply to this email to add anything else. Please keep the reference in the subject."
+                "Reference: {reference}\nSubject: {subject}\n\n{request_text}"
             ),
             body_placeholders={
                 **_COMMON,
@@ -173,7 +172,7 @@ REGISTRY: dict[str, TemplateDef] = {
             body_default=(
                 "Your ticket {reference} has been resolved.\n\n"
                 "What was done:\n{resolution_notes}\n\n"
-                "If this has not fixed the problem, reply to this email and tell us, or reopen the ticket.\n"
+                "If this has not fixed the problem, tell us or reopen the ticket.\n"
                 "Reopen this ticket: {reopen_link}\n"
                 "Tell us how we did: {feedback_link}"
             ),
@@ -204,7 +203,7 @@ REGISTRY: dict[str, TemplateDef] = {
             body_default=(
                 "Your ticket {reference} has been closed.\n\n"
                 "Why it was closed:\n{closing_notes}\n\n"
-                "If you still need help, reply to this email and we will open a new ticket linked to this one.\n"
+                "If you still need help, your reply will open a new ticket linked to this one.\n"
                 "Tell us how we did: {feedback_link}"
             ),
             body_placeholders={
@@ -229,7 +228,7 @@ REGISTRY: dict[str, TemplateDef] = {
             ),
             body_default=(
                 "We are waiting to hear back from you about {reference} ({subject}). Is this still an issue?\n\n"
-                "Reply to this email to let us know. If we do not hear from you in the next {days} days, "
+                "Let us know. If we do not hear from you in the next {days} days, "
                 "we will assume it is sorted and resolve the ticket (you can reopen it by replying)."
             ),
             body_placeholders={**_COMMON, "days": "how many days until the ticket is resolved automatically"},
@@ -243,8 +242,7 @@ REGISTRY: dict[str, TemplateDef] = {
                 "They then go into the resolution email like an agent's notes."
             ),
             body_default=(
-                "No reply was received after {days} days, so this ticket has been resolved automatically. "
-                "If you still need help, reply to this email."
+                "No reply was received after {days} days, so this ticket has been resolved automatically."
             ),
             body_placeholders={**_COMMON, "days": "how many days we waited for a reply"},
             sample={**_COMMON_SAMPLE, "days": "3"},
