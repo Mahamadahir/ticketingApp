@@ -2,10 +2,8 @@
 Outbound mail on the admin patterns. One smoke test per page; the rules the pages show are tested where they live."""
 
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-
-from datetime import timedelta
 
 from sqlmodel import select
 
