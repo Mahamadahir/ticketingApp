@@ -304,6 +304,10 @@ def split_ticket(
 
     if not parts:
         raise SplitError("Enter a subject for at least one part")
+    # The card starts with the original's text in every part, so two parts left exactly alike are an untrimmed card, not a split.
+    shapes = [(subject.casefold(), " ".join((details or "").split()).casefold()) for subject, (_, details) in zip(subjects, parts)]
+    if len(set(shapes)) < len(shapes):
+        raise SplitError("Two parts are exactly the same: change each to its own issue, or empty the part you do not need")
     existing = sub_ticket_count(session, original)
     if existing + len(parts) < MIN_PARTS:
         raise SplitError(f"Split into at least {MIN_PARTS} parts")

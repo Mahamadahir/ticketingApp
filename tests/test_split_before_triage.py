@@ -351,3 +351,24 @@ def test_with_mail_off_the_split_queues_no_email(client, db_session):
     split(client, original, ("One", ""), ("Two", ""))
 
     assert rows(db_session) == []
+
+
+def test_two_parts_left_exactly_alike_are_refused_as_an_untrimmed_card(client, db_session):
+    original, _, _ = untriaged_world(client, db_session)
+
+    response = split(client, original, (original.subject, REQUEST_TEXT), (original.subject, REQUEST_TEXT))
+
+    assert response.status_code == 400 and "exactly the same" in response.text
+    assert subs_of(db_session, original) == []
+    assert split(client, original, (original.subject, REQUEST_TEXT), (original.subject, "Only the Office part")).status_code == 200
+
+
+def test_the_queues_and_the_original_with_no_category_still_draw_after_an_untriaged_split(client, db_session):
+    original, _, _ = untriaged_world(client, db_session)
+    split(client, original, ("One", ""), ("Two", ""))
+
+    assert client.get("/tickets").status_code == 200
+    assert client.get("/tickets?untriaged=1").status_code == 200
+    assert client.get(f"/tickets/{original.number}").status_code == 200
+    assert client.get(f"/tickets/{subs_of(db_session, original)[0].number}").status_code == 200
+
