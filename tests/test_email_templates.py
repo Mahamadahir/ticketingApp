@@ -105,7 +105,7 @@ def test_saving_changes_the_next_email_and_reset_restores_the_default(client, db
     assert save(client, "raised_for", "Hello from {raised_by}: {reference}", subject="").status_code == 303
 
     [row] = rows(db_session, outbox.RAISED_FOR)
-    assert mail.build_raised_for_mail(db_session, row).body == f"Hello from Agent Ann: {ticket.reference}"
+    assert mail.build_raised_for_mail(db_session, row).body.endswith(f"\n\nHello from Agent Ann: {ticket.reference}")
 
     assert client.post("/admin/email-templates/raised_for/reset", follow_redirects=False).status_code == 303
     db_session.expire_all()
@@ -235,7 +235,7 @@ def test_the_raised_for_you_email_reads_as_it_always_did(client, db_session, dev
         "",
         "Reply to this email to add anything else. Please keep the reference in the subject.",
     ])
-    assert built.body == expected and built.record == expected
+    assert built.body.endswith("\n\n" + expected) and built.record == built.body  # after the header (tests/test_email_header.py)
 
 
 def test_the_approval_email_reads_as_it_always_did(client, db_session, dev_mail):

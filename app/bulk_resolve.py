@@ -132,7 +132,7 @@ def _run(
             resolve_ticket(session, ticket, user, notes, detail="Resolved in a bulk resolve", tell_msp=tell)
             if dry_run:
                 # The recipients of the email the real run queues (the ticket's status no longer matters to it).
-                item.preview = preview_email(session, ticket, resolution_email_body(session, ticket, notes))
+                item.preview = preview_email(session, ticket, resolution_email_body(session, ticket, notes), author=user)
         except (ResolveError, SplitError, UnknownRecipient) as error:
             savepoint.rollback()
             item.skipped = str(error)

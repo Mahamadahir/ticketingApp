@@ -58,6 +58,7 @@ class TemplateDef:
     subject_default: Optional[str] = None
     subject_placeholders: dict[str, str] = field(default_factory=dict)
     required: tuple[str, ...] = ()  # body placeholders that must appear
+    may_be_blank: bool = False  # an admin may empty the text, which drops that line (the email header lines)
     subject_required: tuple[str, ...] = ()  # subject placeholders that must appear
 
     @property
@@ -75,6 +76,44 @@ _COMMON_SAMPLE = {"reference": "INC-1042", "ticket_number": "1042", "subject": "
 REGISTRY: dict[str, TemplateDef] = {
     d.key: d
     for d in (
+        TemplateDef(
+            key="header_agent",
+            label="Email header: an agent wrote it",
+            description=(
+                "The first line of the header at the top of an email an agent sent to the requester (a reply, the resolution "
+                "email, the closing email). It says who sent it. The name is the one recorded on the message. "
+                "Leave it empty to drop the line. If this line and the reply line are both empty, the header is left out altogether."
+            ),
+            body_default="{agent} from IT Support replied to {reference}.",
+            body_placeholders={"agent": "the name of the agent who wrote it", "reference": _COMMON["reference"]},
+            sample={"agent": "Sam Jones", "reference": "INC-1042"},
+            may_be_blank=True,
+        ),
+        TemplateDef(
+            key="header_automatic",
+            label="Email header: an automatic notice",
+            description=(
+                "The first line of the header at the top of an automatic notice to the requester (an approval decision, "
+                "\"sent to the MSP\", the automatic resolution after a chase). Leave it empty to drop the line."
+            ),
+            body_default="IT Support sent an update on {reference}.",
+            body_placeholders={"reference": _COMMON["reference"]},
+            sample={"reference": "INC-1042"},
+            may_be_blank=True,
+        ),
+        TemplateDef(
+            key="header_reply",
+            label="Email header: please reply",
+            description=(
+                "The line under it, on every email that has the header (including the acknowledgement, the chase and "
+                "\"raised for you\", which have no first line). A dividing rule follows the header and is fixed. "
+                "The reference is the one in the subject. Leave it empty to drop the line."
+            ),
+            body_default="Please reply to this email to respond, keeping [{reference}] in the subject.",
+            body_placeholders={"reference": _COMMON["reference"]},
+            sample={"reference": "INC-1042"},
+            may_be_blank=True,
+        ),
         TemplateDef(
             key="raised_for",
             label="Raised for you",
@@ -511,6 +550,7 @@ AUDIENCE_OF: dict[str, str] = {
     "closed": "requester", "chase": "requester", "auto_resolve_note": "requester", "link_code": "requester",
     "msp_forward": "requester", "msp_sent_notice": "requester", "approval_approved": "requester",
     "approval_declined": "requester", "approval_waived": "requester",
+    "header_agent": "requester", "header_automatic": "requester", "header_reply": "requester",
     "approval_request": "agent", "approval_reminder": "agent", "approval_withdrawn": "agent",
     "emergency_password_reset": "agent", "msp_handoff": "agent", "msp_no_longer_needed": "agent",
     "approval_overdue": "admin",
@@ -545,7 +585,7 @@ def ticket_values(ticket: Ticket) -> dict[str, str]:
 def validate(defn: TemplateDef, subject: Optional[str], body: str) -> tuple[Optional[str], str]:
     """The cleaned subject (None when the template has none of its own) and body, or TemplateError."""
     body = _lines(body).strip()
-    if not body:
+    if not body and not defn.may_be_blank:
         raise TemplateError("The email needs some text")
     if len(body) > MAX_BODY_LENGTH:
         raise TemplateError(f"The text can be at most {MAX_BODY_LENGTH} characters")

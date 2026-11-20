@@ -125,6 +125,7 @@ class EmailPreview:
     by_teams: bool = False  # the message would go to the requester's chat with the bot
     also_email: bool = True  # and by email (always, unless it goes to Teams only)
     files: Optional[list] = None  # (name, size) of each file that would be attached, set by the caller that holds them
+    header: str = ""  # the header the email starts with (email_header), "" when it goes to Teams only; not part of `body`
 
 
 # The statuses an agent may pick when emailing the requester or adding a note. New is left only by
@@ -189,8 +190,10 @@ def preview_email(
     body: str,
     cc_emails: Optional[list[str]] = None,
     next_status: Optional[str] = None,
+    author: Optional[User] = None,
 ) -> EmailPreview:
-    """Checks an email exactly as email_requester does and returns what it would send."""
+    """Checks an email exactly as email_requester does and returns what it would send. `author` is the agent who
+    would send it (named in the header)."""
     if not is_triaged(ticket):
         raise NotTriaged()
     if not body.strip():
@@ -207,6 +210,8 @@ def preview_email(
         status_after=status_after,
         by_teams=route.teams,
         also_email=route.email,
+        # Shown only when it goes by email; a Teams-only reply carries no header.
+        header=email_header(session, ticket, HEADER_AGENT, author.display_name if author else None) if route.email else "",
     )
 
 
@@ -722,12 +727,40 @@ def mail_subject(session: Session, ticket: Ticket) -> str:
     brackets is what lets a reply be matched back to the ticket, so it is the family's: a part of a
     split request goes out under its original's reference and subject, one conversation for the
     requester. The preview shows exactly this."""
-    root = ticket
+    return f"[{mail_reference(session, ticket)}] {thread_subject(session, ticket)}"
+
+
+HEADER_RULE = "________________________________"  # fixed in code, not a template
+HEADER_AGENT = "agent"  # "Sam Jones from IT Support replied to INC-1042."
+HEADER_AUTOMATIC = "automatic"  # "IT Support sent an update on INC-1042."
+HEADER_REPLY_ONLY = "reply_only"  # the email says who it is from itself: only "Please reply to this email..."
+
+
+def mail_reference(session: Session, ticket: Ticket) -> str:
+    """The reference in the subject (see mail_subject): a part of a split request uses its original's."""
     if ticket.split_from_id is not None:
         original = session.get(Ticket, ticket.split_from_id)
         if original is not None:
-            root = original
-    return f"[{root.reference}] {thread_subject(session, ticket)}"
+            return original.reference
+    return ticket.reference
+
+
+def email_header(session: Session, ticket: Ticket, kind: str, agent: Optional[str] = None) -> str:
+    """The short header at the top of an email to a requester: who sent it, to reply to this email, then a rule
+    ("" when the admin has blanked every line, so no rule either). Ends with a newline. The one place it is built, used by
+    the preview (preview_email) and the email that is sent (app/mail.py), so they cannot differ. `agent` is the name recorded on
+    the message (Message.sender), never the user's current display name. The reference is the subject's."""
+    from app.email_templates import render_template
+
+    values = {"reference": mail_reference(session, ticket), "agent": (agent or "").strip() or "IT Support"}
+    lines = []
+    if kind == HEADER_AGENT:
+        lines.append(render_template(session, "header_agent", values).body)
+    elif kind == HEADER_AUTOMATIC:
+        lines.append(render_template(session, "header_automatic", values).body)
+    lines.append(render_template(session, "header_reply", values).body)
+    lines = [line for line in lines if line.strip()]
+    return "\n".join(lines + [HEADER_RULE]) + "\n\n" if lines else ""
 
 
 def about_text(ticket: Ticket) -> str:

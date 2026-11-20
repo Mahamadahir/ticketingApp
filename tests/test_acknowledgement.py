@@ -36,7 +36,7 @@ def test_an_emailed_ticket_gets_one_receipt_before_triage(db_session, dev_mail):
     assert mail.deliver_mail(db_session) == (1, 0)  # goes although the ticket is not triaged
     [row] = acks(db_session)
     assert row.sent_at is not None
-    assert row.body == f"Your issue has been logged as {ticket.reference} with IT. We'll be in touch."
+    assert row.body.endswith(f"\n\nYour issue has been logged as {ticket.reference} with IT. We'll be in touch.")  # after the header
     assert row.subject == f"[{ticket.reference}] Printer jam"  # the requester's own subject, so a reply finds the ticket
 
 
@@ -110,7 +110,7 @@ def test_the_admin_wording_is_used_and_cannot_carry_ticket_content(db_session, d
     db_session.commit()
     mail.deliver_mail(db_session)
     [ticket] = tickets(db_session)
-    assert acks(db_session)[0].body == f"Got it: {ticket.reference}."
+    assert acks(db_session)[0].body.endswith(f"\n\nGot it: {ticket.reference}.")
 
 
 def test_the_receipt_is_never_sent_to_the_shared_mailbox_itself(db_session, dev_mail):
