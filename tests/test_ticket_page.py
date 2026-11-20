@@ -57,7 +57,7 @@ def test_an_untriaged_ticket_offers_the_triage_card_and_no_resolve(client, db_se
 
     assert 'id="triage-box-heading"' in html  # the Triage box of the right-hand column
     assert 'id="triage-form"' in client.get(f"/tickets/{ticket.number}?action=triage").text  # the Triage card
-    assert bar_buttons(html) == ["Add note", "Assign to me", "Triage", "Send to MSP"]
+    assert bar_buttons(html) == ["Add note", "Assign to me", "Triage", "Send to MSP", "Split"]  # Split is offered before triage too (#259)
     assert "Resolve" not in bar_buttons(html) and "Reopen" not in bar_buttons(html)
     assert "Close" not in menu_items(html)
 
