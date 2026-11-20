@@ -54,6 +54,37 @@ def test_the_assignee_is_warned_once_before_the_handoff_and_the_entry_links_to_t
     assert len(bells(db_session, "msp_handoff_warning")) == 1
 
 
+def test_a_deleted_warning_does_not_make_the_job_warn_again_the_same_night(client, db_session, mail_on):
+    """#271: once a night rests on the ticket's own marker, not on the bell entry still existing."""
+    set_msp(db_session)
+    team = included_team(db_session)
+    ticket, _ = assigned_ticket(client, db_session, team)
+    assert warn_before_handoff(db_session, WARN_AT) == 1
+    db_session.commit()
+    for bell in bells(db_session, "msp_handoff_warning"):
+        db_session.delete(bell)  # a purge, an anonymisation or a manual delete mid-window
+    db_session.commit()
+    assert bells(db_session, "msp_handoff_warning") == []
+    assert warn_before_handoff(db_session, WARN_AT + timedelta(minutes=5)) == 0
+    db_session.commit()
+    assert bells(db_session, "msp_handoff_warning") == []
+    assert db_session.get(Ticket, ticket.id).msp_warned_for == START
+    # the next night is a new handoff moment: warned again
+    assert warn_before_handoff(db_session, WARN_AT + timedelta(days=1)) == 1
+
+
+def test_an_assignee_who_wants_no_warning_leaves_the_ticket_unmarked(client, db_session, mail_on):
+    set_msp(db_session)
+    ticket, agent_id = assigned_ticket(client, db_session, included_team(db_session))
+    save_choices(db_session, db_session.get(User, agent_id), set())
+    db_session.commit()
+    assert warn_before_handoff(db_session, WARN_AT) == 0
+    assert db_session.get(Ticket, ticket.id).msp_warned_for is None
+    save_choices(db_session, db_session.get(User, agent_id), {"msp_handoff_warning:in_app"})
+    db_session.commit()
+    assert warn_before_handoff(db_session, WARN_AT + timedelta(minutes=5)) == 1  # they changed their mind in time
+
+
 def test_a_new_night_warns_again(client, db_session, mail_on):
     set_msp(db_session)
     team = included_team(db_session)

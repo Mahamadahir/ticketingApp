@@ -417,6 +417,9 @@ class Ticket(SQLModel, table=True):
     # one of ours. msp_ack_alerted_at is when the "MSP has not confirmed" alert was last raised (once per handoff).
     msp_ticket_number: Optional[str] = Field(default=None, unique=True, index=True)
     msp_ack_alerted_at: Optional[datetime] = Field(default=None)
+    # The handoff moment this ticket's "goes to the MSP tonight" warning was last sent for (#271). Kept on the ticket, not
+    # found by looking for the bell entry, so deleting or purging that entry cannot make the job warn a second time.
+    msp_warned_for: Optional[datetime] = Field(default=None)
 
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

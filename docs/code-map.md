@@ -379,15 +379,15 @@ any change that adds, removes or renames modules, routes, models, jobs, settings
 
 ## Migrations
 
-73 revisions. Head: `c255a3f8d1e6`.
+74 revisions. Head: `d1a7e5b93c42`.
 
 Chain tail (newest first):
 
+- `d1a7e5b93c42` migrations/versions/d1a7e5b93c42_ticket_msp_warned_for.py
 - `c255a3f8d1e6` migrations/versions/c255a3f8d1e6_thread_groups_and_deleted_notes.py
 - `b6d83f21a9c4` migrations/versions/b6d83f21a9c4_visible_note_and_attachment_name.py
 - `a4e7b19c3d58` migrations/versions/a4e7b19c3d58_ticket_presence.py
 - `c239d1a7e5b3` migrations/versions/c239d1a7e5b3_notification_dismissed_at.py
-- `c4f7a2b9e813` migrations/versions/c4f7a2b9e813_request_type_icon_and_approval_notice.py
 
 ## Modules
 
