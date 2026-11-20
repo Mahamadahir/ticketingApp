@@ -82,6 +82,7 @@ NOTIFICATION_KEEP_DISMISSED_DAYS = "notification_keep_dismissed_days"
 NOTIFICATION_DELETE_AFTER_DAYS = "notification_delete_after_days"
 MIN_NOTIFICATION_DELETE_DAYS = 7  # the age limit is never set shorter than a week
 AUTOMATIC_EMAIL_CAP = "automatic_email_cap_per_ticket"
+SPLIT_EMAIL_ENABLED = "split_email_enabled"
 INBOUND_MAX_PER_SENDER_HOUR = "inbound_max_per_sender_hour"
 INBOUND_MAX_ATTACHMENTS = "inbound_max_attachments"
 INBOUND_MAX_CC = "inbound_max_cc"
@@ -344,6 +345,18 @@ REGISTRY: dict[str, SettingDef] = {
             "replies are never counted. Placeholder value until the real limit is agreed."
         ),
         default="10",
+    ),
+    SPLIT_EMAIL_ENABLED: SettingDef(
+        key=SPLIT_EMAIL_ENABLED,
+        group=GROUP_MAIL,
+        label="Split: email the requester when a ticket is split",
+        kind="flag",
+        description=(
+            "On: splitting a ticket emails its requester (copying the followers) to say the request has become separate tickets, "
+            "listing each new reference and subject. It goes out even before the ticket is triaged, and counts towards the "
+            "automatic email limit above. The wording is under Admin > Email templates (Split notice). Off: nothing is sent."
+        ),
+        default="on",
     ),
     INBOUND_MAX_PER_SENDER_HOUR: SettingDef(
         key=INBOUND_MAX_PER_SENDER_HOUR,

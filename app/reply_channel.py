@@ -116,7 +116,7 @@ def _notices_to_teams_today(session: Session, ticket: Ticket) -> int:
     ).one()
 
 
-def queue_reply(session: Session, message: Message, ticket: Ticket) -> ReplyRoute:
+def queue_reply(session: Session, message: Message, ticket: Ticket, kind: Optional[str] = None) -> ReplyRoute:
     """Queues the public message for the requester by the route above. Does not commit. (An agent's reply records the route
     on the message when it is made, `messages.email_requester`; an automatic notice is `system` whatever the route.)"""
     from app.teams import queue_requester_message
@@ -125,7 +125,7 @@ def queue_reply(session: Session, message: Message, ticket: Ticket) -> ReplyRout
     if route.teams:
         queue_requester_message(session, message, ticket)
     if route.email:
-        queue_message(session, message, ticket)
+        queue_message(session, message, ticket, kind)
     return route
 
 
