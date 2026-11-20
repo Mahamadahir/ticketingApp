@@ -4,7 +4,7 @@ from html import escape
 from typing import Optional
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from app.templating import is_htmx, templates
 from sqlalchemy import func, or_
@@ -55,6 +55,7 @@ from app.msp_actions import (
 )
 from app.escalation import EscalationError, escalate_ticket as escalate, escalation_target, escalators_of
 from app.raising import source_label
+from app.requester_change import NotAllowed, RequesterChangeError, change_requester, suggestions
 from app.request_questions import QuestionError, answer_rows, form_rows, save_answers
 from app.request_types import active_request_types, request_type_of
 from app.subrequests import TemplateError, after_triage as make_subrequests, answers_changed_note, pending_subjects, preview as preview_subrequests
@@ -155,6 +156,7 @@ from app.visibility import (
     NoTicketAccess,
     assignable_agents,
     may_add_note,
+    may_change_requester,
     may_manage_note,
     may_self_assign,
     may_set_due,
@@ -986,6 +988,55 @@ def change_due(
         session.commit()
         session.refresh(ticket)
     return _render_ticket_detail(request, ticket, user, session)
+
+
+@router.get("/{number}/requester-search", response_class=HTMLResponse)
+def search_requester(
+    number: int,
+    q: str = Query("", max_length=100, alias="new_requester"),
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """The options of the End user picker: active accounts whose name or address contains what was typed. Only for an agent
+    who may change this ticket's end user, so the account list is not open to anyone with a ticket link."""
+    ticket = _get_ticket(session, number, user, Access.READ)
+    if not may_change_requester(user, ticket, access_context(session, user)):
+        raise HTTPException(status_code=403, detail="You cannot change the end user of this ticket")
+    return HTMLResponse(
+        "".join(
+            f'<option value="{escape(u.email)}">{escape(u.display_name or u.email)}</option>' for u in suggestions(session, q)
+        )
+    )
+
+
+@router.post("/{number}/requester", response_class=HTMLResponse)
+def change_end_user(
+    number: int,
+    request: Request,
+    new_requester: str = Form("", max_length=320),
+    keep_old: Optional[str] = Form(None),
+    email_new: Optional[str] = Form(None),
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """An agent who works the ticket changes its end user (app/requester_change.py does it; the rule is
+    visibility.may_change_requester). The old end user is kept as a follower unless unticked; the new one is emailed only
+    when ticked."""
+    ticket = _get_ticket(session, number, user, Access.READ)
+    session.refresh(ticket, with_for_update=True)  # two changes at once must not both start from the same requester
+    try:
+        outcome = change_requester(
+            session, ticket, user, new_requester, keep_old_as_follower=keep_old == "on", email_new=email_new == "on",
+        )
+    except NotAllowed as error:
+        session.rollback()
+        raise HTTPException(status_code=403, detail=str(error))
+    except RequesterChangeError as error:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(error))
+    session.commit()
+    session.refresh(ticket)
+    return _render_ticket_detail(request, ticket, user, session, notice="; ".join(outcome.notes) or None)
 
 
 @router.post("/{number}/reassign", response_class=HTMLResponse)
@@ -2164,7 +2215,7 @@ def _may_close(session: Session, ticket: Ticket) -> bool:
 
 
 # The boxes of the right-hand column whose rows have a pencil, and the keys `?edit=` takes ("file-<id>" renames a file).
-EDIT_FIELDS = ("type", "category", "priority", "status", "due", "required_by")
+EDIT_FIELDS = ("type", "category", "priority", "status", "due", "required_by", "requester")
 
 # Where a ticket came from, short, for the header's "Reported by ..." (source_label has the long form).
 REPORTED_BY = {
@@ -2175,7 +2226,7 @@ REPORTED_BY = {
 def _render_ticket_detail(
     request: Request, ticket: Ticket, user: User, session: Session, compose: Optional[dict] = None, hold: Optional[dict] = None,
     action: Optional[str] = None, edit: Optional[str] = None, card_error: Optional[str] = None,
-    card_values: Optional[dict] = None, card_must_open: Optional[HTTPException] = None,
+    card_values: Optional[dict] = None, card_must_open: Optional[HTTPException] = None, notice: Optional[str] = None,
 ) -> HTMLResponse:
     """`compose` is set when a send was held back (`_send_warning`): the composer's card then opens with the text kept.
     `action` names the card to open at the top of the main column (app/ticket_actions.py) and `edit` the box row to show as
@@ -2278,7 +2329,7 @@ def _render_ticket_detail(
     can_set_due = may_set_due(user, ticket, levels)
     editable = {
         "type": can_edit_triage and ticket.status != TicketStatus.AWAITING_APPROVAL, "category": can_edit_triage, "priority": can_edit_triage, "status": can_edit_status,
-        "due": can_set_due, "required_by": can_set_required_by,
+        "due": can_set_due, "required_by": can_set_required_by, "requester": may_change_requester(user, ticket, levels),
     }
     files = ticket_files(session, user, levels, ticket)
     editing = None
@@ -2308,6 +2359,7 @@ def _render_ticket_detail(
             "card_doing": card_doing,
             "editing": editing,
             "editable": editable,
+            "notice": notice,
             "files": files,
             "requester_person": requester_person,
             "reported_by": REPORTED_BY.get(ticket.source, "someone"),

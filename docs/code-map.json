@@ -258,6 +258,7 @@
       "tables": [],
       "tests": [
         "tests/test_anonymisation.py",
+        "tests/test_requester_change.py",
         "tests/test_teams_followups.py"
       ]
     },
@@ -404,6 +405,7 @@
         "app.navigation",
         "app.notifications",
         "app.request_types",
+        "app.requester_change",
         "app.routers.admin",
         "app.routers.approvals",
         "app.routers.portal",
@@ -535,6 +537,7 @@
         "app.reopening",
         "app.report_kit",
         "app.request_types",
+        "app.requester_change",
         "app.required_by",
         "app.resolution",
         "app.routers.admin",
@@ -1047,6 +1050,7 @@
         "app.outbox",
         "app.rate_limit",
         "app.reply_files",
+        "app.requester_change",
         "app.routers.admin",
         "app.routers.auth",
         "app.routers.dev_tools",
@@ -1100,6 +1104,7 @@
         "tests/test_presence.py",
         "tests/test_public_surface.py",
         "tests/test_reply_files.py",
+        "tests/test_requester_change.py",
         "tests/test_resolution.py",
         "tests/test_security.py",
         "tests/test_sessions.py",
@@ -1267,6 +1272,7 @@
         "tests/test_email_templates.py",
         "tests/test_follower_updates.py",
         "tests/test_msp_actions.py",
+        "tests/test_requester_change.py",
         "tests/test_resolution.py",
         "tests/test_teams_hold.py",
         "tests/test_teams_intake.py"
@@ -1452,6 +1458,7 @@
         "app.notifications",
         "app.raising",
         "app.reopening",
+        "app.requester_change",
         "app.routers.admin",
         "app.routers.portal",
         "app.routers.tickets",
@@ -1480,6 +1487,7 @@
         "tests/test_reopening.py",
         "tests/test_reply_notification.py",
         "tests/test_requester_bell.py",
+        "tests/test_requester_change.py",
         "tests/test_withdraw.py"
       ]
     },
@@ -1579,6 +1587,7 @@
         "app.person_data",
         "app.raising",
         "app.reply_channel",
+        "app.requester_change",
         "app.routers.auth",
         "app.routers.portal",
         "app.routers.tickets",
@@ -1889,6 +1898,7 @@
         "build_msp_handoff_mail",
         "build_msp_release_mail",
         "build_raised_for_mail",
+        "build_requester_changed_mail",
         "cap_release",
         "deliver_mail",
         "describe_failure",
@@ -1954,6 +1964,7 @@
         "tests/test_outbound_mail.py",
         "tests/test_reopening.py",
         "tests/test_reply_files.py",
+        "tests/test_requester_change.py",
         "tests/test_resolution.py",
         "tests/test_teams_followups.py",
         "tests/test_ticket_presence.py",
@@ -2148,6 +2159,7 @@
         "tests/test_reply_files.py",
         "tests/test_reply_notification.py",
         "tests/test_request_questions.py",
+        "tests/test_requester_change.py",
         "tests/test_resolution.py",
         "tests/test_scheduled_status.py",
         "tests/test_split_family.py",
@@ -2282,6 +2294,7 @@
         "app.reports",
         "app.request_questions",
         "app.request_types",
+        "app.requester_change",
         "app.required_by",
         "app.resolution",
         "app.routers.action_links",
@@ -2627,6 +2640,7 @@
         "tests/test_request_type_defaults.py",
         "tests/test_request_types.py",
         "tests/test_requester_bell.py",
+        "tests/test_requester_change.py",
         "tests/test_required_by.py",
         "tests/test_resolution.py",
         "tests/test_scheduled_jobs.py",
@@ -3158,7 +3172,8 @@
         "queue_msp_forward",
         "queue_msp_handoff",
         "queue_msp_release",
-        "queue_raised_for"
+        "queue_raised_for",
+        "queue_requester_changed"
       ],
       "imported_by": [
         "app.approval_reminders",
@@ -3172,6 +3187,7 @@
         "app.outage",
         "app.raising",
         "app.reply_channel",
+        "app.requester_change",
         "app.teams_intake"
       ],
       "imports": [
@@ -3196,6 +3212,7 @@
         "tests/test_msp_mail.py",
         "tests/test_outbound_mail.py",
         "tests/test_reply_files.py",
+        "tests/test_requester_change.py",
         "tests/test_resolution.py",
         "tests/test_teams_approvals.py",
         "tests/test_withdraw.py"
@@ -3277,6 +3294,7 @@
       "imported_by": [
         "app.anonymisation",
         "app.mail",
+        "app.requester_change",
         "app.subject_access",
         "app.teams",
         "app.teams_conversations",
@@ -3292,6 +3310,7 @@
       "tables": [],
       "tests": [
         "tests/test_anonymisation.py",
+        "tests/test_requester_change.py",
         "tests/test_subject_access.py",
         "tests/test_teams_followups.py",
         "tests/test_ticket_redesign.py"
@@ -3485,6 +3504,7 @@
         "app.intake",
         "app.messages",
         "app.raising",
+        "app.requester_change",
         "app.routers.portal",
         "app.teams",
         "app.teams_intake",
@@ -3746,6 +3766,43 @@
         "tests/test_request_questions.py",
         "tests/test_request_type_defaults.py",
         "tests/test_request_types.py"
+      ]
+    },
+    {
+      "classes": [
+        "NotAllowed",
+        "Outcome",
+        "RequesterChangeError"
+      ],
+      "file": "app/requester_change.py",
+      "functions": [
+        "change_requester",
+        "resolve_address",
+        "suggestions"
+      ],
+      "imported_by": [
+        "app.routers.tickets"
+      ],
+      "imports": [
+        "app.approvals",
+        "app.audit",
+        "app.config",
+        "app.followers",
+        "app.identity",
+        "app.models",
+        "app.outbox",
+        "app.person_data",
+        "app.reply_channel",
+        "app.sla",
+        "app.ticket_service",
+        "app.visibility"
+      ],
+      "module": "app.requester_change",
+      "routes": [],
+      "summary": "Changing a ticket's end user, its requester (issue #279).",
+      "tables": [],
+      "tests": [
+        "tests/test_requester_change.py"
       ]
     },
     {
@@ -5232,6 +5289,7 @@
         "card_errors",
         "change_answers",
         "change_due",
+        "change_end_user",
         "change_note_visibility",
         "change_priority",
         "change_required_by",
@@ -5266,6 +5324,7 @@
         "reopen",
         "resolve",
         "restore_note",
+        "search_requester",
         "send_ticket_to_msp",
         "split",
         "take_back_from_msp_route",
@@ -5310,6 +5369,7 @@
         "app.reply_files",
         "app.request_questions",
         "app.request_types",
+        "app.requester_change",
         "app.required_by",
         "app.resolution",
         "app.search",
@@ -5539,6 +5599,16 @@
           "handler": "reopen",
           "method": "POST",
           "path": "/tickets/{number}/reopen"
+        },
+        {
+          "handler": "change_end_user",
+          "method": "POST",
+          "path": "/tickets/{number}/requester"
+        },
+        {
+          "handler": "search_requester",
+          "method": "GET",
+          "path": "/tickets/{number}/requester-search"
         },
         {
           "handler": "change_required_by",
@@ -5923,6 +5993,7 @@
         "app.messages",
         "app.raising",
         "app.request_types",
+        "app.requester_change",
         "app.required_by",
         "app.routers.admin",
         "app.routers.portal",
@@ -5945,6 +6016,7 @@
       "tests": [
         "tests/test_backdating.py",
         "tests/test_queue_page.py",
+        "tests/test_requester_change.py",
         "tests/test_required_by.py",
         "tests/test_resolution.py",
         "tests/test_scheduled_status.py",
@@ -6080,6 +6152,7 @@
         "tests/test_portal_new.py",
         "tests/test_portal_request.py",
         "tests/test_reply_files.py",
+        "tests/test_requester_change.py",
         "tests/test_storage.py",
         "tests/test_subject_access.py",
         "tests/test_teams_followups.py",
@@ -6115,6 +6188,7 @@
       "summary": "Subject access export (issue #175): a ZIP of everything held on one person.",
       "tables": [],
       "tests": [
+        "tests/test_requester_change.py",
         "tests/test_subject_access.py",
         "tests/test_teams_followups.py"
       ]
@@ -6821,6 +6895,7 @@
         "app.reopening",
         "app.reports",
         "app.request_questions",
+        "app.requester_change",
         "app.required_by",
         "app.resolution",
         "app.routers.admin",
@@ -6862,6 +6937,7 @@
         "tests/test_request_questions.py",
         "tests/test_request_type_defaults.py",
         "tests/test_requester_bell.py",
+        "tests/test_requester_change.py",
         "tests/test_resolution.py",
         "tests/test_split_family.py",
         "tests/test_subject_access.py",
@@ -6942,6 +7018,7 @@
         "tests/test_msp.py",
         "tests/test_msp_mail.py",
         "tests/test_portal_home.py",
+        "tests/test_requester_change.py",
         "tests/test_time_zones.py"
       ]
     },
@@ -7020,6 +7097,7 @@
         "has_permission",
         "is_untriaged",
         "may_add_note",
+        "may_change_requester",
         "may_edit_answers",
         "may_manage_note",
         "may_self_assign",
@@ -7044,6 +7122,7 @@
         "app.notifications",
         "app.report_kit",
         "app.reports",
+        "app.requester_change",
         "app.routers.attachments",
         "app.routers.bulk_resolve",
         "app.routers.msp_mail",
@@ -7077,6 +7156,7 @@
         "tests/test_portal_request.py",
         "tests/test_reply_files.py",
         "tests/test_reports.py",
+        "tests/test_requester_change.py",
         "tests/test_ticket_thread.py",
         "tests/test_visibility.py"
       ]
@@ -7691,6 +7771,7 @@
     "tests/test_request_type_defaults.py",
     "tests/test_request_types.py",
     "tests/test_requester_bell.py",
+    "tests/test_requester_change.py",
     "tests/test_required_by.py",
     "tests/test_resolution.py",
     "tests/test_scheduled_jobs.py",
