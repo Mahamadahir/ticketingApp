@@ -152,6 +152,23 @@
         <span class="muted small">{{ requester_zone }}</span>
       </div>
     </div>
+    {% if notice %}<p class="note" role="status">{{ notice }}</p>{% endif %}
+    {% if editing == "requester" %}
+    <form class="tp-form tp-edit" method="post" action="/tickets/{{ ticket.number }}/requester" hx-post="/tickets/{{ ticket.number }}/requester" hx-target="main" hx-swap="innerHTML" data-doing="changing the end user">
+      <label>New end user (a name or an email address)
+        <input type="text" name="new_requester" list="requester-options" maxlength="320" required autocomplete="off"
+               hx-get="/tickets/{{ ticket.number }}/requester-search" hx-trigger="input changed delay:300ms" hx-target="#requester-options" hx-swap="innerHTML" />
+        <datalist id="requester-options"></datalist>
+      </label>
+      <label><input type="checkbox" name="keep_old" value="on" checked /> Keep {{ requester_name }} as a follower (unticked, they lose this ticket in the portal)</label>
+      <label><input type="checkbox" name="email_new" value="on" /> Email the new end user</label>
+      <p class="note">The new end user sees what any requester sees. Nothing is emailed to {{ requester_name }}.</p>
+      <div class="tp-edit-actions"><button type="submit" class="btn btn-primary">Change end user</button>{{ cancel_edit("box-enduser") }}</div>
+    </form>
+    {% elif editable.requester %}
+    <p class="tp-val"><a class="btn" href="/tickets/{{ ticket.number }}?edit=requester#box-enduser"
+       hx-get="/tickets/{{ ticket.number }}?edit=requester" hx-target="#box-enduser" hx-select="#box-enduser" hx-swap="outerHTML" hx-push-url="false">Change</a></p>
+    {% endif %}
   </section>
 
   {# 2. Triage: type, category, impact and urgency, and the priority worked out from them. A pencil edits a row in place. #}
