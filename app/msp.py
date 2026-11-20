@@ -231,7 +231,7 @@ def _thread_messages(session: Session, ticket: Ticket, scope: str) -> list[Messa
     messages = list(requester_visible_messages(session, ticket))
     seen = {m.id for m in messages}
     notes = session.exec(
-        select(Message).where(Message.ticket_id == ticket.id, Message.direction == MessageDirection.INTERNAL)
+        select(Message).where(Message.ticket_id == ticket.id, Message.direction == MessageDirection.INTERNAL, Message.deleted_at.is_(None))
     ).all()
     messages += [m for m in notes if m.id not in seen]
     messages.sort(key=lambda m: (m.created_at, m.id))

@@ -425,6 +425,9 @@ class Ticket(SQLModel, table=True):
 
 
 class Message(SQLModel, table=True):
+    # The note purge (app/note_purge.py) looks only for deleted rows.
+    __table_args__ = (Index("ix_message_deleted", "deleted_at", postgresql_where=text("deleted_at IS NOT NULL")),)
+
     id: Optional[int] = Field(default=None, primary_key=True)
     ticket_id: int = Field(foreign_key="ticket.id")
     sender: str
@@ -454,6 +457,13 @@ class Message(SQLModel, table=True):
     # that was never emailed, never sent to Teams and never rang the bell. Set only by app/messages.add_visible_note; who
     # sees it is still decided by requester_visible_messages (which also holds it back until the ticket is triaged).
     visible_note: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
+    # When an agent deleted this note (#255; only a note can be deleted, by its author or a super admin). A deleted note is
+    # gone from the agent thread (a "Note deleted. Undo" line stays), the portal, Team activity, the MSP text and search, and
+    # its files are hidden with it, but the row is kept until the `note-purge` job removes it `note_keep_deleted_days` after
+    # this moment (app/note_purge.py); Undo clears both columns. Every reader of messages leaves deleted ones out
+    # (app/messages.py is the rule for the requester's side).
+    deleted_at: Optional[datetime] = Field(default=None)
+    deleted_by_id: Optional[int] = Field(default=None, foreign_key="user.id")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     ticket: Ticket = Relationship(back_populates="messages")
@@ -827,6 +837,8 @@ class Notification(SQLModel, table=True):
     user_id: int = Field(foreign_key="user.id", index=True)
     kind: str  # assigned, mentioned
     ticket_id: Optional[int] = Field(default=None, foreign_key="ticket.id", index=True)
+    # The note an @mention came from (#255), so deleting the note can withdraw the mention. None for every other kind.
+    message_id: Optional[int] = Field(default=None, foreign_key="message.id", index=True)
     actor_email: Optional[str] = Field(default=None)  # who caused it; None for the system
     text: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), index=True)
@@ -1142,6 +1154,10 @@ class TicketEvent(SQLModel, table=True):
     from_value: Optional[str] = Field(default=None)
     to_value: Optional[str] = Field(default=None)
     detail: Optional[str] = Field(default=None)
+    # Events written by one save (one commit) share this id (`ticket_service.record_event`), so the agent thread can show
+    # them as one box (#255). Their created_at values differ by microseconds, so the time cannot say it. None on events from
+    # before it existed, each of which is its own box.
+    group_id: Optional[str] = Field(default=None)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

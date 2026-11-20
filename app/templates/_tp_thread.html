@@ -1,0 +1,100 @@
+{# The activity thread (#255): newest first, one rounded box per action. The boxes come from app/thread.py (`thread`); nothing here decides what a person may see. Included by ticket_detail.html with its context. #}
+{% set menu_base = "/tickets/" ~ ticket.number ~ "/notes/" %}
+<h2 class="sr-only" id="timeline-heading">Timeline</h2>
+<ol id="thread" class="tp-thread" aria-labelledby="timeline-heading">
+  {% for box in thread %}
+  <li id="{{ box.id }}">
+  {% if box.kind == "note_deleted" %}
+  <article class="tp-msg tp-msg-deleted">
+    <p class="tp-deleted">
+      <span><b>Note deleted</b>{% if box.deleted_by %} <span class="muted">by {{ box.deleted_by }}{% if box.deleted_at %}, {{ box.deleted_at|local_time }}{% endif %}</span>{% endif %}</span>
+      {% if box.can_manage %}<span aria-hidden="true">&middot;</span>
+      <form method="post" action="{{ menu_base }}{{ box.message.id }}/undo" hx-post="{{ menu_base }}{{ box.message.id }}/undo" hx-target="main" hx-swap="innerHTML">
+        <button type="submit" class="btn tp-undo">Undo</button>
+      </form>{% endif %}
+    </p>
+  </article>
+  {% else %}
+  <article class="tp-msg tp-msg-{{ 'note' if box.kind == 'note' else ('visible' if box.kind == 'visible_note' else box.kind.replace('_', '-')) }}">
+    <header class="tp-msg-head">
+      <span class="avatar tp-avatar" aria-hidden="true">{{ box.who|initials }}</span>
+      <span class="tp-who"{% if box.who_email %} title="{{ box.who_email }}"{% endif %}>{{ box.who }}</span>
+      <span class="tp-did">{{ box.title }}</span>
+      <span class="chip t-{{ box.tone }}">
+        {%- if box.kind == "note" %}<svg aria-hidden="true" focusable="false" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V8a4 4 0 018 0v3"></path></svg>
+        {%- elif box.kind == "visible_note" %}<svg aria-hidden="true" focusable="false" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>{% endif -%}
+        {{ box.chip }}</span>
+      {% if box.alert %}<span class="chip t-red">{{ box.alert }}</span>{% endif %}
+      {% if box.source %}<span class="muted small">[{{ box.source.reference }} {{ box.source.subject }}]</span>{% endif %}
+      <time class="tp-when">{{ box.at|local_time }}</time>
+      {% if box.can_manage %}
+      <details class="tp-more tp-note-menu">
+        <summary class="btn icon-btn" aria-label="Options for this note">
+          <svg aria-hidden="true" focusable="false" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"></circle><circle cx="12" cy="12" r="1.8"></circle><circle cx="19" cy="12" r="1.8"></circle></svg>
+        </summary>
+        <div class="tp-more-menu" role="group" aria-label="Options for this note">
+          {% if box.is_visible_note %}
+          <details class="tp-hide">
+            <summary class="btn">Hide from the requester</summary>
+            <p class="note">The requester may already have read this note. Hiding it removes it from the portal from now on.</p>
+            <form method="post" action="{{ menu_base }}{{ box.message.id }}/visibility" hx-post="{{ menu_base }}{{ box.message.id }}/visibility" hx-target="main" hx-swap="innerHTML">
+              <input type="hidden" name="visible" value="0" />
+              <button type="submit" class="btn btn-primary">Hide it</button>
+            </form>
+          </details>
+          {% elif box.files %}
+          <details class="tp-hide">
+            <summary class="btn">Show to the requester</summary>
+            <p class="note">The {{ "file" if box.files|length == 1 else box.files|length ~ " files" }} attached to this note will be visible to the requester too.</p>
+            <form method="post" action="{{ menu_base }}{{ box.message.id }}/visibility" hx-post="{{ menu_base }}{{ box.message.id }}/visibility" hx-target="main" hx-swap="innerHTML">
+              <input type="hidden" name="visible" value="1" />
+              <button type="submit" class="btn btn-primary">Show it</button>
+            </form>
+          </details>
+          {% else %}
+          <form method="post" action="{{ menu_base }}{{ box.message.id }}/visibility" hx-post="{{ menu_base }}{{ box.message.id }}/visibility" hx-target="main" hx-swap="innerHTML">
+            <input type="hidden" name="visible" value="1" />
+            <button type="submit" class="btn">Show to the requester</button>
+          </form>
+          {% endif %}
+          <form method="post" action="{{ menu_base }}{{ box.message.id }}/delete" hx-post="{{ menu_base }}{{ box.message.id }}/delete" hx-target="main" hx-swap="innerHTML">
+            <button type="submit" class="btn btn-danger">Delete</button>
+          </form>
+        </div>
+      </details>
+      {% endif %}
+    </header>
+
+    {% if box.fields %}
+    <dl class="dl tp-dl tp-fields">
+      {% for label, value in box.fields %}<dt>{{ label }}</dt><dd>{{ value }}</dd>{% endfor %}
+    </dl>
+    {% endif %}
+    {% if box.lines %}
+    {% if box.lines|length == 1 %}<p class="tp-line">{{ box.lines[0] }}</p>{% else %}<ul class="tp-lines">{% for line in box.lines %}<li>{{ line }}</li>{% endfor %}</ul>{% endif %}
+    {% endif %}
+    {% if box.waits_for_triage %}<p class="muted small">(the requester sees it once the ticket is triaged)</p>{% endif %}
+    {% if box.notes %}
+    <div class="tp-resolution"><span class="muted small">Resolution notes</span>
+      <div class="message-body tp-msg-body">{{ box.notes }}</div></div>
+    {% endif %}
+    {% if box.body %}
+    <div class="message-body tp-msg-body">{{ box.body }}</div>
+    {% if box.quoted %}
+    <details class="tp-quoted">
+      <summary>Show quoted text</summary>
+      <div class="message-body tp-msg-body tp-quoted-body">{{ box.quoted }}</div>
+    </details>
+    {% endif %}
+    {% endif %}
+    {% if box.files %}
+    <ul class="tp-files" aria-label="Attachments">
+      {% for file in box.files %}<li class="chip t-gray tp-file"><a href="/attachments/{{ file.id }}">{{ file.display_name or file.filename }}</a> <span class="muted small">{{ file.size|file_size }}</span></li>{% endfor %}
+    </ul>
+    {% endif %}
+    {% for line in box.extra %}<p class="muted small tp-extra">{{ line }}</p>{% endfor %}
+  </article>
+  {% endif %}
+  </li>
+  {% endfor %}
+</ol>

@@ -210,8 +210,31 @@ def notify_mentions(
             f"{author.display_name.replace(REF, '')} mentioned you on {REF} {ticket.subject}", author.email,
         )
         if made is not None:
+            made.message_id = note.id  # so deleting the note can withdraw it (withdraw_mentions)
             notifications.append(made)
     return notifications
+
+
+def withdraw_mentions(session: Session, note: Message, now: Optional[datetime] = None) -> int:
+    """Withdraws the unread @mention notifications that came from this note (it was deleted, #255): each is dismissed and
+    marked read (so it leaves the bell, the page and the count, and the purge job deletes it) and its unsent Teams copy is
+    dropped. A mention someone already read is left alone. Undoing the delete does not bring them back. Returns how many.
+    Does not commit."""
+    now = now or datetime.now(timezone.utc)
+    rows = session.exec(
+        select(Notification).where(
+            Notification.message_id == note.id, Notification.kind == MENTIONED,
+            Notification.read_at.is_(None), Notification.dismissed_at.is_(None),
+        )
+    ).all()
+    for row in rows:
+        row.dismissed_at = now
+        row.read_at = now
+        session.add(row)
+    session.flush()
+    if rows:
+        withdraw_teams_copies(session, [row.id for row in rows])
+    return len(rows)
 
 
 def notify_reply(session: Session, ticket: Ticket, replier_email: str) -> list[Notification]:

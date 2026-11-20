@@ -112,6 +112,7 @@ KEPT_COLUMNS = (
     "link_code.user_id",
     "teams_conversation.user_id",  # looked up by object id, which resolves to the main person (identity.person_for_object_id)
     "reply_held_file.user_id",  # an agent's unconfirmed draft: dropped when confirmed or after a day (app/reply_files.py)
+    "message.deleted_by_id",  # who deleted a note (#255): history that keeps the original id, and the note goes at the purge
     "ticket_presence.user_id",  # who has a ticket open right now; gone after the "gone after" setting (app/ticket_presence.py)
 )
 

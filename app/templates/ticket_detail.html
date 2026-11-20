@@ -137,50 +137,7 @@
 </section>
 {% endif %}
 
-<h2 class="sr-only" id="timeline-heading">Timeline</h2>
-<ol id="thread" class="tp-thread" aria-labelledby="timeline-heading">
-  {% for item in timeline %}
-  <li>
-  {% if item.message %}
-  {% set message = item.message %}
-  {% set internal = message.direction.value == "internal" %}
-  <article class="tp-msg{{ ' tp-msg-note' if internal else '' }}{{ ' tp-msg-visible' if message.visible_note else '' }}">
-    <header class="tp-msg-head">
-      <span class="avatar tp-avatar" aria-hidden="true">{{ message.sender|initials }}</span>
-      <span class="tp-who">{{ message.sender }}</span>
-      {% if internal %}<span class="chip t-amber"><svg aria-hidden="true" focusable="false" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V8a4 4 0 018 0v3"></path></svg>Internal note · not visible to requester</span>
-      {% elif message.visible_note %}<span class="chip t-blue"><svg aria-hidden="true" focusable="false" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>Visible to the requester · not emailed</span>
-      {% elif message.msp_forward %}<span class="chip t-blue">From the MSP{% if message.msp_forward == "pending" %} (the user was not on it; agents only until forwarded){% elif message.msp_forward == "forwarded" %} (forwarded to the user){% elif message.msp_forward == "dismissed" %} (not forwarded){% elif message.msp_forward == "internal" %} (acknowledgement; agents only){% endif %}</span>{% if message.msp_unverified %} <span class="chip t-red">sender not verified</span>{% endif %}
-      {% elif message.direction.value == "outbound" %}<span class="chip t-blue">{{ item.label }}{% if message.cc %} (cc: {{ message.cc }}){% endif %}</span>
-      {% else %}<span class="chip t-gray">{{ item.label }}</span>{% endif %}
-      {% if message.visible_note and not ticket.triaged_at %}<span class="muted small">(the requester sees it once the ticket is triaged)</span>{% endif %}
-      {% if item.source %}<span class="muted small">[{{ item.source.reference }} {{ item.source.subject }}]</span>{% endif %}
-      <time class="tp-when">{{ message.created_at|local_time }}</time>
-    </header>
-    <div class="message-body tp-msg-body">{{ message.body }}</div>
-    {% if message_files.get(message.id) %}
-    <ul class="tp-files" aria-label="Attachments">
-      {% for file in message_files[message.id] %}<li><a href="/attachments/{{ file.id }}">{{ file.display_name or file.filename }}</a> <span class="muted small">({{ file.size|file_size }})</span></li>{% endfor %}
-    </ul>
-    {% endif %}
-  </article>
-  {% else %}
-  {% set event = item.event %}
-  <div class="tp-event event">
-    <span class="tp-dot" aria-hidden="true"></span>
-    <span>
-    {% if item.source %}<span class="note">[{{ item.source.reference }} {{ item.source.subject }}]</span>{% endif %}
-    {% if event.event_type == "with_msp_through" %}With the MSP through {{ event.to_value }}{% else %}{{ event.event_type.replace("_", " ") }}{% endif %}
-    {% if event.event_type != "with_msp_through" and (event.from_value or event.to_value) %}: {{ event.from_value or "none" }}{% if event.event_type == "backdated" and event.from_value %} UTC{% endif %} &rarr; {{ event.to_value or "none" }}{% if event.event_type == "backdated" and event.to_value %} UTC{% endif %}{% endif %}
-    {% if event.detail %} ({{ event.detail }}){% endif %}
-    &middot; {{ event.actor_email or "system" }}
-    </span>
-    <time class="tp-when">{{ event.created_at|local_time }}</time>
-  </div>
-  {% endif %}
-  </li>
-  {% endfor %}
-</ol>
+{% include "_tp_thread.html" %}
 </section>
 
 <aside class="tp-side" aria-label="Ticket details">

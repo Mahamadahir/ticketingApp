@@ -46,6 +46,7 @@ from app.due_today import run_scheduled_due
 from app.entra_check import JOB_NAME as ENTRA_CHECK_JOB, run_entra_account_check
 from app.models import ScheduledJob
 from app.msp import run_msp_ack_alerts, run_msp_forwards, run_msp_handoff
+from app.note_purge import purge_deleted_notes
 from app.notification_purge import purge_notifications
 from app.reply_files import expire as expire_reply_files
 from app.ticket_presence import purge_expired as purge_ticket_presence
@@ -79,6 +80,7 @@ SCHEDULED_JOBS: list[ScheduledJobDef] = [
     ScheduledJobDef("msp-ack-alerts", 300, run_msp_ack_alerts),  # a ticket sent to the MSP that it has not confirmed in time
     ScheduledJobDef("msp-forwards", 300, run_msp_forwards),  # MSP mail left waiting for an agent goes to the user once business hours end
     ScheduledJobDef("msp-handoff", 300, run_msp_handoff),  # every 5 minutes: the handoff starts within 5 minutes of its hour
+    ScheduledJobDef("note-purge", 86400, purge_deleted_notes),  # removes notes deleted at least `note_keep_deleted_days` ago, with their files (app/note_purge.py)
     ScheduledJobDef("notification-purge", 86400, purge_notifications),  # deletes dismissed notifications past the undo window and every notification past its age limit, with their Teams posts (app/notification_purge.py)
     ScheduledJobDef("presence-cleanup", 3600, purge_ticket_presence),  # deletes ticket presence rows past the "gone after" time (app/ticket_presence.py)
     ScheduledJobDef("reply-files", 3600, expire_reply_files),  # drops files held for an email preview that was never confirmed (app/reply_files.py)

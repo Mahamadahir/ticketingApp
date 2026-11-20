@@ -254,8 +254,7 @@ def test_events_are_shown_in_the_ticket_timeline(client, db_session):
 
     page = client.get(f"/tickets/{ticket.number}").text
     assert "Timeline" in page
-    assert "status changed" in page
-    assert "open &rarr; in_progress" in page
+    assert "Changed the status from Open to In progress." in page
 
 
 def test_concurrent_ticket_creation_never_duplicates_a_number():

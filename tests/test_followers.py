@@ -140,7 +140,7 @@ def test_an_email_records_who_was_copied_at_send_time(client, db_session):
     db_session.expire_all()
     messages = db_session.exec(select(Message).order_by(Message.id)).all()
     assert [m.cc for m in messages] == ["boss@example.org, peer@example.org", "peer@example.org"]
-    assert "cc: boss@example.org, peer@example.org" in client.get(f"/tickets/{ticket.number}").text
+    assert "Copied: boss@example.org, peer@example.org" in client.get(f"/tickets/{ticket.number}").text
 
 
 def test_an_email_with_no_followers_has_no_cc(client, db_session):
@@ -471,11 +471,11 @@ def test_a_follower_reply_reaches_the_agents_labelled_as_from_a_follower(client,
 
     agent_for(client, db_session, team)
     page = client.get(f"/tickets/{ticket.number}").text
-    assert page.index("From the requester") < page.index("From the boss")
-    # The label is the kind chip of the message card the body sits in.
-    requester_part = page.split("From the requester")[0].rsplit('<span class="chip', 1)[1].split(">", 1)[1].strip()
-    follower_part = page.split("From the boss")[0].rsplit('<span class="chip', 1)[1].split(">", 1)[1].strip()
-    assert requester_part.startswith("Portal reply<") and follower_part.startswith("Portal reply from follower")
+    assert page.index("From the boss") < page.index("From the requester")  # newest first (#255)
+    # The label is what the box says its person did (the "tp-did" words in the head of the box the body sits in).
+    requester_part = page.split("From the requester")[0].rsplit('<span class="tp-did">', 1)[1].split("<", 1)[0].strip()
+    follower_part = page.split("From the boss")[0].rsplit('<span class="tp-did">', 1)[1].split("<", 1)[0].strip()
+    assert requester_part == "Raised in the portal" and follower_part == "Follower replied in the portal"
     db_session.expire_all()
     assert db_session.get(Ticket, ticket.id).updated_at > before
 

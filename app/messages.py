@@ -20,6 +20,7 @@ from sqlalchemy import func
 from sqlmodel import Session, select
 
 from app.attachments import NewFile, store_attachment
+from app.audit import log_action
 from app.followers import copyable_followers
 from app.models import (
     FINISHED_STATUSES,
@@ -33,13 +34,13 @@ from app.models import (
     User,
 )
 from app.request_questions import answer_rows
-from app.notifications import notify_agent_emailed, notify_reply
+from app.notifications import notify_agent_emailed, notify_reply, withdraw_mentions
 from app.settings_store import AUTO_CLOSE_AFTER_DAYS, AUTO_CLOSE_ENABLED, count_setting, get_flag
 from app.sla import note_first_response
 from app.time_zones import format_long_date, relative_time
 from app.reply_channel import AGENT, EMAIL, MESSAGE_CHANNELS, PORTAL, SYSTEM, TEAMS_CHANNEL, queue_reply, route_for
 from app.storage import Storage, get_storage
-from app.ticket_service import NotTriaged
+from app.ticket_service import NotTriaged, record_event
 from app.visibility import Access, is_untriaged, ticket_access, visible_ticket_condition
 
 
@@ -324,6 +325,72 @@ def add_visible_note(
     return note
 
 
+EVENT_NOTE_VISIBILITY = "note_visibility_changed"  # to_value: visible or hidden (never the note's words: the note may be deleted later)
+
+
+class NoteError(Exception):
+    """A note action that cannot go ahead (not a note, already deleted, nothing to undo), worded for the agent."""
+
+
+def is_note(message: Message) -> bool:
+    """An agent's note: an internal one, or a visible-to-the-requester one. Never an email or a message from the requester."""
+    return message.direction == MessageDirection.INTERNAL or message.visible_note
+
+
+def set_note_visible(session: Session, ticket: Ticket, note: Message, actor: User, visible: bool) -> bool:
+    """Shows an internal note to the requester in the portal, or hides a visible note again (#255). It is the same state
+    `add_visible_note` writes (an outbound public message with `visible_note`), so what the requester sees is still decided by
+    `requester_visible_messages`, including the rule that a visible note waits until the ticket is triaged. Nothing is emailed,
+    sent to Teams or put in anyone's bell. Records a ticket event and an audit entry. Returns False when it already was so.
+    Who may do it is `visibility.may_manage_note`; the route asks. Does not commit."""
+    if not is_note(note) or note.ticket_id != ticket.id:
+        raise NoteError("Only a note can be shown or hidden")
+    if note.deleted_at is not None:
+        raise NoteError("That note was deleted")
+    if note.visible_note == visible:
+        return False
+    if visible:
+        note.direction, note.visibility, note.visible_note = MessageDirection.OUTBOUND, MessageVisibility.PUBLIC, True
+    else:
+        note.direction, note.visibility, note.visible_note = MessageDirection.INTERNAL, MessageVisibility.AGENTS_ONLY, False
+    session.add(note)
+    record_event(session, ticket, EVENT_NOTE_VISIBILITY, actor.email, to_value="visible" if visible else "hidden")
+    log_action(session, actor.email, "ticket", ticket.id, "note_made_visible" if visible else "note_hidden", f"message {note.id}")
+    return True
+
+
+def delete_note(session: Session, ticket: Ticket, note: Message, actor: User, now: Optional[datetime] = None) -> bool:
+    """Deletes a note with Undo (#255): sets `deleted_at` and `deleted_by_id` and nothing else is removed yet (the `note-purge`
+    job removes it, and its files, after "Keep deleted notes for" days). From then on every reader of messages leaves it out and
+    its files are not served; the unread @mention notifications that came from it are withdrawn (dismissed, with their unsent Teams
+    copies), and Undo does not bring those back. Audit entry. Returns False when it was already deleted. Does not commit."""
+    if not is_note(note) or note.ticket_id != ticket.id:
+        raise NoteError("Only a note can be deleted")
+    if note.deleted_at is not None:
+        return False
+    note.deleted_at = now or datetime.now(timezone.utc)
+    note.deleted_by_id = actor.id
+    session.add(note)
+    session.flush()
+    withdraw_mentions(session, note, note.deleted_at)
+    log_action(session, actor.email, "ticket", ticket.id, "note_deleted", f"message {note.id}")
+    return True
+
+
+def undo_delete_note(session: Session, ticket: Ticket, note: Message, actor: User) -> bool:
+    """Brings a deleted note back, while the row still exists (before the purge). Audit entry. Returns False when it was not
+    deleted. Does not commit."""
+    if note.ticket_id != ticket.id:
+        raise NoteError("No such note")
+    if note.deleted_at is None:
+        return False
+    note.deleted_at = None
+    note.deleted_by_id = None
+    session.add(note)
+    log_action(session, actor.email, "ticket", ticket.id, "note_restored", f"message {note.id}")
+    return True
+
+
 def record_inbound(
     session: Session,
     ticket: Ticket,
@@ -407,9 +474,11 @@ def requester_visible_messages(session: Session, ticket: Ticket) -> list[Message
     never an internal note even if one were wrongly marked public. A ticket that was
     split shows its family's shared conversation (see _shared_conversation).
     An agent's visible note (`add_visible_note`) waits here until its ticket is triaged, as every message to the
-    requester does; this is the only place that rule is written."""
+    requester does; this is the only place that rule is written. A deleted note (#255) is never shown to the requester,
+    whatever it was before. A deleted note that was visible therefore falls to `not_requester_visible_messages`, which is
+    where the subject access export lists it (still, until the purge)."""
     family = [ticket, *_shared_conversation(session, ticket)]
-    query = select(Message).where(Message.ticket_id.in_([t.id for t in family]), *_PUBLIC)
+    query = select(Message).where(Message.ticket_id.in_([t.id for t in family]), Message.deleted_at.is_(None), *_PUBLIC)
     untriaged = [t.id for t in family if not is_triaged(t)]
     if untriaged:
         query = query.where(~(Message.visible_note.is_(True) & Message.ticket_id.in_(untriaged)))
@@ -434,7 +503,10 @@ def posts_since(session: Session, ticket: Ticket, agent: User, seen: int) -> lis
     emailed = {m.id for m in requester_visible_messages(session, ticket) if m.ticket_id == ticket.id and m.id > seen}
     later = session.exec(
         select(Message)
-        .where(Message.ticket_id == ticket.id, Message.id > seen, Message.author_user_id.is_not(None), Message.author_user_id != agent.id)
+        .where(
+            Message.ticket_id == ticket.id, Message.id > seen, Message.author_user_id.is_not(None), Message.author_user_id != agent.id,
+            Message.deleted_at.is_(None),
+        )
         .order_by(Message.id)
     ).all()
     return [
@@ -776,7 +848,7 @@ def agent_timeline(session: Session, ticket: Ticket, viewer=None) -> list[Timeli
     other_items: list[TimelineItem] = []
     if viewer is not None:
         for other in _shared_conversation(session, ticket, viewer):
-            for m in session.exec(select(Message).where(Message.ticket_id == other.id, *_PUBLIC)).all():
+            for m in session.exec(select(Message).where(Message.ticket_id == other.id, Message.deleted_at.is_(None), *_PUBLIC)).all():
                 other_items.append(TimelineItem(at=m.created_at, message=m, source=other))
             if ticket.split_from_id is None:
                 # Progress of a part shows on its original; the original's own events do not

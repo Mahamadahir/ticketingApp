@@ -412,8 +412,32 @@ label { cursor: pointer; }
 .tp-when { margin-left: auto; color: var(--muted); font-size: 13px; white-space: nowrap; }
 .tp-msg-body { line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
 .tp-files { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 16px; }
-.tp-event { display: flex; gap: 10px; align-items: center; padding: 2px 6px; margin: 0; color: var(--muted); font-size: 13px; }
-.tp-dot { flex: none; width: 8px; height: 8px; border-radius: 999px; background: var(--border); }
+/* The thread's boxes (#255): every action is a rounded box with the person and what they did across the top. */
+.tp-did { color: var(--muted); overflow-wrap: anywhere; }
+.tp-msg-head .chip { flex: none; }
+.tp-msg-head .chip svg { margin-right: 4px; vertical-align: -1px; }
+.tp-msg-system { background: var(--raised); }
+.tp-msg-triage, .tp-msg-resolved { border-left: 4px solid var(--green); }
+.tp-line { margin: 0; line-height: 1.5; }
+.tp-lines { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; line-height: 1.5; }
+.tp-fields { margin: 0; }
+.tp-resolution { display: flex; flex-direction: column; gap: 4px; }
+.tp-quoted > summary { cursor: pointer; color: var(--accent); font-size: 13px; width: fit-content; }
+.tp-quoted-body { margin-top: 8px; padding-left: 12px; border-left: 3px solid var(--border); color: var(--muted); }
+.tp-file { gap: 6px; }
+.tp-extra { margin: 0; }
+.tp-msg-deleted { padding: 10px 18px; background: var(--raised); border-style: dashed; }
+.tp-deleted { margin: 0; display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; color: var(--muted); }
+.tp-deleted form { margin: 0; }
+.tp-undo { min-height: 28px; padding: 2px 10px; color: var(--accent); }
+/* The ... menu on a note: the same dropdown as More actions, opening to the left of the button. */
+.tp-note-menu .tp-more-menu { left: auto; right: 0; min-width: 220px; }
+.tp-note-menu .tp-more-menu form { margin: 0; display: flex; }
+.tp-note-menu .tp-more-menu form .btn { flex: 1; }
+.tp-hide { display: flex; flex-direction: column; gap: 6px; }
+.tp-hide > summary { list-style: none; cursor: pointer; }
+.tp-hide > summary::-webkit-details-marker { display: none; }
+.tp-hide .note { margin: 0; padding: 0 6px; max-width: 260px; }
 
 @media (max-width: 720px) {
   .tp-side { max-width: none; }

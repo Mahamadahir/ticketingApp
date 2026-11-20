@@ -89,6 +89,7 @@ def feed_query(
         )
         .join(Ticket, Ticket.id == Message.ticket_id)
         .join(User, User.id == Message.author_user_id, isouter=True)
+        .where(Message.deleted_at.is_(None))  # a deleted note vanishes from here too (#255)
     )
     if kind == Kind.EVENTS:
         branches = [events]
@@ -336,6 +337,8 @@ def phrase_of(row, names: Mapping[str, str]) -> str:
         return f"Escalated to {row.to_value}" if row.to_value else "Escalated"
     if row.what == "reopened":
         return "Reopened"
+    if row.what == "note_visibility_changed":  # #255
+        return "Made a note visible to the requester" if row.to_value == "visible" else "Hid a note from the requester"
     return row.what.replace("_", " ").capitalize()
 
 
