@@ -1,0 +1,35 @@
+# The image copies only alembic.ini, docker-entrypoint.sh, migrations/ and app/ (see Dockerfile), but the whole
+# directory is still sent to the builder as the build context. Keep local caches, environments and secrets out of it:
+# an unreadable .pytest_cache in a working copy once failed the build.
+# Patterns without **/ match at the root only, so app/ (static images and all) is never touched by the root ones.
+.git
+.github
+.claude
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.coverage
+htmlcov/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+*.db
+.DS_Store
+graphify-out/
+data/
+dist/
+docs/
+tests/
+infra/
+teams-app/
+tools/
+/*.zip
+/*.png
+/*.jpg
+/*.jpeg
