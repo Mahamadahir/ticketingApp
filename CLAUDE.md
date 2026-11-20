@@ -112,7 +112,7 @@ starting a phase, and `README.md` for how to run it.
   work up as a GitHub issue (what, rules, tests), then gives each issue to its own sub-agent running
   Sonnet. The sub-agent branches off `main` (or the branch it builds on), opens a draft PR, builds
   and tests it under the working agreement in `docs/build-plan.md`, then runs `/code-review <PR>`
-  itself and fixes the real findings. It reports back to the orchestrator: what it built, the test
+  itself and fixes the real findings, then re-runs the full test suite. It reports back to the orchestrator: what it built, the test
   results, and every review finding, accepted (fixed) or rejected (with the reason). The orchestrator
   checks the report, relays it to the user and marks the PR ready. Sub-agents work in their own worktrees, so their
   changes never reach the user's checkout (`C:\Projects\ticketingApp`), which the local WSL app serves with auto-reload.

@@ -281,7 +281,8 @@ with `createReply` (sendMail returns no id, so a sent message has none).
    targeting `main`). `gh` is at `C:\Program Files\GitHub CLI\gh.exe`.
 8. Who does what: the orchestrating session writes the issue and hands it to one sub-agent (Sonnet).
    That sub-agent builds the PR, then runs `/code-review N` on it before the PR is marked ready, fixes
-   the real findings and explains the rejected ones, and reports to the orchestrator: what was built,
+   the real findings and explains the rejected ones, re-runs the full test suite after those fixes (a
+   green run from before the review does not count), and reports to the orchestrator: what was built,
    the test results, and each finding accepted or rejected with why. The orchestrator relays the report
    to the user, marks the PR ready and puts the user's checkout on the PR's latest commit (detached) so the
    local WSL app shows it for a preview before "merge"; afterwards the checkout goes back to `main` (see CLAUDE.md).
