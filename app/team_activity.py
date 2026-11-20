@@ -28,6 +28,22 @@ from app.time_zones import format_long_date, valid_zone
 
 EXCERPT = 160
 
+# Event types only an agent can cause (triage, assignment, escalation, links, splits, the MSP steps, dates, priority and
+# so on). A step of one of these types is agent work whatever the person's role is now (#270): a demoted agent's past
+# changes stay agent cards. Every other event type (created, reopened, status and approval steps, follower steps, and any
+# type added later) is decided by the person's role, so a new type that a requester can cause is never shown as an
+# agent's by mistake. Add a type here only when a requester or approver can never cause it.
+AGENT_ONLY_EVENTS = (
+    "triaged", "assigned", "escalated", "team_changed", "type_changed", "priority_changed", "category_changed",
+    "category_reviewed", "attachment_renamed", "note_visibility_changed", "backdated", "due_changed", "required_by_changed",
+    "linked", "unlinked", "child_linked", "child_unlinked", "split", "split_from", "reclosed",
+    "sent_to_msp", "msp_hold", "msp_hold_released", "msp_forwarded", "msp_forward_dismissed", "msp_acknowledged",
+    "with_msp_through", "taken_back_from_msp", "linked_taken_back_from_msp",
+)
+
+# The Person filter lists people active in this many days (#262); anyone can still be picked through ?person=.
+PERSON_WINDOW_DAYS = 90
+
 
 class Kind(str, Enum):
     EVENTS = "events"  # what changed on a ticket
@@ -60,7 +76,14 @@ def feed_query(
             TicketEvent.detail.label("detail"),
             Ticket.requester_email.label("requester"),
             cast(null(), Integer).label("author_id"),
-            case((User.id.is_(None), False), else_=User.role.in_(AGENT_ROLES)).label("agent"),
+            # Agent work is decided from what the step was, not only from the person's role now (#270): a note, a
+            # change or an email can only have been made by an agent, so a demoted agent's past work stays agent work.
+            # Only the types in AGENT_ONLY_EVENTS are decided that way; every other step goes by the person's role.
+            case(
+                (User.id.is_(None), False),
+                (TicketEvent.event_type.in_(AGENT_ONLY_EVENTS), True),
+                else_=User.role.in_(AGENT_ROLES),
+            ).label("agent"),
         )
         .join(Ticket, Ticket.id == TicketEvent.ticket_id)
         .join(User, func.lower(User.email) == func.lower(TicketEvent.actor_email), isouter=True)
@@ -498,12 +521,21 @@ def _lookups(session: Session, rows) -> tuple[dict[str, str], dict[int, Ticket],
     return people, tickets, teams
 
 
-def person_choices(session: Session, visible, team_id: Optional[int] = None) -> list[User]:
-    """The agents whose steps appear in this viewer's feed (the choices of the person filter)."""
-    feed = feed_query(visible, team_id).subquery()
-    actors = select(func.lower(feed.c.actor)).distinct()
-    query = select(User).where(func.lower(User.email).in_(actors), User.role.in_(AGENT_ROLES)).order_by(User.display_name)
-    return list(session.exec(query).all())
+def person_choices(
+    session: Session, visible, team_id: Optional[int] = None, chosen: Optional[str] = None, now: Optional[datetime] = None
+) -> list[User]:
+    """The agents whose steps appear in this viewer's feed over the last PERSON_WINDOW_DAYS (the choices of the person
+    filter): a bounded, DISTINCT query on the actor, never the whole history (#262). `chosen` is the address picked in the
+    URL: it is listed even when they were last active before the window, so the filter still shows who it is on."""
+    since = _aware(now or datetime.now(timezone.utc)) - timedelta(days=PERSON_WINDOW_DAYS)
+    feed = feed_query(visible, team_id, since=since).subquery()
+    # People with agent work in the window, which includes an agent demoted since (their cards are agent cards, so the
+    # filter can pick them), plus the one chosen in the URL while they are an agent.
+    actors = select(func.lower(feed.c.actor)).where(feed.c.agent.is_(True)).distinct()
+    listed = func.lower(User.email).in_(actors)
+    if chosen:
+        listed = or_(listed, (func.lower(User.email) == chosen.lower()) & User.role.in_(AGENT_ROLES))
+    return list(session.exec(select(User).where(listed).order_by(User.display_name)).all())
 
 
 def count_steps_today(session: Session, visible, person: str, zone: str, now: Optional[datetime] = None) -> int:

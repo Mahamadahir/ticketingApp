@@ -54,6 +54,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/d4e8a1b7c3f9_activity_window_indexes.py",
+        "revision": "d4e8a1b7c3f9"
+      },
+      {
         "file": "migrations/versions/c255a3f8d1e6_thread_groups_and_deleted_notes.py",
         "revision": "c255a3f8d1e6"
       },
@@ -68,17 +72,13 @@
       {
         "file": "migrations/versions/c239d1a7e5b3_notification_dismissed_at.py",
         "revision": "c239d1a7e5b3"
-      },
-      {
-        "file": "migrations/versions/c4f7a2b9e813_request_type_icon_and_approval_notice.py",
-        "revision": "c4f7a2b9e813"
       }
     ],
-    "count": 73,
+    "count": 74,
     "heads": [
       {
-        "file": "migrations/versions/c255a3f8d1e6_thread_groups_and_deleted_notes.py",
-        "revision": "c255a3f8d1e6"
+        "file": "migrations/versions/d4e8a1b7c3f9_activity_window_indexes.py",
+        "revision": "d4e8a1b7c3f9"
       }
     ]
   },
@@ -1185,6 +1185,7 @@
         "tests/test_scheduled_jobs.py",
         "tests/test_split_family.py",
         "tests/test_splitting.py",
+        "tests/test_team_activity_cards.py",
         "tests/test_teams_copy.py",
         "tests/test_teams_copy_sending.py",
         "tests/test_teams_intake.py",

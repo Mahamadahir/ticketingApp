@@ -375,7 +375,7 @@ def team_activity(
         {
             "timeline": timeline,
             "teams": teams,
-            "people": person_choices(session, visible, team_choice),
+            "people": person_choices(session, visible, team_choice, chosen=None if tab_choice == "mine" else person_choice),
             "team_id": team_choice,
             "kind": filters["kind"],
             "person": "" if tab_choice == "mine" else (person_choice or ""),
