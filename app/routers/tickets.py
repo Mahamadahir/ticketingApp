@@ -452,7 +452,14 @@ def card_errors(card: str):
                 ticket = get_by_number(session, kwargs["number"])
                 if ticket is None:
                     raise
-                values = {k: v for k, v in kwargs.items() if isinstance(v, (str, int, list)) and k not in ("number", "request")}
+                # Only what was typed: text, numbers and lists of text (the split parts). Never an upload, a flag or a dependency.
+                values = {
+                    k: v for k, v in kwargs.items()
+                    if k not in ("number", "request") and (
+                        isinstance(v, str) or (isinstance(v, int) and not isinstance(v, bool))
+                        or (isinstance(v, list) and all(isinstance(i, str) for i in v))
+                    )
+                }
                 response = _render_ticket_detail(
                     request, ticket, user, session, action=card, card_error=str(error.detail), card_values=values, card_must_open=error,
                 )
