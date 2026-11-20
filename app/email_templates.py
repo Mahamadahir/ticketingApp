@@ -158,11 +158,7 @@ REGISTRY: dict[str, TemplateDef] = {
             subject_required=("reference",),
             body_default=(
                 "Your request {reference} ({subject}) covered more than one issue, so we have split it into separate tickets "
-                "so that each can be dealt with on its own:
-
-{new_tickets}
-
-"
+                "so that each can be dealt with on its own:\n\n{new_tickets}\n\n"
                 "You do not need to do anything. Reply to this email to add to any of them; we will see which one you mean."
             ),
             body_placeholders={
@@ -172,8 +168,7 @@ REGISTRY: dict[str, TemplateDef] = {
             required=("new_tickets",),
             sample={
                 **_COMMON_SAMPLE,
-                "new_tickets": "SR-1043 Replace the keyboard
-INC-1044 Printer on floor 2 is jammed",
+                "new_tickets": "SR-1043 Replace the keyboard\nINC-1044 Printer on floor 2 is jammed",
             },
         ),
         TemplateDef(

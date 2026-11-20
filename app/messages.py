@@ -322,8 +322,7 @@ def record_split_notice(session: Session, original: Ticket, parts: list[Ticket])
 
     if not parts or not get_flag(session, SPLIT_EMAIL_ENABLED):
         return None
-    listing = "
-".join(f"{part.reference} {part.subject}" for part in parts)
+    listing = "\n".join(f"{part.reference} {part.subject}" for part in parts)
     body = render_template(session, "split_notice", {**ticket_values(original), "new_tickets": listing}).body
     return record_notice(session, original, body, copy_followers=True, kind=SPLIT_NOTICE)
 
