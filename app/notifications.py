@@ -784,18 +784,18 @@ def notify_msp_handoff_warning(
     session: Session, ticket: Ticket, handoff_label: str, handoff_at: datetime
 ) -> Optional[Notification]:
     """Tells the assignee their ticket will go to the MSP at the handoff hour unless they Hold it (app/msp.py
-    `warn_before_handoff`). Once for each ticket for each handoff moment (`handoff_at`), whether or not the bell entry
-    has been read or has since been deleted: "warned for tonight" is `ticket.msp_warned_for`, not the existence of a
-    Notification row (#271). Nobody assigned, or an assignee who wants neither channel, tells nobody and leaves the
-    ticket unmarked. A ticket given a new assignee after the warning is not warned again that night. Does not commit."""
-    if ticket.msp_warned_for == handoff_at:
-        return None
+    `warn_before_handoff`). Once for each ticket and person for each handoff moment (`handoff_at`), whether or not the bell
+    entry has been read or has since been deleted: "warned for tonight" is `ticket.msp_warned_for` and
+    `msp_warned_user_id`, not the existence of a Notification row (#271). Nobody assigned, or an assignee who wants neither channel, tells nobody and leaves the
+    ticket unmarked. A ticket given a new assignee after the warning warns the new one. Does not commit."""
     agent = _assignee_who_can_open(session, ticket)
     if agent is None:
         return None
+    if ticket.msp_warned_for == handoff_at and ticket.msp_warned_user_id == agent.id:
+        return None
     made = notify(session, agent, MSP_HANDOFF_WARNING, ticket, f"{REF} will go to the MSP at {handoff_label}. Hold it to keep it.", None)
     if made is not None:
-        ticket.msp_warned_for = handoff_at
+        ticket.msp_warned_for, ticket.msp_warned_user_id = handoff_at, agent.id
         session.add(ticket)
     return made
 

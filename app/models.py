@@ -419,7 +419,9 @@ class Ticket(SQLModel, table=True):
     msp_ack_alerted_at: Optional[datetime] = Field(default=None)
     # The handoff moment this ticket's "goes to the MSP tonight" warning was last sent for (#271). Kept on the ticket, not
     # found by looking for the bell entry, so deleting or purging that entry cannot make the job warn a second time.
+    # msp_warned_user_id is who was told, so a ticket re-assigned after the warning warns its new assignee too.
     msp_warned_for: Optional[datetime] = Field(default=None)
+    msp_warned_user_id: Optional[int] = Field(default=None, foreign_key="user.id")
 
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

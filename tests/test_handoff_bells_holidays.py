@@ -73,6 +73,24 @@ def test_a_deleted_warning_does_not_make_the_job_warn_again_the_same_night(clien
     assert warn_before_handoff(db_session, WARN_AT + timedelta(days=1)) == 1
 
 
+def test_a_ticket_reassigned_after_the_warning_warns_the_new_assignee(client, db_session, mail_on):
+    set_msp(db_session)
+    team = included_team(db_session)
+    ticket, first_id = assigned_ticket(client, db_session, team)
+    assert warn_before_handoff(db_session, WARN_AT) == 1
+    db_session.commit()
+    second_id = login_as(client, "kim@example.com", "Kim")
+    set_role(db_session, second_id, UserRole.AGENT, team.id)
+    ticket = db_session.get(Ticket, ticket.id)
+    ticket.assigned_agent_id = second_id
+    db_session.add(ticket)
+    db_session.commit()
+    assert warn_before_handoff(db_session, WARN_AT + timedelta(minutes=5)) == 1
+    db_session.commit()
+    assert [b.user_id for b in bells(db_session, "msp_handoff_warning")] == [first_id, second_id]
+    assert warn_before_handoff(db_session, WARN_AT + timedelta(minutes=10)) == 0
+
+
 def test_an_assignee_who_wants_no_warning_leaves_the_ticket_unmarked(client, db_session, mail_on):
     set_msp(db_session)
     ticket, agent_id = assigned_ticket(client, db_session, included_team(db_session))
