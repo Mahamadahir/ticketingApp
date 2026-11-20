@@ -84,6 +84,7 @@ MOVED_COLUMNS = (
     Ticket.resolved_by_id,
     Ticket.triaged_by_id,
     Ticket.escalated_by_id,
+    Ticket.msp_warned_user_id,  # who was told the ticket goes to the MSP tonight (#271); the main account, so it is not told twice
     Message.author_user_id,
     Attachment.uploaded_by_id,
     TicketFollower.user_id,

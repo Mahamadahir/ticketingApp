@@ -597,8 +597,8 @@ def warn_before_handoff(session: Session, now: Optional[datetime] = None) -> int
     for ticket_id in _handoff_candidates(session, start, end):
         ticket = session.get(Ticket, ticket_id)
         if ticket is not None and _eligible(session, ticket, start, end):
-            # Once a night is keyed on the handoff moment, not on the setting: a shorter setting must not warn again.
-            told += notify_msp_handoff_warning(session, ticket, label, start - timedelta(hours=12), now) is not None
+            # Once a night is keyed on the handoff moment (kept on the ticket, #271), not on the setting or the bell entry.
+            told += notify_msp_handoff_warning(session, ticket, label, start) is not None
     return told
 
 
