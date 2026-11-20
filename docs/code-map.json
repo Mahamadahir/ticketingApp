@@ -93,9 +93,7 @@
       "routes": [],
       "summary": "",
       "tables": [],
-      "tests": [
-        "tests/test_team_activity_cards.py"
-      ]
+      "tests": []
     },
     {
       "classes": [
@@ -1187,6 +1185,7 @@
         "tests/test_scheduled_jobs.py",
         "tests/test_split_family.py",
         "tests/test_splitting.py",
+        "tests/test_team_activity_cards.py",
         "tests/test_teams_copy.py",
         "tests/test_teams_copy_sending.py",
         "tests/test_teams_intake.py",

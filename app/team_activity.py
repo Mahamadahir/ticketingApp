@@ -28,12 +28,17 @@ from app.time_zones import format_long_date, valid_zone
 
 EXCERPT = 160
 
-# Event types a requester, approver or follower can cause as well as an agent. For these the person's role decides
-# whether the step is agent work; every other event type with a known person is agent work whatever their role is now.
-SHARED_EVENTS = (
-    "created", "reopened", "follows", "followed_by", "follower_added", "follower_removed", "follower_added_from_mail",
-    "mail_reference_not_used", "thanks_ignored", "message_moved", "approval_decided", "approval_withdrawn",
-    "approval_self_approved",
+# Event types only an agent can cause (triage, assignment, escalation, links, splits, the MSP steps, dates, priority and
+# so on). A step of one of these types is agent work whatever the person's role is now (#270): a demoted agent's past
+# changes stay agent cards. Every other event type (created, reopened, status and approval steps, follower steps, and any
+# type added later) is decided by the person's role, so a new type that a requester can cause is never shown as an
+# agent's by mistake. Add a type here only when a requester or approver can never cause it.
+AGENT_ONLY_EVENTS = (
+    "triaged", "assigned", "escalated", "team_changed", "type_changed", "priority_changed", "category_changed",
+    "category_reviewed", "attachment_renamed", "note_visibility_changed", "backdated", "due_changed", "required_by_changed",
+    "linked", "unlinked", "child_linked", "child_unlinked", "split", "split_from", "reclosed",
+    "sent_to_msp", "msp_hold", "msp_hold_released", "msp_forwarded", "msp_forward_dismissed", "msp_acknowledged",
+    "with_msp_through", "taken_back_from_msp", "linked_taken_back_from_msp",
 )
 
 # The Person filter lists people active in this many days (#262); anyone can still be picked through ?person=.
@@ -73,10 +78,10 @@ def feed_query(
             cast(null(), Integer).label("author_id"),
             # Agent work is decided from what the step was, not only from the person's role now (#270): a note, a
             # change or an email can only have been made by an agent, so a demoted agent's past work stays agent work.
-            # The steps a requester or approver can also take (SHARED_EVENTS) go by the person's role.
+            # Only the types in AGENT_ONLY_EVENTS are decided that way; every other step goes by the person's role.
             case(
                 (User.id.is_(None), False),
-                (TicketEvent.event_type.not_in(SHARED_EVENTS), True),
+                (TicketEvent.event_type.in_(AGENT_ONLY_EVENTS), True),
                 else_=User.role.in_(AGENT_ROLES),
             ).label("agent"),
         )
@@ -524,11 +529,13 @@ def person_choices(
     URL: it is listed even when they were last active before the window, so the filter still shows who it is on."""
     since = _aware(now or datetime.now(timezone.utc)) - timedelta(days=PERSON_WINDOW_DAYS)
     feed = feed_query(visible, team_id, since=since).subquery()
-    actors = select(func.lower(feed.c.actor)).distinct()
+    # People with agent work in the window, which includes an agent demoted since (their cards are agent cards, so the
+    # filter can pick them), plus the one chosen in the URL while they are an agent.
+    actors = select(func.lower(feed.c.actor)).where(feed.c.agent.is_(True)).distinct()
     listed = func.lower(User.email).in_(actors)
     if chosen:
-        listed = or_(listed, func.lower(User.email) == chosen.lower())
-    return list(session.exec(select(User).where(listed, User.role.in_(AGENT_ROLES)).order_by(User.display_name)).all())
+        listed = or_(listed, (func.lower(User.email) == chosen.lower()) & User.role.in_(AGENT_ROLES))
+    return list(session.exec(select(User).where(listed).order_by(User.display_name)).all())
 
 
 def count_steps_today(session: Session, visible, person: str, zone: str, now: Optional[datetime] = None) -> int:

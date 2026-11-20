@@ -549,6 +549,7 @@ def test_a_person_outside_the_window_still_works_as_the_person_parameter(client,
     assert 'value="old@example.com" selected' in page  # named in the filter though not in the default list
     assert "Priority changed" in page  # and their step shows
     assert 'value="old@example.com"' not in feed(client).text  # but not offered otherwise
+    assert 'value="old@example.com"' not in feed(client, tab="mine", person="old@example.com").text  # My activity ignores it
 
 
 def test_a_demoted_agents_past_work_stays_agent_cards_and_their_own_requests_are_requester_cards(client, db_session):
@@ -557,10 +558,15 @@ def test_a_demoted_agents_past_work_stays_agent_cards_and_their_own_requests_are
     ticket = ticket_named(db_session, "Ann's old work")
     client.post(f"/tickets/{ticket.number}/note", data={"body": "Checked the fuser"})
     _event(db_session, ticket, "agent@example.com", "priority_changed", 0)
+    _event(db_session, ticket, "agent@example.com", "approval_outcome", 0)  # not agent-only: a role-based step
     set_role(db_session, ann_id, UserRole.END_USER)
     second_agent(client, db_session, team)
 
     page = feed(client).text
+    assert "Approval outcome" in " ".join(re.findall(r'<article class="act-card act-requester">.*?</article>', page, re.S))
+    from app.team_activity import person_choices
+
+    assert "agent@example.com" in [u.email for u in person_choices(db_session, None)]  # the filter can still pick her
     agent_text = " ".join(re.findall(r'<article class="act-card act-agent">.*?</article>', page, re.S))
     requester_text = " ".join(re.findall(r'<article class="act-card act-requester">.*?</article>', page, re.S))
     assert "Priority changed" in agent_text and "Added an internal note" in agent_text and "Triaged" in agent_text
