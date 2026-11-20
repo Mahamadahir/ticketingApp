@@ -96,7 +96,10 @@ starting a phase, and `README.md` for how to run it.
   polish. Phase 9 restyles every page onto the 9A tokens and components (`docs/ui.md`), one issue at
   a time, so do not restyle a page outside its issue; use the 9A classes and tokens, never raw colours.
 - Schema changes need an Alembic migration (CI runs `alembic check`).
-- Run `pytest -n auto` (parallel, one database per worker) before saying work is done. Tests run against
+- Run the suite in parallel (`pytest -n 4`, one database per worker; never `-n auto`, which on this
+  22-core laptop runs out of Postgres `max_locks_per_transaction`) before saying work is done; when the
+  machine is too loaded to finish a full local run, say so, run the changed test files locally and let CI
+  run the full suite. Tests run against
   Postgres 16 (compose `db` locally, a service container in CI), never SQLite.
   Start it with `docker compose up -d db`; the tests create and wipe a separate
   `ticketing_test` database. Python is 3.14. Run only one pytest process per test database
@@ -120,6 +123,8 @@ starting a phase, and `README.md` for how to run it.
   `git switch --detach origin/<branch>`) for them to preview, says what to look at, and after the decision puts it back
   on `main` and pulls (`docker compose restart worker` if job code changed). Never while the checkout has the user's
   own uncommitted changes (ask first); one PR at a time. Only the user merges: they say "merge".
+  If a sub-agent's command is denied by a permission prompt or classifier, it stops that step and reports
+  it; it never retries the same thing another way (another shell, another tool) to get round the denial.
 - Before starting a piece of work check `gh pr list` and open a DRAFT PR on day one so
   two agents do not do the same work. Docs-only changes still go through a PR unless the
   user says to commit straight to main.
@@ -153,9 +158,9 @@ staging checklist. The full list is under "Azure-only verification" in
 
 Built: the `APP_ROLE` split (`web` / `public` / `worker`), the worker and its jobs (`app/jobs`),
 the storage interface with local and Blob implementations, Application Insights, rate limiting on
-public routes, and the deploy workflow (all unproved until staging). Still to do: DB-driven
-recurring jobs (the `scheduled_job` table; see `docs/build-plan.md`). The `RUN_MIGRATIONS` switch is
-done; proxy headers need only `FORWARDED_ALLOW_IPS`, set in the Bicep to the Container Apps subnet
+public routes, and the deploy workflow (all unproved until staging). DB-driven recurring jobs are
+built too (the `scheduled_job` table; a job is one line in `SCHEDULED_JOBS`, see `docs/build-plan.md`).
+The `RUN_MIGRATIONS` switch is done; proxy headers need only `FORWARDED_ALLOW_IPS`, set in the Bicep to the Container Apps subnet
 (never `*`, which lets clients forge their IP).
 
 ## Layout
