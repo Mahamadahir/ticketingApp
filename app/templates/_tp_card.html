@@ -47,7 +47,7 @@
     <form class="tp-form" hx-post="/tickets/{{ ticket.number }}/email/preview" hx-target="#email-preview" hx-swap="innerHTML"
           hx-encoding="multipart/form-data" hx-on:input="document.getElementById('email-preview').innerHTML = ''">
       <p class="tp-hint">Goes to {{ ticket.requester_email }} and is copied to {{ cc_candidates|length }} follower{{ "" if cc_candidates|length == 1 else "s" }}.</p>
-      {% with body = compose.body if compose and compose.mode == "email" else "" %}{% include "_email_body.html" %}{% endwith %}
+      {% with body = compose.body if compose and compose.mode == "email" else card_values.get("body", "") %}{% include "_email_body.html" %}{% endwith %}
       <input type="hidden" name="seen" value="{{ latest_post_id }}" />
       {% if cc_candidates %}
       <fieldset>
@@ -55,7 +55,7 @@
         <input type="hidden" name="cc_form" value="1" />
         {% for f in cc_candidates %}
         <label>
-          <input type="checkbox" name="cc" value="{{ f.email }}" checked {{ "disabled" if f.is_internal else "" }} />
+          <input type="checkbox" name="cc" value="{{ f.email }}" {{ "checked" if f.is_internal or not (card_error and card_values.get("cc_form")) or f.email in card_values.get("cc", []) else "" }} {{ "disabled" if f.is_internal else "" }} />
           {{ f.email }}{% if f.is_internal %} <i>(internal, always copied)</i>{% endif %}
         </label>
         {% endfor %}
@@ -86,7 +86,7 @@
 
   {% elif card == "note" %}
   {% set requester_name = (requester_person.display_name if requester_person and requester_person.display_name else ticket.requester_email) %}
-  {% set is_visible = compose.visible if compose and compose.mode == "note" else false %}
+  {% set is_visible = compose.visible if compose and compose.mode == "note" else card_values.get("visible_to_requester") == "1" %}
   <div class="tp-compose tp-compose-note" data-mention-url="/tickets/{{ ticket.number }}/mentions">
     <form class="tp-form" method="post" action="/tickets/{{ ticket.number }}/note" enctype="multipart/form-data"
           hx-post="/tickets/{{ ticket.number }}/note" hx-target="main" hx-swap="innerHTML" hx-encoding="multipart/form-data">
@@ -95,12 +95,13 @@
       <div class="tp-mention-wrap">
         <textarea name="body" id="note-body" rows="4" maxlength="{{ max_message_length }}" placeholder="Note (does not triage the ticket)..." required
                   aria-autocomplete="list" aria-controls="note-mentions" autocomplete="off">
-{{- compose.body if compose and compose.mode == "note" else "" -}}</textarea>
+{{- compose.body if compose and compose.mode == "note" else card_values.get("body", "") -}}</textarea>
         <ul class="tp-mentions" id="note-mentions" role="listbox" aria-label="Agents you can mention" hidden></ul>
       </div>
       <input type="hidden" name="seen" value="{{ latest_post_id }}" />
-      {% if compose and compose.mode == "note" and compose.draft %}<input type="hidden" name="draft" value="{{ compose.draft }}" />{% endif %}
+      {% if compose and compose.mode == "note" and compose.draft %}<input type="hidden" name="draft" value="{{ compose.draft }}" />{% elif card_error and card_values.get("draft") %}<input type="hidden" name="draft" value="{{ card_values.draft }}" />{% endif %}
       {% with attach_id = "note-files" %}{% include "_attach_control.html" %}{% endwith %}
+      {% if card_error %}{% include "_refused_files.html" %}{% endif %}
       {% if can_work %}
       <div class="tp-visible-box">
         <label class="tp-visible">
@@ -126,15 +127,15 @@
     <label>Type
       <select name="ticket_type">
         {% for type in ticket_types %}
-        <option value="{{ type.value }}" {{ "selected" if ticket.type == type else "" }}>{{ type.value.replace("_", " ") }}</option>
+        <option value="{{ type.value }}" {{ "selected" if (triage_kept.ticket_type or ticket.type.value) == type.value else "" }}>{{ type.value.replace("_", " ") }}</option>
         {% endfor %}
       </select>
     </label>
     <label>Impact
-      {{ impact_select(impact_options, "") }}
+      {{ impact_select(impact_options, triage_kept.impact or "") }}
     </label>
     <label>Urgency
-      {{ urgency_select(urgency_options, "") }}
+      {{ urgency_select(urgency_options, triage_kept.urgency or "") }}
     </label>
     {% if request_types %}
     <label>Kind of request (service requests)
@@ -142,33 +143,37 @@
         hx-get="/tickets/triage-dates?number={{ ticket.number }}" hx-trigger="change" hx-target="#triage-dates" hx-swap="outerHTML"
         hx-include="closest form">
         <option value="">Leave as is{{ " (" ~ request_info[0].name ~ ")" if request_info else " (none)" }}</option>
-        {% for rt in request_types %}<option value="{{ rt.id }}">{{ rt.name }}</option>{% endfor %}
+        {% for rt in request_types %}<option value="{{ rt.id }}" {{ "selected" if rt.id == triage_kept.request_type_id else "" }}>{{ rt.name }}</option>{% endfor %}
       </select>
     </label>
     {% endif %}
     <label>Category
-      {{ category_select(category_options, none) }}
+      {{ category_select(category_options, triage_kept.category_id) }}
     </label>
     <label>Assign to
       <select name="agent_id" id="triage-agent">
+        {% if triage_kept and triage_kept.members %}
+        {% with members = triage_kept.members, blank_label = "Leave as is", selected_id = triage_kept.agent_id %}{% include "_agent_options.html" %}{% endwith %}
+        {% else %}
         <option value="">Leave as is{{ " (" ~ assigned_agent.display_name ~ (", inactive" if not assigned_agent.is_active else "") ~ ")" if assigned_agent else " (unassigned)" }}</option>
+        {% endif %}
       </select>
     </label>
     </div>
-    {% with offers = offers_required_by, required_by = ticket.required_by.isoformat() if ticket.required_by else "", due_on = ticket.due_on.isoformat() if ticket.due_on else "", due_reason = "", has_due = ticket.due_on is not none %}{% include "_triage_dates.html" %}{% endwith %}
+    {% with offers = offers_required_by, required_by = triage_kept.required_by if triage_kept else (ticket.required_by.isoformat() if ticket.required_by else ""), due_on = triage_kept.due_on if triage_kept else (ticket.due_on.isoformat() if ticket.due_on else ""), due_reason = triage_kept.due_reason if triage_kept else "", has_due = ticket.due_on is not none %}{% include "_triage_dates.html" %}{% endwith %}
     {% with div_id = "triage-questions", rows = triage_questions, oob = false %}{% include "_request_questions.html" %}{% endwith %}
     {% with rows = triage_subrequests %}{% include "_triage_subrequests.html" %}{% endwith %}
     {% if can_create_category %}
-    <details class="tp-item">
+    <details class="tp-item" {{ "open" if triage_kept.new_category_name else "" }}>
       <summary>Create a new category instead</summary>
       <div class="tp-item-body">
       <p class="note">Leave the category above on "Choose a category". A new main category needs a team; a sub-category uses its parent's.</p>
-      <label>Name <input type="text" name="new_category_name" maxlength="80" /></label>
+      <label>Name <input type="text" name="new_category_name" maxlength="80" value="{{ triage_kept.new_category_name or '' }}" /></label>
       <label>Under
         <select name="new_category_parent_id">
           <option value="">Nothing: a new main category</option>
           {% for main in main_categories %}
-          <option value="{{ main.id }}">{{ main.name }}</option>
+          <option value="{{ main.id }}" {{ "selected" if main.id == triage_kept.new_category_parent_id else "" }}>{{ main.name }}</option>
           {% endfor %}
         </select>
       </label>
@@ -176,7 +181,7 @@
         <select name="new_category_team_id">
           <option value="">Choose a team</option>
           {% for t in teams %}
-          <option value="{{ t.id }}">{{ t.name }}</option>
+          <option value="{{ t.id }}" {{ "selected" if t.id == triage_kept.new_category_team_id else "" }}>{{ t.name }}</option>
           {% endfor %}
         </select>
       </label>
@@ -238,9 +243,9 @@
   <form class="tp-form" hx-post="/tickets/{{ ticket.number }}/send-to-msp/preview" hx-target="#msp-preview" hx-swap="innerHTML"
         hx-on:input="document.getElementById('msp-preview').innerHTML = ''">
     <p class="note">The ticket stays in its team, with the status With MSP, and nobody's access changes. You keep access to it and are copied on its mail to the MSP.{% if escalation_is_msp %} This is also what escalating does for this category.{% endif %}</p>
-    <textarea name="reason" maxlength="{{ max_message_length }}" placeholder="Why is it being sent to the MSP?" required></textarea>
-    <label><input type="radio" name="scope" value="thread" checked /> Send the thread (the user's messages, emails sent, comments and notes)</label>
-    <label><input type="radio" name="scope" value="original" /> Send only the original request (use this when it was passed between teams and the MSP does not need that history)</label>
+    <textarea name="reason" maxlength="{{ max_message_length }}" placeholder="Why is it being sent to the MSP?" required>{{ card_values.get('reason', '') }}</textarea>
+    <label><input type="radio" name="scope" value="thread" {{ "" if card_values.get('scope') == "original" else "checked" }} /> Send the thread (the user's messages, emails sent, comments and notes)</label>
+    <label><input type="radio" name="scope" value="original" {{ "checked" if card_values.get("scope") == "original" else "" }} /> Send only the original request (use this when it was passed between teams and the MSP does not need that history)</label>
     <button type="submit" class="btn btn-primary">Preview</button>
   </form>
   <div id="msp-preview"></div>
@@ -287,7 +292,7 @@
   <form class="tp-form" hx-post="/tickets/{{ ticket.number }}/close/preview" hx-target="#close-preview" hx-swap="innerHTML"
         hx-on:input="document.getElementById('close-preview').innerHTML = ''">
     <label>Closing notes (why it is being closed; they go into the email to the requester)
-      <textarea name="closing_notes" rows="4" maxlength="{{ max_message_length }}" required></textarea>
+      <textarea name="closing_notes" rows="4" maxlength="{{ max_message_length }}" required>{{ card_values.get('closing_notes', '') }}</textarea>
     </label>
     {% if cc_candidates %}
     <fieldset>
@@ -309,7 +314,7 @@
   <form class="tp-form" hx-post="/tickets/{{ ticket.number }}/resolve/preview" hx-target="#resolve-preview" hx-swap="innerHTML"
         hx-on:input="document.getElementById('resolve-preview').innerHTML = ''">
     <label>Resolution notes (what was done to fix it; they go into the email to the requester)
-      <textarea name="resolution_notes" rows="4" maxlength="{{ max_message_length }}" required></textarea>
+      <textarea name="resolution_notes" rows="4" maxlength="{{ max_message_length }}" required>{{ card_values.get('resolution_notes', '') }}</textarea>
     </label>
     {% if cc_candidates %}
     <fieldset>
