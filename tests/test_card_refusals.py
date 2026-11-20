@@ -12,7 +12,7 @@ from sqlmodel import select
 from app import mail, reply_files
 from app.main import app
 from app.models import ReplyHeldFile, Ticket, UserRole
-from app.settings_store import INBOUND_MAX_ATTACHMENTS, set_setting
+from app.settings_store import INBOUND_MAX_ATTACHMENTS, MSP_ADDRESS, set_setting
 from app.storage import LocalStorage, get_storage
 from tests.conftest import create_category, create_team, login_as, set_role
 from tests.test_email_preview import ticket_for_email
@@ -166,6 +166,8 @@ def test_a_refused_confirm_shows_in_its_own_card(client, db_session, path, data,
 @pytest.mark.parametrize("htmx", [False, True])
 def test_a_refused_send_to_msp_keeps_the_reason_and_the_scope(client, db_session, htmx):
     ticket = ticket_for_email(client, db_session)
+    set_setting(db_session, MSP_ADDRESS, "help@msp.example")  # without one the card shows a note, not the form
+    db_session.commit()
     response = client.post(
         f"/tickets/{ticket.number}/send-to-msp", data={"reason": "Needs the MSP", "scope": "original", "digest": "stale"},
         headers=HTMX if htmx else {},
@@ -264,7 +266,7 @@ def test_a_choice_that_is_no_longer_valid_is_not_kept(client, second, db_session
         f"/tickets/{ticket.number}/triage",
         data={
             "ticket_type": "incident", "impact": "low", "urgency": "low", "category_id": elsewhere.id, "agent_id": outsider,
-            "request_type_id": "999999", f"q_{size.id}": "Gigantic",
+            "request_type_id": "999999",
         },
         headers=HTMX,
     )
@@ -272,8 +274,14 @@ def test_a_choice_that_is_no_longer_valid_is_not_kept(client, second, db_session
     html = response.text
     assert selected(html, "category_id") == ""  # switched off since the page was drawn
     assert selected(html, "agent_id") == ""
-    assert selected(html, "request_type_id") == ""
-    assert selected(html, f"q_{size.id}") == "" and "no longer listed" not in html
+    assert selected(html, "request_type_id") == ""  # not an active kind of request
+    again = client.post(
+        f"/tickets/{ticket.number}/triage",
+        data={"ticket_type": "incident", "impact": "low", "urgency": "low", "request_type_id": kind.id, f"q_{size.id}": "Gigantic"},
+        headers=HTMX,
+    ).text
+    assert selected(again, "request_type_id") == str(kind.id)
+    assert selected(again, f"q_{size.id}") == "" and "no longer listed" not in again  # a pick-list answer not on offer
     assert selected(html, "ticket_type") == "incident" and selected(html, "impact") == "low"
 
 

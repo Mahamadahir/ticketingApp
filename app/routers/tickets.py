@@ -472,7 +472,7 @@ def card_errors(card: str):
                 }
                 # A browser cannot refill a file input, so the card says the files must be chosen again. Files held at a preview
                 # (`draft`) are kept, if they still are held.
-                if any(isinstance(i, UploadFile) and i.filename for v in kwargs.values() if isinstance(v, list) for i in v):
+                if any(getattr(i, "filename", None) for v in kwargs.values() if isinstance(v, list) for i in v):  # starlette's UploadFile, not fastapi's subclass
                     values["had_files"] = True
                 if values.get("draft"):
                     held = reply_files.held(session, ticket, user, values["draft"])
