@@ -43,7 +43,7 @@ def recorded(db_session):
 
 def test_the_page_previews_before_it_sends(client, db_session):
     ticket = ticket_for_email(client, db_session)
-    page = client.get(f"/tickets/{ticket.number}").text
+    page = client.get(f"/tickets/{ticket.number}?action=email").text
     assert f'hx-post="/tickets/{ticket.number}/email/preview"' in page and "Preview message" in page
     assert f'hx-post="/tickets/{ticket.number}/email"' not in page  # nothing on the page sends directly
 
@@ -160,7 +160,7 @@ def test_a_leading_blank_line_survives_the_trip_to_the_send(client, db_session):
 
 def test_editing_the_form_clears_the_preview(client, db_session):
     ticket = ticket_for_email(client, db_session)
-    page = client.get(f"/tickets/{ticket.number}").text
+    page = client.get(f"/tickets/{ticket.number}?action=email").text
     clear = "document.getElementById('email-preview').innerHTML = ''"
     assert f'hx-on:input="{clear}"' in page  # typing, ticking a copy, anything in the form
     assert page.count(clear) == 1  # (the canned-response picker adds its own once any exist)
@@ -244,7 +244,7 @@ def test_preview_email_returns_the_status_after(client, db_session):
 def test_the_page_offers_the_dropdown_in_the_form_that_is_previewed(client, db_session):
     ticket = ticket_for_email(client, db_session)
 
-    page = client.get(f"/tickets/{ticket.number}").text
+    page = client.get(f"/tickets/{ticket.number}?action=email").text + client.get(f"/tickets/{ticket.number}?action=note").text
 
     assert page.count('<select name="next_status">') == 2  # Email user and Add note
     assert "Ticket status after this" in page

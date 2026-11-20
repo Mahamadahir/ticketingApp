@@ -1,10 +1,11 @@
+import functools
 from datetime import datetime, timezone
 from html import escape
 from typing import Optional
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from app.templating import is_htmx, templates
 from sqlalchemy import func, or_
 from sqlmodel import Session, select
@@ -70,8 +71,10 @@ from app.required_by import (
 from app.settings_store import REQUIRED_BY_LEAD_DAYS, count_setting
 from app.canned import active_canned, fill as fill_canned
 from app.approvals import SUPERSEDED, ApprovalError, approval_group_of, current_approval, describe_rule, is_waiting_for_approvers, votes_of, waive
-from app.notifications import AWAITING_YOU, notify_agent_emailed, notify_assigned, notify_mentions
+from app.notifications import AWAITING_YOU, mentionable_agents, notify_agent_emailed, notify_assigned, notify_mentions
+from app.identity import person_for_address
 from app.presence import agent_label
+from app.ticket_actions import CARDS, action_chips
 from app.search import normalise, search_condition
 from app.splitting import (
     max_sub_tickets,
@@ -89,6 +92,7 @@ from app.messages import (
     EmptyEmail,
     UnknownRecipient,
     add_note,
+    add_visible_note,
     agent_timeline,
     email_requester,
     chosen_status,
@@ -100,8 +104,8 @@ from app.messages import (
     preview_email,
     status_choices,
 )
-from app.models import FINISHED_STATUSES, CannedResponse, Category, Message, MessageDirection, RequestType, Team, Ticket, TicketSource, TicketStatus, TicketType, User, UserRole
-from app.attachments import files_by_message
+from app.models import FINISHED_STATUSES, Attachment, CannedResponse, Category, Message, MessageDirection, RequestType, Team, Ticket, TicketSource, TicketStatus, TicketType, User, UserRole
+from app.attachments import RenameRefused, files_by_message, rename_attachment, shown_name, ticket_files
 from app.pagination import paginate
 from app.team_activity import (
     DRAWER_CARDS,
@@ -119,6 +123,7 @@ from app.sla import (
     at_risk_percent,
     describe_priority,
     queue_order,
+    header_sla,
     queue_sla,
     sla_rows,
     set_impact_urgency,
@@ -136,9 +141,9 @@ from app.reopening import (
 )
 from app.closing import CloseError, check_can_close, close_ticket, preview_closing
 from app.resolution import ResolveError, check_can_resolve, preview_resolution, resolve_ticket
-from app.ticket_service import AwaitingApproval, ClosingNeedsNotes, EVENT_ASSIGNED, NotTriaged, ResolutionRequired, ScheduledNeedsDate, find_ticket, get_by_number, record_event, set_status
+from app.ticket_service import AwaitingApproval, ClosingNeedsNotes, EVENT_ASSIGNED, EVENT_ATTACHMENT_RENAMED, NotTriaged, ResolutionRequired, ScheduledNeedsDate, find_ticket, get_by_number, record_event, set_status
 from app.time_zones import zone_for_email, zone_for_user
-from app.triage import TriageError, reassign_ticket, triage_ticket
+from app.triage import TriageError, change_category, change_type, clean_reason, reassign_ticket, triage_ticket
 from app.visibility import (
     Access,
     NoTicketAccess,
@@ -425,6 +430,48 @@ def _get_ticket(session: Session, number: int, user: User, needed: Access = Acce
     return ticket
 
 
+def card_errors(card: str):
+    """A refused action shows its message inside its own card (#254), not at the top of the page. The route runs as before;
+    when it refuses with a 400, 403 or 422 the page is drawn again with that card open, the message in the card and what was
+    typed kept. It is the same for htmx (the page swaps into main) and a plain form post (the status stays the refusal's).
+    If this ticket no longer offers the card (it was triaged meanwhile), the refusal goes out unchanged. What is refused, and
+    why, is decided where it always was; this only decides where the message shows."""
+
+    def wrap(route):
+        @functools.wraps(route)
+        def run(*args, **kwargs):
+            try:
+                return route(*args, **kwargs)
+            except HTTPException as error:
+                if error.status_code not in (400, 403, 422):
+                    raise
+                request, session, user = kwargs.get("request"), kwargs.get("session"), kwargs.get("user")
+                if request is None or session is None or user is None:
+                    raise
+                session.rollback()
+                ticket = get_by_number(session, kwargs["number"])
+                if ticket is None:
+                    raise
+                # Only what was typed: text, numbers and lists of text (the split parts). Never an upload, a flag or a dependency.
+                values = {
+                    k: v for k, v in kwargs.items()
+                    if k not in ("number", "request") and (
+                        isinstance(v, str) or (isinstance(v, int) and not isinstance(v, bool))
+                        or (isinstance(v, list) and all(isinstance(i, str) for i in v))
+                    )
+                }
+                response = _render_ticket_detail(
+                    request, ticket, user, session, action=card, card_error=str(error.detail), card_values=values, card_must_open=error,
+                )
+                if not is_htmx(request):
+                    response.status_code = error.status_code
+                return response
+
+        return run
+
+    return wrap
+
+
 def _agent_options(request: Request, members: list[User], blank_label: str) -> HTMLResponse:
     return templates.TemplateResponse(request, "_agent_options.html", {"members": members, "blank_label": blank_label})
 
@@ -544,6 +591,7 @@ def _triage_dates(
 
 
 @router.post("/{number}/triage", response_class=HTMLResponse)
+@card_errors("triage")
 def triage(
     number: int,
     request: Request,
@@ -625,26 +673,143 @@ def change_priority(
     request: Request,
     impact: Level = Form(...),
     urgency: Level = Form(...),
+    reason: Optional[str] = Form(None, max_length=600),
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
     """Re-sets impact and urgency on a triaged ticket the agent works. The priority
-    follows, and the SLA deadlines are worked out again from the new targets."""
+    follows, and the SLA deadlines are worked out again from the new targets. A reason is required (#254): the priority
+    decides the SLA clock, so changing it is explained; it is kept on the ticket event and in the audit entry."""
     ticket = _get_ticket(session, number, user)
     if ticket.triaged_at is None:
         raise HTTPException(status_code=400, detail="Triage the ticket first; triage sets its priority")
     if ticket.status in FINISHED_STATUSES:
         # A finished ticket's SLA result must not be rewritable after the fact.
         raise HTTPException(status_code=400, detail="A resolved or closed ticket's priority can no longer be changed")
-    if set_impact_urgency(session, ticket, impact, urgency, user.email):
+    try:
+        reason = clean_reason(reason, "priority")
+    except TriageError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    if set_impact_urgency(session, ticket, impact, urgency, user.email, reason):
         ticket.updated_at = datetime.now(timezone.utc)
-        log_action(session, user.email, "ticket", ticket.id, "priority_changed", describe_priority(ticket))
+        log_action(session, user.email, "ticket", ticket.id, "priority_changed", f"{describe_priority(ticket)}: {reason}")
         session.commit()
         session.refresh(ticket)
     return _render_ticket_detail(request, ticket, user, session)
 
 
+@router.post("/{number}/category", response_class=HTMLResponse)
+def edit_category(
+    number: int,
+    request: Request,
+    category_id: Optional[str] = Form(None),
+    reason: Optional[str] = Form(None, max_length=600),
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """Changes the category of a triaged ticket the agent works, from the Triage box (#254). A reason is required. It does not
+    move the ticket: the team and the assignee stay (Re-assign and Escalate move a ticket). A ticket event and an audit entry
+    record the old and new category and the reason."""
+    ticket = _get_ticket(session, number, user)
+    chosen = optional_int(category_id)
+    category = session.get(Category, chosen) if chosen is not None else None
+    if category is None:
+        raise HTTPException(status_code=400, detail="Choose a category")
+    previous = session.get(Category, ticket.category_id) if ticket.category_id else None
+    before = path_of(session, previous) if previous else "none"
+    try:
+        changed = change_category(session, ticket, category, user, reason)
+    except TriageError as error:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(error))
+    if changed:
+        why = clean_reason(reason, "category")
+        log_action(session, user.email, "ticket", ticket.id, "category_changed", f"{before} -> {path_of(session, category)}: {why}")
+        session.commit()
+        session.refresh(ticket)
+    return _render_ticket_detail(request, ticket, user, session)
+
+
+@router.post("/{number}/type", response_class=HTMLResponse)
+def edit_type(
+    number: int,
+    request: Request,
+    ticket_type: TicketType = Form(...),
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """Changes the type of a triaged, unfinished ticket the agent works, from the Triage box (#254). The number never changes
+    (only the reference prefix follows the type). A ticket event (`change_type`) and an audit entry record it."""
+    ticket = _get_ticket(session, number, user)
+    if ticket.triaged_at is None:
+        raise HTTPException(status_code=400, detail="Triage the ticket first; triage sets its type")
+    if ticket.status in FINISHED_STATUSES:
+        raise HTTPException(status_code=400, detail="A resolved or closed ticket's type can no longer be changed")
+    if ticket.status == TicketStatus.AWAITING_APPROVAL:
+        raise HTTPException(status_code=400, detail="The type cannot be changed while the request waits for approval")
+    previous = ticket.type
+    change_type(session, ticket, ticket_type, user.email)
+    if ticket.type != previous:
+        ticket.updated_at = datetime.now(timezone.utc)
+        log_action(session, user.email, "ticket", ticket.id, "type_changed", f"{previous.value} -> {ticket.type.value}")
+        session.commit()
+        session.refresh(ticket)
+    return _render_ticket_detail(request, ticket, user, session)
+
+
+@router.post("/{number}/attachments/{attachment_id}/rename", response_class=HTMLResponse)
+def rename_file(
+    number: int,
+    attachment_id: int,
+    request: Request,
+    name: str = Form("", max_length=400),
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """Renames a file as the ticket page shows it (#254). For agents who work the ticket. Only the shown name changes: the
+    name the file arrived with stays on its row, and the file itself is untouched. A ticket event and an audit entry record
+    the old and new names. Nothing is ever deleted."""
+    ticket = _get_ticket(session, number, user)
+    attachment = session.get(Attachment, attachment_id)
+    if attachment is None or attachment.ticket_id != ticket.id:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    try:
+        renamed = rename_attachment(attachment, name)
+    except RenameRefused as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    if renamed:
+        old, new = renamed
+        session.add(attachment)
+        ticket.updated_at = datetime.now(timezone.utc)
+        session.add(ticket)
+        record_event(session, ticket, EVENT_ATTACHMENT_RENAMED, user.email, old, new, detail=f"arrived as {attachment.filename}")
+        log_action(session, user.email, "attachment", attachment.id, "renamed", f"{old} -> {new}")
+        session.commit()
+        session.refresh(ticket)
+    return _render_ticket_detail(request, ticket, user, session)
+
+
+@router.get("/{number}/mentions")
+def mention_candidates(
+    number: int,
+    q: str = "",
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """The @ list of the Add note composer (#254): the agents the note could mention, who are exactly the ones who can open
+    this ticket (`mentionable_agents`), narrowed by what has been typed after the @. For someone who may add a note here."""
+    ticket = _get_ticket(session, number, user, Access.READ)
+    if not may_add_note(user, ticket, access_context(session, user)):
+        raise NoTicketAccess()
+    people = mentionable_agents(session, ticket, user, q[:60])
+    return JSONResponse(
+        {"agents": [{"name": person.display_name or person.email, "email": person.email, "insert": insert} for person, insert in people]},
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 @router.post("/{number}/backdate", response_class=HTMLResponse)
+@card_errors("backdate")
 def backdate(
     number: int,
     request: Request,
@@ -756,6 +921,7 @@ def change_due(
 
 
 @router.post("/{number}/reassign", response_class=HTMLResponse)
+@card_errors("reassign")
 def reassign(
     number: int,
     request: Request,
@@ -794,10 +960,17 @@ def reassign(
 def view_ticket(
     number: int,
     request: Request,
+    action: Optional[str] = None,
+    edit: Optional[str] = None,
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
-    return _render_ticket_detail(request, _get_ticket(session, number, user, Access.READ), user, session)
+    """The ticket page. `?action=<card>` opens that action's card at the top of the main column and `?edit=<field>` puts one
+    box row into its edit form: how the chips and pencils work without scripts (with htmx they fetch this same page and swap
+    the card or the box). A name that is not an action this ticket offers this person opens nothing."""
+    return _render_ticket_detail(
+        request, _get_ticket(session, number, user, Access.READ), user, session, action=action, edit=edit,
+    )
 
 
 @reference_router.get("/t/{number}", response_class=HTMLResponse)
@@ -907,7 +1080,10 @@ def _send_warning(
         "mode": mode,
         "body": body,
         "later": [
-            {"who": m.sender, "at": m.created_at, "email": m.direction == MessageDirection.OUTBOUND, "excerpt": excerpt(m.body)}
+            {
+                "who": m.sender, "at": m.created_at, "excerpt": excerpt(m.body),
+                "email": m.direction == MessageDirection.OUTBOUND and not m.visible_note, "visible": m.visible_note,
+            }
             for m in later
         ],
         "action": f"/tickets/{ticket.number}/{'email' if mode == 'email' else 'note'}",
@@ -1144,13 +1320,16 @@ def add_ticket_note(
     draft: Optional[str] = Form(None, max_length=100),
     seen: Optional[str] = Form(None, max_length=20),
     confirm: Optional[str] = Form(None, max_length=5),
+    visible_to_requester: Optional[str] = Form(None, max_length=5),
     files: list[UploadFile] = File(default=[]),
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
     storage: Storage = Depends(get_storage),
 ):
     """An internal note, visible to agents only; its files are too (never in the portal or an email). Allowed at any stage, including
-    on an untriaged ticket the agent has not claimed, and never triages it. The agent may also pick
+    on an untriaged ticket the agent has not claimed, and never triages it. With "visible_to_requester" (the eye toggle, #254) it is
+    instead a note the requester sees in the portal (`add_visible_note`): never emailed, never sent to Teams, no bell, held back
+    until the ticket is triaged, and for an agent who works the ticket only. The agent may also pick
     the ticket's next status; left alone, a note never changes it. Like the email, it is held back with a warning when another
     agent emailed the requester or added a note after the agent's page was loaded ("seen"); the files chosen are held with
     the draft (app/reply_files.py) so Send anyway still attaches them."""
@@ -1158,6 +1337,9 @@ def add_ticket_note(
     levels = access_context(session, user)
     if not may_add_note(user, ticket, levels):
         raise NoTicketAccess()
+    visible = bool(visible_to_requester)
+    if visible and ticket_access(user, ticket, levels) < Access.WORK:
+        raise HTTPException(status_code=403, detail="Only an agent who works this ticket can make a note visible to the requester")
     try:
         new_status = chosen_status(session, ticket, next_status, ticket.status)
     except BadStatusChoice as error:
@@ -1187,16 +1369,23 @@ def add_ticket_note(
             token = None
         session.commit()  # the held files outlive this request; nothing else is recorded
         names = [row.filename for row in held_rows] + [item.filename for item in new_files]
-        fields = [("body", body), ("next_status", next_status), ("due_on", due_on), ("due_reason", due_reason), ("draft", token)]
-        return _render_ticket_detail(request, ticket, user, session, compose=_send_warning(ticket, "note", later, body, fields, names))
+        fields = [("body", body), ("next_status", next_status), ("due_on", due_on), ("due_reason", due_reason), ("draft", token),
+                  ("visible_to_requester", "1" if visible else None)]
+        warning = _send_warning(ticket, "note", later, body, fields, names)
+        warning["visible"] = visible
+        return _render_ticket_detail(request, ticket, user, session, compose=warning)
     try:
         new_files = reply_files.take(storage, held_rows) + new_files
     except reply_files.FilesRefused as error:
         raise HTTPException(status_code=400, detail=str(error))
     if new_status == TicketStatus.SCHEDULED:
         _ask_for_scheduled_date(session, ticket, user, due_on, due_reason)  # before the note, so a refusal leaves nothing
-    note = add_note(session, ticket, user, body, files=new_files, storage=storage)
-    log_action(session, user.email, "ticket", ticket.id, "note_added", body[:200])
+    if visible:
+        note = add_visible_note(session, ticket, user, body, files=new_files, storage=storage)
+        log_action(session, user.email, "ticket", ticket.id, "visible_note_added", body[:200])
+    else:
+        note = add_note(session, ticket, user, body, files=new_files, storage=storage)
+        log_action(session, user.email, "ticket", ticket.id, "note_added", body[:200])
     _set_status_from_message(session, ticket, user, new_status, due_on, due_reason)
     notify_mentions(session, ticket, note, user)
     reply_files.release(session, held_rows)  # the files are attached now, so the stored copies stay
@@ -1427,6 +1616,7 @@ def close(
 
 
 @router.post("/{number}/reopen", response_class=HTMLResponse)
+@card_errors("reopen")
 def reopen(
     number: int,
     request: Request,
@@ -1448,6 +1638,7 @@ def reopen(
 
 
 @router.post("/{number}/reclose", response_class=HTMLResponse)
+@card_errors("reclose")
 def reclose(
     number: int,
     request: Request,
@@ -1489,6 +1680,7 @@ def waive_approval(
 
 
 @router.post("/{number}/assign", response_class=HTMLResponse)
+@card_errors("assign")
 def assign_ticket(
     number: int,
     request: Request,
@@ -1533,6 +1725,7 @@ def assign_ticket(
 
 
 @router.post("/{number}/escalate", response_class=HTMLResponse)
+@card_errors("escalate")
 def escalate_ticket(
     number: int,
     request: Request,
@@ -1759,6 +1952,7 @@ def msp_forward_dismiss(
 
 
 @router.post("/{number}/link", response_class=HTMLResponse)
+@card_errors("link")
 def link(
     number: int,
     request: Request,
@@ -1807,6 +2001,7 @@ SPLIT_SLOTS = 4  # part boxes on the form; blank subjects are skipped, and a tic
 
 
 @router.post("/{number}/split", response_class=HTMLResponse)
+@card_errors("split")
 def split(
     number: int,
     request: Request,
@@ -1900,10 +2095,23 @@ def _may_close(session: Session, ticket: Ticket) -> bool:
     return _may(check_can_close, CloseError, session, ticket)
 
 
+# The boxes of the right-hand column whose rows have a pencil, and the keys `?edit=` takes ("file-<id>" renames a file).
+EDIT_FIELDS = ("type", "category", "priority", "status", "due", "required_by")
+
+# Where a ticket came from, short, for the header's "Reported by ..." (source_label has the long form).
+REPORTED_BY = {
+    TicketSource.EMAIL: "email", TicketSource.PORTAL: "portal", TicketSource.TEAMS: "Teams", TicketSource.AGENT: "an agent",
+}
+
+
 def _render_ticket_detail(
-    request: Request, ticket: Ticket, user: User, session: Session, compose: Optional[dict] = None, hold: Optional[dict] = None
+    request: Request, ticket: Ticket, user: User, session: Session, compose: Optional[dict] = None, hold: Optional[dict] = None,
+    action: Optional[str] = None, edit: Optional[str] = None, card_error: Optional[str] = None,
+    card_values: Optional[dict] = None, card_must_open: Optional[HTTPException] = None,
 ) -> HTMLResponse:
-    """`compose` is set when a send was held back (`_send_warning`): the composer then opens on that mode with the text kept."""
+    """`compose` is set when a send was held back (`_send_warning`): the composer's card then opens with the text kept.
+    `action` names the card to open at the top of the main column (app/ticket_actions.py) and `edit` the box row to show as
+    a form; each is honoured only when this ticket offers it to this person."""
     ticket_approval = current_approval(session, ticket)
     ticket_votes = votes_of(session, ticket_approval)
     team = session.get(Team, ticket.team_id) if ticket.team_id else None
@@ -1925,7 +2133,6 @@ def _render_ticket_detail(
     can_edit_answers = may_edit_answers(user, ticket, levels)
     can_reassign = can_work and not can_triage and ticket.triaged_at is not None
     category = session.get(Category, ticket.category_id) if ticket.category_id else None
-    options = selectable(session) if can_triage else []
     teams = session.exec(select(Team)).all()
     escalation_team, escalation_blocked, escalation_is_msp = None, None, False
     if can_work:
@@ -1967,6 +2174,49 @@ def _render_ticket_detail(
     sla_now = sla_view(ticket, now, at_risk)
     presence_others = ticket_presence.others_here(session, ticket, user, now)
 
+    # What the header offers (app/ticket_actions.py) and which card is open. The same answers feed the page's dict below.
+    triaged = ticket.triaged_at is not None
+    triaged_actions = triaged and ticket.status != TicketStatus.AWAITING_APPROVAL
+    unfinished = ticket.status not in FINISHED_STATUSES
+    can_resolve = can_work and _may_resolve(session, ticket)
+    can_close = can_work and _may_close(session, ticket)
+    can_reopen = can_work and _may(check_can_reopen, ReopenError, ticket)
+    can_reclose = can_work and _may(check_can_reclose, ReopenError, session, ticket)
+    can_link = can_work and triaged and linked_total == 0 and ticket.linked_parent_id is None
+    can_split = can_work and triaged and ticket.split_from_id is None and unfinished
+    can_take_back = can_work and ticket.status == TicketStatus.WITH_MSP and not has_sub_tickets(session, ticket)
+    can_backdate = may_backdate(ticket)
+    chips = action_chips(
+        can_work=can_work, can_note=may_add_note(user, ticket, levels), triaged=triaged, triaged_actions=triaged_actions,
+        can_triage=can_triage, is_super_admin=user.role == UserRole.SUPER_ADMIN, can_self_assign=can_self_assign,
+        assigned=assigned_agent is not None, can_reassign=can_reassign, with_msp=ticket.status == TicketStatus.WITH_MSP,
+        can_take_back=can_take_back, can_link=can_link, can_split=can_split, can_resolve=can_resolve, can_reopen=can_reopen,
+        can_reclose=can_reclose, can_close=can_close, can_backdate=can_backdate,
+    )
+    if compose:
+        card = compose["mode"]  # a held-back send reopens its own composer with the text kept
+    else:
+        card = action if action in chips.keys() else None
+    if card_must_open is not None and card is None:
+        raise card_must_open  # the card is no longer on offer, so there is nowhere in it to show the message
+    can_edit_triage = can_work and triaged and unfinished
+    can_edit_status = can_work and triaged_actions
+    can_set_required_by = (offers_required_by(session, ticket) or ticket.required_by is not None) and may_set_required_by(user, ticket, levels)
+    can_set_due = may_set_due(user, ticket, levels)
+    editable = {
+        "type": can_edit_triage and ticket.status != TicketStatus.AWAITING_APPROVAL, "category": can_edit_triage, "priority": can_edit_triage, "status": can_edit_status,
+        "due": can_set_due, "required_by": can_set_required_by,
+    }
+    files = ticket_files(session, user, levels, ticket)
+    editing = None
+    if edit in EDIT_FIELDS and editable[edit]:
+        editing = edit
+    elif edit and edit.startswith("file-") and can_work and edit[5:].isdecimal() and int(edit[5:]) in {f.attachment.id for f in files}:
+        editing = edit
+    options = selectable(session) if (card == "triage" or editing == "category") else []
+    requester_person = person_for_address(session, ticket.requester_email)
+    card_title, card_doing = CARDS.get(card, ("", ""))
+
     return templates.TemplateResponse(
         request,
         "ticket_detail.html",
@@ -1979,10 +2229,17 @@ def _render_ticket_detail(
             "all_parts_done": ticket.status not in FINISHED_STATUSES and all_sub_tickets_finished(session, ticket),
             "hidden_sub_count": subs_total - subs_visible,
             "more_sub_count": subs_visible - len(subs),
-            "can_split": can_work
-            and ticket.triaged_at is not None
-            and ticket.split_from_id is None
-            and ticket.status not in FINISHED_STATUSES,
+            "can_split": can_split,
+            "chips": chips,
+            "card": card,
+            "card_title": card_title,
+            "card_doing": card_doing,
+            "editing": editing,
+            "editable": editable,
+            "files": files,
+            "requester_person": requester_person,
+            "reported_by": REPORTED_BY.get(ticket.source, "someone"),
+            "triaged_actions": triaged_actions,
             "split_slots": range(SPLIT_SLOTS),
             "team": team,
             "assigned_agent": assigned_agent,
@@ -1993,7 +2250,7 @@ def _render_ticket_detail(
             "escalation_is_msp": escalation_is_msp,
             "msp_blocked": msp_blocked,
             "msp_pending": pending_forwards(session, ticket) if can_work else [],
-            "can_take_back_from_msp": can_work and ticket.status == TicketStatus.WITH_MSP and not has_sub_tickets(session, ticket),
+            "can_take_back_from_msp": can_take_back,
             "can_hold": can_work and may_hold(ticket, user),
             "can_release_hold": can_work and ticket.msp_hold,
             "timeline": timeline,
@@ -2018,10 +2275,10 @@ def _render_ticket_detail(
             ],
             "feedback": feedback_for_ticket(session, user, ticket),
             "resolved_by": session.get(User, ticket.resolved_by_id) if ticket.resolved_by_id else None,
-            "can_resolve": can_work and _may_resolve(session, ticket),
-            "can_close": can_work and _may_close(session, ticket),
-            "can_reopen": can_work and _may(check_can_reopen, ReopenError, ticket),
-            "can_reclose": can_work and _may(check_can_reclose, ReopenError, session, ticket),
+            "can_resolve": can_resolve,
+            "can_close": can_close,
+            "can_reopen": can_reopen,
+            "can_reclose": can_reclose,
             "reclose_reasons": RECLOSE_REASONS,
             "max_reason_length": MAX_REASON_LENGTH,
             # Tickets linked by a reply after closure, only those this viewer could open anyway.
@@ -2037,27 +2294,26 @@ def _render_ticket_detail(
             "linked": linked,
             "hidden_linked_count": linked_total - linked_visible,
             "more_linked_count": linked_visible - len(linked),
-            "can_link": can_work and ticket.triaged_at is not None and linked_total == 0,
+            "can_link": can_link,
             "impact_options": impact_options(),
             "urgency_options": urgency_options(),
             "sla": sla_now,
-            "sla_chip": queue_sla(ticket, sla_now, now),
+            "sla_chip": header_sla(ticket, sla_now, now),
             "sla_rows": sla_rows(ticket, now, at_risk),
             "message_files": files_by_message(session, user, levels, [i.message for i in timeline if i.message is not None]),
             "moment_format": MOMENT_FORMAT,
-            "can_backdate": may_backdate(ticket),
-            "can_set_required_by": (offers_required_by(session, ticket) or ticket.required_by is not None)
-            and may_set_required_by(user, ticket, levels),
-            "can_set_due": may_set_due(user, ticket, levels),
+            "can_backdate": can_backdate,
+            "can_set_required_by": can_set_required_by,
+            "can_set_due": can_set_due,
             "due_on": ticket.due_on,
-            "request_types": active_request_types(session) if can_triage else [],
+            "request_types": active_request_types(session) if card == "triage" else [],
             "offers_required_by": offers_required_by(session, ticket),
             "requester_zone": zone_for_email(session, ticket.requester_email),
             "source_label": source_label(session, ticket),
             "request_info": request_type_of(session, ticket),
             "answers": answer_rows(session, ticket),
-            "triage_questions": form_rows(session, ticket.request_type_id, ticket) if can_triage else [],
-            "triage_subrequests": preview_subrequests(session, ticket, ticket.request_type_id, {}, [], []) if can_triage else [],
+            "triage_questions": form_rows(session, ticket.request_type_id, ticket) if card == "triage" else [],
+            "triage_subrequests": preview_subrequests(session, ticket, ticket.request_type_id, {}, [], []) if card == "triage" else [],
             "max_sub_tickets": max_sub_tickets(session),
             "pending_subrequests": pending_subjects(ticket),
             "answers_changed_after_subrequests": answers_changed_note(session, ticket),
@@ -2070,7 +2326,7 @@ def _render_ticket_detail(
             "approval_rule": describe_rule(ticket_approval) if ticket_approval and ticket_approval.status != SUPERSEDED else None,
             "approval_status": ticket_approval.status if ticket_approval else None,
             "can_waive": user.role == UserRole.SUPER_ADMIN and ticket.status == TicketStatus.AWAITING_APPROVAL,
-            "can_set_priority": can_work and ticket.triaged_at is not None and ticket.status not in FINISHED_STATUSES,
+            "can_set_priority": can_edit_triage,
             "category_options": options,
             "main_categories": [c for c, _ in options if c.parent_id is None and not c.is_other],
             "category_path": path_of(session, category) if category else None,
@@ -2088,5 +2344,7 @@ def _render_ticket_detail(
             "latest_post_id": latest_message_id(session, ticket),
             "compose": compose,
             "hold": hold,
+            "card_error": card_error,
+            "card_values": card_values or {},
         },
     )

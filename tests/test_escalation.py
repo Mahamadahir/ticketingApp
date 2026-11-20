@@ -66,8 +66,8 @@ def test_a_category_that_escalates_to_the_msp_cannot_escalate_yet(client, db_ses
     response = escalate(client, ticket)
     assert response.status_code == 400 and "MSP" in response.text
     unchanged(db_session, ticket, desk)
-    page = client.get(f"/tickets/{ticket.number}").text
-    assert "Cannot escalate" in page and "/escalate" not in page.split("Cannot escalate")[0].split("<details>")[-1]
+    page = client.get(f"/tickets/{ticket.number}?action=escalate").text
+    assert "Cannot escalate" in page and "/escalate" not in page.split("Cannot escalate")[0].split('id="tp-card"')[-1]
 
 
 def test_a_ticket_already_with_the_escalation_team_would_go_to_the_msp_and_is_refused(client, db_session):
@@ -386,7 +386,7 @@ def test_the_ticket_page_names_the_escalation_target(client, db_session):
     agent_in(client, db_session, member_of=[desk])
     ticket = make_ticket(db_session, desk.id)
     categorised(db_session, ticket, dev)
-    page = client.get(f"/tickets/{ticket.number}").text
+    page = client.get(f"/tickets/{ticket.number}?action=escalate").text
     assert "Escalate to Dev" in page and "target_team_id" not in page
     assert MembershipLevel.MEMBER  # the team picker is gone from the form
 

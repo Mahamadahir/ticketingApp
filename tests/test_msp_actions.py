@@ -338,8 +338,8 @@ def test_the_button_is_only_on_a_with_msp_ticket(client, db_session, mail_on):
     agent_in(client, db_session, member_of=[team])
     ticket = with_msp(client, db_session, team)
     plain = triaged(db_session, team, subject="Plain")
-    assert "Take back from MSP" in client.get(f"/tickets/{ticket.number}").text
-    assert "Take back from MSP" not in client.get(f"/tickets/{plain.number}").text
+    assert "Take back from the MSP" in client.get(f"/tickets/{ticket.number}?action=takeback").text
+    assert "Take back from the MSP" not in client.get(f"/tickets/{plain.number}?action=takeback").text
     assert take_back(client, plain).status_code == 400
 
 
@@ -559,7 +559,7 @@ def test_a_taken_back_ticket_is_on_hold_until_released_and_the_handoff_skips_it(
     db_session.refresh(ticket)
     assert ticket.status == TicketStatus.IN_PROGRESS and ticket.msp_hold is True
     assert "on hold" in events(db_session, ticket, "msp_hold")[0].detail
-    assert "On MSP hold" in client.get(f"/tickets/{ticket.number}").text
+    assert "On hold for the MSP" in client.get(f"/tickets/{ticket.number}").text
 
     ticket.resolution_due_at = NOW + timedelta(hours=4)  # due before the next business morning
     db_session.add(ticket)

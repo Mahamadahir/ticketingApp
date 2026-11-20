@@ -20,7 +20,7 @@ def test_moving_required_by_at_triage_with_the_old_due_still_in_the_box_is_not_a
     ticket = last_ticket(db_session)
     client.post("/auth/logout")
     agent(client, db_session, member_of=[team])
-    assert f'name="due_on" value="{day(9)}"' in client.get(f"/tickets/{ticket.number}").text  # prefilled
+    assert f'name="due_on" value="{day(9)}"' in client.get(f"/tickets/{ticket.number}?action=triage").text  # prefilled
 
     response = client.post(
         f"/tickets/{ticket.number}/triage",
@@ -90,7 +90,7 @@ def test_the_triage_swap_keeps_the_reason_box_and_reads_only_its_own_form(client
     db_session.commit()
     agent(client, db_session)
 
-    page = client.get(f"/tickets/{ticket.number}").text
+    page = client.get(f"/tickets/{ticket.number}?action=triage").text
     assert 'hx-include="closest form"' in page and 'name="due_reason"' in page
     swapped = client.get("/tickets/triage-dates", params={"request_type_id": request_type.id, "due_on": day(4), "has_due": "1"})
     assert 'name="due_reason"' in swapped.text and 'name="has_due"' in swapped.text

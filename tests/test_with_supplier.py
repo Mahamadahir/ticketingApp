@@ -36,7 +36,7 @@ def test_an_agent_can_reach_and_leave_the_status_by_hand(client, db_session):
     db_session.commit()
     agent_for(client, db_session, team)
 
-    page = client.get(f"/tickets/{ticket.number}").text
+    page = client.get(f"/tickets/{ticket.number}?edit=status").text
     assert 'value="with_supplier"' in page and ">with supplier<" in page
 
     assert client.post(f"/tickets/{ticket.number}/status", data={"status": "with_supplier"}).status_code == 200

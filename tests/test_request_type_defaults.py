@@ -409,7 +409,7 @@ def test_the_triage_form_still_renders_its_selects(client, db_session):
     client.post("/auth/logout")
     agent_in(client, db_session, team)
 
-    html = client.get(f"/tickets/{ticket.number}").text
+    html = client.get(f"/tickets/{ticket.number}?action=triage").text
 
     assert 'name="impact" id="triage-impact" required' in html
     assert 'name="category_id" id="triage-category"' in html and 'hx-get="/tickets/agents-for-category"' in html

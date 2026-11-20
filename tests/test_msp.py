@@ -138,7 +138,7 @@ def test_with_no_msp_address_sending_is_refused(client, db_session):
     assert response.status_code == 400 and "No MSP address is set" in response.text
     db_session.refresh(ticket)
     assert ticket.status == TicketStatus.OPEN and not ticket.is_escalated
-    assert "Cannot send to the MSP" in client.get(f"/tickets/{ticket.number}").text
+    assert "Cannot send to the MSP" in client.get(f"/tickets/{ticket.number}?action=msp").text
 
 
 def test_sending_keeps_the_ticket_in_its_team_with_msp(client, db_session, mail_on):
@@ -332,7 +332,7 @@ def test_escalating_a_category_that_targets_the_msp_sends_it(client, db_session,
     ticket = triaged(db_session, team)
     categorised(db_session, ticket, escalates_to=None)
 
-    page = client.get(f"/tickets/{ticket.number}").text
+    page = client.get(f"/tickets/{ticket.number}?action=escalate").text
     assert "use Send to MSP above" in page
     response = client.post(f"/tickets/{ticket.number}/escalate", data={"reason": "Over to the partner"})
     assert response.status_code == 200
@@ -361,7 +361,7 @@ def test_the_assigned_agent_holds_and_anyone_working_it_releases(client, db_sess
     assert client.post(f"/tickets/{ticket.number}/msp-hold").status_code == 200
     db_session.refresh(ticket)
     assert ticket.msp_hold is True and len(events(db_session, ticket, "msp_hold")) == 1
-    assert "On MSP hold" in client.get(f"/tickets/{ticket.number}").text
+    assert "On hold for the MSP" in client.get(f"/tickets/{ticket.number}").text
     assert client.post(f"/tickets/{ticket.number}/msp-hold").status_code == 400  # already held
 
     # A colleague who is not the assignee can release it, so it is never stuck.

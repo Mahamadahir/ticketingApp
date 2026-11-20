@@ -16,6 +16,7 @@ from app.categories import is_selectable, path_of, team_id_for
 from app.notifications import notify_assigned
 from app.required_by import refresh_default_due
 from app.models import (
+    FINISHED_STATUSES,
     Category,
     RequestType,
     Team,
@@ -27,6 +28,7 @@ from app.models import (
 from app.sla import Level, apply_impact_urgency, describe_priority
 from app.ticket_service import (
     EVENT_ASSIGNED,
+    EVENT_CATEGORY_CHANGED,
     EVENT_ESCALATED,
     EVENT_REQUEST_TYPE,
     EVENT_TEAM_CHANGED,
@@ -61,6 +63,46 @@ def change_type(session: Session, ticket: Ticket, new_type: TicketType, actor_em
             session, ticket, EVENT_REQUEST_TYPE, actor_email,
             from_value=request_type.name if request_type else None, detail="retyped",
         )
+
+
+MAX_REASON_LENGTH = 500
+
+
+def clean_reason(reason: Optional[str], what: str) -> str:
+    """The reason an agent gives for changing `what` on the ticket page: required, one trimmed piece of text of a sensible length."""
+    reason = (reason or "").strip()
+    if not reason:
+        raise TriageError(f"Say why you are changing the {what}")
+    if len(reason) > MAX_REASON_LENGTH:
+        raise TriageError(f"Keep the reason under {MAX_REASON_LENGTH} characters")
+    return reason
+
+
+def change_category(session: Session, ticket: Ticket, category: Category, actor: User, reason: Optional[str]) -> bool:
+    """Changes the category of a triaged, unfinished ticket from the ticket page (#254). A reason is required and is kept on
+    the event (the caller writes the audit entry). It does NOT move the ticket: the team and the assignee stay, because
+    Re-assign and Escalate are what move a ticket. Returns whether anything changed. Does not commit."""
+    if ticket.triaged_at is None:
+        raise TriageError("Triage the ticket first; triage sets its category")
+    if ticket.status in FINISHED_STATUSES:
+        raise TriageError("A resolved or closed ticket's category can no longer be changed")
+    reason = clean_reason(reason, "category")
+    if not is_selectable(session, category):
+        raise TriageError("That category is no longer in use")
+    if team_id_for(session, category) is None:
+        raise TriageError("That category has no team yet. Ask a super admin to give it one.")
+    if ticket.category_id == category.id:
+        return False
+    previous = session.get(Category, ticket.category_id) if ticket.category_id else None
+    ticket.category_id = category.id
+    ticket.needs_category_review = category.is_other
+    ticket.updated_at = datetime.now(timezone.utc)
+    session.add(ticket)
+    record_event(
+        session, ticket, EVENT_CATEGORY_CHANGED, actor.email,
+        from_value=path_of(session, previous) if previous else None, to_value=path_of(session, category), detail=reason,
+    )
+    return True
 
 
 def _assignee_for(session: Session, team_id: int, assignee: Optional[User]) -> Optional[User]:

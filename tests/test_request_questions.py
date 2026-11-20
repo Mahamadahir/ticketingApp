@@ -311,7 +311,7 @@ def test_the_triage_form_shows_the_questions_of_the_chosen_kind(client, db_sessi
     fragment = client.get("/tickets/triage-dates", params={"request_type_id": request_type.id, "number": ticket.number}).text
     assert 'id="triage-questions"' in fragment and 'hx-swap-oob="true"' in fragment and "Department (required)" in fragment
     assert "Department" not in client.get("/tickets/triage-dates", params={"number": ticket.number}).text.replace("hx-swap-oob", "")
-    assert f"triage-dates?number={ticket.number}" in client.get(f"/tickets/{ticket.number}").text
+    assert f"triage-dates?number={ticket.number}" in client.get(f"/tickets/{ticket.number}?action=triage").text
 
 
 def test_triage_waits_for_the_required_answers_then_stores_them(client, db_session):
@@ -369,7 +369,7 @@ def test_a_portal_ticket_waiting_in_new_keeps_its_answers_on_the_triage_form(cli
     client.post("/auth/logout")
     agent_of(client, db_session, team)
 
-    page = client.get(f"/tickets/{ticket.number}").text
+    page = client.get(f"/tickets/{ticket.number}?action=triage").text
     assert 'value="Sales"' in page
     # Triage with "Leave as is" for the kind: the stored answers satisfy the required question.
     response = client.post(

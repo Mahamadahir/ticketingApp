@@ -167,6 +167,13 @@ def test_an_agent_can_still_set_the_status_by_hand(client, db_session):
 OFFERED = ["open", "in_progress", "awaiting_user", "with_supplier", "with_msp", "scheduled"]
 
 
+def forms_page(client, ticket):
+    """The Email user card and the Add note card, one after the other (each form is in its own card since #254)."""
+    return (
+        client.get(f"/tickets/{ticket.number}?action=email").text + client.get(f"/tickets/{ticket.number}?action=note").text
+    )
+
+
 def select_options(page):
     """One (offered values, selected values) pair per next_status dropdown on the page."""
     import re
@@ -183,13 +190,13 @@ def test_both_forms_offer_the_same_six_statuses_and_never_resolved_or_closed(cli
     ticket = make_ticket(db_session, team.id, TicketStatus.IN_PROGRESS)
     agent_for(client, db_session, team)
 
-    email_box, note_box = select_options(client.get(f"/tickets/{ticket.number}").text)
+    email_box, note_box = select_options(forms_page(client, ticket))
 
     # The first option sends nothing: the server applies the default when the form arrives, so a stale
     # page cannot overwrite a status that changed in between.
     assert email_box[0] == [""] + OFFERED and note_box[0] == [""] + OFFERED
     assert email_box[1] == [""] and note_box[1] == [""]
-    page = client.get(f"/tickets/{ticket.number}").text
+    page = forms_page(client, ticket)
     assert "Default: awaiting user" in page and "No change (in progress)" in page
 
 
@@ -225,7 +232,7 @@ def test_emailing_a_ticket_with_the_supplier_defaults_to_leaving_it_there(client
     ticket = make_ticket(db_session, team.id, TicketStatus.WITH_SUPPLIER)
     agent_for(client, db_session, team)
 
-    page = client.get(f"/tickets/{ticket.number}").text
+    page = forms_page(client, ticket)
     assert "Default: with supplier" in page
     client.post(f"/tickets/{ticket.number}/email", data={"body": "Update"})
     assert status_of(db_session, ticket) == TicketStatus.WITH_SUPPLIER
@@ -282,7 +289,7 @@ def test_a_ticket_waiting_for_approval_offers_no_dropdown_and_refuses_a_change(c
     ticket = make_ticket(db_session, team.id, TicketStatus.AWAITING_APPROVAL)
     agent_for(client, db_session, team)
 
-    assert select_options(client.get(f"/tickets/{ticket.number}").text) == []
+    assert select_options(forms_page(client, ticket)) == []
     assert client.post(f"/tickets/{ticket.number}/note", data={"body": "n", "next_status": "open"}).status_code == 400
     # Without the field an email or note leaves it waiting for its approvers.
     assert client.post(f"/tickets/{ticket.number}/email", data={"body": "Hello"}).status_code == 200
@@ -296,7 +303,7 @@ def test_a_finished_ticket_offers_no_dropdown_and_cannot_be_reopened_this_way(cl
     ticket = make_ticket(db_session, team.id, status)
     agent_for(client, db_session, team)
 
-    assert select_options(client.get(f"/tickets/{ticket.number}").text) == []
+    assert select_options(forms_page(client, ticket)) == []
     assert client.post(f"/tickets/{ticket.number}/note", data={"body": "n", "next_status": "open"}).status_code == 400
     assert client.post(f"/tickets/{ticket.number}/email", data={"body": "n", "next_status": "open"}).status_code == 400
     assert status_of(db_session, ticket) == status
@@ -309,7 +316,7 @@ def test_a_split_original_offers_no_dropdown_and_its_status_still_follows_its_pa
     split(client, original, ("Keyboard", ""), ("Office", ""))
     db_session.refresh(original)
 
-    assert select_options(client.get(f"/tickets/{original.number}").text) == []
+    assert select_options(forms_page(client, original)) == []
     for path in ("note", "email"):
         response = client.post(f"/tickets/{original.number}/{path}", data={"body": "n", "next_status": "with_msp"})
         assert response.status_code == 400
@@ -318,7 +325,7 @@ def test_a_split_original_offers_no_dropdown_and_its_status_still_follows_its_pa
 
     # A part is an ordinary ticket: it takes the choice, and the original is re-derived from the parts.
     first, _second = subs_of(db_session, original)
-    assert select_options(client.get(f"/tickets/{first.number}").text)
+    assert select_options(forms_page(client, first))
     client.post(f"/tickets/{first.number}/note", data={"body": "Waiting on the vendor", "next_status": "with_supplier"})
     assert status_of(db_session, first) == TicketStatus.WITH_SUPPLIER
     assert status_of(db_session, original) == TicketStatus.IN_PROGRESS
@@ -332,7 +339,7 @@ def test_an_untriaged_ticket_offers_no_dropdown_and_a_note_cannot_move_it(client
     db_session.commit()
     agent_for(client, db_session, team)
 
-    assert select_options(client.get(f"/tickets/{ticket.number}").text) == []
+    assert select_options(forms_page(client, ticket)) == []
     assert client.post(f"/tickets/{ticket.number}/note", data={"body": "n", "next_status": "in_progress"}).status_code == 400
     assert client.post(f"/tickets/{ticket.number}/note", data={"body": "n"}).status_code == 200
     assert status_of(db_session, ticket) == TicketStatus.OPEN
@@ -342,7 +349,7 @@ def test_a_plain_note_does_not_overwrite_a_status_that_changed_since_the_page_lo
     team = create_team(db_session, "Service Desk")
     ticket = make_ticket(db_session, team.id, TicketStatus.AWAITING_USER)
     agent_for(client, db_session, team)
-    _, note_box = select_options(client.get(f"/tickets/{ticket.number}").text)
+    _, note_box = select_options(forms_page(client, ticket))
     assert note_box[1] == [""]  # what the untouched dropdown posts
     client.post("/auth/logout")
     login_as(client, "me@example.com")

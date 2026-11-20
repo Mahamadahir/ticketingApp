@@ -96,7 +96,7 @@ def test_notes_have_a_length_limit(client, db_session):
 def test_the_status_buttons_no_longer_resolve(client, db_session):
     ticket = ticket_for_email(client, db_session)
 
-    page = client.get(f"/tickets/{ticket.number}").text
+    page = client.get(f"/tickets/{ticket.number}?edit=status").text + client.get(f"/tickets/{ticket.number}?action=resolve").text
     assert 'name="status" value="resolved"' not in page and "Preview resolution" in page
     response = client.post(f"/tickets/{ticket.number}/status", data={"status": "resolved"})
     assert response.status_code == 400 and "Resolve action" in response.text
@@ -390,21 +390,21 @@ def test_reopening_clears_the_resolution_so_a_later_close_does_not_show_it(clien
 
 def test_the_page_offers_resolve_only_when_resolving_would_work(client, db_session):
     original = ticket_for_email(client, db_session, "Two things")
-    assert "Preview resolution" in client.get(f"/tickets/{original.number}").text
+    assert "Preview resolution" in client.get(f"/tickets/{original.number}?action=resolve").text
     split(client, original, ("Keyboard", ""), ("Office", ""))
-    assert "Preview resolution" not in client.get(f"/tickets/{original.number}").text  # parts still open
+    assert "Preview resolution" not in client.get(f"/tickets/{original.number}?action=resolve").text  # parts still open
 
     first, second = subs_of(db_session, original)
     resolve(client, first)
     resolve(client, second)
-    assert "Preview resolution" in client.get(f"/tickets/{original.number}").text
+    assert "Preview resolution" in client.get(f"/tickets/{original.number}?action=resolve").text
 
 
 def test_a_resolved_ticket_shows_resolved_as_its_current_status_without_a_way_to_set_it(client, db_session):
     ticket = ticket_for_email(client, db_session)
     resolve(client, ticket)
 
-    page = client.get(f"/tickets/{ticket.number}").text
+    page = client.get(f"/tickets/{ticket.number}?edit=status").text + client.get(f"/tickets/{ticket.number}?action=resolve").text
 
     assert '<button type="button" disabled class="button-active">resolved</button>' in page
     assert 'name="status" value="resolved"' not in page and "Preview resolution" not in page
