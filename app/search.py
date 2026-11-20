@@ -50,6 +50,7 @@ def search_condition(session: Session, text: str | None):
         select(Message.id).where(
             and_(
                 Message.ticket_id == Ticket.id,
+                Message.deleted_at.is_(None),  # a deleted note is not found (#255)
                 or_(
                     func.to_tsvector(_CONFIG, Message.body).op("@@")(query),
                     Message.body.ilike(pattern, escape="\\"),

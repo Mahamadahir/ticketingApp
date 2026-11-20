@@ -54,6 +54,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/c255a3f8d1e6_thread_groups_and_deleted_notes.py",
+        "revision": "c255a3f8d1e6"
+      },
+      {
         "file": "migrations/versions/b6d83f21a9c4_visible_note_and_attachment_name.py",
         "revision": "b6d83f21a9c4"
       },
@@ -68,17 +72,13 @@
       {
         "file": "migrations/versions/c4f7a2b9e813_request_type_icon_and_approval_notice.py",
         "revision": "c4f7a2b9e813"
-      },
-      {
-        "file": "migrations/versions/b3e8d1f46a72_request_type_featured.py",
-        "revision": "b3e8d1f46a72"
       }
     ],
-    "count": 72,
+    "count": 73,
     "heads": [
       {
-        "file": "migrations/versions/b6d83f21a9c4_visible_note_and_attachment_name.py",
-        "revision": "b6d83f21a9c4"
+        "file": "migrations/versions/c255a3f8d1e6_thread_groups_and_deleted_notes.py",
+        "revision": "c255a3f8d1e6"
       }
     ]
   },
@@ -236,6 +236,7 @@
         "step_vote_comment"
       ],
       "imported_by": [
+        "app.note_purge",
         "app.routers.data_protection",
         "app.scheduled_jobs"
       ],
@@ -472,6 +473,7 @@
         "app.inbound",
         "app.intake",
         "app.messages",
+        "app.note_purge",
         "app.raising",
         "app.reply_files",
         "app.routers.attachments",
@@ -498,7 +500,8 @@
         "tests/test_msp_mail.py",
         "tests/test_reply_files.py",
         "tests/test_subject_access.py",
-        "tests/test_ticket_redesign.py"
+        "tests/test_ticket_redesign.py",
+        "tests/test_ticket_thread.py"
       ]
     },
     {
@@ -524,6 +527,7 @@
         "app.inbound",
         "app.intake",
         "app.linked_identities",
+        "app.messages",
         "app.msp",
         "app.msp_actions",
         "app.notification_settings",
@@ -2023,6 +2027,7 @@
         "tests/test_teams_hold.py",
         "tests/test_ticket_presence.py",
         "tests/test_ticket_redesign.py",
+        "tests/test_ticket_thread.py",
         "tests/test_triage.py"
       ]
     },
@@ -2031,6 +2036,7 @@
         "BadStatusChoice",
         "EmailPreview",
         "EmptyEmail",
+        "NoteError",
         "RequesterStatus",
         "Step",
         "TimelineItem",
@@ -2046,9 +2052,11 @@
         "attach_files",
         "chosen_status",
         "default_status_after_email",
+        "delete_note",
         "email_requester",
         "excerpt",
         "in_a_split",
+        "is_note",
         "is_triaged",
         "it_support_label",
         "kind_label",
@@ -2067,8 +2075,10 @@
         "requester_steps",
         "requester_visible_answers",
         "requester_visible_messages",
+        "set_note_visible",
         "status_choices",
-        "thread_subject"
+        "thread_subject",
+        "undo_delete_note"
       ],
       "imported_by": [
         "app.approvals",
@@ -2090,11 +2100,13 @@
         "app.splitting",
         "app.subject_access",
         "app.teams",
+        "app.thread",
         "app.visibility"
       ],
       "imports": [
         "app.approvals",
         "app.attachments",
+        "app.audit",
         "app.followers",
         "app.models",
         "app.notifications",
@@ -2134,7 +2146,8 @@
         "tests/test_teams_followups.py",
         "tests/test_teams_intake.py",
         "tests/test_ticket_presence.py",
-        "tests/test_ticket_redesign.py"
+        "tests/test_ticket_redesign.py",
+        "tests/test_ticket_thread.py"
       ]
     },
     {
@@ -2244,6 +2257,7 @@
         "app.msp_actions",
         "app.navigation",
         "app.never_follow",
+        "app.note_purge",
         "app.notification_purge",
         "app.notification_settings",
         "app.notifications",
@@ -2296,6 +2310,7 @@
         "app.templating",
         "app.thanks_rules",
         "app.theme",
+        "app.thread",
         "app.ticket_presence",
         "app.ticket_service",
         "app.time_zones",
@@ -2635,6 +2650,7 @@
         "tests/test_ticket_page.py",
         "tests/test_ticket_presence.py",
         "tests/test_ticket_redesign.py",
+        "tests/test_ticket_thread.py",
         "tests/test_ticket_urls.py",
         "tests/test_tickets_rbac.py",
         "tests/test_time_zones.py",
@@ -2737,7 +2753,8 @@
         "tests/test_msp_actions.py",
         "tests/test_msp_mail.py",
         "tests/test_msp_real_mail.py",
-        "tests/test_reports_more.py"
+        "tests/test_reports_more.py",
+        "tests/test_ticket_thread.py"
       ]
     },
     {
@@ -2864,6 +2881,31 @@
     },
     {
       "classes": [],
+      "file": "app/note_purge.py",
+      "functions": [
+        "keep_days",
+        "purge_deleted_notes"
+      ],
+      "imported_by": [
+        "app.scheduled_jobs"
+      ],
+      "imports": [
+        "app.anonymisation",
+        "app.attachments",
+        "app.models",
+        "app.settings_store",
+        "app.storage"
+      ],
+      "module": "app.note_purge",
+      "routes": [],
+      "summary": "The deleted-note purge (#255): the recurring job `note-purge` that removes deleted notes for good.",
+      "tables": [],
+      "tests": [
+        "tests/test_ticket_thread.py"
+      ]
+    },
+    {
+      "classes": [],
       "file": "app/notification_purge.py",
       "functions": [
         "due_for_purge",
@@ -2984,6 +3026,7 @@
         "undo_clear_read",
         "undo_dismiss",
         "visible_to",
+        "withdraw_mentions",
         "withdraw_teams_copies"
       ],
       "imported_by": [
@@ -3046,7 +3089,8 @@
         "tests/test_teams_copy_sending.py",
         "tests/test_teams_dm.py",
         "tests/test_teams_hold.py",
-        "tests/test_ticket_redesign.py"
+        "tests/test_ticket_redesign.py",
+        "tests/test_ticket_thread.py"
       ]
     },
     {
@@ -3271,6 +3315,24 @@
       ]
     },
     {
+      "classes": [],
+      "file": "app/quoted_text.py",
+      "functions": [
+        "split_quoted"
+      ],
+      "imported_by": [
+        "app.thread"
+      ],
+      "imports": [],
+      "module": "app.quoted_text",
+      "routes": [],
+      "summary": "Quoted email history (#255): splits a requester's emailed reply into what they wrote and the earlier conversation their",
+      "tables": [],
+      "tests": [
+        "tests/test_ticket_thread.py"
+      ]
+    },
+    {
       "classes": [
         "RaiseError"
       ],
@@ -3415,7 +3477,8 @@
         "app.raising",
         "app.routers.portal",
         "app.teams",
-        "app.teams_intake"
+        "app.teams_intake",
+        "app.thread"
       ],
       "imports": [
         "app.identity",
@@ -3431,7 +3494,8 @@
       "tables": [],
       "tests": [
         "tests/test_message_channel.py",
-        "tests/test_teams_followups.py"
+        "tests/test_teams_followups.py",
+        "tests/test_ticket_thread.py"
       ]
     },
     {
@@ -5157,6 +5221,7 @@
         "card_errors",
         "change_answers",
         "change_due",
+        "change_note_visibility",
         "change_priority",
         "change_required_by",
         "change_status",
@@ -5184,10 +5249,12 @@
         "preview_take_back",
         "reassign",
         "reclose",
+        "remove_note",
         "remove_ticket_follower",
         "rename_file",
         "reopen",
         "resolve",
+        "restore_note",
         "send_ticket_to_msp",
         "split",
         "take_back_from_msp_route",
@@ -5242,6 +5309,7 @@
         "app.subrequests",
         "app.team_activity",
         "app.templating",
+        "app.thread",
         "app.ticket_actions",
         "app.ticket_presence",
         "app.ticket_service",
@@ -5417,6 +5485,21 @@
           "path": "/tickets/{number}/note"
         },
         {
+          "handler": "remove_note",
+          "method": "POST",
+          "path": "/tickets/{number}/notes/{note_id}/delete"
+        },
+        {
+          "handler": "restore_note",
+          "method": "POST",
+          "path": "/tickets/{number}/notes/{note_id}/undo"
+        },
+        {
+          "handler": "change_note_visibility",
+          "method": "POST",
+          "path": "/tickets/{number}/notes/{note_id}/visibility"
+        },
+        {
           "handler": "presence_check_in",
           "method": "POST",
           "path": "/tickets/{number}/presence"
@@ -5575,6 +5658,7 @@
         "app.entra_check",
         "app.models",
         "app.msp",
+        "app.note_purge",
         "app.notification_purge",
         "app.reply_files",
         "app.sessions",
@@ -5602,7 +5686,8 @@
         "tests/test_scheduled_jobs.py",
         "tests/test_sessions.py",
         "tests/test_teams_followups.py",
-        "tests/test_ticket_presence.py"
+        "tests/test_ticket_presence.py",
+        "tests/test_ticket_thread.py"
       ]
     },
     {
@@ -5624,7 +5709,8 @@
       "summary": "Searching tickets from the agent list (phase 1F).",
       "tables": [],
       "tests": [
-        "tests/test_search.py"
+        "tests/test_search.py",
+        "tests/test_ticket_thread.py"
       ]
     },
     {
@@ -5700,6 +5786,7 @@
         "app.messages",
         "app.msp",
         "app.never_follow",
+        "app.note_purge",
         "app.notification_purge",
         "app.notifications",
         "app.presence",
@@ -5788,6 +5875,7 @@
         "tests/test_teams_hold.py",
         "tests/test_teams_intake.py",
         "tests/test_ticket_presence.py",
+        "tests/test_ticket_thread.py",
         "tests/test_time_zones.py",
         "tests/test_triage.py"
       ]
@@ -5955,6 +6043,7 @@
         "app.intake",
         "app.mail",
         "app.messages",
+        "app.note_purge",
         "app.raising",
         "app.reply_files",
         "app.routers.attachments",
@@ -5985,7 +6074,8 @@
         "tests/test_teams_followups.py",
         "tests/test_teams_intake.py",
         "tests/test_ticket_presence.py",
-        "tests/test_ticket_redesign.py"
+        "tests/test_ticket_redesign.py",
+        "tests/test_ticket_thread.py"
       ]
     },
     {
@@ -6602,6 +6692,33 @@
     },
     {
       "classes": [
+        "Box",
+        "Names"
+      ],
+      "file": "app/thread.py",
+      "functions": [
+        "build_thread"
+      ],
+      "imported_by": [
+        "app.routers.tickets"
+      ],
+      "imports": [
+        "app.messages",
+        "app.models",
+        "app.quoted_text",
+        "app.reply_channel",
+        "app.visibility"
+      ],
+      "module": "app.thread",
+      "routes": [],
+      "summary": "The activity thread of the agent ticket page (#255): the boxes, newest first.",
+      "tables": [],
+      "tests": [
+        "tests/test_ticket_thread.py"
+      ]
+    },
+    {
+      "classes": [
         "Chip",
         "Chips"
       ],
@@ -6665,6 +6782,7 @@
       "file": "app/ticket_service.py",
       "functions": [
         "create_ticket",
+        "event_group",
         "find_ticket",
         "get_by_number",
         "parse_ticket_number",
@@ -6739,6 +6857,7 @@
         "tests/test_teams.py",
         "tests/test_thanks_rules.py",
         "tests/test_ticket_core.py",
+        "tests/test_ticket_thread.py",
         "tests/test_triage.py"
       ]
     },
@@ -6890,6 +7009,7 @@
         "is_untriaged",
         "may_add_note",
         "may_edit_answers",
+        "may_manage_note",
         "may_self_assign",
         "may_set_due",
         "may_set_required_by",
@@ -6920,6 +7040,7 @@
         "app.routers.tickets",
         "app.subrequests",
         "app.templating",
+        "app.thread",
         "app.ticket_presence",
         "app.triage"
       ],
@@ -6944,6 +7065,7 @@
         "tests/test_portal_request.py",
         "tests/test_reply_files.py",
         "tests/test_reports.py",
+        "tests/test_ticket_thread.py",
         "tests/test_visibility.py"
       ]
     },
@@ -7127,6 +7249,12 @@
         "rule": "messages-via-messages-module"
       },
       {
+        "detail": "select() on Message",
+        "file": "app/note_purge.py",
+        "in": "purge_deleted_notes",
+        "rule": "messages-via-messages-module"
+      },
+      {
         "allowed": "Agent search matches message bodies inside a condition that visibility.visible_ticket_condition already narrowed; the requester never sees search.",
         "detail": "select() on Message",
         "file": "app/search.py",
@@ -7156,6 +7284,12 @@
         "detail": "select() on Message",
         "file": "app/thanks_rules.py",
         "in": "_reply_that_reopened",
+        "rule": "messages-via-messages-module"
+      },
+      {
+        "detail": "select() on Message",
+        "file": "app/visibility.py",
+        "in": "may_view_attachment",
         "rule": "messages-via-messages-module"
       },
       {
@@ -7586,6 +7720,7 @@
     "tests/test_ticket_page.py",
     "tests/test_ticket_presence.py",
     "tests/test_ticket_redesign.py",
+    "tests/test_ticket_thread.py",
     "tests/test_ticket_urls.py",
     "tests/test_tickets_rbac.py",
     "tests/test_time_zones.py",

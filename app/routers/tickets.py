@@ -94,6 +94,11 @@ from app.messages import (
     add_note,
     add_visible_note,
     agent_timeline,
+    delete_note,
+    is_note,
+    set_note_visible,
+    undo_delete_note,
+    NoteError,
     email_requester,
     chosen_status,
     default_status_after_email,
@@ -144,11 +149,13 @@ from app.resolution import ResolveError, check_can_resolve, preview_resolution, 
 from app.ticket_service import AwaitingApproval, ClosingNeedsNotes, EVENT_ASSIGNED, EVENT_ATTACHMENT_RENAMED, NotTriaged, ResolutionRequired, ScheduledNeedsDate, find_ticket, get_by_number, record_event, set_status
 from app.time_zones import zone_for_email, zone_for_user
 from app.triage import TriageError, change_category, change_type, clean_reason, reassign_ticket, triage_ticket
+from app.thread import build_thread
 from app.visibility import (
     Access,
     NoTicketAccess,
     assignable_agents,
     may_add_note,
+    may_manage_note,
     may_self_assign,
     may_set_due,
     may_edit_answers,
@@ -787,6 +794,67 @@ def rename_file(
         session.commit()
         session.refresh(ticket)
     return _render_ticket_detail(request, ticket, user, session)
+
+
+def _note_of(session: Session, ticket: Ticket, note_id: int) -> Message:
+    note = session.get(Message, note_id)
+    if note is None or note.ticket_id != ticket.id or not is_note(note):
+        raise HTTPException(status_code=404, detail="Note not found")
+    return note
+
+
+def _note_action(number: int, note_id: int, request: Request, user: User, session: Session, act) -> HTMLResponse:
+    """The three actions of a note's ... menu (#255) share this: load the ticket (any agent who can open it), find the note, check
+    `may_manage_note` (its author or a super admin), run `act`, commit and draw the page again."""
+    ticket = _get_ticket(session, number, user, Access.READ)
+    note = _note_of(session, ticket, note_id)
+    if not may_manage_note(user, note, ticket, access_context(session, user)):
+        raise HTTPException(status_code=403, detail="Only the note's author or a super admin can do that")
+    try:
+        act(ticket, note)
+    except NoteError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    session.commit()
+    session.refresh(ticket)
+    return _render_ticket_detail(request, ticket, user, session)
+
+
+@router.post("/{number}/notes/{note_id}/visibility", response_class=HTMLResponse)
+def change_note_visibility(
+    number: int,
+    note_id: int,
+    request: Request,
+    visible: str = Form("", max_length=1),
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """Shows a note to the requester in the portal (visible=1) or hides it again (anything else): the note's author or a super
+    admin. Nothing is emailed or sent to Teams and nobody's bell rings; the ticket event and audit entry are the record."""
+    return _note_action(number, note_id, request, user, session, lambda t, n: set_note_visible(session, t, n, user, visible == "1"))
+
+
+@router.post("/{number}/notes/{note_id}/delete", response_class=HTMLResponse)
+def remove_note(
+    number: int,
+    note_id: int,
+    request: Request,
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """Deletes a note with Undo: hidden at once everywhere, removed by the `note-purge` job after the keep window."""
+    return _note_action(number, note_id, request, user, session, lambda t, n: delete_note(session, t, n, user))
+
+
+@router.post("/{number}/notes/{note_id}/undo", response_class=HTMLResponse)
+def restore_note(
+    number: int,
+    note_id: int,
+    request: Request,
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """Brings a deleted note back while its row still exists (the purge job has not removed it)."""
+    return _note_action(number, note_id, request, user, session, lambda t, n: undo_delete_note(session, t, n, user))
 
 
 @router.get("/{number}/mentions")
@@ -2149,6 +2217,11 @@ def _render_ticket_detail(
         except MspError as error:
             msp_blocked = str(error)
     timeline = agent_timeline(session, ticket, viewer=(user, levels))
+    message_files = files_by_message(session, user, levels, [i.message for i in timeline if i.message is not None])
+    requester_person = person_for_address(session, ticket.requester_email)
+    thread = build_thread(
+        session, ticket, timeline, user, levels, requester_person.display_name if requester_person else None, message_files,
+    )
 
     # A link is only shown to someone who could open the other ticket anyway.
     parent = session.get(Ticket, ticket.linked_parent_id) if ticket.linked_parent_id else None
@@ -2214,7 +2287,6 @@ def _render_ticket_detail(
     elif edit and edit.startswith("file-") and can_work and edit[5:].isdecimal() and int(edit[5:]) in {f.attachment.id for f in files}:
         editing = edit
     options = selectable(session) if (card == "triage" or editing == "category") else []
-    requester_person = person_for_address(session, ticket.requester_email)
     card_title, card_doing = CARDS.get(card, ("", ""))
 
     return templates.TemplateResponse(
@@ -2300,7 +2372,8 @@ def _render_ticket_detail(
             "sla": sla_now,
             "sla_chip": header_sla(ticket, sla_now, now),
             "sla_rows": sla_rows(ticket, now, at_risk),
-            "message_files": files_by_message(session, user, levels, [i.message for i in timeline if i.message is not None]),
+            "message_files": message_files,
+            "thread": thread,
             "moment_format": MOMENT_FORMAT,
             "can_backdate": can_backdate,
             "can_set_required_by": can_set_required_by,

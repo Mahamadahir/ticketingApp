@@ -239,12 +239,12 @@ def test_the_ticket_page_draws_the_chips(client, db_session):
     client.post(f"/tickets/{ticket.number}/note", data={"body": "A note"})
 
     page = client.get(f"/tickets/{ticket.number}").text
-    for chip in (
-        "Email from requester", "Teams message from requester", "Portal reply", "Teams reply to requester",
-        "Automatic message to requester", "Email to requester", "Internal note",
+    for words in (  # what each box says its person did (#255); the ticket was raised by an agent, so that is its first inbound message
+        "Logged by an agent for the requester", "Replied by email", "Replied in Teams", "Replied in the portal", "Replied to the requester in Teams",
+        "Sent an automatic message", "Emailed the requester", "Internal note",
     ):
-        assert chip in page, chip
-    assert ">From requester<" in page.replace("\n", "").replace("  ", "")  # a message with no recorded channel: plain words
+        assert words in page, words
+    assert '<span class="tp-did">Replied</span>' in page  # a message with no recorded channel: plain words
 
 
 def test_the_requester_never_sees_a_channel_chip(client, db_session):

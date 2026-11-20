@@ -310,7 +310,7 @@ def _tickets(session: Session, person: Person, roles: dict[int, set[str]], budge
             internal_sections.append(
                 {
                     "reference": ticket.reference,
-                    "notes": [_message_row(n, False) | {"visibility": n.visibility.value} for n in notes],
+                    "notes": [_message_row(n, False) | {"visibility": n.visibility.value, "deleted_at": n.deleted_at} for n in notes],
                     "files_on_notes": note_files,
                 }
             )

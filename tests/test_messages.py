@@ -223,8 +223,8 @@ def test_the_timeline_interleaves_messages_notes_and_events_in_order(client, db_
     assert [item.at for item in items] == sorted(item.at for item in items)
 
     page = client.get(f"/tickets/{ticket.number}").text
-    assert page.index("First, a note") < page.index("Then an email")
-    assert "Internal note" in page and "Email to requester" in page and "status changed" in page
+    assert page.index("Then an email") < page.index("First, a note")  # the thread shows the newest first (#255)
+    assert "Internal note" in page and "Emailed the requester" in page and "Changed the status" in page
 
 
 def test_an_inbound_portal_comment_appears_in_the_agent_timeline(client, db_session):
@@ -236,4 +236,4 @@ def test_an_inbound_portal_comment_appears_in_the_agent_timeline(client, db_sess
     agent_for(client, db_session, team)
 
     page = client.get(f"/tickets/{ticket.number}").text
-    assert "Portal reply" in page and "Still broken" in page
+    assert "in the portal" in page and "Still broken" in page

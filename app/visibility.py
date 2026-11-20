@@ -27,6 +27,7 @@ from app.models import (
     FINISHED_STATUSES,
     Attachment,
     MembershipLevel,
+    MessageDirection,
     Team,
     TeamMembership,
     Ticket,
@@ -257,7 +258,14 @@ def may_view_attachment(
     An agent or super admin: whoever can read the ticket (internal notes' files included).
     Otherwise a requester, or someone following the ticket from outside: only files that arrived with a
     message the requester may see (app.messages.requester_visible_messages, which is the single
-    rule for that), or a file they added themselves. Never an internal note's file."""
+    rule for that), or a file they added themselves. Never an internal note's file.
+    The file of a deleted note (#255) is served to nobody, at once, while its note waits for the purge."""
+    from app.models import Message  # here: only this function needs it
+
+    if attachment.message_id is not None and session.exec(
+        select(Message.deleted_at).where(Message.id == attachment.message_id)
+    ).first() is not None:
+        return False
     if user.role in (UserRole.AGENT, UserRole.SUPER_ADMIN) and ticket_access(user, ticket, levels) >= Access.READ:
         return True
     # Anyone else, including an agent who raised or follows a ticket outside their teams, is held
@@ -270,6 +278,19 @@ def may_view_attachment(
     if attachment.message_id is None:
         return attachment.uploaded_by_id == user.id
     return attachment.message_id in {m.id for m in requester_visible_messages(session, ticket)}
+
+
+def may_manage_note(user: User, note, ticket: Ticket, levels: AccessContext) -> bool:
+    """Who may change who sees a note, or delete it, and restore it (#255): the note's author and super admins, and only while
+    they can still open the ticket. A note is an internal note or a note shown to the requester (never an email). The one
+    place that says so; the menu and the routes ask."""
+    if note.direction != MessageDirection.INTERNAL and not note.visible_note:
+        return False
+    if user.role not in (UserRole.AGENT, UserRole.SUPER_ADMIN):
+        return False
+    if ticket_access(user, ticket, levels) < Access.READ:
+        return False
+    return user.role == UserRole.SUPER_ADMIN or (note.author_user_id is not None and note.author_user_id == user.id)
 
 
 def assignable_agents(session: Session, ticket: Ticket) -> list[User]:

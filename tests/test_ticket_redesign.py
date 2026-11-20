@@ -493,7 +493,8 @@ def test_the_thread_marks_a_visible_note_with_the_eye_and_does_not_tint_it_like_
     visible = [a for a in articles if "Your part is on order" in a][0]
     private = [a for a in articles if "Private words" in a][0]
 
-    assert "tp-msg-visible" in visible and "tp-msg-note" not in visible and "Visible to the requester" in visible and "<svg" in visible
+    assert "tp-msg-visible" in visible and "tp-msg-note" not in visible and "Note · visible to the requester" in visible and "<svg" in visible
+    assert "Shown in the portal. Not sent by email." in visible
     assert "tp-msg-note" in private and "Internal note" in private
 
 

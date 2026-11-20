@@ -217,10 +217,12 @@ def test_an_internal_note_is_tinted_and_labelled_and_a_public_message_is_not(cli
     add_message(db_session, ticket, "me@example.com", "Public words", MessageDirection.INBOUND, MessageVisibility.PUBLIC, 30)
     add_message(db_session, ticket, "agent@example.com", "Secret words", MessageDirection.INTERNAL, MessageVisibility.AGENTS_ONLY, 20)
     thread = page(client, ticket).split('id="thread"')[1]
-    public, internal = [c for c in thread.split("<article ")[1:3]]
+    articles = thread.split("<article ")[1:]  # newest first, and the triage box is among them
+    public = [a for a in articles if "Public words" in a][0]
+    internal = [a for a in articles if "Secret words" in a][0]
 
-    assert 'class="tp-msg"' in public and "Internal note" not in public and "From requester" in public
-    assert "tp-msg-note" in internal and "Internal note · not visible to requester" in internal and "Secret words" in internal
+    assert "tp-msg-note" not in public and "Internal note" not in public and "Raised" in public
+    assert "tp-msg-note" in internal and "Internal note · agents only" in internal and "Secret words" in internal
     # and the requester never sees it (the portal's own tests cover the rule; this keeps the new markup out of it)
     client.post("/auth/logout")
     login_as(client, "me@example.com")

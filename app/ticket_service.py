@@ -3,9 +3,12 @@ the caller commits, so the change, its event and its audit entry land in one
 transaction."""
 
 import re
+import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
+from sqlalchemy import event
+from sqlalchemy.orm import Session as OrmSession
 from sqlmodel import Session, select
 
 from app.settings_store import DEFAULT_TRIAGE_TEAM, get_int_setting
@@ -98,6 +101,26 @@ def find_ticket(session: Session, text: str) -> Optional[Ticket]:
     return get_by_number(session, number) if number is not None else None
 
 
+_GROUP_KEY = "ticket_event_group"
+
+
+def event_group(session: Session) -> str:
+    """The id every event written until the session next commits or rolls back shares (#255). One save is one transaction in
+    this app (the caller commits), so the events it writes belong together and the agent thread shows them as one box.
+    Events written by one request that commits twice are two saves and get two ids. The timestamps cannot do this job:
+    each event takes its own `created_at` when it is built, a few microseconds apart."""
+    group = session.info.get(_GROUP_KEY)
+    if group is None:
+        group = session.info[_GROUP_KEY] = uuid.uuid4().hex
+    return group
+
+
+@event.listens_for(OrmSession, "after_commit")
+@event.listens_for(OrmSession, "after_rollback")
+def _end_event_group(session) -> None:
+    session.info.pop(_GROUP_KEY, None)
+
+
 def record_event(
     session: Session,
     ticket: Ticket,
@@ -115,6 +138,7 @@ def record_event(
             from_value=from_value,
             to_value=to_value,
             detail=detail,
+            group_id=event_group(session),
         )
     )
 

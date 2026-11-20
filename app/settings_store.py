@@ -67,7 +67,7 @@ GROUPS: tuple[tuple[str, str, str], ...] = (
     (GROUP_PORTAL, "Portal and uploads", "What requesters and agents can attach."),
     (GROUP_SIGN_IN, "Sign-in and sessions", "Idle time, session length, emergency passwords and linking another account."),
     (GROUP_DATA, "Data protection and reports", "Limits on reports and on the subject access export."),
-    (GROUP_TICKET_PAGE, "Ticket page", "How the agent ticket page shows who else has the ticket open."),
+    (GROUP_TICKET_PAGE, "Ticket page", "How the agent ticket page shows who else has the ticket open, and how long a deleted note is kept."),
     (GROUP_OTHER, "Other", "Settings that belong with none of the groups above."),
 )
 GROUP_KEYS = tuple(key for key, _title, _text in GROUPS)
@@ -100,6 +100,7 @@ MAIL_BACKFILL_DAYS = "mail_backfill_days"
 # Ticket presence (issue #246, app/ticket_presence.py)
 PRESENCE_CHECK_IN_SECONDS = "ticket_presence_check_in_seconds"
 PRESENCE_GONE_AFTER_SECONDS = "ticket_presence_gone_after_seconds"
+NOTE_KEEP_DELETED_DAYS = "note_keep_deleted_days"
 JOB_LEASE_MINUTES = "scheduled_job_lease_minutes"
 JOB_RETRY_MINUTES = "scheduled_job_retry_minutes"
 JOB_LATE_MINUTES = "scheduled_job_late_minutes"
@@ -489,6 +490,18 @@ REGISTRY: dict[str, SettingDef] = {
             "tab's timer, so a tab left in the background may drop off before it checks in again."
         ),
         default="45",
+    ),
+    NOTE_KEEP_DELETED_DAYS: SettingDef(
+        key=NOTE_KEEP_DELETED_DAYS,
+        group=GROUP_TICKET_PAGE,
+        label="Keep deleted notes for (days)",
+        kind="count",
+        description=(
+            "A note an agent deletes is hidden at once (from the thread, the portal, Team activity and search, with its files) but "
+            "kept this long so it can be restored with Undo; a daily job then deletes it, and its files, for good. The retention "
+            "period is a placeholder until confirmed with the data protection lead."
+        ),
+        default="1",
     ),
     SESSION_IDLE_MINUTES: SettingDef(
         key=SESSION_IDLE_MINUTES,
