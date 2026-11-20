@@ -200,6 +200,20 @@ def test_a_refused_close_keeps_the_notes_typed(client, db_session, htmx):
     assert "Not needed any more</textarea>" in response.text
 
 
+def test_a_refused_close_keeps_who_was_unticked(client, db_session):
+    from tests.test_email_preview import follow
+
+    ticket = ticket_for_email(client, db_session)
+    follow(client, ticket, "keep@example.com", "skip@example.com")
+    response = client.post(
+        f"/tickets/{ticket.number}/close",
+        data={"closing_notes": "Done", "cc_form": "1", "cc": ["keep@example.com", "stranger@example.com"]}, headers=HTMX,
+    )
+    assert 'id="tp-card-error"' in response.text
+    box = lambda address: re.search(rf'<input type="checkbox" name="cc" value="{address}"([^>]*)/>', response.text).group(1)
+    assert "checked" in box("keep@example.com") and "checked" not in box("skip@example.com")
+
+
 def test_a_refusal_for_a_card_the_ticket_no_longer_offers_stays_the_plain_error(client, db_session):
     ticket = ticket_for_email(client, db_session)  # not with the MSP, so the Take back card is not on offer
     response = client.post(f"/tickets/{ticket.number}/take-back-from-msp", headers=HTMX)

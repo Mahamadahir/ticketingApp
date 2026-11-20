@@ -1,4 +1,5 @@
 import functools
+import logging
 from enum import Enum
 from datetime import datetime, timezone
 from html import escape
@@ -169,6 +170,7 @@ from app.visibility import (
     visible_ticket_condition,
 )
 
+log = logging.getLogger("app.tickets")
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 # Shareable links live outside /tickets: /t/1042 (the number; a prefix such as INC-1042 is accepted).
 reference_router = APIRouter(tags=["tickets"])
@@ -503,13 +505,13 @@ def _triage_kept(session: Session, ticket: Ticket, values: dict) -> dict:
     choice that is no longer valid is not silently kept. The category's team members fill Assign to, as the page does when the
     category is picked; the chosen kind of request decides the Required by box, the questions and the sub-requests, as
     /tickets/triage-dates does."""
-    category_id = optional_int_or_none(values.get("category_id"))
+    category_id = _optional_int(values.get("category_id"))
     category = session.get(Category, category_id) if category_id is not None else None
     if category is not None and not is_selectable(session, category):
         category = None
     members = team_members(session, team_id_for(session, category)) if category is not None else []
-    agent_id = optional_int_or_none(values.get("agent_id"))
-    chosen = optional_int_or_none(values.get("request_type_id"))
+    agent_id = _optional_int(values.get("agent_id"))
+    chosen = _optional_int(values.get("request_type_id"))
     request_type = next((rt for rt in active_request_types(session) if rt.id == chosen), None)
     type_id = request_type.id if request_type is not None else ticket.request_type_id
     answers = values.get("answers") or {}
@@ -541,12 +543,12 @@ def _triage_kept(session: Session, ticket: Ticket, values: dict) -> dict:
             values.get("subrequest_listed") or [], values.get("subrequest_template") or [],
         ),
         "new_category_name": values.get("new_category_name") or "",
-        "new_category_parent_id": optional_int_or_none(values.get("new_category_parent_id")),
-        "new_category_team_id": optional_int_or_none(values.get("new_category_team_id")),
+        "new_category_parent_id": _optional_int(values.get("new_category_parent_id")),
+        "new_category_team_id": _optional_int(values.get("new_category_team_id")),
     }
 
 
-def optional_int_or_none(value) -> Optional[int]:
+def _optional_int(value) -> Optional[int]:
     """A select's submitted text as a number, or None when blank or not a number (a kept form must never itself refuse)."""
     try:
         return int(value) if value not in (None, "") else None
@@ -2371,7 +2373,12 @@ def _render_ticket_detail(
         editing = edit
     options = selectable(session) if (card == "triage" or editing == "category") else []
     card_title, card_doing = CARDS.get(card, ("", ""))
-    kept = _triage_kept(session, ticket, card_values or {}) if card == "triage" and card_error else {}
+    kept = {}
+    if card == "triage" and card_error:
+        try:
+            kept = _triage_kept(session, ticket, card_values or {})
+        except Exception:  # keeping the form is a courtesy: never turn the refusal into a server error
+            log.exception("could not keep the triage form for ticket %s", ticket.number)
 
     return templates.TemplateResponse(
         request,

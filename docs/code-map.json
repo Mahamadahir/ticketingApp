@@ -5254,7 +5254,6 @@
         "msp_forward_dismiss",
         "msp_hold",
         "msp_hold_release",
-        "optional_int_or_none",
         "presence_check_in",
         "presence_leave",
         "preview_close",

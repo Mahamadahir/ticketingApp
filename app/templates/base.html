@@ -303,7 +303,12 @@
       }, true);
       document.addEventListener("keydown", function (event) {
         if (event.key !== "Escape") { return; }
-        document.querySelectorAll(open).forEach(function (menu) { menu.open = false; menu.querySelector("summary").focus(); });
+        var at = document.activeElement;
+        document.querySelectorAll(open).forEach(function (menu) {
+          menu.open = false;
+          // Only take focus back when it was in the menu (or nowhere): Escape in a box elsewhere keeps its own focus.
+          if (menu.contains(at) || !at || at === document.body) { menu.querySelector("summary").focus(); }
+        });
       });
     })();
   </script>
