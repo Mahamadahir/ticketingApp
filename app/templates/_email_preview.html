@@ -4,7 +4,7 @@
   <p><b>Copied:</b> {{ preview.cc | join(", ") if preview.cc else "no one" }}</p>
   <p><b>Subject:</b> {{ preview.subject }}</p>
   {% if preview.about %}<p class="note">{{ preview.about }} (this message is about one part of a split request)</p>{% endif %}
-  <pre class="message-body">{{ preview.body }}</pre>
+  <pre class="message-body">{{ preview.header }}{{ preview.body }}</pre>
   {% if preview.files %}
   <div>
     <p><b>Files:</b></p>

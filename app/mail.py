@@ -32,7 +32,10 @@ from app.config import settings
 from app.email_templates import LINK_LEFT_OUT, REQUEST_BLOCK, current_text, render_template, render_text, ticket_values
 from app.followers import is_follower
 from app.graph_client import graph_client
-from app.messages import about_text, in_a_split, is_triaged, mail_subject, requester_visible_messages
+from app.messages import (
+    HEADER_AGENT, HEADER_AUTOMATIC, HEADER_REPLY_ONLY, about_text, email_header, in_a_split, is_triaged, mail_subject,
+    requester_visible_messages,
+)
 from app import emergency, outage
 from app.never_follow import is_listed
 from app.approval_groups import is_member
@@ -144,7 +147,10 @@ def build_message_mail(session: Session, row: OutboundEmail) -> Mail:
     if message.id not in {m.id for m in requester_visible_messages(session, ticket)}:
         raise Unsendable("The requester may not see this message")
     _guard_recipient(row)
-    record = _with_about(session, ticket, message.body)
+    # The header (who sent it, how to reply) is built now, like the rest, from the name recorded on the message, and is
+    # part of what the outbound-mail record keeps. It is not stored on the message.
+    header = email_header(session, ticket, HEADER_AGENT if row.kind == REPLY else HEADER_AUTOMATIC, message.sender)
+    record = header + _with_about(session, ticket, message.body)
     files, missing = _read_files(session, row, ticket)  # an agent's attachments; the text stays the message's own
     if missing:
         record += "\n\nNOTE: these files could NOT be attached: " + ", ".join(missing) + ". Ask the IT mailbox for them."
@@ -168,6 +174,7 @@ def build_raised_for_mail(session: Session, row: OutboundEmail) -> Mail:
     _guard_recipient(row)
     creator = session.get(User, ticket.created_by_id) if ticket.created_by_id else None
     first = own_first_message(session, ticket)
+    header = email_header(session, ticket, HEADER_REPLY_ONLY)
     rendered = render_template(session, "raised_for", {
         **ticket_values(ticket),
         "raised_by": creator.display_name if creator else "IT Support",
@@ -175,7 +182,7 @@ def build_raised_for_mail(session: Session, row: OutboundEmail) -> Mail:
     })
     return Mail(
         to=row.to_address, cc=[], subject=rendered.subject or mail_subject(session, ticket),
-        body=rendered.body, record=rendered.body, automatic=True, reference=ticket.reference,
+        body=header + rendered.body, record=header + rendered.body, automatic=True, reference=ticket.reference,
     )
 
 
@@ -189,9 +196,10 @@ def build_acknowledgement_mail(session: Session, row: OutboundEmail) -> Mail:
         raise Unsendable("The ticket is already resolved or closed")
     _guard_recipient(row)
     rendered = render_template(session, "acknowledgement", ticket_values(ticket))
+    text = email_header(session, ticket, HEADER_REPLY_ONLY) + rendered.body
     return Mail(
         to=row.to_address, cc=[], subject=mail_subject(session, ticket),
-        body=rendered.body, record=rendered.body, automatic=True, reference=ticket.reference,
+        body=text, record=text, automatic=True, reference=ticket.reference,
     )
 
 
@@ -205,7 +213,9 @@ def build_chase_mail(session: Session, row: OutboundEmail) -> Mail:
         raise NotReady("The ticket has not been triaged yet, so it cannot be emailed")
     _guard_recipient(row)
     days = get_int_setting(session, CHASE_RESOLVE_AFTER_DAYS) or int(REGISTRY[CHASE_RESOLVE_AFTER_DAYS].default)
-    body = _with_about(session, ticket, render_template(session, "chase", {**ticket_values(ticket), "days": str(days)}).body)
+    body = email_header(session, ticket, HEADER_REPLY_ONLY) + _with_about(
+        session, ticket, render_template(session, "chase", {**ticket_values(ticket), "days": str(days)}).body
+    )
     return Mail(
         to=row.to_address, cc=[], subject=mail_subject(session, ticket),
         body=body, record=body, automatic=True, reference=ticket.reference,

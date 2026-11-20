@@ -68,13 +68,13 @@ def closed_email_body(session: Session, ticket: Ticket, notes: str) -> str:
 
 
 def preview_closing(
-    session: Session, ticket: Ticket, notes: str, cc_emails: Optional[list[str]] = None
+    session: Session, ticket: Ticket, notes: str, cc_emails: Optional[list[str]] = None, author: Optional[User] = None
 ) -> EmailPreview:
     """What closing would email, for the "are you sure?" step. Runs the same checks as close_ticket and
     records nothing. Raises CloseError (or UnknownRecipient for a bad copy)."""
     notes = clean_closing_notes(notes)
     check_can_close(session, ticket)
-    return preview_email(session, ticket, closed_email_body(session, ticket, notes), cc_emails=cc_emails)
+    return preview_email(session, ticket, closed_email_body(session, ticket, notes), cc_emails=cc_emails, author=author)
 
 
 def close_ticket(

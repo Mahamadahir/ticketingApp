@@ -1006,7 +1006,8 @@
       "summary": "Closing a ticket that was not resolved first (#131). The agent's Close action.",
       "tables": [],
       "tests": [
-        "tests/test_closing_email.py"
+        "tests/test_closing_email.py",
+        "tests/test_email_header.py"
       ]
     },
     {
@@ -1238,6 +1239,7 @@
         "app.approvals",
         "app.closing",
         "app.mail",
+        "app.messages",
         "app.msp",
         "app.msp_actions",
         "app.resolution",
@@ -1257,6 +1259,7 @@
         "tests/test_action_links.py",
         "tests/test_auto_close_chase.py",
         "tests/test_closing_email.py",
+        "tests/test_email_header.py",
         "tests/test_email_templates.py",
         "tests/test_follower_updates.py",
         "tests/test_msp_actions.py",
@@ -1936,6 +1939,7 @@
         "tests/test_approval_reminders.py",
         "tests/test_auto_close_chase.py",
         "tests/test_closing_email.py",
+        "tests/test_email_header.py",
         "tests/test_email_templates.py",
         "tests/test_follower_updates.py",
         "tests/test_linked_identities.py",
@@ -2046,6 +2050,7 @@
         "attach_files",
         "chosen_status",
         "default_status_after_email",
+        "email_header",
         "email_requester",
         "excerpt",
         "in_a_split",
@@ -2053,6 +2058,7 @@
         "it_support_label",
         "kind_label",
         "latest_message_id",
+        "mail_reference",
         "mail_subject",
         "not_requester_visible_messages",
         "posts_since",
@@ -2095,6 +2101,7 @@
       "imports": [
         "app.approvals",
         "app.attachments",
+        "app.email_templates",
         "app.followers",
         "app.models",
         "app.notifications",
@@ -2113,6 +2120,7 @@
       "summary": "Everything about the messages on a ticket: emailing the requester, internal",
       "tables": [],
       "tests": [
+        "tests/test_email_header.py",
         "tests/test_email_preview.py",
         "tests/test_escalation_tidy.py",
         "tests/test_follower_updates.py",
@@ -2554,6 +2562,7 @@
         "tests/test_closing_email.py",
         "tests/test_due_date.py",
         "tests/test_due_date_review.py",
+        "tests/test_email_header.py",
         "tests/test_email_preview.py",
         "tests/test_email_templates.py",
         "tests/test_entra_check.py",
@@ -3137,6 +3146,7 @@
         "tests/test_auto_close_chase.py",
         "tests/test_bulk_resolve.py",
         "tests/test_closing_email.py",
+        "tests/test_email_header.py",
         "tests/test_email_templates.py",
         "tests/test_follower_updates.py",
         "tests/test_msp_mail.py",
@@ -3757,6 +3767,7 @@
       "tests": [
         "tests/test_auto_close_chase.py",
         "tests/test_bulk_resolve.py",
+        "tests/test_email_header.py",
         "tests/test_msp.py",
         "tests/test_msp_actions.py",
         "tests/test_reopening.py",
@@ -6238,6 +6249,7 @@
         "tests/test_anonymisation.py",
         "tests/test_approval_reminders.py",
         "tests/test_auto_close_chase.py",
+        "tests/test_email_header.py",
         "tests/test_inbound_mail.py",
         "tests/test_linked_identities.py",
         "tests/test_notification_dismiss.py",
@@ -7497,6 +7509,7 @@
     "tests/test_code_map.py",
     "tests/test_due_date.py",
     "tests/test_due_date_review.py",
+    "tests/test_email_header.py",
     "tests/test_email_preview.py",
     "tests/test_email_templates.py",
     "tests/test_entra_check.py",

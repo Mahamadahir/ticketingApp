@@ -172,7 +172,8 @@ def test_a_reply_goes_under_the_reference_and_copies_who_the_message_recorded(cl
     built = mail.build_message_mail(db_session, reply_row(db_session, ticket))
 
     assert built.subject == f"[{ticket.reference}] Printer jam"
-    assert (built.to, built.cc, built.body, built.automatic) == ("walkin@example.com", ["boss@example.com"], "Fixed it?", False)
+    assert (built.to, built.cc, built.automatic) == ("walkin@example.com", ["boss@example.com"], False)
+    assert built.body.endswith("\n\nFixed it?")  # after the header (tests/test_email_header.py)
 
 
 def test_the_preview_shows_the_same_subject_the_email_goes_out_under(client, db_session, dev_mail):
@@ -189,7 +190,7 @@ def test_a_part_of_a_split_request_goes_out_under_its_originals_reference_with_a
     built = mail.build_message_mail(db_session, reply_row(db_session, part))
 
     assert built.subject == f"[{original.reference}] {original.subject}"
-    assert built.body.startswith(f"About: {part.reference} {part.subject}\n\n") and built.body.endswith("On it")
+    assert f"\n\nAbout: {part.reference} {part.subject}\n\nOn it" in built.body and built.body.endswith("On it")
 
 
 def test_an_internal_note_cannot_be_built_into_an_email_even_if_a_row_points_at_it(client, db_session, dev_mail):
@@ -350,7 +351,7 @@ def test_in_dev_mode_an_email_is_recorded_as_sent_with_its_text_and_nothing_leav
     assert mail.deliver_mail(db_session) == (0, 0)  # nothing left, nothing twice
 
     row = reply_row(db_session, ticket)
-    assert row.sent_at is not None and row.subject == f"[{ticket.reference}] Printer jam" and row.body == "Try turning it off"
+    assert row.sent_at is not None and row.subject == f"[{ticket.reference}] Printer jam" and row.body.endswith("\n\nTry turning it off")
 
 
 def test_with_sending_off_the_job_sends_nothing(client, db_session, dev_mail, monkeypatch):
@@ -463,7 +464,7 @@ def test_a_failed_email_keeps_no_text_it_never_sent(client, db_session, dev_mail
 
     assert all(r.subject is None and r.body is None and r.cc is None for r in rows(db_session))
     mail.deliver_mail(db_session, now=datetime.now(timezone.utc) + timedelta(hours=1))
-    assert reply_row(db_session, ticket).body == "Secret wording"
+    assert reply_row(db_session, ticket).body.endswith("\n\nSecret wording")
 
 
 def test_the_job_is_registered_once_and_runs_the_sender(client, db_session, dev_mail):

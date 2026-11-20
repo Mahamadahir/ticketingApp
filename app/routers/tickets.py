@@ -1182,7 +1182,7 @@ def preview_email_user(
     previewed is what would go."""
     ticket = _get_ticket(session, number, user)
     try:
-        preview = preview_email(session, ticket, body, cc_emails=cc if cc_form else None, next_status=next_status)
+        preview = preview_email(session, ticket, body, cc_emails=cc if cc_form else None, next_status=next_status, author=user)
     except NotTriaged:
         raise HTTPException(status_code=400, detail="Triage the ticket before emailing the requester")
     except EmptyEmail:
@@ -1486,7 +1486,7 @@ def preview_resolve(
     is copied, the subject and the text) and what resolving does. Records and sends nothing."""
     ticket = _get_ticket(session, number, user)
     try:
-        preview = preview_resolution(session, ticket, resolution_notes, cc_emails=cc if cc_form else None)
+        preview = preview_resolution(session, ticket, resolution_notes, cc_emails=cc if cc_form else None, author=user)
     except ResolveError as error:
         raise HTTPException(status_code=400, detail=str(error))
     except UnknownRecipient as error:
@@ -1560,7 +1560,7 @@ def preview_close(
     (who gets it, who is copied, the subject and the text). Records and sends nothing."""
     ticket = _get_ticket(session, number, user)
     try:
-        preview = preview_closing(session, ticket, closing_notes, cc_emails=cc if cc_form else None)
+        preview = preview_closing(session, ticket, closing_notes, cc_emails=cc if cc_form else None, author=user)
     except CloseError as error:
         raise HTTPException(status_code=400, detail=str(error))
     except UnknownRecipient as error:

@@ -20,7 +20,7 @@
       {% else %}
       <p class="note field-wide">The subject is the ticket's own, so replies find their way back to it.</p>
       {% endif %}
-      <label class="field field-wide">Text <textarea name="body" rows="12" maxlength="{{ max_body_length }}" required>{{ body }}</textarea></label>
+      <label class="field field-wide">Text <textarea name="body" rows="12" maxlength="{{ max_body_length }}"{% if not defn.may_be_blank %} required{% endif %}>{{ body }}</textarea></label>
     </div>
     <div class="form-actions">
       <button type="submit" class="btn btn-primary">Save</button>

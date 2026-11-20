@@ -77,13 +77,13 @@ def auto_resolution_note(session: Session, ticket: Ticket, days: int) -> str:
 
 
 def preview_resolution(
-    session: Session, ticket: Ticket, notes: str, cc_emails: Optional[list[str]] = None
+    session: Session, ticket: Ticket, notes: str, cc_emails: Optional[list[str]] = None, author: Optional[User] = None
 ) -> EmailPreview:
     """What resolving would email, for the "are you sure?" step. Runs the same checks as
     resolve_ticket and records nothing. Raises ResolveError (or UnknownRecipient for a bad copy)."""
     notes = clean_notes(notes)
     check_can_resolve(session, ticket)
-    return preview_email(session, ticket, resolution_email_body(session, ticket, notes), cc_emails=cc_emails)
+    return preview_email(session, ticket, resolution_email_body(session, ticket, notes), cc_emails=cc_emails, author=author)
 
 
 def resolve_ticket(
