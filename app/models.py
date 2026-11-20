@@ -426,7 +426,11 @@ class Ticket(SQLModel, table=True):
 
 class Message(SQLModel, table=True):
     # The note purge (app/note_purge.py) looks only for deleted rows.
-    __table_args__ = (Index("ix_message_deleted", "deleted_at", postgresql_where=text("deleted_at IS NOT NULL")),)
+    # created_at: the Team activity feed and its Person filter read a window of recent messages (#262).
+    __table_args__ = (
+        Index("ix_message_deleted", "deleted_at", postgresql_where=text("deleted_at IS NOT NULL")),
+        Index("ix_message_created_at", "created_at"),
+    )
 
     id: Optional[int] = Field(default=None, primary_key=True)
     ticket_id: int = Field(foreign_key="ticket.id")
@@ -1145,7 +1149,10 @@ class TicketEvent(SQLModel, table=True):
     Separate from the audit log, which covers the whole system."""
 
     # The reports (app/reports.py) look events up by type and time.
-    __table_args__ = (Index("ix_ticketevent_type_created", "event_type", "created_at"),)
+    __table_args__ = (
+        Index("ix_ticketevent_type_created", "event_type", "created_at"),
+        Index("ix_ticketevent_created_at", "created_at"),  # the Team activity feed reads a window of recent events (#262)
+    )
 
     id: Optional[int] = Field(default=None, primary_key=True)
     ticket_id: int = Field(foreign_key="ticket.id", index=True)

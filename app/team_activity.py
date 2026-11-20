@@ -28,6 +28,17 @@ from app.time_zones import format_long_date, valid_zone
 
 EXCERPT = 160
 
+# Event types a requester, approver or follower can cause as well as an agent. For these the person's role decides
+# whether the step is agent work; every other event type with a known person is agent work whatever their role is now.
+SHARED_EVENTS = (
+    "created", "reopened", "follows", "followed_by", "follower_added", "follower_removed", "follower_added_from_mail",
+    "mail_reference_not_used", "thanks_ignored", "message_moved", "approval_decided", "approval_withdrawn",
+    "approval_self_approved",
+)
+
+# The Person filter lists people active in this many days (#262); anyone can still be picked through ?person=.
+PERSON_WINDOW_DAYS = 90
+
 
 class Kind(str, Enum):
     EVENTS = "events"  # what changed on a ticket
@@ -60,7 +71,14 @@ def feed_query(
             TicketEvent.detail.label("detail"),
             Ticket.requester_email.label("requester"),
             cast(null(), Integer).label("author_id"),
-            case((User.id.is_(None), False), else_=User.role.in_(AGENT_ROLES)).label("agent"),
+            # Agent work is decided from what the step was, not only from the person's role now (#270): a note, a
+            # change or an email can only have been made by an agent, so a demoted agent's past work stays agent work.
+            # The steps a requester or approver can also take (SHARED_EVENTS) go by the person's role.
+            case(
+                (User.id.is_(None), False),
+                (TicketEvent.event_type.not_in(SHARED_EVENTS), True),
+                else_=User.role.in_(AGENT_ROLES),
+            ).label("agent"),
         )
         .join(Ticket, Ticket.id == TicketEvent.ticket_id)
         .join(User, func.lower(User.email) == func.lower(TicketEvent.actor_email), isouter=True)
@@ -498,12 +516,19 @@ def _lookups(session: Session, rows) -> tuple[dict[str, str], dict[int, Ticket],
     return people, tickets, teams
 
 
-def person_choices(session: Session, visible, team_id: Optional[int] = None) -> list[User]:
-    """The agents whose steps appear in this viewer's feed (the choices of the person filter)."""
-    feed = feed_query(visible, team_id).subquery()
+def person_choices(
+    session: Session, visible, team_id: Optional[int] = None, chosen: Optional[str] = None, now: Optional[datetime] = None
+) -> list[User]:
+    """The agents whose steps appear in this viewer's feed over the last PERSON_WINDOW_DAYS (the choices of the person
+    filter): a bounded, DISTINCT query on the actor, never the whole history (#262). `chosen` is the address picked in the
+    URL: it is listed even when they were last active before the window, so the filter still shows who it is on."""
+    since = _aware(now or datetime.now(timezone.utc)) - timedelta(days=PERSON_WINDOW_DAYS)
+    feed = feed_query(visible, team_id, since=since).subquery()
     actors = select(func.lower(feed.c.actor)).distinct()
-    query = select(User).where(func.lower(User.email).in_(actors), User.role.in_(AGENT_ROLES)).order_by(User.display_name)
-    return list(session.exec(query).all())
+    listed = func.lower(User.email).in_(actors)
+    if chosen:
+        listed = or_(listed, func.lower(User.email) == chosen.lower())
+    return list(session.exec(select(User).where(listed, User.role.in_(AGENT_ROLES)).order_by(User.display_name)).all())
 
 
 def count_steps_today(session: Session, visible, person: str, zone: str, now: Optional[datetime] = None) -> int:

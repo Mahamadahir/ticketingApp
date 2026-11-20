@@ -482,3 +482,87 @@ def test_the_drawer_keeps_the_day_headings_and_back_to_latest_keeps_the_filters(
     link = re.search(r'href="(\?[^"]*before=[^"]*)"[^>]*>Show earlier', first).group(1).replace("&amp;", "&")
     second = client.get("/tickets/activity" + link).text
     assert 'href="/tickets/activity?kind=notes">&larr; Back to the latest' in second
+
+
+# ---- #262 the Person filter reads a window, #270 agent work is decided from the step ------------------------------
+
+
+def _event(db_session, ticket, actor, event_type, days_ago):
+    db_session.add(TicketEvent(
+        ticket_id=ticket.id, event_type=event_type, actor_email=actor,
+        created_at=datetime.now(timezone.utc) - timedelta(days=days_ago),
+    ))
+    db_session.commit()
+
+
+def _agents(db_session, team):
+    made = {}
+    for key, email in (("recent", "recent@example.com"), ("old", "old@example.com")):
+        user = User(email=email, display_name=key.capitalize(), role=UserRole.AGENT)
+        db_session.add(user)
+        db_session.commit()
+        set_role(db_session, user.id, UserRole.AGENT, team.id)
+        made[key] = user
+    return made
+
+
+def test_the_person_filter_lists_people_active_in_the_window_only_and_reads_it_bounded(client, db_session):
+    from sqlalchemy import event
+
+    from app.database import engine
+    from app.team_activity import PERSON_WINDOW_DAYS, person_choices
+
+    team, category, _ = desk(client, db_session)
+    classified(client, category, "Windowed")
+    ticket = ticket_named(db_session, "Windowed")
+    people = _agents(db_session, team)
+    _event(db_session, ticket, "recent@example.com", "priority_changed", 3)
+    _event(db_session, ticket, "old@example.com", "priority_changed", PERSON_WINDOW_DAYS + 30)
+
+    seen = []
+
+    def record(conn, cursor, statement, *args):
+        seen.append(statement)
+
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        listed = [u.email for u in person_choices(db_session, None)]
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+    assert "recent@example.com" in listed and "old@example.com" not in listed
+    feed_selects = [s for s in seen if "ticketevent" in s]
+    assert len(feed_selects) == 1  # one query, not a read of rows per person
+    assert "SELECT DISTINCT" in feed_selects[0] and ".at >= " in feed_selects[0]  # one row per actor, bounded in time
+    assert people["old"].email in [u.email for u in person_choices(db_session, None, chosen="Old@Example.com")]
+
+
+def test_a_person_outside_the_window_still_works_as_the_person_parameter(client, db_session):
+    from app.team_activity import PERSON_WINDOW_DAYS
+
+    team, category, _ = desk(client, db_session)
+    classified(client, category, "Long ago")
+    ticket = ticket_named(db_session, "Long ago")
+    _agents(db_session, team)
+    _event(db_session, ticket, "old@example.com", "priority_changed", PERSON_WINDOW_DAYS + 30)
+
+    page = feed(client, person="old@example.com").text
+    assert 'value="old@example.com" selected' in page  # named in the filter though not in the default list
+    assert "Priority changed" in page  # and their step shows
+    assert 'value="old@example.com"' not in feed(client).text  # but not offered otherwise
+
+
+def test_a_demoted_agents_past_work_stays_agent_cards_and_their_own_requests_are_requester_cards(client, db_session):
+    team, category, ann_id = desk(client, db_session)
+    classified(client, category, "Ann's old work")  # Ann raised it herself: a created event, then triage
+    ticket = ticket_named(db_session, "Ann's old work")
+    client.post(f"/tickets/{ticket.number}/note", data={"body": "Checked the fuser"})
+    _event(db_session, ticket, "agent@example.com", "priority_changed", 0)
+    set_role(db_session, ann_id, UserRole.END_USER)
+    second_agent(client, db_session, team)
+
+    page = feed(client).text
+    agent_text = " ".join(re.findall(r'<article class="act-card act-agent">.*?</article>', page, re.S))
+    requester_text = " ".join(re.findall(r'<article class="act-card act-requester">.*?</article>', page, re.S))
+    assert "Priority changed" in agent_text and "Added an internal note" in agent_text and "Triaged" in agent_text
+    assert "Created" in requester_text  # a step a requester can take stays by role: the request itself
+    assert "Priority changed" not in requester_text and "Triaged" not in requester_text
