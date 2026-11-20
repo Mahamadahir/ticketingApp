@@ -1,4 +1,6 @@
 import functools
+import logging
+from enum import Enum
 from datetime import datetime, timezone
 from html import escape
 from typing import Optional
@@ -168,6 +170,7 @@ from app.visibility import (
     visible_ticket_condition,
 )
 
+log = logging.getLogger("app.tickets")
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 # Shareable links live outside /tickets: /t/1042 (the number; a prefix such as INC-1042 is accepted).
 reference_router = APIRouter(tags=["tickets"])
@@ -459,14 +462,26 @@ def card_errors(card: str):
                 ticket = get_by_number(session, kwargs["number"])
                 if ticket is None:
                     raise
-                # Only what was typed: text, numbers and lists of text (the split parts). Never an upload, a flag or a dependency.
+                # Only what was typed: text, numbers, lists of text (the split parts) or of numbers (ticked boxes) and the triage
+                # form's answers by question. Never an upload, a flag or a dependency.
                 values = {
                     k: v for k, v in kwargs.items()
                     if k not in ("number", "request") and (
                         isinstance(v, str) or (isinstance(v, int) and not isinstance(v, bool))
-                        or (isinstance(v, list) and all(isinstance(i, str) for i in v))
+                        or (isinstance(v, list) and all(isinstance(i, str) or (isinstance(i, int) and not isinstance(i, bool)) for i in v))
+                        or (isinstance(v, dict) and all(isinstance(a, int) and isinstance(b, str) for a, b in v.items()))
                     )
                 }
+                # A browser cannot refill a file input, so the card says the files must be chosen again. Files held at a preview
+                # (`draft`) are kept, if they still are held.
+                if any(getattr(i, "filename", None) for v in kwargs.values() if isinstance(v, list) for i in v):  # starlette's UploadFile, not fastapi's subclass
+                    values["had_files"] = True
+                if values.get("draft"):
+                    held = reply_files.held(session, ticket, user, values["draft"])
+                    if held:
+                        values["held_files"] = [row.filename for row in held]
+                    else:
+                        values.pop("draft")
                 response = _render_ticket_detail(
                     request, ticket, user, session, action=card, card_error=str(error.detail), card_values=values, card_must_open=error,
                 )
@@ -477,6 +492,68 @@ def card_errors(card: str):
         return run
 
     return wrap
+
+
+def _text(value) -> str:
+    """What a form field sent, as text: an enum the route parsed (TicketType, Level) goes back to its value."""
+    return str(value.value if isinstance(value, Enum) else (value if value is not None else ""))
+
+
+def _triage_kept(session: Session, ticket: Ticket, values: dict) -> dict:
+    """What a refused Triage save puts back into the redrawn card (#268): every select choice and typed box. A select choice is
+    carried only if it is still on offer (the select macros and the checks below match it against what the card lists), so a
+    choice that is no longer valid is not silently kept. The category's team members fill Assign to, as the page does when the
+    category is picked; the chosen kind of request decides the Required by box, the questions and the sub-requests, as
+    /tickets/triage-dates does."""
+    category_id = _optional_int(values.get("category_id"))
+    category = session.get(Category, category_id) if category_id is not None else None
+    if category is not None and not is_selectable(session, category):
+        category = None
+    members = team_members(session, team_id_for(session, category)) if category is not None else []
+    agent_id = _optional_int(values.get("agent_id"))
+    chosen = _optional_int(values.get("request_type_id"))
+    request_type = next((rt for rt in active_request_types(session) if rt.id == chosen), None)
+    type_id = request_type.id if request_type is not None else ticket.request_type_id
+    answers = values.get("answers") or {}
+    rows = []
+    for question, current in form_rows(session, type_id, ticket if type_id == ticket.request_type_id else None):
+        given = answers.get(question.id)
+        if given is not None:
+            if question.kind == "choice" and given not in question.options:
+                given = None
+            elif question.kind == "yes_no" and given not in ("yes", "no"):
+                given = None
+        rows.append((question, current if given is None else given))
+    offers = request_type.offers_required_by if request_type is not None else offers_required_by(session, ticket)
+    return {
+        "ticket_type": _text(values.get("ticket_type")),
+        "impact": _text(values.get("impact")),
+        "urgency": _text(values.get("urgency")),
+        "category_id": category.id if category is not None else None,
+        "members": members,
+        "agent_id": agent_id if any(m.id == agent_id for m in members) else None,
+        "request_type_id": request_type.id if request_type is not None else None,
+        "offers_required_by": offers,
+        "required_by": values.get("required_by") or "",
+        "due_on": values.get("due_on") or "",
+        "due_reason": values.get("due_reason") or "",
+        "question_rows": rows,
+        "subrequests": preview_subrequests(
+            session, ticket, type_id, {k: v for k, v in answers.items() if v},
+            values.get("subrequest_listed") or [], values.get("subrequest_template") or [],
+        ),
+        "new_category_name": values.get("new_category_name") or "",
+        "new_category_parent_id": _optional_int(values.get("new_category_parent_id")),
+        "new_category_team_id": _optional_int(values.get("new_category_team_id")),
+    }
+
+
+def _optional_int(value) -> Optional[int]:
+    """A select's submitted text as a number, or None when blank or not a number (a kept form must never itself refuse)."""
+    try:
+        return int(value) if value not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
 
 
 def _agent_options(request: Request, members: list[User], blank_label: str) -> HTMLResponse:
@@ -1300,10 +1377,11 @@ def discard_email_draft(
 
 
 @router.post("/{number}/email", response_class=HTMLResponse)
+@card_errors("email")
 def email_user(
     number: int,
     request: Request,
-    body: str = Form(..., max_length=MAX_MESSAGE_LENGTH),
+    body: str = Form("", max_length=MAX_MESSAGE_LENGTH),
     cc_form: Optional[str] = Form(None),
     cc: list[str] = Form(default=[]),
     next_status: Optional[str] = Form(None),
@@ -1378,10 +1456,11 @@ def email_user(
 
 
 @router.post("/{number}/note", response_class=HTMLResponse)
+@card_errors("note")
 def add_ticket_note(
     number: int,
     request: Request,
-    body: str = Form(..., max_length=MAX_MESSAGE_LENGTH),
+    body: str = Form("", max_length=MAX_MESSAGE_LENGTH),
     next_status: Optional[str] = Form(None),
     due_on: Optional[str] = Form(None, max_length=20),
     due_reason: Optional[str] = Form(None, max_length=600),
@@ -1405,6 +1484,8 @@ def add_ticket_note(
     levels = access_context(session, user)
     if not may_add_note(user, ticket, levels):
         raise NoTicketAccess()
+    if not body.strip():
+        raise HTTPException(status_code=400, detail="Write the note first")  # a refusal the card shows, not a bare 422
     visible = bool(visible_to_requester)
     if visible and ticket_access(user, ticket, levels) < Access.WORK:
         raise HTTPException(status_code=403, detail="Only an agent who works this ticket can make a note visible to the requester")
@@ -1574,6 +1655,7 @@ def preview_resolve(
 
 
 @router.post("/{number}/resolve", response_class=HTMLResponse)
+@card_errors("resolve")
 def resolve(
     number: int,
     request: Request,
@@ -1644,6 +1726,7 @@ def preview_close(
 
 
 @router.post("/{number}/close", response_class=HTMLResponse)
+@card_errors("close")
 def close(
     number: int,
     request: Request,
@@ -1839,6 +1922,7 @@ def preview_send_to_msp(
 
 
 @router.post("/{number}/send-to-msp", response_class=HTMLResponse)
+@card_errors("msp")
 def send_ticket_to_msp(
     number: int,
     request: Request,
@@ -1892,6 +1976,7 @@ def preview_take_back(
 
 
 @router.post("/{number}/take-back-from-msp", response_class=HTMLResponse)
+@card_errors("takeback")
 def take_back_from_msp_route(
     number: int,
     request: Request,
@@ -2288,6 +2373,12 @@ def _render_ticket_detail(
         editing = edit
     options = selectable(session) if (card == "triage" or editing == "category") else []
     card_title, card_doing = CARDS.get(card, ("", ""))
+    kept = {}
+    if card == "triage" and card_error:
+        try:
+            kept = _triage_kept(session, ticket, card_values or {})
+        except Exception:  # keeping the form is a courtesy: never turn the refusal into a server error
+            log.exception("could not keep the triage form for ticket %s", ticket.number)
 
     return templates.TemplateResponse(
         request,
@@ -2380,13 +2471,14 @@ def _render_ticket_detail(
             "can_set_due": can_set_due,
             "due_on": ticket.due_on,
             "request_types": active_request_types(session) if card == "triage" else [],
-            "offers_required_by": offers_required_by(session, ticket),
+            "offers_required_by": kept["offers_required_by"] if kept else offers_required_by(session, ticket),
             "requester_zone": zone_for_email(session, ticket.requester_email),
             "source_label": source_label(session, ticket),
             "request_info": request_type_of(session, ticket),
             "answers": answer_rows(session, ticket),
-            "triage_questions": form_rows(session, ticket.request_type_id, ticket) if card == "triage" else [],
-            "triage_subrequests": preview_subrequests(session, ticket, ticket.request_type_id, {}, [], []) if card == "triage" else [],
+            "triage_questions": kept["question_rows"] if kept else (form_rows(session, ticket.request_type_id, ticket) if card == "triage" else []),
+            "triage_subrequests": kept["subrequests"] if kept else (preview_subrequests(session, ticket, ticket.request_type_id, {}, [], []) if card == "triage" else []),
+            "triage_kept": kept,
             "max_sub_tickets": max_sub_tickets(session),
             "pending_subrequests": pending_subjects(ticket),
             "answers_changed_after_subrequests": answers_changed_note(session, ticket),
