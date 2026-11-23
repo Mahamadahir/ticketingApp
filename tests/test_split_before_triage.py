@@ -10,7 +10,7 @@ from app import mail, outbox
 from app.followers import add_follower
 from app.messages import EMAIL_BEFORE_TRIAGE, can_email_now, record_inbound
 from app.models import EmailTemplate, Message, OutboundEmail, Ticket, TicketStatus, User, UserRole
-from app.settings_store import AUTOMATIC_EMAIL_CAP, SPLIT_EMAIL_ENABLED, set_setting
+from app.settings_store import AUTOMATIC_EMAIL_CAP, MAX_SUB_TICKETS, SPLIT_EMAIL_ENABLED, set_setting
 from tests.conftest import create_category, create_team, login_as, set_role
 from tests.test_outbound_mail import dev_mail, rows  # noqa: F401  (dev_mail is a fixture)
 from tests.test_splitting import split, subs_of, world
@@ -372,3 +372,81 @@ def test_the_queues_and_the_original_with_no_category_still_draw_after_an_untria
     assert client.get(f"/tickets/{original.number}").status_code == 200
     assert client.get(f"/tickets/{subs_of(db_session, original)[0].number}").status_code == 200
 
+
+
+# ---- The Split card's parts and the limit (#285) -----------------------------------------------------------
+
+
+def split_card(client, original):
+    page = client.get(f"/tickets/{original.number}?action=split").text
+    return page.split('id="tp-card"')[1].split("</form>")[0]
+
+
+def test_the_card_shows_two_parts_and_holds_the_rest_hidden_for_the_add_button(client, db_session):
+    original, _, _ = untriaged_world(client, db_session)
+
+    card = split_card(client, original)
+
+    assert card.count("<fieldset") == 10  # the 10 the ticket can take (the default limit); only the first two are shown
+    assert card.count("<fieldset class=\"tp-split-part\">") == 2 and card.count("tp-split-part\" hidden") == 8
+    assert "Part 10 subject" in card and "Part 11 subject" not in card
+    assert "data-add-part" in card and "Add another part" in card
+    assert "split this ticket again" in card  # what a person without scripts is told
+
+
+def test_the_card_says_the_limit_and_what_the_ticket_can_still_take(client, db_session):
+    original, _, _ = untriaged_world(client, db_session)
+    assert "Up to 10 sub-tickets in all." in split_card(client, original)
+
+    split(client, original, ("One", ""), ("Two", ""))
+    card = split_card(client, original)
+
+    assert "Up to 10 sub-tickets in all; this ticket can take 8 more." in card
+    assert card.count("<fieldset") == 8 and "Part 8 subject" in card and "Part 9 subject" not in card
+
+
+def test_at_the_limit_the_card_offers_no_add_button_and_says_why(client, db_session):
+    original, _, _ = untriaged_world(client, db_session)
+    set_setting(db_session, MAX_SUB_TICKETS, "2")
+    db_session.commit()
+    split(client, original, ("One", ""), ("Two", ""))
+
+    card = split_card(client, original)
+
+    assert "this ticket can take 0 more. That is the most this ticket can have." in card
+    assert "data-add-part" not in card and card.count("<fieldset class=\"tp-split-part\">") == 2
+
+
+def test_a_limit_of_two_shows_two_parts_and_no_add_button(client, db_session):
+    original, _, _ = untriaged_world(client, db_session)
+    set_setting(db_session, MAX_SUB_TICKETS, "2")
+    db_session.commit()
+
+    card = split_card(client, original)
+
+    assert card.count("<fieldset") == 2 and "data-add-part" not in card
+    assert "Up to 2 sub-tickets in all. That is the most this ticket can have." in card
+
+
+def test_a_refused_split_comes_back_with_every_part_that_was_typed(client, db_session):
+    original, _, _ = untriaged_world(client, db_session)
+    typed = [(f"Typed part {n}", f"Typed details {n}") for n in range(1, 6)]
+    typed[3] = typed[0]  # parts 1 and 4 alike: refused
+
+    response = split(client, original, *typed)
+
+    assert response.status_code == 400 and 'id="tp-card-error"' in response.text
+    card = response.text.split('id="tp-card"')[1].split("</form>")[0]
+    for subject, details in typed:
+        assert subject in card and details in card
+    assert card.count("<fieldset class=\"tp-split-part\">") == 5  # all five shown, the others held back
+    assert "Typed part 5" in card and card.count("tp-split-part\" hidden") == 5
+
+
+def test_six_parts_make_six_sub_tickets(client, db_session):
+    original, _, _ = untriaged_world(client, db_session)
+
+    response = split(client, original, *[(f"Part {n}", "") for n in range(1, 7)], ("", ""), ("", ""))
+
+    assert response.status_code == 200
+    assert [s.subject for s in subs_of(db_session, original)] == [f"Part {n}" for n in range(1, 7)]

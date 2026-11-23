@@ -79,6 +79,7 @@ from app.search import normalise, search_condition
 from app.splitting import (
     MAX_DETAILS,
     MAX_SUBJECT,
+    PREFILLED_PARTS,
     max_sub_tickets,
     prefilled_parts,
     SplitError,
@@ -86,6 +87,7 @@ from app.splitting import (
     check_manual_status,
     has_sub_tickets,
     split_ticket,
+    sub_ticket_count,
     sub_tickets_summary,
 )
 from app.linking import PARENT_TYPES, LinkError, link_ticket, linked_summary, unlink_ticket
@@ -2068,9 +2070,6 @@ def unlink(
     return _render_ticket_detail(request, ticket, user, session)
 
 
-SPLIT_SLOTS = 4  # part boxes on the form; blank subjects are skipped, and a ticket can be split again to add more
-
-
 @router.post("/{number}/split", response_class=HTMLResponse)
 @card_errors("split")
 def split(
@@ -2292,17 +2291,21 @@ def _render_ticket_detail(
     elif edit and edit.startswith("file-") and can_work and edit[5:].isdecimal() and int(edit[5:]) in {f.attachment.id for f in files}:
         editing = edit
     options = selectable(session) if (card == "triage" or editing == "category") else []
-    split_parts = []
+    split_parts, split_shown, split_existing, split_room = [], 0, 0, 0
     if card == "split":
-        # What was typed when a split was refused, else the original's own text in the first boxes.
+        # The boxes the ticket can still take (the limit is for the whole family): the first PREFILLED_PARTS shown and the
+        # rest hidden until the agent adds them. A refused split comes back with every part that was typed, shown.
+        split_existing = sub_ticket_count(session, ticket)
+        split_room = max(max_sub_tickets(session) - split_existing, 0)
         typed_subjects, typed_details = (card_values or {}).get("subject"), (card_values or {}).get("details") or []
         if typed_subjects is not None:
-            split_parts = [
-                (typed_subjects[i] if i < len(typed_subjects) else "", typed_details[i] if i < len(typed_details) else "")
-                for i in range(SPLIT_SLOTS)
-            ]
+            split_parts = [(sub, typed_details[n] if n < len(typed_details) else "") for n, sub in enumerate(typed_subjects)]
+            filled = [n + 1 for n, (sub, det) in enumerate(split_parts) if sub.strip() or det.strip()]
+            split_shown = max(PREFILLED_PARTS, filled[-1] if filled else 0)
         else:
-            split_parts = prefilled_parts(session, ticket, SPLIT_SLOTS)
+            split_parts = prefilled_parts(session, ticket, PREFILLED_PARTS)
+            split_shown = PREFILLED_PARTS
+        split_parts += [("", "")] * (max(split_room, split_shown) - len(split_parts))
     card_title, card_doing = CARDS.get(card, ("", ""))
 
     return templates.TemplateResponse(
@@ -2328,7 +2331,7 @@ def _render_ticket_detail(
             "requester_person": requester_person,
             "reported_by": REPORTED_BY.get(ticket.source, "someone"),
             "triaged_actions": triaged_actions,
-            "split_slots": range(SPLIT_SLOTS),
+            "split_shown": split_shown, "split_existing": split_existing, "split_room": split_room,
             "split_parts": split_parts,
             "split_email_on": get_flag(session, SPLIT_EMAIL_ENABLED),
             "team": team,

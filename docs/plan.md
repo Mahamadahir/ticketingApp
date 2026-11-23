@@ -726,7 +726,7 @@ internal note. One level only. Events `split` / `split_from`, and an audit entry
 *Before triage, pre-filled parts and the split email (#259, 20 Nov 2026):* an agent who works an untriaged ticket can split it; its parts
 are untriaged (no category, impact or urgency, in the shared untriaged queue) and are triaged one by one. The original is marked triaged as
 a parent with no category of its own, so its status follows its parts and an agent can resolve it (and email the requester) when every part is
-finished, as for a triaged original. The Split card starts with the original's subject and the requester's words in the first two parts.
+finished, as for a triaged original. The Split card starts with the original's subject and the requester's words in the first two parts and shows only those two to start: "Add another part" (a small script, `app/static/split-card.js`) reveals the next of the boxes the server renders for what the ticket can still take (`max_sub_tickets` minus its sub-tickets), the card says the limit beside the parts, and a refused split comes back with every part typed. Without the script the two parts show and the card says to split again for more (#285).
 The requester is emailed once when a ticket is split (admin template `split_notice`, setting `split_email_enabled`, default on), even before
 triage, copying the followers, counted in the automatic email cap.
 
