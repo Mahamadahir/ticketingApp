@@ -9,6 +9,7 @@ from sqlmodel import Session, select
 from app.messages import about_labels, agent_timeline, requester_visible_messages, thread_subject
 from app.models import Message, MessageDirection, Ticket, TicketEvent, TicketStatus, User, UserRole
 from app.splitting import derived_status
+from app.settings_store import SPLIT_EMAIL_ENABLED, set_setting
 from tests.conftest import create_team, login_as, set_role
 from tests.test_splitting import split, subs_of, world
 from tests.test_triage import events
@@ -34,6 +35,10 @@ def status_of(db_session, ticket):
 
 def family(client, db_session, parts=2):
     original, desk = world(client, db_session)
+    # These tests are about whose messages show where; the automatic "your request was split" email (#259, its own tests are in
+    # test_split_before_triage.py) is another message on the original's thread, so it is switched off here.
+    set_setting(db_session, SPLIT_EMAIL_ENABLED, "off")
+    db_session.commit()
     split(client, original, *[(f"Part {i + 1}", "") for i in range(parts)])
     return original, subs_of(db_session, original), desk
 

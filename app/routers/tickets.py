@@ -68,7 +68,7 @@ from app.required_by import (
     set_due,
     set_required_by,
 )
-from app.settings_store import REQUIRED_BY_LEAD_DAYS, count_setting
+from app.settings_store import REQUIRED_BY_LEAD_DAYS, SPLIT_EMAIL_ENABLED, count_setting, get_flag
 from app.canned import active_canned, fill as fill_canned
 from app.approvals import SUPERSEDED, ApprovalError, approval_group_of, current_approval, describe_rule, is_waiting_for_approvers, votes_of, waive
 from app.notifications import AWAITING_YOU, mentionable_agents, notify_agent_emailed, notify_assigned, notify_mentions
@@ -77,12 +77,17 @@ from app.presence import agent_label
 from app.ticket_actions import CARDS, action_chips
 from app.search import normalise, search_condition
 from app.splitting import (
+    MAX_DETAILS,
+    MAX_SUBJECT,
+    PREFILLED_PARTS,
     max_sub_tickets,
+    prefilled_parts,
     SplitError,
     all_sub_tickets_finished,
     check_manual_status,
     has_sub_tickets,
     split_ticket,
+    sub_ticket_count,
     sub_tickets_summary,
 )
 from app.linking import PARENT_TYPES, LinkError, link_ticket, linked_summary, unlink_ticket
@@ -2065,9 +2070,6 @@ def unlink(
     return _render_ticket_detail(request, ticket, user, session)
 
 
-SPLIT_SLOTS = 4  # part boxes on the form; blank subjects are skipped, and a ticket can be split again to add more
-
-
 @router.post("/{number}/split", response_class=HTMLResponse)
 @card_errors("split")
 def split(
@@ -2078,12 +2080,14 @@ def split(
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
-    """Splits this ticket into sub-tickets, one per part with a subject. Each is triaged
-    like the original and can then be amended or assigned on its own page."""
+    """Splits this ticket into sub-tickets, one per part with a subject (the card starts with the original's text in each, so
+    nothing is made until the agent confirms what is in the boxes). Each part of a triaged ticket is triaged like the original
+    and can then be amended or assigned on its own page; each part of an untriaged one is untriaged, for the queue. The
+    requester is emailed once about it (app/messages.record_split_notice)."""
     ticket = _get_ticket(session, number, user)
     details = details + [""] * (len(subject) - len(details))
     parts = [(s, d) for s, d in zip(subject, details) if s.strip() or d.strip()]
-    if len(parts) > max_sub_tickets(session) or any(len(s) > 200 or len(d) > 5000 for s, d in parts):
+    if len(parts) > max_sub_tickets(session) or any(len(s) > MAX_SUBJECT or len(d) > MAX_DETAILS for s, d in parts):
         raise HTTPException(status_code=400, detail="Too many parts, or a subject or details that is too long")
     try:
         made = split_ticket(session, ticket, user, parts)
@@ -2256,7 +2260,7 @@ def _render_ticket_detail(
     can_reopen = can_work and _may(check_can_reopen, ReopenError, ticket)
     can_reclose = can_work and _may(check_can_reclose, ReopenError, session, ticket)
     can_link = can_work and triaged and linked_total == 0 and ticket.linked_parent_id is None
-    can_split = can_work and triaged and ticket.split_from_id is None and unfinished
+    can_split = can_work and ticket.split_from_id is None and unfinished  # before triage too (#259): the parts are untriaged
     can_take_back = can_work and ticket.status == TicketStatus.WITH_MSP and not has_sub_tickets(session, ticket)
     can_backdate = may_backdate(ticket)
     chips = action_chips(
@@ -2287,6 +2291,21 @@ def _render_ticket_detail(
     elif edit and edit.startswith("file-") and can_work and edit[5:].isdecimal() and int(edit[5:]) in {f.attachment.id for f in files}:
         editing = edit
     options = selectable(session) if (card == "triage" or editing == "category") else []
+    split_parts, split_shown, split_existing, split_room = [], 0, 0, 0
+    if card == "split":
+        # The boxes the ticket can still take (the limit is for the whole family): the first PREFILLED_PARTS shown and the
+        # rest hidden until the agent adds them. A refused split comes back with every part that was typed, shown.
+        split_existing = sub_ticket_count(session, ticket)
+        split_room = max(max_sub_tickets(session) - split_existing, 0)
+        typed_subjects, typed_details = (card_values or {}).get("subject"), (card_values or {}).get("details") or []
+        if typed_subjects is not None:
+            split_parts = [(sub, typed_details[n] if n < len(typed_details) else "") for n, sub in enumerate(typed_subjects)]
+            filled = [n + 1 for n, (sub, det) in enumerate(split_parts) if sub.strip() or det.strip()]
+            split_shown = max(PREFILLED_PARTS, filled[-1] if filled else 0)
+        else:
+            split_parts = prefilled_parts(session, ticket, PREFILLED_PARTS)
+            split_shown = PREFILLED_PARTS
+        split_parts += [("", "")] * (max(split_room, split_shown) - len(split_parts))
     card_title, card_doing = CARDS.get(card, ("", ""))
 
     return templates.TemplateResponse(
@@ -2312,7 +2331,9 @@ def _render_ticket_detail(
             "requester_person": requester_person,
             "reported_by": REPORTED_BY.get(ticket.source, "someone"),
             "triaged_actions": triaged_actions,
-            "split_slots": range(SPLIT_SLOTS),
+            "split_shown": split_shown, "split_existing": split_existing, "split_room": split_room,
+            "split_parts": split_parts,
+            "split_email_on": get_flag(session, SPLIT_EMAIL_ENABLED),
             "team": team,
             "assigned_agent": assigned_agent,
             "team_agents": team_agents,

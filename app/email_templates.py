@@ -143,6 +143,34 @@ REGISTRY: dict[str, TemplateDef] = {
             sample={"reference": "INC-1042", "ticket_number": "1042"},
         ),
         TemplateDef(
+            key="split_notice",
+            label="Split notice",
+            description=(
+                "Sent to the requester, copying the followers, when an agent splits their ticket into separate tickets. "
+                "It goes out even before the ticket is triaged, and says only that the request was split and what the new "
+                "tickets are called (the reference and subject of each). {reference} and {subject} are the original ticket's, "
+                "which stays open and keeps this conversation. The switch is under Admin > Settings (Mail). "
+                "The subject must keep {reference}, so a reply finds its ticket."
+            ),
+            subject_default="[{reference}] {subject}",
+            subject_placeholders=_COMMON,
+            subject_required=("reference",),
+            body_default=(
+                "Your request {reference} ({subject}) covered more than one issue, so we have split it into separate tickets "
+                "so that each can be dealt with on its own:\n\n{new_tickets}\n\n"
+                "You do not need to do anything. Reply to this email to add to any of them; we will see which one you mean."
+            ),
+            body_placeholders={
+                **_COMMON,
+                "new_tickets": "one line for each new ticket: its reference and subject",
+            },
+            required=("new_tickets",),
+            sample={
+                **_COMMON_SAMPLE,
+                "new_tickets": "SR-1043 Replace the keyboard\nINC-1044 Printer on floor 2 is jammed",
+            },
+        ),
+        TemplateDef(
             key="follower_update",
             label="Follower update",
             description=(
@@ -544,7 +572,7 @@ AUDIENCES: tuple[tuple[str, str, str], ...] = (
     ("legal", "Legal pages", "Not emails: the Teams app's privacy and terms pages."),
 )
 AUDIENCE_OF: dict[str, str] = {
-    "raised_for": "requester", "acknowledgement": "requester", "follower_update": "requester", "resolution": "requester",
+    "raised_for": "requester", "acknowledgement": "requester", "split_notice": "requester", "follower_update": "requester", "resolution": "requester",
     "closed": "requester", "chase": "requester", "auto_resolve_note": "requester", "link_code": "requester",
     "msp_forward": "requester", "msp_sent_notice": "requester", "approval_approved": "requester",
     "approval_declined": "requester", "approval_waived": "requester",

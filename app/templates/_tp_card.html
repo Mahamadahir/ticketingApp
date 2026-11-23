@@ -262,14 +262,26 @@
   </form>
 
   {% elif card == "split" %}
-  <p class="note">Each part with a subject becomes its own ticket, triaged like this one (type, category, impact, urgency, team); amend or assign it on its own page. Leave unused parts blank; a part with details needs a subject. A ticket needs at least two sub-tickets in all and at most {{ max_sub_tickets }} (sub-requests made automatically count too).</p>
+  {% if ticket.triaged_at %}
+  <p class="note">Each part with a subject becomes its own ticket, triaged like this one (type, category, impact, urgency, team); amend or assign it on its own page.</p>
+  {% else %}
+  <p class="note">This ticket has not been triaged, so each part is made untriaged: it goes to the untriaged queue and is triaged on its own, with its own category, team and priority. This ticket stays as their parent and keeps the conversation with the requester.</p>
+  {% endif %}
+  <p class="note">The parts start with this ticket's subject and what the requester wrote: trim each down to that part's issue. Nothing is made until you press Split. Empty a part's boxes (or press Clear) to leave it out; a part with details needs a subject. A ticket needs at least two sub-tickets in all. Sub-requests made automatically count too.{% if split_email_on %} The requester is emailed once to say the request was split, listing the new tickets (Admin &gt; Email templates, "Split notice").{% endif %}</p>
+  <p class="note" data-split-limit>Up to {{ max_sub_tickets }} sub-tickets in all{% if split_existing %}; this ticket can take {{ split_room }} more{% endif %}.{% if split_shown >= split_parts|length %} That is the most this ticket can have.{% endif %}</p>
   <form class="tp-form" method="post" action="/tickets/{{ ticket.number }}/split" hx-post="/tickets/{{ ticket.number }}/split" hx-target="main" hx-swap="innerHTML">
-    {% for i in split_slots %}
-    <fieldset>
-      <label>Part {{ loop.index }} subject <input type="text" name="subject" maxlength="200" value="{{ (card_values.get('subject') or [])[loop.index0] if (card_values.get('subject') or [])|length > loop.index0 else '' }}" /></label>
-      <label>Details <textarea name="details" maxlength="5000" rows="2">{{ (card_values.get('details') or [])[loop.index0] if (card_values.get('details') or [])|length > loop.index0 else '' }}</textarea></label>
+    {% for part in split_parts %}
+    <fieldset class="tp-split-part"{% if loop.index > split_shown %} hidden{% endif %}>
+      <label>Part {{ loop.index }} subject <input type="text" name="subject" maxlength="200" value="{{ part[0] }}" /></label>
+      <label>Details <textarea name="details" maxlength="5000" rows="3">{{ part[1] }}</textarea></label>
+      <button type="button" class="btn" data-clear-part>Clear</button>
     </fieldset>
     {% endfor %}
+    {% if split_shown < split_parts|length %}
+    <button type="button" class="btn" data-add-part hidden>Add another part</button>
+    <p class="note" data-split-most hidden>That is the most this ticket can have.</p>
+    <p class="note" data-split-nojs>To add more than the parts shown, split this ticket again afterwards.</p>
+    {% endif %}
     <button type="submit" class="btn btn-primary">Split</button>
   </form>
 
