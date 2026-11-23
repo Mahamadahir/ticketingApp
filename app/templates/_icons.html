@@ -2,3 +2,8 @@
 {% macro kind_icon(name, size=22) -%}
 <svg aria-hidden="true" focusable="false" width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="kind-icon"><path d="{{ icon_path(name) }}"></path></svg>
 {%- endmacro %}
+
+{# A bin (trash can) in the red token, for a button that removes something: {{ bin_icon() }} after `{% from "_icons.html" import bin_icon %}`. #}
+{% macro bin_icon(size=18) -%}
+<svg aria-hidden="true" focusable="false" width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="bin-icon"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path></svg>
+{%- endmacro %}
