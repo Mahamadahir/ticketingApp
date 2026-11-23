@@ -309,7 +309,7 @@ def assignable_agents(session: Session, ticket: Ticket) -> list[User]:
     if ticket.team_id is None:
         return list(
             session.exec(
-                select(User).where(User.role.in_(ASSIGNEE_ROLES), User.is_active).order_by(User.display_name)
+                select(User).where(User.role.in_(ASSIGNEE_ROLES), User.is_active, User.is_break_glass.is_(False)).order_by(User.display_name)
             ).all()
         )
     return team_members(session, ticket.team_id)
@@ -333,6 +333,7 @@ def team_members(session: Session, team_id: int | None, include_inactive: bool =
                 TeamMembership.team_id.in_(team_ids),
                 TeamMembership.level == MembershipLevel.MEMBER,
                 User.role.in_(ASSIGNEE_ROLES),
+                User.is_break_glass.is_(False),
                 User.is_active | include_inactive,
             )
             .order_by(User.display_name)

@@ -215,3 +215,14 @@ def test_the_request_types_page_lists_a_super_admin_as_a_possible_assignee(clien
     boss = super_admin_in(client, db_session, [], email="lister@example.com")
     login_as(client, "admin@example.com")
     assert f'<option value="{boss}"' in client.get(f"/admin/request-types?type={request_type.id}").text
+
+
+def test_a_break_glass_account_is_never_offered(client, db_session):
+    desk = create_team(db_session, "Service Desk")
+    glass = super_admin_in(client, db_session, [desk], email="glass@example.com")
+    person = db_session.get(User, glass)
+    person.is_break_glass = True
+    db_session.add(person)
+    db_session.commit()
+    assert glass not in ids(team_members(db_session, desk.id))
+    assert glass not in ids(assignable_agents(db_session, new_ticket(db_session)))

@@ -1527,7 +1527,7 @@ def list_request_types(
             "question_kinds": QUESTION_KINDS,
             "sub_templates": sub_templates,
             "condition_text": {t.id: format_conditions(session, t.condition_groups, question_labels) for t in all_sub},
-            "agents": session.exec(select(User).where(User.role.in_(ASSIGNEE_ROLES), User.is_active).order_by(User.display_name)).all(),
+            "agents": session.exec(select(User).where(User.role.in_(ASSIGNEE_ROLES), User.is_active, User.is_break_glass.is_(False)).order_by(User.display_name)).all(),
             "user": user,
         },
     )
