@@ -1512,6 +1512,7 @@
       "tables": [],
       "tests": [
         "tests/test_canned.py",
+        "tests/test_htmx_errors.py",
         "tests/test_pagination_and_limits.py",
         "tests/test_resolution.py"
       ]
@@ -1944,6 +1945,7 @@
         "tests/test_anonymisation.py",
         "tests/test_approval_reminders.py",
         "tests/test_auto_close_chase.py",
+        "tests/test_card_refusals.py",
         "tests/test_closing_email.py",
         "tests/test_email_header.py",
         "tests/test_email_templates.py",
@@ -2020,6 +2022,7 @@
         "tests/test_anonymisation.py",
         "tests/test_attachments.py",
         "tests/test_break_glass.py",
+        "tests/test_card_refusals.py",
         "tests/test_entra_check.py",
         "tests/test_health.py",
         "tests/test_htmx_errors.py",
@@ -2580,6 +2583,7 @@
         "tests/test_break_glass.py",
         "tests/test_bulk_resolve.py",
         "tests/test_canned.py",
+        "tests/test_card_refusals.py",
         "tests/test_category_admin.py",
         "tests/test_closing_email.py",
         "tests/test_due_date.py",
@@ -3556,6 +3560,7 @@
       "summary": "Files an agent attaches to a reply or a note on the ticket page (#201).",
       "tables": [],
       "tests": [
+        "tests/test_card_refusals.py",
         "tests/test_portal_request.py",
         "tests/test_reply_files.py",
         "tests/test_ticket_presence.py"
@@ -5855,6 +5860,7 @@
         "tests/test_backdating.py",
         "tests/test_break_glass.py",
         "tests/test_bulk_resolve.py",
+        "tests/test_card_refusals.py",
         "tests/test_category_admin.py",
         "tests/test_closing_email.py",
         "tests/test_due_date.py",
@@ -6090,6 +6096,7 @@
       "tests": [
         "tests/test_anonymisation.py",
         "tests/test_attachments.py",
+        "tests/test_card_refusals.py",
         "tests/test_inbound_mail.py",
         "tests/test_msp_mail.py",
         "tests/test_portal_new.py",
@@ -7653,6 +7660,7 @@
     "tests/test_break_glass.py",
     "tests/test_bulk_resolve.py",
     "tests/test_canned.py",
+    "tests/test_card_refusals.py",
     "tests/test_category_admin.py",
     "tests/test_closing_email.py",
     "tests/test_code_map.py",
