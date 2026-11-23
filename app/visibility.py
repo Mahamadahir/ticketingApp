@@ -61,6 +61,11 @@ class AccessContext(dict):
 
 _LEVEL_ACCESS = {MembershipLevel.MEMBER: Access.WORK, MembershipLevel.VIEWER: Access.READ}
 
+# Who may hold a ticket (#288). A super admin is an agent plus admin, so they count here; team membership is still what
+# offers them (see `team_members`). The one place that says so: every assignee query and check uses this, never a
+# literal `UserRole.AGENT`. (Not `permissions.ASSIGNABLE_ROLES`, which is about extra permissions.)
+ASSIGNEE_ROLES = (UserRole.AGENT, UserRole.SUPER_ADMIN)
+
 
 _CACHE_KEY = "access_context"
 
@@ -155,12 +160,16 @@ def ticket_access(user: User, ticket: Ticket, levels: AccessContext) -> Access:
 def may_self_assign(user: User, ticket: Ticket, levels: AccessContext) -> bool:
     """An agent can take a ticket they work that nobody else holds, or claim an
     untriaged one that nobody has yet. A ticket assigned to someone else (for example
-    one handed to whoever will triage it) is never taken this way: that is Re-assign."""
-    if user.role != UserRole.AGENT:
+    one handed to whoever will triage it) is never taken this way: that is Re-assign.
+    A super admin counts as an agent for this (#288), but only through team membership, as an agent does: they see
+    every ticket, yet are offered as an assignee only for a team they are a member of (or while there is no team)."""
+    if user.role not in ASSIGNEE_ROLES:
         return False
     if ticket.assigned_agent_id not in (None, user.id):
         # Taking a ticket from its assignee is a deliberate re-assign, never a claim.
         return False
+    if user.role == UserRole.SUPER_ADMIN:
+        return ticket.team_id is None or levels.get(ticket.team_id, Access.NONE) == Access.WORK
     access = ticket_access(user, ticket, levels)
     if access == Access.WORK and levels.get(ticket.team_id, Access.NONE) == Access.WORK:
         # Working it through the team (or a parent team). An escalator's access to a ticket
@@ -295,19 +304,19 @@ def may_manage_note(user: User, note, ticket: Ticket, levels: AccessContext) -> 
 
 
 def assignable_agents(session: Session, ticket: Ticket) -> list[User]:
-    """Who a super admin may assign the ticket to: the team's members, or any
-    agent while the ticket has no team yet. Inactive agents (app/entra_check.py) are never offered."""
+    """Who a super admin may assign the ticket to: the team's members, or any agent or super admin
+    while the ticket has no team yet. Inactive accounts (app/entra_check.py) are never offered."""
     if ticket.team_id is None:
         return list(
             session.exec(
-                select(User).where(User.role == UserRole.AGENT, User.is_active).order_by(User.display_name)
+                select(User).where(User.role.in_(ASSIGNEE_ROLES), User.is_active).order_by(User.display_name)
             ).all()
         )
     return team_members(session, ticket.team_id)
 
 
 def team_members(session: Session, team_id: int | None, include_inactive: bool = False) -> list[User]:
-    """Agents who can work a team's tickets (members, not viewers), including the members of
+    """Agents and super admins (ASSIGNEE_ROLES) who can work a team's tickets (members, not viewers), including the members of
     its parent team, who work its tickets too (see access_context). Inactive agents (a leaver, or an
     account Entra disabled) are left out: every picker, notification and automatic assignment reads
     this, so they are never offered or told anything. `include_inactive` is for checks about an
@@ -323,7 +332,7 @@ def team_members(session: Session, team_id: int | None, include_inactive: bool =
             .where(
                 TeamMembership.team_id.in_(team_ids),
                 TeamMembership.level == MembershipLevel.MEMBER,
-                User.role == UserRole.AGENT,
+                User.role.in_(ASSIGNEE_ROLES),
                 User.is_active | include_inactive,
             )
             .order_by(User.display_name)

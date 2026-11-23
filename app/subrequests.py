@@ -64,7 +64,7 @@ from app.ticket_service import (
     record_event,
 )
 from app.triage import TriageError, set_assignee
-from app.visibility import team_members
+from app.visibility import ASSIGNEE_ROLES, team_members
 
 EQUALS, NOT_EQUALS, ONE_OF, ANSWERED = "equals", "not_equals", "one_of", "answered"
 OPERATORS = {EQUALS: "equals", NOT_EQUALS: "does not equal", ONE_OF: "is one of", ANSWERED: "is answered"}
@@ -266,7 +266,7 @@ def _check_template(
         raise TemplateError("Name an agent or choose the parent's assignee, not both")
     if assignee_id is not None and assignee_id != keep_assignee_id:  # an assignee who has since left may stay while other things are edited
         agent = session.get(User, assignee_id)
-        if agent is None or agent.role != UserRole.AGENT or agent.id not in {m.id for m in team_members(session, team.id)}:
+        if agent is None or agent.role not in ASSIGNEE_ROLES or agent.id not in {m.id for m in team_members(session, team.id)}:
             raise TemplateError(f"Choose an active agent who is a member of {team.name}")
     if due_days is not None and not 0 <= due_days <= MAX_DUE_DAYS:
         raise TemplateError(f"Days before Required by must be from 0 to {MAX_DUE_DAYS}, or blank to use the setting")

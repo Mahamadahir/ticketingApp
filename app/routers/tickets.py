@@ -158,6 +158,7 @@ from app.time_zones import zone_for_email, zone_for_user
 from app.triage import TriageError, change_category, change_type, clean_reason, reassign_ticket, triage_ticket
 from app.thread import build_thread
 from app.visibility import (
+    ASSIGNEE_ROLES,
     Access,
     NoTicketAccess,
     assignable_agents,
@@ -729,7 +730,7 @@ def triage(
 
         chosen_agent = optional_int(agent_id)
         assignee = session.get(User, chosen_agent) if chosen_agent is not None else None
-        if chosen_agent is not None and (assignee is None or assignee.role != UserRole.AGENT):
+        if chosen_agent is not None and (assignee is None or assignee.role not in ASSIGNEE_ROLES):
             raise HTTPException(status_code=400, detail="Choose an agent from the list")
 
         chosen_type = optional_int(request_type_id)
@@ -1088,7 +1089,7 @@ def reassign(
         raise HTTPException(status_code=400, detail="Choose a team")
     chosen_agent = optional_int(agent_id)
     assignee = session.get(User, chosen_agent) if chosen_agent is not None else None
-    if chosen_agent is not None and (assignee is None or assignee.role != UserRole.AGENT):
+    if chosen_agent is not None and (assignee is None or assignee.role not in ASSIGNEE_ROLES):
         raise HTTPException(status_code=400, detail="Choose an agent from the list")
 
     try:
@@ -1846,11 +1847,14 @@ def assign_ticket(
 ):
     ticket = _get_ticket(session, number, user, Access.READ)
 
-    if user.role == UserRole.AGENT:
+    if user.role == UserRole.AGENT or (user.role == UserRole.SUPER_ADMIN and agent_id is None):
+        # Assign to me: an agent always; a super admin when they name nobody (#288), through the same rule.
         levels = access_context(session, user)
         if not may_self_assign(user, ticket, levels):
             if ticket_access(user, ticket, levels) >= Access.WORK and ticket.assigned_agent_id is not None:
                 raise HTTPException(status_code=400, detail="This ticket is assigned to someone else. Use Re-assign.")
+            if user.role == UserRole.SUPER_ADMIN:
+                raise HTTPException(status_code=400, detail="You are not a member of the ticket's team")
             raise NoTicketAccess()
         target_agent = user
     else:
