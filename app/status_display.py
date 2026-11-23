@@ -8,7 +8,7 @@ Red is not used here: it is kept for SLA breaches."""
 
 from typing import Optional, Union
 
-from app.models import FINISHED_STATUSES, TicketStatus
+from app.models import TicketStatus
 
 STATUS_LABELS = {
     TicketStatus.NEW: "New",
@@ -63,6 +63,3 @@ def status_options() -> list[tuple[str, str]]:
     """(value, label) of the queue's Status filter after "Any status": Not finished, then every status in order."""
     return [(NOT_FINISHED, "Not finished")] + [(s.value, STATUS_LABELS[s]) for s in TicketStatus]
 
-
-def not_finished() -> tuple[TicketStatus, ...]:
-    return tuple(s for s in TicketStatus if s not in FINISHED_STATUSES)

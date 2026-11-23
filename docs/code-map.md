@@ -1354,7 +1354,7 @@ File: `app/routers/tickets.py`
 - Routes: GET `/t/{number}`, GET `/tickets`, GET `/tickets/activity`, GET `/tickets/activity/latest`, GET `/tickets/agents-for-category`, GET `/tickets/agents-for-team`, GET `/tickets/triage-dates`, GET `/tickets/triage-subrequests`, GET `/tickets/{number}`, POST `/tickets/{number}/answers`, POST `/tickets/{number}/approval/waive`, POST `/tickets/{number}/assign`, POST `/tickets/{number}/attachments/{attachment_id}/rename`, POST `/tickets/{number}/backdate`, GET `/tickets/{number}/canned`, POST `/tickets/{number}/category`, POST `/tickets/{number}/close`, POST `/tickets/{number}/close/preview`, POST `/tickets/{number}/due`, POST `/tickets/{number}/email`, POST `/tickets/{number}/email/discard`, POST `/tickets/{number}/email/preview`, POST `/tickets/{number}/escalate`, POST `/tickets/{number}/followers`, POST `/tickets/{number}/followers/{follower_id}/remove`, POST `/tickets/{number}/link`, GET `/tickets/{number}/mentions`, POST `/tickets/{number}/msp-forward/{message_id}`, POST `/tickets/{number}/msp-forward/{message_id}/dismiss`, POST `/tickets/{number}/msp-forward/{message_id}/preview`, POST `/tickets/{number}/msp-hold`, POST `/tickets/{number}/msp-hold/release`, POST `/tickets/{number}/note`, POST `/tickets/{number}/notes/{note_id}/delete`, POST `/tickets/{number}/notes/{note_id}/undo`, POST `/tickets/{number}/notes/{note_id}/visibility`, POST `/tickets/{number}/presence`, POST `/tickets/{number}/presence/leave`, POST `/tickets/{number}/priority`, POST `/tickets/{number}/reassign`, POST `/tickets/{number}/reclose`, POST `/tickets/{number}/reopen`, POST `/tickets/{number}/required-by`, POST `/tickets/{number}/resolve`, POST `/tickets/{number}/resolve/preview`, POST `/tickets/{number}/send-to-msp`, POST `/tickets/{number}/send-to-msp/preview`, POST `/tickets/{number}/split`, POST `/tickets/{number}/status`, POST `/tickets/{number}/take-back-from-msp`, POST `/tickets/{number}/take-back-from-msp/preview`, POST `/tickets/{number}/triage`, POST `/tickets/{number}/type`, POST `/tickets/{number}/unlink`
 - Imports: `app.approvals`, `app.attachments`, `app.audit`, `app.auth`, `app.backdating`, `app.canned`, `app.categories`, `app.closing`, `app.database`, `app.escalation`, `app.feedback`, `app.followers`, `app.forms`, `app.identity`, `app.linking`, `app.messages`, `app.models`, `app.msp`, `app.msp_actions`, `app.notifications`, `app.pagination`, `app.presence`, `app.raising`, `app.reopening`, `app.reply_files`, `app.request_questions`, `app.request_types`, `app.required_by`, `app.resolution`, `app.search`, `app.settings_store`, `app.sla`, `app.splitting`, `app.status_display`, `app.storage`, `app.subrequests`, `app.team_activity`, `app.templating`, `app.thread`, `app.ticket_actions`, `app.ticket_presence`, `app.ticket_service`, `app.time_zones`, `app.triage`, `app.visibility`
 - Imported by: `app.main`
-- Tests: none
+- Tests: `test_queue_status_sort.py`
 
 ### `app.routers.webhooks`
 
@@ -1441,7 +1441,7 @@ File: `app/static_url.py`
 
 How an agent sees a ticket status: one label and one tone per status, used everywhere an agent sees one (the queue,  
 File: `app/status_display.py`
-- Functions: `not_finished`, `status_label`, `status_options`, `status_tone`
+- Functions: `status_label`, `status_options`, `status_tone`
 - Imports: `app.models`
 - Imported by: `app.routers.tickets`, `app.team_activity`, `app.templating`
 - Tests: `test_queue_status_sort.py`

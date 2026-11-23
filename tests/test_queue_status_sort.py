@@ -200,7 +200,8 @@ def test_the_sort_and_status_survive_pagination_and_the_tabs(client, db_session,
     link = re.search(r'<a href="([^"]*)">Next', page).group(1).replace("&amp;", "&")
     assert "sort=breach" in link and "status=with_msp" in link and "page=2" in link
     assert subjects(client.get("/tickets" + link).text) == ["P-2", "P-3"]
-    assert "sort=breach" in re.search(r'href="([^"]*)"[^>]*>My queue', page).group(1)
+    tab = re.search(r'href="([^"]*)"[^>]*>My queue', page).group(1)
+    assert "sort=breach" in tab and "status" not in tab  # the tabs keep the sort and clear the status
 
 
 # ---- Colours and labels -------------------------------------------------------------------------------------

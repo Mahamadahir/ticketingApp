@@ -5622,7 +5622,9 @@
       ],
       "summary": "",
       "tables": [],
-      "tests": []
+      "tests": [
+        "tests/test_queue_status_sort.py"
+      ]
     },
     {
       "classes": [],
@@ -6065,7 +6067,6 @@
       "classes": [],
       "file": "app/status_display.py",
       "functions": [
-        "not_finished",
         "status_label",
         "status_options",
         "status_tone"

@@ -17,9 +17,9 @@
   </div>
 
   <nav class="tabs" aria-label="Queue views">
-    <a class="tab{{ ' on' if not mine and not untriaged else '' }}" href="{{ list_link(mine=False, untriaged=False, q='', source='') }}"{% if not mine and not untriaged %} aria-current="true"{% endif %}>All I can see <span class="chip t-gray">{{ figures.tab_all }}</span></a>
-    <a class="tab{{ ' on' if mine else '' }}" href="{{ list_link(mine=True, team_id=None, q='', source='') }}"{% if mine %} aria-current="true"{% endif %}>My queue <span class="chip t-gray">{{ figures.tab_mine }}</span></a>
-    <a class="tab{{ ' on' if untriaged else '' }}" href="{{ list_link(untriaged=True, q='', source='') }}"{% if untriaged %} aria-current="true"{% endif %}>Untriaged <span class="chip t-gray">{{ figures.tab_untriaged }}</span></a>
+    <a class="tab{{ ' on' if not mine and not untriaged else '' }}" href="{{ list_link(mine=False, untriaged=False, q='', source='', status='') }}"{% if not mine and not untriaged %} aria-current="true"{% endif %}>All I can see <span class="chip t-gray">{{ figures.tab_all }}</span></a>
+    <a class="tab{{ ' on' if mine else '' }}" href="{{ list_link(mine=True, team_id=None, q='', source='', status='') }}"{% if mine %} aria-current="true"{% endif %}>My queue <span class="chip t-gray">{{ figures.tab_mine }}</span></a>
+    <a class="tab{{ ' on' if untriaged else '' }}" href="{{ list_link(untriaged=True, q='', source='', status='') }}"{% if untriaged %} aria-current="true"{% endif %}>Untriaged <span class="chip t-gray">{{ figures.tab_untriaged }}</span></a>
   </nav>
 
   <form method="get" action="/tickets" class="queue-filters">
