@@ -2,7 +2,6 @@
 {% block title %}{{ ticket.reference }}{% endblock %}
 {% block content %}
 {% from "_tp_macros.html" import chip_link, pencil, cancel_edit with context %}
-{% set status_label = ticket.status.value.replace("_", " ")|capitalize|replace("msp", "MSP") %}
 {% set requester_name = (requester_person.display_name if requester_person and requester_person.display_name else ticket.requester_email) %}
 <div class="tp">
 <p class="tp-crumbs"><a href="/tickets">&larr; back to tickets</a></p>
@@ -29,7 +28,7 @@
     <span class="chip t-gray tp-ref">{{ ticket.reference }}</span>
     <span class="chip t-gray">{{ ticket.type.value.replace("_", " ")|capitalize }}</span>
     <span class="chip {{ 't-red' if ticket.priority == 'p1' else ('t-amber' if ticket.priority == 'p2' else 't-gray') }}">{{ ticket.priority.upper() if ticket.priority else ("Untriaged" if not ticket.triaged_at else "No priority") }}</span>
-    <span class="chip {{ 't-green' if ticket.status.value == 'resolved' else ('t-blue' if ticket.status.value == 'with_msp' else 't-gray') }}">{{ status_label }}</span>
+    <span class="chip t-{{ ticket.status|status_tone }}">{{ ticket.status|status_label }}</span>
     <span class="chip t-{{ sla_chip.tone }}">
       <svg aria-hidden="true" focusable="false" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
       {{ sla_chip.text }}
@@ -248,7 +247,7 @@
           {% for s in statuses %}
           {% if s.value == "resolved" %}<button type="button" disabled class="button-active">resolved</button>
           {% elif s.value == "closed" and can_close %}<button type="button" disabled class="button-outline" title="Use Close in the ticket actions: it needs notes and emails the requester">closed</button>{% else %}
-          <button type="submit" name="status" value="{{ s.value }}" class="{{ 'button-active' if ticket.status == s else 'button-outline' }}">{{ s.value.replace("_", " ") }}</button>{% endif %}
+          <button type="submit" name="status" value="{{ s.value }}" class="{{ 'button-active' if ticket.status == s else 'button-outline' }}">{{ s|status_label }}</button>{% endif %}
           {% endfor %}
         </div>
         <label>Scheduled needs a date: Due
@@ -259,7 +258,7 @@
         <div class="tp-edit-actions">{{ cancel_edit("box-sla") }}</div>
       </form></dd>
       {% else %}
-      <dd class="tp-val"><span>{{ status_label }}</span>{% if editable.status %}{{ pencil("box-sla", "status", "status") }}{% endif %}</dd>
+      <dd class="tp-val"><span class="chip t-{{ ticket.status|status_tone }}">{{ ticket.status|status_label }}</span>{% if editable.status %}{{ pencil("box-sla", "status", "status") }}{% endif %}</dd>
       {% endif %}
 
       {% if ticket.required_by or can_set_required_by %}
@@ -368,7 +367,7 @@
     {% endif %}
     {% if linked or hidden_linked_count %}
     <ul class="tp-list">
-      {% for t in linked %}<li><a href="/tickets/{{ t.number }}">{{ t.reference }}</a> {{ t.subject }} <span class="status status-{{ t.status.value }}">{{ t.status.value.replace("_", " ") }}</span></li>{% endfor %}
+      {% for t in linked %}<li><a href="/tickets/{{ t.number }}">{{ t.reference }}</a> {{ t.subject }} <span class="chip t-{{ t.status|status_tone }}">{{ t.status|status_label }}</span></li>{% endfor %}
     </ul>
     {% if linked and can_work %}<p><a href="/bulk-resolve?parent={{ ticket.number }}">Resolve this ticket and its linked tickets together</a></p>{% endif %}
     {% if more_linked_count %}<p class="note">Showing the first {{ linked|length }}; {{ more_linked_count }} more you can open are not listed.</p>{% endif %}
@@ -378,7 +377,7 @@
     {% if related %}
     <h3 class="tp-sub">Related tickets</h3>
     <ul class="tp-list">
-      {% for t, which in related %}<li><a href="/tickets/{{ t.number }}">{{ t.reference }}</a> {{ t.subject }} <span class="status status-{{ t.status.value }}">{{ t.status.value.replace("_", " ") }}</span> <span class="note">({{ "this ticket follows on from it" if which == "earlier" else "opened after this one was closed" }})</span></li>{% endfor %}
+      {% for t, which in related %}<li><a href="/tickets/{{ t.number }}">{{ t.reference }}</a> {{ t.subject }} <span class="chip t-{{ t.status|status_tone }}">{{ t.status|status_label }}</span> <span class="note">({{ "this ticket follows on from it" if which == "earlier" else "opened after this one was closed" }})</span></li>{% endfor %}
     </ul>
     {% endif %}
 
@@ -391,7 +390,7 @@
     {% endif %}
     {% if sub_tickets or hidden_sub_count %}
     <ul class="tp-list">
-      {% for t in sub_tickets %}<li><a href="/tickets/{{ t.number }}">{{ t.reference }}</a> {{ t.subject }} <span class="status status-{{ t.status.value }}">{{ t.status.value.replace("_", " ") }}</span></li>{% endfor %}
+      {% for t in sub_tickets %}<li><a href="/tickets/{{ t.number }}">{{ t.reference }}</a> {{ t.subject }} <span class="chip t-{{ t.status|status_tone }}">{{ t.status|status_label }}</span></li>{% endfor %}
     </ul>
     {% if more_sub_count %}<p class="note">Showing the first {{ sub_tickets|length }}; {{ more_sub_count }} more you can open are not listed.</p>{% endif %}
     {% if hidden_sub_count %}<p class="note">{{ hidden_sub_count }} more sub-ticket{{ "s" if hidden_sub_count != 1 else "" }} you cannot open.</p>{% endif %}

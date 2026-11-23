@@ -404,7 +404,7 @@ def test_each_step_kind_is_drawn_as_its_sentence(client, db_session):
     page = hx(client, "/tickets/activity/latest").text
     card = re.search(r'<article class="act-card act-agent">.*?</article>', page, re.S).group(0)
 
-    assert re.search(r'Updated status: <span class="chip t-gray">New</span> <span class="act-arrow"[^>]*>&rarr;</span> <span class="chip t-blue">With MSP</span>', card)
+    assert re.search(r'Updated status: <span class="chip t-blue">New</span> <span class="act-arrow"[^>]*>&rarr;</span> <span class="chip t-amber">With MSP</span>', card)
     assert re.search(r'Added an internal note<blockquote class="act-quote act-note">Device enrolled</blockquote>', card)
     assert re.search(r'Emailed the requester<span class="act-first-line">On our way</span>', card) and "Second line" not in card
     assert "Assigned to <strong>Agent Ann</strong> (You)" in card

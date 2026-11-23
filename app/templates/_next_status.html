@@ -7,7 +7,7 @@
   <select name="next_status">
     <option value="" {{ "selected" if not (card_error and card_values.get("next_status")) else "" }}>{{ blank_label }}</option>
     {% for s in message_statuses %}
-    <option value="{{ s.value }}" {{ "selected" if card_error and card_values.get("next_status") == s.value else "" }}>{{ s.value.replace("_", " ") }}{{ " (current)" if s == ticket.status else "" }}</option>
+    <option value="{{ s.value }}" {{ "selected" if card_error and card_values.get("next_status") == s.value else "" }}>{{ s|status_label }}{{ " (current)" if s == ticket.status else "" }}</option>
     {% endfor %}
   </select>
 </label>

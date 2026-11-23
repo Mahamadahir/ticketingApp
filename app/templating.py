@@ -9,6 +9,8 @@ from fastapi import Request
 from jinja2 import pass_context
 from sqlalchemy.orm import object_session
 from sqlmodel import Session
+
+from app.status_display import status_label, status_tone
 from fastapi.templating import Jinja2Templates
 
 from app.request_icons import icon_path
@@ -146,6 +148,8 @@ def _file_size(size: int) -> str:
 
 templates.env.filters["initials"] = _initials
 templates.env.filters["file_size"] = _file_size
+templates.env.filters["status_label"] = status_label
+templates.env.filters["status_tone"] = status_tone
 templates.env.filters["local_time"] = _local_time
 templates.env.filters["local_input"] = _local_input
 templates.env.filters["local_date"] = _local_date

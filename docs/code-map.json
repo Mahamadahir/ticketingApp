@@ -2318,6 +2318,7 @@
         "app.settings_store",
         "app.sla",
         "app.splitting",
+        "app.status_display",
         "app.subject_access",
         "app.subrequests",
         "app.subscriptions",
@@ -2630,6 +2631,7 @@
         "tests/test_presence.py",
         "tests/test_public_surface.py",
         "tests/test_queue_page.py",
+        "tests/test_queue_status_sort.py",
         "tests/test_raising.py",
         "tests/test_reopening.py",
         "tests/test_reply_files.py",
@@ -3243,6 +3245,7 @@
       "tests": [
         "tests/test_hardening.py",
         "tests/test_pagination_and_limits.py",
+        "tests/test_queue_status_sort.py",
         "tests/test_sla.py"
       ]
     },
@@ -5336,6 +5339,7 @@
         "app.settings_store",
         "app.sla",
         "app.splitting",
+        "app.status_display",
         "app.storage",
         "app.subrequests",
         "app.team_activity",
@@ -5623,7 +5627,9 @@
       ],
       "summary": "",
       "tables": [],
-      "tests": []
+      "tests": [
+        "tests/test_queue_status_sort.py"
+      ]
     },
     {
       "classes": [],
@@ -5927,6 +5933,7 @@
       "functions": [
         "apply_impact_urgency",
         "at_risk_percent",
+        "breach_order",
         "describe_priority",
         "header_sla",
         "impact_options",
@@ -6059,6 +6066,30 @@
       "tables": [],
       "tests": [
         "tests/test_static.py"
+      ]
+    },
+    {
+      "classes": [],
+      "file": "app/status_display.py",
+      "functions": [
+        "status_label",
+        "status_options",
+        "status_tone"
+      ],
+      "imported_by": [
+        "app.routers.tickets",
+        "app.team_activity",
+        "app.templating"
+      ],
+      "imports": [
+        "app.models"
+      ],
+      "module": "app.status_display",
+      "routes": [],
+      "summary": "How an agent sees a ticket status: one label and one tone per status, used everywhere an agent sees one (the queue,",
+      "tables": [],
+      "tests": [
+        "tests/test_queue_status_sort.py"
       ]
     },
     {
@@ -6285,6 +6316,7 @@
         "app.models",
         "app.notification_settings",
         "app.settings_store",
+        "app.status_display",
         "app.time_zones"
       ],
       "module": "app.team_activity",
@@ -6293,6 +6325,7 @@
       "tables": [],
       "tests": [
         "tests/test_msp_mail.py",
+        "tests/test_queue_status_sort.py",
         "tests/test_team_activity.py",
         "tests/test_team_activity_cards.py"
       ]
@@ -6656,6 +6689,7 @@
         "app.presence",
         "app.request_icons",
         "app.static_url",
+        "app.status_display",
         "app.theme",
         "app.time_zones",
         "app.visibility"
@@ -7723,6 +7757,7 @@
     "tests/test_presence.py",
     "tests/test_public_surface.py",
     "tests/test_queue_page.py",
+    "tests/test_queue_status_sort.py",
     "tests/test_raising.py",
     "tests/test_reopening.py",
     "tests/test_reply_files.py",

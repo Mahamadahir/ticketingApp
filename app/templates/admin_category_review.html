@@ -20,7 +20,7 @@
       {% for ticket in tickets %}
       <tr>
         <td><a class="person-cell" href="/tickets/{{ ticket.number }}"><span class="person-name">{{ ticket.reference }}</span><span class="person-email">{{ ticket.subject }}</span></a></td>
-        <td><span class="chip t-gray">{{ ticket.status.value }}</span></td>
+        <td><span class="chip t-{{ ticket.status|status_tone }}">{{ ticket.status|status_label }}</span></td>
         <td>
           <form method="post" action="/admin/category-review/{{ ticket.number }}" class="review-form">
             <label class="field">Existing category

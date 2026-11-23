@@ -75,7 +75,7 @@
           </select>
         </label>
         {% endif %}
-        {% with blank_label = "Default: " ~ email_default_status.value.replace("_", " ") %}{% include "_next_status.html" %}{% endwith %}
+        {% with blank_label = "Default: " ~ email_default_status|status_label %}{% include "_next_status.html" %}{% endwith %}
         <button type="submit" class="btn btn-primary">Preview message</button>
       </div>
     </form>
@@ -114,7 +114,7 @@
       </div>
       {% endif %}
       <div class="tp-compose-row">
-        {% with blank_label = "No change (" ~ ticket.status.value.replace("_", " ") ~ ")" %}{% include "_next_status.html" %}{% endwith %}
+        {% with blank_label = "No change (" ~ ticket.status|status_label ~ ")" %}{% include "_next_status.html" %}{% endwith %}
         <button type="submit" class="btn btn-primary">Add note</button>
       </div>
     </form>

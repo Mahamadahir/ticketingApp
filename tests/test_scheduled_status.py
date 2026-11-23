@@ -51,7 +51,7 @@ def test_an_agent_can_reach_and_leave_the_status_by_hand(client, db_session):
     agent_for(client, db_session, team)
 
     page = client.get(f"/tickets/{ticket.number}?edit=status").text
-    assert 'value="scheduled"' in page and ">scheduled<" in page
+    assert 'value="scheduled"' in page and ">Scheduled<" in page
     assert schedule(client, ticket).status_code == 200
     assert status_of(db_session, ticket) == SCHEDULED
     db_session.refresh(ticket)
