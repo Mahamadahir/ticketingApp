@@ -1,6 +1,7 @@
 from sqlmodel import select
 
 from app.models import AuditLog, Category, Message, Ticket, TicketSource, TicketStatus, TicketType, UserRole
+from app.settings_store import SPLIT_EMAIL_ENABLED, set_setting
 from tests.conftest import add_membership, create_team, login_as, set_role
 from tests.test_sla import triaged_ticket
 from tests.test_triage import agent, events
@@ -161,13 +162,18 @@ def test_a_part_needs_a_subject(client, db_session):
     refused(client, db_session, original, [("One", ""), ("", "details but no subject")], "needs a subject")
 
 
-def test_an_untriaged_ticket_cannot_be_split(client, db_session):
+def test_an_untriaged_ticket_can_be_split_but_still_needs_two_parts(client, db_session):
+    """Before #259 an untriaged ticket was refused ("Triage this ticket before splitting it"). It can be split now (its parts are
+    untriaged; tests/test_split_before_triage.py), but the other rules still hold: at least two parts, each with a subject."""
     from tests.test_triage import new_ticket
 
     desk = create_team(db_session, "Service Desk")
     ticket = new_ticket(db_session, desk)
     agent(client, db_session, member_of=[desk])
-    refused(client, db_session, ticket, [("One", ""), ("Two", "")], "Triage this ticket")
+    refused(client, db_session, ticket, [("Only", "")], "at least 2")
+    refused(client, db_session, ticket, [("One", ""), ("", "details but no subject")], "needs a subject")
+    assert split(client, ticket, ("One", ""), ("Two", "")).status_code == 200
+    assert len(subs_of(db_session, ticket)) == 2
 
 
 def test_a_finished_ticket_cannot_be_split(client, db_session):
@@ -296,6 +302,8 @@ def test_an_agent_not_on_the_originals_team_cannot_split_it(client, db_session):
 
 def test_the_original_hides_sub_tickets_in_teams_the_viewer_cannot_see(client, db_session):
     original, desk = world(client, db_session)
+    set_setting(db_session, SPLIT_EMAIL_ENABLED, "off")  # the split email names every part; this test is about the page's own list
+    db_session.commit()
     secret = create_team(db_session, "Security")
     split(client, original, ("Visible part", ""), ("Secret part", ""))
     visible, hidden = subs_of(db_session, original)
