@@ -2655,6 +2655,7 @@
         "tests/test_status_follows_conversation.py",
         "tests/test_subject_access.py",
         "tests/test_subrequests.py",
+        "tests/test_super_admin_assignee.py",
         "tests/test_team_activity.py",
         "tests/test_team_activity_cards.py",
         "tests/test_teams.py",
@@ -2775,6 +2776,7 @@
         "tests/test_msp_mail.py",
         "tests/test_msp_real_mail.py",
         "tests/test_reports_more.py",
+        "tests/test_super_admin_assignee.py",
         "tests/test_ticket_thread.py"
       ]
     },
@@ -4030,7 +4032,8 @@
         "app.thanks_rules",
         "app.ticket_service",
         "app.time_zones",
-        "app.user_filters"
+        "app.user_filters",
+        "app.visibility"
       ],
       "module": "app.routers.admin",
       "routes": [
@@ -6200,7 +6203,8 @@
         "tests/test_approval_inactive.py",
         "tests/test_entra_check.py",
         "tests/test_self_approval.py",
-        "tests/test_subrequests.py"
+        "tests/test_subrequests.py",
+        "tests/test_super_admin_assignee.py"
       ]
     },
     {
@@ -7066,6 +7070,7 @@
         "app.notifications",
         "app.report_kit",
         "app.reports",
+        "app.routers.admin",
         "app.routers.attachments",
         "app.routers.bulk_resolve",
         "app.routers.msp_mail",
@@ -7099,6 +7104,7 @@
         "tests/test_portal_request.py",
         "tests/test_reply_files.py",
         "tests/test_reports.py",
+        "tests/test_super_admin_assignee.py",
         "tests/test_ticket_thread.py",
         "tests/test_visibility.py"
       ]
@@ -7740,6 +7746,7 @@
     "tests/test_storage.py",
     "tests/test_subject_access.py",
     "tests/test_subrequests.py",
+    "tests/test_super_admin_assignee.py",
     "tests/test_team_activity.py",
     "tests/test_team_activity_cards.py",
     "tests/test_teams.py",
