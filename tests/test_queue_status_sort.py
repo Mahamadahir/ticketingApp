@@ -5,6 +5,7 @@ import re
 from datetime import datetime, timedelta, timezone
 
 from app import pagination
+from app.routers import tickets as tickets_router
 from app.models import FINISHED_STATUSES, TicketStatus
 from app.status_display import STATUS_LABELS, STATUS_TONES, status_label, status_options, status_tone
 from tests.conftest import add_membership, create_category, create_team
@@ -181,7 +182,15 @@ def test_the_sort_agrees_with_the_chip_on_a_due_date_lead_time(client, db_sessio
 
 
 def test_the_sort_and_status_survive_pagination_and_the_tabs(client, db_session, monkeypatch):
+    real = pagination.paginate
+
+    def two_to_a_page(*args):  # Page.size is bound when the class is defined, so set it after
+        page = real(*args)
+        page.size = 2
+        return page
+
     monkeypatch.setattr(pagination, "PAGE_SIZE", 2)
+    monkeypatch.setattr(tickets_router, "paginate", two_to_a_page)
     desk, category, _ = desk_agent(client, db_session)
     for n in range(5):
         clocked(db_session, desk, category, f"P-{n}", UTC_NOW + timedelta(days=n + 1), status=TicketStatus.WITH_MSP)
@@ -213,7 +222,7 @@ def test_each_status_renders_its_label_and_tone_on_the_queue_and_the_ticket_head
 def test_the_service_level_box_and_linked_lists_use_the_same_chip(client, db_session):
     desk, category, _ = desk_agent(client, db_session)
     parent = triaged(db_session, desk, category, "Parent", status=TicketStatus.IN_PROGRESS)
-    triaged(db_session, desk, category, "Child", status=TicketStatus.WITH_SUPPLIER, linked_parent_id=parent.id)
+    triaged(db_session, desk, category, "Child", status=TicketStatus.WITH_SUPPLIER, split_from_id=parent.id)
     page = client.get(f"/tickets/{parent.number}").text
     assert page.count('<span class="chip t-blue">In progress</span>') >= 2  # the header and the Service level box
     assert '<span class="chip t-amber">With supplier</span>' in page
