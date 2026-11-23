@@ -40,6 +40,7 @@
       var goneBoxes = gone.querySelectorAll("input[name=subject], textarea[name=details]");
       for (var g = 0; g < goneBoxes.length; g++) { goneBoxes[g].value = ""; }
       gone.hidden = true;
+      // The server skips a part with an empty subject and details, so the emptied part is left out wherever it sits.
       // Move it to the end of the parts so the shown parts stay numbered 1, 2, 3 with no gaps; then renumber.
       var all = card.querySelectorAll(".tp-split-part");
       all[all.length - 1].insertAdjacentElement("afterend", gone);

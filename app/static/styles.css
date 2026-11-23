@@ -328,6 +328,7 @@ label { cursor: pointer; }
 .tp-form fieldset, .tp-form > .tp-item { width: 100%; margin: 0; }
 .tp-form fieldset label { margin: 0; }
 .tp-form .tp-split-part > [data-clear-part] { margin-top: 10px; }
+.tp-form .tp-split-part > [data-remove-part] { margin-top: 10px; margin-left: 8px; vertical-align: top; }
 .tp-form .tp-split-part[hidden], .tp-form [data-add-part][hidden], .tp-form [data-remove-part][hidden] { display: none; }
 .tp-form > div { width: 100%; }
 .tp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; width: 100%; }
