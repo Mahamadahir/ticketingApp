@@ -1,6 +1,6 @@
 # Pinned by digest (the multi-arch index, so it works on amd64 and arm64). Dependabot's
 # docker ecosystem proposes new digests for this tag; see docs/build-plan.md.
-FROM python:3.14-slim@sha256:fbecd461fc72d21b2143c6eaba25143738079154a6d0ea3da3aec724f50eed4a
+FROM python:3.14-slim@sha256:9aaa474097d094040649f2162a627c0049b408f52138d980916788d80f04802f
 
 WORKDIR /srv
 
