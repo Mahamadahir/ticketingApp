@@ -119,6 +119,7 @@ from app.messages import (
 from app.models import FINISHED_STATUSES, Attachment, CannedResponse, Category, Message, MessageDirection, RequestType, Team, Ticket, TicketSource, TicketStatus, TicketType, User, UserRole
 from app.attachments import RenameRefused, files_by_message, rename_attachment, shown_name, ticket_files
 from app.pagination import paginate
+from app.status_display import NOT_FINISHED, status_options
 from app.team_activity import (
     DRAWER_CARDS,
     KIND_LABELS,
@@ -134,6 +135,7 @@ from app.sla import (
     Level,
     at_risk_percent,
     describe_priority,
+    breach_order,
     queue_order,
     header_sla,
     queue_sla,
@@ -184,12 +186,15 @@ AGENT_ROLES = (UserRole.SUPER_ADMIN, UserRole.AGENT)
 
 
 
-def _list_link(q: str, source: str = ""):
-    """Builds a link to the ticket list that keeps the current search; a filter passed in
+SORT_BREACH = "breach"  # ?sort=breach; blank is the queue order
+
+
+def _list_link(q: str, source: str = "", status: str = "", sort: str = ""):
+    """Builds a link to the ticket list that keeps the current search, status filter and sort; a filter passed in
     replaces the same filter (false, empty and None leave it out)."""
 
     def link(**params) -> str:
-        wanted = {"q": q, "source": source, **params}
+        wanted = {"q": q, "source": source, "status": status, "sort": sort, **params}
         return "/tickets" + ("?" + urlencode({k: ("true" if v is True else v) for k, v in wanted.items() if v}) if any(wanted.values()) else "")
 
     return link
@@ -233,18 +238,27 @@ def list_tickets(
     team_id: Optional[str] = None,
     q: str = "",
     source: Optional[str] = None,
+    status: Optional[str] = None,
+    sort: Optional[str] = None,
     page: int = 1,
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
     # The filter form sends a blank value for "any", which is no filter, not an error.
+    status = (status or "").strip()
+    sort = (sort or "").strip()
     try:
         team_id = optional_int(team_id)
         source = TicketSource(source) if source and source.strip() else None
+        status_choice = None if not status else (NOT_FINISHED if status == NOT_FINISHED else TicketStatus(status))
+        if sort not in ("", SORT_BREACH):
+            raise ValueError(sort)
     except ValueError:
-        raise HTTPException(status_code=422, detail="Unknown team or channel")
-    # Untriaged first, then by time to breach, then priority (see sla.queue_order).
-    query = select(Ticket).order_by(*queue_order(count_setting(session, REQUIRED_BY_LEAD_DAYS)))
+        raise HTTPException(status_code=422, detail="Unknown team, channel, status or sort")
+    lead_days = count_setting(session, REQUIRED_BY_LEAD_DAYS)
+    # Default: untriaged first, then by time to breach, then priority (see sla.queue_order); "breach" sorts every
+    # ticket by time to breach with no pinning (sla.breach_order).
+    query = select(Ticket).order_by(*(breach_order(lead_days) if sort == SORT_BREACH else queue_order(lead_days)))
 
     # Search only narrows what the agent can already see, so visibility is applied first.
     levels = access_context(session, user)
@@ -259,6 +273,10 @@ def list_tickets(
         query = query.where(Ticket.team_id == team_id)
     if source is not None:
         query = query.where(Ticket.source == source)
+    if status_choice == NOT_FINISHED:
+        query = query.where(Ticket.status.notin_(FINISHED_STATUSES))
+    elif status_choice is not None:
+        query = query.where(Ticket.status == status_choice)
 
     if mine:
         query = query.where(Ticket.assigned_agent_id == user.id)
@@ -299,7 +317,10 @@ def list_tickets(
             "q": q,
             "source": source.value if source else "",
             "sources": [s.value for s in TicketSource],
-            "list_link": _list_link(q, source.value if source else ""),
+            "status": status,
+            "status_options": status_options(),
+            "sort": sort,
+            "list_link": _list_link(q, source.value if source else "", status, sort),
         },
     )
 

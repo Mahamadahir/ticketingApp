@@ -7,7 +7,7 @@
   <div class="queue-head">
     <div>
       <h1>Queue</h1>
-      <p class="muted">Sorted by time to breach. Untriaged tickets stay at the top.</p>
+      <p class="muted">{% if sort == 'breach' %}Sorted by time to breach, soonest first, untriaged tickets included.{% else %}Sorted by time to breach. Untriaged tickets stay at the top.{% endif %}</p>
     </div>
     <div class="queue-figures">
       <span class="chip t-red queue-figure">{{ figures.breached }} breached</span>
@@ -38,8 +38,20 @@
         {% for s in sources %}<option value="{{ s }}"{{ ' selected' if source == s else '' }}>{{ s|capitalize }}</option>{% endfor %}
       </select>
     </label>
+    <label class="field">Status
+      <select name="status">
+        <option value="">Any status</option>
+        {% for value, label in status_options %}<option value="{{ value }}"{{ ' selected' if status == value else '' }}>{{ label }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="field">Sort
+      <select name="sort">
+        <option value="">Queue order</option>
+        <option value="breach"{{ ' selected' if sort == 'breach' else '' }}>Time to breach</option>
+      </select>
+    </label>
     <button type="submit" class="btn">Apply filters</button>
-    {% if q or team_id or source %}<a href="{{ list_link(q='', source='', team_id=None, mine=mine, untriaged=untriaged) }}" class="btn">Clear search and filters</a>{% endif %}
+    {% if q or team_id or source or status or sort %}<a href="{{ list_link(q='', source='', status='', sort='', team_id=None, mine=mine, untriaged=untriaged) }}" class="btn">Clear search and filters</a>{% endif %}
     <p class="queue-showing" role="status">Showing {{ page.items|length }} of {{ page.total_items }}</p>
   </form>
   {% if q %}<p class="note">{{ page.total_items }} ticket{{ "" if page.total_items == 1 else "s" }} you can open match "{{ q }}" (subject, requester, number, and every message including internal notes).</p>{% endif %}
@@ -79,7 +91,7 @@
             </td>
             <td><span class="chip {{ 't-red' if ticket.priority == 'p1' else ('t-amber' if ticket.priority == 'p2' else 't-gray') }}">{{ ticket.priority.upper() if ticket.priority else ("Untriaged" if not ticket.triaged_at else "None") }}</span></td>
             <td>
-              <span class="chip t-gray">{{ ticket.status.value.replace("_", " ")|capitalize }}</span>
+              <span class="chip t-{{ ticket.status|status_tone }}">{{ ticket.status|status_label }}</span>
               <div class="muted small">Updated {{ ticket.updated_at|local_time }}</div>
             </td>
             <td>
@@ -99,7 +111,7 @@
   </form>
   {% else %}
   <div class="empty-state">
-    {% if q or team_id or source %}
+    {% if q or team_id or source or status %}
       <strong>No tickets match.</strong>
       Try fewer words, or clear the filters.
     {% elif mine %}

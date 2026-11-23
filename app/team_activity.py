@@ -24,6 +24,7 @@ from sqlmodel import Session, select
 from app.models import Message, MessageDirection, Ticket, TicketEvent, User
 from app.notification_settings import AGENT_ROLES
 from app.settings_store import ACTIVITY_GROUP_MINUTES, count_setting
+from app.status_display import status_label, status_tone
 from app.time_zones import format_long_date, valid_zone
 
 EXCERPT = 160
@@ -357,10 +358,8 @@ def role_of(row) -> str:
 
 
 def status_chip(value: Optional[str]) -> tuple[str, str]:
-    """(label, chip tone) of a status, the tones the ticket page uses: green Resolved, blue With MSP, gray the rest."""
-    value = (value or "none").lower()
-    label = value.replace("_", " ").capitalize().replace("msp", "MSP")
-    return label, "green" if value == "resolved" else ("blue" if value == "with_msp" else "gray")
+    """(label, chip tone) of a status: the one mapping in app/status_display.py."""
+    return status_label(value), status_tone(value)
 
 
 def step_of(row, names: Mapping[str, str], viewer: Optional[str] = None) -> Step:

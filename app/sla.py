@@ -321,6 +321,21 @@ def at_risk_percent(session: Session) -> int:
     return value if value is not None and 0 < value < 100 else 25
 
 
+def breach_order(default_lead_days: int):
+    """The "Time to breach" sort: every ticket with a running clock first, soonest breach first (a breached ticket's
+    deadline is in the past, so the most overdue comes first), untriaged ones included and not pinned; then the tickets
+    with no running clock (paused, no target, backdated, finished). Same clock as `queue_order` and the SLA chip."""
+    _paused, next_due, finished = _clock_terms(default_lead_days)
+    running = and_(next_due.is_not(None), ~finished, Ticket.is_backdated.is_(False))
+    return [
+        case((running, 0), else_=1),
+        case((running, next_due)).asc().nulls_last(),
+        Ticket.priority.asc().nulls_last(),
+        Ticket.updated_at.desc(),
+        Ticket.id.desc(),
+    ]
+
+
 def queue_order(default_lead_days: int):
     """The agents' queue: untriaged tickets pinned to the top (oldest first), then
     running clocks by time to breach, then paused clocks, then tickets without a
@@ -328,6 +343,28 @@ def queue_order(default_lead_days: int):
     A ticket with a Due date counts as due some days before the end of that day, so work that takes
     time rises early: its request type's queue lead time (RequestType.queue_lead_days) or, when
     that is blank, `default_lead_days` (the REQUIRED_BY_LEAD_DAYS setting)."""
+    paused, next_due, finished = _clock_terms(default_lead_days)
+    group = case(
+        (Ticket.triaged_at.is_(None), 0),
+        (finished, 4),
+        (paused, 2),
+        (next_due.is_(None), 3),
+        else_=1,
+    )
+    return [
+        group,
+        case((Ticket.triaged_at.is_(None), Ticket.created_at)),
+        next_due.asc().nulls_last(),
+        Ticket.priority.asc().nulls_last(),
+        Ticket.updated_at.desc(),
+        Ticket.id.desc(),  # a total order, so pages never repeat or skip a ticket
+    ]
+
+
+def _clock_terms(default_lead_days: int):
+    """(paused, next_due, finished): the SQL terms for a ticket's running clock, shared by both queue sorts so they
+    agree with each other and with the SLA chip (`sla_view`). `next_due` is the first response until an agent has
+    emailed, then the resolution, with a Due date counting as due some days early (see `queue_order`)."""
     type_lead = sa_select(RequestType.queue_lead_days).where(RequestType.id == Ticket.request_type_id).scalar_subquery()
     lead_days = func.coalesce(type_lead, default_lead_days)
     resolution_due = case(
@@ -346,19 +383,4 @@ def queue_order(default_lead_days: int):
         ),
         else_=resolution_due,
     )
-    finished = Ticket.status.in_(FINISHED_STATUSES)
-    group = case(
-        (Ticket.triaged_at.is_(None), 0),
-        (finished, 4),
-        (paused, 2),
-        (next_due.is_(None), 3),
-        else_=1,
-    )
-    return [
-        group,
-        case((Ticket.triaged_at.is_(None), Ticket.created_at)),
-        next_due.asc().nulls_last(),
-        Ticket.priority.asc().nulls_last(),
-        Ticket.updated_at.desc(),
-        Ticket.id.desc(),  # a total order, so pages never repeat or skip a ticket
-    ]
+    return paused, next_due, Ticket.status.in_(FINISHED_STATUSES)

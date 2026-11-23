@@ -197,7 +197,7 @@ def test_both_forms_offer_the_same_six_statuses_and_never_resolved_or_closed(cli
     assert email_box[0] == [""] + OFFERED and note_box[0] == [""] + OFFERED
     assert email_box[1] == [""] and note_box[1] == [""]
     page = forms_page(client, ticket)
-    assert "Default: awaiting user" in page and "No change (in progress)" in page
+    assert "Default: Awaiting user" in page and "No change (In progress)" in page
 
 
 @pytest.mark.parametrize("chosen", OFFERED)

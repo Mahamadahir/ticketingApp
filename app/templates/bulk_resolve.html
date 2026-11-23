@@ -15,7 +15,7 @@
       <td>{{ row.ticket.reference }}</td>
       <td><a href="/tickets/{{ row.ticket.number }}">{{ row.ticket.subject }}</a></td>
       <td>{{ row.ticket.requester_email }}</td>
-      <td>{{ row.ticket.status.value.replace("_", " ") }}{% if row.problem %} <span class="note">(will be skipped: {{ row.problem }})</span>{% endif %}</td>
+      <td><span class="chip t-{{ row.ticket.status|status_tone }}">{{ row.ticket.status|status_label }}</span>{% if row.problem %} <span class="note">(will be skipped: {{ row.problem }})</span>{% endif %}</td>
       {% else %}
       <td></td><td>#{{ row.number }}</td><td colspan="3" class="note">{{ row.problem }}</td>
       {% endif %}
