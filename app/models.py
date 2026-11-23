@@ -1004,6 +1004,9 @@ class InboundMail(SQLModel, table=True):
     outcome: str  # ticket_created, reply_added or ignored_*
     ticket_id: Optional[int] = Field(default=None, foreign_key="ticket.id", index=True)
     message_id: Optional[int] = Field(default=None, foreign_key="message.id")
+    # When the mail reached the mailbox (Graph's receivedDateTime). `created_at` is when the intake recorded it,
+    # which after an outage and a catch-up is later. None for rows from before this column and for mail built by hand.
+    received_at: Optional[datetime] = Field(default=None)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
