@@ -33,7 +33,7 @@ from app.email_templates import LINK_LEFT_OUT, REQUEST_BLOCK, current_text, rend
 from app.followers import is_follower
 from app.graph_client import graph_client
 from app.messages import (
-    HEADER_AGENT, HEADER_AUTOMATIC, HEADER_REPLY_ONLY, about_text, email_header, in_a_split, is_triaged, mail_subject,
+    HEADER_AGENT, HEADER_AUTOMATIC, HEADER_REPLY_ONLY, about_text, can_email_now, email_header, in_a_split, is_triaged, mail_subject,
     requester_visible_messages,
 )
 from app import emergency, outage
@@ -54,9 +54,9 @@ from app.models import (
     User,
     UserRole,
 )
-from app.outbox import ACKNOWLEDGEMENT, EMERGENCY_RESET, MSP_FORWARD, MSP_HANDOFF, MSP_RELEASE, APPROVAL, APPROVAL_OVERDUE, APPROVAL_REMINDER, APPROVAL_WITHDRAWN, AUTOMATIC_TO_REQUESTER, CHASE, FOLLOWER_UPDATE, NOTICE, RAISED_FOR, REPLY
+from app.outbox import ACKNOWLEDGEMENT, EMERGENCY_RESET, MSP_FORWARD, MSP_HANDOFF, MSP_RELEASE, APPROVAL, APPROVAL_OVERDUE, APPROVAL_REMINDER, APPROVAL_WITHDRAWN, AUTOMATIC_TO_REQUESTER, CHASE, FOLLOWER_UPDATE, NOTICE, SPLIT_NOTICE, RAISED_FOR, REPLY
 from app.raising import should_tell_requester
-from app.settings_store import APPROVAL_LINK_MINUTES, AUTOMATIC_EMAIL_CAP, CHASE_RESOLVE_AFTER_DAYS, REGISTRY, get_int_setting
+from app.settings_store import APPROVAL_LINK_MINUTES, AUTOMATIC_EMAIL_CAP, CHASE_RESOLVE_AFTER_DAYS, REGISTRY, SPLIT_EMAIL_ENABLED, get_flag, get_int_setting
 from app.storage import get_storage
 from app.person_data import is_placeholder_address
 from app.teams import MAX_ATTEMPTS, MAX_BACKOFF_MINUTES, Unsendable
@@ -164,6 +164,32 @@ def build_message_mail(session: Session, row: OutboundEmail) -> Mail:
         automatic=row.kind == NOTICE,
         reference=ticket.reference,
         files=files,
+    )
+
+
+def build_split_notice_mail(session: Session, row: OutboundEmail) -> Mail:
+    """"Your request was split": the recorded message (the admin template, filled in when the ticket was split) to the
+    requester, copying who it recorded, under the subject of the same template. It does not wait for triage
+    (messages.can_email_now decides which kinds do not). Asked again now: the switch is still on, and the ticket is not
+    already finished (held by the cap or retried, it could arrive after the answer). The header is the automatic notice's."""
+    ticket = _ticket_of(session, row)
+    message = session.get(Message, row.message_id) if row.message_id else None
+    if message is None:
+        raise Unsendable("Message not found")
+    if not can_email_now(ticket, row.kind):
+        raise NotReady("The ticket has not been triaged yet, so it cannot be emailed")
+    if not get_flag(session, SPLIT_EMAIL_ENABLED):
+        raise Unsendable("The email about a split is switched off")
+    if ticket.status in (TicketStatus.RESOLVED, TicketStatus.CLOSED):
+        raise Unsendable("The ticket is already resolved or closed")
+    if message.id not in {m.id for m in requester_visible_messages(session, ticket)}:
+        raise Unsendable("The requester may not see this message")
+    _guard_recipient(row)
+    subject = render_template(session, "split_notice", ticket_values(ticket)).subject or mail_subject(session, ticket)
+    text = email_header(session, ticket, HEADER_AUTOMATIC) + message.body
+    return Mail(
+        to=row.to_address, cc=[a.strip() for a in (message.cc or "").split(",") if a.strip()], subject=subject,
+        body=text, record=text, automatic=True, reference=ticket.reference,
     )
 
 
@@ -495,6 +521,7 @@ def build_msp_forward_mail(session: Session, row: OutboundEmail) -> Mail:
 BUILDERS: dict[str, Callable[[Session, OutboundEmail], Mail]] = {
     REPLY: build_message_mail,
     NOTICE: build_message_mail,
+    SPLIT_NOTICE: build_split_notice_mail,
     RAISED_FOR: build_raised_for_mail,
     APPROVAL: build_approval_mail,
     APPROVAL_REMINDER: build_approval_reminder_mail,

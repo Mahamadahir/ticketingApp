@@ -1480,6 +1480,7 @@
         "tests/test_reopening.py",
         "tests/test_reply_notification.py",
         "tests/test_requester_bell.py",
+        "tests/test_split_before_triage.py",
         "tests/test_withdraw.py"
       ]
     },
@@ -1511,6 +1512,7 @@
       "tables": [],
       "tests": [
         "tests/test_canned.py",
+        "tests/test_htmx_errors.py",
         "tests/test_pagination_and_limits.py",
         "tests/test_resolution.py"
       ]
@@ -1889,6 +1891,7 @@
         "build_msp_handoff_mail",
         "build_msp_release_mail",
         "build_raised_for_mail",
+        "build_split_notice_mail",
         "cap_release",
         "deliver_mail",
         "describe_failure",
@@ -1942,6 +1945,7 @@
         "tests/test_anonymisation.py",
         "tests/test_approval_reminders.py",
         "tests/test_auto_close_chase.py",
+        "tests/test_card_refusals.py",
         "tests/test_closing_email.py",
         "tests/test_email_header.py",
         "tests/test_email_templates.py",
@@ -1955,6 +1959,7 @@
         "tests/test_reopening.py",
         "tests/test_reply_files.py",
         "tests/test_resolution.py",
+        "tests/test_split_before_triage.py",
         "tests/test_teams_followups.py",
         "tests/test_ticket_presence.py",
         "tests/test_withdraw.py"
@@ -2017,6 +2022,7 @@
         "tests/test_anonymisation.py",
         "tests/test_attachments.py",
         "tests/test_break_glass.py",
+        "tests/test_card_refusals.py",
         "tests/test_entra_check.py",
         "tests/test_health.py",
         "tests/test_htmx_errors.py",
@@ -2054,6 +2060,7 @@
         "add_visible_note",
         "agent_timeline",
         "attach_files",
+        "can_email_now",
         "chosen_status",
         "default_status_after_email",
         "delete_note",
@@ -2074,6 +2081,7 @@
         "record_inbound",
         "record_msp_message",
         "record_notice",
+        "record_split_notice",
         "reopen_deadline",
         "requester_kind",
         "requester_last_update",
@@ -2117,6 +2125,7 @@
         "app.followers",
         "app.models",
         "app.notifications",
+        "app.outbox",
         "app.reply_channel",
         "app.request_questions",
         "app.settings_store",
@@ -2150,6 +2159,7 @@
         "tests/test_request_questions.py",
         "tests/test_resolution.py",
         "tests/test_scheduled_status.py",
+        "tests/test_split_before_triage.py",
         "tests/test_split_family.py",
         "tests/test_teams_followups.py",
         "tests/test_teams_intake.py",
@@ -2573,6 +2583,7 @@
         "tests/test_break_glass.py",
         "tests/test_bulk_resolve.py",
         "tests/test_canned.py",
+        "tests/test_card_refusals.py",
         "tests/test_category_admin.py",
         "tests/test_closing_email.py",
         "tests/test_due_date.py",
@@ -2637,6 +2648,7 @@
         "tests/test_shell.py",
         "tests/test_signin_pages.py",
         "tests/test_sla.py",
+        "tests/test_split_before_triage.py",
         "tests/test_split_family.py",
         "tests/test_splitting.py",
         "tests/test_sso_cancel.py",
@@ -3167,6 +3179,7 @@
         "app.follower_updates",
         "app.inbound",
         "app.mail",
+        "app.messages",
         "app.msp",
         "app.msp_actions",
         "app.outage",
@@ -3197,6 +3210,7 @@
         "tests/test_outbound_mail.py",
         "tests/test_reply_files.py",
         "tests/test_resolution.py",
+        "tests/test_split_before_triage.py",
         "tests/test_teams_approvals.py",
         "tests/test_withdraw.py"
       ]
@@ -3546,6 +3560,7 @@
       "summary": "Files an agent attaches to a reply or a note on the ticket page (#201).",
       "tables": [],
       "tests": [
+        "tests/test_card_refusals.py",
         "tests/test_portal_request.py",
         "tests/test_reply_files.py",
         "tests/test_ticket_presence.py"
@@ -5845,6 +5860,7 @@
         "tests/test_backdating.py",
         "tests/test_break_glass.py",
         "tests/test_bulk_resolve.py",
+        "tests/test_card_refusals.py",
         "tests/test_category_admin.py",
         "tests/test_closing_email.py",
         "tests/test_due_date.py",
@@ -5877,6 +5893,9 @@
         "tests/test_scheduled_jobs.py",
         "tests/test_sessions.py",
         "tests/test_sla.py",
+        "tests/test_split_before_triage.py",
+        "tests/test_split_family.py",
+        "tests/test_splitting.py",
         "tests/test_subject_access.py",
         "tests/test_subrequests.py",
         "tests/test_team_activity_cards.py",
@@ -5968,7 +5987,9 @@
         "lock_ticket",
         "make_sub_ticket",
         "max_sub_tickets",
+        "prefilled_parts",
         "refresh_open_sub_tickets",
+        "request_text",
         "split_ticket",
         "sub_ticket_count",
         "sub_tickets_summary",
@@ -6075,6 +6096,7 @@
       "tests": [
         "tests/test_anonymisation.py",
         "tests/test_attachments.py",
+        "tests/test_card_refusals.py",
         "tests/test_inbound_mail.py",
         "tests/test_msp_mail.py",
         "tests/test_portal_new.py",
@@ -7275,6 +7297,12 @@
       },
       {
         "detail": "select() on Message",
+        "file": "app/splitting.py",
+        "in": "request_text",
+        "rule": "messages-via-messages-module"
+      },
+      {
+        "detail": "select() on Message",
         "file": "app/subject_access.py",
         "in": "_staff_references",
         "rule": "messages-via-messages-module"
@@ -7632,6 +7660,7 @@
     "tests/test_break_glass.py",
     "tests/test_bulk_resolve.py",
     "tests/test_canned.py",
+    "tests/test_card_refusals.py",
     "tests/test_category_admin.py",
     "tests/test_closing_email.py",
     "tests/test_code_map.py",
@@ -7702,6 +7731,7 @@
     "tests/test_shell.py",
     "tests/test_signin_pages.py",
     "tests/test_sla.py",
+    "tests/test_split_before_triage.py",
     "tests/test_split_family.py",
     "tests/test_splitting.py",
     "tests/test_sso_cancel.py",
