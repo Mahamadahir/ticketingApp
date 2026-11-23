@@ -32,7 +32,8 @@
     var add = target.closest("[data-add-part]");
     if (add) {
       var form = add.closest("form");
-      var hiddenParts = form ? form.querySelectorAll(".tp-split-part[hidden]") : [];
+      if (!form) { return; }
+      var hiddenParts = form.querySelectorAll(".tp-split-part[hidden]");
       if (hiddenParts.length) {
         hiddenParts[0].hidden = false;
         var field = hiddenParts[0].querySelector("input[name=subject]");
