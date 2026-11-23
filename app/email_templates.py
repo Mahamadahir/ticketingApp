@@ -120,8 +120,7 @@ REGISTRY: dict[str, TemplateDef] = {
             description="Sent to a person when an agent raises a ticket on their behalf.",
             body_default=(
                 "{raised_by} has raised a ticket for you with IT Support.\n\n"
-                "Reference: {reference}\nSubject: {subject}\n\n{request_text}\n\n"
-                "Reply to this email to add anything else. Please keep the reference in the subject."
+                "Reference: {reference}\nSubject: {subject}\n\n{request_text}"
             ),
             body_placeholders={
                 **_COMMON,
@@ -142,6 +141,34 @@ REGISTRY: dict[str, TemplateDef] = {
             body_default="Your issue has been logged as {reference} with IT. We'll be in touch.",
             body_placeholders={"reference": _COMMON["reference"], "ticket_number": _COMMON["ticket_number"]},
             sample={"reference": "INC-1042", "ticket_number": "1042"},
+        ),
+        TemplateDef(
+            key="split_notice",
+            label="Split notice",
+            description=(
+                "Sent to the requester, copying the followers, when an agent splits their ticket into separate tickets. "
+                "It goes out even before the ticket is triaged, and says only that the request was split and what the new "
+                "tickets are called (the reference and subject of each). {reference} and {subject} are the original ticket's, "
+                "which stays open and keeps this conversation. The switch is under Admin > Settings (Mail). "
+                "The subject must keep {reference}, so a reply finds its ticket."
+            ),
+            subject_default="[{reference}] {subject}",
+            subject_placeholders=_COMMON,
+            subject_required=("reference",),
+            body_default=(
+                "Your request {reference} ({subject}) covered more than one issue, so we have split it into separate tickets "
+                "so that each can be dealt with on its own:\n\n{new_tickets}\n\n"
+                "You do not need to do anything. Reply to this email to add to any of them; we will see which one you mean."
+            ),
+            body_placeholders={
+                **_COMMON,
+                "new_tickets": "one line for each new ticket: its reference and subject",
+            },
+            required=("new_tickets",),
+            sample={
+                **_COMMON_SAMPLE,
+                "new_tickets": "SR-1043 Replace the keyboard\nINC-1044 Printer on floor 2 is jammed",
+            },
         ),
         TemplateDef(
             key="follower_update",
@@ -173,7 +200,7 @@ REGISTRY: dict[str, TemplateDef] = {
             body_default=(
                 "Your ticket {reference} has been resolved.\n\n"
                 "What was done:\n{resolution_notes}\n\n"
-                "If this has not fixed the problem, reply to this email and tell us, or reopen the ticket.\n"
+                "If this has not fixed the problem, tell us or reopen the ticket.\n"
                 "Reopen this ticket: {reopen_link}\n"
                 "Tell us how we did: {feedback_link}"
             ),
@@ -204,7 +231,7 @@ REGISTRY: dict[str, TemplateDef] = {
             body_default=(
                 "Your ticket {reference} has been closed.\n\n"
                 "Why it was closed:\n{closing_notes}\n\n"
-                "If you still need help, reply to this email and we will open a new ticket linked to this one.\n"
+                "If you still need help, your reply will open a new ticket linked to this one.\n"
                 "Tell us how we did: {feedback_link}"
             ),
             body_placeholders={
@@ -229,7 +256,7 @@ REGISTRY: dict[str, TemplateDef] = {
             ),
             body_default=(
                 "We are waiting to hear back from you about {reference} ({subject}). Is this still an issue?\n\n"
-                "Reply to this email to let us know. If we do not hear from you in the next {days} days, "
+                "Let us know. If we do not hear from you in the next {days} days, "
                 "we will assume it is sorted and resolve the ticket (you can reopen it by replying)."
             ),
             body_placeholders={**_COMMON, "days": "how many days until the ticket is resolved automatically"},
@@ -243,8 +270,7 @@ REGISTRY: dict[str, TemplateDef] = {
                 "They then go into the resolution email like an agent's notes."
             ),
             body_default=(
-                "No reply was received after {days} days, so this ticket has been resolved automatically. "
-                "If you still need help, reply to this email."
+                "No reply was received after {days} days, so this ticket has been resolved automatically."
             ),
             body_placeholders={**_COMMON, "days": "how many days we waited for a reply"},
             sample={**_COMMON_SAMPLE, "days": "3"},
@@ -546,7 +572,7 @@ AUDIENCES: tuple[tuple[str, str, str], ...] = (
     ("legal", "Legal pages", "Not emails: the Teams app's privacy and terms pages."),
 )
 AUDIENCE_OF: dict[str, str] = {
-    "raised_for": "requester", "acknowledgement": "requester", "follower_update": "requester", "resolution": "requester",
+    "raised_for": "requester", "acknowledgement": "requester", "split_notice": "requester", "follower_update": "requester", "resolution": "requester",
     "closed": "requester", "chase": "requester", "auto_resolve_note": "requester", "link_code": "requester",
     "msp_forward": "requester", "msp_sent_notice": "requester", "approval_approved": "requester",
     "approval_declined": "requester", "approval_waived": "requester",

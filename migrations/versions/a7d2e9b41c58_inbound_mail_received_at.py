@@ -1,7 +1,7 @@
 """inbound mail received_at
 
 Revision ID: a7d2e9b41c58
-Revises: c255a3f8d1e6
+Revises: d1a7e5b93c42
 Create Date: 2026-11-20 17:00:00.000000
 
 """
@@ -14,7 +14,7 @@ import sqlmodel
 
 # revision identifiers, used by Alembic.
 revision: str = 'a7d2e9b41c58'
-down_revision: Union[str, Sequence[str], None] = 'c255a3f8d1e6'
+down_revision: Union[str, Sequence[str], None] = 'd1a7e5b93c42'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

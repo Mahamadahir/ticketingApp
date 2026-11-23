@@ -1,4 +1,6 @@
 import functools
+import logging
+from enum import Enum
 from datetime import datetime, timezone
 from html import escape
 from typing import Optional
@@ -68,7 +70,7 @@ from app.required_by import (
     set_due,
     set_required_by,
 )
-from app.settings_store import REQUIRED_BY_LEAD_DAYS, count_setting
+from app.settings_store import REQUIRED_BY_LEAD_DAYS, SPLIT_EMAIL_ENABLED, count_setting, get_flag
 from app.canned import active_canned, fill as fill_canned
 from app.approvals import SUPERSEDED, ApprovalError, approval_group_of, current_approval, describe_rule, is_waiting_for_approvers, votes_of, waive
 from app.notifications import AWAITING_YOU, mentionable_agents, notify_agent_emailed, notify_assigned, notify_mentions
@@ -77,12 +79,17 @@ from app.presence import agent_label
 from app.ticket_actions import CARDS, action_chips
 from app.search import normalise, search_condition
 from app.splitting import (
+    MAX_DETAILS,
+    MAX_SUBJECT,
+    PREFILLED_PARTS,
     max_sub_tickets,
+    prefilled_parts,
     SplitError,
     all_sub_tickets_finished,
     check_manual_status,
     has_sub_tickets,
     split_ticket,
+    sub_ticket_count,
     sub_tickets_summary,
 )
 from app.linking import PARENT_TYPES, LinkError, link_ticket, linked_summary, unlink_ticket
@@ -151,6 +158,7 @@ from app.time_zones import zone_for_email, zone_for_user
 from app.triage import TriageError, change_category, change_type, clean_reason, reassign_ticket, triage_ticket
 from app.thread import build_thread
 from app.visibility import (
+    ASSIGNEE_ROLES,
     Access,
     NoTicketAccess,
     assignable_agents,
@@ -168,6 +176,7 @@ from app.visibility import (
     visible_ticket_condition,
 )
 
+log = logging.getLogger("app.tickets")
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 # Shareable links live outside /tickets: /t/1042 (the number; a prefix such as INC-1042 is accepted).
 reference_router = APIRouter(tags=["tickets"])
@@ -459,14 +468,26 @@ def card_errors(card: str):
                 ticket = get_by_number(session, kwargs["number"])
                 if ticket is None:
                     raise
-                # Only what was typed: text, numbers and lists of text (the split parts). Never an upload, a flag or a dependency.
+                # Only what was typed: text, numbers, lists of text (the split parts) or of numbers (ticked boxes) and the triage
+                # form's answers by question. Never an upload, a flag or a dependency.
                 values = {
                     k: v for k, v in kwargs.items()
                     if k not in ("number", "request") and (
                         isinstance(v, str) or (isinstance(v, int) and not isinstance(v, bool))
-                        or (isinstance(v, list) and all(isinstance(i, str) for i in v))
+                        or (isinstance(v, list) and all(isinstance(i, str) or (isinstance(i, int) and not isinstance(i, bool)) for i in v))
+                        or (isinstance(v, dict) and all(isinstance(a, int) and isinstance(b, str) for a, b in v.items()))
                     )
                 }
+                # A browser cannot refill a file input, so the card says the files must be chosen again. Files held at a preview
+                # (`draft`) are kept, if they still are held.
+                if any(getattr(i, "filename", None) for v in kwargs.values() if isinstance(v, list) for i in v):  # starlette's UploadFile, not fastapi's subclass
+                    values["had_files"] = True
+                if values.get("draft"):
+                    held = reply_files.held(session, ticket, user, values["draft"])
+                    if held:
+                        values["held_files"] = [row.filename for row in held]
+                    else:
+                        values.pop("draft")
                 response = _render_ticket_detail(
                     request, ticket, user, session, action=card, card_error=str(error.detail), card_values=values, card_must_open=error,
                 )
@@ -477,6 +498,68 @@ def card_errors(card: str):
         return run
 
     return wrap
+
+
+def _text(value) -> str:
+    """What a form field sent, as text: an enum the route parsed (TicketType, Level) goes back to its value."""
+    return str(value.value if isinstance(value, Enum) else (value if value is not None else ""))
+
+
+def _triage_kept(session: Session, ticket: Ticket, values: dict) -> dict:
+    """What a refused Triage save puts back into the redrawn card (#268): every select choice and typed box. A select choice is
+    carried only if it is still on offer (the select macros and the checks below match it against what the card lists), so a
+    choice that is no longer valid is not silently kept. The category's team members fill Assign to, as the page does when the
+    category is picked; the chosen kind of request decides the Required by box, the questions and the sub-requests, as
+    /tickets/triage-dates does."""
+    category_id = _optional_int(values.get("category_id"))
+    category = session.get(Category, category_id) if category_id is not None else None
+    if category is not None and not is_selectable(session, category):
+        category = None
+    members = team_members(session, team_id_for(session, category)) if category is not None else []
+    agent_id = _optional_int(values.get("agent_id"))
+    chosen = _optional_int(values.get("request_type_id"))
+    request_type = next((rt for rt in active_request_types(session) if rt.id == chosen), None)
+    type_id = request_type.id if request_type is not None else ticket.request_type_id
+    answers = values.get("answers") or {}
+    rows = []
+    for question, current in form_rows(session, type_id, ticket if type_id == ticket.request_type_id else None):
+        given = answers.get(question.id)
+        if given is not None:
+            if question.kind == "choice" and given not in question.options:
+                given = None
+            elif question.kind == "yes_no" and given not in ("yes", "no"):
+                given = None
+        rows.append((question, current if given is None else given))
+    offers = request_type.offers_required_by if request_type is not None else offers_required_by(session, ticket)
+    return {
+        "ticket_type": _text(values.get("ticket_type")),
+        "impact": _text(values.get("impact")),
+        "urgency": _text(values.get("urgency")),
+        "category_id": category.id if category is not None else None,
+        "members": members,
+        "agent_id": agent_id if any(m.id == agent_id for m in members) else None,
+        "request_type_id": request_type.id if request_type is not None else None,
+        "offers_required_by": offers,
+        "required_by": values.get("required_by") or "",
+        "due_on": values.get("due_on") or "",
+        "due_reason": values.get("due_reason") or "",
+        "question_rows": rows,
+        "subrequests": preview_subrequests(
+            session, ticket, type_id, {k: v for k, v in answers.items() if v},
+            values.get("subrequest_listed") or [], values.get("subrequest_template") or [],
+        ),
+        "new_category_name": values.get("new_category_name") or "",
+        "new_category_parent_id": _optional_int(values.get("new_category_parent_id")),
+        "new_category_team_id": _optional_int(values.get("new_category_team_id")),
+    }
+
+
+def _optional_int(value) -> Optional[int]:
+    """A select's submitted text as a number, or None when blank or not a number (a kept form must never itself refuse)."""
+    try:
+        return int(value) if value not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
 
 
 def _agent_options(request: Request, members: list[User], blank_label: str) -> HTMLResponse:
@@ -647,7 +730,7 @@ def triage(
 
         chosen_agent = optional_int(agent_id)
         assignee = session.get(User, chosen_agent) if chosen_agent is not None else None
-        if chosen_agent is not None and (assignee is None or assignee.role != UserRole.AGENT):
+        if chosen_agent is not None and (assignee is None or assignee.role not in ASSIGNEE_ROLES):
             raise HTTPException(status_code=400, detail="Choose an agent from the list")
 
         chosen_type = optional_int(request_type_id)
@@ -1006,7 +1089,7 @@ def reassign(
         raise HTTPException(status_code=400, detail="Choose a team")
     chosen_agent = optional_int(agent_id)
     assignee = session.get(User, chosen_agent) if chosen_agent is not None else None
-    if chosen_agent is not None and (assignee is None or assignee.role != UserRole.AGENT):
+    if chosen_agent is not None and (assignee is None or assignee.role not in ASSIGNEE_ROLES):
         raise HTTPException(status_code=400, detail="Choose an agent from the list")
 
     try:
@@ -1300,10 +1383,11 @@ def discard_email_draft(
 
 
 @router.post("/{number}/email", response_class=HTMLResponse)
+@card_errors("email")
 def email_user(
     number: int,
     request: Request,
-    body: str = Form(..., max_length=MAX_MESSAGE_LENGTH),
+    body: str = Form("", max_length=MAX_MESSAGE_LENGTH),
     cc_form: Optional[str] = Form(None),
     cc: list[str] = Form(default=[]),
     next_status: Optional[str] = Form(None),
@@ -1378,10 +1462,11 @@ def email_user(
 
 
 @router.post("/{number}/note", response_class=HTMLResponse)
+@card_errors("note")
 def add_ticket_note(
     number: int,
     request: Request,
-    body: str = Form(..., max_length=MAX_MESSAGE_LENGTH),
+    body: str = Form("", max_length=MAX_MESSAGE_LENGTH),
     next_status: Optional[str] = Form(None),
     due_on: Optional[str] = Form(None, max_length=20),
     due_reason: Optional[str] = Form(None, max_length=600),
@@ -1405,6 +1490,8 @@ def add_ticket_note(
     levels = access_context(session, user)
     if not may_add_note(user, ticket, levels):
         raise NoTicketAccess()
+    if not body.strip():
+        raise HTTPException(status_code=400, detail="Write the note first")  # a refusal the card shows, not a bare 422
     visible = bool(visible_to_requester)
     if visible and ticket_access(user, ticket, levels) < Access.WORK:
         raise HTTPException(status_code=403, detail="Only an agent who works this ticket can make a note visible to the requester")
@@ -1574,6 +1661,7 @@ def preview_resolve(
 
 
 @router.post("/{number}/resolve", response_class=HTMLResponse)
+@card_errors("resolve")
 def resolve(
     number: int,
     request: Request,
@@ -1644,6 +1732,7 @@ def preview_close(
 
 
 @router.post("/{number}/close", response_class=HTMLResponse)
+@card_errors("close")
 def close(
     number: int,
     request: Request,
@@ -1758,11 +1847,14 @@ def assign_ticket(
 ):
     ticket = _get_ticket(session, number, user, Access.READ)
 
-    if user.role == UserRole.AGENT:
+    if user.role == UserRole.AGENT or (user.role == UserRole.SUPER_ADMIN and agent_id is None):
+        # Assign to me: an agent always; a super admin when they name nobody (#288), through the same rule.
         levels = access_context(session, user)
         if not may_self_assign(user, ticket, levels):
             if ticket_access(user, ticket, levels) >= Access.WORK and ticket.assigned_agent_id is not None:
                 raise HTTPException(status_code=400, detail="This ticket is assigned to someone else. Use Re-assign.")
+            if user.role == UserRole.SUPER_ADMIN:
+                raise HTTPException(status_code=400, detail="You are not a member of the ticket's team")
             raise NoTicketAccess()
         target_agent = user
     else:
@@ -1839,6 +1931,7 @@ def preview_send_to_msp(
 
 
 @router.post("/{number}/send-to-msp", response_class=HTMLResponse)
+@card_errors("msp")
 def send_ticket_to_msp(
     number: int,
     request: Request,
@@ -1892,6 +1985,7 @@ def preview_take_back(
 
 
 @router.post("/{number}/take-back-from-msp", response_class=HTMLResponse)
+@card_errors("takeback")
 def take_back_from_msp_route(
     number: int,
     request: Request,
@@ -2065,9 +2159,6 @@ def unlink(
     return _render_ticket_detail(request, ticket, user, session)
 
 
-SPLIT_SLOTS = 4  # part boxes on the form; blank subjects are skipped, and a ticket can be split again to add more
-
-
 @router.post("/{number}/split", response_class=HTMLResponse)
 @card_errors("split")
 def split(
@@ -2078,12 +2169,14 @@ def split(
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
-    """Splits this ticket into sub-tickets, one per part with a subject. Each is triaged
-    like the original and can then be amended or assigned on its own page."""
+    """Splits this ticket into sub-tickets, one per part with a subject (the card starts with the original's text in each, so
+    nothing is made until the agent confirms what is in the boxes). Each part of a triaged ticket is triaged like the original
+    and can then be amended or assigned on its own page; each part of an untriaged one is untriaged, for the queue. The
+    requester is emailed once about it (app/messages.record_split_notice)."""
     ticket = _get_ticket(session, number, user)
     details = details + [""] * (len(subject) - len(details))
     parts = [(s, d) for s, d in zip(subject, details) if s.strip() or d.strip()]
-    if len(parts) > max_sub_tickets(session) or any(len(s) > 200 or len(d) > 5000 for s, d in parts):
+    if len(parts) > max_sub_tickets(session) or any(len(s) > MAX_SUBJECT or len(d) > MAX_DETAILS for s, d in parts):
         raise HTTPException(status_code=400, detail="Too many parts, or a subject or details that is too long")
     try:
         made = split_ticket(session, ticket, user, parts)
@@ -2256,7 +2349,7 @@ def _render_ticket_detail(
     can_reopen = can_work and _may(check_can_reopen, ReopenError, ticket)
     can_reclose = can_work and _may(check_can_reclose, ReopenError, session, ticket)
     can_link = can_work and triaged and linked_total == 0 and ticket.linked_parent_id is None
-    can_split = can_work and triaged and ticket.split_from_id is None and unfinished
+    can_split = can_work and ticket.split_from_id is None and unfinished  # before triage too (#259): the parts are untriaged
     can_take_back = can_work and ticket.status == TicketStatus.WITH_MSP and not has_sub_tickets(session, ticket)
     can_backdate = may_backdate(ticket)
     chips = action_chips(
@@ -2287,7 +2380,28 @@ def _render_ticket_detail(
     elif edit and edit.startswith("file-") and can_work and edit[5:].isdecimal() and int(edit[5:]) in {f.attachment.id for f in files}:
         editing = edit
     options = selectable(session) if (card == "triage" or editing == "category") else []
+    split_parts, split_shown, split_existing, split_room = [], 0, 0, 0
+    if card == "split":
+        # The boxes the ticket can still take (the limit is for the whole family): the first PREFILLED_PARTS shown and the
+        # rest hidden until the agent adds them. A refused split comes back with every part that was typed, shown.
+        split_existing = sub_ticket_count(session, ticket)
+        split_room = max(max_sub_tickets(session) - split_existing, 0)
+        typed_subjects, typed_details = (card_values or {}).get("subject"), (card_values or {}).get("details") or []
+        if typed_subjects is not None:
+            split_parts = [(sub, typed_details[n] if n < len(typed_details) else "") for n, sub in enumerate(typed_subjects)]
+            filled = [n + 1 for n, (sub, det) in enumerate(split_parts) if sub.strip() or det.strip()]
+            split_shown = max(PREFILLED_PARTS, filled[-1] if filled else 0)
+        else:
+            split_parts = prefilled_parts(session, ticket, PREFILLED_PARTS)
+            split_shown = PREFILLED_PARTS
+        split_parts += [("", "")] * (max(split_room, split_shown) - len(split_parts))
     card_title, card_doing = CARDS.get(card, ("", ""))
+    kept = {}
+    if card == "triage" and card_error:
+        try:
+            kept = _triage_kept(session, ticket, card_values or {})
+        except Exception:  # keeping the form is a courtesy: never turn the refusal into a server error
+            log.exception("could not keep the triage form for ticket %s", ticket.number)
 
     return templates.TemplateResponse(
         request,
@@ -2312,7 +2426,9 @@ def _render_ticket_detail(
             "requester_person": requester_person,
             "reported_by": REPORTED_BY.get(ticket.source, "someone"),
             "triaged_actions": triaged_actions,
-            "split_slots": range(SPLIT_SLOTS),
+            "split_shown": split_shown, "split_existing": split_existing, "split_room": split_room,
+            "split_parts": split_parts,
+            "split_email_on": get_flag(session, SPLIT_EMAIL_ENABLED),
             "team": team,
             "assigned_agent": assigned_agent,
             "team_agents": team_agents,
@@ -2380,13 +2496,14 @@ def _render_ticket_detail(
             "can_set_due": can_set_due,
             "due_on": ticket.due_on,
             "request_types": active_request_types(session) if card == "triage" else [],
-            "offers_required_by": offers_required_by(session, ticket),
+            "offers_required_by": kept["offers_required_by"] if kept else offers_required_by(session, ticket),
             "requester_zone": zone_for_email(session, ticket.requester_email),
             "source_label": source_label(session, ticket),
             "request_info": request_type_of(session, ticket),
             "answers": answer_rows(session, ticket),
-            "triage_questions": form_rows(session, ticket.request_type_id, ticket) if card == "triage" else [],
-            "triage_subrequests": preview_subrequests(session, ticket, ticket.request_type_id, {}, [], []) if card == "triage" else [],
+            "triage_questions": kept["question_rows"] if kept else (form_rows(session, ticket.request_type_id, ticket) if card == "triage" else []),
+            "triage_subrequests": kept["subrequests"] if kept else (preview_subrequests(session, ticket, ticket.request_type_id, {}, [], []) if card == "triage" else []),
+            "triage_kept": kept,
             "max_sub_tickets": max_sub_tickets(session),
             "pending_subrequests": pending_subjects(ticket),
             "answers_changed_after_subrequests": answers_changed_note(session, ticket),

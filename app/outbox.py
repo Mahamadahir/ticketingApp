@@ -26,6 +26,7 @@ APPROVAL_REMINDER = "approval_reminder"  # chases an approver who has not answer
 APPROVAL_OVERDUE = "approval_overdue"  # tells a super admin a request has waited too long for its approvers
 APPROVAL_WITHDRAWN = "approval_withdrawn"  # tells an approver the requester withdrew the request
 ACKNOWLEDGEMENT = "acknowledgement"  # "your issue has been logged", once, for a ticket that arrived by email
+SPLIT_NOTICE = "split_notice"  # "your request was split into separate tickets", an automatic notice that goes before triage (messages.EMAIL_BEFORE_TRIAGE, `can_email_now`)
 CHASE = "chase"  # "is this still an issue?" to the requester of a ticket Awaiting user (app/auto_close_chase.py)
 MSP_HANDOFF = "msp_handoff"  # a ticket sent to the MSP (app/msp.py); the text is fixed when it is queued
 MSP_RELEASE = "msp_release"  # "no longer needed", to the MSP, when IT resolved, closed or took back a ticket (app/msp_actions.py); the text is fixed when queued
@@ -35,16 +36,17 @@ FOLLOWER_UPDATE = "follower_update"  # an inbound update passed to someone who w
 
 # Kinds that go to the requester without an agent having just written them. These are what the
 # per-ticket cap counts; an agent's own reply never is.
-AUTOMATIC_TO_REQUESTER = (NOTICE, RAISED_FOR, ACKNOWLEDGEMENT, CHASE)
+AUTOMATIC_TO_REQUESTER = (NOTICE, RAISED_FOR, ACKNOWLEDGEMENT, CHASE, SPLIT_NOTICE)
 
 
 def is_on() -> bool:
     return settings.mail_sending != "off"
 
 
-def queue_message(session: Session, message: Message, ticket: Ticket) -> Optional[OutboundEmail]:
+def queue_message(session: Session, message: Message, ticket: Ticket, kind: Optional[str] = None) -> Optional[OutboundEmail]:
     """Queues the email for a public outbound message: an agent's reply (it has an author) or an
-    automatic notice (it has none). One email per message, enforced by the database."""
+    automatic notice (it has none), or the kind the caller names (the split notice). One email per message,
+    enforced by the database."""
     if not is_on():
         return None
     session.flush()  # the message needs its id
@@ -53,7 +55,7 @@ def queue_message(session: Session, message: Message, ticket: Ticket) -> Optiona
         select(Attachment.id).where(Attachment.message_id == message.id, Attachment.is_inline.is_(False)).order_by(Attachment.id)
     ).all()
     row = OutboundEmail(
-        kind=REPLY if message.author_user_id is not None else NOTICE,
+        kind=kind or (REPLY if message.author_user_id is not None else NOTICE),
         ticket_id=ticket.id,
         message_id=message.id,
         to_address=ticket.requester_email,
