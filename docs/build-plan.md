@@ -271,8 +271,8 @@ with `createReply` (sendMail returns no id, so a sent message has none).
    for the shell, run `python -m alembic`.
 4. Tests run on Postgres (compose `db`, separate `ticketing_test`, which refuses any
    database not named `*_test`). Run the full suite before saying done:
-   `.\.venv\Scripts\python.exe -m pytest -q -n auto` (`-n auto` runs one pytest-xdist worker
-   per core, each on its own database; plain `pytest -q` still works, one test at a time).
+   `.\.venv\Scripts\python.exe -m pytest -q -n 4` (four pytest-xdist workers, each on its own database;
+   `-n auto` starts one per core, which on this laptop exhausts Postgres `max_locks_per_transaction`; plain `pytest -q` still works, one test at a time).
 5. Break it on purpose: temporarily mutate the rule you added (flip a check, drop a
    lock, widen a query) and confirm a test fails; restore. Surviving mutations mean
    a missing test.
