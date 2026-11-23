@@ -26,6 +26,7 @@ from app.admin_home import area_cards, needs_attention
 from app.auth import get_current_user, hash_password, require_permission, require_roles
 from app.user_filters import USER_STATUS_LABELS, filter_users
 from app.permissions import ASSIGNABLE_ROLES, MANAGE_REQUEST_TEMPLATES, PERMISSIONS
+from app.visibility import ASSIGNEE_ROLES
 from app.sla import impact_options, urgency_options
 from app.categories import (
     CATEGORY_REVIEW_CONDITIONS,
@@ -1526,7 +1527,7 @@ def list_request_types(
             "question_kinds": QUESTION_KINDS,
             "sub_templates": sub_templates,
             "condition_text": {t.id: format_conditions(session, t.condition_groups, question_labels) for t in all_sub},
-            "agents": session.exec(select(User).where(User.role == UserRole.AGENT, User.is_active).order_by(User.display_name)).all(),
+            "agents": session.exec(select(User).where(User.role.in_(ASSIGNEE_ROLES), User.is_active, User.is_break_glass.is_(False)).order_by(User.display_name)).all(),
             "user": user,
         },
     )
