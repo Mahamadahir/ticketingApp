@@ -450,3 +450,62 @@ def test_six_parts_make_six_sub_tickets(client, db_session):
 
     assert response.status_code == 200
     assert [s.subject for s in subs_of(db_session, original)] == [f"Part {n}" for n in range(1, 7)]
+
+
+# The red bin on an added part (#286). The script itself is not run in a browser; these check the markup and the script text.
+def test_the_card_has_a_bin_on_parts_three_onwards_only_hidden_until_the_script_runs(client, db_session):
+    original, _, _ = untriaged_world(client, db_session)
+
+    card = split_card(client, original)
+
+    assert card.count("data-remove-part") == 8  # parts 3 to 10
+    assert "Remove part 1\"" not in card and "Remove part 2\"" not in card
+    for number in range(3, 11):
+        assert f'aria-label="Remove part {number}"' in card
+    for button in card.split("<button")[1:]:
+        if "data-remove-part" in button:
+            tag = button.split(">")[0]
+            assert " hidden" in tag and 'class="icon-btn"' in tag
+    fieldsets = card.split("<fieldset")[1:]
+    assert "data-remove-part" not in fieldsets[0] and "data-remove-part" not in fieldsets[1]
+
+
+def test_the_bin_uses_the_red_token_and_is_hidden_from_screen_readers(client, db_session):
+    original, _, _ = untriaged_world(client, db_session)
+
+    card = split_card(client, original)
+
+    svg = card.split("data-remove-part")[1].split("</button>")[0]
+    assert 'stroke="var(--red)"' in svg and 'aria-hidden="true"' in svg
+    assert "#" not in svg.split("<svg")[1].split(">")[0]  # no raw colour
+
+
+def test_a_refused_split_with_three_or_more_parts_redraws_the_bins(client, db_session):
+    original, _, _ = untriaged_world(client, db_session)
+    typed = [(f"Typed part {n}", f"Typed details {n}") for n in range(1, 5)]
+    typed[3] = typed[0]
+
+    response = split(client, original, *typed)
+
+    card = response.text.split('id="tp-card"')[1].split("</form>")[0]
+    assert response.status_code == 400 and card.count("data-remove-part") == 8
+    assert 'aria-label="Remove part 3"' in card and 'aria-label="Remove part 2"' not in card
+
+
+def test_a_removed_emptied_part_three_is_left_out_of_the_split(client, db_session):
+    original, _, _ = untriaged_world(client, db_session)
+
+    response = split(client, original, ("First", ""), ("Second", ""), ("", ""), ("Fourth", ""))
+
+    assert response.status_code == 200
+    assert [s.subject for s in subs_of(db_session, original)] == ["First", "Second", "Fourth"]
+
+
+def test_the_script_handles_the_bin_by_emptying_hiding_renumbering_and_restoring_add():
+    from pathlib import Path
+
+    script = (Path(__file__).resolve().parent.parent / "app" / "static" / "split-card.js").read_text(encoding="utf-8")
+
+    for needle in ("[data-remove-part]", "gone.hidden = true", "Remove part ", "addBtn.hidden = false", "mostNote.hidden = true", "addBtn.focus()"):
+        assert needle in script
+    assert "bins[b].hidden = false" in script  # shown once the script runs

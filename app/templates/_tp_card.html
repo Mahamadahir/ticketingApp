@@ -3,6 +3,7 @@
    (a key of app/ticket_actions.py CARDS, already checked against what this ticket offers this person). Every form posts to the
    route it always did. #}
 {% from "_tp_macros.html" import cancel_card with context %}
+{% from "_icons.html" import bin_icon %}
 {% if card %}
 {% set composer = card in ("email", "note") %}
 <section class="card tp-acard{{ ' tp-composer' if composer else '' }}" aria-labelledby="tp-card-title"
@@ -277,9 +278,10 @@
   <form class="tp-form" method="post" action="/tickets/{{ ticket.number }}/split" hx-post="/tickets/{{ ticket.number }}/split" hx-target="main" hx-swap="innerHTML">
     {% for part in split_parts %}
     <fieldset class="tp-split-part"{% if loop.index > split_shown %} hidden{% endif %}>
-      <label>Part {{ loop.index }} subject <input type="text" name="subject" maxlength="200" value="{{ part[0] }}" /></label>
+      <label><span data-part-label>Part {{ loop.index }} subject</span> <input type="text" name="subject" maxlength="200" value="{{ part[0] }}" /></label>
       <label>Details <textarea name="details" maxlength="5000" rows="3">{{ part[1] }}</textarea></label>
       <button type="button" class="btn" data-clear-part>Clear</button>
+      {% if loop.index > 2 %}<button type="button" class="icon-btn" data-remove-part aria-label="Remove part {{ loop.index }}" hidden>{{ bin_icon() }}</button>{% endif %}
     </fieldset>
     {% endfor %}
     {% if split_shown < split_parts|length %}
