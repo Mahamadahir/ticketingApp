@@ -233,7 +233,7 @@ def test_emailing_a_ticket_with_the_supplier_defaults_to_leaving_it_there(client
     agent_for(client, db_session, team)
 
     page = forms_page(client, ticket)
-    assert "Default: with supplier" in page
+    assert "Default: With supplier" in page
     client.post(f"/tickets/{ticket.number}/email", data={"body": "Update"})
     assert status_of(db_session, ticket) == TicketStatus.WITH_SUPPLIER
 

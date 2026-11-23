@@ -213,7 +213,7 @@ def test_the_preview_shows_the_chosen_status_and_carries_it_to_the_send(client, 
 
     page = preview(client, ticket, next_status="with_supplier").text
 
-    assert "Sending moves this ticket to with supplier." in page
+    assert "Sending moves this ticket to With supplier." in page
     assert "pauses its SLA clock" not in page
     assert 'name="next_status" value="with_supplier"' in page
 
