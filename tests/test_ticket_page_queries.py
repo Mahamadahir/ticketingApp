@@ -120,8 +120,8 @@ def test_each_kind_of_access_is_offered_and_nothing_else(db_session):
 
     found, _ = offered(ticket, author, limit=50)
 
-    assert [email for email, _ in found] == [
-        "boss@example.com", "esc@example.com", "member@example.com", "parent@example.com", "parentview@example.com", "viewer@example.com",
+    assert [email for email, _ in found] == [  # in name order
+        "boss@example.com", "esc@example.com", "parent@example.com", "parentview@example.com", "member@example.com", "viewer@example.com",
     ]
 
 
