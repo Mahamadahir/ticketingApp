@@ -44,6 +44,7 @@ def upgrade() -> None:
     sa.Column('message_kind', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('message_ref', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('message_id', sa.Integer(), nullable=True),
+    sa.Column('message_sent_at', sqlmodel.sql.sqltypes.UTCDateTime(), nullable=True),
     sa.Column('user_id', sa.Integer(), nullable=True),
     sa.Column('reactor_ref', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('reactor_name', sqlmodel.sql.sqltypes.AutoString(), nullable=True),

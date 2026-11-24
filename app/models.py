@@ -873,6 +873,9 @@ class TicketReaction(SQLModel, table=True):
     message_kind: str  # resolution, awaiting_user, approval, other
     message_ref: str  # the platform's id of the message reacted to (a Teams activity id)
     message_id: Optional[int] = Field(default=None, foreign_key="message.id", ondelete="SET NULL")  # the ticket message it was, when known
+    # When that message was sent, when the channel knows: a reaction to a message sent before the ticket's latest resolution
+    # (or before the current wait began) is about an earlier round and has no effect on this one.
+    message_sent_at: Optional[datetime] = Field(default=None)
     user_id: Optional[int] = Field(default=None, foreign_key="user.id", index=True, ondelete="SET NULL")  # the person, when matched
     reactor_ref: str  # who the platform says: the Entra object id (Teams) or the address (email), as received
     reactor_name: Optional[str] = Field(default=None)

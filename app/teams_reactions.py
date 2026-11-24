@@ -50,6 +50,12 @@ def _emoji(entry: dict) -> Optional[str]:
     return None
 
 
+def _log(entry: dict, what: str) -> None:
+    """The real `type` strings Teams sends are a staging check (docs/build-plan.md), so the type is logged at debug level, with the
+    names of any other fields it carries; nothing else the platform sent (a person's text or emoji) is written to the log."""
+    log.debug("Teams reaction %s: type=%r other fields=%s", what, _text(entry.get("type"))[:64], sorted(k for k in entry if k != "type")[:8])
+
+
 def reactor_of(session: Session, activity: dict) -> Optional[reactions.Reactor]:
     """Who reacted: the object id Teams sent, the name it gave and the account the id matches. A person with no account here
     yet but a stored chat that was matched to one (`TeamsConversation.user_id`) is that account."""
@@ -83,13 +89,13 @@ def handle(session: Session, activity: dict) -> None:
     at = _when(activity)
     message_id = sent.message_id if sent.message_id and session.get(Message, sent.message_id) is not None else None
     for entry in _entries(activity, "reactionsAdded"):
-        log.debug("Teams reaction added: %r", {k: entry[k] for k in list(entry)[:6]})  # the real strings Teams sends are a staging check
+        _log(entry, "added")
         reactions.record_reaction(
             session, ticket, channel=reactions.TEAMS, message_kind=sent.kind, message_ref=sent.activity_id, raw_type=_text(entry.get("type")),
-            reactor=reactor, emoji=_emoji(entry), message_id=message_id, at=at,
+            reactor=reactor, emoji=_emoji(entry), message_id=message_id, message_sent_at=sent.created_at, at=at,
         )
     for entry in _entries(activity, "reactionsRemoved"):
-        log.debug("Teams reaction removed: %r", {k: entry[k] for k in list(entry)[:6]})
+        _log(entry, "removed")
         reactions.remove_reaction(
             session, ticket, channel=reactions.TEAMS, message_ref=sent.activity_id, reactor_ref=reactor.ref, raw_type=_text(entry.get("type")), at=at,
         )

@@ -119,6 +119,7 @@ def test_a_reaction_to_a_stored_bot_message_is_recorded_against_the_right_ticket
     assert (row.ticket_id, row.channel, row.message_kind, row.message_ref) == (resolved.id, "teams", "resolution", target.activity_id)
     assert (row.raw_type, row.reactor_ref, row.reactor_name, row.user_id) == ("like", OID, "Ann Able", ann.id)
     assert (row.sentiment, row.by_party, row.removed_at, row.message_id) == ("positive", True, None, target.message_id)
+    assert row.message_sent_at == target.created_at
     assert row.reacted_at == datetime(2026, 11, 24, 9, 30, tzinfo=timezone.utc)
 
 
@@ -316,6 +317,76 @@ def test_a_real_feedback_answer_replaces_the_quick_rating_and_later_reactions_ne
     assert [(f.rating, f.from_reaction, f.comment) for f in feedback(db_session, resolved)] == [(2, False, "Not fixed properly")]
     react(public, target, "heart")  # a later reaction does not override the answer
     assert [(f.rating, f.from_reaction) for f in feedback(db_session, resolved)] == [(2, False)]
+
+
+def test_taking_a_reaction_back_after_the_ticket_was_reopened_still_removes_the_quick_rating(public, resolved, db_session):
+    target = sent_message(db_session, "resolution").activity_id
+    react(public, target, "like")
+    ticket = db_session.get(Ticket, resolved.id)
+    ticket.status = TicketStatus.OPEN  # reopened
+    db_session.add(ticket)
+    db_session.commit()
+    assert len(feedback(db_session, resolved)) == 1  # a standing reaction's rating is history
+
+    react(public, target, removed=["like"])
+
+    assert feedback(db_session, resolved) == []
+
+
+def test_a_reaction_to_an_earlier_resolution_message_is_not_this_resolutions_rating_or_acknowledgement(db_session, ann):
+    ticket = Ticket(subject="Printer", requester_email="ann@example.com", triaged_at=datetime.now(timezone.utc), status=TicketStatus.RESOLVED)
+    ticket.resolved_at = datetime.now(timezone.utc) - timedelta(hours=1)  # resolved again an hour ago
+    db_session.add(ticket)
+    db_session.commit()
+    who = reactions.Reactor(ref="ann-oid", name="Ann", user=ann)
+
+    reactions.record_reaction(  # to the message of the first resolution, sent two days ago
+        db_session, ticket, channel="teams", message_kind="resolution", message_ref="old", raw_type="sad", reactor=who,
+        message_sent_at=datetime.now(timezone.utc) - timedelta(days=2),
+    )
+    db_session.commit()
+    assert feedback(db_session, ticket) == []
+    assert reactions.acknowledged_since(db_session, ticket.id, ticket.resolved_at) is False
+
+    reactions.record_reaction(
+        db_session, ticket, channel="teams", message_kind="resolution", message_ref="new", raw_type="like", reactor=who,
+        message_sent_at=datetime.now(timezone.utc) - timedelta(minutes=50),
+    )
+    db_session.commit()
+    assert [(f.rating, f.from_reaction) for f in feedback(db_session, ticket)] == [(5, True)]
+    assert reactions.acknowledged_since(db_session, ticket.id, ticket.resolved_at) is True
+
+
+def test_a_real_answer_to_a_later_resolution_leaves_an_earlier_quick_rating_alone(db_session):
+    ticket = Ticket(subject="Printer", requester_email="ann@example.com", triaged_at=datetime.now(timezone.utc), status=TicketStatus.RESOLVED)
+    ticket.resolved_at = datetime.now(timezone.utc)
+    db_session.add(ticket)
+    db_session.commit()
+    db_session.add(TicketFeedback(
+        ticket_id=ticket.id, rating=5, from_reaction=True, created_at=ticket.resolved_at - timedelta(days=3)  # an earlier round's
+    ))
+    db_session.add(TicketFeedback(ticket_id=ticket.id, rating=1, from_reaction=True))  # this round's
+    db_session.commit()
+
+    reactions.drop_soft_feedback(db_session, ticket)
+    db_session.commit()
+
+    assert [(f.rating, f.from_reaction) for f in feedback(db_session, ticket)] == [(5, True)]
+
+
+def test_the_same_reaction_arriving_at_the_same_moment_is_recorded_once_without_an_error(public, resolved, db_session, monkeypatch):
+    target = sent_message(db_session, "resolution").activity_id
+    react(public, target, "like")
+    ann = db_session.get(User, rows(db_session)[0].user_id)
+    monkeypatch.setattr(reactions, "_standing", lambda *args: None)  # both requests passed the look-before-insert check
+
+    again = reactions.record_reaction(
+        db_session, resolved, channel="teams", message_kind="resolution", message_ref=target, raw_type="like",
+        reactor=reactions.Reactor(ref=OID, name="Ann Able", user=ann),
+    )
+
+    assert again is None and len(rows(db_session)) == 1
+    db_session.commit()  # the session is still usable
 
 
 def test_a_reaction_on_a_ticket_that_is_not_resolved_is_not_a_rating(public, resolved, db_session):
@@ -587,8 +658,28 @@ def test_team_activity_shows_a_reaction_as_a_requester_step(public, resolved, db
     reaction_cards = [c for c in timeline.cards if any(s.kind == "reaction" for s in c.steps)]
     assert reaction_cards and all(c.role == "requester" for c in reaction_cards)
     phrases = [s.phrase for c in reaction_cards for s in c.steps if s.kind == "reaction"]
-    assert "Reacted \U0001F44D like" in phrases and "Reacted \U0001F622 sad (taken back)" in phrases
+    assert "Reacted \U0001F44D like" in phrases and "Reacted \U0001F622 sad" in phrases and "Took back \U0001F622 sad" in phrases
     assert all(c.title for c in reaction_cards)
+
+
+def test_team_activity_leaves_out_a_reaction_by_someone_who_is_not_the_requester_or_a_follower(public, resolved, db_session):
+    make_user(db_session, "bob@example.com", OTHER_OID, "Bob Baker")
+    react(public, sent_message(db_session, "other").activity_id, "like", oid=OTHER_OID, name="Bob Baker")
+
+    timeline = load_timeline(db_session, None, "UTC")
+
+    assert not any(s.kind == "reaction" for c in timeline.cards for s in c.steps)
+    assert len(rows(db_session)) == 1  # it is on the ticket's thread
+
+
+def test_taking_a_reaction_back_is_a_step_at_the_time_it_was_taken_back(public, resolved, db_session):
+    target = sent_message(db_session, "resolution").activity_id
+    react(public, target, "like", at="2026-11-24T08:00:00Z")
+    react(public, target, removed=["like"], at="2026-11-24T09:30:00Z")
+
+    steps = [s for c in load_timeline(db_session, None, "UTC").cards for s in c.steps if s.kind == "reaction"]
+
+    assert sorted((s.at.hour, s.phrase) for s in steps) == [(8, "Reacted \U0001F44D like"), (9, "Took back \U0001F44D like")]
 
 
 def test_team_activity_page_and_filters_still_work_with_reactions(client, public, resolved, db_session):

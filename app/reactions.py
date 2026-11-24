@@ -32,7 +32,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Iterable, Optional
 
-from sqlalchemy import delete
+from sqlalchemy import delete, or_
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from app.audit import log_action
@@ -189,34 +190,43 @@ def _clip(value: Optional[str], limit: int = MAX_TEXT) -> Optional[str]:
     return value[:limit] or None
 
 
+def _standing(session: Session, channel: str, message_ref: str, reactor_ref: str, raw_type: str) -> Optional[TicketReaction]:
+    """The reaction by this person of this type to this message that has not been taken back, if there is one."""
+    return session.exec(
+        select(TicketReaction).where(
+            TicketReaction.channel == channel, TicketReaction.message_ref == message_ref[:MAX_TEXT], TicketReaction.reactor_ref == reactor_ref[:512],
+            TicketReaction.raw_type == raw_type, TicketReaction.removed_at.is_(None),
+        )
+    ).first()
+
+
 def record_reaction(
     session: Session, ticket: Ticket, *, channel: str, message_kind: str, message_ref: str, raw_type: str, reactor: Reactor,
-    emoji: Optional[str] = None, message_id: Optional[int] = None, at: Optional[datetime] = None,
+    emoji: Optional[str] = None, message_id: Optional[int] = None, message_sent_at: Optional[datetime] = None, at: Optional[datetime] = None,
 ) -> Optional[TicketReaction]:
     """Records one reaction and applies its effects. Returns the row, or None when it is already recorded and still standing
-    (the platform delivered it twice) or is not usable (no type, no one). The type is kept exactly as received."""
+    (the platform delivered it twice, even at the same moment) or is not usable (no type, no one). The type is kept exactly as
+    received. `message_sent_at` is when the message reacted to was sent, when the channel knows it."""
     raw = (raw_type or "").replace("\x00", "").strip()[:MAX_TYPE]
     ref = _clip(reactor.ref, 512)
     if channel not in CHANNELS or not raw or not ref or not message_ref:
         return None
     if message_kind not in MESSAGE_KINDS:
         message_kind = OTHER
-    existing = session.exec(
-        select(TicketReaction.id).where(
-            TicketReaction.channel == channel, TicketReaction.message_ref == message_ref, TicketReaction.reactor_ref == ref,
-            TicketReaction.raw_type == raw, TicketReaction.removed_at.is_(None),
-        )
-    ).first()
-    if existing is not None:
+    if _standing(session, channel, message_ref, ref, raw) is not None:
         return None
     row = TicketReaction(
         ticket_id=ticket.id, channel=channel, message_kind=message_kind, message_ref=message_ref[:MAX_TEXT], message_id=message_id,
-        user_id=reactor.user.id if reactor.user is not None else None, reactor_ref=ref, reactor_name=_clip(reactor.name),
-        reactor_address=_clip(reactor.address), raw_type=raw, emoji=_clip(emoji, 32), sentiment=sentiment_of(session, raw),
-        by_party=is_party(session, ticket, reactor.user), reacted_at=at or _now(),
+        message_sent_at=message_sent_at, user_id=reactor.user.id if reactor.user is not None else None, reactor_ref=ref,
+        reactor_name=_clip(reactor.name), reactor_address=_clip(reactor.address), raw_type=raw, emoji=_clip(emoji, 32),
+        sentiment=sentiment_of(session, raw), by_party=is_party(session, ticket, reactor.user), reacted_at=at or _now(),
     )
-    session.add(row)
-    session.flush()
+    try:
+        with session.begin_nested():
+            session.add(row)
+            session.flush()
+    except IntegrityError:
+        return None  # the same reaction arrived at the same moment through another request: it is recorded
     apply_effects(session, ticket)
     return row
 
@@ -226,12 +236,7 @@ def remove_reaction(
 ) -> Optional[TicketReaction]:
     """Marks the standing reaction removed (the row and its history stay). Returns it, or None when there was none standing.
     Whatever it did stops counting; nothing already sent is undone."""
-    row = session.exec(
-        select(TicketReaction).where(
-            TicketReaction.channel == channel, TicketReaction.message_ref == message_ref, TicketReaction.reactor_ref == (reactor_ref or "").strip()[:512],
-            TicketReaction.raw_type == (raw_type or "").strip()[:MAX_TYPE], TicketReaction.removed_at.is_(None),
-        )
-    ).first()
+    row = _standing(session, channel, message_ref or "", (reactor_ref or "").strip(), (raw_type or "").strip()[:MAX_TYPE])
     if row is None:
         return None
     row.removed_at = at or _now()
@@ -255,10 +260,21 @@ def _cycle_start(ticket: Ticket) -> Optional[datetime]:
     return ticket.resolved_at if ticket.status in (TicketStatus.RESOLVED, TicketStatus.CLOSED) else None
 
 
+def _of_this_round(since: datetime):
+    """SQL: the reaction is not about a message sent before `since` (a message of an earlier resolution or wait). A channel that
+    does not know when the message was sent (`message_sent_at` empty) is taken as this round's."""
+    return or_(TicketReaction.message_sent_at.is_(None), TicketReaction.message_sent_at >= since)
+
+
 def _refresh_feedback(session: Session, ticket: Ticket) -> None:
     start = _cycle_start(ticket)
     if start is None:
-        return  # the ticket has not been resolved: there is nothing to rate
+        # Not resolved now (reopened): nothing new can be rated, but a quick rating whose reaction has been taken back goes.
+        gone = select(TicketReaction.id).where(TicketReaction.id == TicketFeedback.reaction_id, TicketReaction.removed_at.is_(None))
+        session.execute(delete(TicketFeedback).where(
+            TicketFeedback.ticket_id == ticket.id, TicketFeedback.from_reaction.is_(True), ~gone.exists(),
+        ))
+        return
     in_cycle = (TicketFeedback.ticket_id == ticket.id, TicketFeedback.created_at >= start)
     soft = list(session.exec(select(TicketFeedback).where(*in_cycle, TicketFeedback.from_reaction.is_(True)).order_by(TicketFeedback.id)).all())
     answered = session.exec(select(TicketFeedback.id).where(*in_cycle, TicketFeedback.from_reaction.is_(False)).limit(1)).first()
@@ -268,7 +284,7 @@ def _refresh_feedback(session: Session, ticket: Ticket) -> None:
             select(TicketReaction).where(
                 TicketReaction.ticket_id == ticket.id, TicketReaction.by_party.is_(True), TicketReaction.removed_at.is_(None),
                 TicketReaction.message_kind == RESOLUTION, TicketReaction.sentiment.in_((POSITIVE, NEGATIVE)),
-                TicketReaction.reacted_at >= start,
+                TicketReaction.reacted_at >= start, _of_this_round(start),
             ).order_by(TicketReaction.reacted_at.desc(), TicketReaction.id.desc()).limit(1)
         ).first()
     if latest is None:
@@ -289,10 +305,14 @@ def _refresh_feedback(session: Session, ticket: Ticket) -> None:
     ))
 
 
-def drop_soft_feedback(session: Session, ticket_id: int) -> None:
-    """A real feedback answer replaces the quick rating a reaction made: the soft rows of this ticket go (the real answer is
-    added by the caller, and `_refresh_feedback` never adds a soft one while a real one exists)."""
-    session.execute(delete(TicketFeedback).where(TicketFeedback.ticket_id == ticket_id, TicketFeedback.from_reaction.is_(True)))
+def drop_soft_feedback(session: Session, ticket: Ticket) -> None:
+    """A real feedback answer replaces the quick rating a reaction made for this resolution: the soft rows of this round go (the
+    real answer is added by the caller, and `_refresh_feedback` never adds a soft one while a real one exists). An earlier
+    round's quick rating stays as history."""
+    conditions = [TicketFeedback.ticket_id == ticket.id, TicketFeedback.from_reaction.is_(True)]
+    if ticket.resolved_at is not None:
+        conditions.append(TicketFeedback.created_at >= ticket.resolved_at)
+    session.execute(delete(TicketFeedback).where(*conditions))
 
 
 def acknowledged_since(session: Session, ticket_id: int, since: datetime) -> bool:
@@ -302,7 +322,7 @@ def acknowledged_since(session: Session, ticket_id: int, since: datetime) -> boo
         select(TicketReaction.id).where(
             TicketReaction.ticket_id == ticket_id, TicketReaction.by_party.is_(True), TicketReaction.removed_at.is_(None),
             TicketReaction.sentiment == POSITIVE, TicketReaction.message_kind.in_((RESOLUTION, AWAITING_USER)),
-            TicketReaction.reacted_at >= since,
+            TicketReaction.reacted_at >= since, _of_this_round(since),
         ).limit(1)
     ).first() is not None
 

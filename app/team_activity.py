@@ -115,33 +115,42 @@ def feed_query(
         .where(Message.deleted_at.is_(None))  # a deleted note vanishes from here too (#255)
     )
     # Reactions to the bot's messages (#298) are requester steps: the emoji as received in from_value, its sentiment in
-    # to_value and the name Teams gave in detail. A taken-back one is its own wording, at the time it was made.
-    reactions = (
-        select(
-            literal("reaction").label("kind"),
-            TicketReaction.reacted_at.label("at"),
-            TicketReaction.id.label("row_id"),
-            TicketReaction.ticket_id.label("ticket_id"),
-            case((TicketReaction.removed_at.is_not(None), "reaction_removed"), else_="reaction").label("what"),
-            func.coalesce(User.email, TicketReaction.reactor_address, TicketReaction.reactor_name).label("actor"),
-            func.coalesce(TicketReaction.emoji, TicketReaction.raw_type).label("from_value"),
-            TicketReaction.sentiment.label("to_value"),
-            TicketReaction.reactor_name.label("detail"),
-            Ticket.requester_email.label("requester"),
-            cast(null(), Integer).label("author_id"),
-            literal(False).label("agent"),
+    # to_value and the name Teams gave in detail. Only the requester's and followers' reactions (`by_party`) are steps; anyone
+    # else's (an agent's thumbs-up on a notification card) shows on the ticket's thread only, so it is never read as the
+    # requester acting. Taking one back is a step of its own, at the time it was taken back.
+    def reaction_steps(what: str, moment, *where):
+        return (
+            select(
+                literal("reaction").label("kind"),
+                moment.label("at"),
+                TicketReaction.id.label("row_id"),
+                TicketReaction.ticket_id.label("ticket_id"),
+                literal(what).label("what"),
+                func.coalesce(User.email, TicketReaction.reactor_address, TicketReaction.reactor_name).label("actor"),
+                func.coalesce(TicketReaction.emoji, TicketReaction.raw_type).label("from_value"),
+                TicketReaction.sentiment.label("to_value"),
+                TicketReaction.reactor_name.label("detail"),
+                Ticket.requester_email.label("requester"),
+                cast(null(), Integer).label("author_id"),
+                literal(False).label("agent"),
+            )
+            .join(Ticket, Ticket.id == TicketReaction.ticket_id)
+            .join(User, User.id == TicketReaction.user_id, isouter=True)
+            .where(TicketReaction.by_party.is_(True), *where)
         )
-        .join(Ticket, Ticket.id == TicketReaction.ticket_id)
-        .join(User, User.id == TicketReaction.user_id, isouter=True)
-    )
+
+    reactions = [
+        reaction_steps("reaction", TicketReaction.reacted_at),
+        reaction_steps("reaction_removed", TicketReaction.removed_at, TicketReaction.removed_at.is_not(None)),
+    ]
     if kind == Kind.EVENTS:
         branches = [events]
     elif kind == Kind.CONVERSATION:
-        branches = [messages.where(Message.direction != MessageDirection.INTERNAL, Message.visible_note.is_(False)), reactions]
+        branches = [messages.where(Message.direction != MessageDirection.INTERNAL, Message.visible_note.is_(False)), *reactions]
     elif kind == Kind.NOTES:
         branches = [messages.where(or_(Message.direction == MessageDirection.INTERNAL, Message.visible_note.is_(True)))]
     else:
-        branches = [events, messages, reactions]
+        branches = [events, messages, *reactions]
 
     scoped = []
     for branch in branches:
@@ -180,7 +189,7 @@ _MESSAGE_WHAT = {
 def reaction_words(row) -> str:
     """A reaction as one phrase: "Reacted 👍 like", "Took back 👍 like" (the reaction is shown as received)."""
     shown = display_of(row.from_value or "")
-    return f"Reacted {shown}" + (" (taken back)" if row.what == "reaction_removed" else "")
+    return f"Took back {shown}" if row.what == "reaction_removed" else f"Reacted {shown}"
 
 
 def describe(row) -> str:
