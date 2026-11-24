@@ -25,9 +25,40 @@ def per_worker(url: str) -> str:
 TEST_DATABASE_URL = per_worker(TEST_DATABASE_URL)
 
 
+# Databases this process created (never one that already existed); dropped when the session ends.
+CREATED_DATABASES: list[str] = []
+
+
+def drop_created_databases(url: str, names: list[str]) -> list[str]:
+    """Drops the databases in `names`, which this process created. Each name must end in _test, so
+    the dev database can never be dropped here. A failure is reported, never raised: clean-up must
+    not turn a green run red. Returns the names dropped."""
+    dropped = []
+    parsed = make_url(url)
+    try:
+        connection = psycopg2.connect(
+            host=parsed.host, port=parsed.port, user=parsed.username, password=parsed.password, dbname="postgres"
+        )
+    except psycopg2.Error:
+        return dropped
+    connection.autocommit = True
+    with connection.cursor() as cursor:
+        for name in names:
+            if not name.endswith("_test"):
+                continue
+            try:
+                cursor.execute(f'DROP DATABASE IF EXISTS "{name}"')
+                dropped.append(name)
+            except psycopg2.Error as error:
+                print(f"Could not drop test database {name}: {error}")
+    connection.close()
+    return dropped
+
+
 def ensure_test_database(url: str) -> None:
-    """Creates the test database if it is missing. Refuses any database whose
-    name does not end in _test, because the tests drop every table in it."""
+    """Creates the test database if it is missing (and remembers it, so the session drops it at the
+    end). Refuses any database whose name does not end in _test, because the tests drop every
+    table in it."""
     parsed = make_url(url)
     if parsed.get_backend_name() != "postgresql":
         raise RuntimeError("Tests need PostgreSQL; set TEST_DATABASE_URL to a postgresql+psycopg2 URL")
@@ -48,6 +79,7 @@ def ensure_test_database(url: str) -> None:
         cursor.execute("SELECT 1 FROM pg_database WHERE datname = %s", (parsed.database,))
         if cursor.fetchone() is None:
             cursor.execute(f'CREATE DATABASE "{parsed.database}"')
+            CREATED_DATABASES.append(parsed.database)
     connection.close()
 
 
@@ -79,6 +111,18 @@ def schema():
     SQLModel.metadata.create_all(engine)
     yield
     SQLModel.metadata.drop_all(engine)
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Drops the databases this process created, so runs do not pile up `*_test` databases on the
+    server (hundreds slow every checkpoint). Each xdist worker drops its own, the controller any
+    shared one. Set KEEP_TEST_DB=1 to keep them (to look at a failed run). A database that existed
+    before the run, such as CI's own, is never dropped."""
+    if os.environ.get("KEEP_TEST_DB") == "1" or not CREATED_DATABASES:
+        return
+    engine.dispose()
+    drop_created_databases(TEST_DATABASE_URL, list(CREATED_DATABASES))
+    CREATED_DATABASES.clear()
 
 
 # Every table in one statement: emptying them is far cheaper than dropping and recreating the
