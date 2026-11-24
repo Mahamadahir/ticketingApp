@@ -45,7 +45,11 @@ def clean(cursor, yes: bool, out=print, prefix: str = "") -> list[str]:
         elif not yes:
             out(f"found {name} ({megabytes:.1f} MB)")
         else:
-            cursor.execute(f'DROP DATABASE "{name}"')  # no FORCE: a connection that appears since the check fails the drop
+            try:
+                cursor.execute(f'DROP DATABASE "{name}"')  # no FORCE: a connection that appears since the check fails the drop
+            except psycopg2.Error as error:
+                out(f"FAIL  {name}: {error}".strip())
+                continue
             dropped.append(name)
             out(f"DROP  {name} ({megabytes:.1f} MB)")
     if not yes:

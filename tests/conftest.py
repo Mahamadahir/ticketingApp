@@ -39,19 +39,22 @@ def drop_created_databases(url: str, names: list[str]) -> list[str]:
         connection = psycopg2.connect(
             host=parsed.host, port=parsed.port, user=parsed.username, password=parsed.password, dbname="postgres"
         )
-    except psycopg2.Error:
+    except psycopg2.Error as error:
+        print(f"Could not drop test databases {names}: cannot connect: {error}")
         return dropped
     connection.autocommit = True
-    with connection.cursor() as cursor:
-        for name in names:
-            if not name.endswith("_test"):
-                continue
-            try:
-                cursor.execute(f'DROP DATABASE IF EXISTS "{name}"')
-                dropped.append(name)
-            except psycopg2.Error as error:
-                print(f"Could not drop test database {name}: {error}")
-    connection.close()
+    try:
+        with connection.cursor() as cursor:
+            for name in names:
+                if not name.endswith("_test"):
+                    continue
+                try:
+                    cursor.execute(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')  # ours: close any stray connection
+                    dropped.append(name)
+                except psycopg2.Error as error:
+                    print(f"Could not drop test database {name}: {error}")
+    finally:
+        connection.close()
     return dropped
 
 
