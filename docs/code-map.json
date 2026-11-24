@@ -7812,6 +7812,7 @@
     "tests/test_teams_followups.py",
     "tests/test_teams_hold.py",
     "tests/test_teams_intake.py",
+    "tests/test_test_db_cleanup.py",
     "tests/test_thanks_rules.py",
     "tests/test_ticket_core.py",
     "tests/test_ticket_page.py",
