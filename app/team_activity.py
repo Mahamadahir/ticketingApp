@@ -21,7 +21,8 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import Integer, String, case, cast, func, literal, null, or_, union_all
 from sqlmodel import Session, select
 
-from app.models import Message, MessageDirection, Ticket, TicketEvent, User
+from app.models import Message, MessageDirection, Ticket, TicketEvent, TicketReaction, User
+from app.reactions import display_of
 from app.notification_settings import AGENT_ROLES
 from app.settings_store import ACTIVITY_GROUP_MINUTES, count_setting
 from app.status_display import status_label, status_tone
@@ -113,14 +114,34 @@ def feed_query(
         .join(User, User.id == Message.author_user_id, isouter=True)
         .where(Message.deleted_at.is_(None))  # a deleted note vanishes from here too (#255)
     )
+    # Reactions to the bot's messages (#298) are requester steps: the emoji as received in from_value, its sentiment in
+    # to_value and the name Teams gave in detail. A taken-back one is its own wording, at the time it was made.
+    reactions = (
+        select(
+            literal("reaction").label("kind"),
+            TicketReaction.reacted_at.label("at"),
+            TicketReaction.id.label("row_id"),
+            TicketReaction.ticket_id.label("ticket_id"),
+            case((TicketReaction.removed_at.is_not(None), "reaction_removed"), else_="reaction").label("what"),
+            func.coalesce(User.email, TicketReaction.reactor_address, TicketReaction.reactor_name).label("actor"),
+            func.coalesce(TicketReaction.emoji, TicketReaction.raw_type).label("from_value"),
+            TicketReaction.sentiment.label("to_value"),
+            TicketReaction.reactor_name.label("detail"),
+            Ticket.requester_email.label("requester"),
+            cast(null(), Integer).label("author_id"),
+            literal(False).label("agent"),
+        )
+        .join(Ticket, Ticket.id == TicketReaction.ticket_id)
+        .join(User, User.id == TicketReaction.user_id, isouter=True)
+    )
     if kind == Kind.EVENTS:
         branches = [events]
     elif kind == Kind.CONVERSATION:
-        branches = [messages.where(Message.direction != MessageDirection.INTERNAL, Message.visible_note.is_(False))]
+        branches = [messages.where(Message.direction != MessageDirection.INTERNAL, Message.visible_note.is_(False)), reactions]
     elif kind == Kind.NOTES:
         branches = [messages.where(or_(Message.direction == MessageDirection.INTERNAL, Message.visible_note.is_(True)))]
     else:
-        branches = [events, messages]
+        branches = [events, messages, reactions]
 
     scoped = []
     for branch in branches:
@@ -156,8 +177,16 @@ _MESSAGE_WHAT = {
 }
 
 
+def reaction_words(row) -> str:
+    """A reaction as one phrase: "Reacted 👍 like", "Took back 👍 like" (the reaction is shown as received)."""
+    shown = display_of(row.from_value or "")
+    return f"Reacted {shown}" + (" (taken back)" if row.what == "reaction_removed" else "")
+
+
 def describe(row) -> str:
     """One line for a feed row."""
+    if row.kind == "reaction":
+        return reaction_words(row) + (f" in Teams ({row.detail})" if row.detail else "")
     if row.kind == "message":
         # The database may hand back the enum's name (OUTBOUND) or its value (outbound).
         text = _MESSAGE_WHAT.get(row.what.lower(), row.what)
@@ -332,6 +361,8 @@ _PRIORITY = re.compile(r"\bP[1-4]\b")
 
 def phrase_of(row, names: Mapping[str, str]) -> str:
     """The short wording of a step for a card's summary line."""
+    if row.kind == "reaction":
+        return reaction_words(row)
     if row.kind == "message":
         what = row.what.lower()
         return {
@@ -367,6 +398,8 @@ def phrase_of(row, names: Mapping[str, str]) -> str:
 def role_of(row) -> str:
     """Who took a step. Requester replies and system steps are never an agent's."""
     actor = (row.actor or "").lower()
+    if row.kind == "reaction":
+        return ROLE_REQUESTER  # shown as a requester step, whoever reacted
     if row.kind == "message":
         if row.what.lower() == MessageDirection.INBOUND.value:
             return ROLE_REQUESTER
@@ -384,7 +417,9 @@ def status_chip(value: Optional[str]) -> tuple[str, str]:
 
 
 def step_of(row, names: Mapping[str, str], viewer: Optional[str] = None) -> Step:
-    if row.kind == "message":
+    if row.kind == "reaction":
+        group = "conversation"
+    elif row.kind == "message":
         group = "notes" if row.what.lower() in (MessageDirection.INTERNAL.value, "visible_note") else "conversation"
     else:
         group = "events"

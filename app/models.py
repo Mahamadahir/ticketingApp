@@ -818,10 +818,73 @@ class TicketFeedback(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     ticket_id: int = Field(foreign_key="ticket.id", index=True)
-    token_id: int = Field(foreign_key="actiontoken.id", unique=True)
+    # The link it was given through; empty for a quick rating that came from a reaction (`from_reaction`, app/reactions.py).
+    token_id: Optional[int] = Field(default=None, foreign_key="actiontoken.id", unique=True)
     rating: int
     comment: str = Field(default="")
     resolved_by_id: Optional[int] = Field(default=None, foreign_key="user.id", index=True)
+    # A soft rating made from a positive or negative reaction (5 or 1): a later answer through the real link replaces it
+    # (app/action_links.submit_feedback), and taking the reaction back removes it.
+    from_reaction: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
+    reaction_id: Optional[int] = Field(default=None, foreign_key="ticket_reaction.id", ondelete="SET NULL")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class BotMessage(SQLModel, table=True):
+    """A message or card the Teams bot sent about a ticket (app/reactions.py `record_bot_message`). Teams tells the bot which
+    message was reacted to by its activity id only, so the id is kept here with the ticket, the kind of message and, for
+    a message an agent wrote, which one (`message_id`)."""
+
+    __tablename__ = "bot_message"
+    __table_args__ = (UniqueConstraint("conversation_id", "activity_id", name="uq_bot_message_activity"),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    activity_id: str
+    conversation_id: str
+    ticket_id: int = Field(foreign_key="ticket.id", index=True)
+    message_id: Optional[int] = Field(default=None, foreign_key="message.id", ondelete="SET NULL")
+    kind: str  # resolution, awaiting_user, approval, other
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class TicketReaction(SQLModel, table=True):
+    """A reaction to a message about a ticket, from Teams or (#299) from an email: the one record both channels write
+    (app/reactions.py). Reactions are soft signals: they are shown on the ticket and in Team activity, and the one place
+    that decides what they do is `app/reactions.py`. `raw_type` and `emoji` are kept exactly as the platform sent them;
+    `sentiment` is what the admin mapping said at the time. A removed reaction keeps its row with `removed_at`."""
+
+    __tablename__ = "ticket_reaction"
+    __table_args__ = (
+        # The same person's same reaction to the same message is one row while it stands: Teams sending it twice records it once.
+        Index(
+            "uq_ticket_reaction_live", "channel", "message_ref", "reactor_ref", "raw_type", unique=True,
+            postgresql_where=text("removed_at IS NULL"),
+        ),
+        # The queue and the ticket header look only for reactions still showing the red chip.
+        Index(
+            "ix_ticket_reaction_open_negative", "ticket_id",
+            postgresql_where=text("sentiment = 'negative' AND removed_at IS NULL AND dismissed_at IS NULL AND by_party"),
+        ),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ticket_id: int = Field(foreign_key="ticket.id", index=True)
+    channel: str  # teams, email
+    message_kind: str  # resolution, awaiting_user, approval, other
+    message_ref: str  # the platform's id of the message reacted to (a Teams activity id)
+    message_id: Optional[int] = Field(default=None, foreign_key="message.id", ondelete="SET NULL")  # the ticket message it was, when known
+    user_id: Optional[int] = Field(default=None, foreign_key="user.id", index=True, ondelete="SET NULL")  # the person, when matched
+    reactor_ref: str  # who the platform says: the Entra object id (Teams) or the address (email), as received
+    reactor_name: Optional[str] = Field(default=None)
+    reactor_address: Optional[str] = Field(default=None)
+    raw_type: str
+    emoji: Optional[str] = Field(default=None)  # any emoji or unicode the platform sent with it
+    sentiment: str = Field(default="neutral")  # positive, negative, neutral
+    by_party: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})  # the requester or a follower: only theirs can have an effect
+    reacted_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    removed_at: Optional[datetime] = Field(default=None)
+    dismissed_at: Optional[datetime] = Field(default=None)  # an agent dismissed its red Negative reaction chip
+    dismissed_by_id: Optional[int] = Field(default=None, foreign_key="user.id", ondelete="SET NULL")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

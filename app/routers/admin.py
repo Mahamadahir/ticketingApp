@@ -152,6 +152,7 @@ from app.models import (
 )
 from app.pagination import paginate
 from app.scheduled_jobs import SCHEDULED_JOBS, job_health, status_line, timing
+from app.reactions import parse_mapping
 from app.settings_store import (
     BANK_HOLIDAY_REGION,
     APPROVAL_DEFAULT_PASS_PERCENT,
@@ -1950,8 +1951,15 @@ def _clean_setting_value(session: Session, definition, value: str, submitted: di
     (business hours start and end) are checked together."""
     key = definition.key
     value = value.strip()
-    if len(value) > (500 if definition.kind == "regex" else 200) and definition.kind != "dates":
-        raise ValueError("That is too long (200 characters at most)")
+    if len(value) > (500 if definition.kind in ("regex", "reaction_map") else 200) and definition.kind != "dates":
+        raise ValueError("That is too long (500 characters at most)" if definition.kind in ("regex", "reaction_map") else "That is too long (200 characters at most)")
+    if definition.kind == "reaction_map":
+        try:
+            # Stored as written, tidied: lower case names, one comma and space between pairs. A blank value would mean every
+            # reaction is neutral, which is allowed.
+            value = ", ".join(f"{name}={sentiment}" for name, sentiment in parse_mapping(value).items())
+        except ValueError as error:
+            raise ValueError(str(error))
     if definition.kind == "email" and value:
         try:
             value = normalise_email(value)

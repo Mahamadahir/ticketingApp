@@ -53,6 +53,7 @@ from app.models import (
     TicketEscalator,
     TicketFeedback,
     TicketFollower,
+    TicketReaction,
     User,
     UserPermission,
     UserRole,
@@ -92,6 +93,7 @@ MOVED_COLUMNS = (
     ActionToken.resolved_by_id,
     RequestSubTemplate.assignee_id,
     Notification.user_id,
+    TicketReaction.user_id,  # a reaction the merged-away account made: the person's, so it moves to the main account (#298)
 )
 # Moved by hand: the assignee needs a ticket event; the escalator's key includes the user.
 MOVED_BY_HAND = ("ticket.assigned_agent_id", "ticketescalator.user_id")
@@ -114,6 +116,7 @@ KEPT_COLUMNS = (
     "teams_conversation.user_id",  # looked up by object id, which resolves to the main person (identity.person_for_object_id)
     "reply_held_file.user_id",  # an agent's unconfirmed draft: dropped when confirmed or after a day (app/reply_files.py)
     "message.deleted_by_id",  # who deleted a note (#255): history that keeps the original id, and the note goes at the purge
+    "ticket_reaction.dismissed_by_id",  # who dismissed a chip: history that keeps the original id
     "ticket_presence.user_id",  # who has a ticket open right now; gone after the "gone after" setting (app/ticket_presence.py)
 )
 

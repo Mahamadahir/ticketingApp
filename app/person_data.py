@@ -237,6 +237,11 @@ COLUMNS: dict[str, ColumnUse] = {
     "ticketapproval.voters": _use(NOT_PERSON, LABEL, "a count"),
     "actiontoken.resolved_by_id": _use(STAFF, USER_ID, "the agent a feedback link is about"),
     "ticketfeedback.resolved_by_id": _use(STAFF, USER_ID, "the agent a rating is about"),
+    "ticket_reaction.user_id": _use(SUBJECT, USER_ID, "reactions the person made to messages about a ticket (Teams or email)", anon=DELETE),
+    "ticket_reaction.reactor_ref": _use(SUBJECT, USER_ID, "reactions (found by this: their Entra object id, or their address for an email reaction)", anon=DELETE),
+    "ticket_reaction.reactor_name": _use(SUBJECT, NAME, "reactions: the name the platform gave", anon=WITH_ROW),
+    "ticket_reaction.reactor_address": _use(SUBJECT, EMAIL, "reactions: the address the platform gave, when it gave one", anon=WITH_ROW),
+    "ticket_reaction.dismissed_by_id": _use(STAFF, USER_ID, "the agent who dismissed the Negative reaction chip"),
     "ticketfeedback.comment": _use(TEXT, FREE_TEXT, "the requester's own words (build-plan, 22 Oct 2026)", anon=BLANK),
     # notifications and mail
     "notification.user_id": _use(SUBJECT, USER_ID, "the person's bell", anon=DELETE),

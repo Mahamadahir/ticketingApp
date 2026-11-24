@@ -36,6 +36,10 @@
     {% if ticket.is_escalated %}<span class="chip t-red">Escalated</span>{% endif %}
     {% if ticket.msp_hold %}<span class="chip t-amber">On hold for the MSP</span>{% endif %}
     {% if ticket.is_backdated %}<span class="chip t-gray">Backdated</span>{% endif %}
+    {% if negative_reaction %}<span class="chip t-red">Negative reaction</span>
+    {%- if can_work %}<form class="tp-negative-form" method="post" action="/tickets/{{ ticket.number }}/reactions/dismiss" hx-post="/tickets/{{ ticket.number }}/reactions/dismiss" hx-target="main" hx-swap="innerHTML">
+      <button type="submit" class="btn" title="Dismiss the Negative reaction chip. It shows again if someone reacts negatively again.">Dismiss</button>
+    </form>{% endif %}{% endif %}
   </div>
   <h1>{{ ticket.subject }}</h1>
   <p class="tp-info">
@@ -131,7 +135,7 @@
 <section class="card" aria-labelledby="feedback-heading">
   <h2 id="feedback-heading">Requester feedback</h2>
   {% for f in feedback %}
-  <p class="note">{{ f.rating }} out of 5, {{ f.created_at|local_time }}</p>
+  <p class="note">{{ f.rating }} out of 5, {{ f.created_at|local_time }}{% if f.from_reaction %} <span class="chip t-gray">from a reaction</span>{% endif %}</p>
   {% if f.comment %}<pre class="message-body">{{ f.comment }}</pre>{% endif %}
   {% endfor %}
 </section>
