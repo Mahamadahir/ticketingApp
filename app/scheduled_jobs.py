@@ -160,10 +160,10 @@ def claim_next_due(session: Session, jobs: Sequence[ScheduledJobDef], owner: str
             f"the run started by {row.lease_owner} at {row.last_started_at:%Y-%m-%d %H:%M} UTC never finished",
         )
     if row.run_requested_at is not None:
-        # An admin asked for this run (Run now): it is not late, and the job keeps its place on its schedule.
-        if row.run_resume_at is not None and row.run_resume_at > now:
-            row.next_run_at = row.run_resume_at
-        row.run_requested_at = row.run_requested_by = row.run_resume_at = None
+        # An admin asked for this run (Run now): it is not late. next_run_at stays in the past while it runs (so a
+        # crashed run is recovered); run_resume_at, the due time the job had, is kept until _finish puts the job back on
+        # its own schedule from it.
+        row.run_requested_at = row.run_requested_by = None
     elif now - row.next_run_at > timing(session, JOB_LATE_MINUTES):
         log_action(
             session, AUDIT_ACTOR, AUDIT_ENTITY, 0, f"Job {row.name} ran late",
@@ -197,6 +197,7 @@ def _finish(
         now = clock()
         row.lease_owner = None
         row.lease_expires_at = None
+        resume, row.run_resume_at = row.run_resume_at, None
         if error is None:
             row.last_success_at = now
             row.failures_in_a_row = 0
@@ -207,6 +208,8 @@ def _finish(
             row.failures_in_a_row += 1
             retry = min(timing(session, JOB_RETRY_MINUTES), timedelta(seconds=job.every_seconds))
             row.next_run_at = now + retry
+            if resume is not None and now < resume < row.next_run_at:
+                row.next_run_at = resume  # a requested run that failed does not push the normal run later
         session.add(row)
         session.commit()
 
@@ -254,7 +257,7 @@ def run_due_jobs(
             row = claim_next_due(session, [job for job in jobs if job.name not in ran], owner, now)
             if row is None:
                 break
-            name, due = row.name, row.next_run_at
+            name, due = row.name, row.run_resume_at or row.next_run_at  # a requested run keeps the job's own grid
             session.commit()  # the lease is now visible to every other worker
         ran.append(name)  # never twice in one tick, even if it is due again at once
         run_claimed(by_name[name], owner, now, due, clock)
@@ -323,7 +326,7 @@ class RunNowResult:
     message: str
 
 
-def _within_a_tick() -> str:
+def within_a_tick() -> str:
     minutes = max(1, -(-TICK_EVERY_SECONDS // 60))
     return f"within {minutes} minute{'' if minutes == 1 else 's'}"
 
@@ -336,7 +339,7 @@ def run_now_refusal(row: Optional[ScheduledJob], now: datetime) -> Optional[str]
     if row.lease_expires_at is not None and row.lease_expires_at > now:
         return f"Already running, started at {row.last_started_at:%Y-%m-%d %H:%M} UTC."
     if row.next_run_at <= now:
-        return f"Already due; the worker will run it {_within_a_tick()}."
+        return f"Already due; the worker will run it {within_a_tick()}."
     return None
 
 
@@ -355,4 +358,4 @@ def run_now(session: Session, job: ScheduledJobDef, actor_email: str, now: Optio
     row.next_run_at = now
     session.add(row)
     log_action(session, actor_email, AUDIT_ENTITY, 0, f"Run now requested for job {job.name}", f"was next due {row.run_resume_at:%Y-%m-%d %H:%M} UTC")
-    return RunNowResult(True, f"Run requested. The worker will start {job.name} {_within_a_tick()}.")
+    return RunNowResult(True, f"Run requested. The worker will start {job.name} {within_a_tick()}.")

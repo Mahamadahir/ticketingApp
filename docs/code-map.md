@@ -1374,7 +1374,7 @@ Recurring jobs driven by the database (phase 4A): the `scheduled_job` table.
 File: `app/scheduled_jobs.py`
 
 - Classes: `JobHealth`, `RunNowResult`, `ScheduledJobDef`
-- Functions: `claim_next_due`, `ensure_rows`, `job_health`, `next_slot`, `registry_errors`, `run_claimed`, `run_due_jobs`, `run_now`, `run_now_refusal`, `scheduled_jobs_tick`, `status_line`, `timing`, `utcnow`, `worker_id`
+- Functions: `claim_next_due`, `ensure_rows`, `job_health`, `next_slot`, `registry_errors`, `run_claimed`, `run_due_jobs`, `run_now`, `run_now_refusal`, `scheduled_jobs_tick`, `status_line`, `timing`, `utcnow`, `within_a_tick`, `worker_id`
 - Imports: `app.anonymisation`, `app.approval_reminders`, `app.audit`, `app.auto_close_chase`, `app.bank_holidays`, `app.database`, `app.due_today`, `app.entra_check`, `app.models`, `app.msp`, `app.note_purge`, `app.notification_purge`, `app.reply_files`, `app.sessions`, `app.settings_store`, `app.teams_pending`, `app.ticket_presence`
 - Imported by: `app.admin_home`, `app.jobs`, `app.routers.admin`, `app.worker`
 - Tests: `test_admin_frame.py`, `test_admin_system_log_pages.py`, `test_anonymisation.py`, `test_approval_reminders.py`, `test_auto_close_chase.py`, `test_due_date.py`, `test_entra_check.py`, `test_handoff_bells_holidays.py`, `test_msp.py`, `test_msp_mail.py`, `test_notification_dismiss.py`, `test_reply_files.py`, `test_scheduled_jobs.py`, `test_sessions.py`, `test_teams_followups.py`, `test_ticket_presence.py`, `test_ticket_thread.py`

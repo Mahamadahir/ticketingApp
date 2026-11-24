@@ -151,7 +151,7 @@ from app.models import (
     UserRole,
 )
 from app.pagination import paginate
-from app.scheduled_jobs import SCHEDULED_JOBS, WARNINGS, job_health, run_now, run_now_refusal, status_line, timing
+from app.scheduled_jobs import SCHEDULED_JOBS, WARNINGS, job_health, run_now, run_now_refusal, status_line, timing, within_a_tick
 from app.settings_store import (
     BANK_HOLIDAY_REGION,
     APPROVAL_DEFAULT_PASS_PERCENT,
@@ -2447,7 +2447,7 @@ def run_job_now_page(
         "admin_scheduled_job_run.html",
         {
             "job": job, "every": _every_text(job.every_seconds), "warnings": [WARNINGS[w] for w in job.warns],
-            "refusal": run_now_refusal(row, datetime.now(timezone.utc)), "user": user,
+            "within": within_a_tick(), "refusal": run_now_refusal(row, datetime.now(timezone.utc)), "user": user,
         },
     )
 

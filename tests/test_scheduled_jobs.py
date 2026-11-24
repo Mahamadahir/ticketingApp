@@ -575,3 +575,29 @@ def test_every_registered_job_has_a_description_and_the_mail_jobs_warn():
     assert scheduled_jobs.WARN_MSP in by_name["msp-handoff"].warns and scheduled_jobs.WARN_EMAIL in by_name["msp-handoff"].warns
     assert scheduled_jobs.WARN_EMAIL in by_name["chase"].warns
     assert not by_name["session-cleanup"].warns
+
+
+def test_a_requested_run_keeps_the_grid_even_when_claimed_after_the_original_due_time(client, monkeypatch):
+    job, calls = counting_job()
+    registered(monkeypatch, job)
+    ticked_once(job)
+    original_due = row("count").next_run_at
+    login_as(client, "admin@example.com")
+    run_now_post(client)
+
+    assert run_due_jobs([job], "w1", Clock(original_due + timedelta(seconds=10))) == ["count"]  # claimed after the original due time
+    assert row("count").next_run_at == original_due + timedelta(hours=1)
+
+
+def test_a_requested_run_that_fails_is_retried_and_does_not_push_the_normal_run_later(client, monkeypatch):
+    job = failing_job(name="count", every=3600)
+    registered(monkeypatch, job)
+    run_due_jobs([ScheduledJobDef("count", 3600, lambda session: None)], "w1", Clock(real_now()))
+    original_due = row("count").next_run_at
+    login_as(client, "admin@example.com")
+    run_now_post(client)
+
+    run_due_jobs([job], "w1", Clock(real_now() + timedelta(minutes=1)))
+    saved = row("count")
+    assert saved.failures_in_a_row == 1 and saved.run_resume_at is None
+    assert saved.next_run_at < original_due  # retried in minutes, never later than the normal run
