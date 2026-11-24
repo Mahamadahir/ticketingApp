@@ -1,12 +1,14 @@
 """The one place the Jinja2 environment is built, so every router renders the same way."""
 
 import logging
+import re
 from datetime import timezone
 from urllib.parse import parse_qs
 from zoneinfo import ZoneInfo
 
 from fastapi import Request
 from jinja2 import pass_context
+from markupsafe import Markup, escape
 from sqlalchemy.orm import object_session
 from sqlmodel import Session
 

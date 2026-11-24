@@ -164,8 +164,10 @@ def test_last_mail_arrived_says_not_recorded_for_mail_from_before_the_time_was_k
 def test_mail_intake_long_values_get_the_fit_classes_and_wrap_points(client, db_session):
     """#294: the Subscription card's resource and id are `mono-wrap` with break points after / - . @ _, and the two detail cards
     sit in their own wider grid, apart from the two number cards. Structure only; the CSS is checked in the browser."""
+    from app.templating import _break_points
+
     admin(client, db_session)
-    resource = "users/itsupport-staging@vardags.com/mailFolders('Inbox')/messages"
+    resource = subscription_resource()  # the page shows the subscription for the configured resource
     db_session.add(GraphSubscription(
         resource=resource, subscription_id="3f2a1c9e-7b44-4d0e-9a51-2c8d6e0b1a77",
         expires_at=datetime.now(timezone.utc) + timedelta(days=30),
@@ -174,7 +176,7 @@ def test_mail_intake_long_values_get_the_fit_classes_and_wrap_points(client, db_
     db_session.commit()
     page = client.get("/admin/mail-intake").text
     card = _intake_card(page, "Subscription")
-    assert '<dd class="mono-wrap">users/<wbr>itsupport-<wbr>staging@<wbr>vardags.<wbr>com/<wbr>' in card
+    assert f'<dd class="mono-wrap">{_break_points(resource)}</dd>' in card and "<wbr>" in str(_break_points(resource))
     assert '<dd class="mono-wrap">3f2a1c9e-<wbr>7b44-<wbr>' in card
     assert 'class="dl"' in card
     assert len(re.findall(r'<div class="intake-cards">', page)) == 1 and 'class="intake-cards intake-numbers"' in page

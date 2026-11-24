@@ -243,6 +243,7 @@ label { cursor: pointer; }
 @media (max-width: 600px) {
   .dl { grid-template-columns: minmax(0, 1fr); gap: 2px 0; }
   .dl dd { margin-bottom: 8px; }
+  .tp-dl dd, .rq-card .dl dd { margin-bottom: 0; }
 }
 /* A long technical value (a resource path, an id, an address, a URL): small monospace, wrapping at the break points the
    `break_points` filter adds after / - . @ _; anywhere only when a single piece is still too wide. */
