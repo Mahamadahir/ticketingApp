@@ -284,6 +284,7 @@ COLUMNS: dict[str, ColumnUse] = {
     "requesttype.offers_required_by": _use(NOT_PERSON, LABEL, "a flag"),
     "numbercounter.name": _use(NOT_PERSON, LABEL),
     "scheduledjob.name": _use(NOT_PERSON, LABEL),
+    "scheduledjob.run_requested_by": _use(STAFF, EMAIL, "the super admin who asked for a Run now; cleared when the worker starts the run"),
 }
 
 # Column names that suggest a person's data. A column the pattern finds that is not in COLUMNS fails the test.

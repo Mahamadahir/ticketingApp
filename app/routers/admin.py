@@ -151,7 +151,7 @@ from app.models import (
     UserRole,
 )
 from app.pagination import paginate
-from app.scheduled_jobs import SCHEDULED_JOBS, job_health, status_line, timing
+from app.scheduled_jobs import SCHEDULED_JOBS, WARNINGS, job_health, run_now, run_now_refusal, status_line, timing, within_a_tick
 from app.settings_store import (
     BANK_HOLIDAY_REGION,
     APPROVAL_DEFAULT_PASS_PERCENT,
@@ -2405,6 +2405,7 @@ def _every_text(seconds: int) -> str:
 @router.get("/scheduled-jobs", response_class=HTMLResponse)
 def view_scheduled_jobs(
     request: Request,
+    message: str = "",
     user: User = Depends(require_super_admin),
     session: Session = Depends(get_session),
 ):
@@ -2420,8 +2421,45 @@ def view_scheduled_jobs(
             "rows": rows, "status": status_line(rows, now, late, registered),
             "overdue": set(job_health(rows, now, late, registered).overdue), "registered": registered,
             "intervals": {job.name: _every_text(job.every_seconds) for job in SCHEDULED_JOBS}, "now": now, "user": user,
+            "message": message,
         },
     )
+
+
+def _registered_job(name: str):
+    """The registered job called `name`; a retired job (a row with no registration) or an unknown name is a 404."""
+    job = next((job for job in SCHEDULED_JOBS if job.name == name), None)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
+@router.get("/scheduled-jobs/{name}/run", response_class=HTMLResponse)
+def run_job_now_page(
+    name: str, request: Request, user: User = Depends(require_super_admin), session: Session = Depends(get_session),
+):
+    """The Run now confirm step: what the job does in plain words, a warning when it can email people or hand tickets to
+    the MSP, and the button. Says why instead when the job is running or already due."""
+    job = _registered_job(name)
+    row = session.get(ScheduledJob, name)
+    return templates.TemplateResponse(
+        request,
+        "admin_scheduled_job_run.html",
+        {
+            "job": job, "every": _every_text(job.every_seconds), "warnings": [WARNINGS[w] for w in job.warns],
+            "within": within_a_tick(), "refusal": run_now_refusal(row, datetime.now(timezone.utc)), "user": user,
+        },
+    )
+
+
+@router.post("/scheduled-jobs/{name}/run")
+def run_job_now(name: str, user: User = Depends(require_super_admin), session: Session = Depends(get_session)):
+    """Run now: sets the job's next_run_at to now (app/scheduled_jobs.py `run_now`). The worker runs it on its next tick;
+    the web app never runs job code."""
+    job = _registered_job(name)
+    result = run_now(session, job, user.email)
+    session.commit()
+    return RedirectResponse("/admin/scheduled-jobs?" + urlencode({"message": result.message}), status_code=303)
 
 
 @router.get("/outage", response_class=HTMLResponse)

@@ -957,6 +957,11 @@ class ScheduledJob(SQLModel, table=True):
     last_error: Optional[str] = Field(default=None)
     last_error_at: Optional[datetime] = Field(default=None)
     failures_in_a_row: int = Field(default=0, sa_column_kwargs={"server_default": "0"})
+    # "Run now" (an admin asked for a run): set with next_run_at = now, cleared when the worker claims the job. The
+    # resume time is the due time the job had, put back at the claim so the job keeps its place on its schedule.
+    run_requested_at: Optional[datetime] = Field(default=None)
+    run_requested_by: Optional[str] = Field(default=None)
+    run_resume_at: Optional[datetime] = Field(default=None)
 
 
 class GraphNotification(SQLModel, table=True):
