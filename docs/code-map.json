@@ -58,6 +58,10 @@
         "revision": "e3a7c5d9b1f4"
       },
       {
+        "file": "migrations/versions/e7a2c9d4b6f1_scheduled_job_run_now.py",
+        "revision": "e7a2c9d4b6f1"
+      },
+      {
         "file": "migrations/versions/d4e8a1b7c3f9_activity_window_indexes.py",
         "revision": "d4e8a1b7c3f9"
       },
@@ -68,13 +72,9 @@
       {
         "file": "migrations/versions/d1a7e5b93c42_ticket_msp_warned_for.py",
         "revision": "d1a7e5b93c42"
-      },
-      {
-        "file": "migrations/versions/c255a3f8d1e6_thread_groups_and_deleted_notes.py",
-        "revision": "c255a3f8d1e6"
       }
     ],
-    "count": 77,
+    "count": 78,
     "heads": [
       {
         "file": "migrations/versions/e3a7c5d9b1f4_ticket_reactions.py",
@@ -4055,6 +4055,8 @@
         "reset_email_template",
         "reset_settings_group",
         "review_category",
+        "run_job_now",
+        "run_job_now_page",
         "save_email_template",
         "save_setting",
         "save_settings_group",
@@ -4365,6 +4367,16 @@
           "handler": "view_scheduled_jobs",
           "method": "GET",
           "path": "/admin/scheduled-jobs"
+        },
+        {
+          "handler": "run_job_now_page",
+          "method": "GET",
+          "path": "/admin/scheduled-jobs/{name}/run"
+        },
+        {
+          "handler": "run_job_now",
+          "method": "POST",
+          "path": "/admin/scheduled-jobs/{name}/run"
         },
         {
           "handler": "view_settings",
@@ -5752,6 +5764,7 @@
     {
       "classes": [
         "JobHealth",
+        "RunNowResult",
         "ScheduledJobDef"
       ],
       "file": "app/scheduled_jobs.py",
@@ -5763,10 +5776,13 @@
         "registry_errors",
         "run_claimed",
         "run_due_jobs",
+        "run_now",
+        "run_now_refusal",
         "scheduled_jobs_tick",
         "status_line",
         "timing",
         "utcnow",
+        "within_a_tick",
         "worker_id"
       ],
       "imported_by": [
@@ -6827,6 +6843,7 @@
       "summary": "The one place the Jinja2 environment is built, so every router renders the same way.",
       "tables": [],
       "tests": [
+        "tests/test_admin_mail_pages.py",
         "tests/test_reply_files.py",
         "tests/test_ticket_page.py"
       ]
@@ -7936,6 +7953,7 @@
     "tests/test_teams_followups.py",
     "tests/test_teams_hold.py",
     "tests/test_teams_intake.py",
+    "tests/test_test_db_cleanup.py",
     "tests/test_thanks_rules.py",
     "tests/test_ticket_core.py",
     "tests/test_ticket_page.py",

@@ -1,7 +1,7 @@
 """ticket reactions (#298): the bot's sent messages, the shared reaction record, and quick ratings from a reaction
 
 Revision ID: e3a7c5d9b1f4
-Revises: d4e8a1b7c3f9
+Revises: e7a2c9d4b6f1
 Create Date: 2026-11-24 10:02:57.838953
 
 """
@@ -14,7 +14,7 @@ import sqlmodel
 
 # revision identifiers, used by Alembic.
 revision: str = 'e3a7c5d9b1f4'
-down_revision: Union[str, Sequence[str], None] = 'd4e8a1b7c3f9'
+down_revision: Union[str, Sequence[str], None] = 'e7a2c9d4b6f1'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

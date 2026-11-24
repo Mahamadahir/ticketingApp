@@ -67,26 +67,35 @@ class ScheduledJobDef:
     name: str  # unique; the row's key and the name in the heartbeat line
     every_seconds: int
     run: Callable[[Session], None]  # given a session; the runner commits on return, rolls back on a raise
+    description: str = ""  # what the job does, in plain words: shown on the Run now confirm page
+    warns: tuple[str, ...] = ()  # WARN_EMAIL and/or WARN_MSP: shown as a warning on the Run now confirm page
 
+
+WARN_EMAIL = "email"
+WARN_MSP = "msp"
+WARNINGS = {
+    WARN_EMAIL: "This job can send email to people (requesters, approvers or agents) when it runs.",
+    WARN_MSP: "This job can hand tickets to the MSP, or send mail to or from it, when it runs. The job still keeps its own rules (for example the handoff only acts in its window).",
+}
 
 # The registry: add a ScheduledJobDef here to add a recurring job.
 SCHEDULED_JOBS: list[ScheduledJobDef] = [
-    ScheduledJobDef("approval-reminders", 3600, send_approval_reminders),
-    ScheduledJobDef("auto-close", 3600, run_auto_close),
-    ScheduledJobDef("bank-holidays", 21600, run_bank_holiday_fetch),  # gov.uk bank holidays, cached in the database; every 6 hours so a failed fetch is retried the same day
-    ScheduledJobDef("blob-cleanup", 3600, run_blob_cleanup),  # retries stored-file deletes after a requester was anonymised (app/anonymisation.py)
-    ScheduledJobDef("chase", 3600, run_chase),
-    ScheduledJobDef(ENTRA_CHECK_JOB, 3600, run_entra_account_check),  # wakes hourly; runs once a night after the entra_check_time setting
-    ScheduledJobDef("msp-ack-alerts", 300, run_msp_ack_alerts),  # a ticket sent to the MSP that it has not confirmed in time
-    ScheduledJobDef("msp-forwards", 300, run_msp_forwards),  # MSP mail left waiting for an agent goes to the user once business hours end
-    ScheduledJobDef("msp-handoff", 300, run_msp_handoff),  # every 5 minutes: the handoff starts within 5 minutes of its hour
-    ScheduledJobDef("note-purge", 86400, purge_deleted_notes),  # removes notes deleted at least `note_keep_deleted_days` ago, with their files (app/note_purge.py)
-    ScheduledJobDef("notification-purge", 86400, purge_notifications),  # deletes dismissed notifications past the undo window and every notification past its age limit, with their Teams posts (app/notification_purge.py)
-    ScheduledJobDef("presence-cleanup", 3600, purge_ticket_presence),  # deletes ticket presence rows past the "gone after" time (app/ticket_presence.py)
-    ScheduledJobDef("reply-files", 3600, expire_reply_files),  # drops files held for an email preview that was never confirmed (app/reply_files.py)
-    ScheduledJobDef("scheduled-due", 900, run_scheduled_due),
-    ScheduledJobDef("session-cleanup", 86400, purge_ended_sessions),  # deletes sign-in sessions that ended `session_keep_days` ago
-    ScheduledJobDef("teams-pending", 3600, expire_pending),  # ends the Teams bot's unanswered "which request?" questions and releases their held files (app/teams_pending.py)
+    ScheduledJobDef("approval-reminders", 3600, send_approval_reminders, "Reminds approvers who have not voted on a request, and tells the agent when an approval is overdue.", (WARN_EMAIL,)),
+    ScheduledJobDef("auto-close", 3600, run_auto_close, "Closes Resolved tickets that nobody has answered for the auto-close period, and emails the requester that it was closed (only when auto-close is on).", (WARN_EMAIL,)),
+    ScheduledJobDef("bank-holidays", 21600, run_bank_holiday_fetch, "Fetches the gov.uk bank holidays and keeps them in the database for SLA and due-date calculations; a failed fetch is retried the same day."),
+    ScheduledJobDef("blob-cleanup", 3600, run_blob_cleanup, "Retries deleting stored files for a requester who was anonymised, until every file is gone."),  # app/anonymisation.py
+    ScheduledJobDef("chase", 3600, run_chase, "Emails requesters of tickets that have been Awaiting user for a while, asking them to reply (only when chasing is on).", (WARN_EMAIL,)),
+    ScheduledJobDef(ENTRA_CHECK_JOB, 3600, run_entra_account_check, "Checks in Entra that each user's account is still enabled and deactivates those who are not. It wakes hourly but only checks once a night, after the Entra check time setting."),
+    ScheduledJobDef("msp-ack-alerts", 300, run_msp_ack_alerts, "Raises an alert for a ticket sent to the MSP that the MSP has not confirmed in time."),
+    ScheduledJobDef("msp-forwards", 300, run_msp_forwards, "Forwards mail the MSP sent on a ticket, left waiting for an agent, to the user once business hours end.", (WARN_EMAIL, WARN_MSP)),
+    ScheduledJobDef("msp-handoff", 300, run_msp_handoff, "At the handoff time each day, sends the tickets waiting for the MSP to the MSP and emails them. It only acts inside its handoff window.", (WARN_EMAIL, WARN_MSP)),
+    ScheduledJobDef("note-purge", 86400, purge_deleted_notes, "Removes notes deleted at least the keep-deleted-notes number of days ago, with their files."),
+    ScheduledJobDef("notification-purge", 86400, purge_notifications, "Deletes dismissed notifications past the undo window and every notification past its age limit, with their Teams posts."),
+    ScheduledJobDef("presence-cleanup", 3600, purge_ticket_presence, "Deletes the records of who is looking at a ticket once they are past the gone-after time."),
+    ScheduledJobDef("reply-files", 3600, expire_reply_files, "Drops files held for an email preview that was never confirmed."),
+    ScheduledJobDef("scheduled-due", 900, run_scheduled_due, "On a Scheduled ticket's Due date, moves it back to Open and tells the assignee in the bell."),
+    ScheduledJobDef("session-cleanup", 86400, purge_ended_sessions, "Deletes sign-in sessions that ended more than the session keep-days setting ago."),
+    ScheduledJobDef("teams-pending", 3600, expire_pending, "Ends the Teams bot's unanswered \"which request?\" questions and releases their held files."),
 ]
 
 
@@ -150,7 +159,12 @@ def claim_next_due(session: Session, jobs: Sequence[ScheduledJobDef], owner: str
             session, AUDIT_ACTOR, AUDIT_ENTITY, 0, f"Job {row.name} recovered after its lease expired",
             f"the run started by {row.lease_owner} at {row.last_started_at:%Y-%m-%d %H:%M} UTC never finished",
         )
-    if now - row.next_run_at > timing(session, JOB_LATE_MINUTES):
+    if row.run_requested_at is not None:
+        # An admin asked for this run (Run now): it is not late. next_run_at stays in the past while it runs (so a
+        # crashed run is recovered); run_resume_at, the due time the job had, is kept until _finish puts the job back on
+        # its own schedule from it.
+        row.run_requested_at = row.run_requested_by = None
+    elif now - row.next_run_at > timing(session, JOB_LATE_MINUTES):
         log_action(
             session, AUDIT_ACTOR, AUDIT_ENTITY, 0, f"Job {row.name} ran late",
             f"due {row.next_run_at:%Y-%m-%d %H:%M} UTC, started {now:%Y-%m-%d %H:%M} UTC",
@@ -183,6 +197,7 @@ def _finish(
         now = clock()
         row.lease_owner = None
         row.lease_expires_at = None
+        resume, row.run_resume_at = row.run_resume_at, None
         if error is None:
             row.last_success_at = now
             row.failures_in_a_row = 0
@@ -193,6 +208,8 @@ def _finish(
             row.failures_in_a_row += 1
             retry = min(timing(session, JOB_RETRY_MINUTES), timedelta(seconds=job.every_seconds))
             row.next_run_at = now + retry
+            if resume is not None and now < resume < row.next_run_at:
+                row.next_run_at = resume  # a requested run that failed does not push the normal run later
         session.add(row)
         session.commit()
 
@@ -240,7 +257,7 @@ def run_due_jobs(
             row = claim_next_due(session, [job for job in jobs if job.name not in ran], owner, now)
             if row is None:
                 break
-            name, due = row.name, row.next_run_at
+            name, due = row.name, row.run_resume_at or row.next_run_at  # a requested run keeps the job's own grid
             session.commit()  # the lease is now visible to every other worker
         ran.append(name)  # never twice in one tick, even if it is due again at once
         run_claimed(by_name[name], owner, now, due, clock)
@@ -298,3 +315,47 @@ def status_line(rows: Sequence[ScheduledJob], now: datetime, late: timedelta, re
     if overdue:
         parts.append(f"overdue (is the worker running?): {', '.join(sorted(overdue))}")
     return "Problems with recurring jobs, " + "; ".join(parts) + "."
+
+
+# ---- Run now (#300) -------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class RunNowResult:
+    requested: bool  # True when next_run_at was set to now; False means nothing changed and `message` says why
+    message: str
+
+
+def within_a_tick() -> str:
+    minutes = max(1, -(-TICK_EVERY_SECONDS // 60))
+    return f"within {minutes} minute{'' if minutes == 1 else 's'}"
+
+
+def run_now_refusal(row: Optional[ScheduledJob], now: datetime) -> Optional[str]:
+    """Why a run cannot be requested for this row, or None. Running now (an unexpired lease) comes first: a running job
+    is also due, and 'already running' is the more useful answer."""
+    if row is None:
+        return "The worker has not created this job yet; it runs at its first tick."
+    if row.lease_expires_at is not None and row.lease_expires_at > now:
+        return f"Already running, started at {row.last_started_at:%Y-%m-%d %H:%M} UTC."
+    if row.next_run_at <= now:
+        return f"Already due; the worker will run it {within_a_tick()}."
+    return None
+
+
+def run_now(session: Session, job: ScheduledJobDef, actor_email: str, now: Optional[datetime] = None) -> RunNowResult:
+    """Asks for a run: sets the job's next_run_at to now and notes who asked. The worker runs it on its next tick
+    through the normal path (lease, the job's own guards); this never runs job code. Does not commit. Refuses, changing
+    nothing, when the job is running now or is already due."""
+    now = now or utcnow()
+    row = session.exec(select(ScheduledJob).where(ScheduledJob.name == job.name).with_for_update()).first()
+    refusal = run_now_refusal(row, now)
+    if refusal:
+        return RunNowResult(False, refusal)
+    row.run_resume_at = row.next_run_at
+    row.run_requested_at = now
+    row.run_requested_by = actor_email
+    row.next_run_at = now
+    session.add(row)
+    log_action(session, actor_email, AUDIT_ENTITY, 0, f"Run now requested for job {job.name}", f"was next due {row.run_resume_at:%Y-%m-%d %H:%M} UTC")
+    return RunNowResult(True, f"Run requested. The worker will start {job.name} {within_a_tick()}.")

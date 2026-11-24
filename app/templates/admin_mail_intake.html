@@ -33,8 +33,8 @@
     </div>
     {% if subscription %}
     <dl class="dl">
-      <dt>Resource</dt><dd>{{ subscription.resource }}</dd>
-      <dt>Subscription id</dt><dd>{{ subscription.subscription_id or "none" }}</dd>
+      <dt>Resource</dt><dd class="mono-wrap">{{ subscription.resource|break_points }}</dd>
+      <dt>Subscription id</dt><dd class="mono-wrap">{{ (subscription.subscription_id or "none")|break_points }}</dd>
       <dt>Expires</dt><dd>{{ subscription.expires_at|local_time if subscription.expires_at else "unknown" }}</dd>
       <dt>Last created or renewed</dt><dd>{{ subscription.last_renewed_at|local_time if subscription.last_renewed_at else "never" }}</dd>
       <dt>Last checked</dt><dd>{{ subscription.last_checked_at|local_time if subscription.last_checked_at else "never" }}</dd>
@@ -63,7 +63,9 @@
     <p class="muted">The catch-up has not run (it is off, or has not run yet).</p>
     {% endif %}
   </section>
+</div>
 
+<div class="intake-cards intake-numbers">
   <section class="card intake-card" aria-labelledby="in-last">
     <div class="card-header"><h2 id="in-last">Last mail arrived</h2></div>
     <p class="intake-big">{{ last_arrived|local_time if last_arrived else ("Not recorded" if last_processed else "Nothing yet") }}</p>
