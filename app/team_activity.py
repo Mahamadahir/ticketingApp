@@ -40,7 +40,7 @@ AGENT_ONLY_EVENTS = (
     "category_reviewed", "attachment_renamed", "note_visibility_changed", "backdated", "due_changed", "required_by_changed",
     "linked", "unlinked", "child_linked", "child_unlinked", "split", "split_from", "reclosed",
     "sent_to_msp", "msp_hold", "msp_hold_released", "msp_forwarded", "msp_forward_dismissed", "msp_acknowledged",
-    "with_msp_through", "taken_back_from_msp", "linked_taken_back_from_msp",
+    "msp_told_no_longer_needed", "msp_not_told", "with_msp_through", "taken_back_from_msp", "linked_taken_back_from_msp",
 )
 
 
