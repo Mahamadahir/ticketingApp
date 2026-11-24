@@ -1590,7 +1590,7 @@ File: `app/templating.py`
 - Functions: `is_htmx`
 - Imports: `app.backdating`, `app.database`, `app.forms`, `app.models`, `app.navigation`, `app.outage`, `app.permissions`, `app.presence`, `app.request_icons`, `app.static_url`, `app.status_display`, `app.theme`, `app.time_zones`, `app.visibility`
 - Imported by: `app.main`, `app.routers.action_links`, `app.routers.admin`, `app.routers.approvals`, `app.routers.auth`, `app.routers.bulk_resolve`, `app.routers.data_protection`, `app.routers.feedback`, `app.routers.legal`, `app.routers.link_account`, `app.routers.msp_mail`, `app.routers.my_settings`, `app.routers.notifications`, `app.routers.portal`, `app.routers.reports`, `app.routers.tickets`, `app.subject_access`
-- Tests: `test_reply_files.py`, `test_ticket_page.py`
+- Tests: `test_admin_mail_pages.py`, `test_reply_files.py`, `test_ticket_page.py`
 
 ### `app.thanks_rules`
 

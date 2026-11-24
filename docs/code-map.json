@@ -6723,6 +6723,7 @@
       "summary": "The one place the Jinja2 environment is built, so every router renders the same way.",
       "tables": [],
       "tests": [
+        "tests/test_admin_mail_pages.py",
         "tests/test_reply_files.py",
         "tests/test_ticket_page.py"
       ]

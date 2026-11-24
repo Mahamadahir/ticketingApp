@@ -818,7 +818,7 @@ def test_the_admin_page_shows_the_state_and_no_secrets(client, db_session, mail)
     response = client.get("/admin/mail-intake")
 
     assert response.status_code == 200
-    assert resource() in response.text.replace("&#39;", "'")
+    assert resource() in response.text.replace("&#39;", "'").replace("<wbr>", "")  # the value carries line-break points (#294)
     assert "1 message notification" in response.text
     assert "state-xyz" not in response.text and "Bearer" not in response.text
 
