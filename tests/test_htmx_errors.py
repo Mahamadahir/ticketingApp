@@ -54,7 +54,12 @@ def test_a_bad_follower_address_and_a_validation_error_show_messages(client, db_
     bad_address = client.post(f"/tickets/{ticket.number}/followers", data={"email": "nope"}, headers=HTMX)
     assert bad_address.status_code == 400 and "not a valid email address" in bad_address.text
 
-    missing = client.post(f"/tickets/{ticket.number}/note", data={}, headers=HTMX)
+    # An empty note is a refusal that shows in the Add note card (#266); a validation error (too long) still goes to #flash.
+    empty = client.post(f"/tickets/{ticket.number}/note", data={}, headers=HTMX)
+    assert empty.status_code == 200 and "HX-Retarget" not in empty.headers and "Write the note first" in empty.text
+    from app.forms import MAX_MESSAGE_LENGTH
+
+    missing = client.post(f"/tickets/{ticket.number}/note", data={"body": "x" * (MAX_MESSAGE_LENGTH + 1)}, headers=HTMX)
     assert missing.status_code == 422
     assert missing.headers["HX-Retarget"] == "#flash" and "Check what you entered" in missing.text
 

@@ -404,7 +404,7 @@ def test_each_step_kind_is_drawn_as_its_sentence(client, db_session):
     page = hx(client, "/tickets/activity/latest").text
     card = re.search(r'<article class="act-card act-agent">.*?</article>', page, re.S).group(0)
 
-    assert re.search(r'Updated status: <span class="chip t-gray">New</span> <span class="act-arrow"[^>]*>&rarr;</span> <span class="chip t-blue">With MSP</span>', card)
+    assert re.search(r'Updated status: <span class="chip t-blue">New</span> <span class="act-arrow"[^>]*>&rarr;</span> <span class="chip t-amber">With MSP</span>', card)
     assert re.search(r'Added an internal note<blockquote class="act-quote act-note">Device enrolled</blockquote>', card)
     assert re.search(r'Emailed the requester<span class="act-first-line">On our way</span>', card) and "Second line" not in card
     assert "Assigned to <strong>Agent Ann</strong> (You)" in card
@@ -495,29 +495,30 @@ def _event(db_session, ticket, actor, event_type, days_ago):
     db_session.commit()
 
 
-def _agents(db_session, team):
+def _people(db_session):
     made = {}
-    for key, email in (("recent", "recent@example.com"), ("old", "old@example.com")):
-        user = User(email=email, display_name=key.capitalize(), role=UserRole.AGENT)
+    for key, email, role, extra in (
+        ("agent", "zed@example.com", UserRole.AGENT, {}),
+        ("super", "amy@example.com", UserRole.SUPER_ADMIN, {}),
+        ("inactive", "gone@example.com", UserRole.AGENT, {"is_active": False}),
+        ("breakglass", "bg@example.com", UserRole.SUPER_ADMIN, {"is_break_glass": True}),
+        ("requester", "req@example.com", UserRole.END_USER, {}),
+    ):
+        user = User(email=email, display_name=key.capitalize(), role=role, **extra)
         db_session.add(user)
-        db_session.commit()
-        set_role(db_session, user.id, UserRole.AGENT, team.id)
         made[key] = user
+    db_session.commit()
     return made
 
 
-def test_the_person_filter_lists_people_active_in_the_window_only_and_reads_it_bounded(client, db_session):
+def test_the_person_filter_lists_every_active_agent_and_super_admin_without_reading_history(client, db_session):
     from sqlalchemy import event
 
     from app.database import engine
-    from app.team_activity import PERSON_WINDOW_DAYS, person_choices
+    from app.team_activity import person_choices
 
-    team, category, _ = desk(client, db_session)
-    classified(client, category, "Windowed")
-    ticket = ticket_named(db_session, "Windowed")
-    people = _agents(db_session, team)
-    _event(db_session, ticket, "recent@example.com", "priority_changed", 3)
-    _event(db_session, ticket, "old@example.com", "priority_changed", PERSON_WINDOW_DAYS + 30)
+    desk(client, db_session)
+    _people(db_session)
 
     seen = []
 
@@ -526,30 +527,30 @@ def test_the_person_filter_lists_people_active_in_the_window_only_and_reads_it_b
 
     event.listen(engine, "before_cursor_execute", record)
     try:
-        listed = [u.email for u in person_choices(db_session, None)]
+        listed = [u.email for u in person_choices(db_session)]
     finally:
         event.remove(engine, "before_cursor_execute", record)
-    assert "recent@example.com" in listed and "old@example.com" not in listed
-    feed_selects = [s for s in seen if "ticketevent" in s]
-    assert len(feed_selects) == 1  # one query, not a read of rows per person
-    assert "SELECT DISTINCT" in feed_selects[0] and ".at >= " in feed_selects[0]  # one row per actor, bounded in time
-    assert people["old"].email in [u.email for u in person_choices(db_session, None, chosen="Old@Example.com")]
+    assert "zed@example.com" in listed and "amy@example.com" in listed  # no activity needed
+    assert not {"gone@example.com", "bg@example.com", "req@example.com"} & set(listed)
+    names = [u.display_name for u in person_choices(db_session)]
+    assert names == sorted(names)
+    assert seen and not any("ticketevent" in s or "FROM message" in s for s in seen)  # the user table only
 
 
-def test_a_person_outside_the_window_still_works_as_the_person_parameter(client, db_session):
-    from app.team_activity import PERSON_WINDOW_DAYS
-
+def test_a_demoted_person_is_not_listed_but_works_as_the_person_parameter(client, db_session):
     team, category, _ = desk(client, db_session)
     classified(client, category, "Long ago")
     ticket = ticket_named(db_session, "Long ago")
-    _agents(db_session, team)
-    _event(db_session, ticket, "old@example.com", "priority_changed", PERSON_WINDOW_DAYS + 30)
+    people = _people(db_session)
+    _event(db_session, ticket, "zed@example.com", "priority_changed", 3)
+    set_role(db_session, people["agent"].id, UserRole.END_USER)
 
-    page = feed(client, person="old@example.com").text
-    assert 'value="old@example.com" selected' in page  # named in the filter though not in the default list
+    default = feed(client).text
+    assert 'value="zed@example.com"' not in default and 'value="amy@example.com"' in default
+    page = feed(client, person="zed@example.com").text
+    assert 'value="zed@example.com" selected' in page  # named in the filter though no longer an agent
     assert "Priority changed" in page  # and their step shows
-    assert 'value="old@example.com"' not in feed(client).text  # but not offered otherwise
-    assert 'value="old@example.com"' not in feed(client, tab="mine", person="old@example.com").text  # My activity ignores it
+    assert 'value="zed@example.com"' not in feed(client, tab="mine", person="zed@example.com").text  # My activity ignores it
 
 
 def test_a_demoted_agents_past_work_stays_agent_cards_and_their_own_requests_are_requester_cards(client, db_session):
@@ -566,7 +567,8 @@ def test_a_demoted_agents_past_work_stays_agent_cards_and_their_own_requests_are
     assert "Approval outcome" in " ".join(re.findall(r'<article class="act-card act-requester">.*?</article>', page, re.S))
     from app.team_activity import person_choices
 
-    assert "agent@example.com" in [u.email for u in person_choices(db_session, None)]  # the filter can still pick her
+    assert "agent@example.com" not in [u.email for u in person_choices(db_session)]  # no longer an agent: not listed
+    assert "agent@example.com" in [u.email for u in person_choices(db_session, "agent@example.com")]  # but ?person= names her
     agent_text = " ".join(re.findall(r'<article class="act-card act-agent">.*?</article>', page, re.S))
     requester_text = " ".join(re.findall(r'<article class="act-card act-requester">.*?</article>', page, re.S))
     assert "Priority changed" in agent_text and "Added an internal note" in agent_text and "Triaged" in agent_text

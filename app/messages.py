@@ -4,7 +4,9 @@ notes, what the requester is allowed to see, and the agent timeline.
 Rules that live here and nowhere else:
 - Only requester_visible_messages may feed the portal or outbound mail. It
   returns PUBLIC messages only, so an internal note cannot reach either.
-- A ticket cannot be emailed until it is triaged. Notes can be added any time.
+- A ticket cannot be emailed until it is triaged (`can_email_now`). Notes can be added any time. The one exception is
+  the split notice (`EMAIL_BEFORE_TRIAGE`): an automatic "your request was split" that says nothing hidden and is sent
+  whether or not the original or its parts are triaged yet.
 - Which messages show on which ticket of a split request (_shared_conversation), the
   one thread subject (thread_subject) and the "About:" line (about_labels).
 - What a requester is told about a ticket's state, in plain words: `requester_status` (the one mapping from the
@@ -35,7 +37,8 @@ from app.models import (
 )
 from app.request_questions import answer_rows
 from app.notifications import notify_agent_emailed, notify_reply, withdraw_mentions
-from app.settings_store import AUTO_CLOSE_AFTER_DAYS, AUTO_CLOSE_ENABLED, count_setting, get_flag
+from app.outbox import SPLIT_NOTICE
+from app.settings_store import AUTO_CLOSE_AFTER_DAYS, AUTO_CLOSE_ENABLED, SPLIT_EMAIL_ENABLED, count_setting, get_flag
 from app.sla import note_first_response
 from app.time_zones import format_long_date, relative_time
 from app.reply_channel import AGENT, EMAIL, MESSAGE_CHANNELS, PORTAL, SYSTEM, TEAMS_CHANNEL, queue_reply, route_for
@@ -88,6 +91,19 @@ def _record(
     ticket.updated_at = datetime.now(timezone.utc)
     session.add(ticket)
     return message
+
+
+# Outbox kinds (app/outbox.py) that go to the requester even though the ticket is not triaged. A deliberate exception to "no
+# email until triaged", decided here and nowhere else: the split notice carries only the new references and subjects the
+# requester themselves caused, and is sent when an agent splits an untriaged ticket (#259). The acknowledgement
+# is the other automatic receipt that does not wait; it has its own builder and carries no ticket content.
+EMAIL_BEFORE_TRIAGE = (SPLIT_NOTICE,)
+
+
+def can_email_now(ticket: Ticket, kind: Optional[str] = None) -> bool:
+    """Whether an email of this outbox kind may go to the requester of this ticket now: once it is triaged, or at any
+    time for a kind in EMAIL_BEFORE_TRIAGE."""
+    return is_triaged(ticket) or kind in EMAIL_BEFORE_TRIAGE
 
 
 class EmptyEmail(ValueError):
@@ -278,11 +294,13 @@ def attach_files(
     ]
 
 
-def record_notice(session: Session, ticket: Ticket, body: str, copy_followers: bool = False) -> Message:
+def record_notice(
+    session: Session, ticket: Ticket, body: str, copy_followers: bool = False, kind: Optional[str] = None
+) -> Message:
     """An automatic public message to the requester (an approval decision, say). Not an agent's
     email, so it does not count as a first response. It is queued as an email too. Followers are
     copied only when copy_followers is set (an automatic resolution does), by the same rule as an
-    agent's email."""
+    agent's email. `kind` is the outbox kind when it is not the plain notice (the split notice)."""
     cc = None
     if copy_followers:
         cc = ", ".join(f.email for f in _copied_followers(session, ticket, None)) or None
@@ -290,8 +308,23 @@ def record_notice(session: Session, ticket: Ticket, body: str, copy_followers: b
         session, ticket, sender="IT Support (automatic)", body=body,
         direction=MessageDirection.OUTBOUND, visibility=MessageVisibility.PUBLIC, cc=cc, channel=SYSTEM,
     )
-    queue_reply(session, message, ticket)
+    queue_reply(session, message, ticket, kind)
     return message
+
+
+def record_split_notice(session: Session, original: Ticket, parts: list[Ticket]) -> Optional[Message]:
+    """The automatic "your request was split" notice to the requester of `original`, listing each new part's reference and
+    subject, copying the followers like any email on the ticket. Nothing when the `split_email_enabled` setting is off.
+    It is recorded on the original (so its timeline and the requester's portal show it) and queued like any notice, so it
+    counts towards the automatic email cap, and it is allowed before triage (EMAIL_BEFORE_TRIAGE). The words are the admin
+    template `split_notice`, filled in now. Does not commit."""
+    from app.email_templates import render_template, ticket_values  # here, as email_header does
+
+    if not parts or not get_flag(session, SPLIT_EMAIL_ENABLED):
+        return None
+    listing = "\n".join(f"{part.reference} {part.subject}" for part in parts)
+    body = render_template(session, "split_notice", {**ticket_values(original), "new_tickets": listing}).body
+    return record_notice(session, original, body, copy_followers=True, kind=SPLIT_NOTICE)
 
 
 def add_note(

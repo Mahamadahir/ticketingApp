@@ -417,6 +417,11 @@ class Ticket(SQLModel, table=True):
     # one of ours. msp_ack_alerted_at is when the "MSP has not confirmed" alert was last raised (once per handoff).
     msp_ticket_number: Optional[str] = Field(default=None, unique=True, index=True)
     msp_ack_alerted_at: Optional[datetime] = Field(default=None)
+    # The handoff moment this ticket's "goes to the MSP tonight" warning was last sent for (#271). Kept on the ticket, not
+    # found by looking for the bell entry, so deleting or purging that entry cannot make the job warn a second time.
+    # msp_warned_user_id is who was told, so a ticket re-assigned after the warning warns its new assignee too.
+    msp_warned_for: Optional[datetime] = Field(default=None)
+    msp_warned_user_id: Optional[int] = Field(default=None, foreign_key="user.id")
 
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -1003,6 +1008,9 @@ class InboundMail(SQLModel, table=True):
     outcome: str  # ticket_created, reply_added or ignored_*
     ticket_id: Optional[int] = Field(default=None, foreign_key="ticket.id", index=True)
     message_id: Optional[int] = Field(default=None, foreign_key="message.id")
+    # When the mail reached the mailbox (Graph's receivedDateTime). `created_at` is when the intake recorded it,
+    # which after an outage and a catch-up is later. None for rows from before this column and for mail built by hand.
+    received_at: Optional[datetime] = Field(default=None)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

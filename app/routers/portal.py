@@ -47,7 +47,7 @@ from app.raising import (
 )
 from app.sla import IMPACT_LABELS, URGENCY_LABELS, Level
 from app.triage import TriageError
-from app.visibility import Access, access_context, may_set_required_by, ticket_access
+from app.visibility import ASSIGNEE_ROLES, Access, access_context, may_set_required_by, ticket_access
 from app.attachments import files_by_message
 from app import reply_files
 from app.storage import Storage, get_storage
@@ -415,7 +415,7 @@ def raise_new_ticket(
             raise RaiseError("Choose a kind of request from the list")
         chosen_agent = optional_int(agent_id)
         assignee = session.get(User, chosen_agent) if chosen_agent is not None else None
-        if chosen_agent is not None and (assignee is None or assignee.role != UserRole.AGENT):
+        if chosen_agent is not None and (assignee is None or assignee.role not in ASSIGNEE_ROLES):
             raise RaiseError("Choose an agent from the list")
         try:
             level_impact = Level(impact) if impact else None

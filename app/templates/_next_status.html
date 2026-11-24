@@ -5,16 +5,16 @@
 {% if message_statuses %}
 <label class="tp-status">Ticket status after this
   <select name="next_status">
-    <option value="" selected>{{ blank_label }}</option>
+    <option value="" {{ "selected" if not (card_error and card_values.get("next_status")) else "" }}>{{ blank_label }}</option>
     {% for s in message_statuses %}
-    <option value="{{ s.value }}">{{ s.value.replace("_", " ") }}{{ " (current)" if s == ticket.status else "" }}</option>
+    <option value="{{ s.value }}" {{ "selected" if card_error and card_values.get("next_status") == s.value else "" }}>{{ s|status_label }}{{ " (current)" if s == ticket.status else "" }}</option>
     {% endfor %}
   </select>
 </label>
 <div class="tp-due">
   <label>Due date, needed for Scheduled
-    <input type="date" name="due_on" value="{{ ticket.due_on.isoformat() if ticket.due_on else "" }}" /></label>
+    <input type="date" name="due_on" value="{{ card_values.get("due_on", "") if card_error and "due_on" in card_values else (ticket.due_on.isoformat() if ticket.due_on else "") }}" /></label>
   <label>Why the date is being moved (only if you change it)
-    <input type="text" name="due_reason" maxlength="500" /></label>
+    <input type="text" name="due_reason" maxlength="500" value="{{ card_values.get("due_reason", "") if card_error else "" }}" /></label>
 </div>
 {% endif %}

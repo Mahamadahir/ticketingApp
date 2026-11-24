@@ -191,6 +191,7 @@ COLUMNS: dict[str, ColumnUse] = {
     "ticket.resolved_by_id": _use(STAFF, USER_ID),
     "ticket.triaged_by_id": _use(STAFF, USER_ID),
     "ticket.escalated_by_id": _use(STAFF, USER_ID),
+    "ticket.msp_warned_user_id": _use(STAFF, USER_ID),
     "ticket.escalation_reason": _use(TEXT, FREE_TEXT, "agent-written, internal", anon=SCRUB),
     "ticket.resolution_notes": _use(TEXT, FREE_TEXT, "the resolution the requester is told", anon=SCRUB),
     "ticket.graph_conversation_id": _use(NOT_PERSON, LABEL, "the mail thread; cleared so mail from the old address cannot join it", anon=NULL),

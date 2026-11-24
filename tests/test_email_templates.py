@@ -232,8 +232,6 @@ def test_the_raised_for_you_email_reads_as_it_always_did(client, db_session, dev
         f"Reference: {ticket.reference}",
         f"Subject: {ticket.subject}",
         *(["", first.body] if first else []),
-        "",
-        "Reply to this email to add anything else. Please keep the reference in the subject.",
     ])
     assert built.body.endswith("\n\n" + expected) and built.record == built.body  # after the header (tests/test_email_header.py)
 

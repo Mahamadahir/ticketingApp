@@ -327,6 +327,9 @@ label { cursor: pointer; }
 .tp-form > input, .tp-form > select { font-size: 14px; font-weight: 500; color: var(--text); width: 100%; }
 .tp-form fieldset, .tp-form > .tp-item { width: 100%; margin: 0; }
 .tp-form fieldset label { margin: 0; }
+.tp-form .tp-split-part > [data-clear-part] { margin-top: 10px; }
+.tp-form .tp-split-part > [data-remove-part] { margin-top: 10px; margin-left: 8px; vertical-align: top; }
+.tp-form .tp-split-part[hidden], .tp-form [data-add-part][hidden], .tp-form [data-remove-part][hidden] { display: none; }
 .tp-form > div { width: 100%; }
 .tp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; width: 100%; }
 
@@ -497,10 +500,6 @@ th, td { text-align: left; padding: 0.5rem; border-bottom: 1px solid var(--borde
 th { color: var(--muted); font-weight: 600; }
 
 .status { padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.85rem; background: var(--gray-bg); color: var(--gray); }
-.status-open { background: var(--amber-bg); color: var(--amber); }
-.status-in_progress { background: var(--blue-bg); color: var(--blue); }
-.status-resolved { background: var(--green-bg); color: var(--green); }
-.status-closed { background: var(--gray-bg); color: var(--gray); }
 
 .message { border: 1px solid var(--border); background: var(--surface); border-radius: var(--radius); padding: 0.75rem; margin-bottom: 0.75rem; }
 .message-outbound { background: var(--blue-bg); }

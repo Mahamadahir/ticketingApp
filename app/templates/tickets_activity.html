@@ -31,7 +31,7 @@
     </label>
     {% if tab != "mine" %}
     <label class="field">Person
-      <select name="person" title="People with agent activity in the last 90 days">  {# PERSON_WINDOW_DAYS #}
+      <select name="person">
         <option value="">Everyone</option>
         {% for p in people %}<option value="{{ p.email }}" {{ "selected" if person == p.email.lower() else "" }}>{{ p.display_name }}</option>{% endfor %}
       </select>

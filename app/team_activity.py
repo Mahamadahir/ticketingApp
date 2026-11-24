@@ -24,7 +24,9 @@ from sqlmodel import Session, select
 from app.models import Message, MessageDirection, Ticket, TicketEvent, User
 from app.notification_settings import AGENT_ROLES
 from app.settings_store import ACTIVITY_GROUP_MINUTES, count_setting
+from app.status_display import status_label, status_tone
 from app.time_zones import format_long_date, valid_zone
+from app.visibility import ASSIGNEE_ROLES
 
 EXCERPT = 160
 
@@ -40,9 +42,6 @@ AGENT_ONLY_EVENTS = (
     "sent_to_msp", "msp_hold", "msp_hold_released", "msp_forwarded", "msp_forward_dismissed", "msp_acknowledged",
     "with_msp_through", "taken_back_from_msp", "linked_taken_back_from_msp",
 )
-
-# The Person filter lists people active in this many days (#262); anyone can still be picked through ?person=.
-PERSON_WINDOW_DAYS = 90
 
 
 class Kind(str, Enum):
@@ -380,10 +379,8 @@ def role_of(row) -> str:
 
 
 def status_chip(value: Optional[str]) -> tuple[str, str]:
-    """(label, chip tone) of a status, the tones the ticket page uses: green Resolved, blue With MSP, gray the rest."""
-    value = (value or "none").lower()
-    label = value.replace("_", " ").capitalize().replace("msp", "MSP")
-    return label, "green" if value == "resolved" else ("blue" if value == "with_msp" else "gray")
+    """(label, chip tone) of a status: the one mapping in app/status_display.py."""
+    return status_label(value), status_tone(value)
 
 
 def step_of(row, names: Mapping[str, str], viewer: Optional[str] = None) -> Step:
@@ -521,20 +518,14 @@ def _lookups(session: Session, rows) -> tuple[dict[str, str], dict[int, Ticket],
     return people, tickets, teams
 
 
-def person_choices(
-    session: Session, visible, team_id: Optional[int] = None, chosen: Optional[str] = None, now: Optional[datetime] = None
-) -> list[User]:
-    """The agents whose steps appear in this viewer's feed over the last PERSON_WINDOW_DAYS (the choices of the person
-    filter): a bounded, DISTINCT query on the actor, never the whole history (#262). `chosen` is the address picked in the
-    URL: it is listed even when they were last active before the window, so the filter still shows who it is on."""
-    since = _aware(now or datetime.now(timezone.utc)) - timedelta(days=PERSON_WINDOW_DAYS)
-    feed = feed_query(visible, team_id, since=since).subquery()
-    # People with agent work in the window, which includes an agent demoted since (their cards are agent cards, so the
-    # filter can pick them), plus the one chosen in the URL while they are an agent.
-    actors = select(func.lower(feed.c.actor)).where(feed.c.agent.is_(True)).distinct()
-    listed = func.lower(User.email).in_(actors)
+def person_choices(session: Session, chosen: Optional[str] = None) -> list[User]:
+    """The Person filter's choices (#262): every current agent, that is every active user who can hold tickets
+    (ASSIGNEE_ROLES, break-glass accounts left out as for assignment), by display name. A query on the user table only,
+    never a read of the ticket history. `chosen` is the address in the URL: that person is listed too, whatever their role
+    now, so a demoted agent whose past steps are agent cards can still be picked and stays selected."""
+    listed = User.role.in_(ASSIGNEE_ROLES) & User.is_active & User.is_break_glass.is_(False)
     if chosen:
-        listed = or_(listed, (func.lower(User.email) == chosen.lower()) & User.role.in_(AGENT_ROLES))
+        listed = or_(listed, func.lower(User.email) == chosen.lower())
     return list(session.exec(select(User).where(listed).order_by(User.display_name)).all())
 
 

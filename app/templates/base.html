@@ -288,6 +288,31 @@
     })();
   </script>
   <script>
+    // The ⋯ menu on a thread note (ticket page, _tp_thread.html) closes the same way: on a click elsewhere or Escape (focus goes back
+    // to its ⋯ button), and only one is open at a time. The notes are redrawn by htmx, so the open ones are looked up when the event
+    // happens. Without scripts the menu is still a plain <details>.
+    (function () {
+      var open = "details.tp-note-menu[open]";
+      document.addEventListener("click", function (event) {
+        document.querySelectorAll(open).forEach(function (menu) { if (!menu.contains(event.target)) { menu.open = false; } });
+      });
+      document.addEventListener("toggle", function (event) {
+        var menu = event.target;
+        if (!menu.matches || !menu.matches("details.tp-note-menu") || !menu.open) { return; }
+        document.querySelectorAll(open).forEach(function (other) { if (other !== menu) { other.open = false; } });
+      }, true);
+      document.addEventListener("keydown", function (event) {
+        if (event.key !== "Escape") { return; }
+        var at = document.activeElement;
+        document.querySelectorAll(open).forEach(function (menu) {
+          menu.open = false;
+          // Only take focus back when it was in the menu (or nowhere): Escape in a box elsewhere keeps its own focus.
+          if (menu.contains(at) || !at || at === document.body) { menu.querySelector("summary").focus(); }
+        });
+      });
+    })();
+  </script>
+  <script>
     // Forms swap <main> with htmx. Clear any earlier message when one is sent, and
     // let our error messages (4xx responses that name #flash as their target) show,
     // because htmx ignores 4xx responses by default.

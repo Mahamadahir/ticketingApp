@@ -1,7 +1,7 @@
-"""indexes for the Team activity window
+"""indexes for the Team activity feed time filter
 
 Revision ID: d4e8a1b7c3f9
-Revises: c255a3f8d1e6
+Revises: a7d2e9b41c58
 Create Date: 2026-11-20 17:00:00.000000
 
 """
@@ -12,7 +12,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = 'd4e8a1b7c3f9'
-down_revision: Union[str, Sequence[str], None] = 'c255a3f8d1e6'
+down_revision: Union[str, Sequence[str], None] = 'a7d2e9b41c58'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

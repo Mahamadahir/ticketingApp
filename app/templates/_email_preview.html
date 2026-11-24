@@ -20,7 +20,7 @@
   </div>
   {% endif %}
   <p class="note">
-    {% if preview.status_after %}Sending moves this ticket to {{ preview.status_after.value.replace("_", " ") }}{% if preview.status_after.value == "awaiting_user" %} and pauses its SLA clock{% endif %}.
+    {% if preview.status_after %}Sending moves this ticket to {{ preview.status_after|status_label }}{% if preview.status_after.value == "awaiting_user" %} and pauses its SLA clock{% endif %}.
     {% else %}Sending leaves the ticket's status as it is.{% endif %}
     {% if preview.by_teams %}The message is recorded on the ticket and goes to the requester in Teams{% if preview.also_email %} and by email{% endif %}.
     {% else %}The message is recorded on the ticket and goes to the requester by email.{% endif %}

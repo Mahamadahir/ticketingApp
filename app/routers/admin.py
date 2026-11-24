@@ -26,6 +26,7 @@ from app.admin_home import area_cards, needs_attention
 from app.auth import get_current_user, hash_password, require_permission, require_roles
 from app.user_filters import USER_STATUS_LABELS, filter_users
 from app.permissions import ASSIGNABLE_ROLES, MANAGE_REQUEST_TEMPLATES, PERMISSIONS
+from app.visibility import ASSIGNEE_ROLES
 from app.sla import impact_options, urgency_options
 from app.categories import (
     CATEGORY_REVIEW_CONDITIONS,
@@ -174,7 +175,7 @@ from app.msp import compile_subject_pattern
 from app.approvals import drop_votes_of, start_waiting_rounds
 from app.sessions import live_session_counts, revoke_user_sessions
 from app.inbound import IGNORED_FLOOD
-from app.subscriptions import health_warnings, mail_folder, subscription_resource
+from app.subscriptions import CATCH_UP_PROBLEM, SUBSCRIPTION_PROBLEM, health_problems, mail_folder, subscription_resource
 from app.teams import MAX_ATTEMPTS
 from app.navigation import allowed_admin_pages
 from app.time_zones import parse_clock, parse_dates, valid_zone, zone_for_user
@@ -1526,7 +1527,7 @@ def list_request_types(
             "question_kinds": QUESTION_KINDS,
             "sub_templates": sub_templates,
             "condition_text": {t.id: format_conditions(session, t.condition_groups, question_labels) for t in all_sub},
-            "agents": session.exec(select(User).where(User.role == UserRole.AGENT, User.is_active).order_by(User.display_name)).all(),
+            "agents": session.exec(select(User).where(User.role.in_(ASSIGNEE_ROLES), User.is_active, User.is_break_glass.is_(False)).order_by(User.display_name)).all(),
             "user": user,
         },
     )
@@ -2370,17 +2371,21 @@ def view_mail_intake(
     flood_recent = session.exec(
         select(InboundMail).where(InboundMail.outcome == IGNORED_FLOOD).order_by(InboundMail.created_at.desc()).limit(10)
     ).all()
-    last_received = session.exec(select(func.max(InboundMail.created_at))).one()
-    warnings = health_warnings(session, now)
+    # Two different times: when the newest mail reached the mailbox, and when the intake last recorded one
+    # (after an outage the catch-up records old mail, so the two can be far apart).
+    last_arrived = session.exec(select(func.max(InboundMail.received_at))).one()
+    last_processed = session.exec(select(func.max(InboundMail.created_at))).one()
+    problems = health_problems(session, now)
     return templates.TemplateResponse(
         request,
         "admin_mail_intake.html",
         {
             "subscription": subscription, "sync": sync, "waiting": waiting, "oldest": oldest, "now": now,
             "flood_day": flood_day, "flood_total": flood_total, "flood_recent": flood_recent,
-            "warnings": warnings, "last_received": last_received,
-            "subscription_problem": any(w.startswith("Mail subscription") for w in warnings),
-            "catch_up_problem": any(w.startswith("Mail catch-up") for w in warnings),
+            "warnings": [p.text for p in problems],
+            "last_arrived": last_arrived, "last_processed": last_processed,
+            "subscription_problem": any(p.kind == SUBSCRIPTION_PROBLEM for p in problems),
+            "catch_up_problem": any(p.kind == CATCH_UP_PROBLEM for p in problems),
             "user": user,
         },
     )
