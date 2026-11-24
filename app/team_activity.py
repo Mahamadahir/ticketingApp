@@ -26,8 +26,22 @@ from app.notification_settings import AGENT_ROLES
 from app.settings_store import ACTIVITY_GROUP_MINUTES, count_setting
 from app.status_display import status_label, status_tone
 from app.time_zones import format_long_date, valid_zone
+from app.visibility import ASSIGNEE_ROLES
 
 EXCERPT = 160
+
+# Event types only an agent can cause (triage, assignment, escalation, links, splits, the MSP steps, dates, priority and
+# so on). A step of one of these types is agent work whatever the person's role is now (#270): a demoted agent's past
+# changes stay agent cards. Every other event type (created, reopened, status and approval steps, follower steps, and any
+# type added later) is decided by the person's role, so a new type that a requester can cause is never shown as an
+# agent's by mistake. Add a type here only when a requester or approver can never cause it.
+AGENT_ONLY_EVENTS = (
+    "triaged", "assigned", "escalated", "team_changed", "type_changed", "priority_changed", "category_changed",
+    "category_reviewed", "attachment_renamed", "note_visibility_changed", "backdated", "due_changed", "required_by_changed",
+    "linked", "unlinked", "child_linked", "child_unlinked", "split", "split_from", "reclosed",
+    "sent_to_msp", "msp_hold", "msp_hold_released", "msp_forwarded", "msp_forward_dismissed", "msp_acknowledged",
+    "msp_told_no_longer_needed", "msp_not_told", "with_msp_through", "taken_back_from_msp", "linked_taken_back_from_msp",
+)
 
 
 class Kind(str, Enum):
@@ -61,7 +75,14 @@ def feed_query(
             TicketEvent.detail.label("detail"),
             Ticket.requester_email.label("requester"),
             cast(null(), Integer).label("author_id"),
-            case((User.id.is_(None), False), else_=User.role.in_(AGENT_ROLES)).label("agent"),
+            # Agent work is decided from what the step was, not only from the person's role now (#270): a note, a
+            # change or an email can only have been made by an agent, so a demoted agent's past work stays agent work.
+            # Only the types in AGENT_ONLY_EVENTS are decided that way; every other step goes by the person's role.
+            case(
+                (User.id.is_(None), False),
+                (TicketEvent.event_type.in_(AGENT_ONLY_EVENTS), True),
+                else_=User.role.in_(AGENT_ROLES),
+            ).label("agent"),
         )
         .join(Ticket, Ticket.id == TicketEvent.ticket_id)
         .join(User, func.lower(User.email) == func.lower(TicketEvent.actor_email), isouter=True)
@@ -497,12 +518,15 @@ def _lookups(session: Session, rows) -> tuple[dict[str, str], dict[int, Ticket],
     return people, tickets, teams
 
 
-def person_choices(session: Session, visible, team_id: Optional[int] = None) -> list[User]:
-    """The agents whose steps appear in this viewer's feed (the choices of the person filter)."""
-    feed = feed_query(visible, team_id).subquery()
-    actors = select(func.lower(feed.c.actor)).distinct()
-    query = select(User).where(func.lower(User.email).in_(actors), User.role.in_(AGENT_ROLES)).order_by(User.display_name)
-    return list(session.exec(query).all())
+def person_choices(session: Session, chosen: Optional[str] = None) -> list[User]:
+    """The Person filter's choices (#262): every current agent, that is every active user who can hold tickets
+    (ASSIGNEE_ROLES, break-glass accounts left out as for assignment), by display name. A query on the user table only,
+    never a read of the ticket history. `chosen` is the address in the URL: that person is listed too, whatever their role
+    now, so a demoted agent whose past steps are agent cards can still be picked and stays selected."""
+    listed = User.role.in_(ASSIGNEE_ROLES) & User.is_active & User.is_break_glass.is_(False)
+    if chosen:
+        listed = or_(listed, func.lower(User.email) == chosen.lower())
+    return list(session.exec(select(User).where(listed).order_by(User.display_name)).all())
 
 
 def count_steps_today(session: Session, visible, person: str, zone: str, now: Optional[datetime] = None) -> int:
