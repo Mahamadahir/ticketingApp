@@ -214,7 +214,7 @@ def mentionable_agents(session: Session, ticket: Ticket, author: User, query: st
     found = []
     for person in people:
         start = person.email.lower().partition("@")[0]
-        found.append((person, start if shared[start] == 1 else person.email.lower()))
+        found.append((person, start if shared.get(start, 1) == 1 else person.email.lower()))
     return found
 
 
