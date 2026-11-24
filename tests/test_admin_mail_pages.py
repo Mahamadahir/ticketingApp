@@ -159,3 +159,31 @@ def test_last_mail_arrived_says_not_recorded_for_mail_from_before_the_time_was_k
     db_session.commit()
     card = _intake_card(client.get("/admin/mail-intake").text, "Last mail arrived")
     assert "Not recorded" in card and "Nothing yet" not in card
+
+
+def test_mail_intake_long_values_get_the_fit_classes_and_wrap_points(client, db_session):
+    """#294: the Subscription card's resource and id are `mono-wrap` with break points after / - . @ _, and the two detail cards
+    sit in their own wider grid, apart from the two number cards. Structure only; the CSS is checked in the browser."""
+    admin(client, db_session)
+    resource = "users/itsupport-staging@vardags.com/mailFolders('Inbox')/messages"
+    db_session.add(GraphSubscription(
+        resource=resource, subscription_id="3f2a1c9e-7b44-4d0e-9a51-2c8d6e0b1a77",
+        expires_at=datetime.now(timezone.utc) + timedelta(days=30),
+    ))
+    db_session.add(MailSyncState(folder=mail_folder()))
+    db_session.commit()
+    page = client.get("/admin/mail-intake").text
+    card = _intake_card(page, "Subscription")
+    assert '<dd class="mono-wrap">users/<wbr>itsupport-<wbr>staging@<wbr>vardags.<wbr>com/<wbr>' in card
+    assert '<dd class="mono-wrap">3f2a1c9e-<wbr>7b44-<wbr>' in card
+    assert 'class="dl"' in card
+    assert len(re.findall(r'<div class="intake-cards">', page)) == 1 and 'class="intake-cards intake-numbers"' in page
+    detail, numbers = page.split('class="intake-cards intake-numbers"')
+    assert "in-sub" in detail and "in-sync" in detail and "in-last" not in detail
+    assert "in-last" in numbers and "in-wait" in numbers
+
+
+def test_break_points_escapes_the_value_before_adding_break_opportunities():
+    from app.templating import _break_points
+
+    assert str(_break_points("<b>a/b</b>")) == "&lt;b&gt;a/<wbr>b&lt;/<wbr>b&gt;"

@@ -146,6 +146,13 @@ def _file_size(size: int) -> str:
     return f"{size} bytes" if size < 1024 else f"{size / 1024:.1f} KB"
 
 
+def _break_points(value) -> Markup:
+    """Escape a long technical value (a resource path, an id, an address) and offer a line break after each of / - . @ _ so
+    it wraps at those, not in the middle of a word. Use with the `mono-wrap` class."""
+    return Markup(re.sub(r"([/\-.@_])", r"\1<wbr>", str(escape(value))))
+
+
+templates.env.filters["break_points"] = _break_points
 templates.env.filters["initials"] = _initials
 templates.env.filters["file_size"] = _file_size
 templates.env.filters["status_label"] = status_label
