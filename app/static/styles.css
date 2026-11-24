@@ -865,6 +865,9 @@ th { color: var(--muted); font-weight: 600; }
 /* Admin > System and Logs pages (9L part 2): Scheduled jobs, Outage mode, Data protection, the logs and Feedback. Tokens only. */
 .job-status { margin: 0 0 16px; }
 .job-table td { vertical-align: top; }
+.job-message { margin: 0 0 16px; }
+.job-run-card { max-width: 640px; }
+.job-warning { margin: 0 0 12px; }
 .log-table td { vertical-align: top; overflow-wrap: anywhere; }
 .log-table { min-width: 720px; }
 .outage-cards, .dp-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; margin: 0 0 24px; align-items: start; }
