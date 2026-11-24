@@ -26,7 +26,7 @@ from app.identity import my_ticket_condition, people_for_addresses, person_for_a
 from app.models import FINISHED_STATUSES, Message, Notification, TeamsPost, Ticket, TicketStatus, User, UserRole, UserSession
 from app.notification_settings import IN_APP, TEAMS, is_enabled, offers, wants_approval_email
 from app.settings_store import NOTIFICATION_KEEP_DISMISSED_DAYS, TEAMS_HOLD_WHILE_ACTIVE_MINUTES, TEAMS_UNREAD_MINUTES, count_setting, get_int_setting
-from app.visibility import Access, access_context, team_members, ticket_access, visible_ticket_condition
+from app.visibility import Access, access_context, can_open_condition, team_members, ticket_access, visible_ticket_condition
 
 ASSIGNED = "assigned"
 MENTIONED = "mentioned"
@@ -162,39 +162,59 @@ def mentioned_in(session: Session, ticket: Ticket, body: str, author: User) -> l
     return found
 
 
-_MENTION_WORD = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+def _like_text(text: str) -> str:
+    """`text` as a LIKE pattern that matches only itself (what was typed is plain text, never a pattern)."""
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def mentionable_agents(session: Session, ticket: Ticket, author: User, query: str = "", limit: int = 8) -> list[tuple[User, str]]:
     """The agents the note composer's @ list offers (#254): active agents and super admins who can open this ticket
-    (`ticket_access` in app/visibility.py, the same test `mentioned_in` ends with), never the author, whose name or address
-    starts with what has been typed after the @. Each comes with the text to insert after the @: the part of the address
-    before the @, or the whole address when another agent shares that part (the same rule `mentioned_in` reads back, so what is
-    inserted notifies exactly that person). Someone whose address cannot be written as a mention is not offered."""
-    agents = session.exec(select(User).where(User.role.in_(AGENT_ROLES), User.is_active)).all()
-    locals_seen: dict[str, int] = {}
-    for agent in agents:
-        local = agent.email.lower().partition("@")[0]
-        locals_seen[local] = locals_seen.get(local, 0) + 1
+    (`can_open_condition` in app/visibility.py, the SQL form of `ticket_access`, the same test `mentioned_in` ends with),
+    never the author, whose name or address starts with what has been typed after the @ (or a word of either). Each
+    comes with the text to insert after the @: the part of the address before the @, or the whole address when another
+    agent shares that part (the same rule `mentioned_in` reads back, so what is inserted notifies exactly that person).
+    Someone whose address cannot be written as a mention is not offered.
+
+    Two queries however many agents there are (#261): the people, filtered, ordered and limited by the database, then
+    how many active agents share each address start (the sharing is counted across every agent, not only these)."""
+    email = func.lower(User.email)
+    local = func.split_part(email, "@", 1)
+    shown = func.lower(func.coalesce(User.display_name, ""))
     typed = (query or "").strip().lower()
-    found: list[tuple[User, str]] = []
-    levels_cache: dict[int, object] = {}
-    for agent in sorted(agents, key=lambda a: ((a.display_name or a.email).lower(), a.id)):
-        if agent.id == author.id:
-            continue
-        email = agent.email.lower()
-        local = email.partition("@")[0]
-        words = [part for part in re.split(r"[\s._-]+", f"{agent.display_name or ''} {local}".lower()) if part]
-        if typed and not (email.startswith(typed) or any(word.startswith(typed) for word in words) or (agent.display_name or "").lower().startswith(typed)):
-            continue
-        insert = local if locals_seen[local] == 1 else email
-        if not (_MENTION_WORD.fullmatch(local) and (insert == local or _MENTION_WORD.fullmatch(insert.partition("@")[0]))):
-            continue
-        levels = levels_cache.setdefault(agent.id, access_context(session, agent))
-        if ticket_access(agent, ticket, levels) >= Access.READ:
-            found.append((agent, insert))
-        if len(found) >= limit:
-            break
+    wanted = [
+        User.id != author.id,
+        User.role.in_(AGENT_ROLES),
+        User.is_active,
+        can_open_condition(ticket),
+        local.op("~")(r"^[A-Za-z0-9][A-Za-z0-9._-]*$"),  # one that can be written as a mention
+    ]
+    if typed:
+        like = _like_text(typed)
+        matches = [email.like(like + "%", escape="\\"), shown.like(like + "%", escape="\\")]
+        if not re.search(r"[\s._-]", typed):
+            # A word of the name or of the address's first part: what follows a space, dot, underscore or hyphen.
+            for separator in (" ", ".", "_", "-"):
+                after = "%" + _like_text(separator) + like + "%"
+                matches += [shown.like(after, escape="\\"), local.like(after, escape="\\")]
+        wanted.append(or_(*matches))
+    people = session.exec(
+        select(User)
+        .where(*wanted)
+        .order_by(func.lower(func.coalesce(func.nullif(User.display_name, ""), User.email)).collate("C"), User.id)
+        .limit(limit)
+    ).all()
+    if not people:
+        return []
+    starts = {person.email.lower().partition("@")[0] for person in people}
+    shared = dict(
+        session.exec(
+            select(local, func.count()).where(User.role.in_(AGENT_ROLES), User.is_active, local.in_(starts)).group_by(local)
+        ).all()
+    )
+    found = []
+    for person in people:
+        start = person.email.lower().partition("@")[0]
+        found.append((person, start if shared.get(start, 1) == 1 else person.email.lower()))
     return found
 
 
