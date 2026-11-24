@@ -500,6 +500,7 @@
         "tests/test_msp_mail.py",
         "tests/test_reply_files.py",
         "tests/test_subject_access.py",
+        "tests/test_ticket_page_queries.py",
         "tests/test_ticket_redesign.py",
         "tests/test_ticket_thread.py"
       ]
@@ -1190,6 +1191,7 @@
         "tests/test_teams_copy_sending.py",
         "tests/test_teams_intake.py",
         "tests/test_ticket_core.py",
+        "tests/test_ticket_page_queries.py",
         "tests/test_withdraw.py",
         "tests/test_worker.py"
       ]
@@ -2038,6 +2040,7 @@
         "tests/test_subject_access.py",
         "tests/test_teams_bot.py",
         "tests/test_teams_hold.py",
+        "tests/test_ticket_page_queries.py",
         "tests/test_ticket_presence.py",
         "tests/test_ticket_redesign.py",
         "tests/test_ticket_thread.py",
@@ -2675,6 +2678,7 @@
         "tests/test_thanks_rules.py",
         "tests/test_ticket_core.py",
         "tests/test_ticket_page.py",
+        "tests/test_ticket_page_queries.py",
         "tests/test_ticket_presence.py",
         "tests/test_ticket_redesign.py",
         "tests/test_ticket_thread.py",
@@ -3117,6 +3121,7 @@
         "tests/test_teams_copy_sending.py",
         "tests/test_teams_dm.py",
         "tests/test_teams_hold.py",
+        "tests/test_ticket_page_queries.py",
         "tests/test_ticket_redesign.py",
         "tests/test_ticket_thread.py"
       ]
@@ -6143,6 +6148,7 @@
         "tests/test_subject_access.py",
         "tests/test_teams_followups.py",
         "tests/test_teams_intake.py",
+        "tests/test_ticket_page_queries.py",
         "tests/test_ticket_presence.py",
         "tests/test_ticket_redesign.py",
         "tests/test_ticket_thread.py"
@@ -7085,6 +7091,7 @@
       "functions": [
         "access_context",
         "assignable_agents",
+        "can_open_condition",
         "feedback_condition",
         "has_permission",
         "is_untriaged",
@@ -7149,6 +7156,7 @@
         "tests/test_reply_files.py",
         "tests/test_reports.py",
         "tests/test_super_admin_assignee.py",
+        "tests/test_ticket_page_queries.py",
         "tests/test_ticket_thread.py",
         "tests/test_visibility.py"
       ]
@@ -7807,6 +7815,7 @@
     "tests/test_thanks_rules.py",
     "tests/test_ticket_core.py",
     "tests/test_ticket_page.py",
+    "tests/test_ticket_page_queries.py",
     "tests/test_ticket_presence.py",
     "tests/test_ticket_redesign.py",
     "tests/test_ticket_thread.py",

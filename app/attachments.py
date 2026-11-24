@@ -275,20 +275,19 @@ class TicketFile:
 def ticket_files(session: Session, user: User, levels: AccessContext, ticket: Ticket) -> list[TicketFile]:
     """Every file on the ticket, newest first, that this person may download (`may_view_attachment`), with who added it. A file
     an agent uploaded is theirs by name; one that arrived on a message is the message's sender (the requester, a follower, the MSP)."""
+    # One query (#263): each file with who uploaded it and the message it came with. The rows (so the messages) stay alive
+    # through the loop, which is what lets `may_view_attachment` find each message in the session instead of asking again.
     rows = session.exec(
-        select(Attachment).where(Attachment.ticket_id == ticket.id).order_by(Attachment.created_at.desc(), Attachment.id.desc())
+        select(Attachment, User, Message)
+        .outerjoin(User, User.id == Attachment.uploaded_by_id)
+        .outerjoin(Message, Message.id == Attachment.message_id)
+        .where(Attachment.ticket_id == ticket.id)
+        .order_by(Attachment.created_at.desc(), Attachment.id.desc())
     ).all()
-    people = {
-        u.id: u for u in session.exec(select(User).where(User.id.in_({a.uploaded_by_id for a in rows if a.uploaded_by_id}))).all()
-    } if any(a.uploaded_by_id for a in rows) else {}
-    senders = {
-        m.id: m.sender for m in session.exec(select(Message).where(Message.id.in_({a.message_id for a in rows if a.message_id}))).all()
-    } if any(a.message_id for a in rows) else {}
     files = []
-    for attachment in rows:
+    for attachment, person, message in rows:
         if not may_view_attachment(session, user, attachment, ticket, levels):
             continue
-        person = people.get(attachment.uploaded_by_id)
-        who = (person.display_name or person.email) if person is not None else senders.get(attachment.message_id) or "Unknown"
+        who = (person.display_name or person.email) if person is not None else (message.sender if message is not None else None) or "Unknown"
         files.append(TicketFile(attachment, shown_name(attachment), who, is_inline_type(attachment.content_type)))
     return files
