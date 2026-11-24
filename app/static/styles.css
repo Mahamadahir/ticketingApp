@@ -234,9 +234,20 @@ label { cursor: pointer; }
 .tab:hover { color: var(--text); }
 .tab.on, .tab[aria-selected="true"], .tab[aria-current="page"], .tab[aria-current="true"] { color: var(--text); border-bottom-color: var(--accent); }
 
-.dl { display: grid; grid-template-columns: max-content 1fr; gap: 8px 20px; margin: 0; }
-.dl dt { color: var(--muted); font-weight: 600; }
-.dl dd { margin: 0; overflow-wrap: anywhere; }
+/* A definition list in a card (#294): the label column is capped so a long label wraps instead of squeezing the value, the value
+   column may shrink to nothing so it never pushes past the card, and a value breaks only when one word cannot fit. Below 600px
+   the label sits above its value. Lists with their own columns (.tp-dl, .rq-card .dl) keep them. */
+.dl { display: grid; grid-template-columns: minmax(110px, 40%) minmax(0, 1fr); gap: 8px 20px; margin: 0; }
+.dl dt { color: var(--muted); font-weight: 600; min-width: 0; overflow-wrap: break-word; }
+.dl dd { margin: 0; min-width: 0; overflow-wrap: break-word; }
+@media (max-width: 600px) {
+  .dl { grid-template-columns: minmax(0, 1fr); gap: 2px 0; }
+  .dl dd { margin-bottom: 8px; }
+  .tp-dl dd, .rq-card .dl dd { margin-bottom: 0; }
+}
+/* A long technical value (a resource path, an id, an address, a URL): small monospace, wrapping at the break points the
+   `break_points` filter adds after / - . @ _; anywhere only when a single piece is still too wide. */
+.mono-wrap { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.875em; overflow-wrap: anywhere; }
 
 .empty-state { padding: 40px 20px; text-align: center; color: var(--muted); border: 1px dashed var(--border); border-radius: var(--radius-lg); }
 .empty-state strong { display: block; margin-bottom: 4px; color: var(--text); }
@@ -855,7 +866,9 @@ th { color: var(--muted); font-weight: 600; }
 .tpl-placeholders { padding-top: 12px; border-top: 1px solid var(--border); }
 .tpl-placeholders ul { margin: 0 0 8px; padding-left: 20px; }
 @media (min-width: 1100px) { .tpl-preview { position: sticky; top: 16px; } }
-.intake-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin: 0 0 24px; align-items: start; }
+.intake-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr)); gap: 16px; margin: 0 0 16px; align-items: start; }
+.intake-numbers { grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); margin-bottom: 24px; }
+.intake-card { min-width: 0; }
 .intake-card .card-header { margin-bottom: 10px; }
 .intake-card .card-header h2 { font-size: 16px; }
 .intake-card p { margin: 0 0 4px; }
@@ -867,7 +880,8 @@ th { color: var(--muted); font-weight: 600; }
 .job-table td { vertical-align: top; }
 .log-table td { vertical-align: top; overflow-wrap: anywhere; }
 .log-table { min-width: 720px; }
-.outage-cards, .dp-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; margin: 0 0 24px; align-items: start; }
+.outage-cards > *, .dp-cards > *, .admin-areas > * { min-width: 0; }
+.outage-cards, .dp-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: 16px; margin: 0 0 24px; align-items: start; }
 .outage-card .card-header h2, .dp-card > h2 { margin: 0 0 8px; font-size: 16px; }
 .dp-card .card-header { margin-bottom: 8px; }
 .dp-card h3 { margin: 16px 0 6px; font-size: 14px; }
