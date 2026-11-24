@@ -157,6 +157,24 @@ def ticket_access(user: User, ticket: Ticket, levels: AccessContext) -> Access:
     return Access.NONE
 
 
+def can_open_condition(ticket: Ticket):
+    """The SQL twin of `ticket_access(user, ticket, ...) >= Access.READ`, for every user at once (the @ list asks it of all
+    agents in one query instead of building an access context for each). A WHERE clause over `User`: super admins; and
+    agents who are a member or viewer of the ticket's team or of its parent team, who escalated this ticket, or (while it
+    is untriaged) any agent. Keep it in step with `ticket_access`; `tests/test_ticket_page_queries.py` compares the two."""
+    ways = [User.id.in_(select(TicketEscalator.user_id).where(TicketEscalator.ticket_id == ticket.id))]
+    if is_untriaged(ticket):
+        ways.append(true())
+    if ticket.team_id is not None:
+        parent = select(Team.parent_team_id).where(Team.id == ticket.team_id).scalar_subquery()
+        ways.append(
+            User.id.in_(
+                select(TeamMembership.user_id).where(or_(TeamMembership.team_id == ticket.team_id, TeamMembership.team_id == parent))
+            )
+        )
+    return or_(User.role == UserRole.SUPER_ADMIN, (User.role == UserRole.AGENT) & or_(*ways))
+
+
 def may_self_assign(user: User, ticket: Ticket, levels: AccessContext) -> bool:
     """An agent can take a ticket they work that nobody else holds, or claim an
     untriaged one that nobody has yet. A ticket assigned to someone else (for example
