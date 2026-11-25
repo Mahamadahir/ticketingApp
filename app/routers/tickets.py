@@ -119,7 +119,7 @@ from app.messages import (
 from app.models import FINISHED_STATUSES, Attachment, CannedResponse, Category, Message, MessageDirection, RequestType, Team, Ticket, TicketSource, TicketStatus, TicketType, User, UserRole
 from app.attachments import RenameRefused, files_by_message, rename_attachment, shown_name, ticket_files
 from app.pagination import paginate
-from app.status_display import NOT_FINISHED, status_options
+from app.status_display import AWAITING_ACKNOWLEDGED, NOT_FINISHED, status_options
 from app.team_activity import (
     DRAWER_CARDS,
     KIND_LABELS,
@@ -158,7 +158,7 @@ from app.resolution import ResolveError, check_can_resolve, preview_resolution, 
 from app.ticket_service import AwaitingApproval, ClosingNeedsNotes, EVENT_ASSIGNED, EVENT_ATTACHMENT_RENAMED, NotTriaged, ResolutionRequired, ScheduledNeedsDate, find_ticket, get_by_number, record_event, set_status
 from app.time_zones import zone_for_email, zone_for_user
 from app.triage import TriageError, change_category, change_type, clean_reason, reassign_ticket, triage_ticket
-from app.reactions import dismiss_negative, open_negative_ids
+from app.reactions import acknowledged_condition, acknowledged_views, dismiss_negative, open_negative_ids
 from app.thread import build_thread
 from app.visibility import (
     ASSIGNEE_ROLES,
@@ -252,7 +252,7 @@ def list_tickets(
     try:
         team_id = optional_int(team_id)
         source = TicketSource(source) if source and source.strip() else None
-        status_choice = None if not status else (NOT_FINISHED if status == NOT_FINISHED else TicketStatus(status))
+        status_choice = None if not status else (status if status in (NOT_FINISHED, AWAITING_ACKNOWLEDGED) else TicketStatus(status))
         if sort not in ("", SORT_BREACH):
             raise ValueError(sort)
     except ValueError:
@@ -277,6 +277,8 @@ def list_tickets(
         query = query.where(Ticket.source == source)
     if status_choice == NOT_FINISHED:
         query = query.where(Ticket.status.notin_(FINISHED_STATUSES))
+    elif status_choice == AWAITING_ACKNOWLEDGED:
+        query = query.where(*acknowledged_condition())  # after visibility, like every other filter
     elif status_choice is not None:
         query = query.where(Ticket.status == status_choice)
 
@@ -307,6 +309,7 @@ def list_tickets(
         {
             "page": tickets_page,
             "negative_ids": open_negative_ids(session, [t.id for t in tickets_page.items]),
+            "acknowledged": acknowledged_views(session, tickets_page.items, now),
             "sla": {t.id: queue_sla(t, views[t.id], now) for t in tickets_page.items},
             "figures": figures,
             "categories_by_id": categories_by_id,
@@ -2529,6 +2532,7 @@ def _render_ticket_detail(
             "message_files": message_files,
             "thread": thread,
             "negative_reaction": ticket.id in open_negative_ids(session, [ticket.id]),
+            "acknowledged": acknowledged_views(session, [ticket], now).get(ticket.id),
             "moment_format": MOMENT_FORMAT,
             "can_backdate": can_backdate,
             "can_set_required_by": can_set_required_by,

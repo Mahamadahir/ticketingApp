@@ -48,7 +48,7 @@ def test_the_mapping_covers_every_status_with_the_agreed_tones():
 
 def test_the_filter_options_are_any_not_finished_then_each_status():
     assert [label for _value, label in status_options()] == [
-        "Not finished", "New", "Open", "In progress", "Awaiting user", "Awaiting approval", "With supplier",
+        "Not finished", "New", "Open", "In progress", "Awaiting user", "Awaiting user · acknowledged", "Awaiting approval", "With supplier",
         "With MSP", "Scheduled", "Resolved", "Closed",
     ]
 

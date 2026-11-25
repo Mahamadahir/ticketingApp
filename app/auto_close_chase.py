@@ -13,6 +13,9 @@ cap). `chased_at` and `chase_count` on the ticket make this happen once per wait
 (app/resolution.py, no agent, the `auto_resolve_note` text, and the resolution email with the reopen link).
 A positive reaction from the requester (a thumbs-up on the resolution or on the message asking for a reply, app/reactions.py)
 since the wait began acknowledges it: no chase email goes, and a chased ticket is not auto-resolved. Auto-close is unchanged.
+The one decision is `reactions.acknowledged_at`. As a backstop (#303), once `acknowledged_wait_resolve_days` (placeholder 14, 0 = never)
+whole days have passed since that reaction with no reply, the ticket is auto-resolved the ordinary way (`resolve_acknowledged`:
+same note and resolution email, no new email), chased or not.
 Anything that takes the ticket out of Awaiting user (a reply by mail or portal, the reopen link, an agent's status
 change) clears the chase in `set_status`, so a ticket that goes back to Awaiting user starts a fresh wait.
 
@@ -35,12 +38,11 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from sqlalchemy import func
 from sqlmodel import Session, select
 
 from app.audit import log_action
-from app.models import AuditLog, Notification, OutboundEmail, Ticket, TicketEvent, TicketStatus
-from app.reactions import acknowledged_since
+from app.models import AuditLog, Notification, OutboundEmail, Ticket, TicketStatus
+from app.reactions import acknowledged_at, acknowledged_condition, backstop_days, backstop_due, waiting_since
 from app.mail import give_up
 from app.notifications import CHASE_GIVEN_UP, notify_chase_given_up
 from app.outbox import CHASE, is_on, queue_chase
@@ -56,7 +58,7 @@ from app.settings_store import (
 )
 from app.teams import MAX_ATTEMPTS
 from app.splitting import SplitError, check_manual_status, has_sub_tickets
-from app.ticket_service import EVENT_STATUS_CHANGED, record_event, set_status
+from app.ticket_service import record_event, set_status
 
 log = logging.getLogger("app.worker")
 
@@ -91,19 +93,6 @@ def _lock(session: Session, ticket_id: int) -> Optional[Ticket]:
 
 def _has_parts(ticket_id):
     return select(Ticket.id).where(Ticket.split_from_id == ticket_id).exists()
-
-
-def waiting_since(session: Session, ticket: Ticket) -> datetime:
-    """When the ticket went into Awaiting user this time: its latest status event to that status (a ticket
-    that left and came back starts again)."""
-    moment = session.exec(
-        select(func.max(TicketEvent.created_at)).where(
-            TicketEvent.ticket_id == ticket.id,
-            TicketEvent.event_type == EVENT_STATUS_CHANGED,
-            TicketEvent.to_value == TicketStatus.AWAITING_USER.value,
-        )
-    ).first()
-    return _aware(moment or ticket.updated_at)
 
 
 def _each(session: Session, ticket_ids, work, *args) -> None:
@@ -163,7 +152,7 @@ def _chase_one(session: Session, ticket_id: int, now: datetime, days: int) -> No
     since = waiting_since(session, ticket)
     if now < since + timedelta(days=days):
         return
-    if acknowledged_since(session, ticket.id, since):
+    if acknowledged_at(session, ticket) is not None:
         return  # the requester reacted with a thumbs-up to the resolution or the request for a reply (#298): no reminder
     # A chase from an earlier wait that never went (held by the cap, say) must not go out beside this one.
     for old in session.exec(
@@ -209,7 +198,7 @@ def _resolve_one(session: Session, ticket_id: int, now: datetime, days: int) -> 
     if email is None or email.sent_at is None or now < _aware(email.sent_at) + timedelta(days=days):
         return
     since = waiting_since(session, ticket)
-    if acknowledged_since(session, ticket.id, since):
+    if acknowledged_at(session, ticket) is not None:
         return  # they acknowledged after the chase went (#298): the ticket is left for an agent, not resolved under them
     waited = max(1, (now - since).days)
     try:
@@ -230,6 +219,40 @@ def resolve_unanswered(session: Session, now: datetime) -> None:
         ).order_by(Ticket.id)
     ).all()
     _each(session, ids, _resolve_one, now, days)
+
+
+def _resolve_acknowledged_one(session: Session, ticket_id: int, now: datetime, days: int) -> None:
+    ticket = _lock(session, ticket_id)
+    if ticket is None or ticket.status != TicketStatus.AWAITING_USER or has_sub_tickets(session, ticket):
+        return
+    # Read again under the lock: a reply, a status change or a reaction taken back since the list was read ended the acknowledgement.
+    since = acknowledged_at(session, ticket)
+    if since is None or not backstop_due(since, now, days):
+        return
+    waited = max(1, (now - waiting_since(session, ticket)).days)
+    try:
+        resolve_ticket(
+            session, ticket, None, auto_resolution_note(session, ticket, waited),
+            detail=f"auto-resolved: acknowledged by a reaction and no reply for {days} days",
+        )
+    except ResolveError as error:
+        log.info("Ticket %s not auto-resolved: %s", ticket.id, error)
+
+
+def resolve_acknowledged(session: Session, now: datetime) -> None:
+    """The backstop for an acknowledged wait (#303): a thumbs-up stops the chase emails and the auto-resolve, so without this
+    the ticket would wait for an agent for ever. `acknowledged_wait_resolve_days` after the reaction (0: never) with no reply,
+    the ticket is auto-resolved the ordinary way (the same note and resolution email as an unanswered chase; no new email).
+    Counted from the reaction, not from the start of the wait."""
+    days = backstop_days(session)
+    if days <= 0:
+        return
+    ids = session.exec(
+        select(Ticket.id).where(
+            Ticket.status == TicketStatus.AWAITING_USER, Ticket.triaged_at.is_not(None), ~_has_parts(Ticket.id), *acknowledged_condition(),
+        ).order_by(Ticket.id)
+    ).all()
+    _each(session, ids, _resolve_acknowledged_one, now, days)
 
 
 def _report_one(session: Session, ticket_id: int) -> None:
@@ -279,5 +302,6 @@ def run_chase(session: Session, now: Optional[datetime] = None) -> None:
         return
     now = now or datetime.now(timezone.utc)
     resolve_unanswered(session, now)
+    resolve_acknowledged(session, now)
     report_given_up_chases(session)
     send_chases(session, now)
