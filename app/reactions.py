@@ -8,8 +8,10 @@ all decided HERE and nowhere else (`apply_effects`), so every channel gets the s
   and taking the reaction back removes it.
 - acknowledgement: a positive reaction on a resolution message, or on a message asking the requester to reply (Awaiting
   user), counts as the requester answering for the chase: it stops the reminders and the auto-resolve that follows one
-  (`acknowledged_since`, asked by app/auto_close_chase.py). It never closes or resolves anything, and auto-close keeps its
+  (`acknowledged_at`, asked by app/auto_close_chase.py). It never closes or resolves anything, and auto-close keeps its
   timer. It is computed from the live reaction rows, so taking the reaction back ends it with no cleanup.
+  It is shown (an "Acknowledged by reaction" chip, `acknowledged_views`) and has a backstop (#303): `acknowledged_wait_resolve_days`
+  after the reaction, with no reply, the ordinary auto-resolve runs (the job does that, it is not a reaction effect).
 - negative flag: a negative reaction shows a red "Negative reaction" chip on the ticket and in the queue until an agent
   dismisses it (`open_negative_ids`, `dismiss_negative`).
 
@@ -29,17 +31,17 @@ Nothing here commits; the caller does.
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Iterable, Optional
 
-from sqlalchemy import delete, or_
+from sqlalchemy import delete, func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from app.audit import log_action
 from app.identity import is_follower_of, is_requester
-from app.models import BotMessage, Ticket, TicketFeedback, TicketReaction, TicketStatus, User
-from app.settings_store import REACTION_SENTIMENTS, get_setting
+from app.models import BotMessage, Ticket, TicketEvent, TicketFeedback, TicketReaction, TicketStatus, User
+from app.settings_store import ACKNOWLEDGED_WAIT_RESOLVE_DAYS, REACTION_SENTIMENTS, count_setting, get_setting
 
 log = logging.getLogger("app.reactions")
 
@@ -315,16 +317,123 @@ def drop_soft_feedback(session: Session, ticket: Ticket) -> None:
     session.execute(delete(TicketFeedback).where(*conditions))
 
 
+def _aware(moment: datetime) -> datetime:
+    return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
+
+
+def _standing_positive():
+    return (
+        TicketReaction.by_party.is_(True), TicketReaction.removed_at.is_(None), TicketReaction.sentiment == POSITIVE,
+        TicketReaction.message_kind.in_((RESOLUTION, AWAITING_USER)),
+    )
+
+
 def acknowledged_since(session: Session, ticket_id: int, since: datetime) -> bool:
     """Whether the requester (or a follower) has acknowledged since `since` with a positive reaction that still stands, on a
-    resolution message or on a message asking for a reply. The chase asks this for the current wait."""
+    resolution message or on a message asking for a reply."""
     return session.exec(
         select(TicketReaction.id).where(
-            TicketReaction.ticket_id == ticket_id, TicketReaction.by_party.is_(True), TicketReaction.removed_at.is_(None),
-            TicketReaction.sentiment == POSITIVE, TicketReaction.message_kind.in_((RESOLUTION, AWAITING_USER)),
-            TicketReaction.reacted_at >= since, _of_this_round(since),
+            TicketReaction.ticket_id == ticket_id, *_standing_positive(), TicketReaction.reacted_at >= since, _of_this_round(since),
         ).limit(1)
     ).first() is not None
+
+
+def _latest_wait_start():
+    """SQL: the latest status event of this ticket to Awaiting user (None when there is none)."""
+    from app.ticket_service import EVENT_STATUS_CHANGED
+    return (
+        select(func.max(TicketEvent.created_at)).where(
+            TicketEvent.ticket_id == Ticket.id, TicketEvent.event_type == EVENT_STATUS_CHANGED,
+            TicketEvent.to_value == TicketStatus.AWAITING_USER.value,
+        ).scalar_subquery()
+    )
+
+
+def _acknowledging_this_wait():
+    """SQL: a standing positive reaction by the requester (or a follower) on this ticket since its current Awaiting user wait
+    began (the same start as `waiting_since`)."""
+    since = func.coalesce(_latest_wait_start(), Ticket.updated_at)
+    return (
+        TicketReaction.ticket_id == Ticket.id, *_standing_positive(), TicketReaction.reacted_at >= since,
+        or_(TicketReaction.message_sent_at.is_(None), TicketReaction.message_sent_at >= since),
+    )
+
+
+def acknowledged_condition():
+    """SQL conditions for a query on Ticket: Awaiting user, and the current wait is acknowledged by a reaction (the queue's filter)."""
+    return (Ticket.status == TicketStatus.AWAITING_USER, select(TicketReaction.id).where(*_acknowledging_this_wait()).exists())
+
+
+def acknowledged_times(session: Session, ticket_ids: Iterable[int]) -> dict[int, datetime]:
+    """The tickets among these whose current Awaiting user wait is acknowledged, each with when (the earliest standing
+    acknowledging reaction of this wait). THE one answer to "is this wait acknowledged, and since when": the chase job, the
+    ticket page, the queue and its filter all read it. A reply, a status change (a new wait starts) or a reaction taken back
+    ends it with no cleanup, because it is read from the live rows."""
+    ids = list(ticket_ids)
+    if not ids:
+        return {}
+    rows = session.exec(
+        select(Ticket.id, func.min(TicketReaction.reacted_at)).where(
+            Ticket.id.in_(ids), Ticket.status == TicketStatus.AWAITING_USER, *_acknowledging_this_wait(),
+        ).group_by(Ticket.id)
+    ).all()
+    return {ticket_id: _aware(at) for ticket_id, at in rows}
+
+
+def acknowledged_at(session: Session, ticket: Ticket) -> Optional[datetime]:
+    """When the ticket's current wait was acknowledged by a reaction, or None (also when it is not Awaiting user)."""
+    return acknowledged_times(session, [ticket.id]).get(ticket.id)
+
+
+def waiting_since(session: Session, ticket: Ticket) -> datetime:
+    """When the ticket went into Awaiting user this time: its latest status event to that status (a ticket that left and came
+    back starts again)."""
+    moment = session.exec(select(_latest_wait_start()).where(Ticket.id == ticket.id)).first()
+    return _aware(moment or ticket.updated_at)
+
+
+def backstop_days(session: Session) -> int:
+    """`acknowledged_wait_resolve_days`: 0 is never."""
+    return count_setting(session, ACKNOWLEDGED_WAIT_RESOLVE_DAYS)
+
+
+def backstop_due(since: datetime, now: datetime, days: int) -> bool:
+    """Whether an acknowledged wait has had no reply for `days` whole days since the reaction (never when `days` is 0)."""
+    return days > 0 and now >= _aware(since) + timedelta(days=days)
+
+
+@dataclass(frozen=True)
+class AcknowledgedView:
+    """What the pages say about an acknowledged wait: the chip text and (on the ticket page) the line about what happens next."""
+    since: datetime
+    chip: str
+    short: str  # the Service level row's chip: the row is labelled "Acknowledged"
+    line: str
+
+
+def _days(count: int) -> str:
+    return "today" if count == 0 else (f"{count} day" if count == 1 else f"{count} days")
+
+
+def acknowledged_views(session: Session, tickets: Iterable[Ticket], now: datetime) -> dict[int, AcknowledgedView]:
+    """The chip for each of these tickets whose wait is acknowledged (tickets that are not are missing from the result)."""
+    times = acknowledged_times(session, [t.id for t in tickets])
+    if not times:
+        return {}
+    limit = backstop_days(session)
+    out = {}
+    for ticket_id, since in times.items():
+        since = min(since, now)  # never in the future
+        elapsed = (now - since).days
+        if limit == 0:
+            line = "Chases stopped. Will not auto-resolve."
+        elif backstop_due(since, now, limit):
+            line = "Chases stopped. Auto-resolves at the next run if there is no reply."
+        else:
+            left = -((now - since - timedelta(days=limit)) // timedelta(days=1))  # whole days left, rounded up
+            line = f"Chases stopped. Auto-resolves in {_days(left)} if there is no reply."
+        out[ticket_id] = AcknowledgedView(since=since, chip=f"Acknowledged by reaction · {_days(elapsed)}", short=f"By reaction · {_days(elapsed)}", line=line)
+    return out
 
 
 def _open_negative():

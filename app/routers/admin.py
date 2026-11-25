@@ -2000,6 +2000,9 @@ def _clean_setting_value(session: Session, definition, value: str, submitted: di
     if definition.kind == "off_minutes":
         if not (value.isascii() and value.isdigit()) or not 0 <= int(value) <= 525600:
             raise ValueError("Enter a whole number of minutes, 0 to 525600 (0 is off)")
+    if definition.kind == "off_days":
+        if not (value.isascii() and value.isdigit()) or not 0 <= int(value) <= 3650:
+            raise ValueError("Enter a whole number of days, 0 to 3650 (0 is never)")
     if definition.kind == "regex" and value:  # blank means the default pattern
         try:
             compile_subject_pattern(value)
