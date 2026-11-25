@@ -11,7 +11,7 @@ The job (`run_email_reactions`, registered as `email-reactions`, its interval th
   together with what it recorded (one transaction: the runner commits);
 - matches a changed message to its ticket and to what it was (`message_kind`). Graph's `sendMail` returns no message id, so the
   Sent Items copy cannot be matched on internetMessageId; it is matched to the outbox row that sent it by ticket, subject,
-  recipient and sent time (`outbox_row_for`), and the kind comes from `OutboundEmail.reaction_kind`, fixed when the email was queued
+  recipient and sent time (`outbox_row_for`), and the kind comes from `OutboundEmail.reaction_kind`, fixed by the mail job when the email was sent
   (the same rule as a Teams message: `reactions.kind_of_requester_message`). No row (or an old one) is kind `other`. The ticket
   is the row's ticket, else the `[INC-n]` reference in the subject through `ticket_service.find_ticket` (number only);
 - takes the message as about the ticket only if it went to the requester or a follower (to, cc);
@@ -58,6 +58,7 @@ FORMAT_WARNING = "reaction format not understood"
 REFERENCE = re.compile(r"\[([A-Za-z]{2,4}-\d{1,9})\]")
 # Only fetch a changed message again for its reactions when it was changed well after it was sent (see `_properties`).
 CHANGED_AFTER_SENT = timedelta(minutes=1)
+AMBIGUOUS_GAP = timedelta(seconds=30)  # two different emails this close in time cannot be told apart by when they were sent
 
 
 class FormatNotUnderstood(Exception):
@@ -139,7 +140,9 @@ def recipients_of(item: dict) -> set[str]:
 def outbox_row_for(session: Session, subject: str, sent_at: Optional[datetime], recipients: set[str]) -> Optional[OutboundEmail]:
     """The email the outbox sent that this Sent Items message is: same subject and recipient, sent at (nearly) the same time, the
     closest in time when there are several. None when none matches (an email sent by hand from the mailbox, or before the app kept
-    what it sent)."""
+    what it sent), and None when the two closest are different kinds of email sent within AMBIGUOUS_GAP of each other (a reply and
+    then the resolution, seconds apart: `sent_at` is the app's clock after Graph answered, so their order could be swapped), because a
+    wrong kind would be worse than the plain `other`."""
     if not subject or sent_at is None:
         return None
     rows = session.exec(
@@ -148,8 +151,15 @@ def outbox_row_for(session: Session, subject: str, sent_at: Optional[datetime], 
             OutboundEmail.sent_at >= sent_at - SENT_MATCH_WINDOW, OutboundEmail.sent_at <= sent_at + SENT_MATCH_WINDOW,
         )
     ).all()
-    rows = [row for row in rows if (row.to_address or "").strip().lower() in recipients]
-    return min(rows, key=lambda row: abs(_aware(row.sent_at) - sent_at)) if rows else None
+    rows = sorted(
+        (row for row in rows if (row.to_address or "").strip().lower() in recipients), key=lambda row: abs(_aware(row.sent_at) - sent_at),
+    )
+    if not rows:
+        return None
+    if len(rows) > 1 and rows[0].reaction_kind != rows[1].reaction_kind:
+        if abs(_aware(rows[1].sent_at) - sent_at) - abs(_aware(rows[0].sent_at) - sent_at) < AMBIGUOUS_GAP:
+            return None
+    return rows[0]
 
 
 def _aware(moment: datetime) -> datetime:
@@ -210,21 +220,29 @@ def _sync(session: Session, graph, state: MailSyncState, now: datetime, counts: 
     if link is None:
         since = state.starting_point_at = now - timedelta(days=count_setting(session, EMAIL_REACTIONS_BACKFILL_DAYS))
     restarted = False
+    expand = True
     for _ in range(MAX_PAGES_PER_RUN):
         try:
-            page = graph.sent_items_delta_page(link, since if link is None else None)
+            page = graph.sent_items_delta_page(link, since if link is None else None, expand=expand)
         except httpx.HTTPStatusError as error:
-            if error.response.status_code != 410 or link is None or restarted:
+            status = error.response.status_code
+            if status == 400 and link is None and expand:
+                # Graph refused `$expand` on a delta query: ask for the matching fields only, and read each changed message on its own.
+                expand = False
+                log.warning("email reactions: Graph refused $expand on the Sent Items delta; reading changed messages one by one")
+                continue
+            if status != 410 or link is None or restarted:
                 raise
             # Graph no longer remembers our place: start again from the backfill window (what is recorded is never recorded twice).
             state.delta_link = state.resume_link = link = None
             since = state.starting_point_at = now - timedelta(days=count_setting(session, EMAIL_REACTIONS_BACKFILL_DAYS))
             restarted = True
             continue
-        for item in page.get("value", []):
-            if isinstance(item, dict) and item.get("id") and "@removed" not in item:
-                counts.changed += 1
-                _one_message(session, graph, item, counts, now)
+        items = [item for item in page.get("value", []) if isinstance(item, dict) and item.get("id") and "@removed" not in item]
+        standing = _standing_on(session, [_ref_of(item) for item in items])
+        for item in items:
+            counts.changed += 1
+            _one_message(session, graph, item, counts, now, standing.get(_ref_of(item), []))
         next_link, delta_link = page.get("@odata.nextLink"), page.get("@odata.deltaLink")
         if next_link:
             state.resume_link = link = next_link
@@ -245,6 +263,25 @@ def _sync(session: Session, graph, state: MailSyncState, now: datetime, counts: 
     session.add(state)  # out of pages for this run: the resume link is kept
 
 
+def _ref_of(item: dict) -> str:
+    """How the message is named on a reaction row: its internetMessageId, else its Graph id."""
+    ref = (item.get("internetMessageId") if isinstance(item.get("internetMessageId"), str) else "").strip() or item["id"]
+    return ref[: reactions.MAX_TEXT]
+
+
+def _standing_on(session: Session, refs: list[str]) -> dict[str, list[TicketReaction]]:
+    """The email reactions that still stand on these messages, by message, in one query for a whole page."""
+    found: dict[str, list[TicketReaction]] = {}
+    if refs:
+        for row in session.exec(
+            select(TicketReaction).where(
+                TicketReaction.channel == reactions.EMAIL, TicketReaction.message_ref.in_(refs), TicketReaction.removed_at.is_(None)
+            )
+        ).all():
+            found.setdefault(row.message_ref, []).append(row)
+    return found
+
+
 def _note_format(state: MailSyncState, counts: RunCounts, now: datetime) -> None:
     """One warning for the whole run, kept on the sync row for Admin > Mail intake. It clears only when a run read a blob and met
     no unreadable one: a run that saw no reactions at all says nothing about whether the format is understood now."""
@@ -256,31 +293,39 @@ def _note_format(state: MailSyncState, counts: RunCounts, now: datetime) -> None
         state.last_warning = state.last_warning_at = None
 
 
-def _properties(graph, item: dict) -> tuple[Optional[int], Optional[str]]:
-    """The reaction properties of a changed message. A delta query is meant to carry them (`$expand`); if it does not, a message
-    changed well after it was sent (a reaction changes it, a plain send does not) is read once on its own."""
+def _changed_since_sent(item: dict) -> bool:
+    """Whether the message was changed well after it was sent, which is what a reaction does to it."""
+    sent, changed = parse_graph_time(item.get("sentDateTime")), parse_graph_time(item.get("lastModifiedDateTime"))
+    return sent is not None and changed is not None and changed - sent > CHANGED_AFTER_SENT
+
+
+def _properties(graph, item: dict) -> Optional[tuple[Optional[int], Optional[str]]]:
+    """The reaction properties of a changed message as (count, blob), either None when the message has none: a message with no
+    reaction comes back without them. None (not a pair) means they could not be read at all, and nothing may then be concluded
+    from it (above all, no reaction may be taken as removed). A delta query is meant to carry them (`$expand`); when the item has
+    none and was changed well after it was sent (a reaction changes it, a plain send does not), the message is read once on its own."""
     if "singleValueExtendedProperties" in item:
         return properties_of(item)
     sent, changed = parse_graph_time(item.get("sentDateTime")), parse_graph_time(item.get("lastModifiedDateTime"))
-    if sent is not None and changed is not None and changed - sent > CHANGED_AFTER_SENT:
+    if sent is None or changed is None:
+        return None
+    if changed - sent > CHANGED_AFTER_SENT:
         full = graph.get_sent_message_reactions(item["id"])
-        if isinstance(full, dict):
-            return properties_of(full)
-    return None, None
+        return properties_of(full) if isinstance(full, dict) else None  # gone (moved or deleted): unknown
+    return None, None  # never touched since it was sent: no reactions
 
 
-def _one_message(session: Session, graph, item: dict, counts: RunCounts, now: datetime) -> None:
+def _one_message(session: Session, graph, item: dict, counts: RunCounts, now: datetime, standing: list[TicketReaction]) -> None:
     subject = item.get("subject") if isinstance(item.get("subject"), str) else ""
-    message_ref = (item.get("internetMessageId") if isinstance(item.get("internetMessageId"), str) else "").strip() or item["id"]
-    message_ref = message_ref[: reactions.MAX_TEXT]
-    count, blob = _properties(graph, item)
-    standing = session.exec(
-        select(TicketReaction).where(
-            TicketReaction.channel == reactions.EMAIL, TicketReaction.message_ref == message_ref, TicketReaction.removed_at.is_(None)
-        )
-    ).all()
+    message_ref = _ref_of(item)
+    if not standing and "singleValueExtendedProperties" not in item and not _changed_since_sent(item):
+        return  # the usual sent message: nothing reacted to it and nothing is recorded
+    properties = _properties(graph, item)
+    if properties is None:
+        return  # could not be read: leave whatever is recorded alone
+    count, blob = properties
     if not count and blob is None and not standing:
-        return  # no reaction now and none recorded: nothing to do (the usual sent message)
+        return
     try:
         if blob is None:
             if count:
@@ -293,6 +338,19 @@ def _one_message(session: Session, graph, item: dict, counts: RunCounts, now: da
         counts.unreadable.add(message_ref)
         return  # record nothing, remove nothing
 
+    # Taken back: what stands but is no longer in the blob. Each is removed on its own ticket, so this holds even when the message can
+    # no longer be matched (its outbox row was purged, say).
+    still_there = {(reaction.address, reaction.type[: reactions.MAX_TYPE]) for reaction in found}
+    for gone in standing:
+        if (gone.reactor_ref, gone.raw_type) not in still_there:
+            ticket = session.get(Ticket, gone.ticket_id)
+            if ticket is not None and reactions.remove_reaction(
+                session, ticket, channel=reactions.EMAIL, message_ref=message_ref, reactor_ref=gone.reactor_ref, raw_type=gone.raw_type, at=now,
+            ):
+                counts.removed += 1
+    if not found:
+        return
+
     recipients = recipients_of(item)
     sent_at = parse_graph_time(item.get("sentDateTime"))
     row = outbox_row_for(session, subject, sent_at, recipients)
@@ -304,15 +362,11 @@ def _one_message(session: Session, graph, item: dict, counts: RunCounts, now: da
         counts.skipped += 1
         return
     kind = (row.reaction_kind if row is not None else None) or reactions.OTHER
-    standing_here = [r for r in standing if r.ticket_id == ticket.id]
-
-    present: set[tuple[str, str]] = set()
     for reaction in found:
         person = person_for_address(session, reaction.address)
         if person is None:
             counts.skipped += 1
             continue
-        present.add((reaction.address, reaction.type[: reactions.MAX_TYPE]))
         made = reactions.record_reaction(
             session, ticket, channel=reactions.EMAIL, message_kind=kind, message_ref=message_ref, raw_type=reaction.type,
             # A Bcc reaction is recorded but never counts as the requester's or a follower's: no person, so no effect.
@@ -321,7 +375,3 @@ def _one_message(session: Session, graph, item: dict, counts: RunCounts, now: da
         )
         if made is not None:
             counts.recorded += 1
-    for gone in standing_here:
-        if (gone.reactor_ref, gone.raw_type) not in present:
-            if reactions.remove_reaction(session, ticket, channel=reactions.EMAIL, message_ref=message_ref, reactor_ref=gone.reactor_ref, raw_type=gone.raw_type, at=now):
-                counts.removed += 1

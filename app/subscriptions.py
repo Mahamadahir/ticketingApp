@@ -403,6 +403,7 @@ def _sync_pages(session: Session, graph, intake: MailIntake, state: MailSyncStat
 SUBSCRIPTION_PROBLEM = "subscription"
 CATCH_UP_PROBLEM = "catch_up"
 REACTION_FORMAT_PROBLEM = "reaction_format"  # the Outlook reactions job could not read what Outlook stored (#299)
+REACTIONS_RUN_PROBLEM = "reactions_run"  # the Outlook reactions job's last run failed (#299)
 
 
 @dataclass(frozen=True)
@@ -432,7 +433,7 @@ def health_problems(session: Session, now: Optional[datetime] = None) -> list[He
         warnings.append(HealthWarning(CATCH_UP_PROBLEM, "Mail catch-up: the last run failed"))
     reactions_sync = session.exec(select(MailSyncState).where(MailSyncState.folder == sent_folder())).first()
     if reactions_sync is not None and reactions_sync.last_error:
-        warnings.append(HealthWarning(REACTION_FORMAT_PROBLEM, "Outlook reactions: the last run failed"))
+        warnings.append(HealthWarning(REACTIONS_RUN_PROBLEM, "Outlook reactions: the last run failed"))
     if reactions_sync is not None and reactions_sync.last_warning:
         warnings.append(HealthWarning(REACTION_FORMAT_PROBLEM, "Outlook reactions: reaction format not understood (Outlook may have changed it)"))
     return warnings

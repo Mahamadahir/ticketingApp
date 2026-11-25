@@ -176,7 +176,7 @@ from app.msp import compile_subject_pattern
 from app.approvals import drop_votes_of, start_waiting_rounds
 from app.sessions import live_session_counts, revoke_user_sessions
 from app.inbound import IGNORED_FLOOD
-from app.subscriptions import CATCH_UP_PROBLEM, REACTION_FORMAT_PROBLEM, SUBSCRIPTION_PROBLEM, health_problems, mail_folder, sent_folder, subscription_resource
+from app.subscriptions import CATCH_UP_PROBLEM, SUBSCRIPTION_PROBLEM, health_problems, mail_folder, sent_folder, subscription_resource
 from app.teams import MAX_ATTEMPTS
 from app.navigation import allowed_admin_pages
 from app.time_zones import parse_clock, parse_dates, valid_zone, zone_for_user
@@ -2398,7 +2398,7 @@ def view_mail_intake(
             "last_arrived": last_arrived, "last_processed": last_processed,
             "subscription_problem": any(p.kind == SUBSCRIPTION_PROBLEM for p in problems),
             "catch_up_problem": any(p.kind == CATCH_UP_PROBLEM for p in problems),
-            "reactions_sync": reactions_sync, "reactions_problem": any(p.kind == REACTION_FORMAT_PROBLEM for p in problems),
+            "reactions_sync": reactions_sync,
             "user": user,
         },
     )

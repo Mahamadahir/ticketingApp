@@ -1005,8 +1005,8 @@ class OutboundEmail(SQLModel, table=True):
     body: Optional[str] = Field(default=None)
     # An email to the MSP: the ids of the ticket's attachments sent with it (comma separated), fixed when it was queued.
     attachment_ids: Optional[str] = Field(default=None)
-    # What a reaction to this email counts as (app/reactions.py: resolution, awaiting_user, other), decided when it is queued, like
-    # the Teams copy's kind. Empty for an email nobody reacts meaningfully to (and every email queued before #299).
+    # What a reaction to this email counts as (app/reactions.py: resolution, awaiting_user, other), decided when it is SENT (a chase:
+    # when queued), like the Teams copy's kind. Empty for an email nobody reacts meaningfully to (and every email sent before #299).
     reaction_kind: Optional[str] = Field(default=None)
 
 

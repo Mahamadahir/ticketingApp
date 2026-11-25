@@ -238,14 +238,17 @@ class GraphClient:
             return self._get_json(f"{GRAPH_BASE_URL}/users/{mailbox}/mailFolders/inbox/messages/delta", params=params)
         return self._get_json(link)
 
-    def sent_items_delta_page(self, link: str | None, since: datetime | None = None) -> dict:
+    def sent_items_delta_page(self, link: str | None, since: datetime | None = None, expand: bool = True) -> dict:
         """One page of the Sent Items delta query (GET .../mailFolders/sentitems/messages/delta), like inbox_delta_page,
         for the Outlook reactions job (#299). It asks for what is needed to match a message to its ticket and for the two
         extended properties Outlook keeps reactions in (REACTIONS_COUNT_ID, REACTIONS_BLOB_ID). A message with no reaction
-        comes back without `singleValueExtendedProperties`. Needs Mail.Read, limited to the mailbox."""
+        comes back without `singleValueExtendedProperties`. `expand=False` leaves the properties out (the job falls back to it when Graph refuses
+        `$expand` on a delta query). Needs Mail.Read, limited to the mailbox."""
         if link is None:
             mailbox = quote(settings.graph_shared_mailbox, safe="@")
-            params = {"$select": SENT_ITEMS_SELECT, "$expand": REACTION_EXPAND}
+            params = {"$select": SENT_ITEMS_SELECT}
+            if expand:
+                params["$expand"] = REACTION_EXPAND
             if since is not None:
                 params["$filter"] = f"receivedDateTime ge {_graph_time(since)}"
             return self._get_json(f"{GRAPH_BASE_URL}/users/{mailbox}/mailFolders/sentitems/messages/delta", params=params)

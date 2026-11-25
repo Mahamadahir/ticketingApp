@@ -44,6 +44,12 @@ def graph_on(monkeypatch):
     monkeypatch.setattr(settings, "graph_shared_mailbox", MAILBOX)
 
 
+def make_open(db_session):
+    from tests.test_auto_close_chase import make
+
+    return make(db_session, requester=ANN)
+
+
 def backdate(db_session, ticket, days=1):
     """The resolution or the wait began `days` ago, so a reaction a few minutes ago to an email sent hours ago is about it."""
     then = now() - timedelta(days=days)
@@ -120,13 +126,14 @@ class FakeSent:
         self.single = {}
         self.single_reads = []
         self.fail = None
+        self.fail_once = False  # raise `fail` for the first request only
 
     def page(self, *items, delta="https://graph.microsoft.com/v1.0/delta?token=one"):
         self.pages.append({"value": list(items), "@odata.deltaLink": delta})
 
-    def sent_items_delta_page(self, link, since=None):
-        self.requests.append((link, since))
-        if self.fail is not None:
+    def sent_items_delta_page(self, link, since=None, expand=True):
+        self.requests.append((link, since, expand))
+        if self.fail is not None and not (self.fail_once and len(self.requests) > 1):
             raise self.fail
         return self.pages.pop(0) if self.pages else {"value": [], "@odata.deltaLink": link or "https://graph.microsoft.com/v1.0/delta?token=none"}
 
@@ -213,7 +220,7 @@ def test_the_same_blob_twice_records_nothing_new_and_the_delta_link_is_stored_an
     graph.page(item, delta="https://graph.microsoft.com/v1.0/delta?token=second")  # Graph hands it over again
     counts = run(db_session, graph)
 
-    assert graph.requests[1] == ("https://graph.microsoft.com/v1.0/delta?token=first", None)
+    assert graph.requests[1][:2] == ("https://graph.microsoft.com/v1.0/delta?token=first", None)
     assert counts.recorded == 0 and len(live(db_session)) == 1
     assert state(db_session).delta_link == "https://graph.microsoft.com/v1.0/delta?token=second"
 
@@ -323,14 +330,25 @@ def test_a_linked_address_is_matched_to_the_person_through_identity(db_session, 
     assert (row.user_id, row.by_party, row.reactor_ref) == (ann.id, True, "ann.able@other.org")
 
 
-def test_queuing_an_email_fixes_its_reaction_kind(db_session, dev_mail, ann, resolved, waiting):
+def test_an_email_gets_its_reaction_kind_when_it_is_sent_from_the_status_it_has_then(db_session, dev_mail, ann, resolved, waiting):
+    from app import mail
     from app.messages import record_notice
+    from app.ticket_service import set_status
 
-    for ticket, expected in ((resolved, reactions.RESOLUTION), (waiting, reactions.AWAITING_USER)):
+    open_ticket = make_open(db_session)
+    record_notice(db_session, db_session.get(Ticket, open_ticket.id), "Hello")
+    db_session.commit()
+    set_status(db_session, db_session.get(Ticket, open_ticket.id), TicketStatus.AWAITING_USER, "agent@example.com")  # the status the agent set with it
+    db_session.commit()
+    for ticket in (resolved, waiting):
         record_notice(db_session, db_session.get(Ticket, ticket.id), "Hello")
-        db_session.commit()
-        [row] = [r for r in outbox_rows(db_session, outbox.NOTICE) if r.ticket_id == ticket.id]
-        assert row.reaction_kind == expected
+    db_session.commit()
+    assert all(r.reaction_kind is None for r in outbox_rows(db_session, outbox.NOTICE))  # not decided until it goes
+
+    assert mail.deliver_mail(db_session) == (3, 0)
+
+    kinds = {r.ticket_id: r.reaction_kind for r in outbox_rows(db_session, outbox.NOTICE)}
+    assert kinds == {open_ticket.id: "awaiting_user", resolved.id: "resolution", waiting.id: "awaiting_user"}
     assert outbox.queue_chase(db_session, waiting).reaction_kind == reactions.AWAITING_USER
 
 
@@ -444,6 +462,51 @@ def test_a_positive_reaction_on_a_request_for_a_reply_stops_the_chase(db_session
     assert db_session.get(Ticket, waiting.id).status == TicketStatus.AWAITING_USER
 
 
+def test_two_different_emails_sent_seconds_apart_cannot_be_told_apart_so_the_kind_is_other(db_session, ann, waiting):
+    sent_row(db_session, waiting, reactions.OTHER, minutes_ago=120)
+    sent_row(db_session, waiting, reactions.AWAITING_USER, minutes_ago=120)  # the same minute: a reply, then a request for a reply
+    close = db_session.exec(select(OutboundEmail).order_by(OutboundEmail.id)).all()
+    close[1].sent_at = close[0].sent_at + timedelta(seconds=5)
+    db_session.add(close[1])
+    db_session.commit()
+    graph = FakeSent()
+    graph.page(sent_item(waiting, reactions_blob=blob((ANN, "like")), sent=close[0].sent_at))
+
+    run(db_session, graph)
+
+    [row] = live(db_session)
+    assert (row.ticket_id, row.message_kind, row.message_id) == (waiting.id, "other", None)
+
+
+def test_a_reaction_stays_when_the_message_cannot_be_read_again(db_session, ann, resolved):
+    sent_row(db_session, resolved, reactions.RESOLUTION)
+    graph = FakeSent()
+    sent = now() - timedelta(hours=2)
+    graph.page(sent_item(resolved, reactions_blob=blob((ANN, "like")), sent=sent))
+    run(db_session, graph)
+    moved = sent_item(resolved, ref="<mid-1@example.com>", sent=sent, lastModifiedDateTime=stamp(sent + timedelta(minutes=30)))  # no properties, changed later
+    graph.page(moved)  # graph.single has nothing for it: reading it again finds it gone
+
+    run(db_session, graph)
+
+    assert graph.single_reads == [moved["id"]]
+    assert [r.removed_at for r in live(db_session)] == [None] and ratings(db_session, resolved) == [5]
+
+
+def test_a_reaction_is_taken_back_even_when_the_message_can_no_longer_be_matched(db_session, ann, resolved):
+    row = sent_row(db_session, resolved, reactions.RESOLUTION)
+    graph = FakeSent()
+    graph.page(sent_item(resolved, reactions_blob=blob((ANN, "like"))))
+    run(db_session, graph)
+    db_session.delete(row)
+    db_session.commit()
+    graph.page(sent_item(resolved, count=0, subject="Something else"))
+
+    run(db_session, graph)
+
+    assert all(r.removed_at is not None for r in live(db_session)) and ratings(db_session, resolved) == []
+
+
 # ---- Delta mechanics ---------------------------------------------------------------------------------------------
 
 
@@ -454,8 +517,8 @@ def test_graph_forgetting_the_delta_link_restarts_from_the_backfill_window(db_se
     gone = httpx.HTTPStatusError("gone", request=httpx.Request("GET", "https://graph.microsoft.com/v1.0/x"), response=httpx.Response(410, request=httpx.Request("GET", "https://graph.microsoft.com/v1.0/x")))
 
     class Forgets(FakeSent):
-        def sent_items_delta_page(self, link, since=None):
-            self.requests.append((link, since))
+        def sent_items_delta_page(self, link, since=None, expand=True):
+            self.requests.append((link, since, expand))
             if link is not None:
                 raise gone
             return {"value": [], "@odata.deltaLink": "https://graph.microsoft.com/v1.0/delta?token=new"}
@@ -494,6 +557,22 @@ def test_a_changed_message_that_came_without_properties_is_read_once_on_its_own(
 
     assert graph.single_reads == [changed["id"]]
     assert [r.message_ref for r in live(db_session)] == ["<changed@example.com>"]
+
+
+def test_when_graph_refuses_expand_on_the_delta_the_job_asks_without_it_and_reads_changed_messages_one_by_one(db_session, ann, resolved):
+    sent_row(db_session, resolved, reactions.RESOLUTION)
+    sent = now() - timedelta(hours=2)
+    changed = sent_item(resolved, sent=sent, lastModifiedDateTime=stamp(sent + timedelta(minutes=30)))
+    graph = FakeSent()
+    request = httpx.Request("GET", "https://graph.microsoft.com/v1.0/x")
+    graph.fail = httpx.HTTPStatusError("bad", request=request, response=httpx.Response(400, request=request))
+    graph.fail_once = True
+    graph.single[changed["id"]] = sent_item(resolved, reactions_blob=blob((ANN, "like")), sent=sent)
+    graph.page(changed)
+
+    run(db_session, graph)
+
+    assert [r[2] for r in graph.requests] == [True, False] and len(live(db_session)) == 1
 
 
 def test_without_graph_configured_the_job_does_nothing(db_session, monkeypatch):
