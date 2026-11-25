@@ -182,6 +182,8 @@ def _sentence(e: TicketEvent, n: Names) -> str:
         return f"Changed the priority from {frm or 'none'} to {to or 'none'}.{_reason(detail)}"
     if t == "due_changed":
         return f"Changed the Due date from {frm or 'none'} to {to or 'none'}.{_reason(detail)}"
+    if t == "sla_start_changed":
+        return f"Changed when the SLA clock starts from {frm} to {to}."
     if t == "required_by_changed":
         return f"Changed Required by from {frm or 'none'} to {to or 'none'}."
     if t == "attachment_renamed":
@@ -287,7 +289,7 @@ def _sentence(e: TicketEvent, n: Names) -> str:
 
 _TITLES = {
     "assigned": "Assigned", "escalated": "Escalated", "team_changed": "Re-assigned", "type_changed": "Changed",
-    "category_changed": "Changed", "priority_changed": "Changed", "due_changed": "Changed", "required_by_changed": "Changed",
+    "category_changed": "Changed", "priority_changed": "Changed", "due_changed": "Changed", "required_by_changed": "Changed", "sla_start_changed": "Changed",
     "status_changed": "Changed", "reopened": "Reopened", "reclosed": "Closed again", "created": "Created",
     "note_visibility_changed": "Changed a note", "attachment_renamed": "Renamed a file", "sent_to_msp": "Sent to the MSP",
     "taken_back_from_msp": "Took back from the MSP", "linked": "Linked", "unlinked": "Unlinked", "split": "Split",

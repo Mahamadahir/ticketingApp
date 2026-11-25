@@ -54,6 +54,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/a4d8e1b6c297_ticket_sla_starts_at.py",
+        "revision": "a4d8e1b6c297"
+      },
+      {
         "file": "migrations/versions/b8d2f6a1c350_email_reactions.py",
         "revision": "b8d2f6a1c350"
       },
@@ -68,17 +72,13 @@
       {
         "file": "migrations/versions/d4e8a1b7c3f9_activity_window_indexes.py",
         "revision": "d4e8a1b7c3f9"
-      },
-      {
-        "file": "migrations/versions/a7d2e9b41c58_inbound_mail_received_at.py",
-        "revision": "a7d2e9b41c58"
       }
     ],
-    "count": 79,
+    "count": 80,
     "heads": [
       {
-        "file": "migrations/versions/b8d2f6a1c350_email_reactions.py",
-        "revision": "b8d2f6a1c350"
+        "file": "migrations/versions/a4d8e1b6c297_ticket_sla_starts_at.py",
+        "revision": "a4d8e1b6c297"
       }
     ]
   },
@@ -671,8 +671,7 @@
       "file": "app/backdating.py",
       "functions": [
         "backdate_ticket",
-        "may_backdate",
-        "parse_moment"
+        "may_backdate"
       ],
       "imported_by": [
         "app.raising",
@@ -691,8 +690,7 @@
       "summary": "Logging tickets and fixes after the fact. Nothing here commits.",
       "tables": [],
       "tests": [
-        "tests/test_backdating.py",
-        "tests/test_time_zones.py"
+        "tests/test_backdating.py"
       ]
     },
     {
@@ -3785,6 +3783,7 @@
         "app.msp_actions",
         "app.reopening",
         "app.report_kit",
+        "app.sla",
         "app.ticket_service",
         "app.time_zones",
         "app.visibility"
@@ -6106,6 +6105,7 @@
         "Priority",
         "QueueSla",
         "SlaRow",
+        "SlaStartError",
         "SlaView"
       ],
       "file": "app/sla.py",
@@ -6124,7 +6124,9 @@
         "recalculate_deadlines",
         "set_impact_urgency",
         "sla_rows",
+        "sla_start",
         "sla_view",
+        "start_clock_at",
         "target_minutes",
         "urgency_options"
       ],
@@ -6132,6 +6134,7 @@
         "app.backdating",
         "app.messages",
         "app.raising",
+        "app.reports",
         "app.request_types",
         "app.required_by",
         "app.routers.admin",
@@ -7167,6 +7170,7 @@
     },
     {
       "classes": [
+        "MomentError",
         "RefreshResult"
       ],
       "file": "app/time_zones.py",
@@ -7185,6 +7189,7 @@
         "note_requester",
         "parse_clock",
         "parse_dates",
+        "parse_local_moment",
         "refresh_requester_zones",
         "relative_time",
         "scheduled_morning_hour",
@@ -7227,10 +7232,11 @@
       ],
       "module": "app.time_zones",
       "routes": [],
-      "summary": "Per-person time zones. Everything is stored and calculated in UTC; only what a person SEES is converted,",
+      "summary": "Per-person time zones. Everything is stored and calculated in UTC; only what a person SEES or TYPES is",
       "tables": [],
       "tests": [
         "tests/test_admin_mail_pages.py",
+        "tests/test_backdating.py",
         "tests/test_due_date.py",
         "tests/test_msp.py",
         "tests/test_msp_mail.py",

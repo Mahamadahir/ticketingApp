@@ -385,15 +385,15 @@ any change that adds, removes or renames modules, routes, models, jobs, settings
 
 ## Migrations
 
-79 revisions. Head: `b8d2f6a1c350`.
+80 revisions. Head: `a4d8e1b6c297`.
 
 Chain tail (newest first):
 
+- `a4d8e1b6c297` migrations/versions/a4d8e1b6c297_ticket_sla_starts_at.py
 - `b8d2f6a1c350` migrations/versions/b8d2f6a1c350_email_reactions.py
 - `e3a7c5d9b1f4` migrations/versions/e3a7c5d9b1f4_ticket_reactions.py
 - `e7a2c9d4b6f1` migrations/versions/e7a2c9d4b6f1_scheduled_job_run_now.py
 - `d4e8a1b7c3f9` migrations/versions/d4e8a1b7c3f9_activity_window_indexes.py
-- `a7d2e9b41c58` migrations/versions/a7d2e9b41c58_inbound_mail_received_at.py
 
 ## Modules
 
@@ -538,10 +538,10 @@ Logging tickets and fixes after the fact. Nothing here commits.
 File: `app/backdating.py`
 
 - Classes: `BackdateError`
-- Functions: `backdate_ticket`, `may_backdate`, `parse_moment`
+- Functions: `backdate_ticket`, `may_backdate`
 - Imports: `app.models`, `app.sla`, `app.ticket_service`, `app.time_zones`
 - Imported by: `app.raising`, `app.routers.portal`, `app.routers.tickets`, `app.templating`
-- Tests: `test_backdating.py`, `test_time_zones.py`
+- Tests: `test_backdating.py`
 
 ### `app.bank_holidays`
 
@@ -1128,7 +1128,7 @@ File: `app/reports.py`
 
 - Classes: `ReportDef`
 - Functions: `backlog_age`, `major_incidents`, `msp_handoffs`, `problems`, `reopen_rate`, `satisfaction`, `sla_compliance`, `times`, `volume`
-- Imports: `app.models`, `app.msp`, `app.msp_actions`, `app.reopening`, `app.report_kit`, `app.ticket_service`, `app.time_zones`, `app.visibility`
+- Imports: `app.models`, `app.msp`, `app.msp_actions`, `app.reopening`, `app.report_kit`, `app.sla`, `app.ticket_service`, `app.time_zones`, `app.visibility`
 - Imported by: `app.routers.reports`
 - Tests: `test_reports.py`, `test_reports_more.py`
 
@@ -1438,10 +1438,10 @@ File: `app/settings_store.py`
 Priority and the SLA clock. Nothing here commits.  
 File: `app/sla.py`
 
-- Classes: `Level`, `Priority`, `QueueSla`, `SlaRow`, `SlaView`
-- Functions: `apply_impact_urgency`, `at_risk_percent`, `breach_order`, `describe_priority`, `header_sla`, `impact_options`, `note_first_response`, `on_status_change`, `priority_for`, `queue_order`, `queue_sla`, `recalculate_deadlines`, `set_impact_urgency`, `sla_rows`, `sla_view`, `target_minutes`, `urgency_options`
+- Classes: `Level`, `Priority`, `QueueSla`, `SlaRow`, `SlaStartError`, `SlaView`
+- Functions: `apply_impact_urgency`, `at_risk_percent`, `breach_order`, `describe_priority`, `header_sla`, `impact_options`, `note_first_response`, `on_status_change`, `priority_for`, `queue_order`, `queue_sla`, `recalculate_deadlines`, `set_impact_urgency`, `sla_rows`, `sla_start`, `sla_view`, `start_clock_at`, `target_minutes`, `urgency_options`
 - Imports: `app.models`, `app.settings_store`, `app.ticket_service`, `app.time_zones`
-- Imported by: `app.backdating`, `app.messages`, `app.raising`, `app.request_types`, `app.required_by`, `app.routers.admin`, `app.routers.portal`, `app.routers.tickets`, `app.splitting`, `app.subrequests`, `app.ticket_service`, `app.triage`
+- Imported by: `app.backdating`, `app.messages`, `app.raising`, `app.reports`, `app.request_types`, `app.required_by`, `app.routers.admin`, `app.routers.portal`, `app.routers.tickets`, `app.splitting`, `app.subrequests`, `app.ticket_service`, `app.triage`
 - Tests: `test_backdating.py`, `test_queue_page.py`, `test_required_by.py`, `test_resolution.py`, `test_scheduled_status.py`, `test_sla.py`, `test_ticket_page.py`, `test_ticket_redesign.py`, `test_with_supplier.py`
 
 ### `app.splitting`
@@ -1692,14 +1692,14 @@ File: `app/ticket_service.py`
 
 ### `app.time_zones`
 
-Per-person time zones. Everything is stored and calculated in UTC; only what a person SEES is converted,  
+Per-person time zones. Everything is stored and calculated in UTC; only what a person SEES or TYPES is  
 File: `app/time_zones.py`
 
-- Classes: `RefreshResult`
-- Functions: `clear_manual_zone`, `default_zone`, `end_of_day_for_email`, `end_of_day_for_user`, `end_of_day_utc`, `format_date`, `format_long_date`, `format_moment`, `in_business_hours`, `morning_of`, `next_business_morning`, `note_requester`, `parse_clock`, `parse_dates`, `refresh_requester_zones`, `relative_time`, `scheduled_morning_hour`, `set_browser_zone`, `set_manual_zone`, `valid_zone`, `windows_to_iana`, `zone_choices`, `zone_for_email`, `zone_for_user`
+- Classes: `MomentError`, `RefreshResult`
+- Functions: `clear_manual_zone`, `default_zone`, `end_of_day_for_email`, `end_of_day_for_user`, `end_of_day_utc`, `format_date`, `format_long_date`, `format_moment`, `in_business_hours`, `morning_of`, `next_business_morning`, `note_requester`, `parse_clock`, `parse_dates`, `parse_local_moment`, `refresh_requester_zones`, `relative_time`, `scheduled_morning_hour`, `set_browser_zone`, `set_manual_zone`, `valid_zone`, `windows_to_iana`, `zone_choices`, `zone_for_email`, `zone_for_user`
 - Imports: `app.graph_client`, `app.identity`, `app.models`, `app.settings_store`, `app.windows_zones`
 - Imported by: `app.admin_home`, `app.auth`, `app.backdating`, `app.due_today`, `app.entra_check`, `app.inbound`, `app.jobs`, `app.messages`, `app.msp`, `app.report_kit`, `app.reports`, `app.required_by`, `app.routers.admin`, `app.routers.my_settings`, `app.routers.portal`, `app.routers.tickets`, `app.sla`, `app.team_activity`, `app.templating`, `app.ticket_service`
-- Tests: `test_admin_mail_pages.py`, `test_due_date.py`, `test_msp.py`, `test_msp_mail.py`, `test_portal_home.py`, `test_time_zones.py`
+- Tests: `test_admin_mail_pages.py`, `test_backdating.py`, `test_due_date.py`, `test_msp.py`, `test_msp_mail.py`, `test_portal_home.py`, `test_time_zones.py`
 
 ### `app.triage`
 

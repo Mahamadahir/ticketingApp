@@ -29,7 +29,7 @@ from app.followers import (
     followers_of,
     remove_follower,
 )
-from app.backdating import FORMAT as MOMENT_FORMAT, BackdateError, backdate_ticket, may_backdate, parse_moment
+from app.backdating import FORMAT as MOMENT_FORMAT, backdate_ticket, may_backdate
 from app.categories import CategoryError, create_category, is_selectable, path_of, selectable, team_id_for
 from app.msp import (
     MspError,
@@ -156,7 +156,7 @@ from app.reopening import (
 from app.closing import CloseError, check_can_close, close_ticket, preview_closing
 from app.resolution import ResolveError, check_can_resolve, preview_resolution, resolve_ticket
 from app.ticket_service import AwaitingApproval, ClosingNeedsNotes, EVENT_ASSIGNED, EVENT_ATTACHMENT_RENAMED, NotTriaged, ResolutionRequired, ScheduledNeedsDate, find_ticket, get_by_number, record_event, set_status
-from app.time_zones import zone_for_email, zone_for_user
+from app.time_zones import MomentError, parse_local_moment, zone_for_email, zone_for_user
 from app.triage import TriageError, change_category, change_type, clean_reason, reassign_ticket, triage_ticket
 from app.reactions import acknowledged_condition, acknowledged_views, dismiss_negative, open_negative_ids
 from app.thread import build_thread
@@ -1002,9 +1002,9 @@ def backdate(
     try:
         changes = backdate_ticket(
             session, ticket, user.email,
-            reported_at=parse_moment(reported_at, zone), resolved_at=parse_moment(resolved_at, zone),
+            reported_at=parse_local_moment(reported_at, zone), resolved_at=parse_local_moment(resolved_at, zone),
         )
-    except BackdateError as error:
+    except MomentError as error:
         session.rollback()
         raise HTTPException(status_code=400, detail=str(error))
     if changes:
