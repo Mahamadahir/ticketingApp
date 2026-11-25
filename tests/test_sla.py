@@ -531,3 +531,15 @@ def test_start_clock_at_recalculates_records_an_event_and_refuses_a_moment_befor
     with pytest.raises(sla.SlaStartError):
         sla.start_clock_at(db_session, ticket, ticket.created_at.replace(tzinfo=timezone.utc) - timedelta(seconds=1), "agent@example.com")
     assert ticket.sla_starts_at == start and len(events(db_session, ticket, "sla_start_changed")) == 1
+
+
+def test_start_clock_at_refuses_a_moment_after_the_ticket_was_resolved(db_session):
+    ticket = Ticket(subject="x", requester_email="a@example.com", status=TicketStatus.RESOLVED, priority="p3")
+    db_session.add(ticket)
+    db_session.commit()
+    db_session.refresh(ticket)
+    ticket.resolved_at = ticket.created_at.replace(tzinfo=timezone.utc) + timedelta(hours=1)
+
+    with pytest.raises(sla.SlaStartError):
+        sla.start_clock_at(db_session, ticket, ticket.resolved_at + timedelta(minutes=1), "agent@example.com")
+    assert ticket.sla_starts_at is None

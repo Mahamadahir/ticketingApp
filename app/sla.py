@@ -102,11 +102,14 @@ class SlaStartError(ValueError):
 
 def start_clock_at(session: Session, ticket: Ticket, moment: datetime, actor_email: Optional[str]) -> None:
     """Starts the ticket's SLA clock at `moment` instead of when it was raised, works both deadlines out again from
-    it and records a ticket event (from and to). A moment before created_at is refused with SlaStartError.
+    it and records a ticket event (from and to). A moment before created_at, or after the ticket was resolved or closed, is refused with SlaStartError.
     Nothing commits. Used by scheduled mailbox changes; no form sets it yet."""
     moment = _aware(moment)
     if moment < _aware(ticket.created_at):
         raise SlaStartError("The SLA cannot start before the ticket was created.")
+    finished_at = ticket.resolved_at or ticket.closed_at
+    if finished_at is not None and moment > _aware(finished_at):
+        raise SlaStartError("The SLA cannot start after the ticket was resolved.")
     previous = sla_start(ticket)
     ticket.sla_starts_at = moment
     recalculate_deadlines(session, ticket)

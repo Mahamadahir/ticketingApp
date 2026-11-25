@@ -38,7 +38,7 @@ EXCERPT = 160
 # agent's by mistake. Add a type here only when a requester or approver can never cause it.
 AGENT_ONLY_EVENTS = (
     "triaged", "assigned", "escalated", "team_changed", "type_changed", "priority_changed", "category_changed",
-    "category_reviewed", "attachment_renamed", "note_visibility_changed", "backdated", "due_changed", "required_by_changed", "sla_start_changed",
+    "category_reviewed", "attachment_renamed", "note_visibility_changed", "backdated", "due_changed", "required_by_changed",
     "linked", "unlinked", "child_linked", "child_unlinked", "split", "split_from", "reclosed",
     "sent_to_msp", "msp_hold", "msp_hold_released", "msp_forwarded", "msp_forward_dismissed", "msp_acknowledged",
     "msp_told_no_longer_needed", "msp_not_told", "with_msp_through", "taken_back_from_msp", "linked_taken_back_from_msp",

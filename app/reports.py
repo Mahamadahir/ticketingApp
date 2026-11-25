@@ -242,7 +242,7 @@ def times(session: Session, user: User, levels: AccessContext, filters: ReportFi
         description=(
             "Elapsed time, not working time: the SLA clock runs 24 hours a day, every day (it stops only in Awaiting user). "
             "Tickets created in the range. Resolution time leaves out time spent in Awaiting user; first response is the plain "
-            "time from creation to the first email an agent sent. Only tickets that have had a first response, or are "
+            "time to the first email an agent sent. Times run from when the SLA clock starts (creation, unless a later start was set; an answer given before it counts as 0). Only tickets that have had a first response, or are "
             "resolved or closed, are counted."
         ),
     )
