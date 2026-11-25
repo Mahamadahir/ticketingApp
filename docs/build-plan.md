@@ -318,6 +318,30 @@ do. While a full suite is running, give any other run a second database (for exa
 on your database. Symptoms of a collision, which is not a code bug: `cannot drop table ... other
 objects depend on it` in test setup, runs that hang, or a run that ends with no summary line.
 
+**When a run is slow or hangs (#306 lost two hours to this).** Other agents' suites share the same
+Postgres, so a full run that takes minutes on a quiet machine can crawl or stall. Never wait on it in silence:
+- **Time-limit every full run**, for example `timeout 1800 .venv/Scripts/python.exe -m pytest -q -n 4` in bash
+  (30 minutes). A run that hits the limit, or prints no progress for 10 minutes, is hung, not slow.
+- **Diagnose once.** Look at your database's connections:
+  `wsl -e docker exec ticketingapp-db-1 psql -U ticketing -d postgres -c "select datname, state, wait_event_type, wait_event, now()-query_start as running, left(query,80) from pg_stat_activity where datname like 'ticketing_<yourbranch>%'"`.
+  Lock waits mean a collision (above). `out of shared memory` or `max_locks_per_transaction` means too
+  many workers across all agents: use fewer (`-n 2`).
+- **Kill only your own run.** Match your pytest by its command line and `TEST_DATABASE_URL`, never every
+  `pytest`, since another agent's suite may be running. Then clear your databases with
+  `python tools/clean_test_dbs.py --prefix ticketing_<yourbranch> --yes`.
+- **One retry at most.** If the full suite still cannot finish, run the changed test files (and the
+  tests of the modules they touch) locally, push, and let CI run the full suite. Say so in your report.
+  Do not start a third full run.
+- **Push and report instead of going quiet.** The orchestrator cannot see inside a sub-agent. If you are
+  stuck for more than 30 minutes, push what you have and report where it stopped (the command and its
+  last output).
+- **Merge `main` before the final push.** A PR that conflicts with `main` gets **no CI run at all**
+  (`gh pr checks` says "no checks reported"); check `gh pr view <n> --json mergeable`. If `main` gained a
+  migration with the same parent as yours, point yours at the new one so there is a single head
+  (`python -m alembic heads`), and regenerate the code map rather than hand-merging it.
+- **Never hard-code dates in tests.** Build times from now (`datetime.now(timezone.utc) + timedelta(...)`);
+  a test written for "yesterday" fails the next day (the `test_reactions` failures on 25 Nov 2026).
+
 **Test databases clean themselves up.** At the end of a pytest session (`pytest_sessionfinish` in `tests/conftest.py`) each xdist worker drops the database it created, and the controller any shared one, after disposing the engine; only names ending in `_test` that this session created are dropped (a database that already existed, such as CI's, is kept). Set `KEEP_TEST_DB=1` to keep them when debugging a failed run, then drop them by hand. For leftovers (a crashed or killed run, old branches) run `python tools/clean_test_dbs.py` to list every `*_test` database with its size, then again with `--yes` to drop those with no open connection (`--prefix ticketing_<yourbranch>` narrows it; do not run `--yes` without a prefix while another suite may be starting). It cannot touch `ticketing`. Hundreds of leftovers made one local run take hours (#295).
 
 **If the database is down** (`Connection refused` on 127.0.0.1:5432, usual after the laptop has

@@ -102,6 +102,10 @@ starting a phase, and `README.md` for how to run it.
   `ticketing_test` database. Python is 3.14. Run only one pytest process per test database
   (your own background suite included), and give your branch its own via `TEST_DATABASE_URL`;
   how, and what to do when the database is down, is in `docs/build-plan.md` (working agreement).
+- **Test runs can hang** (other agents share the Postgres). Before running the suite, read "When a run is
+  slow or hangs" in the working agreement in `docs/build-plan.md`: time-limit every full run, diagnose once,
+  kill only your own run, retry at most once and then lean on CI, push and report if stuck for more than
+  30 minutes, and merge `main` before the final push (a conflicting PR gets no CI).
 - No secrets in the repo, Bicep parameter files or app definitions. Secrets
   come from the environment at deploy time and live in Key Vault.
 - Values marked TBC in the plan are settings or environment config, never
