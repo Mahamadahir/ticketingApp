@@ -21,6 +21,12 @@ from app.config import settings
 
 GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0"
 PRESENCE_BATCH = 650  # the most ids getPresencesByUserId accepts in one request
+# Outlook keeps the reactions to a message as MAPI extended properties (undocumented by Microsoft; issue #299).
+REACTION_PROPERTY_SET = "{41F28F13-83F4-4114-A584-EEDB5A6B0BFF}"
+REACTIONS_COUNT_ID = f"Integer {REACTION_PROPERTY_SET} Name ReactionsCount"
+REACTIONS_BLOB_ID = f"Binary {REACTION_PROPERTY_SET} Name MapiReactionsBlob"
+SENT_ITEMS_SELECT = "id,subject,internetMessageId,sentDateTime,lastModifiedDateTime,toRecipients,ccRecipients"
+REACTION_EXPAND = f"singleValueExtendedProperties($filter=id eq '{REACTIONS_COUNT_ID}' or id eq '{REACTIONS_BLOB_ID}')"
 TOKEN_URL_TEMPLATE = "https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
 
 
@@ -231,6 +237,30 @@ class GraphClient:
                 params["$filter"] = f"receivedDateTime ge {_graph_time(since)}"
             return self._get_json(f"{GRAPH_BASE_URL}/users/{mailbox}/mailFolders/inbox/messages/delta", params=params)
         return self._get_json(link)
+
+    def sent_items_delta_page(self, link: str | None, since: datetime | None = None) -> dict:
+        """One page of the Sent Items delta query (GET .../mailFolders/sentitems/messages/delta), like inbox_delta_page,
+        for the Outlook reactions job (#299). It asks for what is needed to match a message to its ticket and for the two
+        extended properties Outlook keeps reactions in (REACTIONS_COUNT_ID, REACTIONS_BLOB_ID). A message with no reaction
+        comes back without `singleValueExtendedProperties`. Needs Mail.Read, limited to the mailbox."""
+        if link is None:
+            mailbox = quote(settings.graph_shared_mailbox, safe="@")
+            params = {"$select": SENT_ITEMS_SELECT, "$expand": REACTION_EXPAND}
+            if since is not None:
+                params["$filter"] = f"receivedDateTime ge {_graph_time(since)}"
+            return self._get_json(f"{GRAPH_BASE_URL}/users/{mailbox}/mailFolders/sentitems/messages/delta", params=params)
+        return self._get_json(link)
+
+    def get_sent_message_reactions(self, message_id: str) -> dict | None:
+        """One sent message with the reaction properties, for a changed message whose delta entry came without them (a
+        delta query may not expand extended properties; the job then reads the message itself). None if it is gone."""
+        response = self._mail_get(
+            f"messages/{quote(message_id, safe='')}", params={"$select": SENT_ITEMS_SELECT, "$expand": REACTION_EXPAND}
+        )
+        if response.status_code == 404:
+            return None
+        response.raise_for_status()
+        return response.json()
 
     def _get_json(self, url: str, params: dict | None = None) -> dict:
         # A stored or server-supplied link is only ever followed on Graph itself, so the token is

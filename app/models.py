@@ -1005,6 +1005,9 @@ class OutboundEmail(SQLModel, table=True):
     body: Optional[str] = Field(default=None)
     # An email to the MSP: the ids of the ticket's attachments sent with it (comma separated), fixed when it was queued.
     attachment_ids: Optional[str] = Field(default=None)
+    # What a reaction to this email counts as (app/reactions.py: resolution, awaiting_user, other), decided when it is queued, like
+    # the Teams copy's kind. Empty for an email nobody reacts meaningfully to (and every email queued before #299).
+    reaction_kind: Optional[str] = Field(default=None)
 
 
 class ScheduledJob(SQLModel, table=True):
@@ -1210,6 +1213,10 @@ class MailSyncState(SQLModel, table=True):
     last_handed_over: int = Field(default=0, sa_column_kwargs={"server_default": "0"})  # new ids at the last run
     last_error: Optional[str] = Field(default=None)
     last_error_at: Optional[datetime] = Field(default=None)
+    # A run that finished but could not use something Graph sent (the Outlook reactions job, #299: a reaction blob in a
+    # format it does not understand). Not a failure: the run succeeded. Cleared by a later run that read every blob.
+    last_warning: Optional[str] = Field(default=None)
+    last_warning_at: Optional[datetime] = Field(default=None)
 
 
 TICKET_COUNTER = "ticket"

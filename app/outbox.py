@@ -17,6 +17,7 @@ from sqlmodel import Session, select
 from app.config import settings
 from app.models import ApprovalVote, Attachment, Message, OutboundEmail, Ticket, TicketApproval, User, UserRole
 from app.notification_settings import APPROVAL_OVERDUE as OVERDUE_EVENT, EMAIL, is_enabled, wants_approval_email
+from app.reactions import AWAITING_USER, kind_of_requester_message
 
 REPLY = "reply"  # an agent's email to the requester (counts as a first response)
 NOTICE = "notice"  # an automatic message to the requester (an approval decision, say)
@@ -60,6 +61,7 @@ def queue_message(session: Session, message: Message, ticket: Ticket, kind: Opti
         message_id=message.id,
         to_address=ticket.requester_email,
         attachment_ids=",".join(str(i) for i in files) or None,
+        reaction_kind=kind_of_requester_message(ticket),
     )
     session.add(row)
     return row
@@ -167,7 +169,7 @@ def queue_chase(session: Session, ticket: Ticket) -> Optional[OutboundEmail]:
     if not is_on():
         return None
     session.flush()
-    row = OutboundEmail(kind=CHASE, ticket_id=ticket.id, to_address=ticket.requester_email)
+    row = OutboundEmail(kind=CHASE, ticket_id=ticket.id, to_address=ticket.requester_email, reaction_kind=AWAITING_USER)
     session.add(row)
     return row
 
