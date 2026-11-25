@@ -54,6 +54,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/b8d2f6a1c350_email_reactions.py",
+        "revision": "b8d2f6a1c350"
+      },
+      {
         "file": "migrations/versions/e3a7c5d9b1f4_ticket_reactions.py",
         "revision": "e3a7c5d9b1f4"
       },
@@ -68,17 +72,13 @@
       {
         "file": "migrations/versions/a7d2e9b41c58_inbound_mail_received_at.py",
         "revision": "a7d2e9b41c58"
-      },
-      {
-        "file": "migrations/versions/d1a7e5b93c42_ticket_msp_warned_for.py",
-        "revision": "d1a7e5b93c42"
       }
     ],
-    "count": 78,
+    "count": 79,
     "heads": [
       {
-        "file": "migrations/versions/e3a7c5d9b1f4_ticket_reactions.py",
-        "revision": "e3a7c5d9b1f4"
+        "file": "migrations/versions/b8d2f6a1c350_email_reactions.py",
+        "revision": "b8d2f6a1c350"
       }
     ]
   },
@@ -660,6 +660,7 @@
         "tests/test_acknowledged_backstop.py",
         "tests/test_auto_close_chase.py",
         "tests/test_closing_email.py",
+        "tests/test_email_reactions.py",
         "tests/test_reactions.py"
       ]
     },
@@ -1042,6 +1043,7 @@
         "app.breakglass",
         "app.check_settings",
         "app.database",
+        "app.email_reactions",
         "app.entra_check",
         "app.followers",
         "app.graph_client",
@@ -1089,6 +1091,7 @@
         "tests/test_break_glass.py",
         "tests/test_bulk_resolve.py",
         "tests/test_closing_email.py",
+        "tests/test_email_reactions.py",
         "tests/test_entra_check.py",
         "tests/test_follower_updates.py",
         "tests/test_handoff_bells_holidays.py",
@@ -1228,6 +1231,42 @@
       "tables": [],
       "tests": [
         "tests/test_due_date.py"
+      ]
+    },
+    {
+      "classes": [
+        "FormatNotUnderstood",
+        "Reaction",
+        "RunCounts"
+      ],
+      "file": "app/email_reactions.py",
+      "functions": [
+        "decode_blob",
+        "outbox_row_for",
+        "properties_of",
+        "recipients_of",
+        "run_email_reactions",
+        "went_to_a_party"
+      ],
+      "imported_by": [
+        "app.scheduled_jobs"
+      ],
+      "imports": [
+        "app.config",
+        "app.graph_client",
+        "app.identity",
+        "app.models",
+        "app.reactions",
+        "app.settings_store",
+        "app.subscriptions",
+        "app.ticket_service"
+      ],
+      "module": "app.email_reactions",
+      "routes": [],
+      "summary": "Reactions in Outlook (issue #299): the recurring job that reads them from the shared mailbox's Sent Items.",
+      "tables": [],
+      "tests": [
+        "tests/test_email_reactions.py"
       ]
     },
     {
@@ -1536,6 +1575,7 @@
       "file": "app/graph_client.py",
       "functions": [],
       "imported_by": [
+        "app.email_reactions",
         "app.entra_check",
         "app.inbound",
         "app.mail",
@@ -1551,6 +1591,7 @@
       "summary": "Microsoft Graph client for the shared IT support mailbox.",
       "tables": [],
       "tests": [
+        "tests/test_email_reactions.py",
         "tests/test_entra_check.py",
         "tests/test_inbound_mail.py",
         "tests/test_mail_subscriptions.py",
@@ -1585,6 +1626,7 @@
         "app.approvals",
         "app.auth",
         "app.bot_cards",
+        "app.email_reactions",
         "app.inbound",
         "app.linked_identities",
         "app.mail",
@@ -1948,6 +1990,7 @@
         "app.outbox",
         "app.person_data",
         "app.raising",
+        "app.reactions",
         "app.settings_store",
         "app.storage",
         "app.teams"
@@ -1965,6 +2008,7 @@
         "tests/test_card_refusals.py",
         "tests/test_closing_email.py",
         "tests/test_email_header.py",
+        "tests/test_email_reactions.py",
         "tests/test_email_templates.py",
         "tests/test_follower_updates.py",
         "tests/test_linked_identities.py",
@@ -2161,6 +2205,7 @@
       "tests": [
         "tests/test_email_header.py",
         "tests/test_email_preview.py",
+        "tests/test_email_reactions.py",
         "tests/test_escalation_tidy.py",
         "tests/test_follower_updates.py",
         "tests/test_inbound_mail.py",
@@ -2277,6 +2322,7 @@
         "app.categories",
         "app.closing",
         "app.due_today",
+        "app.email_reactions",
         "app.email_templates",
         "app.emergency",
         "app.entra_check",
@@ -2623,6 +2669,7 @@
         "tests/test_due_date_review.py",
         "tests/test_email_header.py",
         "tests/test_email_preview.py",
+        "tests/test_email_reactions.py",
         "tests/test_email_templates.py",
         "tests/test_entra_check.py",
         "tests/test_escalation.py",
@@ -3230,7 +3277,8 @@
       "imports": [
         "app.config",
         "app.models",
-        "app.notification_settings"
+        "app.notification_settings",
+        "app.reactions"
       ],
       "module": "app.outbox",
       "routes": [],
@@ -3244,6 +3292,7 @@
         "tests/test_bulk_resolve.py",
         "tests/test_closing_email.py",
         "tests/test_email_header.py",
+        "tests/test_email_reactions.py",
         "tests/test_email_templates.py",
         "tests/test_follower_updates.py",
         "tests/test_msp_mail.py",
@@ -3514,6 +3563,9 @@
       "imported_by": [
         "app.action_links",
         "app.auto_close_chase",
+        "app.email_reactions",
+        "app.mail",
+        "app.outbox",
         "app.routers.admin",
         "app.routers.tickets",
         "app.team_activity",
@@ -3536,6 +3588,7 @@
       "tables": [],
       "tests": [
         "tests/test_acknowledged_backstop.py",
+        "tests/test_email_reactions.py",
         "tests/test_reactions.py"
       ]
     },
@@ -5811,6 +5864,7 @@
         "app.bank_holidays",
         "app.database",
         "app.due_today",
+        "app.email_reactions",
         "app.entra_check",
         "app.models",
         "app.msp",
@@ -5833,6 +5887,7 @@
         "tests/test_approval_reminders.py",
         "tests/test_auto_close_chase.py",
         "tests/test_due_date.py",
+        "tests/test_email_reactions.py",
         "tests/test_entra_check.py",
         "tests/test_handoff_bells_holidays.py",
         "tests/test_msp.py",
@@ -5933,6 +5988,7 @@
         "app.bank_holidays",
         "app.bulk_resolve",
         "app.categories",
+        "app.email_reactions",
         "app.emergency",
         "app.entra_check",
         "app.inbound",
@@ -5997,6 +6053,7 @@
         "tests/test_closing_email.py",
         "tests/test_due_date.py",
         "tests/test_due_date_review.py",
+        "tests/test_email_reactions.py",
         "tests/test_entra_check.py",
         "tests/test_follower_updates.py",
         "tests/test_handoff_bells_holidays.py",
@@ -6385,10 +6442,12 @@
         "parse_graph_time",
         "record_for_processing",
         "renew_margin_minutes",
+        "sent_folder",
         "subscription_resource"
       ],
       "imported_by": [
         "app.admin_home",
+        "app.email_reactions",
         "app.inbound",
         "app.jobs",
         "app.routers.admin",
@@ -6407,6 +6466,7 @@
       "tests": [
         "tests/test_admin_frame.py",
         "tests/test_admin_mail_pages.py",
+        "tests/test_email_reactions.py",
         "tests/test_mail_subscriptions.py"
       ]
     },
@@ -7036,6 +7096,7 @@
         "app.bulk_resolve",
         "app.closing",
         "app.due_today",
+        "app.email_reactions",
         "app.followers",
         "app.inbound",
         "app.intake",
@@ -7083,6 +7144,7 @@
         "tests/test_category_admin.py",
         "tests/test_due_date.py",
         "tests/test_email_preview.py",
+        "tests/test_email_reactions.py",
         "tests/test_linked_identities.py",
         "tests/test_msp_mail.py",
         "tests/test_portal.py",
@@ -7883,6 +7945,7 @@
     "tests/test_due_date_review.py",
     "tests/test_email_header.py",
     "tests/test_email_preview.py",
+    "tests/test_email_reactions.py",
     "tests/test_email_templates.py",
     "tests/test_entra_check.py",
     "tests/test_escalation.py",

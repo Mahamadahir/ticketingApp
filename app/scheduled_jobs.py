@@ -43,6 +43,7 @@ from app.auto_close_chase import run_auto_close, run_chase
 from app.bank_holidays import run_bank_holiday_fetch
 from app.database import engine
 from app.due_today import run_scheduled_due
+from app.email_reactions import run_email_reactions
 from app.entra_check import JOB_NAME as ENTRA_CHECK_JOB, run_entra_account_check
 from app.models import ScheduledJob
 from app.msp import run_msp_ack_alerts, run_msp_forwards, run_msp_handoff
@@ -52,7 +53,7 @@ from app.reply_files import expire as expire_reply_files
 from app.ticket_presence import purge_expired as purge_ticket_presence
 from app.sessions import purge_ended_sessions
 from app.teams_pending import expire_pending
-from app.settings_store import JOB_LATE_MINUTES, JOB_LEASE_MINUTES, JOB_RETRY_MINUTES, REGISTRY, get_int_setting
+from app.settings_store import EMAIL_REACTIONS_MINUTES, JOB_LATE_MINUTES, JOB_LEASE_MINUTES, JOB_RETRY_MINUTES, REGISTRY, get_int_setting
 
 log = logging.getLogger("app.worker")
 
@@ -69,6 +70,14 @@ class ScheduledJobDef:
     run: Callable[[Session], None]  # given a session; the runner commits on return, rolls back on a raise
     description: str = ""  # what the job does, in plain words: shown on the Run now confirm page
     warns: tuple[str, ...] = ()  # WARN_EMAIL and/or WARN_MSP: shown as a warning on the Run now confirm page
+    interval_setting: Optional[str] = None  # a "minutes" setting that overrides every_seconds, so an admin can tune how often it runs
+
+    def seconds(self, session: Session) -> int:
+        """How often the job is due now: its interval setting in minutes when it has one (a blank or invalid value falls back to
+        the setting's default), else the fixed every_seconds."""
+        if self.interval_setting is None:
+            return self.every_seconds
+        return int(timing(session, self.interval_setting).total_seconds())
 
 
 WARN_EMAIL = "email"
@@ -86,6 +95,13 @@ SCHEDULED_JOBS: list[ScheduledJobDef] = [
     ScheduledJobDef("blob-cleanup", 3600, run_blob_cleanup, "Retries deleting stored files for a requester who was anonymised, until every file is gone."),  # app/anonymisation.py
     ScheduledJobDef("chase", 3600, run_chase, "Emails requesters of tickets that have been Awaiting user for a while, asking them to reply (only when chasing is on).", (WARN_EMAIL,)),
     ScheduledJobDef(ENTRA_CHECK_JOB, 3600, run_entra_account_check, "Checks in Entra that each user's account is still enabled and deactivates those who are not. It wakes hourly but only checks once a night, after the Entra check time setting."),
+    ScheduledJobDef(
+        "email-reactions", 600, run_email_reactions,
+        "Reads the shared mailbox's Sent Items for reactions people made in Outlook to the emails the app sent, and records them on the "
+        "tickets like Teams reactions. It only reads: it sends nothing. How often it runs is the setting \"Outlook reactions: how often "
+        "Sent Items is read\".",
+        (), EMAIL_REACTIONS_MINUTES,
+    ),
     ScheduledJobDef("msp-ack-alerts", 300, run_msp_ack_alerts, "Raises an alert for a ticket sent to the MSP that the MSP has not confirmed in time."),
     ScheduledJobDef("msp-forwards", 300, run_msp_forwards, "Forwards mail the MSP sent on a ticket, left waiting for an agent, to the user once business hours end.", (WARN_EMAIL, WARN_MSP)),
     ScheduledJobDef("msp-handoff", 300, run_msp_handoff, "At the handoff time each day, sends the tickets waiting for the MSP to the MSP and emails them. It only acts inside its handoff window.", (WARN_EMAIL, WARN_MSP)),
@@ -201,12 +217,12 @@ def _finish(
         if error is None:
             row.last_success_at = now
             row.failures_in_a_row = 0
-            row.next_run_at = next_slot(due, started, timedelta(seconds=job.every_seconds))
+            row.next_run_at = next_slot(due, started, timedelta(seconds=job.seconds(session)))
         else:
             row.last_error = error[:MAX_ERROR_LENGTH]
             row.last_error_at = now
             row.failures_in_a_row += 1
-            retry = min(timing(session, JOB_RETRY_MINUTES), timedelta(seconds=job.every_seconds))
+            retry = min(timing(session, JOB_RETRY_MINUTES), timedelta(seconds=job.seconds(session)))
             row.next_run_at = now + retry
             if resume is not None and now < resume < row.next_run_at:
                 row.next_run_at = resume  # a requested run that failed does not push the normal run later

@@ -63,6 +63,26 @@
     <p class="muted">The catch-up has not run (it is off, or has not run yet).</p>
     {% endif %}
   </section>
+  <section class="card intake-card" aria-labelledby="in-react">
+    <div class="card-header">
+      <h2 id="in-react">Outlook reactions</h2>
+      {% if not reactions_sync %}<span class="chip t-gray">Not run</span>
+      {% elif reactions_sync.last_error %}<span class="chip t-red">Last run failed</span>
+      {% elif reactions_sync.last_warning %}<span class="chip t-amber">Format not understood</span>
+      {% else %}<span class="chip t-green">Healthy</span>{% endif %}
+    </div>
+    {% if reactions_sync %}
+    <dl class="dl">
+      <dt>Last completed</dt><dd>{{ reactions_sync.last_synced_at|local_time if reactions_sync.last_synced_at else "never" }}</dd>
+      <dt>Reactions recorded at that run</dt><dd>{{ reactions_sync.last_handed_over }}</dd>
+      <dt>Part way through a long run</dt><dd>{{ "yes" if reactions_sync.resume_link else "no" }}</dd>
+      <dt>Last error</dt><dd>{% if reactions_sync.last_error %}{{ reactions_sync.last_error }} ({{ reactions_sync.last_error_at|local_time }}){% else %}none{% endif %}</dd>
+      <dt>Warning</dt><dd>{% if reactions_sync.last_warning %}{{ reactions_sync.last_warning }} ({{ reactions_sync.last_warning_at|local_time }}). Outlook stores reactions in a format Microsoft has not documented and may change; nothing was recorded from those messages.{% else %}none{% endif %}</dd>
+    </dl>
+    {% else %}
+    <p class="muted">The Outlook reactions job has not run (mail is off, or it has not run yet).</p>
+    {% endif %}
+  </section>
 </div>
 
 <div class="intake-cards intake-numbers">

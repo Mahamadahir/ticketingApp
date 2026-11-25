@@ -320,6 +320,11 @@ def mail_folder() -> str:
     return f"users/{settings.graph_shared_mailbox}/mailFolders/inbox"
 
 
+def sent_folder() -> str:
+    """The sync-state key of the Sent Items delta the Outlook reactions job keeps (app/email_reactions.py, #299)."""
+    return f"users/{settings.graph_shared_mailbox}/mailFolders/sentitems"
+
+
 def catch_up(session: Session, graph=None, intake: Optional[MailIntake] = None, now: Optional[datetime] = None) -> int:
     """One catch-up run: asks Graph for the inbox messages that changed since the stored deltaLink
     (the first time ever: from now, handing nothing over), hands their ids to the intake, and stores the
@@ -397,6 +402,8 @@ def _sync_pages(session: Session, graph, intake: MailIntake, state: MailSyncStat
 # never from the wording of `text`, so a warning can be reworded without a chip turning green.
 SUBSCRIPTION_PROBLEM = "subscription"
 CATCH_UP_PROBLEM = "catch_up"
+REACTION_FORMAT_PROBLEM = "reaction_format"  # the Outlook reactions job could not read what Outlook stored (#299)
+REACTIONS_RUN_PROBLEM = "reactions_run"  # the Outlook reactions job's last run failed (#299)
 
 
 @dataclass(frozen=True)
@@ -424,6 +431,11 @@ def health_problems(session: Session, now: Optional[datetime] = None) -> list[He
     sync = session.exec(select(MailSyncState).where(MailSyncState.folder == mail_folder())).first()
     if sync is not None and sync.last_error:
         warnings.append(HealthWarning(CATCH_UP_PROBLEM, "Mail catch-up: the last run failed"))
+    reactions_sync = session.exec(select(MailSyncState).where(MailSyncState.folder == sent_folder())).first()
+    if reactions_sync is not None and reactions_sync.last_error:
+        warnings.append(HealthWarning(REACTIONS_RUN_PROBLEM, "Outlook reactions: the last run failed"))
+    if reactions_sync is not None and reactions_sync.last_warning:
+        warnings.append(HealthWarning(REACTION_FORMAT_PROBLEM, "Outlook reactions: reaction format not understood (Outlook may have changed it)"))
     return warnings
 
 
