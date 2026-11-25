@@ -103,7 +103,9 @@ def test_an_acknowledged_ticket_shows_the_chip_and_what_happens_next_and_an_unac
     react(db_session, acked, at=datetime.now(timezone.utc) + timedelta(seconds=1))
 
     page = client.get(f"/tickets/{acked.number}").text
-    assert page.count("Acknowledged by reaction") == 2  # the header and the Service level box
+    assert page.count("Acknowledged by reaction") == 1  # the header chip
+    assert re.search(r'<li><span>Acknowledged</span><span class="chip t-blue">By reaction · (today|0 days)</span></li>', page)  # the Service level row
+    assert '<p class="note">Chases stopped. Auto-resolves in 14 days' in page
     assert re.search(r'chip t-blue"[^>]*>Acknowledged by reaction · (today|0 days)<', page)
     assert "Chases stopped. Auto-resolves in 14 days if there is no reply." in page
     assert "Acknowledged by reaction" not in client.get(f"/tickets/{quiet.number}").text
@@ -131,6 +133,7 @@ def test_the_chip_counts_days_since_the_reaction_and_days_left(client, db_sessio
     view = reactions.acknowledged_views(db_session, [ticket], since + timedelta(days=5, hours=2))[ticket.id]
 
     assert view.chip == "Acknowledged by reaction · 5 days"
+    assert view.short == "By reaction · 5 days"
     assert view.line == "Chases stopped. Auto-resolves in 9 days if there is no reply."
     assert reactions.acknowledged_views(db_session, [ticket], since)[ticket.id].chip.endswith("today")
 

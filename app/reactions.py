@@ -407,6 +407,7 @@ class AcknowledgedView:
     """What the pages say about an acknowledged wait: the chip text and (on the ticket page) the line about what happens next."""
     since: datetime
     chip: str
+    short: str  # the Service level row's chip: the row is labelled "Acknowledged"
     line: str
 
 
@@ -431,7 +432,7 @@ def acknowledged_views(session: Session, tickets: Iterable[Ticket], now: datetim
         else:
             left = -((now - since - timedelta(days=limit)) // timedelta(days=1))  # whole days left, rounded up
             line = f"Chases stopped. Auto-resolves in {_days(left)} if there is no reply."
-        out[ticket_id] = AcknowledgedView(since=since, chip=f"Acknowledged by reaction · {_days(elapsed)}", line=line)
+        out[ticket_id] = AcknowledgedView(since=since, chip=f"Acknowledged by reaction · {_days(elapsed)}", short=f"By reaction · {_days(elapsed)}", line=line)
     return out
 
 

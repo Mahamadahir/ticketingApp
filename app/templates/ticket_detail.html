@@ -234,18 +234,17 @@
   {# 3. Service level: the clocks, Due and Required by, the status, and the hold. #}
   <section class="card tp-card tp-box" id="box-sla" aria-labelledby="sla-heading">
     <h2 id="sla-heading">Service level</h2>
-    {% if sla_rows %}
+    {% if sla_rows or acknowledged %}
     <ul class="tp-rows">
       {% for row in sla_rows %}<li><span>{{ row.label }}</span><span class="chip t-{{ row.tone }}">{{ row.text }}</span></li>{% endfor %}
+      {% if acknowledged %}<li><span>Acknowledged</span><span class="chip t-blue">{{ acknowledged.short }}</span></li>{% endif %}
     </ul>
+    {% if acknowledged %}<p class="note">{{ acknowledged.line }}</p>{% endif %}
     {% else %}
     <p class="muted">{{ sla_chip.text }}.</p>
     {% endif %}
     {% if sla.state != "none" %}
     <p class="sla sla-{{ sla.state }}">SLA: {{ sla.text }}{% if sla.due %} (due {{ sla.due|local_time }}){% endif %}</p>
-    {% endif %}
-    {% if acknowledged %}
-    <p class="tp-ack"><span class="chip t-blue">{{ acknowledged.chip }}</span> <span class="small">{{ acknowledged.line }}</span></p>
     {% endif %}
     <dl class="dl tp-dl">
       <dt>Status</dt>
@@ -335,7 +334,7 @@
   {# 4. Followers (with Add follower), then Linked. #}
   <section class="card tp-card tp-box" id="box-followers" aria-labelledby="followers-heading">
     <h2 id="followers-heading">Followers</h2>
-    <p class="note">Copied on every email to the requester. Internal followers are agents, such as whoever escalated the ticket; they are copied while they follow, and following does not give access to the ticket.</p>
+    <p class="note">Copied on every email to the requester. External followers also see the ticket in the portal and can reply there. Internal followers are agents, such as whoever escalated the ticket; they are copied while they follow, but following gives them no access to the ticket.</p>
     <ul class="tp-rows">
       {% for follower in followers %}
       <li>
