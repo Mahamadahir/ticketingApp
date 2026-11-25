@@ -351,6 +351,10 @@ any change that adds, removes or renames modules, routes, models, jobs, settings
 | `INBOUND_ENABLED` | `bool` | `False` |
 | `MAIL_CATCH_UP_ENABLED` | `bool` | `False` |
 | `MAIL_SENDING` | `str` | `'off'` |
+| `MAILBOX_AUTOMATION_POLL_SECONDS` | `int` | `5` |
+| `MAILBOX_AUTOMATION_RESOURCE_ID` | `str` | `''` |
+| `MAILBOX_AUTOMATION_TIMEOUT_SECONDS` | `int` | `600` |
+| `MAILBOX_TENANT_DOMAIN` | `str` | `''` |
 | `MAILBOX_TIME_ZONES_ENABLED` | `bool` | `False` |
 | `PRESENCE_ENABLED` | `bool` | `False` |
 | `PUBLIC_BASE_URL` | `str` | `''` |
@@ -646,8 +650,8 @@ File: `app/config.py`
 - Classes: `Settings`
 - Functions: `mail_sync_errors`, `unsafe_setting_errors`
 - Imports: none
-- Imported by: `app.action_links`, `app.admin_home`, `app.anonymisation`, `app.approval_links`, `app.attachments`, `app.auth`, `app.bot_connector`, `app.breakglass`, `app.check_settings`, `app.database`, `app.email_reactions`, `app.entra_check`, `app.followers`, `app.graph_client`, `app.identity`, `app.inbound`, `app.jobs`, `app.linked_identities`, `app.mail`, `app.main`, `app.msp`, `app.outbox`, `app.rate_limit`, `app.reply_files`, `app.routers.admin`, `app.routers.auth`, `app.routers.dev_tools`, `app.routers.link_account`, `app.routers.my_settings`, `app.routers.portal`, `app.routers.teams_bot`, `app.routers.webhooks`, `app.storage`, `app.subscriptions`, `app.teams`, `app.teams_bot`, `app.teams_bot_auth`, `app.teams_intake`, `app.telemetry`, `app.worker`
-- Tests: `test_acknowledgement.py`, `test_action_links.py`, `test_activity_log.py`, `test_admin_frame.py`, `test_anonymisation.py`, `test_approval_reminders.py`, `test_attachments.py`, `test_auto_close_chase.py`, `test_break_glass.py`, `test_bulk_resolve.py`, `test_closing_email.py`, `test_email_reactions.py`, `test_entra_check.py`, `test_follower_updates.py`, `test_handoff_bells_holidays.py`, `test_inbound_mail.py`, `test_linked_identities.py`, `test_mail_subscriptions.py`, `test_message_channel.py`, `test_msp.py`, `test_msp_actions.py`, `test_msp_mail.py`, `test_msp_real_mail.py`, `test_outage_mode.py`, `test_outbound_mail.py`, `test_portal_home.py`, `test_portal_new.py`, `test_portal_request.py`, `test_presence.py`, `test_public_surface.py`, `test_reply_files.py`, `test_resolution.py`, `test_security.py`, `test_sessions.py`, `test_signin_pages.py`, `test_sso_cancel.py`, `test_teams.py`, `test_teams_approvals.py`, `test_teams_bot.py`, `test_teams_copy_sending.py`, `test_teams_dm.py`, `test_teams_followups.py`, `test_teams_hold.py`, `test_teams_intake.py`, `test_time_zones.py`, `test_visibility.py`, `test_wiring_3f.py`, `test_worker.py`
+- Imported by: `app.action_links`, `app.admin_home`, `app.anonymisation`, `app.approval_links`, `app.attachments`, `app.auth`, `app.bot_connector`, `app.breakglass`, `app.check_settings`, `app.database`, `app.email_reactions`, `app.entra_check`, `app.followers`, `app.graph_client`, `app.identity`, `app.inbound`, `app.jobs`, `app.linked_identities`, `app.mail`, `app.mailbox_executor_azure`, `app.main`, `app.msp`, `app.outbox`, `app.rate_limit`, `app.reply_files`, `app.routers.admin`, `app.routers.auth`, `app.routers.dev_tools`, `app.routers.link_account`, `app.routers.my_settings`, `app.routers.portal`, `app.routers.teams_bot`, `app.routers.webhooks`, `app.storage`, `app.subscriptions`, `app.teams`, `app.teams_bot`, `app.teams_bot_auth`, `app.teams_intake`, `app.telemetry`, `app.worker`
+- Tests: `test_acknowledgement.py`, `test_action_links.py`, `test_activity_log.py`, `test_admin_frame.py`, `test_anonymisation.py`, `test_approval_reminders.py`, `test_attachments.py`, `test_auto_close_chase.py`, `test_break_glass.py`, `test_bulk_resolve.py`, `test_closing_email.py`, `test_email_reactions.py`, `test_entra_check.py`, `test_follower_updates.py`, `test_handoff_bells_holidays.py`, `test_inbound_mail.py`, `test_linked_identities.py`, `test_mail_subscriptions.py`, `test_mailbox_executor_azure.py`, `test_message_channel.py`, `test_msp.py`, `test_msp_actions.py`, `test_msp_mail.py`, `test_msp_real_mail.py`, `test_outage_mode.py`, `test_outbound_mail.py`, `test_portal_home.py`, `test_portal_new.py`, `test_portal_request.py`, `test_presence.py`, `test_public_surface.py`, `test_reply_files.py`, `test_resolution.py`, `test_security.py`, `test_sessions.py`, `test_signin_pages.py`, `test_sso_cancel.py`, `test_teams.py`, `test_teams_approvals.py`, `test_teams_bot.py`, `test_teams_copy_sending.py`, `test_teams_dm.py`, `test_teams_followups.py`, `test_teams_hold.py`, `test_teams_intake.py`, `test_time_zones.py`, `test_visibility.py`, `test_wiring_3f.py`, `test_worker.py`
 
 ### `app.database`
 
@@ -857,6 +861,17 @@ File: `app/mail.py`
 - Imports: `app.action_links`, `app.approval_groups`, `app.approval_links`, `app.approvals`, `app.config`, `app.email_templates`, `app.emergency`, `app.followers`, `app.graph_client`, `app.identity`, `app.messages`, `app.models`, `app.never_follow`, `app.notification_settings`, `app.outage`, `app.outbox`, `app.person_data`, `app.raising`, `app.reactions`, `app.settings_store`, `app.storage`, `app.teams`
 - Imported by: `app.auto_close_chase`, `app.inbound`, `app.jobs`, `app.linked_identities`, `app.msp`, `app.reply_channel`
 - Tests: `test_acknowledgement.py`, `test_action_links.py`, `test_anonymisation.py`, `test_approval_reminders.py`, `test_auto_close_chase.py`, `test_card_refusals.py`, `test_closing_email.py`, `test_email_header.py`, `test_email_reactions.py`, `test_email_templates.py`, `test_follower_updates.py`, `test_linked_identities.py`, `test_msp.py`, `test_msp_actions.py`, `test_msp_mail.py`, `test_outage_mode.py`, `test_outbound_mail.py`, `test_reopening.py`, `test_reply_files.py`, `test_resolution.py`, `test_split_before_triage.py`, `test_teams_followups.py`, `test_ticket_presence.py`, `test_withdraw.py`
+
+### `app.mailbox_executor_azure`
+
+The real route to Exchange for mailbox changes: an Azure Automation account runs a fixed runbook.  
+File: `app/mailbox_executor_azure.py`
+
+- Classes: `AzureAutomationExecutor`, `ChangeRequest`, `ExecutorResult`, `JobRequest`, `Outcome`
+- Functions: `azure_executor_config_errors`, `executor_from_settings`, `job_request`, `request_from_change`
+- Imports: `app.config`
+- Imported by: none
+- Tests: `test_mailbox_executor_azure.py`, `test_runbooks.py`
 
 ### `app.main`
 

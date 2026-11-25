@@ -266,6 +266,9 @@ feature is reached:
 - Graph webhook delivery, validation token handshake, 3-second response, and
   subscription renewal. Needs a public URL, so only on staging.
 - Teams bot messages (phase 8) and Teams Workflows webhooks.
+- Scheduled mailbox changes through Azure Automation (#308): the managed identity connecting to Exchange Online, each runbook
+  against a test mailbox, the worker's Automation Job Operator role, a narrower Exchange role, timings and throttling
+  (`docs/azure-setup.md`, step 9).
 - Postgres SSL, private networking and point-in-time restore. Also that the
   server has no public endpoint: the Postgres module deliberately omits
   `publicNetworkAccess` (a VNet-integrated server has none, and setting both may

@@ -113,6 +113,11 @@ param teamsBotAppId string = ''
 @description('The directory whose users the bot serves. Empty uses the tenant of the subscription.')
 param teamsBotTenantIdOverride string = ''
 
+@description('Scheduled mailbox changes (forwarding, full access, Send As): the Automation account with its own identity and the fixed runbooks, the worker identity gets Automation Job Operator on it, and the worker runs with MAILBOX_EXECUTOR=azure. Off changes nothing else. The owner must also grant the account identity Exchange rights by hand (infra/README.md, "Mailbox changes: the Automation account").')
+param mailboxAutomationEnabled bool = false
+@description('The tenant initial domain, e.g. contoso.onmicrosoft.com: what the runbooks pass to Connect-ExchangeOnline -Organization. Required with mailboxAutomationEnabled.')
+param mailboxTenantDomain string = ''
+
 // ---- Secrets (supplied at deploy time, stored in Key Vault) -----------------
 
 @secure()
@@ -307,6 +312,19 @@ module alerts 'modules/alerts.bicep' = {
     environmentName: environmentName
     actionGroupId: monitoring.outputs.actionGroupId
     postgresServerId: postgres.outputs.id
+  }
+}
+
+// Mailbox changes: the Automation account the worker asks to change Exchange. The worker's role on it is
+// written here when assignRoles is on; the account's own Exchange rights are granted by hand.
+module automation 'modules/automation.bicep' = if (mailboxAutomationEnabled) {
+  name: 'automation'
+  params: {
+    location: location
+    tags: tags
+    name: 'aa-${prefix}-${environmentName}-mailbox'
+    workerPrincipalId: identityWorker.properties.principalId
+    assignRoles: assignRoles
   }
 }
 
@@ -537,7 +555,12 @@ module worker 'modules/container-app.bicep' = if (deployApps && deployWorker) {
       { name: 'MAIL_CATCH_UP_ENABLED', value: toLower(string(mailCatchUpEnabled)) }
       { name: 'INBOUND_ENABLED', value: toLower(string(inboundEnabled)) }
       { name: 'AZURE_CLIENT_ID', value: identityWorker.properties.clientId }
-    ])
+    ], mailboxAutomationEnabled ? [
+      // Scheduled mailbox changes go through the Automation account (app/mailbox_executor_azure.py).
+      { name: 'MAILBOX_EXECUTOR', value: 'azure' }
+      { name: 'MAILBOX_AUTOMATION_RESOURCE_ID', value: automation!.outputs.id }
+      { name: 'MAILBOX_TENANT_DOMAIN', value: mailboxTenantDomain }
+    ] : [])
     ingress: null
     cpu: '0.5'
     memory: '1Gi'
@@ -583,6 +606,9 @@ output migrateJobName string = 'job-${prefix}-${environmentName}-migrate'
 output webUrl string = webBaseUrl
 output publicAppName string = publicName
 output publicUrl string = publicAppUrl
+@description('The object id of the Automation account identity: grant it Exchange.ManageAsApp and an Exchange directory role by hand.')
+output mailboxAutomationIdentityPrincipalId string = mailboxAutomationEnabled ? automation!.outputs.identityPrincipalId : ''
+output mailboxAutomationName string = mailboxAutomationEnabled ? automation!.outputs.name : ''
 output webIdentityClientId string = identityWeb.properties.clientId
 @description('The Teams bot application id (also TEAMS_BOT_APP_ID): what the Teams app package is built with (teams-app/build_package.py).')
 output teamsBotAppId string = teamsBotEnabled ? botAppIdValue : ''

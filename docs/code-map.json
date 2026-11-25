@@ -1050,6 +1050,7 @@
         "app.jobs",
         "app.linked_identities",
         "app.mail",
+        "app.mailbox_executor_azure",
         "app.main",
         "app.msp",
         "app.outbox",
@@ -1096,6 +1097,7 @@
         "tests/test_inbound_mail.py",
         "tests/test_linked_identities.py",
         "tests/test_mail_subscriptions.py",
+        "tests/test_mailbox_executor_azure.py",
         "tests/test_message_channel.py",
         "tests/test_msp.py",
         "tests/test_msp_actions.py",
@@ -2022,6 +2024,34 @@
         "tests/test_teams_followups.py",
         "tests/test_ticket_presence.py",
         "tests/test_withdraw.py"
+      ]
+    },
+    {
+      "classes": [
+        "AzureAutomationExecutor",
+        "ChangeRequest",
+        "ExecutorResult",
+        "JobRequest",
+        "Outcome"
+      ],
+      "file": "app/mailbox_executor_azure.py",
+      "functions": [
+        "azure_executor_config_errors",
+        "executor_from_settings",
+        "job_request",
+        "request_from_change"
+      ],
+      "imported_by": [],
+      "imports": [
+        "app.config"
+      ],
+      "module": "app.mailbox_executor_azure",
+      "routes": [],
+      "summary": "The real route to Exchange for mailbox changes: an Azure Automation account runs a fixed runbook.",
+      "tables": [],
+      "tests": [
+        "tests/test_mailbox_executor_azure.py",
+        "tests/test_runbooks.py"
       ]
     },
     {
@@ -7726,6 +7756,30 @@
       "type": "str"
     },
     {
+      "default": "5",
+      "env": "MAILBOX_AUTOMATION_POLL_SECONDS",
+      "name": "mailbox_automation_poll_seconds",
+      "type": "int"
+    },
+    {
+      "default": "''",
+      "env": "MAILBOX_AUTOMATION_RESOURCE_ID",
+      "name": "mailbox_automation_resource_id",
+      "type": "str"
+    },
+    {
+      "default": "600",
+      "env": "MAILBOX_AUTOMATION_TIMEOUT_SECONDS",
+      "name": "mailbox_automation_timeout_seconds",
+      "type": "int"
+    },
+    {
+      "default": "''",
+      "env": "MAILBOX_TENANT_DOMAIN",
+      "name": "mailbox_tenant_domain",
+      "type": "str"
+    },
+    {
       "default": "False",
       "env": "MAILBOX_TIME_ZONES_ENABLED",
       "name": "mailbox_time_zones_enabled",
@@ -7970,6 +8024,7 @@
     "tests/test_linking.py",
     "tests/test_login_lockout.py",
     "tests/test_mail_subscriptions.py",
+    "tests/test_mailbox_executor_azure.py",
     "tests/test_message_channel.py",
     "tests/test_message_channel_migration.py",
     "tests/test_messages.py",
@@ -8008,6 +8063,7 @@
     "tests/test_requester_bell.py",
     "tests/test_required_by.py",
     "tests/test_resolution.py",
+    "tests/test_runbooks.py",
     "tests/test_scheduled_jobs.py",
     "tests/test_scheduled_status.py",
     "tests/test_search.py",
