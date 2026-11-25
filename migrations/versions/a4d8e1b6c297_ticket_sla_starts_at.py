@@ -3,7 +3,7 @@
 Nullable; null means created_at, so every existing ticket behaves as before.
 
 Revision ID: a4d8e1b6c297
-Revises: e3a7c5d9b1f4
+Revises: b8d2f6a1c350
 Create Date: 2026-11-25 14:00:00.000000
 
 """
@@ -16,7 +16,7 @@ import sqlmodel
 
 # revision identifiers, used by Alembic.
 revision: str = 'a4d8e1b6c297'
-down_revision: Union[str, Sequence[str], None] = 'e3a7c5d9b1f4'
+down_revision: Union[str, Sequence[str], None] = 'b8d2f6a1c350'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

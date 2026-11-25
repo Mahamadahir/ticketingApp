@@ -694,6 +694,13 @@ def deliver_mail(
                 row.subject, row.cc, row.body = mail.subject, ", ".join(mail.cc) or None, mail.record
                 row.sent_at = datetime.now(timezone.utc)
                 row.last_error = None
+                if row.kind in (REPLY, NOTICE):
+                    # What a reaction to it means (#299), decided now like a Teams message's kind: an agent's email is queued before the
+                    # status it sets, so the ticket's status only settles by the time it goes.
+                    from app.reactions import kind_of_requester_message
+
+                    ticket = session.get(Ticket, row.ticket_id) if row.ticket_id else None
+                    row.reaction_kind = kind_of_requester_message(ticket) if ticket is not None else None
                 sent += 1
         session.add(row)
         session.commit()  # now, so an email that went is recorded even if the next one fails

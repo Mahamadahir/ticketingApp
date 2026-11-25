@@ -99,6 +99,8 @@ SUBJECT_ACCESS_MAX_MB = "subject_access_max_mb"
 GRAPH_SUBSCRIPTION_MINUTES = "graph_subscription_minutes"
 GRAPH_RENEW_MARGIN_MINUTES = "graph_renew_margin_minutes"
 MAIL_BACKFILL_DAYS = "mail_backfill_days"
+EMAIL_REACTIONS_MINUTES = "email_reactions_poll_minutes"  # how often the Outlook reactions job reads Sent Items (#299)
+EMAIL_REACTIONS_BACKFILL_DAYS = "email_reactions_backfill_days"
 # Ticket presence (issue #246, app/ticket_presence.py)
 PRESENCE_CHECK_IN_SECONDS = "ticket_presence_check_in_seconds"
 PRESENCE_GONE_AFTER_SECONDS = "ticket_presence_gone_after_seconds"
@@ -438,6 +440,29 @@ REGISTRY: dict[str, SettingDef] = {
             "ago that was. Mail already collected is never collected twice."
         ),
         default="3",
+    ),
+    EMAIL_REACTIONS_MINUTES: SettingDef(
+        key=EMAIL_REACTIONS_MINUTES,
+        group=GROUP_MAIL,
+        label="Outlook reactions: how often Sent Items is read (minutes)",
+        kind="minutes",
+        description=(
+            "How often the worker looks at the shared mailbox's Sent Items for reactions people made in Outlook to the emails "
+            "the app sent. A reaction shows on the ticket within about this long. Placeholder until proved on staging."
+        ),
+        default="10",
+    ),
+    EMAIL_REACTIONS_BACKFILL_DAYS: SettingDef(
+        key=EMAIL_REACTIONS_BACKFILL_DAYS,
+        group=GROUP_MAIL,
+        label="Outlook reactions: how many days of sent mail the first read looks at",
+        kind="count",
+        description=(
+            "The first time the job runs (and if Microsoft discards its place) it reads sent mail from this many days back, so "
+            "a reaction to an email sent just before the job was switched on is still found. Later runs carry on from where the "
+            "last one stopped. Placeholder."
+        ),
+        default="14",
     ),
     JOB_LEASE_MINUTES: SettingDef(
         key=JOB_LEASE_MINUTES,

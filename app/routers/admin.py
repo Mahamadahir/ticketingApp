@@ -176,7 +176,7 @@ from app.msp import compile_subject_pattern
 from app.approvals import drop_votes_of, start_waiting_rounds
 from app.sessions import live_session_counts, revoke_user_sessions
 from app.inbound import IGNORED_FLOOD
-from app.subscriptions import CATCH_UP_PROBLEM, SUBSCRIPTION_PROBLEM, health_problems, mail_folder, subscription_resource
+from app.subscriptions import CATCH_UP_PROBLEM, SUBSCRIPTION_PROBLEM, health_problems, mail_folder, sent_folder, subscription_resource
 from app.teams import MAX_ATTEMPTS
 from app.navigation import allowed_admin_pages
 from app.time_zones import parse_clock, parse_dates, valid_zone, zone_for_user
@@ -2360,6 +2360,7 @@ def view_mail_intake(
         select(GraphSubscription).where(GraphSubscription.resource == subscription_resource())
     ).first()
     sync = session.exec(select(MailSyncState).where(MailSyncState.folder == mail_folder())).first()
+    reactions_sync = session.exec(select(MailSyncState).where(MailSyncState.folder == sent_folder())).first()
     waiting = session.exec(
         select(func.count()).select_from(GraphNotification).where(
             GraphNotification.processed_at.is_(None), GraphNotification.lifecycle_event.is_(None)
@@ -2397,6 +2398,7 @@ def view_mail_intake(
             "last_arrived": last_arrived, "last_processed": last_processed,
             "subscription_problem": any(p.kind == SUBSCRIPTION_PROBLEM for p in problems),
             "catch_up_problem": any(p.kind == CATCH_UP_PROBLEM for p in problems),
+            "reactions_sync": reactions_sync,
             "user": user,
         },
     )
@@ -2431,7 +2433,7 @@ def view_scheduled_jobs(
         {
             "rows": rows, "status": status_line(rows, now, late, registered),
             "overdue": set(job_health(rows, now, late, registered).overdue), "registered": registered,
-            "intervals": {job.name: _every_text(job.every_seconds) for job in SCHEDULED_JOBS}, "now": now, "user": user,
+            "intervals": {job.name: _every_text(job.seconds(session)) for job in SCHEDULED_JOBS}, "now": now, "user": user,
             "message": message,
         },
     )
@@ -2457,7 +2459,7 @@ def run_job_now_page(
         request,
         "admin_scheduled_job_run.html",
         {
-            "job": job, "every": _every_text(job.every_seconds), "warnings": [WARNINGS[w] for w in job.warns],
+            "job": job, "every": _every_text(job.seconds(session)), "warnings": [WARNINGS[w] for w in job.warns],
             "within": within_a_tick(), "refusal": run_now_refusal(row, datetime.now(timezone.utc)), "user": user,
         },
     )
