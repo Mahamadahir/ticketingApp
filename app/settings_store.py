@@ -32,7 +32,7 @@ class SettingDef:
         match = _TRAILING_UNIT.search(self.label)
         if match:
             return "%" if match.group(1) == "percent" else match.group(1)
-        return {"minutes": "minutes", "off_minutes": "minutes", "percent": "%", "vote_percent": "%"}.get(self.kind, "")
+        return {"minutes": "minutes", "off_minutes": "minutes", "off_days": "days", "percent": "%", "vote_percent": "%"}.get(self.kind, "")
 
     @property
     def display_label(self) -> str:

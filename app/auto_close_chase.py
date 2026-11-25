@@ -230,6 +230,14 @@ def _resolve_acknowledged_one(session: Session, ticket_id: int, now: datetime, d
     if since is None or not backstop_due(since, now, days):
         return
     waited = max(1, (now - waiting_since(session, ticket)).days)
+    for old in session.exec(
+        select(OutboundEmail).where(
+            OutboundEmail.ticket_id == ticket.id, OutboundEmail.kind == CHASE, OutboundEmail.sent_at.is_(None),
+            OutboundEmail.attempts < MAX_ATTEMPTS,
+        )
+    ).all():
+        give_up(old, "The ticket was resolved before this chase went")  # a held chase must not follow the resolution email
+        session.add(old)
     try:
         resolve_ticket(
             session, ticket, None, auto_resolution_note(session, ticket, waited),

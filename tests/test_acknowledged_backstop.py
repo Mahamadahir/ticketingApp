@@ -285,3 +285,22 @@ def test_the_backstop_is_a_setting_with_a_placeholder_default(db_session):
 
     assert REGISTRY[ACKNOWLEDGED_WAIT_RESOLVE_DAYS].default == "14"
     assert reactions.backstop_days(db_session) == 14
+
+
+def test_a_chase_still_held_is_given_up_when_the_backstop_resolves_the_ticket(client, db_session, dev_mail):
+    desk, category, _ = desk_agent(client, db_session)
+    settings(db_session, "14")
+    ticket = awaiting(db_session, desk, category)
+    start = datetime.now(timezone.utc)
+    run_chase(db_session, start + timedelta(days=4))  # chased, and the email is not sent yet
+    db_session.commit()
+    assert len(chase_emails(db_session)) == 1
+    since = start + timedelta(days=5)
+    react(db_session, ticket, at=since)
+
+    run_chase(db_session, since + timedelta(days=14))
+    db_session.commit()
+
+    assert status_of(db_session, ticket) == TicketStatus.RESOLVED
+    [chase] = chase_emails(db_session)
+    assert chase.sent_at is None and chase.attempts >= 1 and chase.last_error
