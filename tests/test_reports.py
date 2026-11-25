@@ -572,3 +572,15 @@ def test_the_audit_log_page_can_filter_on_reports(client, db_session):
     client.get("/reports/volume/csv?from=2026-10-01&to=2026-10-31")
     page = client.get("/admin/audit-log?entity_type=report")
     assert page.status_code == 200 and "report_csv_download" in page.text
+
+
+def test_times_are_measured_from_the_sla_start_when_one_is_set(db_session, world):
+    desk, net, admin = world
+    # Created 2026-10-05 10:00 but the clock starts at 12:00; answered 12:10, resolved 15:00: 10 and 180 minutes.
+    make_ticket(db_session, desk, at("2026-10-05"), priority="p1", status=TicketStatus.RESOLVED, sla_starts_at=at("2026-10-05", 12),
+                first_responded_at=at("2026-10-05", 12, 10), resolved_at=at("2026-10-05", 15))
+    # Answered before the clock starts: counts as 0, never negative.
+    make_ticket(db_session, desk, at("2026-10-06"), priority="p1", status=TicketStatus.RESOLVED, sla_starts_at=at("2026-10-06", 12),
+                first_responded_at=at("2026-10-06", 11), resolved_at=at("2026-10-06", 11, 30))
+
+    assert table(run(db_session, admin, "times"))[("Desk", "P1")] == [2, 5.0, 5.0, 2, 90.0, 90.0]

@@ -399,6 +399,9 @@ class Ticket(SQLModel, table=True):
     first_responded_at: Optional[datetime] = Field(default=None)
     sla_paused_at: Optional[datetime] = Field(default=None)
     sla_paused_seconds: int = Field(default=0, sa_column_kwargs={"server_default": "0"})
+    # When the SLA clock starts, if not at created_at (a scheduled change starts its clock at the start time). Read it
+    # only through app.sla.sla_start.
+    sla_starts_at: Optional[datetime] = Field(default=None)
 
     # Set when this ticket is linked to a Major Incident or Problem (app/linking.py).
     # One level only: a parent is never itself linked to anything.

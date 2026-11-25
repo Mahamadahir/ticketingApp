@@ -46,6 +46,7 @@ from app.report_kit import (
 from app.reopening import EVENT_RECLOSED, EVENT_REOPENED
 from app.ticket_service import EVENT_STATUS_CHANGED
 from app.msp import BY_AUTOMATIC, EVENT_MSP_ACKNOWLEDGED, EVENT_MSP_TOLD, EVENT_SENT_TO_MSP
+from app.sla import SLA_START_SQL
 from app.msp_actions import EVENT_TAKEN_BACK
 from app.time_zones import format_moment
 from app.visibility import AccessContext, feedback_condition, visible_ticket_condition
@@ -196,10 +197,12 @@ def _minutes(seconds) -> Optional[float]:
 
 def times(session: Session, user: User, levels: AccessContext, filters: ReportFilters, now: datetime) -> Report:
     base = [*ticket_conditions(user, levels, filters), *_created_in_range(filters), Ticket.is_backdated.is_(False)]
-    first_seconds = func.extract("epoch", Ticket.first_responded_at - Ticket.created_at)
+    # Measured from when the SLA clock starts (app/sla.py), which is created_at unless a later start was set; an answer
+    # given before that start counts as 0.
+    first_seconds = func.greatest(func.extract("epoch", Ticket.first_responded_at - SLA_START_SQL), 0)
     # The clock stops in Awaiting user, so that wait is taken off a resolution time (as it is off the deadline).
     resolve_seconds = func.greatest(
-        func.extract("epoch", Ticket.resolved_at - Ticket.created_at) - Ticket.sla_paused_seconds, 0
+        func.extract("epoch", Ticket.resolved_at - SLA_START_SQL) - Ticket.sla_paused_seconds, 0
     )
     team_name = func.coalesce(Team.name, NO_TEAM)
 

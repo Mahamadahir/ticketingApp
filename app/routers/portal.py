@@ -34,7 +34,7 @@ from app.approvals import (
     vote_for,
     record_decision,
 )
-from app.backdating import FORMAT as MOMENT_FORMAT, BackdateError, parse_moment
+from app.backdating import FORMAT as MOMENT_FORMAT
 from app.categories import CategoryError, selectable
 from app.forms import MAX_MESSAGE_LENGTH, form_answers, optional_int
 from app.raising import (
@@ -77,7 +77,7 @@ from app.identity import is_follower_of, is_requester, my_tickets_query
 from app.pagination import paginate
 from app.reply_channel import AGENT
 from app.settings_store import INBOUND_MAX_ATTACHMENTS, REQUESTER_UPLOAD_TOTAL_MB, count_setting
-from app.time_zones import format_moment, zone_for_user
+from app.time_zones import MomentError, format_moment, parse_local_moment, zone_for_user
 
 router = APIRouter(prefix="/portal", tags=["portal"])
 
@@ -421,11 +421,11 @@ def raise_new_ticket(
             level_impact = Level(impact) if impact else None
             level_urgency = Level(urgency) if urgency else None
             zone = zone_for_user(session, user)  # the form is shown and read in the agent's own time zone
-            moments = (parse_moment(reported_at, zone), parse_moment(resolved_at, zone))
+            moments = (parse_local_moment(reported_at, zone), parse_local_moment(resolved_at, zone))
             day = parse_required_by(required_by)
-        except (ValueError, BackdateError, RequiredByError) as error:
+        except (ValueError, MomentError, RequiredByError) as error:
             raise RaiseError(
-                str(error) if isinstance(error, (BackdateError, RequiredByError)) else "Choose impact and urgency from the lists"
+                str(error) if isinstance(error, (MomentError, RequiredByError)) else "Choose impact and urgency from the lists"
             )
         ticket = raise_ticket(
             session, user, subject=subject, description=description, for_email=for_email,

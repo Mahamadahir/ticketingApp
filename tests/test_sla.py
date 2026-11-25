@@ -444,3 +444,90 @@ def test_changing_a_target_leaves_existing_tickets_alone_but_applies_to_new_ones
     db_session.refresh(newer)
     created = newer.created_at if newer.created_at.tzinfo else newer.created_at.replace(tzinfo=timezone.utc)
     assert newer.first_response_due_at == created + timedelta(minutes=999)
+
+# ---- sla_starts_at (#306) ----------------------------------------------------------
+
+
+def test_sla_start_is_created_at_unless_one_is_set():
+    ticket = clocked()
+    assert sla.sla_start(ticket) == ticket.created_at
+    ticket.sla_starts_at = ticket.created_at + timedelta(days=3)
+    assert sla.sla_start(ticket) == ticket.created_at + timedelta(days=3)
+
+
+def test_deadlines_clock_rows_and_percentages_are_measured_from_the_later_start(db_session):
+    ticket = clocked()  # created an hour before NOW, P3
+    ticket.sla_starts_at = ticket.created_at + timedelta(days=3)
+    sla.recalculate_deadlines(db_session, ticket)
+    start = ticket.sla_starts_at
+    assert ticket.first_response_due_at == start + timedelta(minutes=sla.target_minutes(db_session, Priority.P3, "first_response"))
+    assert ticket.resolution_due_at == start + timedelta(minutes=sla.target_minutes(db_session, Priority.P3, "resolution"))
+
+    # Window and percentage, measured from the start: 70% through is ok (25% of the 3-day window is 18h, 21h are left);
+    # measured from created_at the window would be 6 days and the same moment would read as at risk.
+    ticket.first_responded_at = start  # leave only resolution to measure
+    window = ticket.resolution_due_at - start
+    assert sla_view(ticket, start + window * 0.7, 25).state == "ok"
+    assert sla_view(ticket, start + window * 0.8, 25).state == "at_risk"
+    # Rows: resolved 30 minutes after the start reads as 30 minutes taken, not 3 days and a bit.
+    ticket.status, ticket.resolved_at = TicketStatus.RESOLVED, start + timedelta(minutes=30)
+    rows = {r.label: r for r in sla.sla_rows(ticket, NOW + timedelta(days=9), 25)}
+    assert rows["Resolution"].text == "Met · 30m"
+    # An open ticket's row: at risk in the last quarter of the window measured from the start.
+    ticket.status, ticket.resolved_at = TicketStatus.OPEN, None
+    assert {r.label: r for r in sla.sla_rows(ticket, start + window * 0.7, 25)}["Resolution"].tone == "green"
+    assert {r.label: r for r in sla.sla_rows(ticket, start + window * 0.8, 25)}["Resolution"].tone == "amber"
+
+
+def test_the_queue_ranks_by_the_later_start(client, db_session):
+    desk = create_team(db_session, "Service Desk")
+    category = create_category(db_session, desk, "Hardware")
+    agent(client, db_session, member_of=[desk])
+    # Same priority and target, but T-second starts its clock three days on, so its deadlines come after T-first's
+    # even though it was inserted first.
+    for subject, offset in (("T-second", 3), ("T-first", 0)):
+        ticket = new_ticket(db_session, desk)
+        ticket.subject, ticket.priority, ticket.triaged_at = subject, "p3", NOW
+        ticket.category_id, ticket.status = category.id, TicketStatus.OPEN
+        ticket.first_responded_at = NOW
+        ticket.sla_starts_at = ticket.created_at + timedelta(days=offset) if offset else None
+        sla.recalculate_deadlines(db_session, ticket)
+        db_session.add(ticket)
+    db_session.commit()
+
+    page = client.get("/tickets").text
+    assert page.index("T-first") < page.index("T-second")
+    # The untriaged pin is oldest-first by the clock start as well.
+    for subject, offset in (("U-late", 2), ("U-early", 0)):
+        ticket = new_ticket(db_session, desk)
+        ticket.subject = subject
+        ticket.sla_starts_at = ticket.created_at + timedelta(days=offset) if offset else None
+        db_session.add(ticket)
+    db_session.commit()
+    page = client.get("/tickets").text
+    assert page.index("U-early") < page.index("U-late")
+
+
+def test_start_clock_at_recalculates_records_an_event_and_refuses_a_moment_before_creation(db_session):
+    ticket = Ticket(subject="x", requester_email="a@example.com", status=TicketStatus.OPEN, priority="p3")
+    db_session.add(ticket)
+    db_session.commit()
+    db_session.refresh(ticket)
+    sla.recalculate_deadlines(db_session, ticket)
+    before = ticket.resolution_due_at
+    start = ticket.created_at.replace(tzinfo=timezone.utc) + timedelta(days=3)
+
+    sla.start_clock_at(db_session, ticket, start, "agent@example.com")
+    db_session.commit()
+    db_session.refresh(ticket)
+
+    assert ticket.sla_starts_at == start
+    assert ticket.resolution_due_at - before == timedelta(days=3)
+    assert ticket.first_response_due_at.replace(tzinfo=timezone.utc) == start + timedelta(
+        minutes=sla.target_minutes(db_session, Priority.P3, "first_response"))
+    [event] = events(db_session, ticket, "sla_start_changed")
+    assert event.actor_email == "agent@example.com" and event.to_value == f"{start:%Y-%m-%d %H:%M} UTC"
+
+    with pytest.raises(sla.SlaStartError):
+        sla.start_clock_at(db_session, ticket, ticket.created_at.replace(tzinfo=timezone.utc) - timedelta(seconds=1), "agent@example.com")
+    assert ticket.sla_starts_at == start and len(events(db_session, ticket, "sla_start_changed")) == 1
