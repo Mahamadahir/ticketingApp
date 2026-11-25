@@ -40,7 +40,7 @@
         <td>{{ f.created_at|local_time }}</td>
         <td><a href="/tickets/{{ t.number }}">{{ t.reference }}</a> {{ t.subject }}</td>
         <td>{% if f.resolved_by_id %}{% set a = names.get(f.resolved_by_id) %}{{ (a.display_name or a.email) if a else "Unknown" }}{% else %}Resolved automatically{% endif %}</td>
-        <td><span class="chip {{ 't-green' if f.rating >= 4 else ('t-amber' if f.rating == 3 else 't-red') }}">{{ f.rating }} / 5</span></td>
+        <td><span class="chip {{ 't-green' if f.rating >= 4 else ('t-amber' if f.rating == 3 else 't-red') }}">{{ f.rating }} / 5</span>{% if f.from_reaction %} <span class="chip t-gray">from a reaction</span>{% endif %}</td>
         <td>{{ f.comment }}</td>
       </tr>
       {% endfor %}

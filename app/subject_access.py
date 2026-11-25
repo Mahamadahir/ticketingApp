@@ -57,6 +57,7 @@ from app.models import (
     User,
     UserPermission,
     TeamsConversation,
+    TicketReaction,
     UserSession,
 )
 from app.messages import not_requester_visible_messages, requester_visible_answers, requester_visible_messages
@@ -129,7 +130,7 @@ EXPORTED_TABLES = {
     "teammembership": "account.json", "approvalgroupmember": "account.json", "linked_identity": "account.json",
     "link_code": "account.json (link_codes_asked)", "teams_conversation": "account.json (teams_bot)", "notificationpreference": "preferences.json",
     "requestertimezone": "preferences.json", "activitylog": "activity.csv", "auditlog": "audit.csv",
-    "ticketevent": "ticket_events.json", "ticket": "tickets.json", "ticketfollower": "tickets.json",
+    "ticketevent": "ticket_events.json", "ticket_reaction": "reactions.json", "ticket": "tickets.json", "ticketfollower": "tickets.json",
     "message": "tickets.json", "attachment": "attachments/", "approvalvote": "approvals.json",
     "notification": "notifications.json", "outboundemail": "mail.json", "inboundmail": "mail.json",
 }
@@ -273,7 +274,7 @@ def _tickets(session: Session, person: Person, roles: dict[int, set[str]], budge
             ]
             section["feedback"] = [
                 {
-                    "rating": f.rating, "comment": f.comment, "given_at": f.created_at,
+                    "rating": f.rating, "comment": f.comment, "given_at": f.created_at, "from_a_reaction": f.from_reaction,
                     "about": f"staff member user-{f.resolved_by_id}" if f.resolved_by_id else "automatic resolve",
                 }
                 for f in session.exec(select(TicketFeedback).where(TicketFeedback.ticket_id == ticket.id)).all()
@@ -401,6 +402,32 @@ def _preferences(session: Session, person: Person) -> dict:
             for z in session.exec(select(RequesterTimeZone).where(email_matches(RequesterTimeZone.email, person))).all()
         ],
     }
+
+
+def _reactions(session: Session, person: Person) -> list[dict]:
+    """The reactions the person made to messages about tickets (Teams or email, #298): what, when, to which kind of message,
+    on which ticket, and whether it was taken back. Found by their account, their object ids or their addresses."""
+    refs = set(object_ids(session, person)) | set(person.addresses)
+    rows = session.exec(
+        select(TicketReaction, Ticket)
+        .join(Ticket, Ticket.id == TicketReaction.ticket_id)
+        .where(
+            or_(
+                _in(TicketReaction.user_id, person.user_ids),
+                _in(func.lower(TicketReaction.reactor_ref), refs),
+                email_matches(TicketReaction.reactor_address, person),
+            )
+        )
+        .order_by(TicketReaction.id)
+    ).all()
+    return [
+        {
+            "ticket": t.reference, "channel": r.channel, "to": r.message_kind, "reaction": r.raw_type, "emoji": r.emoji,
+            "meaning_then": r.sentiment, "counted": r.by_party, "reacted_at": r.reacted_at, "taken_back_at": r.removed_at,
+            "name_as_received": r.reactor_name, "address_as_received": r.reactor_address, "reactor_ref": r.reactor_ref,
+        }
+        for r, t in rows
+    ]
 
 
 def _teams_bot(session: Session, person: Person) -> list[dict]:
@@ -590,6 +617,7 @@ def build_export(session: Session, storage: Storage, address: str, requested_by:
             "preferences.json": _preferences(session, person),
             "mail.json": _mail(session, person, in_scope),
             "ticket_events.json": _ticket_events(session, person, in_scope),
+            "reactions.json": _reactions(session, person),
             "staff_references.json": staff,
             "attachments_not_added.json": listed,
         }

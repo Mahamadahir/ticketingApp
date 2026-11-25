@@ -54,6 +54,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/e3a7c5d9b1f4_ticket_reactions.py",
+        "revision": "e3a7c5d9b1f4"
+      },
+      {
         "file": "migrations/versions/e7a2c9d4b6f1_scheduled_job_run_now.py",
         "revision": "e7a2c9d4b6f1"
       },
@@ -68,17 +72,13 @@
       {
         "file": "migrations/versions/d1a7e5b93c42_ticket_msp_warned_for.py",
         "revision": "d1a7e5b93c42"
-      },
-      {
-        "file": "migrations/versions/c255a3f8d1e6_thread_groups_and_deleted_notes.py",
-        "revision": "c255a3f8d1e6"
       }
     ],
-    "count": 77,
+    "count": 78,
     "heads": [
       {
-        "file": "migrations/versions/e7a2c9d4b6f1_scheduled_job_run_now.py",
-        "revision": "e7a2c9d4b6f1"
+        "file": "migrations/versions/e3a7c5d9b1f4_ticket_reactions.py",
+        "revision": "e3a7c5d9b1f4"
       }
     ]
   },
@@ -121,6 +121,7 @@
       "imports": [
         "app.config",
         "app.models",
+        "app.reactions",
         "app.reopening",
         "app.settings_store"
       ],
@@ -130,7 +131,8 @@
       "tables": [],
       "tests": [
         "tests/test_action_links.py",
-        "tests/test_closing_email.py"
+        "tests/test_closing_email.py",
+        "tests/test_reactions.py"
       ]
     },
     {
@@ -258,6 +260,7 @@
       "tables": [],
       "tests": [
         "tests/test_anonymisation.py",
+        "tests/test_reactions.py",
         "tests/test_teams_followups.py"
       ]
     },
@@ -533,6 +536,7 @@
         "app.msp_actions",
         "app.notification_settings",
         "app.outage",
+        "app.reactions",
         "app.reopening",
         "app.report_kit",
         "app.request_types",
@@ -641,6 +645,7 @@
         "app.models",
         "app.notifications",
         "app.outbox",
+        "app.reactions",
         "app.resolution",
         "app.settings_store",
         "app.splitting",
@@ -653,7 +658,8 @@
       "tables": [],
       "tests": [
         "tests/test_auto_close_chase.py",
-        "tests/test_closing_email.py"
+        "tests/test_closing_email.py",
+        "tests/test_reactions.py"
       ]
     },
     {
@@ -1153,6 +1159,7 @@
         "app.scheduled_jobs",
         "app.sessions",
         "app.teams_bot",
+        "app.teams_intake",
         "app.templating",
         "app.worker"
       ],
@@ -1480,6 +1487,7 @@
         "tests/test_never_follow.py",
         "tests/test_portal_new.py",
         "tests/test_portal_request.py",
+        "tests/test_reactions.py",
         "tests/test_reopening.py",
         "tests/test_reply_notification.py",
         "tests/test_requester_bell.py",
@@ -1583,6 +1591,7 @@
         "app.notifications",
         "app.person_data",
         "app.raising",
+        "app.reactions",
         "app.reply_channel",
         "app.routers.auth",
         "app.routers.portal",
@@ -1591,6 +1600,7 @@
         "app.teams_approvals",
         "app.teams_conversations",
         "app.teams_intake",
+        "app.teams_reactions",
         "app.time_zones",
         "app.visibility"
       ],
@@ -1824,7 +1834,8 @@
       "summary": "Linked identities (phase 6E, #165): one person known by a second identity.",
       "tables": [],
       "tests": [
-        "tests/test_linked_identities.py"
+        "tests/test_linked_identities.py",
+        "tests/test_reactions.py"
       ]
     },
     {
@@ -2160,6 +2171,7 @@
         "tests/test_outbound_mail.py",
         "tests/test_portal_home.py",
         "tests/test_portal_request.py",
+        "tests/test_reactions.py",
         "tests/test_reply_files.py",
         "tests/test_reply_notification.py",
         "tests/test_request_questions.py",
@@ -2185,6 +2197,7 @@
         "Attachment",
         "AuditLog",
         "BankHolidayCache",
+        "BotMessage",
         "CannedResponse",
         "Category",
         "EmailTemplate",
@@ -2229,6 +2242,7 @@
         "TicketFeedback",
         "TicketFollower",
         "TicketPresence",
+        "TicketReaction",
         "TicketSource",
         "TicketStatus",
         "TicketType",
@@ -2291,6 +2305,7 @@
         "app.person_data",
         "app.presence",
         "app.raising",
+        "app.reactions",
         "app.reopening",
         "app.reply_channel",
         "app.reply_files",
@@ -2332,6 +2347,7 @@
         "app.teams_conversations",
         "app.teams_intake",
         "app.teams_pending",
+        "app.teams_reactions",
         "app.templating",
         "app.thanks_rules",
         "app.theme",
@@ -2383,6 +2399,10 @@
         {
           "class": "BankHolidayCache",
           "table": "bankholidaycache"
+        },
+        {
+          "class": "BotMessage",
+          "table": "bot_message"
         },
         {
           "class": "CannedResponse",
@@ -2549,6 +2569,10 @@
           "table": "ticket_presence"
         },
         {
+          "class": "TicketReaction",
+          "table": "ticket_reaction"
+        },
+        {
           "class": "User",
           "table": "user"
         },
@@ -2637,6 +2661,7 @@
         "tests/test_queue_page.py",
         "tests/test_queue_status_sort.py",
         "tests/test_raising.py",
+        "tests/test_reactions.py",
         "tests/test_reopening.py",
         "tests/test_reply_files.py",
         "tests/test_reply_notification.py",
@@ -3077,6 +3102,7 @@
         "app.msp",
         "app.navigation",
         "app.outage",
+        "app.reactions",
         "app.reopening",
         "app.resolution",
         "app.routers.auth",
@@ -3319,6 +3345,7 @@
       "tables": [],
       "tests": [
         "tests/test_anonymisation.py",
+        "tests/test_reactions.py",
         "tests/test_subject_access.py",
         "tests/test_teams_followups.py",
         "tests/test_ticket_redesign.py"
@@ -3448,6 +3475,56 @@
         "tests/test_teams_bot.py",
         "tests/test_teams_hold.py",
         "tests/test_teams_intake.py"
+      ]
+    },
+    {
+      "classes": [
+        "Reactor"
+      ],
+      "file": "app/reactions.py",
+      "functions": [
+        "acknowledged_since",
+        "apply_effects",
+        "dismiss_negative",
+        "display_of",
+        "drop_soft_feedback",
+        "find_bot_message",
+        "is_party",
+        "kind_of_notification",
+        "kind_of_requester_message",
+        "mapping",
+        "open_negative_ids",
+        "parse_mapping",
+        "reactions_for_ticket",
+        "record_bot_message",
+        "record_reaction",
+        "remove_reaction",
+        "sentiment_of"
+      ],
+      "imported_by": [
+        "app.action_links",
+        "app.auto_close_chase",
+        "app.routers.admin",
+        "app.routers.tickets",
+        "app.team_activity",
+        "app.teams",
+        "app.teams_intake",
+        "app.teams_reactions",
+        "app.thread"
+      ],
+      "imports": [
+        "app.audit",
+        "app.identity",
+        "app.models",
+        "app.notifications",
+        "app.settings_store"
+      ],
+      "module": "app.reactions",
+      "routes": [],
+      "summary": "Reactions to messages about a ticket (issue #298, Teams; #299 reuses all of it for Outlook email reactions).",
+      "tables": [],
+      "tests": [
+        "tests/test_reactions.py"
       ]
     },
     {
@@ -4032,6 +4109,7 @@
         "app.outage",
         "app.pagination",
         "app.permissions",
+        "app.reactions",
         "app.request_questions",
         "app.request_types",
         "app.scheduled_jobs",
@@ -5279,6 +5357,7 @@
         "change_status",
         "close",
         "discard_email_draft",
+        "dismiss_negative_reaction",
         "edit_category",
         "edit_type",
         "email_user",
@@ -5347,6 +5426,7 @@
         "app.pagination",
         "app.presence",
         "app.raising",
+        "app.reactions",
         "app.reopening",
         "app.reply_files",
         "app.request_questions",
@@ -5566,6 +5646,11 @@
           "handler": "change_priority",
           "method": "POST",
           "path": "/tickets/{number}/priority"
+        },
+        {
+          "handler": "dismiss_negative_reaction",
+          "method": "POST",
+          "path": "/tickets/{number}/reactions/dismiss"
         },
         {
           "handler": "reassign",
@@ -5850,6 +5935,7 @@
         "app.notifications",
         "app.presence",
         "app.raising",
+        "app.reactions",
         "app.reply_files",
         "app.report_kit",
         "app.required_by",
@@ -5918,6 +6004,7 @@
         "tests/test_portal_request.py",
         "tests/test_presence.py",
         "tests/test_raising.py",
+        "tests/test_reactions.py",
         "tests/test_reply_files.py",
         "tests/test_reports.py",
         "tests/test_request_types.py",
@@ -6196,6 +6283,7 @@
       "summary": "Subject access export (issue #175): a ZIP of everything held on one person.",
       "tables": [],
       "tests": [
+        "tests/test_reactions.py",
         "tests/test_subject_access.py",
         "tests/test_teams_followups.py"
       ]
@@ -6328,6 +6416,7 @@
         "load_timeline",
         "person_choices",
         "phrase_of",
+        "reaction_words",
         "role_of",
         "status_chip",
         "step_of"
@@ -6338,6 +6427,7 @@
       "imports": [
         "app.models",
         "app.notification_settings",
+        "app.reactions",
         "app.settings_store",
         "app.status_display",
         "app.time_zones",
@@ -6350,6 +6440,7 @@
       "tests": [
         "tests/test_msp_mail.py",
         "tests/test_queue_status_sort.py",
+        "tests/test_reactions.py",
         "tests/test_team_activity.py",
         "tests/test_team_activity_cards.py"
       ]
@@ -6416,6 +6507,7 @@
         "app.models",
         "app.notifications",
         "app.person_data",
+        "app.reactions",
         "app.reply_channel",
         "app.teams_conversations"
       ],
@@ -6433,6 +6525,7 @@
         "tests/test_linked_identities.py",
         "tests/test_notification_dismiss.py",
         "tests/test_outbound_mail.py",
+        "tests/test_reactions.py",
         "tests/test_teams.py",
         "tests/test_teams_approvals.py",
         "tests/test_teams_bot.py",
@@ -6483,12 +6576,14 @@
         "installation_update",
         "invoke",
         "message",
+        "message_reaction",
         "receive"
       ],
       "imported_by": [
         "app.routers.teams_bot",
         "app.teams_approvals",
-        "app.teams_intake"
+        "app.teams_intake",
+        "app.teams_reactions"
       ],
       "imports": [
         "app.bot_cards",
@@ -6498,7 +6593,8 @@
         "app.teams_approvals",
         "app.teams_bot_auth",
         "app.teams_conversations",
-        "app.teams_intake"
+        "app.teams_intake",
+        "app.teams_reactions"
       ],
       "module": "app.teams_bot",
       "routes": [],
@@ -6595,6 +6691,7 @@
         "app.bot_cards",
         "app.bot_connector",
         "app.config",
+        "app.database",
         "app.email_templates",
         "app.follower_updates",
         "app.followers",
@@ -6605,6 +6702,7 @@
         "app.outbox",
         "app.person_data",
         "app.rate_limit",
+        "app.reactions",
         "app.reply_channel",
         "app.settings_store",
         "app.storage",
@@ -6654,6 +6752,28 @@
       "tests": [
         "tests/test_teams_followups.py"
       ]
+    },
+    {
+      "classes": [],
+      "file": "app/teams_reactions.py",
+      "functions": [
+        "handle",
+        "reactor_of"
+      ],
+      "imported_by": [
+        "app.teams_bot"
+      ],
+      "imports": [
+        "app.identity",
+        "app.models",
+        "app.reactions",
+        "app.teams_bot"
+      ],
+      "module": "app.teams_reactions",
+      "routes": [],
+      "summary": "Reactions in Teams (issue #298): what the `messageReaction` activity does.",
+      "tables": [],
+      "tests": []
     },
     {
       "classes": [],
@@ -6796,7 +6916,8 @@
     {
       "classes": [
         "Box",
-        "Names"
+        "Names",
+        "ReactionLine"
       ],
       "file": "app/thread.py",
       "functions": [
@@ -6809,6 +6930,7 @@
         "app.messages",
         "app.models",
         "app.quoted_text",
+        "app.reactions",
         "app.reply_channel",
         "app.visibility"
       ],
@@ -6948,6 +7070,7 @@
         "tests/test_linked_identities.py",
         "tests/test_msp_mail.py",
         "tests/test_portal.py",
+        "tests/test_reactions.py",
         "tests/test_reopening.py",
         "tests/test_reply_notification.py",
         "tests/test_request_questions.py",
@@ -7787,6 +7910,7 @@
     "tests/test_queue_page.py",
     "tests/test_queue_status_sort.py",
     "tests/test_raising.py",
+    "tests/test_reactions.py",
     "tests/test_reopening.py",
     "tests/test_reply_files.py",
     "tests/test_reply_notification.py",

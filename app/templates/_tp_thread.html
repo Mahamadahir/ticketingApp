@@ -93,6 +93,16 @@
     </ul>
     {% endif %}
     {% for line in box.extra %}<p class="muted small tp-extra">{{ line }}</p>{% endfor %}
+    {% if box.reactions %}
+    <ul class="tp-reactions" aria-label="Reactions">
+      {% for r in box.reactions %}
+      <li class="chip t-{{ r.tone }} tp-reaction{{ ' tp-reaction-gone' if r.removed_at else '' }}">
+        <span class="tp-reaction-text">{{ r.text }}</span>
+        <span class="muted small">{{ r.who }} &middot; {{ r.at|local_time }}{% if r.removed_at %} &middot; removed {{ r.removed_at|local_time }}{% endif %}{% if r.no_effect %} &middot; not the requester or a follower, no effect{% endif %}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
   </article>
   {% endif %}
   </li>

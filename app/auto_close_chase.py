@@ -11,6 +11,8 @@ is emailed "Is this still an issue?" (the `chase` template, kind `chase`, which 
 cap). `chased_at` and `chase_count` on the ticket make this happen once per wait. If it is still Awaiting user
 `chase_resolve_after_days` (placeholder 3) after that email was *sent*, it is resolved automatically
 (app/resolution.py, no agent, the `auto_resolve_note` text, and the resolution email with the reopen link).
+A positive reaction from the requester (a thumbs-up on the resolution or on the message asking for a reply, app/reactions.py)
+since the wait began acknowledges it: no chase email goes, and a chased ticket is not auto-resolved. Auto-close is unchanged.
 Anything that takes the ticket out of Awaiting user (a reply by mail or portal, the reopen link, an agent's status
 change) clears the chase in `set_status`, so a ticket that goes back to Awaiting user starts a fresh wait.
 
@@ -38,6 +40,7 @@ from sqlmodel import Session, select
 
 from app.audit import log_action
 from app.models import AuditLog, Notification, OutboundEmail, Ticket, TicketEvent, TicketStatus
+from app.reactions import acknowledged_since
 from app.mail import give_up
 from app.notifications import CHASE_GIVEN_UP, notify_chase_given_up
 from app.outbox import CHASE, is_on, queue_chase
@@ -160,6 +163,8 @@ def _chase_one(session: Session, ticket_id: int, now: datetime, days: int) -> No
     since = waiting_since(session, ticket)
     if now < since + timedelta(days=days):
         return
+    if acknowledged_since(session, ticket.id, since):
+        return  # the requester reacted with a thumbs-up to the resolution or the request for a reply (#298): no reminder
     # A chase from an earlier wait that never went (held by the cap, say) must not go out beside this one.
     for old in session.exec(
         select(OutboundEmail).where(
@@ -203,7 +208,10 @@ def _resolve_one(session: Session, ticket_id: int, now: datetime, days: int) -> 
     # Counted from when the chase actually went: not while it is held or retrying, and never if it was given up on.
     if email is None or email.sent_at is None or now < _aware(email.sent_at) + timedelta(days=days):
         return
-    waited = max(1, (now - waiting_since(session, ticket)).days)
+    since = waiting_since(session, ticket)
+    if acknowledged_since(session, ticket.id, since):
+        return  # they acknowledged after the chase went (#298): the ticket is left for an agent, not resolved under them
+    waited = max(1, (now - since).days)
     try:
         resolve_ticket(
             session, ticket, None, auto_resolution_note(session, ticket, waited),

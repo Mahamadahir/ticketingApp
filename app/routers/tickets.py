@@ -158,6 +158,7 @@ from app.resolution import ResolveError, check_can_resolve, preview_resolution, 
 from app.ticket_service import AwaitingApproval, ClosingNeedsNotes, EVENT_ASSIGNED, EVENT_ATTACHMENT_RENAMED, NotTriaged, ResolutionRequired, ScheduledNeedsDate, find_ticket, get_by_number, record_event, set_status
 from app.time_zones import zone_for_email, zone_for_user
 from app.triage import TriageError, change_category, change_type, clean_reason, reassign_ticket, triage_ticket
+from app.reactions import dismiss_negative, open_negative_ids
 from app.thread import build_thread
 from app.visibility import (
     ASSIGNEE_ROLES,
@@ -305,6 +306,7 @@ def list_tickets(
         "tickets_list.html",
         {
             "page": tickets_page,
+            "negative_ids": open_negative_ids(session, [t.id for t in tickets_page.items]),
             "sla": {t.id: queue_sla(t, views[t.id], now) for t in tickets_page.items},
             "figures": figures,
             "categories_by_id": categories_by_id,
@@ -2031,6 +2033,21 @@ def take_back_from_msp_route(
     return _render_ticket_detail(request, ticket, user, session)
 
 
+@router.post("/{number}/reactions/dismiss", response_class=HTMLResponse)
+def dismiss_negative_reaction(
+    number: int,
+    request: Request,
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """An agent who can work the ticket dismisses its red Negative reaction chip (#298). It shows again on a new negative reaction."""
+    ticket = _get_ticket(session, number, user)
+    dismiss_negative(session, ticket, user)
+    session.commit()
+    session.refresh(ticket)
+    return _render_ticket_detail(request, ticket, user, session)
+
+
 @router.post("/{number}/msp-hold", response_class=HTMLResponse)
 def msp_hold(
     number: int,
@@ -2511,6 +2528,7 @@ def _render_ticket_detail(
             "sla_rows": sla_rows(ticket, now, at_risk),
             "message_files": message_files,
             "thread": thread,
+            "negative_reaction": ticket.id in open_negative_ids(session, [ticket.id]),
             "moment_format": MOMENT_FORMAT,
             "can_backdate": can_backdate,
             "can_set_required_by": can_set_required_by,

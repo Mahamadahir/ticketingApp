@@ -265,6 +265,11 @@ class BotDelivery:
     conversation_id: str
     card: Optional[dict] = None
     text: Optional[str] = None  # a plain text message instead of a card (an agent's reply to a requester, 8D)
+    # What it is about, so the activity id Teams gives back can be kept for reactions (#298, app/reactions.py): the ticket, the
+    # kind of message (resolution, awaiting_user, approval, other) and, for an agent's message, which one.
+    ticket_id: Optional[int] = None
+    kind: str = "other"
+    message_id: Optional[int] = None
 
 
 def notifications_on() -> bool:
@@ -330,7 +335,12 @@ def notification_post(session: Session, post: TeamsPost, bot_refused: bool = Fal
     if route == DIRECT:
         from app.bot_cards import notification_card as direct_card  # the bot's cards live in one module (8C extends it)
 
-        return BotDelivery(conversation.service_url, conversation.conversation_id, direct_card(session, notification, ticket))
+        from app.reactions import kind_of_notification
+
+        return BotDelivery(
+            conversation.service_url, conversation.conversation_id, direct_card(session, notification, ticket),
+            ticket_id=ticket.id if ticket is not None else None, kind=kind_of_notification(notification.kind),
+        )
     if route == CHANNEL:
         return notification_card(notification, person, ticket)
     raise Unsendable("No Teams conversation with the bot, and notifications to the channel are switched off")
@@ -378,7 +388,12 @@ def requester_message_post(session: Session, post: TeamsPost, bot_refused: bool 
         # (The email copy, when there is one, carries them.)
         noun = "1 file" if files == 1 else f"{files} files"
         footer = f"\n\n{noun} attached: open it in the portal" + (f": {link}" if link else ".")
-    return BotDelivery(conversation.service_url, conversation.conversation_id, text=f"{mail_subject(session, ticket)}\n\n{body}{footer}")
+    from app.reactions import kind_of_requester_message
+
+    return BotDelivery(
+        conversation.service_url, conversation.conversation_id, text=f"{mail_subject(session, ticket)}\n\n{body}{footer}",
+        ticket_id=ticket.id, kind=kind_of_requester_message(ticket), message_id=message.id,
+    )
 
 
 # One builder per kind of post: it turns the row into the payload to send, or raises Unsendable.
@@ -411,16 +426,16 @@ def give_up(post: TeamsPost, reason: str) -> None:
     post.last_error = reason
 
 
-def send_bot(delivery: BotDelivery) -> None:
+def send_bot(delivery: BotDelivery) -> Optional[str]:
     """Sends one direct message through the Bot Connector (app/bot_connector.py). Raises on any failure; the outbox
-    records it like a webhook failure (never the token or the address)."""
+    records it like a webhook failure (never the token or the address). Returns the id Teams gave the new message (kept for
+    reactions), or None when it gave none."""
     from app.bot_connector import ConversationRef, send_card, send_text  # imported here: bot_connector imports this module
 
     ref = ConversationRef(delivery.service_url, delivery.conversation_id)
     if delivery.text is not None:
-        send_text(ref, delivery.text)
-    else:
-        send_card(ref, delivery.card)
+        return send_text(ref, delivery.text)
+    return send_card(ref, delivery.card)
 
 
 def deliver_pending(
@@ -428,7 +443,7 @@ def deliver_pending(
     send: Optional[Callable[[dict], None]] = None,
     limit: int = BATCH,
     now: Optional[datetime] = None,
-    bot_send: Optional[Callable[[BotDelivery], None]] = None,
+    bot_send: Optional[Callable[[BotDelivery], Optional[str]]] = None,
 ) -> tuple[int, int]:
     """Sends the oldest unsent posts that are due, up to `limit`: a webhook payload through `send`, a direct message
     from the bot through `bot_send`. A post that fails waits longer each time (see MAX_ATTEMPTS) and is given up on
@@ -487,7 +502,7 @@ def deliver_pending(
             log.warning("Teams post %s goes to the channel but TEAMS_NEW_TICKET_WEBHOOK_URL is not set in this process", post.id)
             continue
         try:
-            error = _transmit(payload, send, bot_send)
+            error, sent_id = _transmit(payload, send, bot_send)
             if error is not None and direct and is_app_removed(error):
                 # The person removed the app (an uninstall Teams never told us about, or a refusal for another reason): route
                 # this copy again in the one place (route_for) without the bot: the channel @mention if that is on,
@@ -495,7 +510,7 @@ def deliver_pending(
                 payload = builder(session, post, bot_refused=True)
                 if not isinstance(payload, BotDelivery) and not webhook:
                     raise Unsendable("The app was removed, and the channel needs TEAMS_NEW_TICKET_WEBHOOK_URL")
-                error = _transmit(payload, send, bot_send)
+                error, sent_id = _transmit(payload, send, bot_send)
         except Unsendable as reason:
             give_up(post, f"The app was removed from the person's Teams: {reason}")
             gave_up(session, post)
@@ -512,20 +527,36 @@ def deliver_pending(
             post.sent_at = datetime.now(timezone.utc)
             post.last_error = None
             sent += 1
+            if isinstance(payload, BotDelivery):
+                _keep_for_reactions(session, payload, sent_id)
         session.add(post)
     return sent, failed
 
 
-def _transmit(payload: "dict | BotDelivery", send: Callable[[dict], None], bot_send: Callable[["BotDelivery"], None]) -> Optional[Exception]:
-    """Sends one payload; the exception if it failed, else None."""
+def _keep_for_reactions(session: Session, delivery: BotDelivery, activity_id: Optional[str]) -> None:
+    """Remembers the id Teams gave a message the bot sent about a ticket, so a reaction to it can be found (#298). A failure
+    to note it never fails the send: the message has gone."""
+    from app.reactions import record_bot_message
+
+    try:
+        with session.begin_nested():
+            record_bot_message(session, delivery.ticket_id, activity_id, delivery.conversation_id, delivery.kind, delivery.message_id)
+            session.flush()
+    except Exception as error:
+        log.warning("Teams post sent but its id could not be kept (%s)", type(error).__name__)
+
+
+def _transmit(
+    payload: "dict | BotDelivery", send: Callable[[dict], None], bot_send: Callable[["BotDelivery"], Optional[str]]
+) -> tuple[Optional[Exception], Optional[str]]:
+    """Sends one payload; (the exception if it failed, else None) and the id Teams gave a direct message (None for a webhook)."""
     try:
         if isinstance(payload, BotDelivery):
-            bot_send(payload)
-        else:
-            send(payload)
+            return None, bot_send(payload)
+        send(payload)
     except Exception as error:
-        return error
-    return None
+        return error, None
+    return None, None
 
 
 def is_app_removed(error: Exception) -> bool:

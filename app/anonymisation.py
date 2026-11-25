@@ -61,6 +61,7 @@ from app.models import (
     RequesterTimeZone,
     TeamMembership,
     TeamsConversation,
+    TicketReaction,
     TeamsPost,
     ThanksCandidate,
     Ticket,
@@ -510,6 +511,16 @@ def step_accounts(ctx: Context) -> None:
     ctx.count("Accounts anonymised and made inactive", len(users))
 
 
+_delete_reactions = _delete_rows(
+    TicketReaction,
+    lambda c: or_(
+        _in(TicketReaction.user_id, c.person.user_ids),
+        _in(func.lower(TicketReaction.reactor_ref), set(object_ids(c.session, c.person)) | set(c.person.addresses)),
+        func.lower(func.trim(TicketReaction.reactor_address)).in_(c.person.addresses),
+    ),
+    "Reactions deleted (the quick rating a reaction made is kept, without the link)",
+)
+
 _delete_teams_conversations = _delete_rows(
     TeamsConversation,
     lambda c: or_(_in(TeamsConversation.user_id, c.person.user_ids), _in(TeamsConversation.entra_object_id, object_ids(c.session, c.person))),
@@ -584,6 +595,8 @@ STEPS: dict[str, Callable[[Context], None]] = {
         NotificationPreference, lambda c: _in(NotificationPreference.user_id, c.person.user_ids), "Notification preferences deleted"
     ),
     # Their chat with the Teams bot is found by their account or by any of their object ids: one step serves both columns.
+    "ticket_reaction.user_id": _delete_reactions,
+    "ticket_reaction.reactor_ref": _delete_reactions,
     "teams_conversation.user_id": _delete_teams_conversations,
     "teams_conversation.entra_object_id": _delete_teams_conversations,
     "requestertimezone.email": _delete_rows(

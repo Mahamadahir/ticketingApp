@@ -15,7 +15,7 @@ hold a transaction open). Types with no handler are accepted and ignored: Teams 
 anything but a 2xx makes it retry. A handler that calls Teams back (a reply) does it in `Handled.after`, which runs once the answer has been sent. Sending out is app/bot_connector.py; who is reachable is
 app/teams_conversations.py.
 
-What it handles: `installationUpdate` (the app was added to a person's personal scope, or removed: store or forget
+What it handles: `messageReaction` (a reaction to a message of ours: app/teams_reactions.py), `installationUpdate` (the app was added to a person's personal scope, or removed: store or forget
 their conversation), `message` (store the conversation, then intake: app/teams_intake.py) and `invoke` (a card button).
 Only the personal scope is served; teams and group chats are ignored.
 """
@@ -170,6 +170,16 @@ def invoke(session: Session, activity: dict) -> Optional[Handled]:
 
         body = answer(session, activity)
     return Handled(body=body) if body is not None else None
+
+
+@handler("messageReaction")
+def message_reaction(session: Session, activity: dict) -> Optional[Handled]:
+    """Someone reacted to (or took back a reaction to) one of the bot's messages (#298, app/teams_reactions.py): recorded and
+    shown on the ticket, with soft effects only. Nothing is answered."""
+    from app.teams_reactions import handle  # imported here: it reads this module's helpers
+
+    handle(session, activity)
+    return None
 
 
 def _reply(activity: dict, text: str) -> None:
