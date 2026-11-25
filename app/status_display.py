@@ -38,6 +38,8 @@ STATUS_TONES = {
 
 # The queue's Status filter: "Not finished" is everything except Resolved and Closed.
 NOT_FINISHED = "active"
+# ... and Awaiting user whose wait a requester reaction has acknowledged (#303; app/reactions.py decides which).
+AWAITING_ACKNOWLEDGED = "awaiting_user_acknowledged"
 
 
 def _status_of(status: Union[TicketStatus, str, None]) -> Optional[TicketStatus]:
@@ -60,6 +62,12 @@ def status_tone(status: Union[TicketStatus, str, None]) -> str:
 
 
 def status_options() -> list[tuple[str, str]]:
-    """(value, label) of the queue's Status filter after "Any status": Not finished, then every status in order."""
-    return [(NOT_FINISHED, "Not finished")] + [(s.value, STATUS_LABELS[s]) for s in TicketStatus]
+    """(value, label) of the queue's Status filter after "Any status": Not finished, then every status in order, with
+    "Awaiting user · acknowledged" right after Awaiting user."""
+    options = [(NOT_FINISHED, "Not finished")]
+    for s in TicketStatus:
+        options.append((s.value, STATUS_LABELS[s]))
+        if s == TicketStatus.AWAITING_USER:
+            options.append((AWAITING_ACKNOWLEDGED, "Awaiting user \u00b7 acknowledged"))
+    return options
 

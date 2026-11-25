@@ -16,7 +16,7 @@ from app.models import Setting
 class SettingDef:
     key: str
     label: str
-    kind: str  # "team": a team id, empty for none; "minutes": a whole number; "percent": 1 to 99; "vote_percent": 1 to 100; "flag": on or off; "count": a whole number, 1 to 1000; "hour": a whole number, 0 to 23; "clock": a time of day written 09:00 or 17:30; "time_zone": an IANA time zone name, blank for the default; "email": one email address, blank for none; "region": one of england-and-wales, scotland, northern-ireland; "dates": a list of dates (2026-12-25, separated by commas or spaces), blank for none; "off_minutes": a whole number of minutes, 0 is off; "regex": a regular expression with the named groups the setting says; "reaction_map": reaction=positive|negative|neutral pairs separated by commas
+    kind: str  # "team": a team id, empty for none; "minutes": a whole number; "percent": 1 to 99; "vote_percent": 1 to 100; "flag": on or off; "count": a whole number, 1 to 1000; "hour": a whole number, 0 to 23; "clock": a time of day written 09:00 or 17:30; "time_zone": an IANA time zone name, blank for the default; "email": one email address, blank for none; "region": one of england-and-wales, scotland, northern-ireland; "dates": a list of dates (2026-12-25, separated by commas or spaces), blank for none; "off_minutes": a whole number of minutes, 0 is off; "off_days": a whole number of days, 0 to 3650, 0 is off; "regex": a regular expression with the named groups the setting says; "reaction_map": reaction=positive|negative|neutral pairs separated by commas
     description: str
     default: str = ""
     group: str = ""  # one of GROUP_KEYS: the group of the Settings page this belongs to, declared with the setting (a test fails if it is missing)
@@ -32,7 +32,7 @@ class SettingDef:
         match = _TRAILING_UNIT.search(self.label)
         if match:
             return "%" if match.group(1) == "percent" else match.group(1)
-        return {"minutes": "minutes", "off_minutes": "minutes", "percent": "%", "vote_percent": "%"}.get(self.kind, "")
+        return {"minutes": "minutes", "off_minutes": "minutes", "off_days": "days", "percent": "%", "vote_percent": "%"}.get(self.kind, "")
 
     @property
     def display_label(self) -> str:
@@ -129,6 +129,7 @@ CHASE_ENABLED = "chase_enabled"
 ACTIVITY_GROUP_MINUTES = "activity_group_minutes"
 CHASE_AFTER_DAYS = "chase_after_days"
 CHASE_RESOLVE_AFTER_DAYS = "chase_resolve_after_days"
+ACKNOWLEDGED_WAIT_RESOLVE_DAYS = "acknowledged_wait_resolve_days"
 BULK_RESOLVE_MAX = "bulk_resolve_max_tickets"
 MAX_SUB_TICKETS = "max_sub_tickets"  # shared by manual splitting and automatic sub-requests
 REQUIRED_BY_LEAD_DAYS = "required_by_lead_days"  # the queue lead time when a request type has none of its own
@@ -730,6 +731,18 @@ REGISTRY: dict[str, SettingDef] = {
             "(the resolution email says to reply to reopen it). Placeholder."
         ),
         default="3",
+    ),
+    ACKNOWLEDGED_WAIT_RESOLVE_DAYS: SettingDef(
+        key=ACKNOWLEDGED_WAIT_RESOLVE_DAYS,
+        group=GROUP_RESOLVING,
+        label="Chase: resolve an acknowledged wait automatically after (days)",
+        kind="off_days",
+        description=(
+            "A thumbs-up from the requester on a message waiting for their reply stops the chase emails and the automatic resolve. "
+            "If there is still no reply this many days after that reaction, the ticket is resolved automatically like any "
+            "unanswered one (same resolution email). 0 never resolves it: it waits until an agent acts. Placeholder, to be confirmed."
+        ),
+        default="14",
     ),
     REQUIRED_BY_LEAD_DAYS: SettingDef(
         key=REQUIRED_BY_LEAD_DAYS,

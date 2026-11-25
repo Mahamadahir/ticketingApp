@@ -630,11 +630,11 @@
       "functions": [
         "close_resolved_tickets",
         "report_given_up_chases",
+        "resolve_acknowledged",
         "resolve_unanswered",
         "run_auto_close",
         "run_chase",
-        "send_chases",
-        "waiting_since"
+        "send_chases"
       ],
       "imported_by": [
         "app.scheduled_jobs"
@@ -657,6 +657,7 @@
       "summary": "Auto-close and chase (phase 4H): two recurring jobs on the database-driven scheduler",
       "tables": [],
       "tests": [
+        "tests/test_acknowledged_backstop.py",
         "tests/test_auto_close_chase.py",
         "tests/test_closing_email.py",
         "tests/test_reactions.py"
@@ -2588,6 +2589,7 @@
       "tests": [
         "tests/conftest.py",
         "tests/test_access_context.py",
+        "tests/test_acknowledged_backstop.py",
         "tests/test_acknowledgement.py",
         "tests/test_action_links.py",
         "tests/test_activity_log.py",
@@ -3479,12 +3481,19 @@
     },
     {
       "classes": [
+        "AcknowledgedView",
         "Reactor"
       ],
       "file": "app/reactions.py",
       "functions": [
+        "acknowledged_at",
+        "acknowledged_condition",
         "acknowledged_since",
+        "acknowledged_times",
+        "acknowledged_views",
         "apply_effects",
+        "backstop_days",
+        "backstop_due",
         "dismiss_negative",
         "display_of",
         "drop_soft_feedback",
@@ -3499,7 +3508,8 @@
         "record_bot_message",
         "record_reaction",
         "remove_reaction",
-        "sentiment_of"
+        "sentiment_of",
+        "waiting_since"
       ],
       "imported_by": [
         "app.action_links",
@@ -3517,13 +3527,15 @@
         "app.identity",
         "app.models",
         "app.notifications",
-        "app.settings_store"
+        "app.settings_store",
+        "app.ticket_service"
       ],
       "module": "app.reactions",
       "routes": [],
       "summary": "Reactions to messages about a ticket (issue #298, Teams; #299 reuses all of it for Outlook email reactions).",
       "tables": [],
       "tests": [
+        "tests/test_acknowledged_backstop.py",
         "tests/test_reactions.py"
       ]
     },
@@ -5969,6 +5981,7 @@
       "tables": [],
       "tests": [
         "tests/conftest.py",
+        "tests/test_acknowledged_backstop.py",
         "tests/test_acknowledgement.py",
         "tests/test_action_links.py",
         "tests/test_admin_settings.py",
@@ -6198,6 +6211,7 @@
       "summary": "How an agent sees a ticket status: one label and one tone per status, used everywhere an agent sees one (the queue,",
       "tables": [],
       "tests": [
+        "tests/test_acknowledged_backstop.py",
         "tests/test_queue_status_sort.py"
       ]
     },
@@ -7031,6 +7045,7 @@
         "app.msp",
         "app.msp_actions",
         "app.raising",
+        "app.reactions",
         "app.reopening",
         "app.reports",
         "app.request_questions",
@@ -7063,6 +7078,7 @@
       "summary": "Changes to tickets that more than one route makes. Nothing here commits:",
       "tables": [],
       "tests": [
+        "tests/test_acknowledged_backstop.py",
         "tests/test_auto_close_chase.py",
         "tests/test_category_admin.py",
         "tests/test_due_date.py",
@@ -7831,6 +7847,7 @@
   "tests": [
     "tests/conftest.py",
     "tests/test_access_context.py",
+    "tests/test_acknowledged_backstop.py",
     "tests/test_acknowledgement.py",
     "tests/test_action_links.py",
     "tests/test_activity_log.py",

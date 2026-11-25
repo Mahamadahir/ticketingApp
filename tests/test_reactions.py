@@ -280,8 +280,8 @@ def test_a_reaction_on_another_kind_of_message_is_not_a_rating(public, resolved,
 
 def test_the_latest_reaction_decides_and_there_is_one_quick_rating(public, resolved, db_session):
     target = sent_message(db_session, "resolution").activity_id
-    react(public, target, "like", at="2026-11-24T09:00:00Z")
-    react(public, target, "sad", at="2026-11-24T09:05:00Z")
+    react(public, target, "like", at=soon(1))
+    react(public, target, "sad", at=soon(2))
 
     assert [(f.rating, f.from_reaction) for f in feedback(db_session, resolved)] == [(1, True)]
 
@@ -297,8 +297,8 @@ def test_taking_the_reaction_back_removes_the_quick_rating(public, resolved, db_
 
 def test_taking_one_of_two_reactions_back_leaves_the_other_deciding(public, resolved, db_session):
     target = sent_message(db_session, "resolution").activity_id
-    react(public, target, "like", at="2026-11-24T09:00:00Z")
-    react(public, target, "sad", at="2026-11-24T09:05:00Z")
+    react(public, target, "like", at=soon(1))
+    react(public, target, "sad", at=soon(2))
     react(public, target, removed=["sad"])
 
     assert [(f.rating, f.from_reaction) for f in feedback(db_session, resolved)] == [(5, True)]
@@ -798,3 +798,8 @@ def test_a_bot_message_without_an_id_or_a_ticket_is_not_kept(db_session):
     assert reactions.record_bot_message(db_session, None, "a1", "c1", "other") is None
     assert reactions.record_bot_message(db_session, 1, None, "c1", "other") is None
     assert reactions.record_bot_message(db_session, 1, "a1", "c1", "bogus") is None
+
+
+def soon(minutes):
+    """A reaction time after the resolution (the fixture resolves a day ago), written as Teams sends it; never a fixed date."""
+    return (datetime.now(timezone.utc) + timedelta(minutes=minutes)).strftime("%Y-%m-%dT%H:%M:%SZ")
