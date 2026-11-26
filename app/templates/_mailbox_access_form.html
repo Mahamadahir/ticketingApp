@@ -3,7 +3,7 @@
    field. The warning is ALWAYS shown (the server refuses until `confirm_access=1`): the modal with scripts (static/mailbox-form.js,
    `data-warn="access"`), the confirm block without. Each permission ticked becomes its own change on the one request. #}
 {% set f = mailbox_form %}
-<form class="nr-form card" id="mb-form" method="post" action="/portal/mailbox-change" data-zone="{{ mailbox_zone }}" data-warn="access">
+<form class="nr-form card" id="mb-form" method="post" action="/portal/mailbox-change" data-zone="{{ mailbox_zone }}" data-me="{{ user.display_name or user.email }}" data-warn="access">
   <div class="nr-form-head">
     <h2>2. {{ chosen_title }}</h2>
     <p class="nr-hint">Give a colleague access to your mailbox for the time you choose. You can remove it early from the request page.</p>
@@ -12,9 +12,10 @@
 
   {% if mailbox_error %}<p class="error" id="mb-error" role="alert">{{ mailbox_error }}</p>{% endif %}
 
-  <p class="mb-mailbox"><strong>Your mailbox:</strong> {{ user.email }} <span class="nr-hint">(always the mailbox you are signed in as)</span></p>
+  {% include "_mailbox_whose.html" %}
+  <p class="mb-mailbox" id="mb-mine-line"><strong>Your mailbox:</strong> {{ user.email }} <span class="nr-hint">(always the mailbox you are signed in as)</span></p>
 
-  {% set picker_legend = "Give access to" %}{% include "_mailbox_picker.html" %}
+  {% set picker_legend = "Give access to" %}{% set picker_prefix = "mb" %}{% set picker_field = "target" %}{% set picker_oid = f.target_object_id %}{% set picker_name = f.target_name %}{% include "_mailbox_picker.html" %}
 
   <fieldset class="mb-fieldset" id="mb-permissions">
     <legend>What they can do (choose at least one)</legend>

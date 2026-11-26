@@ -77,7 +77,7 @@ from app.notifications import AWAITING_YOU, mentionable_agents, notify_agent_ema
 from app.identity import person_for_address
 from app.presence import agent_label
 from app.ticket_actions import CARDS, action_chips
-from app import mailbox_changes
+from app import mailbox_changes, portal_mailbox
 from app.search import normalise, search_condition
 from app.splitting import (
     MAX_DETAILS,
@@ -2631,6 +2631,7 @@ def _render_ticket_detail(
             "approval_waiting_group": (approval_group_of(session, ticket) if is_waiting_for_approvers(session, ticket) else None),
             "approval_rule": describe_rule(ticket_approval) if ticket_approval and ticket_approval.status != SUPERSEDED else None,
             "approval_status": ticket_approval.status if ticket_approval else None,
+            "approval_note": portal_mailbox.approval_note(session, ticket),
             "can_waive": user.role == UserRole.SUPER_ADMIN and ticket.status == TicketStatus.AWAITING_APPROVAL,
             "can_set_priority": can_edit_triage,
             "category_options": options,

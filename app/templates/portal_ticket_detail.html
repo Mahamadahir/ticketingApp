@@ -18,7 +18,7 @@
   </li>
   {% endfor %}
 </ol>
-{% if approval_rule %}<p class="note">Waiting for approval ({{ approval_rule }}).</p>{% endif %}
+{% if approval_rule %}<p class="note">Waiting for approval ({{ approval_rule }}).{% if approval_note %} {{ approval_note }}{% endif %}</p>{% endif %}
 {% if self_approved %}<p class="note">Your own approval was recorded automatically: approvers may approve their own requests of this kind.</p>{% endif %}
 
 <div class="rq-cols">
@@ -99,7 +99,8 @@
   {% if my_approval %}
   <form class="card rq-card rq-form" hx-post="/portal/{{ ticket.number }}/approval" hx-target="main" hx-swap="innerHTML">
     <h2>Your approval</h2>
-    <label class="field">Comment (optional; shown to the requester if you decline)
+    {% if mailbox_summary %}<p class="note">{{ mailbox_summary }}</p>{% endif %}
+    <label class="field">{% if my_approval_note_required %}Note (required to approve: who you checked with, for example "Spoke to J. Smith, line manager, by phone 09:10"){% else %}Comment (optional; shown to the requester if you decline){% endif %}
       <textarea name="comment" rows="2" maxlength="1000"></textarea>
     </label>
     <div class="rq-actions">

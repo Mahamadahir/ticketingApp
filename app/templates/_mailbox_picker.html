@@ -1,20 +1,27 @@
-{# The people picker shared by the portal's mailbox forms (#309, #310): the same ids, because static/mailbox-form.js looks them up.
-   Set `picker_legend` before including it. The object id is the only thing that counts: the server fetches the person again. #}
-  <fieldset class="mb-fieldset" id="mb-picker">
+{# The people picker shared by the portal's mailbox forms (#309, #310, #311): the ids are `<prefix>-oid`, `-name`, `-chosen`, `-search`,
+   `-q` and `-results`, because static/mailbox-form.js looks them up. Set `picker_legend` before including it. The default is the
+   "other person" picker (prefix `mb`, fields target_object_id and target_name); the mailbox owner's picker sets `picker_prefix` to
+   `mo`, `picker_field` to `owner`, and `picker_oid` and `picker_name` to its values. The object id is the only thing that counts:
+   the server fetches the person again. #}
+{% set pp = picker_prefix if picker_prefix is defined else "mb" %}
+{% set pf = picker_field if picker_field is defined else "target" %}
+{% set poid = picker_oid if picker_oid is defined else f.target_object_id %}
+{% set pname = picker_name if picker_name is defined else f.target_name %}
+  <fieldset class="mb-fieldset" id="{{ pp }}-picker">
     <legend>{{ picker_legend }}</legend>
-    <input type="hidden" name="target_object_id" id="mb-oid" value="{{ f.target_object_id }}" />
-    <input type="hidden" name="target_name" id="mb-name" value="{{ f.target_name }}" />
-    <p class="mb-chosen" id="mb-chosen"{% if not f.target_object_id %} hidden{% endif %}>
-      <strong id="mb-chosen-name">{{ f.target_name }}</strong>
-      <button type="button" class="btn" id="mb-change">Choose someone else</button>
+    <input type="hidden" name="{{ pf }}_object_id" id="{{ pp }}-oid" value="{{ poid }}" />
+    <input type="hidden" name="{{ pf }}_name" id="{{ pp }}-name" value="{{ pname }}" />
+    <p class="mb-chosen" id="{{ pp }}-chosen"{% if not poid %} hidden{% endif %}>
+      <strong id="{{ pp }}-chosen-name">{{ pname }}</strong>
+      <button type="button" class="btn" id="{{ pp }}-change">Choose someone else</button>
     </p>
-    <div id="mb-search"{% if f.target_object_id %} hidden{% endif %}>
+    <div id="{{ pp }}-search"{% if poid %} hidden{% endif %}>
       <label class="field">Search by name or email address
-        <input type="search" id="mb-q" name="q" autocomplete="off" maxlength="100" aria-describedby="mb-q-hint"
-               hx-get="/portal/people" hx-trigger="input changed delay:300ms, search" hx-target="#mb-results" hx-swap="innerHTML" hx-sync="this:replace" />
+        <input type="search" id="{{ pp }}-q" name="q" autocomplete="off" maxlength="100" aria-describedby="{{ pp }}-q-hint"
+               hx-get="/portal/people" hx-trigger="input changed delay:300ms, search" hx-target="#{{ pp }}-results" hx-swap="innerHTML" hx-sync="this:replace" />
       </label>
-      <p class="nr-hint" id="mb-q-hint">Only people in the organisation who have a mailbox are listed.</p>
-      <div id="mb-results" aria-live="polite"></div>
+      <p class="nr-hint" id="{{ pp }}-q-hint">Only people in the organisation who have a mailbox are listed.</p>
+      <div id="{{ pp }}-results" aria-live="polite"></div>
       <noscript><p class="error">Choosing a person needs scripts switched on in your browser.</p></noscript>
     </div>
   </fieldset>

@@ -612,7 +612,7 @@ REGISTRY: dict[str, TemplateDef] = {
                 "internal note. It goes under the request's own subject."
             ),
             body_default=(
-                "We could not make the change you asked for on your mailbox, so nothing has been changed. "
+                "We could not make the change you asked for on the mailbox, so nothing has been changed. "
                 "IT Support has your request {reference} and will be in touch."
             ),
             body_placeholders=dict(_COMMON),
@@ -622,7 +622,7 @@ REGISTRY: dict[str, TemplateDef] = {
             key="mailbox_cancelled_requester",
             label="Mailbox change: cancelled by IT (to the mailbox owner)",
             description="Sent to the person whose mailbox was to be changed when an agent cancels the request after it could not be made. It goes under the request's own subject.",
-            body_default="Your request {reference} has been cancelled by IT Support. Nothing was changed on your mailbox.",
+            body_default="Your request {reference} has been cancelled by IT Support. Nothing was changed on the mailbox.",
             body_placeholders=dict(_COMMON),
             sample=dict(_COMMON_SAMPLE),
         ),
@@ -659,7 +659,7 @@ REGISTRY: dict[str, TemplateDef] = {
                 "Exchange error. It goes under the request's own subject."
             ),
             body_default=(
-                "We could not make the {kind} change you asked for on your mailbox, so that part has not been made. Anything else "
+                "We could not make the {kind} change you asked for on the mailbox, so that part has not been made. Anything else "
                 "on your request is unaffected by this. IT Support has your request {reference} and will be in touch."
             ),
             body_placeholders={**_COMMON, "kind": "which change could not be made (Full access or Send As)"},
@@ -673,9 +673,68 @@ REGISTRY: dict[str, TemplateDef] = {
                 "for two (Full access and Send As) after it could not be made. {kind} names the one cancelled. It goes under the "
                 "request's own subject."
             ),
-            body_default="IT Support has cancelled the {kind} part of your request {reference}. Nothing was changed on your mailbox for it.",
+            body_default="IT Support has cancelled the {kind} part of your request {reference}. Nothing was changed on the mailbox for it.",
             body_placeholders={**_COMMON, "kind": "which change was cancelled (Full access or Send As)"},
             sample={**_COMMON_SAMPLE, "kind": "Send As"},
+        ),
+        TemplateDef(
+            key="mailbox_started_owner",
+            label="Mailbox change: started on someone else's request (to the mailbox owner)",
+            description=(
+                "Sent to the owner of a mailbox when a request made by SOMEONE ELSE for their mailbox (forwarding, Full access or Send "
+                "As) has been carried out, whoever approved it and whether or not they voted. {change} is the sentence for the kind "
+                "of change; {approved_by} says who approved it. Never sent for a request about the person's own mailbox."
+            ),
+            subject_default="A change was made to your mailbox",
+            subject_placeholders={},
+            body_default=(
+                "{change}, until {until}.\n\n{copy_text}\n\n{requested_by} asked for this and {approved_by}.\n\n"
+                "If you were not expecting it, tell IT Support."
+            ),
+            body_placeholders={
+                "change": "what is now in place, as a sentence", "until": "when it ends, in the mailbox owner's time zone",
+                "copy_text": "whether a copy of forwarded mail stays in their mailbox (empty for other kinds)",
+                "requested_by": "the name of the person who asked", "approved_by": "who approved it, for example 'it was approved by Sam Lee (IT Support)'",
+            },
+            required=("until",),
+            sample={
+                "change": "Mail sent to you is now going to Jane Smith as well", "until": "12 Jan 2027 17:00 GMT",
+                "copy_text": "A copy stays in your mailbox.", "requested_by": "Jane Smith",
+                "approved_by": "it was approved by Sam Lee (IT Support)",
+            },
+        ),
+        TemplateDef(
+            key="mailbox_stopped_owner",
+            label="Mailbox change: stopped on someone else's request (to the mailbox owner)",
+            description=(
+                "Sent to the owner of a mailbox when a change that someone else asked for on their mailbox has stopped. {change} is the "
+                "sentence for the kind of change; {approved_by} says who approved it. Never sent for a request about the person's own mailbox."
+            ),
+            subject_default="A change to your mailbox has ended",
+            subject_placeholders={},
+            body_default="{change}. Your mailbox is back to how it was.\n\n{requested_by} had asked for it and {approved_by}.",
+            body_placeholders={
+                "change": "what has stopped, as a sentence", "requested_by": "the name of the person who asked",
+                "approved_by": "who approved it, for example 'it was approved by Sam Lee (IT Support)'",
+            },
+            sample={
+                "change": "Forwarding your mail to Jane Smith has stopped", "requested_by": "Jane Smith",
+                "approved_by": "it was approved by Sam Lee (IT Support)",
+            },
+        ),
+        TemplateDef(
+            key="mailbox_expired_requester",
+            label="Mailbox change: approved too late (to the requester)",
+            description=(
+                "Sent to the requester of a change to someone else's mailbox when it was approved only after its end time had passed, "
+                "so it was not made. It goes under the request's own subject."
+            ),
+            body_default=(
+                "Your request {reference} was approved too late: the end time you chose had already passed, so nothing was "
+                "changed. Please make a new request if you still need it."
+            ),
+            body_placeholders=dict(_COMMON),
+            sample=dict(_COMMON_SAMPLE),
         ),
         TemplateDef(
             key="legal_privacy",
@@ -719,7 +778,8 @@ AUDIENCE_OF: dict[str, str] = {
     "mailbox_started_requester": "requester", "mailbox_started_target": "requester", "mailbox_stopped_requester": "requester",
     "mailbox_stopped_target": "requester", "mailbox_could_not_start_requester": "requester", "mailbox_cancelled_requester": "requester",
     "mailbox_full_access_started_target": "requester", "mailbox_part_could_not_start_requester": "requester",
-    "mailbox_part_cancelled_requester": "requester",
+    "mailbox_part_cancelled_requester": "requester", "mailbox_started_owner": "requester", "mailbox_stopped_owner": "requester",
+    "mailbox_expired_requester": "requester",
     "header_agent": "requester", "header_automatic": "requester", "header_reply": "requester",
     "approval_request": "agent", "approval_reminder": "agent", "approval_withdrawn": "agent",
     "emergency_password_reset": "agent", "msp_handoff": "agent", "msp_no_longer_needed": "agent",

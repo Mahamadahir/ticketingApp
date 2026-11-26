@@ -445,6 +445,7 @@ def _mailbox_changes(session: Session, person: Person, name_other_person: bool =
             or_(
                 email_matches(MailboxChange.owner_address, person),
                 email_matches(MailboxChange.target_address, person),
+                email_matches(MailboxChange.created_by, person),  # a request they made for someone else's mailbox (#311)
                 _in(func.lower(MailboxChange.owner_object_id), oids),
                 _in(func.lower(MailboxChange.target_object_id), oids),
             )

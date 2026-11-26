@@ -54,6 +54,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/c8d4a1e6f257_mailbox_on_behalf_approvals.py",
+        "revision": "c8d4a1e6f257"
+      },
+      {
         "file": "migrations/versions/b5e2c8a1f903_request_type_mailbox_action.py",
         "revision": "b5e2c8a1f903"
       },
@@ -68,17 +72,13 @@
       {
         "file": "migrations/versions/b8d2f6a1c350_email_reactions.py",
         "revision": "b8d2f6a1c350"
-      },
-      {
-        "file": "migrations/versions/e3a7c5d9b1f4_ticket_reactions.py",
-        "revision": "e3a7c5d9b1f4"
       }
     ],
-    "count": 82,
+    "count": 83,
     "heads": [
       {
-        "file": "migrations/versions/b5e2c8a1f903_request_type_mailbox_action.py",
-        "revision": "b5e2c8a1f903"
+        "file": "migrations/versions/c8d4a1e6f257_mailbox_on_behalf_approvals.py",
+        "revision": "c8d4a1e6f257"
       }
     ]
   },
@@ -284,9 +284,7 @@
         "types_using"
       ],
       "imported_by": [
-        "app.approval_reminders",
         "app.approvals",
-        "app.bot_cards",
         "app.mail",
         "app.request_types",
         "app.routers.admin"
@@ -305,8 +303,10 @@
         "tests/test_approval_reminders.py",
         "tests/test_approvals.py",
         "tests/test_entra_check.py",
+        "tests/test_mailbox_on_behalf.py",
         "tests/test_outbound_mail.py",
         "tests/test_portal_home.py",
+        "tests/test_portal_mailbox.py",
         "tests/test_portal_new.py",
         "tests/test_request_types.py",
         "tests/test_teams_approvals.py"
@@ -332,6 +332,7 @@
       "tables": [],
       "tests": [
         "tests/test_approvals.py",
+        "tests/test_mailbox_on_behalf.py",
         "tests/test_outbound_mail.py"
       ]
     },
@@ -345,7 +346,6 @@
         "app.scheduled_jobs"
       ],
       "imports": [
-        "app.approval_groups",
         "app.approvals",
         "app.audit",
         "app.models",
@@ -381,8 +381,12 @@
         "drop_votes_of",
         "eligible_voters",
         "is_waiting_for_approvers",
+        "mailbox_owner_address",
+        "mailbox_owner_voter",
+        "may_answer",
         "may_self_approve",
         "needs_approval",
+        "note_required",
         "outcome",
         "pending_for",
         "reconcile_approvals",
@@ -405,9 +409,11 @@
         "app.entra_check",
         "app.linked_identities",
         "app.mail",
+        "app.mailbox_changes",
         "app.messages",
         "app.navigation",
         "app.notifications",
+        "app.portal_mailbox",
         "app.request_types",
         "app.routers.admin",
         "app.routers.approvals",
@@ -422,6 +428,7 @@
         "app.audit",
         "app.email_templates",
         "app.identity",
+        "app.mailbox_changes",
         "app.messages",
         "app.models",
         "app.notifications",
@@ -439,6 +446,7 @@
         "tests/test_approvals.py",
         "tests/test_email_templates.py",
         "tests/test_linked_identities.py",
+        "tests/test_mailbox_on_behalf.py",
         "tests/test_outbound_mail.py",
         "tests/test_requester_bell.py",
         "tests/test_self_approval.py",
@@ -754,7 +762,6 @@
         "app.teams_intake"
       ],
       "imports": [
-        "app.approval_groups",
         "app.approvals",
         "app.identity",
         "app.messages",
@@ -1199,6 +1206,7 @@
         "tests/test_mail_subscriptions.py",
         "tests/test_mailbox_access.py",
         "tests/test_mailbox_changes.py",
+        "tests/test_mailbox_on_behalf.py",
         "tests/test_notification_dismiss.py",
         "tests/test_notification_followup.py",
         "tests/test_outbound_mail.py",
@@ -2050,14 +2058,17 @@
       ],
       "file": "app/mailbox_changes.py",
       "functions": [
+        "after_approval",
         "cancel",
         "cancel_by_requester",
         "change_for_ticket",
         "changes_for_ticket",
         "create_mailbox_change",
         "done_by_hand",
+        "drop_unstarted",
         "failed_change_for_ticket",
         "failed_phase",
+        "finish_on_behalf",
         "max_attempts",
         "pending_change_condition",
         "run_mailbox_changes",
@@ -2067,12 +2078,14 @@
         "utcnow"
       ],
       "imported_by": [
+        "app.approvals",
         "app.portal_mailbox",
         "app.routers.portal",
         "app.routers.tickets",
         "app.scheduled_jobs"
       ],
       "imports": [
+        "app.approvals",
         "app.audit",
         "app.config",
         "app.email_templates",
@@ -2096,6 +2109,7 @@
       "tests": [
         "tests/test_mailbox_access.py",
         "tests/test_mailbox_changes.py",
+        "tests/test_mailbox_on_behalf.py",
         "tests/test_portal_mailbox.py"
       ]
     },
@@ -2129,6 +2143,7 @@
       "tests": [
         "tests/test_mailbox_access.py",
         "tests/test_mailbox_changes.py",
+        "tests/test_mailbox_on_behalf.py",
         "tests/test_portal_mailbox.py"
       ]
     },
@@ -2806,6 +2821,7 @@
         "tests/test_mail_subscriptions.py",
         "tests/test_mailbox_access.py",
         "tests/test_mailbox_changes.py",
+        "tests/test_mailbox_on_behalf.py",
         "tests/test_message_channel.py",
         "tests/test_messages.py",
         "tests/test_msp.py",
@@ -3422,6 +3438,7 @@
         "tests/test_follower_updates.py",
         "tests/test_mailbox_access.py",
         "tests/test_mailbox_changes.py",
+        "tests/test_mailbox_on_behalf.py",
         "tests/test_msp_mail.py",
         "tests/test_outbound_mail.py",
         "tests/test_reply_files.py",
@@ -3568,12 +3585,15 @@
         "ConfirmNoCopy",
         "ForwardingForm",
         "MailboxFormError",
+        "OwnerRefused",
         "TargetRefused",
         "Times"
       ],
       "file": "app/portal_mailbox.py",
       "functions": [
         "access_warning",
+        "approval_note",
+        "approval_summary",
         "copy_off_warning",
         "read_times",
         "submit_access",
@@ -3582,15 +3602,19 @@
         "views"
       ],
       "imported_by": [
-        "app.routers.portal"
+        "app.routers.approvals",
+        "app.routers.portal",
+        "app.routers.tickets"
       ],
       "imports": [
+        "app.approvals",
         "app.identity",
         "app.mailbox_changes",
         "app.mailbox_executor",
         "app.models",
         "app.people_directory",
         "app.raising",
+        "app.request_types",
         "app.settings_store",
         "app.time_zones"
       ],
@@ -4085,6 +4109,7 @@
         "create_request_type",
         "is_offered",
         "offered_request_types",
+        "offers_someone_elses",
         "portal_cards",
         "portal_tiles",
         "problem_card",
@@ -4094,6 +4119,7 @@
         "update_request_type"
       ],
       "imported_by": [
+        "app.portal_mailbox",
         "app.raising",
         "app.routers.admin",
         "app.routers.portal",
@@ -4119,6 +4145,7 @@
       "tests": [
         "tests/test_approvals.py",
         "tests/test_mailbox_access.py",
+        "tests/test_mailbox_on_behalf.py",
         "tests/test_portal_home.py",
         "tests/test_portal_mailbox.py",
         "tests/test_portal_new.py",
@@ -4796,6 +4823,7 @@
         "app.database",
         "app.messages",
         "app.models",
+        "app.portal_mailbox",
         "app.rate_limit",
         "app.settings_store",
         "app.templating"
@@ -5733,6 +5761,7 @@
         "app.msp_actions",
         "app.notifications",
         "app.pagination",
+        "app.portal_mailbox",
         "app.presence",
         "app.raising",
         "app.reactions",
@@ -6328,6 +6357,7 @@
         "tests/test_mail_subscriptions.py",
         "tests/test_mailbox_access.py",
         "tests/test_mailbox_changes.py",
+        "tests/test_mailbox_on_behalf.py",
         "tests/test_msp.py",
         "tests/test_msp_actions.py",
         "tests/test_msp_mail.py",
@@ -6589,6 +6619,7 @@
         "tests/test_card_refusals.py",
         "tests/test_inbound_mail.py",
         "tests/test_mailbox_changes.py",
+        "tests/test_mailbox_on_behalf.py",
         "tests/test_msp_mail.py",
         "tests/test_portal_new.py",
         "tests/test_portal_request.py",
@@ -6630,6 +6661,7 @@
       "tables": [],
       "tests": [
         "tests/test_mailbox_changes.py",
+        "tests/test_mailbox_on_behalf.py",
         "tests/test_reactions.py",
         "tests/test_subject_access.py",
         "tests/test_teams_followups.py"
@@ -8261,6 +8293,7 @@
     "tests/test_mail_subscriptions.py",
     "tests/test_mailbox_access.py",
     "tests/test_mailbox_changes.py",
+    "tests/test_mailbox_on_behalf.py",
     "tests/test_message_channel.py",
     "tests/test_message_channel_migration.py",
     "tests/test_messages.py",

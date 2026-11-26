@@ -32,8 +32,7 @@ from typing import Optional
 
 from sqlmodel import Session, select
 
-from app.approval_groups import is_member
-from app.approvals import PENDING, reconcile_approvals, voters_yet_to_vote
+from app.approvals import PENDING, may_answer, reconcile_approvals, voters_yet_to_vote
 from app.audit import log_action
 from app.models import ApprovalVote, OutboundEmail, Ticket, TicketApproval, TicketStatus, User, UserRole
 from app.notifications import notify_approval_overdue, notify_approval_reminder
@@ -97,7 +96,7 @@ def send_approval_reminders(session: Session, now: Optional[datetime] = None) ->
         # Someone who has left (inactive) or was taken out of the group can no longer answer, so is not chased or counted.
         waiting = [
             (vote, voter) for vote, voter in voters_yet_to_vote(session, approval)
-            if voter.is_active and is_member(session, approval.group_id, voter.id)
+            if voter.is_active and may_answer(session, approval, vote)
         ]
         for vote, voter in waiting:
             if not _due(vote, now, after, every, maximum):
