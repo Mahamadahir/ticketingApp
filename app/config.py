@@ -153,6 +153,11 @@ class Settings(BaseSettings):
     # switch alert is set to a few multiples of this.
     worker_heartbeat_seconds: int = 60
 
+    # Who makes mailbox changes in Exchange (app/mailbox_executor.py). Unset: the feature is OFF (the mailbox-changes job does
+    # nothing and a change cannot be created), so an environment that has not been set up for it still starts. "fake" keeps them in memory (local development and tests;
+    # the worker refuses it anywhere but dev) and "azure" is the Azure Automation account (#308). Only the worker uses it.
+    mailbox_executor: str = ""
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")  # ignore keys left in an old .env (e.g. the retired INBOUND_MAX_*)
 
     @property
@@ -196,6 +201,7 @@ class Settings(BaseSettings):
 
 
 MAIL_SENDING_MODES = ("off", "dev", "graph")
+MAILBOX_EXECUTORS = ("", "fake", "azure")  # "" is off
 
 
 def mail_sync_errors(config: Settings) -> list[str]:
@@ -215,6 +221,13 @@ def unsafe_setting_errors(config: Settings) -> list[str]:
         errors.append(f"MAIL_SENDING must be one of {', '.join(MAIL_SENDING_MODES)}")
     if config.app_role not in APP_ROLES:
         errors.append(f"APP_ROLE must be one of {', '.join(APP_ROLES)}")
+    if config.mailbox_executor not in MAILBOX_EXECUTORS:
+        errors.append("MAILBOX_EXECUTOR must be unset (off), fake or azure")
+    if config.mailbox_executor == "azure" and config.app_role in ("worker", "all"):
+        # Only the worker calls Azure; web and public just need the variable set so they can create a change.
+        from app.mailbox_executor_azure import azure_executor_config_errors
+
+        errors.extend(azure_executor_config_errors(config))
     if config.teams_bot_enabled and not (config.teams_bot_app_id and config.teams_bot_tenant_id):
         errors.append("TEAMS_BOT_ENABLED needs TEAMS_BOT_APP_ID and TEAMS_BOT_TENANT_ID")
     if config.teams_bot_client_secret and config.app_role == "web":
@@ -223,6 +236,10 @@ def unsafe_setting_errors(config: Settings) -> list[str]:
         return errors
     if config.mail_sending == "dev":
         errors.append("MAIL_SENDING=dev only works in the dev environment (it sends nothing)")
+    if config.mailbox_executor == "fake" and config.app_role in ("worker", "all"):
+        # The worker is the one process that applies mailbox changes. A fake executor outside dev would tell people their
+        # forwarding is on when Exchange was never touched.
+        errors.append("MAILBOX_EXECUTOR=fake only works in the dev environment (it changes nothing in Exchange): unset it or set azure")
 
     if config.app_role == "all":
         errors.append("APP_ROLE is unset: say web, public or worker, so the process serves only its own routes")

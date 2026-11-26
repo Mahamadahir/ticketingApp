@@ -42,6 +42,7 @@ from app.models import (
     InboundMail,
     LinkCode,
     LinkedIdentity,
+    MailboxChange,
     Message,
     Notification,
     NotificationPreference,
@@ -133,6 +134,7 @@ EXPORTED_TABLES = {
     "ticketevent": "ticket_events.json", "ticket_reaction": "reactions.json", "ticket": "tickets.json", "ticketfollower": "tickets.json",
     "message": "tickets.json", "attachment": "attachments/", "approvalvote": "approvals.json",
     "notification": "notifications.json", "outboundemail": "mail.json", "inboundmail": "mail.json",
+    "mailbox_change": "mailbox_changes.json",
 }
 
 
@@ -430,6 +432,38 @@ def _reactions(session: Session, person: Person) -> list[dict]:
     ]
 
 
+def _mailbox_changes(session: Session, person: Person) -> list[dict]:
+    """The scheduled mailbox changes (#307) on the person's mailbox or made for them: what, with whom, when it was to start and end
+    and what happened. Found by their addresses or their Entra object ids. The raw Exchange messages and job ids are the team's
+    working notes and are not part of the export."""
+    oids = set(object_ids(session, person))
+    rows = session.exec(
+        select(MailboxChange, Ticket)
+        .join(Ticket, Ticket.id == MailboxChange.ticket_id)
+        .where(
+            or_(
+                email_matches(MailboxChange.owner_address, person),
+                email_matches(MailboxChange.target_address, person),
+                _in(func.lower(MailboxChange.owner_object_id), oids),
+                _in(func.lower(MailboxChange.target_object_id), oids),
+            )
+        )
+        .order_by(MailboxChange.id)
+    ).all()
+    return [
+        {
+            # The other person's address is theirs, not the one asked about: the export names only the asker's own side.
+            "request": t.reference, "kind": c.kind,
+            "mailbox": c.owner_address if c.owner_address.strip().lower() in person.addresses else "another person's",
+            "shared_with": c.target_address if c.target_address.strip().lower() in person.addresses else "another person",
+            "keep_copy": c.keep_copy if c.kind == "forwarding" else None, "starts_at": c.starts_at, "ends_at": c.ends_at,
+            "state": c.state, "applied_at": c.applied_at, "removed_at": c.removed_at, "asked_by": c.created_by,
+            "asked_at": c.created_at,
+        }
+        for c, t in rows
+    ]
+
+
 def _teams_bot(session: Session, person: Person) -> list[dict]:
     return [
         {
@@ -618,6 +652,7 @@ def build_export(session: Session, storage: Storage, address: str, requested_by:
             "mail.json": _mail(session, person, in_scope),
             "ticket_events.json": _ticket_events(session, person, in_scope),
             "reactions.json": _reactions(session, person),
+            "mailbox_changes.json": _mailbox_changes(session, person),
             "staff_references.json": staff,
             "attachments_not_added.json": listed,
         }

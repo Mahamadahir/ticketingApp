@@ -113,7 +113,7 @@ param teamsBotAppId string = ''
 @description('The directory whose users the bot serves. Empty uses the tenant of the subscription.')
 param teamsBotTenantIdOverride string = ''
 
-@description('Scheduled mailbox changes (forwarding, full access, Send As): the Automation account with its own identity and the fixed runbooks, the worker identity gets Automation Job Operator on it, and the worker runs with MAILBOX_EXECUTOR=azure. Off changes nothing else. The owner must also grant the account identity Exchange rights by hand (infra/README.md, "Mailbox changes: the Automation account").')
+@description('Scheduled mailbox changes (forwarding, full access, Send As): the Automation account with its own identity and the fixed runbooks, the worker identity gets Automation Job Operator on it, and every app runs with MAILBOX_EXECUTOR=azure (the worker also gets the Automation settings). Off changes nothing else. The owner must also grant the account identity Exchange rights by hand (infra/README.md, "Mailbox changes: the Automation account").')
 param mailboxAutomationEnabled bool = false
 @description('The tenant initial domain, e.g. contoso.onmicrosoft.com: what the runbooks pass to Connect-ExchangeOnline -Organization. Required with mailboxAutomationEnabled.')
 param mailboxTenantDomain string = ''
@@ -429,6 +429,10 @@ var commonEnv = [
   { name: 'TEAMS_BOT_TENANT_ID', value: teamsBotEnabled ? teamsBotTenantId : '' }
 ]
 
+// Every process that can create a mailbox change must say which executor is in use, or it refuses (app/mailbox_executor.py);
+// only the worker also gets the Automation settings, because only it calls Azure.
+var mailboxExecutorEnv = mailboxAutomationEnabled ? [{ name: 'MAILBOX_EXECUTOR', value: 'azure' }] : []
+
 var allowRules = [
   for (cidr, i) in webAllowedCidrs: {
     name: 'allow-${i}'
@@ -454,7 +458,7 @@ module web 'modules/container-app.bicep' = if (deployApps) {
       { name: 'APP_ROLE', value: 'web' }
       { name: 'AZURE_CLIENT_ID', value: identityWeb.properties.clientId }
       { name: 'SSO_REDIRECT_URI', value: '${webBaseUrl}/auth/callback' }
-    ])
+    ], mailboxExecutorEnv)
     ingress: {
       external: true
       targetPort: 8000
@@ -494,7 +498,7 @@ module publicApp 'modules/container-app.bicep' = if (deployApps && deployPublicA
     env: concat(commonEnv, publicSecretEnv, [
       { name: 'APP_ROLE', value: 'public' }
       { name: 'AZURE_CLIENT_ID', value: identityPublic.properties.clientId }
-    ])
+    ], mailboxExecutorEnv)
     ingress: {
       external: true
       targetPort: 8000

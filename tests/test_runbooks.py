@@ -59,7 +59,8 @@ def test_the_read_job_parameters_are_the_read_runbooks_parameters(kind):
     request = azure.ChangeRequest("7", kind, "owner@contoso.com", "target@contoso.com")
     job = azure.job_request(request, "read", ORG)
     text = (RUNBOOK_DIR / f"{job.runbook}.ps1").read_text(encoding="utf-8")
-    assert set(job.parameters) == set(param_names(text))
+    assert set(job.parameters) <= set(param_names(text))
+    assert ("KeepCopy" in job.parameters) == (kind == "forwarding")
 
 
 @pytest.mark.parametrize("path", build_runbooks.runbook_files(), ids=lambda p: p.stem)
@@ -390,3 +391,11 @@ def test_status_numbers_inside_other_text_are_not_taken_for_http_errors(built, t
         fail={"Set-Mailbox": "The remote server returned an error: (503) Server Unavailable."},
     )
     assert gate["error_category"] == "timeout"
+
+
+@needs_pwsh
+@pytest.mark.parametrize(("keep_copy_on_exchange", "asked", "present"), [(True, "true", True), (False, "true", False), (False, "false", True)])
+def test_read_of_forwarding_includes_the_copy_setting_when_asked(built, tmp_path, keep_copy_on_exchange, asked, present):
+    boxes = {OWNER: {"forwarding": TARGET, "keep_copy": keep_copy_on_exchange}}
+    result, _ = run(built, tmp_path, "Read-MailboxChange", {"Kind": "forwarding", "Mailbox": OWNER, "Target": TARGET, "KeepCopy": asked}, mailboxes=boxes, recipients=[TARGET])
+    assert result["found"]["present"] is present

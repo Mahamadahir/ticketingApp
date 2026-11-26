@@ -263,6 +263,14 @@ COLUMNS: dict[str, ColumnUse] = {
     "mspunmatchedmail.resolved_by": _use(STAFF, EMAIL),
     "mspunmatchedmail.subject": _use(TEXT, FREE_TEXT, "MSP mail", anon=SCRUB),
     "mspunmatchedmail.body": _use(TEXT, FREE_TEXT, "MSP mail", anon=SCRUB),
+    # scheduled mailbox changes (#307): the owner is the requester, the target is whoever it was shared with
+    "mailbox_change.owner_address": _use(SUBJECT, EMAIL, "scheduled mailbox changes on their mailbox", anon=REPLACE),
+    "mailbox_change.owner_object_id": _use(SUBJECT, USER_ID, "scheduled mailbox changes (found by this)", anon=NULL),
+    "mailbox_change.target_address": _use(SUBJECT, EMAIL, "scheduled mailbox changes made for them (forwarding, access)", anon=REPLACE),
+    "mailbox_change.target_object_id": _use(SUBJECT, USER_ID, "scheduled mailbox changes made for them (found by this)", anon=NULL),
+    "mailbox_change.created_by": _use(SUBJECT, EMAIL, "who asked for the change (usually the owner)", anon=SCRUB),
+    "mailbox_change.last_error": _use(TEXT, FREE_TEXT, "the raw Exchange message of a failed attempt; it can name the mailbox", anon=SCRUB),
+    "mailbox_change.last_found": _use(TEXT, FREE_TEXT, "what the read-back showed; it can name the mailbox", anon=SCRUB),
     # configuration that names people or things
     "neverfollowaddress.email": _use(OTHER, EMAIL, "shared mailboxes and lists, not people", anon=DELETE),
     "neverfollowaddress.added_by": _use(STAFF, EMAIL),

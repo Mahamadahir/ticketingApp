@@ -312,6 +312,16 @@ def record_notice(
     return message
 
 
+def record_system_note(session: Session, ticket: Ticket, body: str) -> Message:
+    """An internal note written by the system (no author): agents only, never shown to the requester or emailed. Used where the
+    app has something for the team that must not reach the requester, such as a raw Exchange error (app/mailbox_changes.py).
+    Does not commit."""
+    return _record(
+        session, ticket, sender="IT Support (automatic)", body=body,
+        direction=MessageDirection.INTERNAL, visibility=MessageVisibility.AGENTS_ONLY, channel=SYSTEM,
+    )
+
+
 def record_split_notice(session: Session, original: Ticket, parts: list[Ticket]) -> Optional[Message]:
     """The automatic "your request was split" notice to the requester of `original`, listing each new part's reference and
     subject, copying the followers like any email on the ticket. Nothing when the `split_email_enabled` setting is off.

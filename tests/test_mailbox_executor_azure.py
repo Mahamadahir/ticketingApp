@@ -5,21 +5,31 @@ answers like this, and that the worker's role is enough, are staging checks (doc
 """
 
 import json
-from types import SimpleNamespace
-
 import httpx
 import pytest
 
 from app import mailbox_executor_azure as azure
 from app.config import Settings
-from app.mailbox_executor_azure import AzureAutomationExecutor, Outcome
+from app.mailbox_executor import (
+    OUTCOME_MISMATCH,
+    OUTCOME_NO_ANSWER,
+    OUTCOME_PERMANENT,
+    OUTCOME_RETRYABLE,
+    OUTCOME_SUCCEEDED,
+    ExecutorResult,
+    MailboxExecutor,
+    make_executor,
+)
+from app.mailbox_executor_azure import AzureAutomationExecutor
+from app.models import MailboxChange
 
 ACCOUNT = "/subscriptions/11111111-2222-3333-4444-555555555555/resourceGroups/rg-ticketing-staging/providers/Microsoft.Automation/automationAccounts/aa-ticketing-staging-mailbox"
 ORG = "contoso.onmicrosoft.com"
 
 
 def change(kind="forwarding", keep_copy=True):
-    return SimpleNamespace(id=42, kind=kind, owner_address="jane@contoso.com", target_address="sam@contoso.com", keep_copy=keep_copy)
+    """A detached MailboxChange, as #307 hands one to an executor."""
+    return MailboxChange(id=42, kind=kind, owner_address="jane@contoso.com", target_address="sam@contoso.com", keep_copy=keep_copy)
 
 
 def job_body(status, **extra):
@@ -102,7 +112,7 @@ def executor(arm, timeout=60, clock=None):
         ("full_access", "remove", "Remove-FullAccess", {"Mailbox": "jane@contoso.com", "Trustee": "sam@contoso.com"}),
         ("send_as", "apply", "Grant-SendAs", {"Mailbox": "jane@contoso.com", "Trustee": "sam@contoso.com"}),
         ("send_as", "remove", "Remove-SendAs", {"Mailbox": "jane@contoso.com", "Trustee": "sam@contoso.com"}),
-        ("forwarding", "read", "Read-MailboxChange", {"Kind": "forwarding", "Mailbox": "jane@contoso.com", "Target": "sam@contoso.com"}),
+        ("forwarding", "read", "Read-MailboxChange", {"Kind": "forwarding", "Mailbox": "jane@contoso.com", "Target": "sam@contoso.com", "KeepCopy": "true"}),
         ("full_access", "read", "Read-MailboxChange", {"Kind": "full_access", "Mailbox": "jane@contoso.com", "Target": "sam@contoso.com"}),
         ("send_as", "read", "Read-MailboxChange", {"Kind": "send_as", "Mailbox": "jane@contoso.com", "Target": "sam@contoso.com"}),
     ],
@@ -111,7 +121,7 @@ def test_the_job_names_the_right_runbook_and_parameters(kind, action, runbook, p
     present = action != "remove"
     arm = FakeArm(output=runbook_output(present=present))
     result = getattr(executor(arm), action)(change(kind))
-    assert result.outcome is Outcome.SUCCEEDED
+    assert result.outcome == OUTCOME_SUCCEEDED
     (put,) = arm.puts
     body = json.loads(put.content)["properties"]
     assert body["runbook"] == {"name": runbook}
@@ -140,7 +150,7 @@ def test_a_runbook_outside_the_allow_list_is_never_started():
     ex = executor(arm)
     with pytest.raises(azure._AzureError) as caught:
         ex._start(azure.JobRequest("Get-Everything", {}))
-    assert caught.value.outcome is Outcome.PERMANENT
+    assert caught.value.outcome == OUTCOME_PERMANENT
     assert not arm.requests
 
 
@@ -158,69 +168,70 @@ def test_a_completed_job_maps_to_succeeded_with_what_was_found_and_the_job_id():
     arm = FakeArm(statuses=["New", "Running", "Completed"], output=runbook_output(forwarding_to="sam@contoso.com", keep_copy=True))
     clock = Clock()
     result = executor(arm, clock=clock).apply(change())
-    assert result.outcome is Outcome.SUCCEEDED
-    assert result.found == {"present": True, "forwarding_to": "sam@contoso.com", "keep_copy": True}
+    assert result.outcome == OUTCOME_SUCCEEDED
+    assert result.found is True
+    assert json.loads(result.found_detail) == {"present": True, "forwarding_to": "sam@contoso.com", "keep_copy": True}
     assert result.job_id == "job-guid-1"
-    assert result.error == ""
+    assert result.error is None
     assert clock.sleeps == [5, 5]  # polled twice more after the first look
 
 
 @pytest.mark.parametrize(
     ("outcome", "category", "expected"),
     [
-        ("retryable", "throttled", Outcome.RETRYABLE),
-        ("retryable", "timeout", Outcome.RETRYABLE),
-        ("permanent", "access_denied", Outcome.PERMANENT),
-        ("permanent", "not_found", Outcome.PERMANENT),
-        ("mismatch", "mismatch", Outcome.MISMATCH),
+        ("retryable", "throttled", OUTCOME_RETRYABLE),
+        ("retryable", "timeout", OUTCOME_RETRYABLE),
+        ("permanent", "access_denied", OUTCOME_PERMANENT),
+        ("permanent", "not_found", OUTCOME_PERMANENT),
+        ("mismatch", "mismatch", OUTCOME_MISMATCH),
     ],
 )
 def test_each_runbook_outcome_maps_with_its_error_text(outcome, category, expected):
     arm = FakeArm(output=runbook_output(outcome=outcome, present=False, category=category, error="raw Exchange text"))
     result = executor(arm).apply(change())
-    assert result.outcome is expected
+    assert result.outcome == expected
     assert result.error == f"{category}: raw Exchange text"
-    assert result.found == {"present": False}
+    assert result.found is False
 
 
 def test_success_that_does_not_show_the_change_is_a_mismatch():
     result = executor(FakeArm(output=runbook_output(present=False))).apply(change())
-    assert result.outcome is Outcome.MISMATCH
+    assert result.outcome == OUTCOME_MISMATCH
 
 
 def test_a_remove_that_still_shows_the_change_is_a_mismatch():
     result = executor(FakeArm(output=runbook_output(present=True))).remove(change())
-    assert result.outcome is Outcome.MISMATCH
+    assert result.outcome == OUTCOME_MISMATCH
 
 
 def test_read_passes_what_was_found_through_whether_or_not_it_is_there():
     present = executor(FakeArm(output=runbook_output(present=True))).read(change())
     absent = executor(FakeArm(output=runbook_output(present=False))).read(change())
-    assert (present.outcome, present.found["present"]) == (Outcome.SUCCEEDED, True)
-    assert (absent.outcome, absent.found["present"]) == (Outcome.SUCCEEDED, False)
+    assert (present.outcome, present.found) == (OUTCOME_SUCCEEDED, True)
+    assert (absent.outcome, absent.found) == (OUTCOME_SUCCEEDED, False)
 
 
 def test_the_result_is_the_last_json_line_even_with_other_output_around_it():
     noisy = 'WARNING: {"outcome": "permanent"} was a lie\n' + runbook_output() + "done\n"
-    assert executor(FakeArm(output=noisy)).apply(change()).outcome is Outcome.SUCCEEDED
+    assert executor(FakeArm(output=noisy)).apply(change()).outcome == OUTCOME_SUCCEEDED
 
 
 @pytest.mark.parametrize("output", ["", "nothing useful\n", "{not json}\n", '{"found": {}}\n'])
 def test_a_completed_job_without_a_readable_result_is_no_answer(output):
     result = executor(FakeArm(output=output)).apply(change())
-    assert result.outcome is Outcome.NO_ANSWER
+    assert result.outcome == OUTCOME_NO_ANSWER
     assert result.job_id == "job-guid-1"
 
 
 def test_an_unknown_outcome_word_is_permanent():
     result = executor(FakeArm(output=runbook_output(outcome="fine"))).apply(change())
-    assert result.outcome is Outcome.PERMANENT
+    assert result.outcome == OUTCOME_PERMANENT
 
 
 @pytest.mark.parametrize("status", ["Failed", "Stopped", "Suspended"])
 def test_a_job_that_ends_badly_is_retryable_with_the_reason(status):
     result = executor(FakeArm(statuses=["Running", status])).apply(change())
-    assert result.outcome is Outcome.RETRYABLE
+    assert result.outcome == OUTCOME_RETRYABLE
     assert status in result.error
     assert result.job_id == "job-guid-1"
 
@@ -229,7 +240,7 @@ def test_a_job_with_no_answer_in_time_is_no_answer_and_stops_asking():
     arm = FakeArm(statuses=["Running"])
     clock = Clock()
     result = executor(arm, timeout=30, clock=clock).apply(change())
-    assert result.outcome is Outcome.NO_ANSWER
+    assert result.outcome == OUTCOME_NO_ANSWER
     assert "30 seconds" in result.error
     assert result.job_id == "job-guid-1"
     assert clock.now <= 35
@@ -254,20 +265,20 @@ def test_a_blip_while_polling_is_asked_again():
         automation_account_id=ACCOUNT, organization=ORG, timeout_seconds=60, poll_seconds=1,
         token_provider=lambda: "token-1", http=httpx.Client(transport=httpx.MockTransport(flaky)), sleep=lambda s: None,
     )
-    assert ex.apply(change()).outcome is Outcome.SUCCEEDED
+    assert ex.apply(change()).outcome == OUTCOME_SUCCEEDED
     assert calls["n"] == 3
 
 
 def test_a_poll_the_service_refuses_is_no_answer():
     result = executor(FakeArm(poll_status=403)).apply(change())
-    assert result.outcome is Outcome.NO_ANSWER
+    assert result.outcome == OUTCOME_NO_ANSWER
     assert "403" in result.error
 
 
 def test_output_that_cannot_be_read_is_no_answer_after_a_few_tries():
     arm = FakeArm(output_status=500)
     result = executor(arm).apply(change())
-    assert result.outcome is Outcome.NO_ANSWER
+    assert result.outcome == OUTCOME_NO_ANSWER
     assert len([r for r in arm.requests if r.url.path.endswith("/output")]) == 3
 
 
@@ -276,12 +287,12 @@ def test_output_that_cannot_be_read_is_no_answer_after_a_few_tries():
 
 @pytest.mark.parametrize(
     ("status", "expected"),
-    [(429, Outcome.RETRYABLE), (500, Outcome.RETRYABLE), (503, Outcome.RETRYABLE), (400, Outcome.PERMANENT), (404, Outcome.PERMANENT)],
+    [(429, OUTCOME_RETRYABLE), (500, OUTCOME_RETRYABLE), (503, OUTCOME_RETRYABLE), (400, OUTCOME_PERMANENT), (404, OUTCOME_PERMANENT)],
 )
 def test_a_job_that_cannot_be_started_is_classified_by_the_status(status, expected):
     arm = FakeArm(put=httpx.Response(status, text="no"))
     result = executor(arm).apply(change())
-    assert result.outcome is expected
+    assert result.outcome == expected
     assert str(status) in result.error
     assert len(arm.requests) == 1  # nothing was polled
 
@@ -289,7 +300,7 @@ def test_a_job_that_cannot_be_started_is_classified_by_the_status(status, expect
 @pytest.mark.parametrize("status", [401, 403])
 def test_a_refused_start_says_which_role_is_missing(status):
     result = executor(FakeArm(put=httpx.Response(status, text="AuthorizationFailed"))).apply(change())
-    assert result.outcome is Outcome.PERMANENT
+    assert result.outcome == OUTCOME_PERMANENT
     assert "Automation Job Operator" in result.error
 
 
@@ -302,7 +313,7 @@ def test_azure_unreachable_when_starting_is_retryable():
         token_provider=lambda: "t", http=httpx.Client(transport=httpx.MockTransport(down)), sleep=lambda s: None,
     )
     result = ex.apply(change())
-    assert result.outcome is Outcome.RETRYABLE
+    assert result.outcome == OUTCOME_RETRYABLE
     assert "Could not reach Azure" in result.error
 
 
@@ -316,7 +327,7 @@ def test_a_token_that_cannot_be_got_is_retryable_and_calls_nothing():
         http=httpx.Client(transport=httpx.MockTransport(arm)), sleep=lambda s: None,
     )
     result = ex.apply(change())
-    assert result.outcome is Outcome.RETRYABLE
+    assert result.outcome == OUTCOME_RETRYABLE
     assert "Azure token" in result.error
     assert not arm.requests
 
@@ -379,14 +390,14 @@ def test_a_poll_answered_with_something_that_is_not_a_job_is_no_answer_not_an_ex
         token_provider=lambda: "t", http=httpx.Client(transport=httpx.MockTransport(odd)), sleep=lambda s: None,
     )
     result = ex.apply(change())
-    assert result.outcome is Outcome.NO_ANSWER
+    assert result.outcome == OUTCOME_NO_ANSWER
     assert result.job_id == "job-guid-1"
 
 
 def test_a_created_job_whose_reply_cannot_be_read_still_gets_polled():
     arm = FakeArm(put=httpx.Response(201, text="<html>"))
     result = executor(arm).apply(change())
-    assert result.outcome is Outcome.SUCCEEDED
+    assert result.outcome == OUTCOME_SUCCEEDED
     assert result.job_id == arm.puts[0].url.path.rsplit("/", 1)[1]  # no job id from the service: the job's own name
 
 
@@ -402,3 +413,33 @@ def test_a_poll_interval_below_one_second_is_refused(poll):
         AzureAutomationExecutor(automation_account_id=ACCOUNT, organization=ORG, timeout_seconds=10, poll_seconds=poll)
     config = settings(mailbox_automation_resource_id=ACCOUNT, mailbox_tenant_domain=ORG, mailbox_automation_poll_seconds=int(poll))
     assert any("POLL_SECONDS" in e for e in azure.azure_executor_config_errors(config))
+
+
+# ---- plugged into #307 ------------------------------------------------------------------------------------------------------
+
+
+def test_it_is_a_mailbox_executor_and_returns_the_shared_result_type():
+    ex = executor(FakeArm())
+    assert isinstance(ex, MailboxExecutor)
+    assert isinstance(ex.apply(change()), ExecutorResult)
+
+
+def test_make_executor_azure_builds_it_from_settings_and_refuses_when_unconfigured(monkeypatch):
+    from app import mailbox_executor
+    from app.mailbox_executor import ExecutorNotAvailable
+
+    monkeypatch.setattr(mailbox_executor.settings, "mailbox_automation_resource_id", "")
+    with pytest.raises(ExecutorNotAvailable):
+        make_executor("azure")
+    monkeypatch.setattr(mailbox_executor.settings, "mailbox_automation_resource_id", ACCOUNT)
+    monkeypatch.setattr(mailbox_executor.settings, "mailbox_tenant_domain", ORG)
+    assert isinstance(make_executor("azure"), AzureAutomationExecutor)
+
+
+def test_the_worker_start_up_check_names_the_missing_automation_settings():
+    from app.config import unsafe_setting_errors
+
+    errors = unsafe_setting_errors(settings(env="dev", mailbox_executor="azure", app_role="worker"))
+    assert any("MAILBOX_AUTOMATION_RESOURCE_ID" in e for e in errors)
+    web = unsafe_setting_errors(settings(env="dev", mailbox_executor="azure", app_role="web"))
+    assert not any("MAILBOX_AUTOMATION" in e for e in web)  # only the worker calls Azure

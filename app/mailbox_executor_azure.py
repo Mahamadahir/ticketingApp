@@ -13,54 +13,37 @@ account scope), so this allow-list and the account holding nothing else are the 
 Azure-only, unproved until staging: the ARM calls (job create, status, output), the role being enough, and the
 runbooks themselves. The tests use recorded ARM responses (tests/test_mailbox_executor_azure.py).
 
-STAND-IN: `Outcome`, `ExecutorResult` and `request_from_change` below mirror the executor interface of issue #307
-(app/mailbox_executor.py: apply/remove/read, each returning outcome succeeded|retryable|permanent|mismatch|no_answer
-with what was found, the error text and the job id). #307 was not merged when this was written. When it lands,
-delete the two stand-in types, import them from app.mailbox_executor, and point `request_from_change` at the real
-MailboxChange fields (the attribute names it reads are listed in its docstring).
+Implements `MailboxExecutor` from app/mailbox_executor.py (#307) and is what `make_executor('azure')` builds.
 """
 
-import enum
 import json
 import logging
 import re
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Callable
 
 import httpx
 
 from .config import Settings
+from .mailbox_executor import (
+    OUTCOME_MISMATCH,
+    OUTCOME_NO_ANSWER,
+    OUTCOME_PERMANENT,
+    OUTCOME_RETRYABLE,
+    OUTCOME_SUCCEEDED,
+    OUTCOMES,
+    ExecutorResult,
+    MailboxExecutor,
+)
+from .models import MailboxChange
 
 log = logging.getLogger("app.mailbox_executor_azure")
 
 ARM = "https://management.azure.com"
 ARM_SCOPE = "https://management.azure.com/.default"
 JOBS_API_VERSION = "2023-11-01"
-
-# ---- STAND-IN for #307's result type (see the module docstring) -----------------------------------------------------
-
-
-class Outcome(str, enum.Enum):
-    SUCCEEDED = "succeeded"
-    RETRYABLE = "retryable"
-    PERMANENT = "permanent"
-    # Exchange accepted the change but the read-back does not show it.
-    MISMATCH = "mismatch"
-    # No answer within the timeout, or an answer that could not be read. The caller reads the mailbox before deciding.
-    NO_ANSWER = "no_answer"
-
-
-@dataclass(frozen=True)
-class ExecutorResult:
-    outcome: Outcome
-    # What Exchange holds after the call (the runbook's read-back): {"present": bool, ...}.
-    found: dict[str, Any] = field(default_factory=dict)
-    # Internal only: the raw Exchange message is never shown to a requester.
-    error: str = ""
-    job_id: str = ""
-
 
 # ---- What can be asked of Exchange ----------------------------------------------------------------------------------
 
@@ -103,18 +86,14 @@ class ChangeRequest:
     keep_copy: bool = True
 
 
-def request_from_change(change: Any) -> ChangeRequest:
-    """STAND-IN adapter from a MailboxChange row (#307) to the fields a job needs.
-
-    Reads these attributes of `change`: `id`, `kind`, `owner_address`, `target_address`, `keep_copy`. Adjust the names
-    here (and nowhere else) when #307's model lands.
-    """
+def request_from_change(change: MailboxChange) -> ChangeRequest:
+    """The plain fields a job needs, read from a (detached) MailboxChange."""
     return ChangeRequest(
         change_id=str(change.id),
         kind=str(change.kind),
         owner=str(change.owner_address),
         target=str(change.target_address),
-        keep_copy=bool(getattr(change, "keep_copy", True)),
+        keep_copy=bool(change.keep_copy),
     )
 
 
@@ -132,10 +111,10 @@ def job_request(request: ChangeRequest, action: str, organization: str) -> JobRe
     if request.kind not in KINDS:
         raise ValueError(f"Unknown kind {request.kind!r}")
     if action == "read":
-        return JobRequest(
-            READ_RUNBOOK,
-            {"Organization": organization, "Kind": request.kind, "Mailbox": request.owner, "Target": request.target},
-        )
+        parameters = {"Organization": organization, "Kind": request.kind, "Mailbox": request.owner, "Target": request.target}
+        if request.kind == "forwarding":  # "in place" for forwarding includes the keep-a-copy setting
+            parameters["KeepCopy"] = "true" if request.keep_copy else "false"
+        return JobRequest(READ_RUNBOOK, parameters)
     runbook = RUNBOOKS[(request.kind, action)]
     if request.kind == "forwarding":
         parameters = {"Organization": organization, "Mailbox": request.owner, "Target": request.target}
@@ -151,7 +130,7 @@ def job_request(request: ChangeRequest, action: str, organization: str) -> JobRe
 class _AzureError(Exception):
     """A call to Azure Resource Manager that did not give what we need; carries the result to return."""
 
-    def __init__(self, outcome: Outcome, message: str, job_id: str = ""):
+    def __init__(self, outcome: str, message: str, job_id: str = ""):
         super().__init__(message)
         self.outcome = outcome
         self.message = message
@@ -171,7 +150,7 @@ def _arm_token_from_managed_identity() -> Callable[[], str]:
     return token
 
 
-class AzureAutomationExecutor:
+class AzureAutomationExecutor(MailboxExecutor):
     """apply, remove and read a mailbox change by running a runbook in an Azure Automation account."""
 
     def __init__(
@@ -204,13 +183,13 @@ class AzureAutomationExecutor:
         self._clock = clock
 
     # The interface of #307 (apply and remove read back inside the runbook before it answers).
-    def apply(self, change: Any) -> ExecutorResult:
+    def apply(self, change: MailboxChange) -> ExecutorResult:
         return self._run(request_from_change(change), "apply")
 
-    def remove(self, change: Any) -> ExecutorResult:
+    def remove(self, change: MailboxChange) -> ExecutorResult:
         return self._run(request_from_change(change), "remove")
 
-    def read(self, change: Any) -> ExecutorResult:
+    def read(self, change: MailboxChange) -> ExecutorResult:
         return self._run(request_from_change(change), "read")
 
     # -- one call = one job --
@@ -225,13 +204,13 @@ class AzureAutomationExecutor:
         except _AzureError as exc:
             log.warning(
                 "mailbox executor change=%s action=%s runbook=%s job=%s outcome=%s reason=%s",
-                request.change_id, action, job.runbook, exc.job_id or job_name, exc.outcome.value, exc.message,
+                request.change_id, action, job.runbook, exc.job_id or job_name, exc.outcome, exc.message,
             )
-            return ExecutorResult(exc.outcome, error=exc.message, job_id=exc.job_id or job_name)
+            return ExecutorResult(exc.outcome, error=exc.message, job_id=exc.job_id or job_name or None)
         result = self._map_output(output, action, job_id)
         log.info(
             "mailbox executor change=%s action=%s runbook=%s job=%s outcome=%s",
-            request.change_id, action, job.runbook, job_id, result.outcome.value,
+            request.change_id, action, job.runbook, job_id, result.outcome,
         )
         return result
 
@@ -247,9 +226,9 @@ class AzureAutomationExecutor:
         try:
             return self._http.request(method, url, headers=self._headers(), **kwargs)
         except httpx.HTTPError as exc:
-            raise _AzureError(Outcome.RETRYABLE, f"Could not reach Azure Resource Manager: {type(exc).__name__}: {exc}") from exc
+            raise _AzureError(OUTCOME_RETRYABLE, f"Could not reach Azure Resource Manager: {type(exc).__name__}: {exc}") from exc
         except Exception as exc:  # the identity could not get a token: a setup problem, retried, then a final failure
-            raise _AzureError(Outcome.RETRYABLE, f"Could not get an Azure token: {type(exc).__name__}: {exc}") from exc
+            raise _AzureError(OUTCOME_RETRYABLE, f"Could not get an Azure token: {type(exc).__name__}: {exc}") from exc
 
     @staticmethod
     def _body_text(response: httpx.Response) -> str:
@@ -264,12 +243,12 @@ class AzureAutomationExecutor:
         except (ValueError, AttributeError):
             properties = None
         if not isinstance(properties, dict):
-            raise _AzureError(Outcome.NO_ANSWER, f"Azure answered with something that is not a job: {self._body_text(response)}", job_id)
+            raise _AzureError(OUTCOME_NO_ANSWER, f"Azure answered with something that is not a job: {self._body_text(response)}", job_id)
         return properties
 
     def _start(self, job: JobRequest) -> tuple[str, str]:
         if job.runbook not in ALLOWED_RUNBOOKS:  # defence in depth: job_request only ever builds these
-            raise _AzureError(Outcome.PERMANENT, f"Runbook {job.runbook!r} is not one the app may start")
+            raise _AzureError(OUTCOME_PERMANENT, f"Runbook {job.runbook!r} is not one the app may start")
         name = str(uuid.uuid4())
         body = {"properties": {"runbook": {"name": job.runbook}, "parameters": job.parameters, "runOn": ""}}
         response = self._send("PUT", self._url(name), json=body)
@@ -282,13 +261,13 @@ class AzureAutomationExecutor:
             return name, job_id
         code, text = response.status_code, self._body_text(response)
         if code == 429 or code >= 500:
-            raise _AzureError(Outcome.RETRYABLE, f"Azure refused to start the job for now (HTTP {code}): {text}")
+            raise _AzureError(OUTCOME_RETRYABLE, f"Azure refused to start the job for now (HTTP {code}): {text}")
         if code in (401, 403):
             raise _AzureError(
-                Outcome.PERMANENT,
+                OUTCOME_PERMANENT,
                 f"The worker's identity may not start jobs (HTTP {code}); it needs Automation Job Operator on the account: {text}",
             )
-        raise _AzureError(Outcome.PERMANENT, f"Azure rejected the job (HTTP {code}); is the runbook published? {text}")
+        raise _AzureError(OUTCOME_PERMANENT, f"Azure rejected the job (HTTP {code}); is the runbook published? {text}")
 
     def _wait(self, job_name: str, job_id: str) -> None:
         deadline = self._clock() + self.timeout_seconds
@@ -306,15 +285,15 @@ class AzureAutomationExecutor:
                         return
                     if status in _ENDED_BADLY:
                         detail = properties.get("exception") or properties.get("statusDetails") or ""
-                        raise _AzureError(Outcome.RETRYABLE, f"The job ended as {status}. {detail}".strip(), job_id)
+                        raise _AzureError(OUTCOME_RETRYABLE, f"The job ended as {status}. {detail}".strip(), job_id)
                 elif code not in (404, 429) and code < 500:
                     # 404 is asked again: a job can be briefly unreadable just after it is created.
                     raise _AzureError(
-                        Outcome.NO_ANSWER, f"Could not read the job (HTTP {code}): {self._body_text(response)}", job_id
+                        OUTCOME_NO_ANSWER, f"Could not read the job (HTTP {code}): {self._body_text(response)}", job_id
                     )
             if self._clock() >= deadline:
                 raise _AzureError(
-                    Outcome.NO_ANSWER, f"No answer from the job within {self.timeout_seconds:g} seconds", job_id
+                    OUTCOME_NO_ANSWER, f"No answer from the job within {self.timeout_seconds:g} seconds", job_id
                 )
             self._sleep(self.poll_seconds)
 
@@ -332,7 +311,7 @@ class AzureAutomationExecutor:
                 if response.status_code not in (429,) and response.status_code < 500:
                     break
             self._sleep(self.poll_seconds)
-        raise _AzureError(Outcome.NO_ANSWER, f"The job completed but its output could not be read ({last})", job_id)
+        raise _AzureError(OUTCOME_NO_ANSWER, f"The job completed but its output could not be read ({last})", job_id)
 
     # -- the runbook's one JSON object -> ExecutorResult --
 
@@ -353,25 +332,24 @@ class AzureAutomationExecutor:
     def _map_output(self, output: str, action: str, job_id: str) -> ExecutorResult:
         data = self._parse_output(output)
         if data is None:
-            return ExecutorResult(Outcome.NO_ANSWER, error="The runbook finished without a result line", job_id=job_id)
+            return ExecutorResult(OUTCOME_NO_ANSWER, error="The runbook finished without a result line", job_id=job_id)
         raw = data.get("outcome")
-        found = data.get("found") if isinstance(data.get("found"), dict) else {}
+        found_data = data.get("found") if isinstance(data.get("found"), dict) else {}
+        present = found_data.get("present")
+        found = present if isinstance(present, bool) else None
+        detail = json.dumps(found_data, sort_keys=True) if found_data else None
         category, text = str(data.get("error_category") or ""), str(data.get("error") or "")
-        error = f"{category}: {text}" if category and text else (text or category)
-        try:
-            outcome = Outcome(raw)
-        except ValueError:
-            return ExecutorResult(Outcome.PERMANENT, found, f"The runbook returned an unknown outcome {raw!r}", job_id)
-        if outcome is Outcome.NO_ANSWER:  # a runbook never says this; treat it as unreadable
-            return ExecutorResult(Outcome.NO_ANSWER, found, error or "The runbook gave no answer", job_id)
+        error = (f"{category}: {text}" if category and text else (text or category)) or None
+        if raw not in OUTCOMES:
+            return ExecutorResult(OUTCOME_PERMANENT, found, detail, f"The runbook returned an unknown outcome {raw!r}", job_id)
+        if raw == OUTCOME_NO_ANSWER:  # a runbook never says this; treat it as unreadable
+            return ExecutorResult(OUTCOME_NO_ANSWER, found, detail, error or "The runbook gave no answer", job_id)
         # A success must also say what was asked: present after apply, gone after remove.
-        if outcome is Outcome.SUCCEEDED and action in ("apply", "remove"):
-            expected = action == "apply"
-            if found.get("present") is not expected:
-                return ExecutorResult(
-                    Outcome.MISMATCH, found, "The runbook reported success but its read-back does not show the change", job_id
-                )
-        return ExecutorResult(outcome, found, error, job_id)
+        if raw == OUTCOME_SUCCEEDED and action in ("apply", "remove") and found is not (action == "apply"):
+            return ExecutorResult(
+                OUTCOME_MISMATCH, found, detail, "The runbook reported success but its read-back does not show the change", job_id
+            )
+        return ExecutorResult(raw, found, detail, error, job_id)
 
 
 # ---- Configuration --------------------------------------------------------------------------------------------------
