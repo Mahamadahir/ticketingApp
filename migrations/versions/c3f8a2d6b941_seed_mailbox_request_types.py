@@ -38,6 +38,15 @@ SEEDS = (
 
 def upgrade() -> None:
     connection = op.get_bind()
+    # Rows that were loaded with explicit ids (a restore, a test) can leave the id sequence behind them: move it past them first,
+    # never backwards, so the inserts below cannot collide.
+    connection.execute(
+        sa.text(
+            "SELECT setval(pg_get_serial_sequence('requesttype', 'id'), "
+            "GREATEST((SELECT COALESCE(MAX(id), 1) FROM requesttype), "
+            "(SELECT last_value FROM requesttype_id_seq)))"
+        )
+    )
     for name, action, icon, description in SEEDS:
         connection.execute(
             sa.text(
