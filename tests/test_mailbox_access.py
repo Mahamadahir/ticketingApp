@@ -486,3 +486,15 @@ def test_a_later_start_sets_the_sla_clock_once_for_both_changes(client, db_sessi
     ticket = db_session.exec(select(Ticket)).one()
     clock = db_session.exec(select(TicketEvent).where(TicketEvent.ticket_id == ticket.id, TicketEvent.event_type == "sla_start_changed")).all()
     assert len(clock) == 1 and ticket.sla_starts_at is not None and len(changes(db_session)) == 2
+
+
+def test_a_permission_whose_removal_failed_still_counts_as_live_for_the_overlap(client, db_session, world, friend, fake_exchange, dev_mail):
+    ticket, full, send = both(client, db_session, world, friend)
+    run(db_session, full.starts_at + timedelta(minutes=1))
+    from app.mailbox_executor import OUTCOME_PERMANENT as PERM
+
+    fake_exchange.script("remove", PERM)
+    run(db_session, full.ends_at + timedelta(minutes=1))
+    assert reload(db_session, full).state == "failed" and reload(db_session, full).applied_at is not None
+    again = post(client, world, send_as=None, end_date=later(24 * 40)[0])
+    assert again.status_code == 400 and "already has Full access" in again.text

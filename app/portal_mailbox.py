@@ -17,6 +17,7 @@ from typing import Optional
 
 import logging
 
+from sqlalchemy import and_, or_
 from sqlmodel import Session, select
 
 from app import identity
@@ -187,8 +188,12 @@ def _overlapping(session: Session, user: User, times: Times, kind: str, target_a
     switch the second off early. For Full access and Send As (`target_address` given) it is the same permission for the same
     other person: the first one's removal would take the second one's away early. (It also stops a double click making two.)"""
     live = (MAILBOX_SCHEDULED, MAILBOX_APPLYING, MAILBOX_ACTIVE, MAILBOX_REMOVING)
+    state = MailboxChange.state.in_(live)
+    if target_address is not None:
+        # A permission whose removal failed (made, so `applied_at` is set) may still be in Exchange: it counts as live (#310 review).
+        state = or_(state, and_(MailboxChange.state == MAILBOX_FAILED, MailboxChange.applied_at.is_not(None)))
     query = select(MailboxChange.id).where(
-        MailboxChange.owner_address == user.email.lower(), MailboxChange.kind == kind, MailboxChange.state.in_(live),
+        MailboxChange.owner_address == user.email.lower(), MailboxChange.kind == kind, state,
         MailboxChange.starts_at < times.ends_at, MailboxChange.ends_at > times.starts_at,
     )
     if target_address is not None:
