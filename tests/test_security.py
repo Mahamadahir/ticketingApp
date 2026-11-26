@@ -1,4 +1,5 @@
 import pytest
+from pydantic import ValidationError
 
 from app import check_settings
 from app.config import Settings, settings, unsafe_setting_errors
@@ -97,6 +98,6 @@ def test_bcrypt_rounds_below_12_are_refused_outside_dev_and_out_of_range_everywh
     assert any("BCRYPT_ROUNDS" in e for e in unsafe_setting_errors(Settings(env="staging", bcrypt_rounds=11, **base)))
     assert not any("BCRYPT_ROUNDS" in e for e in unsafe_setting_errors(Settings(env="production", bcrypt_rounds=12, **base)))
     assert not any("BCRYPT_ROUNDS" in e for e in unsafe_setting_errors(Settings(env="dev", bcrypt_rounds=4)))
-    for rounds in (3, 17):
-        assert any("BCRYPT_ROUNDS" in e for e in unsafe_setting_errors(Settings(env="dev", bcrypt_rounds=rounds)))
-        assert any("BCRYPT_ROUNDS" in e for e in unsafe_setting_errors(Settings(env="production", bcrypt_rounds=rounds, **base)))
+    for rounds in (3, 17):  # refused when the settings load, before app/auth.py hashes anything at import
+        with pytest.raises(ValidationError):
+            Settings(env="dev", bcrypt_rounds=rounds)
