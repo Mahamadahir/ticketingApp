@@ -135,7 +135,7 @@ def test_the_status_line_counts_jobs_correctly():
 def test_each_result_key_renders_its_sentence_with_the_job_name(client, monkeypatch):
     for key, sentence in RUN_NOW_SENTENCES.items():
         page = page_for(client, monkeypatch, query=f"?done={key}&job=count")
-        assert 'role="status">' + sentence.format(job="count") in page
+        assert 'role="status">' + sentence.format(job="count", within="within 1 minute") in page
 
 
 def test_an_unknown_key_an_unknown_job_and_free_text_render_nothing(client, monkeypatch):
@@ -185,3 +185,24 @@ def test_the_outage_page_shows_sentences_from_keys_and_ignores_free_text(client)
         shown = client.get("/admin/outage" + query).text
         assert "notice-bar" not in shown and "evil.example" not in shown and "<b>x</b>" not in shown
     assert "notice-bar" not in client.get("/admin/outage?sessions=5").text
+
+
+def test_a_missing_column_is_not_reported_as_a_missing_table():
+    text = 'ProgrammingError: (psycopg2.errors.UndefinedColumn) column "foo" of relation "bankholidaycache" does not exist\nLINE 1: INSERT'
+    assert summarise_error(text) == "Column foo does not exist"
+
+
+def test_a_mangled_count_on_the_outage_page_still_shows_the_page(client):
+    login_as(client, "admin@example.com")
+    response = client.get("/admin/outage?done=off&sessions=x&passwords=-4")
+    assert response.status_code == 200 and "0 emergency session(s) ended, 0 emergency password(s) cleared." in response.text
+
+
+def test_every_outage_refusal_has_its_own_key():
+    from app.job_errors import outage_refusal_key
+    from app.outage import OutageError
+
+    assert outage_refusal_key(OutageError("Only a break-glass account can switch outage mode on.")) == "not-break-glass"
+    assert outage_refusal_key(OutageError("Outage mode is already on.")) == "already-on"
+    assert outage_refusal_key(OutageError("Outage mode is already off.")) == "already-off"
+    assert outage_refusal_key(OutageError("something else")) == "refused"

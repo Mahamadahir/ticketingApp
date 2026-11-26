@@ -1,4 +1,5 @@
-"""How the Scheduled jobs page shows a job's stored error and a Run now result (#323).
+"""How the Scheduled jobs page shows a job's stored error and a Run now result (#323), and the result sentences of the
+Outage mode page (a result is a key in the URL, never text).
 
 `last_error` holds the whole exception text (up to 500 characters), which for a database error includes the SQL.
 The page shows `summarise_error` in the row and the full text only inside a details element. A Run now result is a
@@ -10,12 +11,13 @@ from datetime import datetime
 from typing import Optional
 
 from app.models import ScheduledJob
+from app.scheduled_jobs import within_a_tick
 
 SUMMARY_LENGTH = 80
 
 _CLASS = re.compile(r"^([A-Za-z_][\w.]*(?:Error|Exception|Warning|Timeout|Exit))\b:?\s*")
 _DRIVER_PREFIX = re.compile(r"^\((?:[\w.]+)\)\s*")
-_MISSING = re.compile(r'(relation|column|table) "([^"]+)" does not exist')
+_MISSING = re.compile(r'(column) "([^"]+)" of relation "[^"]+" does not exist|(relation|column|table) "([^"]+)" does not exist')
 _TAIL = re.compile(r"\s*\[(?:SQL|parameters):.*$|\s*\(Background on this error.*$", re.DOTALL)
 
 
@@ -31,8 +33,8 @@ def summarise_error(text: Optional[str]) -> str:
     first = _DRIVER_PREFIX.sub("", lines[0] if lines else "").strip()
     missing = _MISSING.search(first)
     if missing:
-        kind = "Table" if missing.group(1) in ("relation", "table") else "Column"
-        return f"{kind} {missing.group(2)} does not exist"
+        kind, name = (missing.group(1), missing.group(2)) if missing.group(1) else (missing.group(3), missing.group(4))
+        return f"{'Table' if kind in ('relation', 'table') else 'Column'} {name} does not exist"
     summary = f"{name}: {first}" if name and first else (name or first)
     if len(summary) > SUMMARY_LENGTH:
         summary = summary[: SUMMARY_LENGTH - 1].rstrip() + "…"
@@ -41,8 +43,8 @@ def summarise_error(text: Optional[str]) -> str:
 
 # The Run now result: the key goes in the redirect, this fixed list gives the sentence. {job} is a registered job's name.
 RUN_NOW_SENTENCES = {
-    "queued": "Run requested. The worker will start {job} within 1 minute.",
-    "due": "{job} is already due; the worker will run it within 1 minute.",
+    "queued": "Run requested. The worker will start {job} {within}.",
+    "due": "{job} is already due; the worker will run it {within}.",
     "running": "{job} is already running.",
     "missing": "The worker has not created {job} yet; it runs at its first tick.",
 }
@@ -64,7 +66,7 @@ def run_now_sentence(done: str, job: str, registered: set[str]) -> str:
     template = RUN_NOW_SENTENCES.get(done)
     if template is None or job not in registered:
         return ""
-    return template.format(job=job)
+    return template.format(job=job, within=within_a_tick())
 
 
 # Outage mode results: key -> sentence. The off result also carries two counts, which the page reads as integers.
@@ -81,7 +83,6 @@ def outage_sentence(done: str, sessions: int = 0, passwords: int = 0) -> str:
     if done == "off":
         return f"Outage mode is off. {sessions} emergency session(s) ended, {passwords} emergency password(s) cleared."
     return OUTAGE_SENTENCES.get(done, "")
-
 
 
 def outage_refusal_key(refusal: Exception) -> str:

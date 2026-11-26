@@ -1782,11 +1782,12 @@
         "app.routers.admin"
       ],
       "imports": [
-        "app.models"
+        "app.models",
+        "app.scheduled_jobs"
       ],
       "module": "app.job_errors",
       "routes": [],
-      "summary": "How the Scheduled jobs page shows a job's stored error and a Run now result (#323).",
+      "summary": "How the Scheduled jobs page shows a job's stored error and a Run now result (#323), and the result sentences of the",
       "tables": [],
       "tests": [
         "tests/test_scheduled_jobs_page.py"
@@ -3262,6 +3263,7 @@
         "tests/test_admin_frame.py",
         "tests/test_admin_system_log_pages.py",
         "tests/test_outage_mode.py",
+        "tests/test_scheduled_jobs_page.py",
         "tests/test_signin_pages.py"
       ]
     },
@@ -5879,6 +5881,7 @@
       ],
       "imported_by": [
         "app.admin_home",
+        "app.job_errors",
         "app.jobs",
         "app.routers.admin",
         "app.worker"

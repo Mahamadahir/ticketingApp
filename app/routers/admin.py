@@ -2487,9 +2487,14 @@ def run_job_now(name: str, user: User = Depends(require_super_admin), session: S
     return RedirectResponse("/admin/scheduled-jobs?" + urlencode({"done": key, "job": job.name}), status_code=303)
 
 
+def _count(text: str) -> int:
+    """A display count from the URL: a non-negative integer, else 0 (a mangled link still shows the page)."""
+    return int(text) if text.isascii() and text.isdigit() and len(text) < 9 else 0
+
+
 @router.get("/outage", response_class=HTMLResponse)
 def outage_page(
-    request: Request, done: str = "", sessions: int = 0, passwords: int = 0,
+    request: Request, done: str = "", sessions: str = "", passwords: str = "",
     user: User = Depends(require_super_admin), session: Session = Depends(get_session),
 ):
     """Outage mode (#164, app/outage.py): the state, who may switch it on, and which agents have no emergency password yet.
@@ -2501,7 +2506,7 @@ def outage_page(
         request,
         "admin_outage.html",
         {
-            "user": user, "message": outage_sentence(done, max(sessions, 0), max(passwords, 0)), "status": outage.status(session),
+            "user": user, "message": outage_sentence(done, _count(sessions), _count(passwords)), "status": outage.status(session),
             "without": [a for a in agents if not a.emergency_password_hash], "with_count": sum(1 for a in agents if a.emergency_password_hash),
         },
     )
