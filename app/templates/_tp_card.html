@@ -259,6 +259,34 @@
   </form>
   <div id="take-back-preview"></div>
 
+  {% elif card in ("mbx_retry", "mbx_done", "mbx_cancel") and mailbox_change %}
+  {% set mbx_start = mailbox_phase == "start" %}
+  <dl class="dl tp-dl">
+    <dt>Change</dt><dd>{{ mailbox_change.kind|replace("_", " ") }} on {{ mailbox_change.owner_address }} for {{ mailbox_change.target_address }}</dd>
+    <dt>Failed at</dt><dd>{{ "the start" if mbx_start else "the removal" }}, after {{ mailbox_change.attempts }} attempt{{ "" if mailbox_change.attempts == 1 else "s" }}</dd>
+  </dl>
+  <p class="note">The Exchange message is in the internal note on the ticket.</p>
+  {% if card == "mbx_retry" %}
+  <form class="tp-form" method="post" action="/tickets/{{ ticket.number }}/mailbox/try-again" hx-post="/tickets/{{ ticket.number }}/mailbox/try-again" hx-target="main" hx-swap="innerHTML">
+    <p class="note">One more attempt, made by the worker within a minute or so. If it fails again the change comes back here, and the requester is not emailed a second time.</p>
+    <button type="submit" class="btn btn-primary">Try again</button>
+  </form>
+  {% elif card == "mbx_done" %}
+  <form class="tp-form" method="post" action="/tickets/{{ ticket.number }}/mailbox/done-by-hand" hx-post="/tickets/{{ ticket.number }}/mailbox/done-by-hand" hx-target="main" hx-swap="innerHTML">
+    {% if mbx_start %}
+    <p class="note">Use this once you have made the change in the Exchange admin centre. The request is resolved, the requester and the other person are told it is on, and the change is still removed automatically at its end time.</p>
+    {% else %}
+    <p class="note">Use this once you have removed the change in the Exchange admin centre. The requester and the other person are told it has stopped.</p>
+    {% endif %}
+    <button type="submit" class="btn btn-primary">Done by hand</button>
+  </form>
+  {% else %}
+  <form class="tp-form" method="post" action="/tickets/{{ ticket.number }}/mailbox/cancel" hx-post="/tickets/{{ ticket.number }}/mailbox/cancel" hx-target="main" hx-swap="innerHTML">
+    <p class="note">Nothing was changed in Exchange. The change is dropped, the request is resolved as cancelled and the requester is emailed that nothing was changed.</p>
+    <button type="submit" class="btn btn-primary">Cancel the change</button>
+  </form>
+  {% endif %}
+
   {% elif card == "link" %}
   <form class="tp-form" method="post" action="/tickets/{{ ticket.number }}/link" hx-post="/tickets/{{ ticket.number }}/link" hx-target="main" hx-swap="innerHTML">
     <label>Ticket number of the Major Incident or Problem (for example 1042)

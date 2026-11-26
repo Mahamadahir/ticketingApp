@@ -124,6 +124,7 @@ activitylog.method activitylog.path auditlog.entity_type auditlog.action bankhol
 teams_conversation.service_url teams_conversation.conversation_id teamsintake.outcome teamsintake.previous_status
 bot_message.activity_id bot_message.conversation_id bot_message.kind ticket_reaction.channel ticket_reaction.message_kind
 ticket_reaction.message_ref ticket_reaction.raw_type ticket_reaction.emoji ticket_reaction.sentiment
+mailbox_change.kind mailbox_change.state mailbox_change.last_error_category mailbox_change.last_job_id
 requesttype.icon approvalgroup.request_notice ticket.last_requester_channel teams_held_file.blob_key teams_held_file.skipped reply_held_file.token reply_held_file.blob_key
 """.split())
 

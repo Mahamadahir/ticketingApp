@@ -54,6 +54,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/d7a3f9b2c614_mailbox_change.py",
+        "revision": "d7a3f9b2c614"
+      },
+      {
         "file": "migrations/versions/a4d8e1b6c297_ticket_sla_starts_at.py",
         "revision": "a4d8e1b6c297"
       },
@@ -68,17 +72,13 @@
       {
         "file": "migrations/versions/e7a2c9d4b6f1_scheduled_job_run_now.py",
         "revision": "e7a2c9d4b6f1"
-      },
-      {
-        "file": "migrations/versions/d4e8a1b7c3f9_activity_window_indexes.py",
-        "revision": "d4e8a1b7c3f9"
       }
     ],
-    "count": 80,
+    "count": 81,
     "heads": [
       {
-        "file": "migrations/versions/a4d8e1b6c297_ticket_sla_starts_at.py",
-        "revision": "a4d8e1b6c297"
+        "file": "migrations/versions/d7a3f9b2c614_mailbox_change.py",
+        "revision": "d7a3f9b2c614"
       }
     ]
   },
@@ -227,6 +227,7 @@
         "step_followers",
         "step_held_files",
         "step_inbound_sender",
+        "step_mailbox_changes",
         "step_message_body",
         "step_message_cc",
         "step_message_sender",
@@ -260,6 +261,7 @@
       "tables": [],
       "tests": [
         "tests/test_anonymisation.py",
+        "tests/test_mailbox_changes.py",
         "tests/test_reactions.py",
         "tests/test_teams_followups.py"
       ]
@@ -531,6 +533,7 @@
         "app.inbound",
         "app.intake",
         "app.linked_identities",
+        "app.mailbox_changes",
         "app.messages",
         "app.msp",
         "app.msp_actions",
@@ -1050,6 +1053,8 @@
         "app.jobs",
         "app.linked_identities",
         "app.mail",
+        "app.mailbox_changes",
+        "app.mailbox_executor",
         "app.main",
         "app.msp",
         "app.outbox",
@@ -1096,6 +1101,7 @@
         "tests/test_inbound_mail.py",
         "tests/test_linked_identities.py",
         "tests/test_mail_subscriptions.py",
+        "tests/test_mailbox_changes.py",
         "tests/test_message_channel.py",
         "tests/test_msp.py",
         "tests/test_msp_actions.py",
@@ -1189,6 +1195,7 @@
         "tests/test_inbound_mail.py",
         "tests/test_linking.py",
         "tests/test_mail_subscriptions.py",
+        "tests/test_mailbox_changes.py",
         "tests/test_notification_dismiss.py",
         "tests/test_notification_followup.py",
         "tests/test_outbound_mail.py",
@@ -1228,7 +1235,8 @@
       "summary": "The morning of a Scheduled ticket's Due date (issue #121). Nothing here commits.",
       "tables": [],
       "tests": [
-        "tests/test_due_date.py"
+        "tests/test_due_date.py",
+        "tests/test_mailbox_changes.py"
       ]
     },
     {
@@ -1291,6 +1299,7 @@
         "app.approvals",
         "app.closing",
         "app.mail",
+        "app.mailbox_changes",
         "app.messages",
         "app.msp",
         "app.msp_actions",
@@ -1628,6 +1637,7 @@
         "app.inbound",
         "app.linked_identities",
         "app.mail",
+        "app.mailbox_changes",
         "app.msp",
         "app.notifications",
         "app.person_data",
@@ -1943,6 +1953,7 @@
         "build_chase_mail",
         "build_emergency_reset_mail",
         "build_follower_update_mail",
+        "build_mailbox_change_mail",
         "build_message_mail",
         "build_msp_forward_mail",
         "build_msp_handoff_mail",
@@ -2022,6 +2033,83 @@
         "tests/test_teams_followups.py",
         "tests/test_ticket_presence.py",
         "tests/test_withdraw.py"
+      ]
+    },
+    {
+      "classes": [
+        "MailboxChangeError"
+      ],
+      "file": "app/mailbox_changes.py",
+      "functions": [
+        "cancel",
+        "cancel_by_requester",
+        "change_for_ticket",
+        "create_mailbox_change",
+        "done_by_hand",
+        "failed_phase",
+        "max_attempts",
+        "pending_change_condition",
+        "run_mailbox_changes",
+        "schedule_ticket",
+        "stop_now",
+        "try_again",
+        "utcnow"
+      ],
+      "imported_by": [
+        "app.routers.tickets",
+        "app.scheduled_jobs"
+      ],
+      "imports": [
+        "app.audit",
+        "app.config",
+        "app.email_templates",
+        "app.identity",
+        "app.mailbox_executor",
+        "app.messages",
+        "app.models",
+        "app.notifications",
+        "app.outbox",
+        "app.resolution",
+        "app.settings_store",
+        "app.sla",
+        "app.ticket_service",
+        "app.time_zones",
+        "app.triage"
+      ],
+      "module": "app.mailbox_changes",
+      "routes": [],
+      "summary": "Scheduled mailbox changes: what happens on the ticket and to the row (#307; tracker #305).",
+      "tables": [],
+      "tests": [
+        "tests/test_mailbox_changes.py"
+      ]
+    },
+    {
+      "classes": [
+        "ExecutorNotAvailable",
+        "ExecutorResult",
+        "FakeExecutor",
+        "MailboxExecutor"
+      ],
+      "file": "app/mailbox_executor.py",
+      "functions": [
+        "get_executor",
+        "make_executor",
+        "set_executor"
+      ],
+      "imported_by": [
+        "app.mailbox_changes"
+      ],
+      "imports": [
+        "app.config",
+        "app.models"
+      ],
+      "module": "app.mailbox_executor",
+      "routes": [],
+      "summary": "The only code that talks to Exchange about scheduled mailbox changes (#307; the real executor is #308).",
+      "tables": [],
+      "tests": [
+        "tests/test_mailbox_changes.py"
       ]
     },
     {
@@ -2142,6 +2230,7 @@
         "record_msp_message",
         "record_notice",
         "record_split_notice",
+        "record_system_note",
         "reopen_deadline",
         "requester_kind",
         "requester_last_update",
@@ -2162,6 +2251,7 @@
         "app.escalation",
         "app.intake",
         "app.mail",
+        "app.mailbox_changes",
         "app.msp",
         "app.msp_actions",
         "app.raising",
@@ -2207,6 +2297,7 @@
         "tests/test_escalation_tidy.py",
         "tests/test_follower_updates.py",
         "tests/test_inbound_mail.py",
+        "tests/test_mailbox_changes.py",
         "tests/test_message_channel.py",
         "tests/test_messages.py",
         "tests/test_msp_mail.py",
@@ -2251,6 +2342,7 @@
         "LinkCode",
         "LinkedIdentity",
         "MailSyncState",
+        "MailboxChange",
         "MembershipLevel",
         "Message",
         "MessageDirection",
@@ -2334,6 +2426,8 @@
         "app.linked_identities",
         "app.linking",
         "app.mail",
+        "app.mailbox_changes",
+        "app.mailbox_executor",
         "app.main",
         "app.messages",
         "app.msp",
@@ -2484,6 +2578,10 @@
         {
           "class": "MailSyncState",
           "table": "mailsyncstate"
+        },
+        {
+          "class": "MailboxChange",
+          "table": "mailbox_change"
         },
         {
           "class": "Message",
@@ -2684,6 +2782,7 @@
         "tests/test_linking.py",
         "tests/test_login_lockout.py",
         "tests/test_mail_subscriptions.py",
+        "tests/test_mailbox_changes.py",
         "tests/test_message_channel.py",
         "tests/test_messages.py",
         "tests/test_msp.py",
@@ -3115,6 +3214,7 @@
         "notify_chase_given_up",
         "notify_due_today",
         "notify_link_requested",
+        "notify_mailbox_change_failed",
         "notify_mentions",
         "notify_msp_handed_off",
         "notify_msp_handoff_warning",
@@ -3145,6 +3245,7 @@
         "app.escalation",
         "app.jobs",
         "app.linked_identities",
+        "app.mailbox_changes",
         "app.messages",
         "app.msp",
         "app.navigation",
@@ -3251,6 +3352,7 @@
         "queue_chase",
         "queue_emergency_reset",
         "queue_follower_update",
+        "queue_mailbox_change_mail",
         "queue_message",
         "queue_msp_forward",
         "queue_msp_handoff",
@@ -3264,6 +3366,7 @@
         "app.follower_updates",
         "app.inbound",
         "app.mail",
+        "app.mailbox_changes",
         "app.messages",
         "app.msp",
         "app.msp_actions",
@@ -3293,6 +3396,7 @@
         "tests/test_email_reactions.py",
         "tests/test_email_templates.py",
         "tests/test_follower_updates.py",
+        "tests/test_mailbox_changes.py",
         "tests/test_msp_mail.py",
         "tests/test_outbound_mail.py",
         "tests/test_reply_files.py",
@@ -3394,6 +3498,7 @@
       "tables": [],
       "tests": [
         "tests/test_anonymisation.py",
+        "tests/test_mailbox_changes.py",
         "tests/test_reactions.py",
         "tests/test_subject_access.py",
         "tests/test_teams_followups.py",
@@ -3977,6 +4082,7 @@
       "imported_by": [
         "app.auto_close_chase",
         "app.bulk_resolve",
+        "app.mailbox_changes",
         "app.raising",
         "app.routers.bulk_resolve",
         "app.routers.tickets"
@@ -5429,6 +5535,9 @@
         "fill_from_canned",
         "link",
         "list_tickets",
+        "mailbox_cancel",
+        "mailbox_done_by_hand",
+        "mailbox_try_again",
         "mention_candidates",
         "msp_forward",
         "msp_forward_dismiss",
@@ -5482,6 +5591,7 @@
         "app.forms",
         "app.identity",
         "app.linking",
+        "app.mailbox_changes",
         "app.messages",
         "app.models",
         "app.msp",
@@ -5497,6 +5607,7 @@
         "app.request_types",
         "app.required_by",
         "app.resolution",
+        "app.scheduled_jobs",
         "app.search",
         "app.settings_store",
         "app.sla",
@@ -5645,6 +5756,21 @@
           "handler": "link",
           "method": "POST",
           "path": "/tickets/{number}/link"
+        },
+        {
+          "handler": "mailbox_cancel",
+          "method": "POST",
+          "path": "/tickets/{number}/mailbox/cancel"
+        },
+        {
+          "handler": "mailbox_done_by_hand",
+          "method": "POST",
+          "path": "/tickets/{number}/mailbox/done-by-hand"
+        },
+        {
+          "handler": "mailbox_try_again",
+          "method": "POST",
+          "path": "/tickets/{number}/mailbox/try-again"
         },
         {
           "handler": "mention_candidates",
@@ -5853,6 +5979,7 @@
         "app.admin_home",
         "app.jobs",
         "app.routers.admin",
+        "app.routers.tickets",
         "app.worker"
       ],
       "imports": [
@@ -5865,6 +5992,7 @@
         "app.due_today",
         "app.email_reactions",
         "app.entra_check",
+        "app.mailbox_changes",
         "app.models",
         "app.msp",
         "app.note_purge",
@@ -5889,6 +6017,7 @@
         "tests/test_email_reactions.py",
         "tests/test_entra_check.py",
         "tests/test_handoff_bells_holidays.py",
+        "tests/test_mailbox_changes.py",
         "tests/test_msp.py",
         "tests/test_msp_mail.py",
         "tests/test_notification_dismiss.py",
@@ -5994,6 +6123,7 @@
         "app.intake",
         "app.linked_identities",
         "app.mail",
+        "app.mailbox_changes",
         "app.messages",
         "app.msp",
         "app.never_follow",
@@ -6059,6 +6189,7 @@
         "tests/test_inbound_mail.py",
         "tests/test_linked_identities.py",
         "tests/test_mail_subscriptions.py",
+        "tests/test_mailbox_changes.py",
         "tests/test_msp.py",
         "tests/test_msp_actions.py",
         "tests/test_msp_mail.py",
@@ -6132,6 +6263,7 @@
       ],
       "imported_by": [
         "app.backdating",
+        "app.mailbox_changes",
         "app.messages",
         "app.raising",
         "app.reports",
@@ -6317,6 +6449,7 @@
         "tests/test_attachments.py",
         "tests/test_card_refusals.py",
         "tests/test_inbound_mail.py",
+        "tests/test_mailbox_changes.py",
         "tests/test_msp_mail.py",
         "tests/test_portal_new.py",
         "tests/test_portal_request.py",
@@ -6357,6 +6490,7 @@
       "summary": "Subject access export (issue #175): a ZIP of everything held on one person.",
       "tables": [],
       "tests": [
+        "tests/test_mailbox_changes.py",
         "tests/test_reactions.py",
         "tests/test_subject_access.py",
         "tests/test_teams_followups.py"
@@ -7105,6 +7239,7 @@
         "app.intake",
         "app.linked_identities",
         "app.linking",
+        "app.mailbox_changes",
         "app.messages",
         "app.msp",
         "app.msp_actions",
@@ -7209,6 +7344,7 @@
         "app.entra_check",
         "app.inbound",
         "app.jobs",
+        "app.mailbox_changes",
         "app.messages",
         "app.msp",
         "app.report_kit",
@@ -7260,6 +7396,7 @@
       ],
       "imported_by": [
         "app.escalation",
+        "app.mailbox_changes",
         "app.raising",
         "app.request_types",
         "app.routers.portal",
@@ -7726,6 +7863,12 @@
       "type": "str"
     },
     {
+      "default": "'fake'",
+      "env": "MAILBOX_EXECUTOR",
+      "name": "mailbox_executor",
+      "type": "str"
+    },
+    {
       "default": "False",
       "env": "MAILBOX_TIME_ZONES_ENABLED",
       "name": "mailbox_time_zones_enabled",
@@ -7970,6 +8113,7 @@
     "tests/test_linking.py",
     "tests/test_login_lockout.py",
     "tests/test_mail_subscriptions.py",
+    "tests/test_mailbox_changes.py",
     "tests/test_message_channel.py",
     "tests/test_message_channel_migration.py",
     "tests/test_messages.py",

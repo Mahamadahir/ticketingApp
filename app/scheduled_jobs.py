@@ -45,6 +45,7 @@ from app.database import engine
 from app.due_today import run_scheduled_due
 from app.email_reactions import run_email_reactions
 from app.entra_check import JOB_NAME as ENTRA_CHECK_JOB, run_entra_account_check
+from app.mailbox_changes import run_mailbox_changes
 from app.models import ScheduledJob
 from app.msp import run_msp_ack_alerts, run_msp_forwards, run_msp_handoff
 from app.note_purge import purge_deleted_notes
@@ -53,7 +54,7 @@ from app.reply_files import expire as expire_reply_files
 from app.ticket_presence import purge_expired as purge_ticket_presence
 from app.sessions import purge_ended_sessions
 from app.teams_pending import expire_pending
-from app.settings_store import EMAIL_REACTIONS_MINUTES, JOB_LATE_MINUTES, JOB_LEASE_MINUTES, JOB_RETRY_MINUTES, REGISTRY, get_int_setting
+from app.settings_store import EMAIL_REACTIONS_MINUTES, MAILBOX_CHANGES_MINUTES, JOB_LATE_MINUTES, JOB_LEASE_MINUTES, JOB_RETRY_MINUTES, REGISTRY, get_int_setting
 
 log = logging.getLogger("app.worker")
 
@@ -101,6 +102,13 @@ SCHEDULED_JOBS: list[ScheduledJobDef] = [
         "tickets like Teams reactions. It only reads: it sends nothing. How often it runs is the setting \"Outlook reactions: how often "
         "Sent Items is read\".",
         (), EMAIL_REACTIONS_MINUTES,
+    ),
+    ScheduledJobDef(
+        "mailbox-changes", 300, run_mailbox_changes,
+        "Makes the scheduled mailbox changes (mail forwarding, mailbox access) whose start time has come, removes those whose end "
+        "has, and retries failed attempts, resolving or handing back the request ticket as it goes. Only the executor talks to "
+        "Exchange. How often it runs is the setting \"Mailbox changes: how often the worker looks for due changes\".",
+        (WARN_EMAIL,), MAILBOX_CHANGES_MINUTES,
     ),
     ScheduledJobDef("msp-ack-alerts", 300, run_msp_ack_alerts, "Raises an alert for a ticket sent to the MSP that the MSP has not confirmed in time."),
     ScheduledJobDef("msp-forwards", 300, run_msp_forwards, "Forwards mail the MSP sent on a ticket, left waiting for an agent, to the user once business hours end.", (WARN_EMAIL, WARN_MSP)),

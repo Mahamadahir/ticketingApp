@@ -53,6 +53,7 @@ GROUP_PORTAL = "portal-and-uploads"
 GROUP_SIGN_IN = "sign-in-and-sessions"
 GROUP_DATA = "data-protection-and-reports"
 GROUP_TICKET_PAGE = "ticket-page"
+GROUP_MAILBOX = "mailbox-changes"
 GROUP_OTHER = "other"
 
 # The groups of the Settings page, in the order shown: (key, title, one line under the title).
@@ -68,6 +69,7 @@ GROUPS: tuple[tuple[str, str, str], ...] = (
     (GROUP_SIGN_IN, "Sign-in and sessions", "Idle time, session length, emergency passwords and linking another account."),
     (GROUP_DATA, "Data protection and reports", "Limits on reports and on the subject access export."),
     (GROUP_TICKET_PAGE, "Ticket page", "How the agent ticket page shows who else has the ticket open, and how long a deleted note is kept."),
+    (GROUP_MAILBOX, "Mailbox changes", "Scheduled mail forwarding and mailbox access: how often the worker looks for changes that are due, and how a failed attempt is retried."),
     (GROUP_OTHER, "Other", "Settings that belong with none of the groups above."),
 )
 GROUP_KEYS = tuple(key for key, _title, _text in GROUPS)
@@ -99,6 +101,9 @@ SUBJECT_ACCESS_MAX_MB = "subject_access_max_mb"
 GRAPH_SUBSCRIPTION_MINUTES = "graph_subscription_minutes"
 GRAPH_RENEW_MARGIN_MINUTES = "graph_renew_margin_minutes"
 MAIL_BACKFILL_DAYS = "mail_backfill_days"
+MAILBOX_CHANGES_MINUTES = "mailbox_changes_poll_minutes"  # how often the mailbox-changes job looks for due changes (#307)
+MAILBOX_CHANGE_MAX_ATTEMPTS = "mailbox_change_max_attempts"
+MAILBOX_CHANGE_RETRY_MINUTES = "mailbox_change_retry_minutes"
 EMAIL_REACTIONS_MINUTES = "email_reactions_poll_minutes"  # how often the Outlook reactions job reads Sent Items (#299)
 EMAIL_REACTIONS_BACKFILL_DAYS = "email_reactions_backfill_days"
 # Ticket presence (issue #246, app/ticket_presence.py)
@@ -440,6 +445,40 @@ REGISTRY: dict[str, SettingDef] = {
             "ago that was. Mail already collected is never collected twice."
         ),
         default="3",
+    ),
+    MAILBOX_CHANGES_MINUTES: SettingDef(
+        key=MAILBOX_CHANGES_MINUTES,
+        group=GROUP_MAILBOX,
+        label="Mailbox changes: how often the worker looks for due changes (minutes)",
+        kind="minutes",
+        description=(
+            "How often the worker looks for a mailbox change whose start or end time has come (or one waiting to be tried again). "
+            "A change starts or ends within about this long after its time. Placeholder until proved on staging."
+        ),
+        default="5",
+    ),
+    MAILBOX_CHANGE_MAX_ATTEMPTS: SettingDef(
+        key=MAILBOX_CHANGE_MAX_ATTEMPTS,
+        group=GROUP_MAILBOX,
+        label="Mailbox changes: attempts before a change is given up (attempts)",
+        kind="count",
+        description=(
+            "How many times the worker tries a start or a removal that fails with a temporary error before it gives up and hands "
+            "the ticket to the team. A permanent error is final at once. Nothing is shown to the requester while retries are "
+            "pending. Placeholder until proved on staging."
+        ),
+        default="3",
+    ),
+    MAILBOX_CHANGE_RETRY_MINUTES: SettingDef(
+        key=MAILBOX_CHANGE_RETRY_MINUTES,
+        group=GROUP_MAILBOX,
+        label="Mailbox changes: wait before trying a failed attempt again (minutes)",
+        kind="minutes",
+        description=(
+            "After a temporary failure the same attempt waits this long, and a little longer each time (this long times the number "
+            "of attempts made so far). Placeholder until proved on staging."
+        ),
+        default="10",
     ),
     EMAIL_REACTIONS_MINUTES: SettingDef(
         key=EMAIL_REACTIONS_MINUTES,
