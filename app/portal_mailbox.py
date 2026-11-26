@@ -15,19 +15,23 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from sqlmodel import Session
+import logging
+
+from sqlmodel import Session, select
 
 from app import identity
 from app.mailbox_changes import MailboxChangeError, change_for_ticket, create_mailbox_change, failed_phase
 from app.mailbox_executor import is_enabled
 from app.models import (
     MAILBOX_ACTIVE, MAILBOX_APPLYING, MAILBOX_CANCELLED, MAILBOX_ENDED, MAILBOX_FAILED, MAILBOX_REMOVING, MAILBOX_SCHEDULED,
-    RequestType, Ticket, User,
+    MailboxChange, RequestType, Ticket, User,
 )
 from app.people_directory import DirectoryError, Person, resolve
 from app.raising import MAX_SUBJECT_LENGTH, RaiseError, raise_ticket
 from app.settings_store import MAILBOX_CHANGE_MAX_DAYS, count_setting
 from app.time_zones import MomentError, format_moment, parse_local_moment, zone_for_user
+
+log = logging.getLogger("app.people")
 
 QUARTER_HOUR = 15
 QUARTER_TIMES = [f"{hour:02d}:{minute:02d}" for hour in range(24) for minute in range(0, 60, QUARTER_HOUR)]
@@ -136,6 +140,10 @@ def submit_forwarding(
         raise TargetRefused(str(error))
     times = read_times(session, user, form, now)
     zone = zone_for_user(session, user)
+    if _overlapping(session, user, times):
+        raise MailboxFormError(
+            "You already have forwarding set up for some of that time. Cancel or stop it on its request page first, or choose times that do not overlap"
+        )
     if not form.keep_copy and not form.confirm_no_copy:
         raise ConfirmNoCopy(copy_off_warning(person.name, format_moment(times.ends_at, zone)))
     try:
@@ -152,9 +160,22 @@ def submit_forwarding(
     except RaiseError as error:
         raise MailboxFormError(str(error))
     except MailboxChangeError as error:
-        text = str(error)
-        raise MailboxFormError(NOT_AVAILABLE if "not switched on" in text else f"This request could not be set up: {text}")
+        log.warning("mailbox change refused for %s: %s", user.email, error)  # the detail is for the log, not the requester
+        raise MailboxFormError("This request could not be set up right now. Please contact IT Support.")
     return ticket
+
+
+def _overlapping(session: Session, user: User, times: Times) -> bool:
+    """Whether this person already has forwarding that is waiting, starting, on or stopping at any time in the same span. Exchange
+    holds one forwarding setting per mailbox, so a second would overwrite the first and the first one's removal would switch the
+    second off early. (It also stops a double click making two.)"""
+    live = (MAILBOX_SCHEDULED, MAILBOX_APPLYING, MAILBOX_ACTIVE, MAILBOX_REMOVING)
+    return session.exec(
+        select(MailboxChange.id).where(
+            MailboxChange.owner_address == user.email.lower(), MailboxChange.kind == "forwarding", MailboxChange.state.in_(live),
+            MailboxChange.starts_at < times.ends_at, MailboxChange.ends_at > times.starts_at,
+        )
+    ).first() is not None
 
 
 # ---- The request page ---------------------------------------------------------------------------------------------

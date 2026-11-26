@@ -760,3 +760,43 @@ def test_the_card_is_only_for_the_person_whose_mailbox_it_is_even_on_their_ticke
     other = person(db_session, "other@example.com", "Other One")
     assert portal_mailbox.view(db_session, ticket, owner) is not None
     assert portal_mailbox.view(db_session, ticket, other) is None
+
+
+def test_a_second_forwarding_that_overlaps_a_live_one_is_refused_and_a_double_click_makes_one(client, db_session, world, friend):
+    signed_in(client, db_session)
+    assert post(client, world).status_code == 303
+    again = post(client, world)
+    assert again.status_code == 400 and "already have forwarding" in again.text
+    db_session.expire_all()
+    assert len(db_session.exec(select(MailboxChange)).all()) == 1 and len(db_session.exec(select(Ticket)).all()) == 1
+
+
+def test_forwarding_after_the_first_ends_or_once_it_is_cancelled_is_allowed(client, db_session, world, friend):
+    signed_in(client, db_session)
+    first_end, _ = later(30)
+    assert post(client, world, end_date=first_end, end_time="09:00").status_code == 303
+    start = (now() + timedelta(days=5)).strftime("%Y-%m-%d")
+    end = (now() + timedelta(days=6)).strftime("%Y-%m-%d")
+    assert post(client, world, start_mode="later", start_date=start, start_time="09:00", end_date=end, end_time="09:00").status_code == 303
+    change = db_session.exec(select(MailboxChange).order_by(MailboxChange.id)).first()
+    change.state = "cancelled"
+    db_session.add(change)
+    db_session.commit()
+    assert post(client, world).status_code == 303
+
+
+def test_the_apps_own_mailbox_is_never_offered_or_accepted(client, db_session, world, friend, directory, monkeypatch):
+    signed_in(client, db_session)
+    monkeypatch.setattr(settings, "graph_shared_mailbox", "itsupport@example.com")
+    directory["sm"] = raw_user("sm", "Jane Support Desk", "ItSupport@example.com")
+    assert "Support Desk" not in client.get("/portal/people?q=jane").text
+    assert "cannot be sent to that address" in post(client, world, target_object_id="sm").text
+
+
+def test_an_internal_refusal_is_not_shown_to_the_requester(client, db_session, world, friend):
+    signed_in(client, db_session)
+    world.category.is_active = False
+    db_session.add(world.category)
+    db_session.commit()
+    text = post(client, world).text
+    assert "contact IT Support" in text and "triage" not in text and "defaults" not in text

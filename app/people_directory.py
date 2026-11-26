@@ -47,6 +47,8 @@ class Person:
 
 def blocklist(session: Session) -> set[str]:
     out = set()
+    if settings.graph_shared_mailbox.strip():
+        out.add(settings.graph_shared_mailbox.strip().lower())  # the app's own mailbox is never somewhere to send a person's mail
     for part in re.split(r"[,;\s]+", get_setting(session, MAILBOX_TARGET_BLOCKLIST)):
         try:
             out.add(normalise_email(part))
