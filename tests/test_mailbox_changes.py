@@ -786,7 +786,7 @@ def test_the_export_box_names_the_other_person_only_when_ticked_and_the_audit_re
     run(db_session, change.starts_at + timedelta(minutes=1))
     set_role(db_session, login_as(client, "dpo@example.com"), UserRole.SUPER_ADMIN)
     page = client.get("/admin/data-protection").text
-    assert 'name="name_other_person"' in page and "#319" in page and 'name="name_other_person" value="true" checked' not in page
+    assert 'name="name_other_person"' in page and "issue 319" in page and 'name="name_other_person" value="true" checked' not in page
 
     def row(**data):
         response = client.post("/admin/data-protection/subject-access", data={"address": OWNER, **data})
