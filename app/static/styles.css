@@ -1051,3 +1051,21 @@ html.act-open { overflow: hidden; }
 .tp-reaction-gone .tp-reaction-text { text-decoration: line-through; }
 .tp-negative-form { display: inline; margin: 0; }
 .tp-negative-form .btn { min-height: 24px; padding: 0 8px; font-size: 12px; }
+
+/* Admin > Scheduled jobs (#323): five columns, a short error with the full text in a details, a card per job when narrow. Tokens only. */
+.job-table td { overflow-wrap: anywhere; }
+.job-error { margin-top: 6px; max-width: 46ch; }
+.job-error-full { margin-top: 2px; }
+.job-error-full summary { cursor: pointer; color: var(--muted); }
+.job-error-full .mono-wrap { margin-top: 4px; padding: 8px; background: var(--raised); border-radius: var(--radius); max-height: 14em; overflow: auto; }
+.job-error-now { border-left: 3px solid var(--red); padding-left: 8px; }
+@media (max-width: 760px) {
+  .job-table-box { background: none; border: 0; overflow: visible; }
+  .job-table-box table { min-width: 0; }
+  .job-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .job-table, .job-table tbody, .job-table tr, .job-table td { display: block; width: 100%; }
+  .job-table tr { margin: 0 0 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); }
+  .job-table td { border-bottom: 0; padding: 8px 14px; }
+  .job-table td[data-label]::before { content: attr(data-label); display: block; color: var(--muted); font-size: 12px; }
+  .job-error { max-width: none; }
+}

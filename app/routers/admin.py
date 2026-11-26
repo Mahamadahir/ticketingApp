@@ -152,6 +152,7 @@ from app.models import (
 )
 from app.pagination import paginate
 from app.reactions import parse_mapping
+from app.job_errors import outage_refusal_key, outage_sentence, run_now_key, run_now_sentence, summarise_error
 from app.scheduled_jobs import SCHEDULED_JOBS, WARNINGS, job_health, run_now, run_now_refusal, status_line, timing, within_a_tick
 from app.settings_store import (
     BANK_HOLIDAY_REGION,
@@ -2418,23 +2419,33 @@ def _every_text(seconds: int) -> str:
 @router.get("/scheduled-jobs", response_class=HTMLResponse)
 def view_scheduled_jobs(
     request: Request,
-    message: str = "",
+    done: str = "",
+    job: str = "",
     user: User = Depends(require_super_admin),
     session: Session = Depends(get_session),
 ):
     """The recurring jobs driven by the scheduled_job table: when each is next due, when it last worked,
-    and why it last failed, under one status line."""
+    and why it last failed, under one status line. `done` is a Run now result key (never text) for `job`."""
     now = datetime.now(timezone.utc)
     rows = session.exec(select(ScheduledJob).order_by(ScheduledJob.name)).all()
-    late, registered = timing(session, JOB_LATE_MINUTES), {job.name for job in SCHEDULED_JOBS}
+    late, registered = timing(session, JOB_LATE_MINUTES), {job_def.name for job_def in SCHEDULED_JOBS}
+    # What the row shows of the stored error: a short summary, and whether the job has worked since (muted) or not (red).
+    errors = {
+        row.name: {
+            "summary": summarise_error(row.last_error),
+            "since_worked": bool(row.last_success_at and row.last_error_at and row.last_success_at > row.last_error_at),
+        }
+        for row in rows if row.last_error
+    }
     return templates.TemplateResponse(
         request,
         "admin_scheduled_jobs.html",
         {
             "rows": rows, "status": status_line(rows, now, late, registered),
             "overdue": set(job_health(rows, now, late, registered).overdue), "registered": registered,
-            "intervals": {job.name: _every_text(job.seconds(session)) for job in SCHEDULED_JOBS}, "now": now, "user": user,
-            "message": message,
+            "intervals": {job_def.name: _every_text(job_def.seconds(session)) for job_def in SCHEDULED_JOBS}, "now": now, "user": user,
+            "descriptions": {job_def.name: job_def.description for job_def in SCHEDULED_JOBS}, "errors": errors,
+            "result": run_now_sentence(done, job, registered),
         },
     )
 
@@ -2471,15 +2482,18 @@ def run_job_now(name: str, user: User = Depends(require_super_admin), session: S
     the web app never runs job code."""
     job = _registered_job(name)
     result = run_now(session, job, user.email)
+    key = run_now_key(session.get(ScheduledJob, job.name), result.requested, datetime.now(timezone.utc))
     session.commit()
-    return RedirectResponse("/admin/scheduled-jobs?" + urlencode({"message": result.message}), status_code=303)
+    return RedirectResponse("/admin/scheduled-jobs?" + urlencode({"done": key, "job": job.name}), status_code=303)
 
 
 @router.get("/outage", response_class=HTMLResponse)
 def outage_page(
-    request: Request, message: str = "", user: User = Depends(require_super_admin), session: Session = Depends(get_session),
+    request: Request, done: str = "", sessions: int = 0, passwords: int = 0,
+    user: User = Depends(require_super_admin), session: Session = Depends(get_session),
 ):
-    """Outage mode (#164, app/outage.py): the state, who may switch it on, and which agents have no emergency password yet."""
+    """Outage mode (#164, app/outage.py): the state, who may switch it on, and which agents have no emergency password yet.
+    `done` is a result key (never text); the two counts only go with `off`."""
     agents = session.exec(
         select(User).where(User.role.in_([UserRole.AGENT, UserRole.SUPER_ADMIN]), User.is_active, User.is_break_glass.is_(False)).order_by(User.email)
     ).all()
@@ -2487,7 +2501,7 @@ def outage_page(
         request,
         "admin_outage.html",
         {
-            "user": user, "message": message, "status": outage.status(session),
+            "user": user, "message": outage_sentence(done, max(sessions, 0), max(passwords, 0)), "status": outage.status(session),
             "without": [a for a in agents if not a.emergency_password_hash], "with_count": sum(1 for a in agents if a.emergency_password_hash),
         },
     )
@@ -2499,9 +2513,9 @@ def outage_on(user: User = Depends(require_super_admin), session: Session = Depe
         outage.turn_on(session, user)
     except outage.OutageError as refusal:
         session.rollback()
-        return RedirectResponse("/admin/outage?" + urlencode({"message": str(refusal)}), status_code=303)
+        return RedirectResponse("/admin/outage?" + urlencode({"done": outage_refusal_key(refusal)}), status_code=303)
     session.commit()
-    return RedirectResponse("/admin/outage?" + urlencode({"message": "Outage mode is on."}), status_code=303)
+    return RedirectResponse("/admin/outage?" + urlencode({"done": "on"}), status_code=303)
 
 
 @router.post("/outage/off")
@@ -2510,7 +2524,7 @@ def outage_off(user: User = Depends(require_super_admin), session: Session = Dep
         result = outage.turn_off(session, user)
     except outage.OutageError as refusal:
         session.rollback()
-        return RedirectResponse("/admin/outage?" + urlencode({"message": str(refusal)}), status_code=303)
+        return RedirectResponse("/admin/outage?" + urlencode({"done": outage_refusal_key(refusal)}), status_code=303)
     session.commit()
-    message = f"Outage mode is off. {result.sessions_ended} emergency session(s) ended, {result.passwords_invalidated} emergency password(s) cleared."
-    return RedirectResponse("/admin/outage?" + urlencode({"message": message}), status_code=303)
+    counts = {"done": "off", "sessions": result.sessions_ended, "passwords": result.passwords_invalidated}
+    return RedirectResponse("/admin/outage?" + urlencode(counts), status_code=303)

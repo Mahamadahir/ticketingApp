@@ -1193,6 +1193,7 @@
         "tests/test_notification_followup.py",
         "tests/test_outbound_mail.py",
         "tests/test_scheduled_jobs.py",
+        "tests/test_scheduled_jobs_page.py",
         "tests/test_split_family.py",
         "tests/test_splitting.py",
         "tests/test_team_activity_cards.py",
@@ -1768,6 +1769,30 @@
       ]
     },
     {
+      "classes": [],
+      "file": "app/job_errors.py",
+      "functions": [
+        "outage_refusal_key",
+        "outage_sentence",
+        "run_now_key",
+        "run_now_sentence",
+        "summarise_error"
+      ],
+      "imported_by": [
+        "app.routers.admin"
+      ],
+      "imports": [
+        "app.models"
+      ],
+      "module": "app.job_errors",
+      "routes": [],
+      "summary": "How the Scheduled jobs page shows a job's stored error and a Run now result (#323).",
+      "tables": [],
+      "tests": [
+        "tests/test_scheduled_jobs_page.py"
+      ]
+    },
+    {
       "classes": [
         "Job"
       ],
@@ -2331,6 +2356,7 @@
         "app.identity",
         "app.inbound",
         "app.intake",
+        "app.job_errors",
         "app.linked_identities",
         "app.linking",
         "app.mail",
@@ -2721,6 +2747,7 @@
         "tests/test_required_by.py",
         "tests/test_resolution.py",
         "tests/test_scheduled_jobs.py",
+        "tests/test_scheduled_jobs_page.py",
         "tests/test_scheduled_status.py",
         "tests/test_search.py",
         "tests/test_self_approval.py",
@@ -4165,6 +4192,7 @@
         "app.followers",
         "app.forms",
         "app.inbound",
+        "app.job_errors",
         "app.linked_identities",
         "app.models",
         "app.msp",
@@ -5894,6 +5922,7 @@
         "tests/test_notification_dismiss.py",
         "tests/test_reply_files.py",
         "tests/test_scheduled_jobs.py",
+        "tests/test_scheduled_jobs_page.py",
         "tests/test_sessions.py",
         "tests/test_teams_followups.py",
         "tests/test_ticket_presence.py",
@@ -8009,6 +8038,7 @@
     "tests/test_required_by.py",
     "tests/test_resolution.py",
     "tests/test_scheduled_jobs.py",
+    "tests/test_scheduled_jobs_page.py",
     "tests/test_scheduled_status.py",
     "tests/test_search.py",
     "tests/test_security.py",

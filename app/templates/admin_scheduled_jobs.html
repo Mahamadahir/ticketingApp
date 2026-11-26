@@ -1,8 +1,9 @@
 {% extends "base.html" %}
 {% block title %}Admin: Scheduled jobs{% endblock %}
 {% block content %}
-{# 9L: the jobs as a table with a last-result chip. Run now (super admins, which this whole page is) only asks: it sets
-   the job's next due time to now and the worker runs it on its next tick. #}
+{# 9L, then #323: five columns (Job, Status, Last run, Next due, Run now). Run now (super admins, which this whole page is) only asks:
+   it sets the job's next due time to now and the worker runs it on its next tick. Each cell carries data-label, which the
+   narrow layout shows when a row becomes a card. A stored error is shown as a short summary; the full text is in a details. #}
 <header class="admin-head">
   <h1>Scheduled jobs</h1>
   <p>The recurring jobs that must not be missed: auto-close, chase, reminders and the rest.</p>
@@ -13,34 +14,57 @@
 </p>
 
 <p class="job-status" role="status"><strong>{{ status }}</strong></p>
-{% if message %}<p class="job-message" role="status">{{ message }}</p>{% endif %}
+{% if result %}<div class="notice-bar" role="status">{{ result }}</div>{% endif %}
+
+{% macro error_block(row, errors) %}
+{% set err = errors.get(row.name) %}
+{% if err %}
+<div class="job-error {{ 'job-error-old' if err.since_worked else 'job-error-now' }}">
+  <span class="{{ 'muted small' if err.since_worked else 'error small' }}">
+    {% if err.since_worked %}Earlier error{% else %}Error{% endif %}{% if row.last_error_at %} at {{ row.last_error_at|local_time }}{% endif %}{% if err.since_worked %} (since worked){% endif %}: {{ err.summary }}
+  </span>
+  <details class="job-error-full">
+    <summary class="small">Full error</summary>
+    <div class="mono-wrap">{{ row.last_error }}</div>
+  </details>
+</div>
+{% endif %}
+{% endmacro %}
 
 {% if rows %}
-<div class="table-box">
+<div class="table-box job-table-box">
   <table class="table job-table">
     <thead>
-      <tr><th>Job</th><th>Every</th><th>Last started</th><th>Last result</th><th>Next due</th><th>Held by</th><th>Failures in a row</th><th>Last error</th><th></th></tr>
+      <tr><th>Job</th><th>Status</th><th>Last run</th><th>Next due</th><th></th></tr>
     </thead>
     <tbody>
       {% for row in rows %}
       <tr>
-        <td><strong>{{ row.name }}</strong></td>
-        <td>{{ intervals.get(row.name, "retired") }}</td>
-        <td>{{ row.last_started_at|local_time if row.last_started_at else "never" }}</td>
-        <td>
+        <td data-label="Job">
+          <strong>{{ row.name }}</strong>
+          <div class="muted small">{% if row.name in registered %}Every {{ intervals.get(row.name, "") }}{% else %}Retired{% endif %}</div>
+          {% if descriptions.get(row.name) %}<div class="muted small">{{ descriptions[row.name] }}</div>{% endif %}
+        </td>
+        <td data-label="Status">
           {% if row.name not in registered %}<span class="chip t-gray">Retired</span>
           {% elif row.failures_in_a_row %}<span class="chip t-red">Failing</span>
           {% elif row.lease_expires_at and row.lease_expires_at <= now %}<span class="chip t-amber">Did not finish</span>
           {% elif row.name in overdue %}<span class="chip t-amber">Overdue</span>
           {% elif row.last_success_at %}<span class="chip t-green">Worked</span>
           {% else %}<span class="chip t-gray">Never run</span>{% endif %}
-          <br /><span class="muted small">{% if row.last_success_at %}last success {{ row.last_success_at|local_time }}{% else %}no success yet{% endif %}</span>
+          <div class="muted small">{% if row.last_success_at %}last success {{ row.last_success_at|local_time }}{% else %}no success yet{% endif %}</div>
+          {% if row.failures_in_a_row %}<div class="small">Failures in a row: {{ row.failures_in_a_row }}</div>{% endif %}
+          {{ error_block(row, errors) }}
         </td>
-        <td>{{ row.next_run_at|local_time }}{% if row.run_requested_at %}<br /><span class="muted small">Run requested at {{ row.run_requested_at|local_time }} by {{ row.run_requested_by }}</span>{% endif %}</td>
-        <td>{% if row.lease_owner %}{{ row.lease_owner }} until {{ row.lease_expires_at|local_time }}{% else %}nobody{% endif %}</td>
-        <td>{{ row.failures_in_a_row }}</td>
-        <td>{% if row.last_error %}{{ row.last_error }} ({{ row.last_error_at|local_time }}{% if row.last_success_at and row.last_success_at > row.last_error_at %}, since worked{% endif %}){% else %}none{% endif %}</td>
-        <td>{% if row.name in registered %}<a class="btn" href="/admin/scheduled-jobs/{{ row.name }}/run">Run now</a>{% endif %}</td>
+        <td data-label="Last run">
+          {{ row.last_started_at|local_time if row.last_started_at else "never" }}
+          {% if row.lease_owner %}<div class="muted small">Held by {{ row.lease_owner }} until {{ row.lease_expires_at|local_time }}</div>{% endif %}
+        </td>
+        <td data-label="Next due">
+          {{ row.next_run_at|local_time }}
+          {% if row.run_requested_at %}<div class="muted small">Run requested at {{ row.run_requested_at|local_time }} by {{ row.run_requested_by }}</div>{% endif %}
+        </td>
+        <td class="job-action">{% if row.name in registered %}<a class="btn" href="/admin/scheduled-jobs/{{ row.name }}/run">Run now</a>{% endif %}</td>
       </tr>
       {% endfor %}
     </tbody>

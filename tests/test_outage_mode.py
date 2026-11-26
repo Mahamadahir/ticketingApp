@@ -142,7 +142,7 @@ def test_an_ordinary_super_admin_cannot_switch_it_on(client, db_session):
     page = client.get("/admin/outage")
     assert "cannot switch it on" in page.text and "Switch outage mode on" not in page.text
     response = client.post("/admin/outage/on", follow_redirects=False)
-    assert "Only+a+break-glass" in response.headers["location"]
+    assert "done=not-break-glass" in response.headers["location"]
     assert not outage.is_on(db_session)
 
 
@@ -160,7 +160,7 @@ def test_a_break_glass_account_switches_it_on_audited_and_belled(client, db_sess
     glass = new_client()
     assert signed_in(break_glass_sign_in(glass, break_glass))
     response = glass.post("/admin/outage/on", follow_redirects=False)
-    assert response.status_code == 303 and "Outage+mode+is+on" in response.headers["location"]
+    assert response.status_code == 303 and "done=on" in response.headers["location"]
 
     [entry] = audits(db_session, "outage_mode_on")
     assert entry.actor_email == break_glass.email
@@ -172,7 +172,7 @@ def test_a_break_glass_account_switches_it_on_audited_and_belled(client, db_sess
     assert "Outage mode is on" in client.get("/notifications").text or "Outage mode was switched on" in client.get("/notifications").text
 
     again = glass.post("/admin/outage/on", follow_redirects=False)
-    assert "already+on" in again.headers["location"]
+    assert "done=already-on" in again.headers["location"]
     assert len(audits(db_session, "outage_mode_on")) == 1
 
 
@@ -319,7 +319,7 @@ def test_switching_off_ends_emergency_sessions_and_clears_used_passwords(client,
     assert emergency_client.get("/portal").status_code == 200
 
     response = glass.post("/admin/outage/off", follow_redirects=False)
-    assert "2+emergency+session" in response.headers["location"] and "2+emergency+password" in response.headers["location"]
+    assert "done=off" in response.headers["location"] and "sessions=2" in response.headers["location"] and "passwords=2" in response.headers["location"]
 
     assert not outage.is_on(db_session)
     assert emergency_client.get("/portal", follow_redirects=False).status_code in (302, 303, 307, 401)  # signed out
@@ -373,7 +373,7 @@ def test_any_super_admin_can_switch_it_off(client, db_session, on):
     assert "Switch outage mode off" in page.text
     response = client.post("/admin/outage/off", follow_redirects=False)
     assert response.status_code == 303 and not outage.is_on(db_session)
-    assert "already+off" in client.post("/admin/outage/off", follow_redirects=False).headers["location"]
+    assert "done=already-off" in client.post("/admin/outage/off", follow_redirects=False).headers["location"]
     assert "Outage mode is on" not in new_client().get("/auth/login").text
 
 
