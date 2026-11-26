@@ -2,6 +2,7 @@
 (the list beside a panel). Behaviour is the routes' and is tested with them (test_request_types, test_canned ...)."""
 
 import re
+from pathlib import Path
 
 from app.models import RequestType, RequestTypeQuestion
 from app.settings_store import APPROVAL_DEFAULT_PASS_PERCENT, get_setting
@@ -113,7 +114,7 @@ def test_the_approval_section_wraps_what_needs_a_group_and_the_percent_has_its_o
             assert f'name="{name}"' in wrapper
         assert 'name="approval_group_id"' not in wrapper and 'class="field pass-percent"' in wrapper
         assert " required" not in re.search(r'<input type="number" name="pass_percent"[^>]*>', html).group(0)
-    css = open("app/static/styles.css", encoding="utf-8").read()
+    css = (Path(__file__).parent.parent / "app" / "static" / "styles.css").read_text(encoding="utf-8")
     assert 'option[value=""]:checked) .needs-group { display: none; }' in css and "any_one_approver" in css
 
 
@@ -122,7 +123,7 @@ def test_without_a_group_a_blank_percent_keeps_the_stored_value_and_a_new_type_g
     created = client.post("/admin/request-types", data={"name": "Draft", "approval_group_id": "", "pass_percent": ""}, follow_redirects=False)
     assert created.status_code == 303
     draft = db_session.exec(select(RequestType).where(RequestType.name == "Draft")).one()
-    assert draft.pass_percent == get_setting(db_session, APPROVAL_DEFAULT_PASS_PERCENT) and draft.approval_group_id is None
+    assert draft.pass_percent == int(get_setting(db_session, APPROVAL_DEFAULT_PASS_PERCENT)) and draft.approval_group_id is None
     kind = make(db_session, "Laptop", pass_percent=70)
     saved = client.post(f"/admin/request-types/{kind.id}", data={"name": "Laptop", "approval_group_id": "", "pass_percent": ""}, follow_redirects=False)
     assert saved.status_code == 303
@@ -135,6 +136,19 @@ def test_with_a_group_the_percent_is_still_required_and_held_to_1_to_100(client,
     kind = make(db_session, "Laptop", pass_percent=70)
     for bad in ("", "0", "101", "abc"):
         response = client.post(f"/admin/request-types/{kind.id}", data={"name": "Laptop", "approval_group_id": kind.approval_group_id, "pass_percent": bad})
-        assert response.status_code in (400, 422), bad
+        assert response.status_code == 422, bad
     db_session.expire_all()
     assert db_session.get(RequestType, kind.id).pass_percent == 70
+
+
+def test_a_blank_percent_is_also_kept_while_any_one_approver_is_ticked(client, db_session):
+    admin(client, db_session)
+    kind = make(db_session, "Laptop", pass_percent=70)
+    saved = client.post(
+        f"/admin/request-types/{kind.id}",
+        data={"name": "Laptop", "approval_group_id": kind.approval_group_id, "pass_percent": "", "any_one_approver": "on"},
+        follow_redirects=False,
+    )
+    assert saved.status_code == 303
+    db_session.expire_all()
+    assert db_session.get(RequestType, kind.id).pass_percent == 70 and db_session.get(RequestType, kind.id).any_one_approver
