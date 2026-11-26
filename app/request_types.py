@@ -135,14 +135,23 @@ def _check_defaults(session: Session, defaults: TypeDefaults) -> None:
             raise RequestTypeError(f"Choose the {label} from the list")
 
 
-def _check_mailbox_action(action: Optional[str], group_id: Optional[int], defaults: TypeDefaults) -> None:
+def _mailbox_defaults(action: Optional[str], defaults: TypeDefaults) -> TypeDefaults:
+    """A mailbox action type with a blank impact or urgency gets Low for it (#325): impact times urgency sets the priority and SLA,
+    and a mailbox change is routine. The team and category are the admin's choice and are never guessed."""
+    if not action or (defaults.impact is not None and defaults.urgency is not None):
+        return defaults
+    return TypeDefaults(defaults.team_id, defaults.category_id, defaults.impact or Level.LOW.value, defaults.urgency or Level.LOW.value)
+
+
+def _check_mailbox_action(action: Optional[str], group_id: Optional[int], defaults: TypeDefaults, is_active: bool = True) -> None:
     """A type that makes a mailbox change is about the person's own mailbox, which needs no approval, and is raised by the
-    portal form with no one to triage it, so it must triage itself: no approval group and all four defaults."""
+    portal form with no one to triage it, so it must triage itself: no approval group and, to be offered (active), all four
+    defaults. An inactive one may still lack its team and category (the seeded types wait like that until an admin sets them)."""
     if not action:
         return
     if group_id is not None:
         raise RequestTypeError("A request type with a mailbox action cannot have an approval group (it is the person's own mailbox)")
-    if None in (defaults.team_id, defaults.category_id, defaults.impact, defaults.urgency):
+    if is_active and None in (defaults.team_id, defaults.category_id, defaults.impact, defaults.urgency):
         raise RequestTypeError(
             "A request type with a mailbox action must triage itself: choose its default team, category, impact and urgency"
         )
@@ -229,8 +238,9 @@ def create_request_type(
     mailbox_action = _clean_mailbox_action(mailbox_action)
     _check_days(due_days_before, queue_lead_days)
     defaults = defaults or TypeDefaults()
+    defaults = _mailbox_defaults(mailbox_action, defaults)
     _check_defaults(session, defaults)
-    _check_mailbox_action(mailbox_action, group_id, defaults)
+    _check_mailbox_action(mailbox_action, group_id, defaults, is_active)
     if _name_taken(session, name, None):
         raise RequestTypeError("There is already a request type with that name")
     _checked(session, group_id, pass_percent, is_active, mailbox_action)
@@ -264,14 +274,15 @@ def update_request_type(
     icon = _clean_icon(icon) if set_icon else request_type.icon
     action = _clean_mailbox_action(mailbox_action) if set_mailbox_action else request_type.mailbox_action
     _check_days(due_days_before, queue_lead_days)
+    effective = defaults or TypeDefaults(
+        request_type.default_team_id, request_type.default_category_id, request_type.default_impact, request_type.default_urgency
+    )
+    filled = _mailbox_defaults(action, effective)
+    if filled != effective or defaults is not None:
+        defaults = filled
     if defaults is not None:
         _check_defaults(session, defaults)
-    _check_mailbox_action(
-        action, group_id,
-        defaults or TypeDefaults(
-            request_type.default_team_id, request_type.default_category_id, request_type.default_impact, request_type.default_urgency
-        ),
-    )
+    _check_mailbox_action(action, group_id, filled, is_active)
     if _name_taken(session, name, request_type.id):
         raise RequestTypeError("There is already a request type with that name")
     _checked(session, group_id, pass_percent, is_active, action)

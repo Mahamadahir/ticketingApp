@@ -115,10 +115,10 @@ class GraphClient:
 
     def search_users(self, text: str, limit: int = 25) -> list[dict]:
         """People whose name or address matches `text` (GET /users with `$search`, which needs the `ConsistencyLevel: eventual`
-        header), for the portal's people picker (#309). Asks Graph for enabled member accounts only and the caller checks the
+        header), for the portal's people picker (#309). Asks Graph for enabled accounts only (guests and the rest are refused in code, `userType` can be null) and the caller checks the
         answer again (app/people_directory.py), since this is a hint, not the rule. Each row is Graph's own: id, displayName,
         mail, jobTitle, department, accountEnabled, userType. Needs User.Read.All (application). Raises on a failed call.
-        UNPROVED until staging: the exact $search/$filter combination is checked there (docs/build-plan.md, Azure-only list)."""
+        $search with $filter is documented (Microsoft Learn, "Use the $search query parameter": the results are the AND of both). UNPROVED until staging: the exact $search/$filter combination is checked there (docs/build-plan.md, Azure-only list)."""
         term = " ".join(text.replace('"', " ").replace("\\", " ").split())[:80]
         if not term:
             return []
@@ -126,7 +126,7 @@ class GraphClient:
             f"{GRAPH_BASE_URL}/users",
             params={
                 "$search": f'"displayName:{term}" OR "mail:{term}"',
-                "$filter": "accountEnabled eq true and userType eq 'Member'",
+                "$filter": "accountEnabled eq true",  # userType is checked in code: `userType eq 'Member'` hides accounts where it is null
                 "$select": USER_SELECT,
                 "$top": str(limit),
                 "$count": "true",

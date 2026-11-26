@@ -72,7 +72,7 @@ def _refusal(raw: dict) -> Optional[str]:
     """Why a directory entry cannot be chosen, or None. The same test for what the picker lists and what a submit accepts."""
     if raw.get("accountEnabled") is not True:
         return "That person's account is switched off, so mail cannot go to them. Choose someone else."
-    if str(raw.get("userType") or "").lower() != "member":
+    if str(raw.get("userType") or "").strip().lower() == "guest":  # a blank or missing userType is a member (older accounts have none)
         return "Mail can only go to people inside the organisation. Choose someone else."
     if not (raw.get("mail") or "").strip():
         return "That person has no mailbox to send mail to. Choose someone else."

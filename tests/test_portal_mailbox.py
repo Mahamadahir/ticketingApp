@@ -328,7 +328,7 @@ def test_the_graph_search_uses_search_with_the_eventual_consistency_header(monke
     assert rows == [{"id": "1"}] and seen["url"].endswith("/users")
     assert seen["headers"]["ConsistencyLevel"] == "eventual" and seen["headers"]["Authorization"] == "Bearer tok"
     assert seen["params"]["$search"] == '"displayName:Ja ne" OR "mail:Ja ne"'  # a quote cannot break out of the search term
-    assert "accountEnabled eq true" in seen["params"]["$filter"] and "Member" in seen["params"]["$filter"]
+    assert seen["params"]["$filter"] == "accountEnabled eq true"  # userType is checked in code: `eq 'Member'` hides a null userType
 
 
 # ---- Submitting: who ------------------------------------------------------------------------------------------------
@@ -801,3 +801,138 @@ def test_an_internal_refusal_is_not_shown_to_the_requester(client, db_session, w
     db_session.commit()
     text = post(client, world).text
     assert "contact IT Support" in text and "triage" not in text and "defaults" not in text
+
+
+# ---- Review follow-ups (#325) ---------------------------------------------------------------------------------------
+
+
+def forwarding_row(db_session, owner, target, owner_oid=None, target_oid=None, starts=None, hours=48, state="active", applied=True):
+    ticket = Ticket(subject="x", description="x", requester_email=owner, source=TicketSource.PORTAL, type=TicketType.SERVICE_REQUEST)
+    db_session.add(ticket)
+    db_session.flush()
+    start = starts or now() - timedelta(hours=1)
+    row = MailboxChange(
+        ticket_id=ticket.id, kind="forwarding", owner_address=owner, owner_object_id=owner_oid, target_address=target,
+        target_object_id=target_oid, starts_at=start, ends_at=start + timedelta(hours=hours), state=state,
+        applied_at=now() if applied else None, created_by=owner,
+    )
+    db_session.add(row)
+    db_session.commit()
+    return row
+
+
+def test_forwarding_to_someone_who_already_forwards_to_you_is_refused_as_a_loop(client, db_session, world, friend):
+    signed_in(client, db_session, entra_object_id=OWNER_OID)
+    forwarding_row(db_session, "jane@example.com", OWNER, FRIEND_OID, OWNER_OID)
+    answer = post(client, world)
+    assert answer.status_code == 400 and "mail is already forwarded to you during that time" in answer.text
+    assert "loop" in answer.text and no_change_of_mine(db_session)
+
+
+def no_change_of_mine(db_session):
+    db_session.expire_all()
+    return len(db_session.exec(select(MailboxChange).where(MailboxChange.owner_address == OWNER)).all()) == 0
+
+
+def test_a_loop_is_found_by_address_alone_and_ignores_a_stopped_or_non_overlapping_forwarding(client, db_session, world, friend):
+    signed_in(client, db_session)
+    ended = forwarding_row(db_session, "jane@example.com", OWNER, state="ended")
+    far = forwarding_row(db_session, "jane@example.com", OWNER, starts=now() + timedelta(days=10), state="scheduled", applied=False)
+    assert post(client, world).status_code == 303  # neither is live in that span
+    live = forwarding_row(db_session, "jane@example.com", OWNER, state="scheduled", applied=False)
+    assert "loop" in post(client, world).text  # (a second request would also overlap; the loop wording comes first)
+    live.state = "failed"  # removal failed: Exchange may still hold it
+    live.applied_at = now()
+    db_session.add(live)
+    db_session.commit()
+    assert "loop" in post(client, world).text
+    live.applied_at = None  # a start that failed never made it
+    db_session.add(live)
+    db_session.commit()
+    db_session.refresh(ended), db_session.refresh(far)
+    first = db_session.exec(select(MailboxChange).where(MailboxChange.owner_address == OWNER)).one()
+    first.state = "cancelled"
+    db_session.add(first)
+    db_session.commit()
+    assert post(client, world).status_code == 303
+
+
+def test_a_chain_is_not_a_loop(client, db_session, world, friend):
+    signed_in(client, db_session)
+    forwarding_row(db_session, "jane@example.com", "third@example.com", FRIEND_OID, "oid-third")  # Jane to a third person
+    assert post(client, world).status_code == 303  # Alex to Jane: A to B to C
+
+
+def test_forwarding_to_a_person_forwarding_to_a_different_person_than_me_is_allowed_but_the_reverse_direction_is_not_a_loop(client, db_session, world, friend):
+    signed_in(client, db_session)
+    forwarding_row(db_session, OWNER, "jane@example.com")  # Alex already forwards to Jane (a plain overlap, not the loop wording)
+    answer = post(client, world)
+    assert answer.status_code == 400 and "already have forwarding" in answer.text and "loop" not in answer.text
+
+
+def test_a_forwarding_whose_removal_failed_still_blocks_an_overlapping_request(client, db_session, world, friend):
+    signed_in(client, db_session)
+    forwarding_row(db_session, OWNER, "other@example.com", state="failed", applied=True)
+    answer = post(client, world)
+    assert answer.status_code == 400 and "already have forwarding" in answer.text
+    row = db_session.exec(select(MailboxChange)).one()
+    row.applied_at = None  # a start that failed was never made, so it does not block
+    db_session.add(row)
+    db_session.commit()
+    assert post(client, world).status_code == 303
+
+
+def test_both_submits_take_the_owners_lock_before_the_overlap_check(client, db_session, world, friend, monkeypatch):
+    from app import mailbox_changes, portal_mailbox
+
+    taken, order = [], []
+    real = mailbox_changes.lock_owner
+    monkeypatch.setattr(portal_mailbox, "lock_owner", lambda session, address: (taken.append(address), real(session, address)))
+    signed_in(client, db_session)
+    assert post(client, world).status_code == 303
+    assert taken == [OWNER]
+
+
+def test_a_second_session_waits_for_the_owners_lock_until_the_first_commits(db_session):
+    """Two sessions for one owner: the second blocks on the advisory lock until the first ends its transaction, a different owner
+    does not wait."""
+    import threading
+    import time as time_module
+
+    from sqlmodel import Session
+
+    from app.database import engine
+    from app.mailbox_changes import lock_owner
+
+    first = Session(engine)
+    lock_owner(first, "Alex@Example.com")
+    got = []
+
+    def second():
+        with Session(engine) as other:
+            lock_owner(other, "alex@example.com")  # same owner, case ignored
+            got.append(time_module.monotonic())
+
+    started = time_module.monotonic()
+    thread = threading.Thread(target=second)
+    thread.start()
+    with Session(engine) as unrelated:
+        lock_owner(unrelated, "someone-else@example.com")  # not blocked
+    time_module.sleep(0.5)
+    assert got == []  # still waiting
+    first.commit()
+    thread.join(5)
+    first.close()
+    assert len(got) == 1 and got[0] - started >= 0.5
+
+
+def test_an_account_with_a_blank_user_type_is_listed_and_accepted_but_a_guest_is_not(client, db_session, world, friend, directory):
+    signed_in(client, db_session)
+    directory["n"] = raw_user("oid-null", "Jane Nulltype", "jane.null@example.com", kind=None)
+    directory["b"] = raw_user("oid-blank", "Jane Blanktype", "jane.blank@example.com", kind="  ")
+    directory["g"] = raw_user("oid-guest", "Jane Guestly", "jane.guest@example.com", kind="guest")
+    text = client.get("/portal/people?q=jane").text
+    assert "Jane Nulltype" in text and "Jane Blanktype" in text and "Jane Guestly" not in text
+    assert post(client, world, target_object_id="oid-null").status_code == 303  # and the submit's own check agrees
+    refused = post(client, world, target_object_id="oid-guest")
+    assert refused.status_code == 400 and "inside the organisation" in refused.text

@@ -39,7 +39,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import and_, func, or_
+from sqlalchemy import and_, func, or_, text
 from sqlmodel import Session, select
 
 from app.audit import log_action
@@ -288,6 +288,13 @@ def create_mailbox_change(
 # ---- The ticket side of each outcome -------------------------------------------------------------------------------
 
 
+def lock_owner(session: Session, owner_address: str) -> None:
+    """Takes a Postgres advisory lock, held until the transaction ends, keyed on the mailbox's owner. Taken before an overlap check so
+    that two submits for one mailbox (a double click, two tabs) take turns: the second waits, then sees the first one's rows and is
+    refused. The lock is released by the commit or rollback the route does (#325)."""
+    session.exec(text("select pg_advisory_xact_lock(hashtextextended(:key, 0))").bindparams(key=f"mailbox-change:{owner_address.strip().lower()}"))
+
+
 def _others(session: Session, ticket: Ticket, change: MailboxChange) -> list[MailboxChange]:
     """The other changes the same request made (Full access and Send As asked together, #310), with this one's state saved first."""
     session.flush()
@@ -381,6 +388,27 @@ def _on_removed(session: Session, change: MailboxChange, ticket: Ticket, now: da
     ).body
     record_notice(session, ticket, body)
     _tell_target(session, change, ticket, "mailbox_stopped_target", STOPPED_TARGET, values)
+    _settle_incident(session, change, now, actor)
+
+
+def _settle_incident(session: Session, change: MailboxChange, now: datetime, actor: Optional[User]) -> None:
+    """A removal that failed raised a P2 incident (`_on_removal_failed`). Once the change is removed after all (Try again worked, or
+    an agent removed it by hand) the incident is noted and resolved, so it is not left open (#325). One already finished is left."""
+    if not change.incident_ticket_id:
+        return
+    incident = session.get(Ticket, change.incident_ticket_id)
+    if incident is None or incident.status in FINISHED_STATUSES:
+        return
+    how = f"by hand, by {actor.email}" if actor else "when the removal was tried again"
+    note = (
+        f"The mailbox change (change {change.id}, {KIND_WORDS.get(change.kind, change.kind)} on {change.owner_address}) has now been "
+        f"removed {how}, at {now:%Y-%m-%d %H:%M} UTC. Nothing is left in Exchange."
+    )
+    record_system_note(session, incident, note)
+    try:
+        resolve_ticket(session, incident, actor, note, send_email=False)
+    except ResolveError as error:
+        log.info("mailbox change: incident %s not resolved (%s)", incident.number, error)
 
 
 def _internal_note(change: MailboxChange, phase: str, now: datetime) -> str:
@@ -729,6 +757,10 @@ def try_again(session: Session, change: MailboxChange, actor: User, now: Optiona
     if phase == "start" and _aware(change.ends_at) <= now:
         raise MailboxChangeError("The end time of this change has passed, so it can no longer be made: use Cancel change, or Done by hand if you made it")
     ticket = session.get(Ticket, change.ticket_id)
+    if phase == "start" and ticket.status in FINISHED_STATUSES:
+        # Made on a finished request it would be done without the request being resolved by it or the team seeing it on the ticket:
+        # refuse, and let the agent reopen the request first (#325).
+        raise MailboxChangeError("This request is already resolved or closed. Reopen it first, then use Try again, or use Done by hand if you made the change")
     change.state = MAILBOX_SCHEDULED if phase == "start" else MAILBOX_ACTIVE
     change.attempts = max(max_attempts(session) - 1, 0)
     change.next_attempt_at, change.updated_at = None, now

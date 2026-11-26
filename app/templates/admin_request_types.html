@@ -21,7 +21,7 @@
       <option value="">(none: an ordinary request with form questions)</option>
       {% for key, label in mailbox_action_labels.items() %}<option value="{{ key }}" {{ "selected" if t and key == t.mailbox_action else "" }}>{{ label }}</option>{% endfor %}
     </select>
-    <span class="note">A kind with an action shows its own form instead of form questions and changes the signed-in person's own mailbox at the times they choose. It needs no approval group (it cannot have one) and all four defaults (team, category, impact, urgency) so that it triages itself. Forwarding has its own form; Full access and Send As share one form, "Give someone access to my mailbox". Nothing is offered unless this environment has MAILBOX_EXECUTOR set.</span>
+    <span class="note">A kind with an action shows its own form instead of form questions and changes the signed-in person's own mailbox at the times they choose. It needs no approval group (it cannot have one) and, to be switched on, all four defaults (team, category, impact, urgency) so that it triages itself; a blank impact or urgency is saved as Low. Forwarding has its own form; Full access and Send As share one form, "Give someone access to my mailbox". Nothing is offered unless this environment has MAILBOX_EXECUTOR set.</span>
   </label>
   <label class="check field-wide"><input type="checkbox" name="is_active" {{ "checked" if (t.is_active if t else true) else "" }} /> Available on the request form</label>
   <label class="check field-wide"><input type="checkbox" name="is_featured" {{ "checked" if t and t.is_featured else "" }} /> Feature on the portal home page (up to four kinds show as quick-start tiles; with none featured, the first four do)</label>
@@ -52,6 +52,7 @@
       {% for value, label in urgency_options %}<option value="{{ value }}" {{ "selected" if t and value == t.default_urgency else "" }}>{{ label }}</option>{% endfor %}
     </select>
   </label>
+  <p class="note field-wide">Impact x urgency sets the priority and SLA. Set all four defaults (team, category, impact, urgency) to let a request triage itself.</p>
   <label class="field">Due: days before Required by (blank: {{ default_due_days }}) <input type="number" name="due_days_before" value="{{ t.due_days_before if t and t.due_days_before is not none else "" }}" min="0" max="365" /></label>
   <label class="field">Queue lead time in days (blank: {{ default_queue_days }}) <input type="number" name="queue_lead_days" value="{{ t.queue_lead_days if t and t.queue_lead_days is not none else "" }}" min="0" max="365" /></label>
   <label class="check field-wide"><input type="checkbox" name="offers_required_by" {{ "checked" if t and t.offers_required_by else "" }} /> Offer a Required by date</label>

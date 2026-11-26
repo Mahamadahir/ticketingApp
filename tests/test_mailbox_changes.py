@@ -895,3 +895,72 @@ def test_the_mailbox_job_runs_in_the_background():
 
     [job] = [j for j in SCHEDULED_JOBS if j.name == "mailbox-changes"]
     assert job.background
+
+
+# ---- Review follow-ups (#325) ---------------------------------------------------------------------------------------
+
+
+def failed_removal(db_session, fake_exchange, times=1):
+    team, agent = team_with_agent(db_session)
+    ticket, change = schedule(db_session, ticket=request_ticket(db_session, team), team=team)
+    run(db_session, change.starts_at + timedelta(minutes=1))
+    fake_exchange.script("remove", OUTCOME_PERMANENT, times=times)
+    run(db_session, change.ends_at + timedelta(minutes=1))
+    change = reload(db_session, change)
+    assert change.state == "failed" and change.incident_ticket_id is not None
+    return team, agent, ticket, change
+
+
+def test_the_incident_is_noted_and_resolved_when_try_again_removes_the_change(client, db_session, fake_exchange, dev_mail):
+    team, agent, ticket, change = failed_removal(db_session, fake_exchange)
+    incident_id = change.incident_ticket_id
+    agent_client(client, db_session, team)
+    assert client.post(f"/tickets/{ticket.number}/mailbox/try-again").status_code == 200
+    run(db_session, change.ends_at + timedelta(minutes=30))
+
+    assert reload(db_session, change).state == "ended"
+    incident = db_session.get(Ticket, incident_id)
+    assert incident.status == TicketStatus.RESOLVED and "has now been removed" in incident.resolution_notes
+    assert any("has now been removed" in m.body for m in notes(db_session, incident, visible=False))
+
+
+def test_the_incident_is_noted_and_resolved_when_an_agent_removes_the_change_by_hand(client, db_session, fake_exchange, dev_mail):
+    team, agent, ticket, change = failed_removal(db_session, fake_exchange)
+    agent_client(client, db_session, team)
+    assert client.post(f"/tickets/{ticket.number}/mailbox/done-by-hand").status_code == 200
+    incident = db_session.get(Ticket, change.incident_ticket_id)
+    db_session.refresh(incident)
+    assert incident.status == TicketStatus.RESOLVED and "by hand, by agent@example.com" in incident.resolution_notes
+
+
+def test_an_incident_an_agent_already_resolved_is_left_alone_when_the_change_is_removed(client, db_session, fake_exchange, dev_mail):
+    from app.resolution import resolve_ticket
+
+    team, agent, ticket, change = failed_removal(db_session, fake_exchange)
+    incident = db_session.get(Ticket, change.incident_ticket_id)
+    resolve_ticket(db_session, incident, agent, "Checked in Exchange", send_email=False)
+    db_session.commit()
+    agent_client(client, db_session, team)
+    assert client.post(f"/tickets/{ticket.number}/mailbox/done-by-hand").status_code == 200
+    db_session.refresh(incident)
+    assert incident.resolution_notes == "Checked in Exchange"
+
+
+def test_try_again_on_a_failed_start_is_refused_when_the_request_was_resolved_meanwhile(client, db_session, fake_exchange, dev_mail):
+    team, agent, ticket, change = failed_start(db_session, fake_exchange)
+    ticket = reload(db_session, ticket)
+    ticket.status = TicketStatus.CLOSED
+    db_session.add(ticket)
+    db_session.commit()
+    agent_client(client, db_session, team)
+    answer = client.post(f"/tickets/{ticket.number}/mailbox/try-again")
+    assert answer.status_code == 400 and "Reopen it first" in answer.text
+    change = reload(db_session, change)
+    assert change.state == "failed" and not events(db_session, ticket, "mailbox_change_try_again")  # nothing was queued and dropped
+    with pytest.raises(MailboxChangeError, match="resolved or closed"):
+        mailbox_changes.try_again(db_session, change, agent)
+    db_session.rollback()
+    ticket.status = TicketStatus.OPEN  # reopened by an agent: Try again works again
+    db_session.add(ticket)
+    mailbox_changes.try_again(db_session, change, agent)
+    assert change.state == "scheduled"

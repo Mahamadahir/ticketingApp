@@ -21,7 +21,7 @@ from sqlalchemy import and_, or_
 from sqlmodel import Session, select
 
 from app import identity
-from app.mailbox_changes import MailboxChangeError, changes_for_ticket, create_mailbox_change, failed_phase
+from app.mailbox_changes import MailboxChangeError, changes_for_ticket, create_mailbox_change, failed_phase, lock_owner
 from app.mailbox_executor import is_enabled
 from app.models import (
     MAILBOX_ACTIVE, MAILBOX_APPLYING, MAILBOX_CANCELLED, MAILBOX_ENDED, MAILBOX_FAILED, MAILBOX_REMOVING, MAILBOX_SCHEDULED,
@@ -157,6 +157,8 @@ def submit_forwarding(
         raise TargetRefused(str(error))
     times = read_times(session, user, form, now)
     zone = zone_for_user(session, user)
+    if _forwards_back(session, user, person, times):
+        raise MailboxFormError(f"{person.name}'s mail is already forwarded to you during that time, so this would create a loop.")
     if _overlapping(session, user, times, "forwarding"):
         raise MailboxFormError(
             "You already have forwarding set up for some of that time. Cancel or stop it on its request page first, or choose times that do not overlap"
@@ -182,16 +184,36 @@ def submit_forwarding(
     return ticket
 
 
+def _forwards_back(session: Session, user: User, person: Person, times: Times) -> bool:
+    """Whether the chosen person's own mail is already forwarded to this person, through the app, at any time in the span (a loop:
+    each would send the other's mail back). Counts the same changes as `_overlapping`. A chain (A to B, B to C) is not a loop."""
+    owner_is_target = MailboxChange.owner_address == person.mail.strip().lower()
+    if person.object_id:
+        owner_is_target = or_(owner_is_target, MailboxChange.owner_object_id == person.object_id)
+    to_me = MailboxChange.target_address.in_(sorted(identity.requester_emails(user)))
+    if user.entra_object_id:
+        to_me = or_(to_me, MailboxChange.target_object_id == user.entra_object_id)
+    query = select(MailboxChange.id).where(
+        MailboxChange.kind == "forwarding", owner_is_target, to_me, _live_state(),
+        MailboxChange.starts_at < times.ends_at, MailboxChange.ends_at > times.starts_at,
+    )
+    return session.exec(query).first() is not None
+
+
+def _live_state():
+    """Rows that are waiting, starting, on or stopping, or whose removal failed (made, so `applied_at` is set, and Exchange may still
+    hold them)."""
+    live = (MAILBOX_SCHEDULED, MAILBOX_APPLYING, MAILBOX_ACTIVE, MAILBOX_REMOVING)
+    return or_(MailboxChange.state.in_(live), and_(MailboxChange.state == MAILBOX_FAILED, MailboxChange.applied_at.is_not(None)))
+
+
 def _overlapping(session: Session, user: User, times: Times, kind: str, target_address: Optional[str] = None) -> bool:
     """Whether this person already has a change of this kind that is waiting, starting, on or stopping at any time in the same span.
     Exchange holds one forwarding setting per mailbox, so a second would overwrite the first and the first one's removal would
     switch the second off early. For Full access and Send As (`target_address` given) it is the same permission for the same
     other person: the first one's removal would take the second one's away early. (It also stops a double click making two.)"""
-    live = (MAILBOX_SCHEDULED, MAILBOX_APPLYING, MAILBOX_ACTIVE, MAILBOX_REMOVING)
-    state = MailboxChange.state.in_(live)
-    if target_address is not None:
-        # A permission whose removal failed (made, so `applied_at` is set) may still be in Exchange: it counts as live (#310 review).
-        state = or_(state, and_(MailboxChange.state == MAILBOX_FAILED, MailboxChange.applied_at.is_not(None)))
+    state = _live_state()  # a failed removal counts as live (#310 review, #325)
+    lock_owner(session, user.email)  # two submits for one mailbox take turns: the second sees the first's rows (#325)
     query = select(MailboxChange.id).where(
         MailboxChange.owner_address == user.email.lower(), MailboxChange.kind == kind, state,
         MailboxChange.starts_at < times.ends_at, MailboxChange.ends_at > times.starts_at,
