@@ -19,6 +19,7 @@ from app.models import (
 from app.request_types import RequestTypeError, TypeDefaults, create_request_type, update_request_type
 from app.settings_store import DEFAULT_TIME_ZONE, MAILBOX_CHANGE_MAX_DAYS, MAILBOX_TARGET_BLOCKLIST, set_setting
 from tests.conftest import create_category, create_team, login_as, set_role
+from app.approval_groups import create_group
 from tests.test_request_types import admin, group_of
 
 OWNER = "alex@example.com"
@@ -131,13 +132,22 @@ def friend(directory):
 # ---- The request type ---------------------------------------------------------------------------------------------
 
 
-def test_a_type_with_an_action_cannot_have_an_approval_group(db_session, world):
+def test_a_type_with_an_action_may_have_an_approval_group_for_someone_elses_mailbox(db_session, world):
+    """#311: the group is the IT approvers for requests about someone else's mailbox; the person's own mailbox needs no approval."""
+    from app.request_types import offers_someone_elses
+
+    assert not offers_someone_elses(world.type)  # no group: only "Mine" is offered
     group = group_of(db_session, "Managers")
-    with pytest.raises(RequestTypeError, match="approval group"):
-        update_request_type(db_session, world.type, "Forward my mail", "", group.id, 51, True)
-    with pytest.raises(RequestTypeError, match="approval group"):
+    update_request_type(db_session, world.type, "Forward my mail", "", group.id, 51, True)
+    assert offers_someone_elses(world.type)
+    other = create_request_type(
+        db_session, "Other", "", group.id, 51, defaults=TypeDefaults(world.team.id, world.category.id, "low", "low"), mailbox_action="forwarding",
+    )
+    assert other.approval_group_id == group.id
+    with pytest.raises(RequestTypeError, match="at least one member"):  # an active type with a group still needs someone to ask
         create_request_type(
-            db_session, "Other", "", group.id, 51, defaults=TypeDefaults(world.team.id, world.category.id, "low", "low"), mailbox_action="forwarding",
+            db_session, "Empty", "", create_group(db_session, "Nobody").id, 51,
+            defaults=TypeDefaults(world.team.id, world.category.id, "low", "low"), mailbox_action="forwarding",
         )
 
 
@@ -155,7 +165,7 @@ def test_a_type_with_an_action_needs_all_four_defaults(db_session, world):
 def test_switching_an_ordinary_type_to_an_action_checks_its_stored_group_and_defaults(db_session):
     group = group_of(db_session, "Managers")
     request_type = create_request_type(db_session, "Plain", "", group.id, 51)
-    with pytest.raises(RequestTypeError, match="approval group"):
+    with pytest.raises(RequestTypeError, match="triage itself"):
         update_request_type(db_session, request_type, "Plain", "", group.id, 51, True, mailbox_action="send_as", set_mailbox_action=True)
     with pytest.raises(RequestTypeError, match="Choose a mailbox action"):
         update_request_type(db_session, request_type, "Plain", "", None, 51, True, mailbox_action="nonsense", set_mailbox_action=True)
@@ -165,14 +175,16 @@ def test_an_active_action_type_needs_no_approval_group(db_session, world):
     assert world.type.is_active and world.type.approval_group_id is None and world.type.mailbox_action == "forwarding"
 
 
-def test_the_admin_editor_sets_the_action_and_refuses_a_group(client, db_session, world):
+def test_the_admin_editor_sets_the_action_and_may_save_a_group(client, db_session, world):
     admin(client, db_session)
     group = group_of(db_session, "Managers")
     base = {
         "name": "Forward my mail", "pass_percent": 51, "is_active": "on", "mailbox_action": "forwarding",
         "default_team_id": world.team.id, "default_category_id": world.category.id, "default_impact": "low", "default_urgency": "low",
     }
-    assert client.post(f"/admin/request-types/{world.type.id}", data={**base, "approval_group_id": group.id}).status_code == 400
+    assert client.post(f"/admin/request-types/{world.type.id}", data={**base, "approval_group_id": group.id}, follow_redirects=False).status_code == 303
+    db_session.expire_all()
+    assert db_session.get(RequestType, world.type.id).approval_group_id == group.id
     assert client.post(f"/admin/request-types/{world.type.id}", data={**base, "mailbox_action": "send_as"}, follow_redirects=False).status_code == 303
     db_session.expire_all()
     assert db_session.get(RequestType, world.type.id).mailbox_action == "send_as"

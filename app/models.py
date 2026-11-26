@@ -687,13 +687,17 @@ class RequestType(SQLModel, table=True):
     # Off by default (#167): an approver who is also the requester counts as a voter and approves their own
     # request at once (app/approvals.py). Off: the requester is left out of the vote.
     approvers_may_self_approve: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
+    # Off by default (#311): on, the first answer of any voter settles the request (an approval approves it, a decline declines
+    # it), whatever the number of voters and the pass percentage (app/approvals.py `outcome`). Used by the mailbox types, where
+    # the voters are the owner of the mailbox or an IT approver and either one is enough.
+    any_one_approver: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
     # Shown first among the quick-start tiles on the portal's My requests page (#204, app/request_types.py `portal_tiles`).
     is_featured: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
     # The icon on the kind's card and tile (#206): a name from app/request_types.py `ICONS`; blank shows the generic one.
     icon: Optional[str] = Field(default=None)
     # Blank for an ordinary request; else one of MAILBOX_KINDS (#309): the portal shows that kind's own form instead of form
-    # questions and the request makes a scheduled mailbox change (app/mailbox_changes.py). Such a type has no approval group
-    # and all four self-triage defaults (app/request_types.py).
+    # questions and the request makes a scheduled mailbox change (app/mailbox_changes.py). Such a type may have an approval group (#311), which then only applies to requests about SOMEONE ELSE'S mailbox, and
+    # needs all four self-triage defaults (app/request_types.py).
     mailbox_action: Optional[str] = Field(default=None)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -775,6 +779,8 @@ class TicketApproval(SQLModel, table=True):
     pass_percent: int
     voters: int  # fixed when the approval starts
     status: str = Field(default="pending")  # pending, approved, declined, waived, withdrawn
+    # Copied from the request type when the round starts (#311): the first answer settles it (RequestType.any_one_approver).
+    any_one: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     settled_at: Optional[datetime] = Field(default=None)
     # Set once when the super admins were told this approval has waited too long (app/approval_reminders.py).
@@ -792,6 +798,9 @@ class ApprovalVote(SQLModel, table=True):
     voter_id: int = Field(foreign_key="user.id", index=True)
     decision: str = Field(default="pending")  # pending, approved, declined, not_needed
     comment: str = Field(default="")
+    # Added for this request on top of the approval group (#311: the owner of the mailbox asked about), so being in the group is
+    # not what lets them answer. Fixed when the round starts like every other voter.
+    extra_voter: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     decided_at: Optional[datetime] = Field(default=None)
     # Reminders queued to this voter and when the last one was (app/approval_reminders.py): what makes the

@@ -38,7 +38,7 @@ from app.messages import (
 )
 from app import emergency, outage
 from app.never_follow import is_listed
-from app.approval_groups import is_member
+from app.approvals import may_answer
 from app.notification_settings import APPROVAL_OVERDUE as APPROVAL_OVERDUE_EVENT, EMAIL, FOLLOWER_UPDATE as FOLLOWER_UPDATE_EVENT, is_enabled, wants_approval_email
 from app.identity import person_for_address
 from app.models import (
@@ -287,7 +287,7 @@ def build_approval_mail(session: Session, row: OutboundEmail, template: str = "a
         raise Unsendable("Approval not found")
     if vote.decision != PENDING or approval.status != PENDING or ticket.status != TicketStatus.AWAITING_APPROVAL:
         raise Unsendable("The request no longer needs this approval")
-    if not is_member(session, approval.group_id, vote.voter_id):
+    if not may_answer(session, approval, vote):  # a group member, or the mailbox owner added for the request (#311)
         raise Unsendable("The person is no longer in the approval group")
     approver = session.get(User, vote.voter_id)
     if approver is None:

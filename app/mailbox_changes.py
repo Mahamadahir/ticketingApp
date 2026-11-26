@@ -28,6 +28,17 @@ The life of a change
 6. The change then waits in `failed` for an agent: Try again, Done by hand or Cancel (`try_again`, `done_by_hand`, `cancel`).
    The requester can `cancel_by_requester` before the start and `stop_now` while it is on (the portal, #309).
 
+Someone else's mailbox (#311)
+-----------------------------
+A request about SOMEONE ELSE'S mailbox (the owner of a change is not the requester) is approved first, through the approval flow of
+`app/approvals.py`, by the owner of the mailbox or by an IT approver from the request type's group. Its rows are written before
+triage (`create_mailbox_change(before_triage=True)`) so the approval knows whose mailbox it is, and wait unclaimed (the job skips a
+ticket in Awaiting approval). `after_approval` then schedules the ticket once, starts the SLA at the later of the start time and the
+approval, and cancels a change whose end time has already passed (the requester is told); `drop_unstarted` cancels the rows of a
+declined or withdrawn request. A change that is approved after its start time begins at the next run of the job. Whoever asked,
+the OWNER is told when it starts and when it ends, with who approved it (`_tell_owner`); the requester's own emails and notes use
+the owner's name in place of "your mailbox".
+
 Anonymisation refuses a person who owns or is the other person of a change that has not ended, because removing it needs their
 address (`anonymisation.refusal`).
 """
@@ -42,10 +53,11 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import and_, func, or_, text
 from sqlmodel import Session, select
 
+from app.approvals import APPROVED, WAIVED, current_approval, votes_of
 from app.audit import log_action
 from app.config import settings
 from app.email_templates import render_template, ticket_values
-from app.identity import person_for_address
+from app.identity import addresses_of, person_for_address
 from app.mailbox_executor import (
     OUTCOME_MISMATCH, OUTCOME_NO_ANSWER, OUTCOME_PERMANENT, OUTCOME_RETRYABLE, OUTCOME_SUCCEEDED, ExecutorResult, get_executor, is_enabled,
 )
@@ -120,6 +132,28 @@ RESOLUTION_NOTE = {
     "full_access": "{target} has Full access to your mailbox until {until}",
     "send_as": "{target} can send email as you until {until}",
 }
+# The same, for a request about someone else's mailbox: told to the requester as a third person, unless the requester is the one the
+# change was made for ("target"), when they are told in the second person. {owner} is the owner of the mailbox.
+STARTED_THIRD = {
+    "forwarding": "Mail sent to {owner} is now going to {target} as well",
+    "full_access": "{target} now has Full access to {owner}'s mailbox",
+    "send_as": "{target} can now send email as {owner}",
+}
+STOPPED_THIRD = {
+    "forwarding": "Forwarding {owner}'s mail to {target} has stopped",
+    "full_access": "{target} no longer has Full access to {owner}'s mailbox",
+    "send_as": "{target} can no longer send email as {owner}",
+}
+RESOLUTION_NOTE_THIRD = {
+    "forwarding": "Forwarding of {owner}'s mail to {target} is on until {until}",
+    "full_access": "{target} has Full access to {owner}'s mailbox until {until}",
+    "send_as": "{target} can send email as {owner} until {until}",
+}
+RESOLUTION_NOTE_TARGET = {
+    "forwarding": "{owner}'s mail is also coming to you until {until}",
+    "full_access": "You have Full access to {owner}'s mailbox until {until}",
+    "send_as": "You can send email as {owner} until {until}",
+}
 STARTED_TARGET_KEY = {"full_access": "mailbox_full_access_started_target"}  # the one kind whose email says more (Outlook can be slow)
 KIND_WORDS = {"forwarding": "mail forwarding", "full_access": "Full access", "send_as": "Send As"}
 
@@ -146,16 +180,43 @@ def _lines(change: MailboxChange, ticket: Ticket, session: Session) -> dict[str,
     """The values the sentences and the templates are filled in with, for the mailbox owner (requester) and the other person."""
     owner_zone = zone_for_email(session, change.owner_address)
     target_zone = zone_for_email(session, change.target_address)
+    requester_zone = zone_for_email(session, ticket.requester_email)
     owner, target = _name(session, change.owner_address), _name(session, change.target_address)
+    owner_copy = (
+        ("A copy stays in your mailbox." if change.keep_copy else "Your mailbox is **not** keeping a copy.")
+        if change.kind == "forwarding" else ""
+    )
+    on_behalf = _on_behalf(session, change, ticket)
     return {
         "owner": owner, "target": target, "kind": KIND_WORDS.get(change.kind, change.kind),
+        "requester": _name(session, ticket.requester_email),
         "until_owner": format_moment(change.ends_at, owner_zone), "until_target": format_moment(change.ends_at, target_zone),
+        "until_requester": format_moment(change.ends_at, requester_zone),
         "link": _ticket_link(ticket),
+        "copy_text_owner": owner_copy,
+        # What the requester is told: in their own mailbox's words, or (someone else's mailbox) in the owner's.
         "copy_text": (
-            ("A copy stays in your mailbox." if change.keep_copy else "Your mailbox is **not** keeping a copy.")
-            if change.kind == "forwarding" else ""
+            (f"A copy stays in {owner}'s mailbox." if change.keep_copy else f"{owner}'s mailbox is **not** keeping a copy.")
+            if on_behalf and change.kind == "forwarding" else owner_copy
         ),
     }
+
+
+def _on_behalf(session: Session, change: MailboxChange, ticket: Ticket) -> bool:
+    """Whether this change is on SOMEONE ELSE'S mailbox (#311): its owner is not the requester or one of their linked addresses."""
+    return change.owner_address.strip().lower() not in addresses_of(session, ticket.requester_email)
+
+
+def _target_is_requester(session: Session, change: MailboxChange, ticket: Ticket) -> bool:
+    return change.target_address.strip().lower() in addresses_of(session, ticket.requester_email)
+
+
+def _for_requester(session: Session, change: MailboxChange, ticket: Ticket, own: dict, target: dict, third: dict) -> dict:
+    """The phrase table for a message to the requester: `own` (their own mailbox), else `target` (they are the one it was made for)
+    or `third` (someone else's mailbox, made for another person)."""
+    if not _on_behalf(session, change, ticket):
+        return own
+    return target if _target_is_requester(session, change, ticket) else third
 
 
 def _sentence(table: dict[str, str], change: MailboxChange, values: dict[str, str]) -> str:
@@ -217,23 +278,25 @@ def max_attempts(session: Session) -> int:
 # ---- Creating a change and scheduling its ticket -------------------------------------------------------------------
 
 
-def schedule_ticket(session: Session, ticket: Ticket, change: MailboxChange) -> None:
+def schedule_ticket(session: Session, ticket: Ticket, change: MailboxChange, not_before: Optional[datetime] = None) -> None:
     """Puts the request in Scheduled with Due = the start date (in the requester's time zone) and starts its SLA clock at the start
     time. Set by the system, not through `prepare_scheduled` (that is the agent's form, which refuses a day whose morning has
     already begun, as a "Now" start would). Called by `create_mailbox_change`, and by the approval flow once a request for someone
-    else's mailbox is approved (#311). Does not commit."""
+    else's mailbox is approved (#311), with `not_before` = the approval time: the SLA then starts at the later of the start time and
+    the approval. Does not commit."""
     if change.state != MAILBOX_SCHEDULED:
         return  # cancelled (or already under way) while it waited for approval
     zone = zone_for_email(session, ticket.requester_email)
-    ticket.due_on = _aware(change.starts_at).astimezone(ZoneInfo(zone)).date()
+    sla_moment = max(_aware(change.starts_at), _aware(not_before)) if not_before is not None else _aware(change.starts_at)
+    ticket.due_on = sla_moment.astimezone(ZoneInfo(zone)).date()
     ticket.due_set_by_hand = False
     session.add(ticket)
     set_status(session, ticket, TicketStatus.SCHEDULED, "system", detail="waiting for the mailbox change to start")
-    if ticket.sla_starts_at is not None and _aware(ticket.sla_starts_at) == _aware(change.starts_at):
+    if ticket.sla_starts_at is not None and _aware(ticket.sla_starts_at) == sla_moment:
         pass  # a second change on the same request (Full access and Send As together) starts at the same moment: the clock is set
-    elif _aware(change.starts_at) > _aware(ticket.created_at):
+    elif sla_moment > _aware(ticket.created_at):
         try:
-            start_clock_at(session, ticket, change.starts_at, "system")
+            start_clock_at(session, ticket, sla_moment, "system")
         except SlaStartError:
             recalculate_deadlines(session, ticket)  # cannot start later than it finished; the due date still applies
     else:
@@ -257,8 +320,11 @@ def create_mailbox_change(
     owner_object_id: Optional[str] = None,
     target_object_id: Optional[str] = None,
     keep_copy: bool = True,
+    before_triage: bool = False,
 ) -> MailboxChange:
-    """Writes the change for a request ticket and schedules the ticket. The ticket must already be triaged (a portal request of a
+    """Writes the change for a request ticket and schedules the ticket. With `before_triage` (a request about someone else's mailbox,
+    #311) the ticket is not triaged yet and is not scheduled: the row is written first so the approval that triage starts knows whose
+    mailbox it is, and `finish_on_behalf` schedules it after triage (or `after_approval` once approved). The ticket must already be triaged (a portal request of a
     type whose defaults are all set triages itself when raised, `request_types.self_triage`). A request still waiting for approval
     (#311) is left as it is: the row waits, and the job does not touch it, until `schedule_ticket` is called when it is approved.
     Times are UTC; `ends_at` is required and after `starts_at`. Does not commit."""
@@ -269,7 +335,7 @@ def create_mailbox_change(
     starts_at, ends_at = _aware(starts_at), _aware(ends_at)
     if ends_at <= starts_at:
         raise MailboxChangeError("The end must be after the start")
-    if ticket.triaged_at is None:
+    if ticket.triaged_at is None and not before_triage:
         raise MailboxChangeError("The request has not been triaged: its request type needs defaults so that it triages itself")
     change = MailboxChange(
         ticket_id=ticket.id, kind=kind, owner_object_id=(owner_object_id or None) and owner_object_id.lower(),
@@ -280,9 +346,59 @@ def create_mailbox_change(
     session.add(change)
     session.flush()
     _audit(session, created_by, change, "created", f"{kind}, starts {starts_at:%Y-%m-%d %H:%M} UTC, ends {ends_at:%Y-%m-%d %H:%M} UTC")
-    if ticket.status != TicketStatus.AWAITING_APPROVAL:
+    if ticket.status != TicketStatus.AWAITING_APPROVAL and not before_triage:
         schedule_ticket(session, ticket, change)
     return change
+
+
+def finish_on_behalf(session: Session, ticket: Ticket) -> None:
+    """After a request for someone else's mailbox has been raised and triaged (#311): a request that waits for approval keeps its rows
+    scheduled but unclaimed (the job skips Awaiting approval) and is scheduled by `after_approval`; one that did not need to wait is
+    scheduled now. Raises MailboxChangeError when the request was not triaged (its type's defaults are not all set)."""
+    if ticket.triaged_at is None:
+        raise MailboxChangeError("The request has not been triaged: its request type needs defaults so that it triages itself")
+    if ticket.status == TicketStatus.AWAITING_APPROVAL:
+        return
+    for change in changes_for_ticket(session, ticket):
+        schedule_ticket(session, ticket, change)
+
+
+def after_approval(session: Session, ticket: Ticket, now: Optional[datetime] = None) -> None:
+    """The request for someone else's mailbox was approved (#311, called by the approval flow): each change still waiting is scheduled
+    now with `schedule_ticket` (once per change; it is idempotent), the SLA starting at the later of its start time and now. A
+    change that starts in the past begins at the job's next run. One whose end time has already passed is cancelled, the request
+    is resolved with a note and the requester told. Does nothing for a request with no waiting change. Does not commit."""
+    now = now or utcnow()
+    waiting = [c for c in changes_for_ticket(session, ticket) if c.state == MAILBOX_SCHEDULED and c.applied_at is None]
+    if not waiting:
+        return
+    live = []
+    for change in waiting:
+        if _aware(change.ends_at) <= now:
+            change.state, change.next_attempt_at, change.updated_at = MAILBOX_CANCELLED, None, now
+            session.add(change)
+            _audit(session, AUDIT_ACTOR, change, "cancelled", "approved after the end time had passed")
+            record_event(session, ticket, EVENT_CANCELLED, "system", to_value=change.kind, detail="approved after its end time")
+        else:
+            live.append(change)
+    for change in live:
+        schedule_ticket(session, ticket, change, not_before=now)
+    if not live:
+        _resolve(session, ticket, "This request was approved after the end time you chose, so nothing was changed.", None, _others(session, ticket, waiting[0]))
+        record_notice(session, ticket, render_template(session, "mailbox_expired_requester", ticket_values(ticket)).body)
+
+
+def drop_unstarted(session: Session, ticket: Ticket, reason: str, now: Optional[datetime] = None) -> None:
+    """A request for someone else's mailbox will not be approved (declined or withdrawn, #311): the changes it was holding back are
+    cancelled with an audit entry, so the job never makes them. The ticket was closed by the approval flow, which told the requester.
+    Does not commit."""
+    now = now or utcnow()
+    for change in changes_for_ticket(session, ticket):
+        if change.state == MAILBOX_SCHEDULED and change.applied_at is None:
+            change.state, change.next_attempt_at, change.updated_at = MAILBOX_CANCELLED, None, now
+            session.add(change)
+            _audit(session, AUDIT_ACTOR, change, "cancelled", reason)
+            record_event(session, ticket, EVENT_CANCELLED, "system", to_value=change.kind, detail=reason)
 
 
 # ---- The ticket side of each outcome -------------------------------------------------------------------------------
@@ -311,8 +427,10 @@ def _applied_note(session: Session, change: MailboxChange, others: list[MailboxC
     made = sorted([change] + [o for o in others if o.applied_at is not None and o.state != MAILBOX_CANCELLED], key=lambda c: c.id)
     lines = []
     for item in made:
-        values = _lines(item, session.get(Ticket, item.ticket_id), session)
-        lines.append(RESOLUTION_NOTE.get(item.kind, "{target}: {kind}").format(target=values["target"], until=values["until_owner"]))
+        item_ticket = session.get(Ticket, item.ticket_id)
+        values = _lines(item, item_ticket, session)
+        table = _for_requester(session, item, item_ticket, RESOLUTION_NOTE, RESOLUTION_NOTE_TARGET, RESOLUTION_NOTE_THIRD)
+        lines.append(table.get(item.kind, "{target}: {kind}").format(owner=values["owner"], target=values["target"], until=values["until_requester"]))
     return ". ".join(lines)
 
 
@@ -341,6 +459,8 @@ def _resolve(session: Session, ticket: Ticket, note: str, actor: Optional[User],
 
 
 def _tell_target(session: Session, change: MailboxChange, ticket: Ticket, key: str, table: dict[str, str], values: dict[str, str]) -> None:
+    if _on_behalf(session, change, ticket) and _target_is_requester(session, change, ticket):
+        return  # the requester is the other person: their own email and note already say so
     rendered = render_template(
         session, key,
         {
@@ -349,6 +469,38 @@ def _tell_target(session: Session, change: MailboxChange, ticket: Ticket, key: s
         },
     )
     queue_mailbox_change_mail(session, ticket, change.target_address, rendered.subject or "", rendered.body)
+
+
+def _approved_by(session: Session, ticket: Ticket) -> str:
+    """Who approved a request for someone else's mailbox, as the end of a sentence for the owner: "you approved it", "it was approved by
+    Sam Lee (IT Support)" or "it was approved by an administrator" (a waiver)."""
+    approval = current_approval(session, ticket)
+    if approval is None:
+        return "it was approved"
+    if approval.status == WAIVED:
+        return "it was approved by an administrator"
+    for vote, voter in votes_of(session, approval):
+        if vote.decision == APPROVED:
+            mailbox_owners = {c.owner_address.strip().lower() for c in changes_for_ticket(session, ticket)}
+            if mailbox_owners & addresses_of(session, voter.email):
+                return "you approved it"
+            return f"it was approved by {voter.display_name or voter.email} (IT Support)"
+    return "it was approved"
+
+
+def _tell_owner(session: Session, change: MailboxChange, ticket: Ticket, key: str, table: dict[str, str], values: dict[str, str]) -> None:
+    """The owner of the mailbox is always told when a change THEY did not ask for starts or ends (#311), whoever approved it and
+    whether or not they voted. Nothing for a request about the person's own mailbox (the requester is told, as before)."""
+    if not _on_behalf(session, change, ticket):
+        return
+    rendered = render_template(
+        session, key,
+        {
+            "change": _sentence(table, change, values), "until": values["until_owner"], "copy_text": values["copy_text_owner"],
+            "requested_by": values["requester"], "approved_by": _approved_by(session, ticket),
+        },
+    )
+    queue_mailbox_change_mail(session, ticket, change.owner_address, rendered.subject or "", rendered.body)
 
 
 def _on_applied(session: Session, change: MailboxChange, ticket: Ticket, now: datetime, actor: Optional[User] = None) -> None:
@@ -365,12 +517,14 @@ def _on_applied(session: Session, change: MailboxChange, ticket: Ticket, now: da
     body = render_template(
         session, "mailbox_started_requester",
         {
-            **ticket_values(ticket), "change": _sentence(STARTED_OWNER, change, values), "target": values["target"],
-            "until": values["until_owner"], "copy_text": values["copy_text"], "link": values["link"],
+            **ticket_values(ticket),
+            "change": _sentence(_for_requester(session, change, ticket, STARTED_OWNER, STARTED_TARGET, STARTED_THIRD), change, values),
+            "target": values["target"], "until": values["until_requester"], "copy_text": values["copy_text"], "link": values["link"],
         },
     ).body
     record_notice(session, ticket, body)
     _tell_target(session, change, ticket, STARTED_TARGET_KEY.get(change.kind, "mailbox_started_target"), STARTED_TARGET, values)
+    _tell_owner(session, change, ticket, "mailbox_started_owner", STARTED_OWNER, values)
 
 
 def _on_removed(session: Session, change: MailboxChange, ticket: Ticket, now: datetime, actor: Optional[User] = None) -> None:
@@ -384,10 +538,15 @@ def _on_removed(session: Session, change: MailboxChange, ticket: Ticket, now: da
     record_event(session, ticket, EVENT_ENDED, actor.email if actor else "system", to_value=change.kind, detail=("done by hand" if actor else None))
     body = render_template(
         session, "mailbox_stopped_requester",
-        {**ticket_values(ticket), "change": _sentence(STOPPED_OWNER, change, values), "target": values["target"]},
+        {
+            **ticket_values(ticket),
+            "change": _sentence(_for_requester(session, change, ticket, STOPPED_OWNER, STOPPED_TARGET, STOPPED_THIRD), change, values),
+            "target": values["target"],
+        },
     ).body
     record_notice(session, ticket, body)
     _tell_target(session, change, ticket, "mailbox_stopped_target", STOPPED_TARGET, values)
+    _tell_owner(session, change, ticket, "mailbox_stopped_owner", STOPPED_OWNER, values)
     _settle_incident(session, change, now, actor)
 
 
@@ -809,7 +968,7 @@ def cancel(session: Session, change: MailboxChange, actor: User, now: Optional[d
             session, "mailbox_part_cancelled_requester", {**ticket_values(ticket), "kind": word}
         ).body
     else:
-        _resolve(session, ticket, "This request was cancelled by IT Support. Nothing was changed on your mailbox.", actor)
+        _resolve(session, ticket, "This request was cancelled by IT Support. Nothing was changed on the mailbox.", actor)
         body = render_template(session, "mailbox_cancelled_requester", ticket_values(ticket)).body
     record_notice(session, ticket, body)
 
@@ -826,6 +985,8 @@ def cancel_by_requester(session: Session, change: MailboxChange, actor_email: st
     if change.state != MAILBOX_SCHEDULED or _aware(change.starts_at) <= now:
         raise MailboxChangeError("This change has already started or is about to: stop it once it is on instead")
     ticket = session.get(Ticket, change.ticket_id)
+    if ticket.status == TicketStatus.AWAITING_APPROVAL:
+        raise MailboxChangeError("This request is waiting for approval: withdraw the request instead (#311)")
     change.state, change.next_attempt_at, change.updated_at = MAILBOX_CANCELLED, None, now
     session.add(change)
     _audit(session, actor_email, change, "cancelled", "by the requester before the start")

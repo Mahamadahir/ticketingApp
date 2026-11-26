@@ -21,7 +21,7 @@
       <option value="">(none: an ordinary request with form questions)</option>
       {% for key, label in mailbox_action_labels.items() %}<option value="{{ key }}" {{ "selected" if t and key == t.mailbox_action else "" }}>{{ label }}</option>{% endfor %}
     </select>
-    <span class="note">A kind with an action shows its own form instead of form questions and changes the signed-in person's own mailbox at the times they choose. It needs no approval group (it cannot have one) and, to be switched on, all four defaults (team, category, impact, urgency) so that it triages itself; a blank impact or urgency is saved as Low. Forwarding has its own form; Full access and Send As share one form, "Give someone access to my mailbox". Nothing is offered unless this environment has MAILBOX_EXECUTOR set.</span>
+    <span class="note">A kind with an action shows its own form instead of form questions and changes the signed-in person's own mailbox at the times they choose. It needs, to be switched on, all four defaults (team, category, impact, urgency) so that it triages itself; a blank impact or urgency is saved as Low. Its approval group (optional) is the IT approvers for requests about SOMEONE ELSE'S mailbox, which the owner of the mailbox can also approve; a request about the person's own mailbox never needs approval. Without a group the form offers only "Mine". Tick "Any one approver is enough" below for these (one answer settles it). Forwarding has its own form; Full access and Send As share one form, "Give someone access to my mailbox". Nothing is offered unless this environment has MAILBOX_EXECUTOR set.</span>
   </label>
   <label class="check field-wide"><input type="checkbox" name="is_active" {{ "checked" if (t.is_active if t else true) else "" }} /> Available on the request form</label>
   <label class="check field-wide"><input type="checkbox" name="is_featured" {{ "checked" if t and t.is_featured else "" }} /> Feature on the portal home page (up to four kinds show as quick-start tiles; with none featured, the first four do)</label>
@@ -66,7 +66,8 @@
   </label>
   <label class="field">Percent to pass <input type="number" name="pass_percent" value="{{ t.pass_percent if t else default_pass }}" min="1" max="100" required /></label>
   <label class="check field-wide"><input type="checkbox" name="subrequests_need_own_approval" {{ "checked" if t and t.subrequests_need_own_approval else "" }} /> Sub-requests of this kind need their own approval (otherwise the request they come from covers them)</label>
-  <label class="check field-wide"><input type="checkbox" name="approvers_may_self_approve" {{ "checked" if t and t.approvers_may_self_approve else "" }} /> Approvers may approve their own requests (an active member of the approval group who raises one of these has their approval recorded at once)</label>
+  <label class="check field-wide"><input type="checkbox" name="any_one_approver" {{ "checked" if t and t.any_one_approver else "" }} /> Any one approver is enough (the first answer settles it, whatever the number of approvers and the percent above; for a mailbox kind the approvers are the owner of the mailbox and the approval group)</label>
+  <label class="check field-wide"><input type="checkbox" name="approvers_may_self_approve" {{ "checked" if t and t.approvers_may_self_approve else "" }} /> Approvers may approve their own requests (an active member of the approval group who raises one of these has their approval recorded at once; never for a mailbox kind)</label>
 {% endmacro %}
 {% macro template_fields(tpl, t) %}
   <label class="field field-wide">Subject (use {Question} for an answer, e.g. Laptop for {Name})

@@ -107,7 +107,7 @@
 </form>
 {% endif %}
 {% elif ticket.status.value == "awaiting_approval" %}
-<p class="note tp-banner"><b>Waiting for approval</b> ({{ approval_rule }}). The ticket moves on when its approvers decide; its status cannot be changed by hand until then. The SLA clock is running.</p>
+<p class="note tp-banner"><b>Waiting for approval</b> ({{ approval_rule }}). The ticket moves on when its approvers decide; its status cannot be changed by hand until then. The SLA clock is running.{% if approval_note %} {{ approval_note }}{% endif %}</p>
 {% endif %}
 
 {% if ticket.is_escalated %}

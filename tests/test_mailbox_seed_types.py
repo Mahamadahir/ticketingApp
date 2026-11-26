@@ -113,12 +113,11 @@ def test_an_active_mailbox_type_still_needs_a_team_and_category_on_create(db_ses
         create_request_type(db_session, "Forward", "d", None, 51, True, mailbox_action="forwarding")
 
 
-def test_a_mailbox_type_still_cannot_have_an_approval_group_even_when_inactive(db_session):
-    from tests.test_request_types import group_of
+def test_the_seeded_types_have_no_approval_group_so_only_mine_is_offered(db_session):
+    from app.request_types import offers_someone_elses
 
-    group = group_of(db_session, "Managers")
-    with pytest.raises(RequestTypeError, match="cannot have an approval group"):
-        create_request_type(db_session, "Forward", "d", group.id, 51, False, mailbox_action="forwarding")
+    run(db_session, "upgrade")
+    assert not any(offers_someone_elses(r) for r in mailbox_types(db_session))
 
 
 def test_a_blank_impact_and_urgency_are_saved_as_low_for_a_mailbox_type_only(db_session):

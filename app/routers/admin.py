@@ -1464,6 +1464,7 @@ def _type_snapshot(session: Session, request_type: RequestType) -> tuple:
         request_type.due_days_before, request_type.queue_lead_days,
         _defaults_text(session, request_type), request_type.subrequests_need_own_approval,
         request_type.approvers_may_self_approve, request_type.is_featured, request_type.icon, request_type.mailbox_action,
+        request_type.any_one_approver,
     )
 
 
@@ -1556,6 +1557,7 @@ def add_request_type(
     is_featured: Optional[str] = Form(None),
     icon: Optional[str] = Form(None, max_length=40),
     mailbox_action: Optional[str] = Form(None, max_length=40),
+    any_one_approver: Optional[str] = Form(None),
     admin: User = Depends(require_request_templates),
     session: Session = Depends(get_session),
 ):
@@ -1569,6 +1571,7 @@ def add_request_type(
             subrequests_need_own_approval=subrequests_need_own_approval == "on",
             approvers_may_self_approve=approvers_may_self_approve == "on",
             is_featured=is_featured == "on", icon=icon, mailbox_action=mailbox_action,
+            any_one_approver=any_one_approver == "on",
         )
     except RequestTypeError as error:
         session.rollback()
@@ -1598,6 +1601,7 @@ def edit_request_type(
     is_featured: Optional[str] = Form(None),
     icon: Optional[str] = Form(None, max_length=40),
     mailbox_action: Optional[str] = Form(None, max_length=40),
+    any_one_approver: Optional[str] = Form(None),
     admin: User = Depends(require_request_templates),
     session: Session = Depends(get_session),
 ):
@@ -1606,6 +1610,10 @@ def edit_request_type(
         raise HTTPException(status_code=404, detail="Request type not found")
     if ((mailbox_action or "").strip() or None) != request_type.mailbox_action and admin.role != UserRole.SUPER_ADMIN:
         raise HTTPException(status_code=403, detail="Only a super admin can change what a request type does to a mailbox")
+    if request_type.mailbox_action and admin.role != UserRole.SUPER_ADMIN and (
+        optional_int(approval_group_id) != request_type.approval_group_id or (any_one_approver == "on") != request_type.any_one_approver
+    ):
+        raise HTTPException(status_code=403, detail="Only a super admin can change who approves requests for someone else's mailbox")
     before = _type_snapshot(session, request_type)
     was_active = request_type.is_active
     try:
@@ -1617,6 +1625,7 @@ def edit_request_type(
             subrequests_need_own_approval=subrequests_need_own_approval == "on",
             approvers_may_self_approve=approvers_may_self_approve == "on",
             is_featured=is_featured == "on", icon=icon, set_icon=True, mailbox_action=mailbox_action, set_mailbox_action=True,
+            any_one_approver=any_one_approver == "on",
         )
     except RequestTypeError as error:
         session.rollback()
@@ -1652,6 +1661,8 @@ def edit_request_type(
             changes.append(f"icon {before[11] or '(default)'} -> {after[11] or '(default)'}")
         if before[12] != after[12]:
             changes.append(f"mailbox action {before[12] or '(none)'} -> {after[12] or '(none)'}")
+        if before[13] != after[13]:
+            changes.append(f"any one approver is enough {before[13]} -> {after[13]}")
         log_action(session, admin.email, "request_type", request_type.id, "edited", "; ".join(changes))
     if request_type.is_active != was_active:
         log_action(

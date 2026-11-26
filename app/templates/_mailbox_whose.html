@@ -1,0 +1,16 @@
+{# "Whose mailbox?" for the portal's mailbox forms (#311): Mine (the default, as before) or Someone else's, chosen with the people picker
+   (prefix `mo`, field owner_object_id). Only shown for a kind of request that offers it (it has an approval group: someone else's
+   mailbox is approved by the owner or an IT approver). The server checks both again. static/mailbox-form.js shows and hides the owner
+   picker. #}
+{% if mailbox_can_other %}
+  <fieldset class="mb-fieldset" id="mb-whose">
+    <legend>Whose mailbox?</legend>
+    <label class="mb-choice"><input type="radio" name="whose" value="mine" {{ "checked" if f.whose != "other" else "" }} /> Mine</label>
+    <label class="mb-choice"><input type="radio" name="whose" value="other" {{ "checked" if f.whose == "other" else "" }} /> Someone else's</label>
+    <p class="nr-hint">A request for someone else's mailbox needs approval from the mailbox owner or IT Support. The owner is told when it starts and when it ends.</p>
+  </fieldset>
+  <div id="mb-owner-block"{% if f.whose != "other" %} hidden{% endif %}>
+    {% set picker_legend = "Their mailbox" %}{% set picker_prefix = "mo" %}{% set picker_field = "owner" %}{% set picker_oid = f.owner_object_id %}{% set picker_name = f.owner_name %}
+    {% include "_mailbox_picker.html" %}
+  </div>
+{% endif %}

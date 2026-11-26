@@ -235,6 +235,7 @@ COLUMNS: dict[str, ColumnUse] = {
     "approvalvote.voter_id": _use(SUBJECT, USER_ID, "approval votes", anon=KEEP),
     "approvalvote.comment": _use(TEXT, FREE_TEXT, "approval votes", anon=BLANK),
     "ticketapproval.voters": _use(NOT_PERSON, LABEL, "a count"),
+    "approvalvote.extra_voter": _use(NOT_PERSON, LABEL, "a flag: the vote was added for the request, not from the group (#311)"),
     "actiontoken.resolved_by_id": _use(STAFF, USER_ID, "the agent a feedback link is about"),
     "ticketfeedback.resolved_by_id": _use(STAFF, USER_ID, "the agent a rating is about"),
     "ticket_reaction.user_id": _use(SUBJECT, USER_ID, "reactions the person made to messages about a ticket (Teams or email)", anon=DELETE),

@@ -30,6 +30,7 @@ from app.approvals import (
     withdraw,
     count_pending_for,
     describe_rule,
+    note_required,
     pending_for,
     vote_for,
     record_decision,
@@ -69,11 +70,11 @@ from app.reply_channel import PORTAL, note_requester_wrote
 from app.splitting import apply_requester_reply
 from app.request_questions import answer_rows, form_rows
 from app.request_types import (
-    PROBLEM_TITLE, active_request_types, approval_notice, is_offered, portal_cards, portal_tiles, request_type_of,
+    PROBLEM_TITLE, active_request_types, approval_notice, is_offered, offers_someone_elses, portal_cards, portal_tiles, request_type_of,
 )
 from app import people_directory, portal_mailbox
 from app.mailbox_changes import MailboxChangeError, cancel_by_requester, changes_for_ticket, stop_now
-from app.portal_mailbox import AccessForm, ConfirmAccess, ConfirmNoCopy, ForwardingForm, MailboxFormError, TargetRefused
+from app.portal_mailbox import AccessForm, ConfirmAccess, ConfirmNoCopy, ForwardingForm, MailboxFormError, OwnerRefused, TargetRefused
 from app.rate_limit import PEOPLE_SEARCH, rate_limited
 from app.required_by import RequiredByError, offers_required_by, parse_required_by, set_required_by
 from app.models import FINISHED_STATUSES, Category, MessageDirection, RequestType, Ticket, TicketSource, TicketStatus, TicketType, User, UserRole
@@ -167,6 +168,7 @@ def _render_new_form(
         "portal_new_ticket.html",
         {
             "mailbox_mode": mailbox_mode,
+            "mailbox_can_other": chosen is not None and offers_someone_elses(chosen),
             "mailbox_form": mailbox_form or ForwardingForm(),
             "mailbox_error": form_error,
             "mailbox_confirm_text": confirm_text,
@@ -291,8 +293,11 @@ def _render_ticket(request: Request, ticket: Ticket, user: User, session: Sessio
             "request_info": request_info,
             "answers": requester_visible_answers(session, ticket),
             "my_approval": _my_pending_approval(session, ticket, user),
+            "my_approval_note_required": note_required(session, ticket, user),
+            "mailbox_summary": portal_mailbox.approval_summary(session, ticket) if _my_pending_approval(session, ticket, user) else "",
             "is_approver": vote_for(session, ticket, user) is not None,
             "approval_rule": _approval_rule(session, ticket),
+            "approval_note": portal_mailbox.approval_note(session, ticket) if mine else "",
             "self_approved": _self_approved(session, ticket, user),
             # Only the requester sees who else is copied; a follower must not learn
             # the other followers' addresses, and internal followers are never shown.
@@ -429,6 +434,9 @@ def request_mailbox_change(
     request_type_id: str = Form(..., max_length=20),
     target_object_id: str = Form("", max_length=100),
     target_name: str = Form("", max_length=200),
+    whose: str = Form(portal_mailbox.MINE, max_length=10),
+    owner_object_id: str = Form("", max_length=100),
+    owner_name: str = Form("", max_length=200),
     keep_copy: Optional[str] = Form(None, max_length=10),
     start_mode: str = Form(portal_mailbox.NOW, max_length=10),
     start_date: str = Form("", max_length=20),
@@ -452,6 +460,8 @@ def request_mailbox_change(
         raise HTTPException(status_code=400, detail="Choose a kind of request from the list")
     common = dict(
         target_object_id=target_object_id.strip(), target_name=target_name.strip(), keep_copy=keep_copy == "on",
+        whose=portal_mailbox.OTHER if whose == portal_mailbox.OTHER else portal_mailbox.MINE,
+        owner_object_id=owner_object_id.strip(), owner_name=owner_name.strip(),
         start_mode=portal_mailbox.LATER if start_mode == portal_mailbox.LATER else portal_mailbox.NOW,
         start_date=start_date, start_time=start_time, end_date=end_date, end_time=end_time, confirm_no_copy=confirm_no_copy == "1",
     )
@@ -473,6 +483,8 @@ def request_mailbox_change(
         session.rollback()
         if isinstance(error, TargetRefused):
             form.target_object_id = form.target_name = ""  # asked to choose again
+        if isinstance(error, OwnerRefused):
+            form.owner_object_id = form.owner_name = ""
         return _render_new_form(request, user, session, chosen.id, form, form_error=str(error), status_code=400)
     session.commit()
     return RedirectResponse(f"/portal/{ticket.number}", status_code=303)
@@ -579,6 +591,8 @@ def my_approvals(
             "answers": answer_rows(session, ticket),
             "rule": describe_rule(approval) if approval is not None else None,
             "kind": (request_type_of(session, ticket) or (None, None))[0],
+            "note_required": note_required(session, ticket, user),
+            "mailbox_note": portal_mailbox.approval_summary(session, ticket),
         })
     return templates.TemplateResponse(
         request, "portal_approvals.html", {"cards": cards, "max_comment_length": MAX_COMMENT_LENGTH, "zone": zone, "user": user}
@@ -731,12 +745,11 @@ def withdraw_my_request(
 
 
 def _own_mailbox_change(session: Session, number: int, user: User, change_id: Optional[str] = None):
-    """The ticket and one mailbox change it made, for the person whose mailbox it is; 404 for anyone else, any other ticket or a
-    change that belongs to another ticket. A request with several changes (#310) says which in `change_id`; without it, a request
+    """The ticket and one mailbox change it made, for the requester (their own mailbox or, #311, someone else's that they asked
+    about); 404 for anyone else, any other ticket or a change that belongs to another ticket. A request with several changes (#310) says which in `change_id`; without it, a request
     with one change means that one."""
     ticket = _get_own_ticket(session, number, user)
-    mine = identity.requester_emails(user)
-    found = [c for c in changes_for_ticket(session, ticket) if c.owner_address in mine]
+    found = list(changes_for_ticket(session, ticket))  # `_get_own_ticket` has checked that the user is the requester
     wanted = optional_int(change_id)
     if wanted is not None:
         found = [c for c in found if c.id == wanted]

@@ -715,7 +715,7 @@ def _approval_progress(session: Session, ticket: Ticket) -> str:
     approval = current_approval(session, ticket)
     if approval is None or approval.status != PENDING:
         return "Waiting for approval"
-    needed = votes_needed(approval.pass_percent, approval.voters)
+    needed = votes_needed(approval.pass_percent, approval.voters, approval.any_one)
     approved = tally([vote for vote, _ in votes_of(session, approval)])[0]
     if needed <= 1:
         return "Waiting for approval"

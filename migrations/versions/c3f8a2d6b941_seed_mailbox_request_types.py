@@ -4,6 +4,9 @@ Data only, no schema change (#325; tracker #305). Creates "Forward my mail" (mai
 access to my mailbox" (`full_access`), both switched off and with no team or category: an admin chooses the team and category
 under Admin > Request types and switches them on (the editor refuses to switch one on until all four defaults are set).
 
+The seeded types get no approval group (#311 lets a mailbox type have one, used only for "Someone else's" mailbox): an admin adds
+one if they want that path offered. Requests for the person's own mailbox never need approval.
+
 A type is created only when no request type already has that mailbox action and none has that name, so a type an admin made by
 hand is never touched, and running the migration again adds nothing. It never updates or deletes an existing row.
 
@@ -11,7 +14,7 @@ The downgrade removes only the rows this migration could have created, and only 
 nothing refers to them (no ticket, question or sub-request template); an edited or used type is left alone.
 
 Revision ID: c3f8a2d6b941
-Revises: b5e2c8a1f903
+Revises: c8d4a1e6f257
 Create Date: 2026-11-26 10:00:00.000000
 
 """
@@ -23,7 +26,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = 'c3f8a2d6b941'
-down_revision: Union[str, Sequence[str], None] = 'b5e2c8a1f903'
+down_revision: Union[str, Sequence[str], None] = 'c8d4a1e6f257'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
