@@ -168,7 +168,7 @@ def test_no_code_but_the_one_helper_builds_a_message():
             self.generic_visit(node)
 
     for path in sorted(APP.rglob("*.py")):
-        Finder(path.relative_to(APP).as_posix()).visit(ast.parse(path.read_text()))
+        Finder(path.relative_to(APP).as_posix()).visit(ast.parse(path.read_text(encoding="utf-8")))
     assert set(sites) <= {("messages.py", "_record")}, f"a Message is built outside _record: {sorted(set(sites) - {('messages.py', '_record')})}"
     assert ("messages.py", "_record") in sites
 
