@@ -1,6 +1,7 @@
 """htmx wraps a `js:` hx-vals that does not start with `{` in braces, so `js:f()` becomes `({f()})`, a syntax error
 that stops htmx setting up the rest of the page. Every `js:` hx-vals in a template must be an object literal."""
 
+import pytest
 import re
 from pathlib import Path
 
@@ -8,6 +9,7 @@ TEMPLATES = Path(__file__).resolve().parent.parent / "app" / "templates"
 JS_VALS = re.compile(r"""hx-vals\s*=\s*(["'])\s*(?:js|javascript):(.*?)\1""", re.S)
 
 
+@pytest.mark.guard
 def test_every_js_hx_vals_is_an_object_literal():
     bad = []
     for path in sorted(TEMPLATES.rglob("*.html")):

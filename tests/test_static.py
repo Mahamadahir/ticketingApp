@@ -1,3 +1,4 @@
+import pytest
 import hashlib
 import re
 from pathlib import Path
@@ -8,6 +9,7 @@ TEMPLATES = Path("app/templates")
 VENDOR = Path("app/static/vendor")
 
 
+@pytest.mark.guard
 def test_no_template_loads_a_script_or_stylesheet_from_another_origin():
     external = re.compile(r"""<(?:script|link)\b[^>]*\b(?:src|href)\s*=\s*["'](?:https?:)?//""", re.IGNORECASE)
     offenders = [p.name for p in TEMPLATES.rglob("*.html") if external.search(p.read_text(encoding="utf-8"))]

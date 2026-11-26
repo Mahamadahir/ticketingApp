@@ -284,6 +284,9 @@ with `createReply` (sendMail returns no id, so a sent message has none).
    and wait for CI's full run on the final commit and report it. Run the whole suite locally only when the
    user asks: agents share this machine, and local full runs took 30 minutes or more and often never
    finished, while CI takes 8 to 15.
+   Also run `pytest -n 2 -m guard` before every push: the guard tests (marked `@pytest.mark.guard`) scan every
+   model, template, route, registry or stylesheet, so a new column, template or colour breaks one even when
+   you touched none of their files. Mark any new such scan test `guard`.
 5. Break it on purpose: temporarily mutate the rule you added (flip a check, drop a
    lock, widen a query) and confirm a test fails; restore. Surviving mutations mean
    a missing test.

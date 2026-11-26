@@ -50,7 +50,7 @@ def scratch():
     admin = psycopg2.connect(host=parsed.host, port=parsed.port, user=parsed.username, password=parsed.password, dbname="postgres")
     admin.autocommit = True
     with admin.cursor() as cursor:
-        cursor.execute(f'DROP DATABASE IF EXISTS "{name}"')
+        cursor.execute(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
         cursor.execute(f'CREATE DATABASE "{name}"')
     url = parsed.set(database=name).render_as_string(hide_password=False)
 
@@ -63,15 +63,24 @@ def scratch():
         assert result.returncode == 0, result.stderr
         return result
 
+    opened = []
+
     def connect():
+        # `with connect() as c` only ends a transaction, it does not close the connection, so every
+        # connection is kept here and closed in the teardown (an open one made the DROP fail with ObjectInUse).
         connection = psycopg2.connect(host=parsed.host, port=parsed.port, user=parsed.username, password=parsed.password, dbname=name)
         connection.autocommit = True
+        opened.append(connection)
         return connection
 
-    yield alembic, connect
-    with admin.cursor() as cursor:
-        cursor.execute(f'DROP DATABASE IF EXISTS "{name}"')
-    admin.close()
+    try:
+        yield alembic, connect
+    finally:
+        for connection in opened:
+            connection.close()
+        with admin.cursor() as cursor:
+            cursor.execute(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
+        admin.close()
 
 
 def rows(connect, query):

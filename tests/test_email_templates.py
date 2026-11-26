@@ -84,6 +84,7 @@ def test_empty_and_overlong_text_is_refused():
         et.validate(et.definition("approval_request"), "  ", "{link}")
 
 
+@pytest.mark.guard
 def test_every_default_is_valid_and_previews_with_its_sample():
     for defn in et.REGISTRY.values():
         et.validate(defn, defn.subject_default, defn.body_default)
@@ -312,6 +313,7 @@ def test_the_waived_notice_reads_as_it_always_did(client, db_session, dev_mail):
 # ---- 9L: the list by audience and the full-page editor ----------------------------------------------------------------
 
 
+@pytest.mark.guard
 def test_every_template_has_exactly_one_audience():
     assert set(et.AUDIENCE_OF) == set(et.REGISTRY)
     assert set(et.AUDIENCE_OF.values()) <= {key for key, _title, _blurb in et.AUDIENCES}

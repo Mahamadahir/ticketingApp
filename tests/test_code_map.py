@@ -157,6 +157,7 @@ def test_check_fails_on_a_stale_map_and_passes_when_current(tmp_path, capsys):
     assert code_map.main(["--root", str(repo), "--check"]) == 1
 
 
+@pytest.mark.guard
 def test_the_committed_map_is_current():
     """The same check CI runs: fails when someone changed code without regenerating the map."""
     assert code_map.main(["--check"]) == 0

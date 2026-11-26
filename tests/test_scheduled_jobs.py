@@ -1,3 +1,4 @@
+import pytest
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -368,6 +369,7 @@ def test_the_registry_refuses_duplicate_names_and_zero_intervals():
     assert registry_errors([ScheduledJobDef("x", 0, lambda s: None)])
 
 
+@pytest.mark.guard
 def test_the_registered_jobs_are_valid():
     assert registry_errors(scheduled_jobs.SCHEDULED_JOBS) == []
 

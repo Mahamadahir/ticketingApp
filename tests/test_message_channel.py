@@ -146,6 +146,7 @@ def test_the_notes_the_app_writes_for_an_agents_action_record_agent(client, db_s
 APP = Path(__file__).resolve().parent.parent / "app"
 
 
+@pytest.mark.guard
 def test_no_code_but_the_one_helper_builds_a_message():
     """A Message is built in app/messages.py `_record` and nowhere else in the app, so its channel cannot be forgotten."""
     sites = []
@@ -167,7 +168,7 @@ def test_no_code_but_the_one_helper_builds_a_message():
             self.generic_visit(node)
 
     for path in sorted(APP.rglob("*.py")):
-        Finder(path.relative_to(APP).as_posix()).visit(ast.parse(path.read_text()))
+        Finder(path.relative_to(APP).as_posix()).visit(ast.parse(path.read_text(encoding="utf-8")))
     assert set(sites) <= {("messages.py", "_record")}, f"a Message is built outside _record: {sorted(set(sites) - {('messages.py', '_record')})}"
     assert ("messages.py", "_record") in sites
 

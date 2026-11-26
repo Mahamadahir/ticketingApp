@@ -130,6 +130,7 @@ def test_a_split_part_has_the_originals_reference_as_the_subject_does_and_the_ab
 # ---- No header on anything else ---------------------------------------------------------------------
 
 
+@pytest.mark.guard
 def test_only_the_requester_builders_make_a_header():  # the four of #257 and the split notice (#259, an automatic notice)
     callers = {
         name for name, fn in inspect.getmembers(mail, inspect.isfunction)

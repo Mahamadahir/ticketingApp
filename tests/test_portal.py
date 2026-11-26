@@ -1,3 +1,4 @@
+import pytest
 from app.models import Ticket, TicketStatus
 from tests.conftest import login_as
 
@@ -87,6 +88,7 @@ def test_someone_else_sees_neither_in_the_list_nor_by_link(client, db_session):
     assert client.post(f"/portal/{ticket.number}/comment", data={"body": "hi"}).status_code == 404
 
 
+@pytest.mark.guard
 def test_every_portal_path_goes_through_the_requester_emails_helper(client, db_session, monkeypatch):
     first = create_ticket_for(db_session, "me@example.com", subject="Under first address")
     second = create_ticket_for(db_session, "me@othercompany.com", subject="Under second address")

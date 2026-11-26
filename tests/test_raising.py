@@ -291,6 +291,7 @@ def test_raising_is_audited(client, db_session):
 # ---- The one rule: only the raise form makes agent tickets ------------------------------------------
 
 
+@pytest.mark.guard
 def test_only_the_raise_module_creates_agent_sourced_tickets():
     """Backdating trusts source=agent, so nothing else may set it when creating a ticket."""
     offenders = []
