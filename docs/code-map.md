@@ -346,6 +346,7 @@ any change that adds, removes or renames modules, routes, models, jobs, settings
 | `ATTACHMENT_INLINE_MIN_BYTES` | `int` | `5 * 1024` |
 | `ATTACHMENT_LINK_SECONDS` | `int` | `90` |
 | `ATTACHMENT_MAX_BYTES` | `int` | `10 * 1024 * 1024` |
+| `BCRYPT_ROUNDS` | `int` | `Field(default=12, ge=4, le=16)` |
 | `DATABASE_URL` | `str` | `(url with credentials)` |
 | `ENTRA_ACCOUNT_CHECK_ENABLED` | `bool` | `False` |
 | `ENV` | `str` | `'production'` |
@@ -546,7 +547,7 @@ File: `app/auth.py`
 - Functions: `acquire_token_by_auth_code`, `attempt_local_login`, `build_auth_url`, `get_current_user`, `get_current_user_passively`, `get_or_create_user`, `hash_password`, `require_permission`, `require_roles`
 - Imports: `app.audit`, `app.config`, `app.database`, `app.identity`, `app.models`, `app.outage`, `app.sessions`, `app.time_zones`, `app.visibility`
 - Imported by: `app.breakglass`, `app.emergency`, `app.main`, `app.routers.admin`, `app.routers.attachments`, `app.routers.auth`, `app.routers.bulk_resolve`, `app.routers.data_protection`, `app.routers.feedback`, `app.routers.link_account`, `app.routers.msp_mail`, `app.routers.my_settings`, `app.routers.notifications`, `app.routers.portal`, `app.routers.reports`, `app.routers.tickets`
-- Tests: `test_activity_log.py`, `test_admin_users_page.py`, `test_auth.py`, `test_break_glass.py`, `test_hardening.py`, `test_login_lockout.py`, `test_outage_mode.py`, `test_sessions.py`, `test_visibility.py`
+- Tests: `test_activity_log.py`, `test_admin_users_page.py`, `test_auth.py`, `test_break_glass.py`, `test_hardening.py`, `test_login_lockout.py`, `test_outage_mode.py`, `test_security.py`, `test_sessions.py`, `test_visibility.py`
 
 ### `app.auto_close_chase`
 

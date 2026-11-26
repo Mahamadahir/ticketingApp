@@ -674,6 +674,7 @@
         "tests/test_hardening.py",
         "tests/test_login_lockout.py",
         "tests/test_outage_mode.py",
+        "tests/test_security.py",
         "tests/test_sessions.py",
         "tests/test_visibility.py"
       ]
@@ -8093,6 +8094,12 @@
       "default": "10 * 1024 * 1024",
       "env": "ATTACHMENT_MAX_BYTES",
       "name": "attachment_max_bytes",
+      "type": "int"
+    },
+    {
+      "default": "Field(default=12, ge=4, le=16)",
+      "env": "BCRYPT_ROUNDS",
+      "name": "bcrypt_rounds",
       "type": "int"
     },
     {
