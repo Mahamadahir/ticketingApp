@@ -1,0 +1,18 @@
+{# The people picker's answer (GET /portal/people, #309): buttons the form's script (static/mailbox-form.js) turns into a choice. #}
+{% if error %}
+<p class="error" role="alert">{{ error }}</p>
+{% elif too_short %}
+<p class="nr-hint">Type at least 2 letters of their name or email address.</p>
+{% elif not people %}
+<p class="nr-hint">No one found. Only people in the organisation who have a mailbox are listed.</p>
+{% else %}
+<ul class="mb-results" aria-label="People found">
+  {% for p in people %}
+  <li><button type="button" class="mb-person" data-oid="{{ p.object_id }}" data-name="{{ p.name }}"
+      data-detail="{{ [p.job_title, p.department, p.mail]|select|join(' · ') }}">
+    <span class="mb-person-name">{{ p.name }}</span>
+    <span class="mb-person-detail">{{ [p.job_title, p.department]|select|join(' · ') or p.mail }}{% if p.job_title or p.department %} · {{ p.mail }}{% endif %}</span>
+  </button></li>
+  {% endfor %}
+</ul>
+{% endif %}

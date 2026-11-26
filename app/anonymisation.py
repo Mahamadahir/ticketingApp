@@ -48,6 +48,7 @@ from app.models import (
     InboundMail,
     LinkCode,
     LinkedIdentity,
+    MailboxChange,
     Message,
     MessageDirection,
     MessageVisibility,
@@ -511,6 +512,33 @@ def step_accounts(ctx: Context) -> None:
     ctx.count("Accounts anonymised and made inactive", len(users))
 
 
+def step_mailbox_changes(ctx: Context) -> None:
+    """Scheduled mailbox changes (#307) that are over keep their row, with the person's address replaced by the placeholder and
+    their Entra object id cleared, wherever they are the owner or the other person. A change that has not ended is refused
+    earlier (`refusal`), because removing it needs the address."""
+    oids = object_ids(ctx.session, ctx.person)
+    rows = ctx.session.exec(
+        select(MailboxChange).where(
+            or_(
+                func.lower(func.trim(MailboxChange.owner_address)).in_(ctx.person.addresses),
+                func.lower(func.trim(MailboxChange.target_address)).in_(ctx.person.addresses),
+                _in(func.lower(MailboxChange.owner_object_id), oids),
+                _in(func.lower(MailboxChange.target_object_id), oids),
+            )
+        )
+    ).all()
+    changed = 0
+    for row in rows:
+        if row.owner_address.strip().lower() in ctx.person.addresses or (row.owner_object_id or "").lower() in oids:
+            row.owner_address, row.owner_object_id = ctx.placeholder, None
+            changed += 1
+        if row.target_address.strip().lower() in ctx.person.addresses or (row.target_object_id or "").lower() in oids:
+            row.target_address, row.target_object_id = ctx.placeholder, None
+            changed += 1
+        ctx.session.add(row)
+    ctx.count("Mailbox changes, address replaced and object id cleared", changed)
+
+
 _delete_reactions = _delete_rows(
     TicketReaction,
     lambda c: or_(
@@ -595,6 +623,13 @@ STEPS: dict[str, Callable[[Context], None]] = {
         NotificationPreference, lambda c: _in(NotificationPreference.user_id, c.person.user_ids), "Notification preferences deleted"
     ),
     # Their chat with the Teams bot is found by their account or by any of their object ids: one step serves both columns.
+    "mailbox_change.owner_address": step_mailbox_changes,
+    "mailbox_change.owner_object_id": step_mailbox_changes,
+    "mailbox_change.target_address": step_mailbox_changes,
+    "mailbox_change.target_object_id": step_mailbox_changes,
+    "mailbox_change.created_by": _scrub_column(MailboxChange, "created_by", "Mailbox changes, who asked, address replaced"),
+    "mailbox_change.last_error": _scrub_column(MailboxChange, "last_error", "Mailbox change errors, address replaced"),
+    "mailbox_change.last_found": _scrub_column(MailboxChange, "last_found", "Mailbox change read-backs, address replaced"),
     "ticket_reaction.user_id": _delete_reactions,
     "ticket_reaction.reactor_ref": _delete_reactions,
     "teams_conversation.user_id": _delete_teams_conversations,
@@ -661,6 +696,23 @@ def refusal(session: Session, person: Person) -> Optional[str]:
                 "That address belongs to an agent, super admin or break-glass account. They leave through the normal "
                 "route (deactivate the account on Admin > Users), not by anonymisation."
             )
+    oids = object_ids(session, person)
+    unfinished = session.exec(
+        select(MailboxChange.id).where(
+            MailboxChange.state.not_in(["ended", "cancelled"]),
+            or_(
+                func.lower(func.trim(MailboxChange.owner_address)).in_(person.addresses),
+                func.lower(func.trim(MailboxChange.target_address)).in_(person.addresses),
+                _in(func.lower(MailboxChange.owner_object_id), oids),
+                _in(func.lower(MailboxChange.target_object_id), oids),
+            ),
+        ).limit(1)
+    ).first()
+    if unfinished is not None:
+        return (
+            "They have a scheduled mailbox change that has not ended (it is waiting, on, or failed and with the team). "
+            "Removing it needs their address, so let it end or settle it first (Cancel, or Done by hand on its request)."
+        )
     pending = session.exec(
         select(ApprovalVote, Ticket.number)
         .join(TicketApproval, TicketApproval.id == ApprovalVote.approval_id)

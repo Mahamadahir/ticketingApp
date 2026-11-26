@@ -15,6 +15,14 @@
   <label class="field field-wide">Description (one short line, shown on the kind's card on New request and on the home page tiles)
     <textarea name="description" rows="2" maxlength="{{ max_description_length }}">{{ t.description if t else "" }}</textarea>
   </label>
+  <label class="field field-wide">Mailbox action (a super admin sets this)
+    {% if user.role.value != "super_admin" %}<input type="hidden" name="mailbox_action" value="{{ t.mailbox_action or '' if t else '' }}" />{% endif %}
+    <select {% if user.role.value == "super_admin" %}name="mailbox_action"{% else %}disabled{% endif %}>
+      <option value="">(none: an ordinary request with form questions)</option>
+      {% for key, label in mailbox_action_labels.items() %}<option value="{{ key }}" {{ "selected" if t and key == t.mailbox_action else "" }}>{{ label }}</option>{% endfor %}
+    </select>
+    <span class="note">A kind with an action shows its own form instead of form questions and changes the signed-in person's own mailbox at the times they choose. It needs, to be switched on, all four defaults (team, category, impact, urgency) so that it triages itself; a blank impact or urgency is saved as Low. Its approval group (optional) is the IT approvers for requests about SOMEONE ELSE'S mailbox, which the owner of the mailbox can also approve; a request about the person's own mailbox never needs approval. Without a group the form offers only "Mine". Tick "Any one approver is enough" below for these (one answer settles it). Forwarding has its own form; Full access and Send As share one form, "Give someone access to my mailbox". Nothing is offered unless this environment has MAILBOX_EXECUTOR set.</span>
+  </label>
   <label class="check field-wide"><input type="checkbox" name="is_active" {{ "checked" if (t.is_active if t else true) else "" }} /> Available on the request form</label>
   <label class="check field-wide"><input type="checkbox" name="is_featured" {{ "checked" if t and t.is_featured else "" }} /> Feature on the portal home page (up to four kinds show as quick-start tiles; with none featured, the first four do)</label>
 {% endmacro %}
@@ -44,6 +52,7 @@
       {% for value, label in urgency_options %}<option value="{{ value }}" {{ "selected" if t and value == t.default_urgency else "" }}>{{ label }}</option>{% endfor %}
     </select>
   </label>
+  <p class="note field-wide">Impact x urgency sets the priority and SLA. Set all four defaults (team, category, impact, urgency) to let a request triage itself.</p>
   <label class="field">Due: days before Required by (blank: {{ default_due_days }}) <input type="number" name="due_days_before" value="{{ t.due_days_before if t and t.due_days_before is not none else "" }}" min="0" max="365" /></label>
   <label class="field">Queue lead time in days (blank: {{ default_queue_days }}) <input type="number" name="queue_lead_days" value="{{ t.queue_lead_days if t and t.queue_lead_days is not none else "" }}" min="0" max="365" /></label>
   <label class="check field-wide"><input type="checkbox" name="offers_required_by" {{ "checked" if t and t.offers_required_by else "" }} /> Offer a Required by date</label>
@@ -57,7 +66,8 @@
   </label>
   <label class="field">Percent to pass <input type="number" name="pass_percent" value="{{ t.pass_percent if t else default_pass }}" min="1" max="100" required /></label>
   <label class="check field-wide"><input type="checkbox" name="subrequests_need_own_approval" {{ "checked" if t and t.subrequests_need_own_approval else "" }} /> Sub-requests of this kind need their own approval (otherwise the request they come from covers them)</label>
-  <label class="check field-wide"><input type="checkbox" name="approvers_may_self_approve" {{ "checked" if t and t.approvers_may_self_approve else "" }} /> Approvers may approve their own requests (an active member of the approval group who raises one of these has their approval recorded at once)</label>
+  <label class="check field-wide"><input type="checkbox" name="any_one_approver" {{ "checked" if t and t.any_one_approver else "" }} /> Any one approver is enough (the first answer settles it, whatever the number of approvers and the percent above; for a mailbox kind the approvers are the owner of the mailbox and the approval group)</label>
+  <label class="check field-wide"><input type="checkbox" name="approvers_may_self_approve" {{ "checked" if t and t.approvers_may_self_approve else "" }} /> Approvers may approve their own requests (an active member of the approval group who raises one of these has their approval recorded at once; never for a mailbox kind)</label>
 {% endmacro %}
 {% macro template_fields(tpl, t) %}
   <label class="field field-wide">Subject (use {Question} for an answer, e.g. Laptop for {Name})

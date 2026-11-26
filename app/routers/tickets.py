@@ -77,6 +77,7 @@ from app.notifications import AWAITING_YOU, mentionable_agents, notify_agent_ema
 from app.identity import person_for_address
 from app.presence import agent_label
 from app.ticket_actions import CARDS, action_chips
+from app import mailbox_changes, portal_mailbox
 from app.search import normalise, search_condition
 from app.splitting import (
     MAX_DETAILS,
@@ -2183,6 +2184,74 @@ def link(
     return _render_ticket_detail(request, ticket, user, session)
 
 
+def _failed_mailbox_change(session: Session, ticket: Ticket):
+    change = mailbox_changes.failed_change_for_ticket(session, ticket)  # the oldest first, one at a time (#310)
+    if change is None:
+        raise HTTPException(status_code=400, detail="This ticket has no mailbox change waiting for an agent")
+    return change
+
+
+def _settle_mailbox_change(session: Session, number: int, user: User, action):
+    """Runs one of the agent's actions on a failed mailbox change (app/mailbox_changes.py) and commits, or refuses with the
+    action's own message. `action(session, change, user)` returns True when the worker should look now (Try again)."""
+    ticket = _get_ticket(session, number, user)
+    change = _failed_mailbox_change(session, ticket)
+    try:
+        wake = action(session, change, user)
+    except mailbox_changes.MailboxChangeError as error:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(error))
+    if wake:
+        from app.scheduled_jobs import SCHEDULED_JOBS, run_now  # the worker's next tick starts the job, not this route
+
+        run_now(session, next(job for job in SCHEDULED_JOBS if job.name == "mailbox-changes"), user.email)
+    ticket.updated_at = datetime.now(timezone.utc)
+    session.add(ticket)
+    session.commit()
+    session.refresh(ticket)
+    return ticket
+
+
+@router.post("/{number}/mailbox/try-again", response_class=HTMLResponse)
+@card_errors("mbx_retry")
+def mailbox_try_again(
+    number: int,
+    request: Request,
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """One more attempt at a mailbox change that failed for good: the worker makes (or removes) it on its next run."""
+    ticket = _settle_mailbox_change(session, number, user, lambda s, change, agent: mailbox_changes.try_again(s, change, agent) or True)
+    return _render_ticket_detail(request, ticket, user, session)
+
+
+@router.post("/{number}/mailbox/done-by-hand", response_class=HTMLResponse)
+@card_errors("mbx_done")
+def mailbox_done_by_hand(
+    number: int,
+    request: Request,
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """The agent made (or removed) the change in the Exchange admin centre: record it. A hand-made start still gets its
+    automatic removal at the end time."""
+    ticket = _settle_mailbox_change(session, number, user, lambda s, change, agent: mailbox_changes.done_by_hand(s, change, agent))
+    return _render_ticket_detail(request, ticket, user, session)
+
+
+@router.post("/{number}/mailbox/cancel", response_class=HTMLResponse)
+@card_errors("mbx_cancel")
+def mailbox_cancel(
+    number: int,
+    request: Request,
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """Drops a mailbox change that could not be started: the request is resolved as cancelled and the requester told."""
+    ticket = _settle_mailbox_change(session, number, user, lambda s, change, agent: mailbox_changes.cancel(s, change, agent))
+    return _render_ticket_detail(request, ticket, user, session)
+
+
 @router.post("/{number}/unlink", response_class=HTMLResponse)
 def unlink(
     number: int,
@@ -2393,12 +2462,14 @@ def _render_ticket_detail(
     can_split = can_work and ticket.split_from_id is None and unfinished  # before triage too (#259): the parts are untriaged
     can_take_back = can_work and ticket.status == TicketStatus.WITH_MSP and not has_sub_tickets(session, ticket)
     can_backdate = may_backdate(ticket)
+    mailbox_change = mailbox_changes.failed_change_for_ticket(session, ticket)
+    mailbox_phase = mailbox_changes.failed_phase(mailbox_change) if mailbox_change is not None else None
     chips = action_chips(
         can_work=can_work, can_note=may_add_note(user, ticket, levels), triaged=triaged, triaged_actions=triaged_actions,
         can_triage=can_triage, is_super_admin=user.role == UserRole.SUPER_ADMIN, can_self_assign=can_self_assign,
         assigned=assigned_agent is not None, can_reassign=can_reassign, with_msp=ticket.status == TicketStatus.WITH_MSP,
         can_take_back=can_take_back, can_link=can_link, can_split=can_split, can_resolve=can_resolve, can_reopen=can_reopen,
-        can_reclose=can_reclose, can_close=can_close, can_backdate=can_backdate,
+        can_reclose=can_reclose, can_close=can_close, can_backdate=can_backdate, mailbox_phase=mailbox_phase,
     )
     if compose:
         card = compose["mode"]  # a held-back send reopens its own composer with the text kept
@@ -2458,6 +2529,9 @@ def _render_ticket_detail(
             "more_sub_count": subs_visible - len(subs),
             "can_split": can_split,
             "chips": chips,
+            "mailbox_change": mailbox_change if mailbox_phase else None,
+            "mailbox_declined": mailbox_changes.DECLINED_LINE if mailbox_changes.was_declined(session, ticket) else "",
+            "mailbox_phase": mailbox_phase,
             "card": card,
             "card_title": card_title,
             "card_doing": card_doing,
@@ -2558,6 +2632,7 @@ def _render_ticket_detail(
             "approval_waiting_group": (approval_group_of(session, ticket) if is_waiting_for_approvers(session, ticket) else None),
             "approval_rule": describe_rule(ticket_approval) if ticket_approval and ticket_approval.status != SUPERSEDED else None,
             "approval_status": ticket_approval.status if ticket_approval else None,
+            "approval_note": portal_mailbox.approval_note(session, ticket),
             "can_waive": user.role == UserRole.SUPER_ADMIN and ticket.status == TicketStatus.AWAITING_APPROVAL,
             "can_set_priority": can_edit_triage,
             "category_options": options,

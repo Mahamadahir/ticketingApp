@@ -43,6 +43,7 @@
     </form>{% endif %}{% endif %}
   </div>
   <h1>{{ ticket.subject }}</h1>
+  {% if mailbox_declined %}<p class="note tp-declined" id="mailbox-declined" role="status">{{ mailbox_declined }}</p>{% endif %}
   <p class="tp-info">
     <span><span class="muted">Requester</span> <b title="{{ ticket.requester_email }}">{{ requester_name }}</b></span>
     <span><span class="muted">Team</span> <b>{{ team.name if team else "Unassigned" }}</b></span>
@@ -107,7 +108,7 @@
 </form>
 {% endif %}
 {% elif ticket.status.value == "awaiting_approval" %}
-<p class="note tp-banner"><b>Waiting for approval</b> ({{ approval_rule }}). The ticket moves on when its approvers decide; its status cannot be changed by hand until then. The SLA clock is running.</p>
+<p class="note tp-banner"><b>Waiting for approval</b> ({{ approval_rule }}). The ticket moves on when its approvers decide; its status cannot be changed by hand until then. The SLA clock is running.{% if approval_note %} {{ approval_note }}{% endif %}</p>
 {% endif %}
 
 {% if ticket.is_escalated %}

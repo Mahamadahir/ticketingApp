@@ -40,6 +40,13 @@ admin actions and from the reminder job). A super admin can waive it meanwhile. 
 group after the approval started stays counted as a voter but can no longer answer (a super admin waives a
 request that can then never be decided).
 
+Someone else's mailbox (#311): a request type with a mailbox action may have a group, which then applies ONLY to a request about someone
+else's mailbox (`mailbox_owner_address`: a change on the ticket whose owner is not the requester; the person's own mailbox needs no
+approval). The voters are the group's active members plus the mailbox owner as an extra voter (`ApprovalVote.extra_voter`) when they
+have an active account; the requester is never a voter and `may_self_approve` is false for these types. With the type's
+`any_one_approver` (copied to `TicketApproval.any_one`) the first answer settles the round. Everybody but the owner needs a note to
+approve (`note_required`). Settling hands over to `app/mailbox_changes.py` (`after_approval`, `drop_unstarted`).
+
 A voter who becomes inactive (Admin > Users or the nightly Entra check, app/entra_check.py) and had not yet
 voted is dropped (`drop_votes_of`): the vote is marked not needed (as waive and withdraw mark theirs), the
 voter count falls by one, and the outcome is worked out again on the rest with the same rule, so the
@@ -51,14 +58,14 @@ the reminder job.
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlmodel import Session, select
 
 from app.approval_groups import is_member, members_of
 from app.audit import log_action
 from app.email_templates import render_template, ticket_values
-from app.messages import record_notice
+from app.messages import record_notice, record_system_note
 from app.notifications import (
     notify_approval_outcome,
     notify_approval_waiting,
@@ -66,11 +73,12 @@ from app.notifications import (
     notify_no_active_approvers,
 )
 from app.outbox import queue_approval, queue_approval_withdrawn
-from app.identity import addresses_of, is_requester
+from app.identity import addresses_of, is_requester, person_for_address
 from app.models import (
     ApprovalGroup,
     ApprovalGroupMember,
     ApprovalVote,
+    MailboxChange,
     RequestType,
     Setting,
     Ticket,
@@ -108,6 +116,10 @@ SUPERSEDED = "superseded"
 AUDIT_ACTOR = "system"
 MAX_COMMENT_LENGTH = 1000
 SELF_APPROVED_COMMENT = "Self-approved (allowed for this request type)"
+NOTE_REQUIRED = (
+    "Add a note saying who you checked with (for example: Spoke to J. Smith, line manager, by phone 09:10) before you approve "
+    "a request for someone else's mailbox"
+)
 
 
 class ApprovalError(ValueError):
@@ -124,17 +136,20 @@ def check_percentages(pass_percent: int) -> None:
         raise PercentError("The pass percentage must be a whole number from 1 to 100")
 
 
-def votes_needed(percent: int, voters: int) -> int:
-    """The smallest number of votes that reaches the percentage."""
-    return -(-percent * voters // 100)
+def votes_needed(percent: int, voters: int, any_one: bool = False) -> int:
+    """The smallest number of votes that reaches the percentage; one when any one approver is enough (#311)."""
+    return 1 if any_one else -(-percent * voters // 100)
 
 
-def outcome(approved: int, declined: int, voters: int, pass_percent: int) -> Optional[str]:
+def outcome(approved: int, declined: int, voters: int, pass_percent: int, any_one: bool = False) -> Optional[str]:
     """APPROVED as soon as the approvals reach the pass percentage, DECLINED as soon as it can no longer
     be reached (more declines than voters - votes_needed), else None while it is still open. A complete
-    vote always reaches one of the two."""
+    vote always reaches one of the two. With `any_one` (#311) the first answer settles it: one approval approves, one decline
+    declines, whatever the number of voters."""
     if voters <= 0:
         return None
+    if any_one:
+        return APPROVED if approved else DECLINED if declined else None
     needed = votes_needed(pass_percent, voters)
     if approved >= needed:
         return APPROVED
@@ -149,7 +164,8 @@ def may_self_approve(session: Session, ticket: Ticket) -> bool:
     if ticket.source != TicketSource.PORTAL:
         return False
     request_type = session.get(RequestType, ticket.request_type_id) if ticket.request_type_id is not None else None
-    return request_type is not None and request_type.approvers_may_self_approve
+    # A mailbox request is never self-approved, even where an admin ticked the option (#311): someone else's mailbox is the point.
+    return request_type is not None and request_type.approvers_may_self_approve and not request_type.mailbox_action
 
 
 def eligible_voters(session: Session, ticket: Ticket) -> list[User]:
@@ -160,7 +176,44 @@ def eligible_voters(session: Session, ticket: Ticket) -> list[User]:
         return []
     keep_requester = may_self_approve(session, ticket)
     requester = addresses_of(session, ticket.requester_email)  # the requester's person, once
-    return [u for u in members_of(session, group.id, active_only=True) if keep_requester or u.email.lower() not in requester]
+    voters = [u for u in members_of(session, group.id, active_only=True) if keep_requester or u.email.lower() not in requester]
+    owner = mailbox_owner_voter(session, ticket)
+    if owner is not None and owner.email.lower() not in requester and all(u.id != owner.id for u in voters):
+        voters.append(owner)  # the owner of the mailbox asked about votes too (#311), whether or not they are in the group
+    return voters
+
+
+def mailbox_owner_address(session: Session, ticket: Ticket) -> Optional[str]:
+    """The address of the mailbox owner when the request is about SOMEONE ELSE'S mailbox (#311): a mailbox change on the ticket whose
+    owner is not the requester (or one of their linked addresses). None for an ordinary request and for one's own mailbox."""
+    owners = session.exec(select(MailboxChange.owner_address).where(MailboxChange.ticket_id == ticket.id).order_by(MailboxChange.id)).all()
+    if not owners:
+        return None  # an ordinary ticket: nothing more to look up
+    requester = addresses_of(session, ticket.requester_email)
+    for address in owners:
+        if address.strip().lower() not in requester:
+            return address.strip().lower()
+    return None
+
+
+def mailbox_owner_voter(session: Session, ticket: Ticket) -> Optional[User]:
+    """The active account of the mailbox owner (someone else's mailbox only), or None: with no account they cannot vote and only
+    the approval group decides (the request page says so)."""
+    address = mailbox_owner_address(session, ticket)
+    person = person_for_address(session, address) if address else None
+    return person if person is not None and person.is_active else None
+
+
+def note_required(session: Session, ticket: Ticket, voter: User) -> bool:
+    """Whether this person's approval needs a note saying who they checked with (#311): on a request about someone else's mailbox,
+    everyone except the owner of that mailbox. The owner's own approval needs none."""
+    owner = mailbox_owner_address(session, ticket)
+    return owner is not None and owner not in addresses_of(session, voter.email)
+
+
+def may_answer(session: Session, approval: TicketApproval, vote: ApprovalVote) -> bool:
+    """Whether this voter may still answer: a member of the approval group, or the extra voter added for the request (#311)."""
+    return vote.extra_voter or is_member(session, approval.group_id, vote.voter_id)
 
 
 def approval_group_of(session: Session, ticket: Ticket) -> Optional[ApprovalGroup]:
@@ -170,6 +223,8 @@ def approval_group_of(session: Session, ticket: Ticket) -> Optional[ApprovalGrou
     request_type = session.get(RequestType, ticket.request_type_id)
     if request_type is None or request_type.approval_group_id is None:
         return None
+    if request_type.mailbox_action and mailbox_owner_address(session, ticket) is None:
+        return None  # a request about the person's own mailbox needs no approval, even on a type that has a group (#311)
     return session.get(ApprovalGroup, request_type.approval_group_id)
 
 
@@ -226,22 +281,23 @@ def start_approvals(session: Session, ticket: Ticket, actor_email: str) -> Optio
     request_type = session.get(RequestType, ticket.request_type_id)
     approval = TicketApproval(
         ticket_id=ticket.id, group_id=request_type.approval_group_id, voters=len(voters),
-        pass_percent=request_type.pass_percent,
+        pass_percent=request_type.pass_percent, any_one=request_type.any_one_approver,
     )
     session.add(approval)
     session.flush()
     requester = addresses_of(session, ticket.requester_email)
+    group_ids = {u.id for u in members_of(session, approval.group_id, active_only=True)}
     now = datetime.now(timezone.utc)
     # The requester is only in `voters` when the type allows self-approval (eligible_voters): their vote is made now.
     votes = [
         ApprovalVote(approval_id=approval.id, voter_id=u.id, decision=APPROVED, comment=SELF_APPROVED_COMMENT, decided_at=now)
-        if u.email.lower() in requester else ApprovalVote(approval_id=approval.id, voter_id=u.id)
+        if u.email.lower() in requester else ApprovalVote(approval_id=approval.id, voter_id=u.id, extra_voter=u.id not in group_ids)
         for u in voters
     ]
     session.add_all(votes)
     session.flush()
     approved, declined, _ = tally(votes)
-    result = outcome(approved, declined, approval.voters, approval.pass_percent)
+    result = outcome(approved, declined, approval.voters, approval.pass_percent, approval.any_one)
     for vote, voter in zip(votes, voters):
         if vote.decision == PENDING and result is None:  # a request settled by the self-approval asks nobody
             queue_approval(session, vote, voter)
@@ -303,6 +359,12 @@ def restart_after_reopen(session: Session, ticket: Ticket, actor_email: Optional
     approval = current_approval(session, ticket)
     if approval is None or approval.status not in (DECLINED, WITHDRAWN) or approval_group_of(session, ticket) is None:
         return False
+    from app.mailbox_changes import changes_for_ticket  # imported here: app.mailbox_changes builds on this module
+
+    if changes_for_ticket(session, ticket):
+        # A mailbox request's changes were cancelled with the decline and stay cancelled (#325): asking the approvers again would
+        # leave an approved request with nothing to make, so a reopened one is simply open, and says it was declined.
+        return False
     set_status(session, ticket, TicketStatus.AWAITING_APPROVAL, actor_email, detail="approval restarted", by_approval=True)
     start_approvals(session, ticket, actor_email or "system")
     log_action(session, actor_email or "system", "ticket", ticket.id, "approval_restarted", f"after {approval.status}")
@@ -311,6 +373,8 @@ def restart_after_reopen(session: Session, ticket: Ticket, actor_email: Optional
 
 def describe_rule(approval: TicketApproval) -> str:
     n = approval.voters
+    if approval.any_one:
+        return f"any one of {n} approver{'s' if n != 1 else ''} can decide"
     return f"{votes_needed(approval.pass_percent, n)} of {n} must approve ({approval.pass_percent}%)"
 
 
@@ -370,11 +434,12 @@ def _waiting_votes(user: User):
         select(ApprovalVote, Ticket)
         .join(TicketApproval, TicketApproval.id == ApprovalVote.approval_id)
         .join(Ticket, Ticket.id == TicketApproval.ticket_id)
-        .join(
+        .outerjoin(
             ApprovalGroupMember,
             (ApprovalGroupMember.group_id == TicketApproval.group_id) & (ApprovalGroupMember.user_id == user.id),
         )
         .where(
+            or_(ApprovalVote.extra_voter, ApprovalGroupMember.user_id.is_not(None)),
             ApprovalVote.voter_id == user.id,
             ApprovalVote.decision == PENDING,
             TicketApproval.status == PENDING,
@@ -414,6 +479,21 @@ def _make_subrequests(session: Session, ticket: Ticket) -> None:
     after_approval(session, ticket)
 
 
+def _mailbox_approved(session: Session, ticket: Ticket) -> None:
+    """A request for someone else's mailbox that was approved is scheduled now (#311; imported here because app.mailbox_changes
+    builds on the resolution and triage machinery, which builds on this module)."""
+    from app.mailbox_changes import after_approval
+
+    after_approval(session, ticket)
+
+
+def _mailbox_stopped(session: Session, ticket: Ticket, reason: str) -> None:
+    """A request that will not be approved (declined, withdrawn) drops the mailbox changes it was holding back (#311)."""
+    from app.mailbox_changes import drop_unstarted
+
+    drop_unstarted(session, ticket, reason)
+
+
 def _settle(session: Session, ticket: Ticket, approval: TicketApproval, result: str, votes: list[ApprovalVote], actor_email: str) -> None:
     approval.status, approval.settled_at = result, datetime.now(timezone.utc)
     session.add(approval)
@@ -424,12 +504,14 @@ def _settle(session: Session, ticket: Ticket, approval: TicketApproval, result: 
         record_notice(session, ticket, _notice(session, ticket, "approval_approved"))
         notify_approval_outcome(session, ticket, APPROVED, actor_email)
         _make_subrequests(session, ticket)
+        _mailbox_approved(session, ticket)
     else:
         set_status(session, ticket, TicketStatus.CLOSED, actor_email, detail="approval declined", by_approval=True)
         reasons = [v.comment for v in votes if v.decision == DECLINED and v.comment]
         reason_text = f" Reason: {' / '.join(reasons)}" if reasons else ""
         record_notice(session, ticket, _notice(session, ticket, "approval_declined", reason_text=reason_text))
         notify_approval_outcome(session, ticket, DECLINED, actor_email)
+        _mailbox_stopped(session, ticket, "the request was declined")
 
 
 def _with_channel(via: Optional[str], comment: str) -> str:
@@ -481,17 +563,23 @@ def decide(session: Session, vote: ApprovalVote, decision: str, comment: str, vi
         raise ApprovalError("You cannot approve your own request")
     if not voter.is_active:
         raise ApprovalError("Your account is inactive, so you can no longer answer this request")
-    if not is_member(session, approval.group_id, vote.voter_id):
+    if not may_answer(session, approval, vote):
         raise ApprovalError("You are no longer an approver for this kind of request")
+    if decision == APPROVED and not comment and note_required(session, ticket, voter):
+        raise ApprovalError(NOTE_REQUIRED)
 
     vote.decision, vote.comment, vote.decided_at = decision, comment, datetime.now(timezone.utc)
     session.add(vote)
     session.flush()
     record_event(session, ticket, EVENT_APPROVAL_DECIDED, voter.email, to_value=decision, detail=_with_channel(via, comment) or None)
+    if decision == APPROVED and comment and note_required(session, ticket, voter):
+        # An IT approver's note on someone else's mailbox (#311): on the ticket for the team (never the requester), and in the audit log
+        # through record_decision.
+        record_system_note(session, ticket, f"{voter.display_name or voter.email} approved this request for someone else's mailbox. Checked with: {comment}")
 
     votes = [v for v, _ in votes_of(session, approval)]
     approved, declined, _ = tally(votes)
-    result = outcome(approved, declined, approval.voters, approval.pass_percent)
+    result = outcome(approved, declined, approval.voters, approval.pass_percent, approval.any_one)
     if result is not None:
         _settle(session, ticket, approval, result, votes, voter.email)
     return result
@@ -514,6 +602,7 @@ def waive(session: Session, ticket: Ticket, actor: User) -> None:
     record_notice(session, ticket, _notice(session, ticket, "approval_waived"))
     notify_approval_outcome(session, ticket, "waived", actor.email)
     _make_subrequests(session, ticket)
+    _mailbox_approved(session, ticket)
 
 
 def withdraw(session: Session, ticket: Ticket, requester_email: str) -> None:
@@ -537,6 +626,7 @@ def withdraw(session: Session, ticket: Ticket, requester_email: str) -> None:
         set_status(session, ticket, TicketStatus.CLOSED, requester_email, detail="withdrawn", by_approval=True)
         log_action(session, requester_email, "ticket", ticket.id, "approval_withdrawn", ticket.tag)
         notify_approval_outcome(session, ticket, "withdrawn", requester_email)
+        _mailbox_stopped(session, ticket, "the request was withdrawn")
         return
     # Re-read the votes under the lock: one decided since this session loaded them must not be overwritten.
     for vote, _ in votes_of(session, approval):
@@ -549,6 +639,7 @@ def withdraw(session: Session, ticket: Ticket, requester_email: str) -> None:
     set_status(session, ticket, TicketStatus.CLOSED, requester_email, detail="withdrawn", by_approval=True)
     log_action(session, requester_email, "ticket", ticket.id, "approval_withdrawn", ticket.tag)
     notify_approval_outcome(session, ticket, "withdrawn", requester_email)  # the followers; never the requester
+    _mailbox_stopped(session, ticket, "the request was withdrawn")
     for vote, voter in unanswered:
         notify_approval_withdrawn(session, ticket, voter, requester_email)
         queue_approval_withdrawn(session, vote, voter)
@@ -591,7 +682,7 @@ def drop_inactive_votes(session: Session, ticket: Ticket, actor_email: str = AUD
         return len(gone)
     votes = [v for v, _ in votes_of(session, approval)]
     approved, declined, _ = tally(votes)
-    result = outcome(approved, declined, approval.voters, approval.pass_percent)
+    result = outcome(approved, declined, approval.voters, approval.pass_percent, approval.any_one)
     if result is not None:
         _settle(session, ticket, approval, result, votes, actor_email)
     return len(gone)

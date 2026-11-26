@@ -1,0 +1,57 @@
+{# The portal's "forward my mail" form (#309), shown on New request in place of the ordinary form when the chosen kind has the
+   mailbox action `forwarding`. A plain POST (not htmx) so a refusal and the keep-a-copy confirm block come back as a page and it
+   works without scripts, except choosing a person, which needs the search. The mailbox is never a field: it is whoever is signed
+   in. Scripts: static/mailbox-form.js (the picker, the modal). #}
+{% set f = mailbox_form %}
+<form class="nr-form card" id="mb-form" method="post" action="/portal/mailbox-change" data-zone="{{ mailbox_zone }}" data-me="{{ user.display_name or user.email }}">
+  <div class="nr-form-head">
+    <h2>2. {{ chosen_title }}</h2>
+    <p class="nr-hint">Mail sent to you is also sent to a colleague for the time you choose. You can stop it early from the request page.</p>
+  </div>
+  <input type="hidden" name="request_type_id" value="{{ chosen.id }}" />
+
+  {% if mailbox_error %}<p class="error" id="mb-error" role="alert">{{ mailbox_error }}</p>{% endif %}
+
+  {% include "_mailbox_whose.html" %}
+  <p class="mb-mailbox" id="mb-mine-line"><strong>Your mailbox:</strong> {{ user.email }} <span class="nr-hint">(always the mailbox you are signed in as)</span></p>
+
+  <p class="nr-hint" id="mb-other-target-hint" hidden>For someone else's mail, the mail goes to you unless you choose another person here.</p>
+  {% set picker_legend = "Forward to" %}{% set picker_prefix = "mb" %}{% set picker_field = "target" %}{% set picker_oid = f.target_object_id %}{% set picker_name = f.target_name %}{% include "_mailbox_picker.html" %}
+
+  <label class="check"><input type="checkbox" name="keep_copy" id="mb-keep-copy" {{ "checked" if f.keep_copy else "" }} /> Keep a copy in my mailbox <span class="nr-hint">(recommended: you will still receive your mail)</span></label>
+
+  {% set times_what = "Forwarding" %}{% include "_mailbox_times.html" %}
+
+  {% if mailbox_confirm_text %}
+  {# Without scripts (or when the script did not stop the send) the same warning as the modal, on the page. #}
+  <section class="mb-confirm" id="mb-confirm-block" aria-labelledby="mb-confirm-title" role="alert">
+    <h3 class="mb-confirm-head" id="mb-confirm-title">Turn off your copy?</h3>
+    <div class="mb-confirm-body">
+      <p>{{ mailbox_confirm_text }}</p>
+      <div class="rq-actions">
+        <button type="submit" name="confirm_no_copy" value="1" class="btn btn-danger">Turn off my copy</button>
+        <a class="btn" href="/portal/new?request_type_id={{ chosen.id }}">Cancel</a>
+      </div>
+      <p class="nr-hint">To keep a copy instead, tick "Keep a copy in my mailbox" above and send the request again.</p>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if not mailbox_confirm_text %}<input type="hidden" name="confirm_no_copy" id="mb-confirm-field" value="" />{% endif %}
+  <div class="nr-actions">
+    <button type="submit" class="btn btn-primary nr-send">Send request</button>
+  </div>
+</form>
+
+<dialog class="mb-dialog" id="mb-dialog" aria-labelledby="mb-dialog-title" aria-describedby="mb-dialog-text">
+  <h2 class="mb-dialog-head" id="mb-dialog-title">Turn off your copy?</h2>
+  <div class="mb-dialog-body">
+    <p id="mb-dialog-text"></p>
+    <p class="mb-countdown" id="mb-countdown" role="status" aria-live="polite"></p>
+  </div>
+  <div class="mb-dialog-actions">
+    <button type="button" class="btn" id="mb-dialog-cancel" autofocus>Cancel</button>
+    <button type="button" class="btn btn-danger" id="mb-dialog-confirm" disabled>Turn off my copy</button>
+  </div>
+</dialog>
+<script src="{{ static_url('mailbox-form.js') }}" defer></script>

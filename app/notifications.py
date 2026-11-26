@@ -36,6 +36,7 @@ APPROVAL_WITHDRAWN = "approval_withdrawn"
 APPROVAL_OVERDUE = "approval_overdue"
 APPROVAL_WAITING = "approval_waiting"
 DUE_TODAY = "due_today"
+MAILBOX_CHANGE_FAILED = "mailbox_change_failed"  # #307: a scheduled mailbox change failed for good; the team is told
 NO_ACTIVE_APPROVERS = "approval_no_active_approvers"  # #161: a request waits because nobody active can approve it (not a listed event type)
 LINK_REQUESTED = "link_requested"  # #165: someone asked to link two accounts and a super admin must decide (not a listed event type)
 OUTAGE_MODE = "outage_mode"  # #164: outage mode was switched on or off (not a listed event type)
@@ -788,6 +789,20 @@ def notify_msp_unacknowledged(session: Session, ticket: Ticket) -> list[Notifica
         if person is None or not person.is_active or not _can_open(session, person, ticket):
             continue
         notification = notify(session, person, MSP_UNACKNOWLEDGED, ticket, text, None)
+        if notification is not None:
+            made.append(notification)
+    return made
+
+
+def notify_mailbox_change_failed(session: Session, ticket: Ticket, text: str) -> list[Notification]:
+    """Tells the working members of the ticket's team that a scheduled mailbox change failed for good (app/mailbox_changes.py):
+    `ticket` is the request (a start that failed) or the new incident (a removal that failed). `text` should start with REF.
+    Only people who can open the ticket. Does not commit."""
+    made = []
+    for person in team_members(session, ticket.team_id):
+        if not person.is_active or not _can_open(session, person, ticket):
+            continue
+        notification = notify(session, person, MAILBOX_CHANGE_FAILED, ticket, text, None)
         if notification is not None:
             made.append(notification)
     return made
