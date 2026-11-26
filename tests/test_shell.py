@@ -140,6 +140,7 @@ def test_theme_helpers():
     assert [next_theme(t) for t in (SYSTEM, LIGHT, DARK, "junk")] == [LIGHT, DARK, SYSTEM, SYSTEM]
 
 
+@pytest.mark.guard
 def test_the_tokens_are_the_mockups_in_both_themes():
     css = (STATIC / "tokens.css").read_text(encoding="utf-8")
     light, dark = css.split(":root.dark")[0], css.split(":root.dark")[1].split("@media")[0]
@@ -167,6 +168,7 @@ def contrast(a: str, b: str) -> float:
     return (high + 0.05) / (low + 0.05)
 
 
+@pytest.mark.guard
 def test_text_contrast_is_at_least_4_5_to_1_in_both_themes():
     css = (STATIC / "tokens.css").read_text(encoding="utf-8")
     sets = {"light": css.split(":root.dark")[0], "dark": css.split(":root.dark")[1].split("@media")[0]}
@@ -391,6 +393,7 @@ def test_active_item_uses_aria_current_not_colour_alone(client, db_session):
     assert '[aria-current="page"]' in (STATIC / "styles.css").read_text(encoding="utf-8")
 
 
+@pytest.mark.guard
 def test_focus_is_visible_and_targets_are_big_enough():
     css = (STATIC / "styles.css").read_text(encoding="utf-8")
     assert ":focus-visible" in css and "outline: 2px solid var(--focus)" in css

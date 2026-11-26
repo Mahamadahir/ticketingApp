@@ -1,6 +1,7 @@
 """The Mail pages of the admin overhaul (9L, part 1): Email templates, Never follow, Thanks rules, Mail intake and
 Outbound mail on the admin patterns. One smoke test per page; the rules the pages show are tested where they live."""
 
+import pytest
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -30,6 +31,7 @@ def admin(client, db_session):
     set_role(db_session, login_as(client, "boss@example.com"), UserRole.SUPER_ADMIN)
 
 
+@pytest.mark.guard
 def test_the_mail_pages_use_tokens_never_raw_colours():
     for name in MAIL_PAGES:
         text = (TEMPLATES / name).read_text(encoding="utf-8")

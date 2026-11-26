@@ -125,6 +125,7 @@ def test_dev_login_page_keeps_its_fields_in_the_card(client):
     assert names(form_of(html, "/auth/dev-login")) == {"email", "display_name"}
 
 
+@pytest.mark.guard
 @pytest.mark.parametrize("name", ["login.html", "break_glass.html", "dev_login.html"])
 def test_no_raw_colour_in_the_sign_in_templates(name):
     text = (TEMPLATES / name).read_text(encoding="utf-8")

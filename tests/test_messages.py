@@ -1,3 +1,4 @@
+import pytest
 from pathlib import Path
 
 from sqlmodel import select
@@ -144,6 +145,7 @@ def test_a_portal_comment_is_recorded_as_public_inbound(client, db_session):
     assert (message.direction, message.visibility) == (MessageDirection.INBOUND, MessageVisibility.PUBLIC)
 
 
+@pytest.mark.guard
 def test_portal_code_only_reads_messages_through_the_safe_function():
     """The portal must not touch ticket.messages (every message, notes included).
     This catches someone reintroducing the shortcut in a route or template."""

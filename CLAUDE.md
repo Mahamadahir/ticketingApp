@@ -97,7 +97,7 @@ starting a phase, and `README.md` for how to run it.
   a time, so do not restyle a page outside its issue; use the 9A classes and tokens, never raw colours.
 - Schema changes need an Alembic migration (CI runs `alembic check`).
 - **CI is the full test run.** Before saying work is done, run the test files you touched (and those of
-  the modules they change) locally, `pytest -n 2 <files>`, then push and wait for CI's full run on the PR's
+  the modules they change) locally, `pytest -n 2 <files>` and `pytest -n 2 -m guard` (the cross-cutting scan tests), then push and wait for CI's full run on the PR's
   final commit and report its result. Do not run the whole suite locally unless the user asks: several
   agents share this machine, and a local full run takes 30 minutes or more and often never finishes (CI
   takes 8 to 15). Tests run against

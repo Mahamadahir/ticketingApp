@@ -129,6 +129,7 @@ requesttype.icon requesttype.mailbox_action approvalgroup.request_notice ticket.
 """.split())
 
 
+@pytest.mark.guard
 def test_text_columns_the_name_pattern_misses_were_checked_by_hand():
     """person_data finds columns by name; this finds the rest by type. A new text column that is in neither COLUMNS nor the
     hand-reviewed list above fails here, so it gets a decision (and a step if it holds a person's words)."""

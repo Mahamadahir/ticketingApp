@@ -350,11 +350,13 @@ def test_mentions_matches_whole_addresses_only():
     assert not mentions("ann@a.example.evil.com", person)
 
 
+@pytest.mark.guard
 def test_every_column_that_holds_a_persons_data_is_classified():
     """A new email, name, user id, actor or free-text column must be decided in app/person_data.py before this passes."""
     assert candidate_keys() - set(COLUMNS) == set()
 
 
+@pytest.mark.guard
 def test_the_classification_names_real_columns():
     from sqlmodel import SQLModel
 
@@ -362,6 +364,7 @@ def test_the_classification_names_real_columns():
     assert set(COLUMNS) - real == set()
 
 
+@pytest.mark.guard
 def test_every_table_classified_as_the_persons_own_is_in_the_export():
     """A table whose columns are the person's own data must be exported (or this list consciously extended)."""
     own = {key.split(".")[0] for key, use in COLUMNS.items() if use.role == SUBJECT}

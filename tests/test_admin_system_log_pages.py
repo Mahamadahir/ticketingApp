@@ -2,6 +2,7 @@
 anonymise steps), Audit log, Activity log and Feedback on the admin patterns. One smoke test per page; the rules the pages
 show are tested where they live."""
 
+import pytest
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -27,6 +28,7 @@ def admin(client, db_session):
     set_role(db_session, login_as(client, "boss@example.com"), UserRole.SUPER_ADMIN)
 
 
+@pytest.mark.guard
 def test_the_system_and_log_pages_use_tokens_never_raw_colours():
     for name in PAGES:
         text = (TEMPLATES / name).read_text(encoding="utf-8")
