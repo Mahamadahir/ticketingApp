@@ -54,6 +54,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/c3f8a2d6b941_seed_mailbox_request_types.py",
+        "revision": "c3f8a2d6b941"
+      },
+      {
         "file": "migrations/versions/c8d4a1e6f257_mailbox_on_behalf_approvals.py",
         "revision": "c8d4a1e6f257"
       },
@@ -68,17 +72,13 @@
       {
         "file": "migrations/versions/a4d8e1b6c297_ticket_sla_starts_at.py",
         "revision": "a4d8e1b6c297"
-      },
-      {
-        "file": "migrations/versions/b8d2f6a1c350_email_reactions.py",
-        "revision": "b8d2f6a1c350"
       }
     ],
-    "count": 83,
+    "count": 84,
     "heads": [
       {
-        "file": "migrations/versions/c8d4a1e6f257_mailbox_on_behalf_approvals.py",
-        "revision": "c8d4a1e6f257"
+        "file": "migrations/versions/c3f8a2d6b941_seed_mailbox_request_types.py",
+        "revision": "c3f8a2d6b941"
       }
     ]
   },
@@ -195,6 +195,7 @@
       "tables": [],
       "tests": [
         "tests/test_admin_frame.py",
+        "tests/test_mailbox_seed_types.py",
         "tests/test_notification_dismiss.py"
       ]
     },
@@ -1109,6 +1110,7 @@
         "tests/test_linked_identities.py",
         "tests/test_mail_subscriptions.py",
         "tests/test_mailbox_changes.py",
+        "tests/test_mailbox_third_person.py",
         "tests/test_message_channel.py",
         "tests/test_msp.py",
         "tests/test_msp_actions.py",
@@ -1209,6 +1211,7 @@
         "tests/test_notification_dismiss.py",
         "tests/test_notification_followup.py",
         "tests/test_outbound_mail.py",
+        "tests/test_portal_mailbox.py",
         "tests/test_scheduled_jobs.py",
         "tests/test_split_family.py",
         "tests/test_splitting.py",
@@ -2068,13 +2071,15 @@
         "failed_change_for_ticket",
         "failed_phase",
         "finish_on_behalf",
+        "lock_owner",
         "max_attempts",
         "pending_change_condition",
         "run_mailbox_changes",
         "schedule_ticket",
         "stop_now",
         "try_again",
-        "utcnow"
+        "utcnow",
+        "was_declined"
       ],
       "imported_by": [
         "app.approvals",
@@ -2109,6 +2114,7 @@
         "tests/test_mailbox_access.py",
         "tests/test_mailbox_changes.py",
         "tests/test_mailbox_on_behalf.py",
+        "tests/test_mailbox_third_person.py",
         "tests/test_portal_mailbox.py"
       ]
     },
@@ -2822,6 +2828,8 @@
         "tests/test_mailbox_access.py",
         "tests/test_mailbox_changes.py",
         "tests/test_mailbox_on_behalf.py",
+        "tests/test_mailbox_seed_types.py",
+        "tests/test_mailbox_third_person.py",
         "tests/test_message_channel.py",
         "tests/test_messages.py",
         "tests/test_msp.py",
@@ -3625,6 +3633,7 @@
       "tables": [],
       "tests": [
         "tests/test_mailbox_access.py",
+        "tests/test_mailbox_third_person.py",
         "tests/test_portal_mailbox.py"
       ]
     },
@@ -4147,6 +4156,7 @@
         "tests/test_approvals.py",
         "tests/test_mailbox_access.py",
         "tests/test_mailbox_on_behalf.py",
+        "tests/test_mailbox_seed_types.py",
         "tests/test_portal_home.py",
         "tests/test_portal_mailbox.py",
         "tests/test_portal_new.py",
@@ -4240,6 +4250,7 @@
         "tests/test_auto_close_chase.py",
         "tests/test_bulk_resolve.py",
         "tests/test_email_header.py",
+        "tests/test_mailbox_changes.py",
         "tests/test_msp.py",
         "tests/test_msp_actions.py",
         "tests/test_reopening.py",
@@ -6359,6 +6370,7 @@
         "tests/test_mailbox_access.py",
         "tests/test_mailbox_changes.py",
         "tests/test_mailbox_on_behalf.py",
+        "tests/test_mailbox_third_person.py",
         "tests/test_msp.py",
         "tests/test_msp_actions.py",
         "tests/test_msp_mail.py",
@@ -7456,6 +7468,7 @@
         "tests/test_email_preview.py",
         "tests/test_email_reactions.py",
         "tests/test_linked_identities.py",
+        "tests/test_mailbox_third_person.py",
         "tests/test_msp_mail.py",
         "tests/test_portal.py",
         "tests/test_reactions.py",
@@ -8295,6 +8308,8 @@
     "tests/test_mailbox_access.py",
     "tests/test_mailbox_changes.py",
     "tests/test_mailbox_on_behalf.py",
+    "tests/test_mailbox_seed_types.py",
+    "tests/test_mailbox_third_person.py",
     "tests/test_message_channel.py",
     "tests/test_message_channel_migration.py",
     "tests/test_messages.py",
