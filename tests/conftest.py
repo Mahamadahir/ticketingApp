@@ -92,6 +92,7 @@ os.environ["ENV"] = "dev"
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ["SUPER_ADMIN_EMAILS"] = "admin@example.com"
 os.environ["SESSION_SECRET_KEY"] = "test-secret"
+os.environ["BCRYPT_ROUNDS"] = "4"  # the cheapest cost; production keeps 12 (unsafe_setting_errors enforces it)
 os.environ["SSO_TENANT_ID"] = ""
 os.environ["SSO_CLIENT_ID"] = ""
 os.environ["SSO_CLIENT_SECRET"] = ""

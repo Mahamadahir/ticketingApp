@@ -62,7 +62,7 @@ def test_production_rejects_default_client_state_once_graph_is_configured():
 
 
 def test_production_accepts_real_secrets():
-    assert unsafe_setting_errors(Settings(env="production", app_role="web", session_secret_key="a-real-secret")) == []
+    assert unsafe_setting_errors(Settings(env="production", app_role="web", session_secret_key="a-real-secret", bcrypt_rounds=12)) == []
 
 
 def test_dev_login_still_works_in_dev(client):
@@ -77,3 +77,26 @@ def test_settings_check_exits_non_zero_on_unsafe_config(monkeypatch):
 
 def test_settings_check_passes_in_dev():
     assert check_settings.main() == 0
+
+
+def test_hash_password_uses_the_configured_rounds_and_old_hashes_still_verify():
+    import bcrypt
+
+    from app.auth import _DUMMY_HASH, _verify_password, hash_password
+
+    assert settings.bcrypt_rounds == 4  # tests/conftest.py
+    assert hash_password("a password").startswith("$2b$04$")
+    assert _DUMMY_HASH.startswith("$2b$04$")  # the timing-equalising check costs what a real one does
+    old = bcrypt.hashpw(b"a password", bcrypt.gensalt(rounds=12)).decode("ascii")
+    assert _verify_password("a password", old) and not _verify_password("another", old)
+
+
+def test_bcrypt_rounds_below_12_are_refused_outside_dev_and_out_of_range_everywhere():
+    base = dict(app_role="web", session_secret_key="a-real-secret")
+    assert any("BCRYPT_ROUNDS" in e for e in unsafe_setting_errors(Settings(env="production", bcrypt_rounds=4, **base)))
+    assert any("BCRYPT_ROUNDS" in e for e in unsafe_setting_errors(Settings(env="staging", bcrypt_rounds=11, **base)))
+    assert not any("BCRYPT_ROUNDS" in e for e in unsafe_setting_errors(Settings(env="production", bcrypt_rounds=12, **base)))
+    assert not any("BCRYPT_ROUNDS" in e for e in unsafe_setting_errors(Settings(env="dev", bcrypt_rounds=4)))
+    for rounds in (3, 17):
+        assert any("BCRYPT_ROUNDS" in e for e in unsafe_setting_errors(Settings(env="dev", bcrypt_rounds=rounds)))
+        assert any("BCRYPT_ROUNDS" in e for e in unsafe_setting_errors(Settings(env="production", bcrypt_rounds=rounds, **base)))

@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     sso_client_secret: str = ""
     sso_redirect_uri: str = "http://localhost:8000/auth/callback"
 
+    # bcrypt cost for new password hashes (4 to 16). Tests set 4 for speed; outside dev it must be at least 12.
+    # Existing hashes keep the cost they were made with.
+    bcrypt_rounds: int = 12
     session_secret_key: str = "dev-secret-change-me"
 
     # Announcing new tickets in a Teams channel (phase 2D). The web and public apps only queue the
@@ -202,6 +205,8 @@ class Settings(BaseSettings):
         return [e.strip().lower() for e in self.super_admin_emails.split(",") if e.strip()]
 
 
+BCRYPT_ROUNDS_RANGE = (4, 16)
+BCRYPT_MIN_ROUNDS_OUTSIDE_DEV = 12
 MAIL_SENDING_MODES = ("off", "dev", "graph")
 MAILBOX_EXECUTORS = ("", "fake", "azure")  # "" is off
 
@@ -234,8 +239,12 @@ def unsafe_setting_errors(config: Settings) -> list[str]:
         errors.append("TEAMS_BOT_ENABLED needs TEAMS_BOT_APP_ID and TEAMS_BOT_TENANT_ID")
     if config.teams_bot_client_secret and config.app_role == "web":
         errors.append("Only the public app and the worker may hold the Teams bot secret (TEAMS_BOT_CLIENT_SECRET)")
+    if not BCRYPT_ROUNDS_RANGE[0] <= config.bcrypt_rounds <= BCRYPT_ROUNDS_RANGE[1]:
+        errors.append(f"BCRYPT_ROUNDS must be between {BCRYPT_ROUNDS_RANGE[0]} and {BCRYPT_ROUNDS_RANGE[1]}")
     if config.is_dev:
         return errors
+    if config.bcrypt_rounds < BCRYPT_MIN_ROUNDS_OUTSIDE_DEV:
+        errors.append(f"BCRYPT_ROUNDS below {BCRYPT_MIN_ROUNDS_OUTSIDE_DEV} only works in the dev environment (it makes passwords cheap to crack)")
     if config.mail_sending == "dev":
         errors.append("MAIL_SENDING=dev only works in the dev environment (it sends nothing)")
     if config.mailbox_executor == "fake" and config.app_role in ("worker", "all"):

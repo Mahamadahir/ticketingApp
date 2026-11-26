@@ -24,7 +24,8 @@ BASE_LOCKOUT = timedelta(minutes=15)
 MAX_LOCKOUT_DOUBLINGS = 10
 SSO_SCOPES = ["User.Read"]
 
-# bcrypt only uses the first 72 bytes of a password.
+# bcrypt only uses the first 72 bytes of a password. Every new hash, and the dummy hash the timing-equalising
+# checks use, is made by hash_password, so BCRYPT_ROUNDS (app/config.py) sets the cost in one place.
 BCRYPT_MAX_BYTES = 72
 
 
@@ -41,7 +42,7 @@ def _password_bytes(password: str) -> bytes:
 
 
 def hash_password(password: str) -> str:
-    return bcrypt.hashpw(_password_bytes(password), bcrypt.gensalt()).decode("ascii")
+    return bcrypt.hashpw(_password_bytes(password), bcrypt.gensalt(rounds=settings.bcrypt_rounds)).decode("ascii")
 
 
 def _verify_password(password: str, password_hash: str) -> bool:
