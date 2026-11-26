@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Admin: {{ person.display_name }}{% endblock %}
+{% block content %}
+{# Admin > Users > one person (#322). The jump links and the cards come from PERSON_SECTIONS, the At a glance facts from
+   PERSON_FACTS (app/admin_people.py). Adding a section or a fact never edits this page: see docs/ui.md. #}
+<p class="pp-crumb"><a href="/admin/users">&larr; All users</a></p>
+
+<header class="card pp-head">
+  <span class="pp-avatar" aria-hidden="true">{{ (person.display_name or person.email)[:1]|upper }}</span>
+  <div class="pp-title">
+    <h1>{{ person.display_name }}</h1>
+    <div class="pp-email">{{ person.email }}</div>
+    <div class="pp-chips">{% for tone, text in chips %}<span class="chip {{ tone }}">{{ text }}</span>{% endfor %}</div>
+  </div>
+  <a class="btn" href="#sec-status">Account status&hellip;</a>
+</header>
+
+{% if done %}<p class="pp-done" role="status">{{ done }}</p>{% endif %}
+
+<section class="card pp-glance" id="glance" aria-labelledby="glance-h">
+  <h2 id="glance-h">At a glance</h2>
+  <ul class="pp-facts">
+    {% for fact, value in glance.facts %}
+    <li class="pp-fact" data-fact="{{ fact.key }}">
+      <span class="pp-fact-label">{{ fact.label }}</span>
+      <span class="pp-fact-value">
+        {% if value.href %}<a href="{{ value.href }}">{% endif %}{% if value.tone %}<span class="chip {{ value.tone }}">{% endif %}{% if value.moment %}{{ value.moment|local_time }}{% else %}{{ value.text }}{% endif %}{% if value.tone %}</span>{% endif %}{% if value.href %}</a>{% endif %}
+      </span>
+      {% if value.hint %}<span class="pp-fact-hint">{{ value.hint }}</span>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  <p class="pp-shortcuts">{% for label, href in glance.shortcuts %}<a href="{{ href }}">{{ label }}</a>{% endfor %}</p>
+</section>
+
+<div class="pp-body">
+  <nav aria-label="On this page">
+    <ul class="pp-jump">
+      {% for s in sections %}<li><a{% if s.section.danger %} class="pp-danger-link"{% endif %} href="#sec-{{ s.section.key }}">{{ s.section.title }}</a></li>{% endfor %}
+    </ul>
+  </nav>
+  <div class="pp-stack">
+    {% for s in sections %}
+    <section class="card pp-card{{ ' pp-danger' if s.section.danger else '' }}" id="sec-{{ s.section.key }}" aria-labelledby="sec-{{ s.section.key }}-h">
+      <h2 id="sec-{{ s.section.key }}-h">{{ s.section.title }}</h2>
+      {% if s.lede %}<p class="pp-lede">{{ s.lede }}</p>{% endif %}
+      {% if refusal and refusal[0] == s.section.key %}<p class="error" role="alert">{{ refusal[1] }}</p>{% endif %}
+      {% with v = s.view %}{% include s.section.template %}{% endwith %}
+    </section>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}
