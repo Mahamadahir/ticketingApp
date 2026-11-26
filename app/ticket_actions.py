@@ -11,6 +11,8 @@ answers in as plain booleans so the rules for the row can be read, and tested, i
 - Link and Split only when the agent may do them.
 - Resolve is the one primary button; once the ticket is resolved it is Reopen (or Reclose).
 - Backdate and Close sit under the small more button.
+- A ticket whose scheduled mailbox change failed for good (#307) offers Try again, Done by hand and (only after a failed start)
+  Cancel change, right after the composers, to whoever can work it.
 
 A chip is a link to `?action=<key>` (so it works without scripts); with htmx it opens the same card in place. The key is
 also the name of the card, so a stale or invented `?action=` opens nothing."""
@@ -59,6 +61,10 @@ CARDS: dict[str, tuple[str, str]] = {
     "resolve": ("Resolve", "resolving"),
     "reopen": ("Reopen", "reopening"),
     "reclose": ("Reclose", "reclosing"),
+    # A scheduled mailbox change that failed for good (app/mailbox_changes.py, #307)
+    "mbx_retry": ("Try the mailbox change again", "retrying the mailbox change"),
+    "mbx_done": ("Mailbox change done by hand", "settling the mailbox change by hand"),
+    "mbx_cancel": ("Cancel the mailbox change", "cancelling the mailbox change"),
 }
 
 
@@ -82,12 +88,20 @@ def action_chips(
     can_reclose: bool,
     can_close: bool,
     can_backdate: bool,
+    mailbox_phase: Optional[str] = None,  # "start" or "removal" when a scheduled mailbox change on this ticket failed for good
 ) -> Chips:
     chips = Chips()
     if can_work and triaged:  # email to the requester is unavailable before triage (app/messages.py)
         chips.row.append(Chip("email", "Email user"))
     if can_note:
         chips.row.append(Chip("note", "Add note"))
+    if can_work and mailbox_phase:
+        # Settling a failed mailbox change comes right after the composers: it is what the ticket is waiting for. Cancel only
+        # when nothing was ever made (after a failed removal Exchange may still hold the change).
+        chips.row.append(Chip("mbx_retry", "Try again"))
+        chips.row.append(Chip("mbx_done", "Done by hand"))
+        if mailbox_phase == "start":
+            chips.row.append(Chip("mbx_cancel", "Cancel change"))
     if not can_work:
         if can_triage:
             # Any agent can triage an untriaged ticket they can see (visibility.may_triage), without working it.

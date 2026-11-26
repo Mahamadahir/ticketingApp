@@ -154,6 +154,7 @@ def fresh_rate_limits():
     rate_limit.BREAK_GLASS.reset()
     rate_limit.EMERGENCY.reset()
     rate_limit.TEAMS_BOT.reset()
+    rate_limit.PEOPLE_SEARCH.reset()
     yield
 
 

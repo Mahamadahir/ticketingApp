@@ -21,7 +21,8 @@ from app.approval_groups import members_of
 from app.approvals import PercentError, check_percentages
 from app.audit import log_action
 from app.categories import is_selectable, path_of, team_id_for
-from app.models import ApprovalGroup, Category, RequestType, Team, Ticket, TicketSource, TicketType
+from app.mailbox_executor import is_enabled as mailbox_changes_enabled
+from app.models import MAILBOX_KINDS, ApprovalGroup, Category, RequestType, Team, Ticket, TicketSource, TicketType
 from app.request_icons import DEFAULT_ICON, ICONS, PROBLEM_ICON, icon_path
 from app.request_questions import missing_required
 from app.sla import Level
@@ -67,13 +68,15 @@ def _name_taken(session: Session, name: str, except_id: Optional[int]) -> bool:
     return session.exec(query).first() is not None
 
 
-def _checked(session: Session, group_id: Optional[int], pass_percent: int, is_active: bool) -> None:
+def _checked(session: Session, group_id: Optional[int], pass_percent: int, is_active: bool, mailbox_action: Optional[str] = None) -> None:
     if group_id is not None and session.get(ApprovalGroup, group_id) is None:
         raise RequestTypeError("That approval group does not exist")
     try:
         check_percentages(pass_percent)
     except PercentError as error:
         raise RequestTypeError(str(error))
+    if mailbox_action and group_id is None:
+        return  # a mailbox type may have no group: only the person's own mailbox is offered then (`offers_someone_elses`)
     if is_active and not members_of(session, group_id, active_only=True):
         raise RequestTypeError(
             "An active request type needs an approval group with at least one member (switch it off to save it without one)"
@@ -81,6 +84,22 @@ def _checked(session: Session, group_id: Optional[int], pass_percent: int, is_ac
 
 
 MAX_LEAD_DAYS = 365
+
+# The mailbox actions that have a portal form so far (#309: forwarding; #310: Full access and Send As, which open the one "give someone access" form). A type with
+# another action can be saved but is not offered to anyone yet.
+PORTAL_MAILBOX_ACTIONS = ("forwarding", "full_access", "send_as")
+MAILBOX_ACTION_LABELS = {
+    "forwarding": "Forward the person's own mail",
+    "full_access": "Full access to a mailbox",
+    "send_as": "Send as",
+}
+
+
+def _clean_mailbox_action(value: Optional[str]) -> Optional[str]:
+    value = (value or "").strip() or None
+    if value is not None and value not in MAILBOX_KINDS:
+        raise RequestTypeError("Choose a mailbox action from the list")
+    return value
 
 
 @dataclass(frozen=True)
@@ -114,6 +133,34 @@ def _check_defaults(session: Session, defaults: TypeDefaults) -> None:
     for value, label in ((defaults.impact, "impact"), (defaults.urgency, "urgency")):
         if value is not None and value not in {level.value for level in Level}:
             raise RequestTypeError(f"Choose the {label} from the list")
+
+
+def _mailbox_defaults(action: Optional[str], defaults: TypeDefaults) -> TypeDefaults:
+    """A mailbox action type with a blank impact or urgency gets Low for it (#325): impact times urgency sets the priority and SLA,
+    and a mailbox change is routine. The team and category are the admin's choice and are never guessed."""
+    if not action or (defaults.impact is not None and defaults.urgency is not None):
+        return defaults
+    return TypeDefaults(defaults.team_id, defaults.category_id, defaults.impact or Level.LOW.value, defaults.urgency or Level.LOW.value)
+
+
+def offers_someone_elses(request_type: RequestType) -> bool:
+    """Whether the portal form of this mailbox type offers "Someone else's" mailbox (#311): only a type with an approval group, because
+    a request for someone else's mailbox is approved by the owner or by an IT approver from that group. Requests for the person's own
+    mailbox need no approval whatever the type has."""
+    return bool(request_type.mailbox_action) and request_type.approval_group_id is not None
+
+
+def _check_mailbox_action(action: Optional[str], group_id: Optional[int], defaults: TypeDefaults, is_active: bool = True) -> None:
+    """A type that makes a mailbox change is raised by the portal form with no one to triage it, so it must triage itself: to be
+    offered (active) all four defaults. An inactive one may still lack its team and category (the seeded types wait like that until
+    an admin sets them). It may have an approval group (#311), which then only applies to requests about SOMEONE ELSE'S mailbox: the
+    person's own mailbox needs no approval."""
+    if not action:
+        return
+    if is_active and None in (defaults.team_id, defaults.category_id, defaults.impact, defaults.urgency):
+        raise RequestTypeError(
+            "A request type with a mailbox action must triage itself: choose its default team, category, impact and urgency"
+        )
 
 
 def self_triage_defaults(session: Session, request_type: RequestType) -> Optional[Category]:
@@ -190,15 +237,19 @@ def create_request_type(
     due_days_before: Optional[int] = None, queue_lead_days: Optional[int] = None,
     defaults: Optional[TypeDefaults] = None, subrequests_need_own_approval: bool = False,
     approvers_may_self_approve: bool = False, is_featured: bool = False, icon: Optional[str] = None,
+    mailbox_action: Optional[str] = None, any_one_approver: bool = False,
 ) -> RequestType:
     name, description = _clean(name, description)
     icon = _clean_icon(icon)
+    mailbox_action = _clean_mailbox_action(mailbox_action)
     _check_days(due_days_before, queue_lead_days)
     defaults = defaults or TypeDefaults()
+    defaults = _mailbox_defaults(mailbox_action, defaults)
     _check_defaults(session, defaults)
+    _check_mailbox_action(mailbox_action, group_id, defaults, is_active)
     if _name_taken(session, name, None):
         raise RequestTypeError("There is already a request type with that name")
-    _checked(session, group_id, pass_percent, is_active)
+    _checked(session, group_id, pass_percent, is_active, mailbox_action)
     request_type = RequestType(
         name=name, description=description, is_active=is_active, approval_group_id=group_id,
         pass_percent=pass_percent, offers_required_by=offers_required_by,
@@ -206,7 +257,7 @@ def create_request_type(
         default_team_id=defaults.team_id, default_category_id=defaults.category_id,
         default_impact=defaults.impact, default_urgency=defaults.urgency,
         subrequests_need_own_approval=subrequests_need_own_approval, approvers_may_self_approve=approvers_may_self_approve,
-        is_featured=is_featured, icon=icon,
+        is_featured=is_featured, icon=icon, mailbox_action=mailbox_action, any_one_approver=any_one_approver,
     )
     session.add(request_type)
     _flush(session)
@@ -219,19 +270,29 @@ def update_request_type(
     due_days_before: Optional[int] = None, queue_lead_days: Optional[int] = None,
     defaults: Optional[TypeDefaults] = None, subrequests_need_own_approval: Optional[bool] = None,
     approvers_may_self_approve: Optional[bool] = None, is_featured: Optional[bool] = None,
-    icon: Optional[str] = None, set_icon: bool = False,
+    icon: Optional[str] = None, set_icon: bool = False, mailbox_action: Optional[str] = None, set_mailbox_action: bool = False,
+    any_one_approver: Optional[bool] = None,
 ) -> RequestType:
     """Blank (None) day counts mean "use the setting". `defaults` None leaves the type's defaults as they are, and so
     does `subrequests_need_own_approval` None. The icon changes only with `set_icon` (the admin form always sends it, even
-    blank); a caller that does not know about icons leaves it as it is."""
+    blank); a caller that does not know about icons leaves it as it is. The mailbox action changes only with
+    `set_mailbox_action`, likewise; whichever action the type ends up with is checked against the group and defaults it ends up with."""
     name, description = _clean(name, description)
     icon = _clean_icon(icon) if set_icon else request_type.icon
+    action = _clean_mailbox_action(mailbox_action) if set_mailbox_action else request_type.mailbox_action
     _check_days(due_days_before, queue_lead_days)
+    effective = defaults or TypeDefaults(
+        request_type.default_team_id, request_type.default_category_id, request_type.default_impact, request_type.default_urgency
+    )
+    filled = _mailbox_defaults(action, effective)
+    if filled != effective or defaults is not None:
+        defaults = filled
     if defaults is not None:
         _check_defaults(session, defaults)
+    _check_mailbox_action(action, group_id, filled, is_active)
     if _name_taken(session, name, request_type.id):
         raise RequestTypeError("There is already a request type with that name")
-    _checked(session, group_id, pass_percent, is_active)
+    _checked(session, group_id, pass_percent, is_active, action)
     request_type.name, request_type.description, request_type.is_active = name, description, is_active
     request_type.approval_group_id = group_id
     request_type.pass_percent = pass_percent
@@ -244,7 +305,10 @@ def update_request_type(
         request_type.approvers_may_self_approve = approvers_may_self_approve
     if is_featured is not None:
         request_type.is_featured = is_featured
+    if any_one_approver is not None:
+        request_type.any_one_approver = any_one_approver
     request_type.icon = icon
+    request_type.mailbox_action = action
     if defaults is not None:
         request_type.default_team_id, request_type.default_category_id = defaults.team_id, defaults.category_id
         request_type.default_impact, request_type.default_urgency = defaults.impact, defaults.urgency
@@ -302,16 +366,29 @@ def card_for(request_type: RequestType) -> Card:
     return Card(request_type, request_type.name, request_type.description, request_type.icon or DEFAULT_ICON)
 
 
+def is_offered(request_type: RequestType) -> bool:
+    """Whether the portal shows this kind of request: an ordinary one always; one with a mailbox action only when that action has
+    its form (`PORTAL_MAILBOX_ACTIONS`) and the feature is switched on in this environment (MAILBOX_EXECUTOR is set), so a
+    person is never offered a request that could only fail."""
+    if not request_type.mailbox_action:
+        return True
+    return request_type.mailbox_action in PORTAL_MAILBOX_ACTIONS and mailbox_changes_enabled()
+
+
+def offered_request_types(session: Session) -> list[RequestType]:
+    return [t for t in active_request_types(session) if is_offered(t)]
+
+
 def portal_cards(session: Session) -> list[Card]:
-    """The choices of step 1 on New request: "Something is not working" first, then every active request type."""
-    return [problem_card()] + [card_for(t) for t in active_request_types(session)]
+    """The choices of step 1 on New request: "Something is not working" first, then every active request type on offer."""
+    return [problem_card()] + [card_for(t) for t in offered_request_types(session)]
 
 
 def portal_tiles(session: Session) -> list[Card]:
     """The quick-start tiles on the portal's My requests page: "Something is not working" first, then at most three of the
     active request types, the ones an admin marked as featured first (in the catalogue's order), else the first three of
     the catalogue. Always a subset of `portal_cards`, so a tile never leads to a kind that page refuses."""
-    types = active_request_types(session)
+    types = offered_request_types(session)
     featured = [t for t in types if t.is_featured]
     return [problem_card()] + [card_for(t) for t in (featured or types)[: TILE_COUNT - 1]]
 
@@ -321,8 +398,8 @@ def approval_notice(session: Session, request_type: RequestType, viewer=None) ->
     default; None for a kind with no approval group, and for a member of the group on a kind that lets approvers approve
     their own requests (their own approval is recorded at once, so nothing waits)."""
     group = session.get(ApprovalGroup, request_type.approval_group_id) if request_type.approval_group_id else None
-    if group is None:
-        return None
+    if group is None or request_type.mailbox_action:
+        return None  # a mailbox kind needs approval only for someone else's mailbox, which its own form explains (#311)
     if viewer is not None and request_type.approvers_may_self_approve and viewer.id in {
         u.id for u in members_of(session, group.id, active_only=True)
     }:

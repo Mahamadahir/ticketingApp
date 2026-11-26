@@ -21,6 +21,7 @@ so expect a round of fixes on the first `what-if`.
 | `container-app` | Used for `web`, `public` and `worker` |
 | `migrate-job` | Manual job that runs `alembic upgrade head` |
 | `alerts` | Database storage and CPU alerts to the action group |
+| `automation` | Only with `MAILBOX_AUTOMATION_ENABLED=true`: the Automation account for scheduled mailbox changes, its own managed identity, the PowerShell 7.4 runtime with `ExchangeOnlineManagement` pinned, seven runbook shells, and the worker's role on it (see "Mailbox changes") |
 
 Each app and the migrate job has its own user-assigned managed identity, so a
 compromised app can use only what it was granted. This matters most for
@@ -253,11 +254,15 @@ switches as the GitHub Environment holds (which secrets exist, and who may read
 them, follows from them) and leave `IMAGE` unset: the apps are not touched, and
 the next workflow deploy wires the new secret in.
 
+With `MAILBOX_AUTOMATION_ENABLED=true` there is one more assignment here, **Automation Job Operator** for the worker on the
+Automation account, and one that is not Azure RBAC (the Automation identity's Exchange rights, which need a Global or
+Privileged Role Administrator). Both are described under "Mailbox changes: the Automation account", below.
+
 To hand this to the pipeline instead, grant its identity **Role Based Access
 Control Administrator** on the group, restricted with the condition "Allow user
 to only assign selected roles to selected principals" to AcrPull, AcrPush, Key
-Vault Secrets User, Storage Blob Data Contributor and Storage Blob Delegator (so
-it cannot grant itself Owner), then set the `ASSIGN_ROLES` variable to `true`
+Vault Secrets User, Storage Blob Data Contributor and Storage Blob Delegator (plus Automation Job Operator once the mailbox
+switch is on; so it cannot grant itself Owner), then set the `ASSIGN_ROLES` variable to `true`
 in the GitHub Environment. An Owner grant made with the portal's default
 condition cannot give out that role; the subscription's Owner has to.
 
@@ -329,6 +334,89 @@ admin center (Manage apps) and install it for a test user. An app installed for 
 uninstalled by them (Microsoft's documentation); if someone removes it themselves, the next message to them is refused with a 403
 or 404 and the bot falls back to the channel mention, where that is switched on. The deploy workflow refuses the switch on without the public app, or `clientSecret` without its id
 and secret.
+
+## Mailbox changes: the Automation account
+
+Scheduled mailbox changes (forwarding, full access, Send As; tracker #305) reach Exchange Online only through an **Azure
+Automation account** that runs fixed runbooks. The app never holds Exchange rights. Nothing here is deployed or proved:
+every check is on the staging list (`docs/azure-setup.md`, step 9).
+
+Switch: `MAILBOX_AUTOMATION_ENABLED=true` (off by default; off creates nothing and leaves the worker alone) with
+`MAILBOX_TENANT_DOMAIN`, the tenant's `<name>.onmicrosoft.com` name (a GitHub Environment variable; the Deploy workflow
+refuses the switch without it). It needs the `Microsoft.Automation` resource provider registered (an Owner, once).
+
+What the template makes (`modules/automation.bicep`, `aa-ticketing-<env>-mailbox`):
+
+- the account with its own **system-assigned managed identity**, never shared with the web, public or worker identities,
+  and account-key authentication off;
+- a PowerShell **7.4** runtime environment (7.2 is deprecated; 7.4 exists only as a runtime environment) with the
+  `ExchangeOnlineManagement` module pinned (`exchangeModuleVersion`, 3.9.2), loaded from the PowerShell Gallery;
+- seven runbooks: `Set-MailForwarding`, `Clear-MailForwarding`, `Grant-FullAccess`, `Remove-FullAccess`, `Grant-SendAs`,
+  `Remove-SendAs` and `Read-MailboxChange`. Each takes fixed parameters (addresses and a flag, never a script),
+  connects with `Connect-ExchangeOnline -ManagedIdentity`, checks its parameters again, treats "already set" as success,
+  reads back and writes one JSON object. Their source is `infra/runbooks/*.ps1` (`Common.ps1` holds the shared helpers);
+- no secret anywhere.
+
+ARM takes runbook text only from a URL and the repository is private, so the template creates the runbooks empty and the
+Deploy workflow uploads and publishes them after every deploy (`.github/scripts/publish-runbooks.sh`, using
+`tools/build_runbooks.py` to put `Common.ps1` into each; Contributor on the group is enough). To publish by hand:
+`python tools/build_runbooks.py <folder>` then the same three calls (`draft/content`, `publish`) with `az rest`.
+
+The worker gets `MAILBOX_EXECUTOR=azure`, `MAILBOX_AUTOMATION_RESOURCE_ID` (the account) and `MAILBOX_TENANT_DOMAIN`. The
+job timeout is `MAILBOX_AUTOMATION_TIMEOUT_SECONDS` (default 600, the poll interval `MAILBOX_AUTOMATION_POLL_SECONDS`, 5).
+
+### The two role assignments (not the Deploy workflow's job)
+
+The Deploy workflow runs with `ASSIGN_ROLES=false`, so the first is written by the owner's shell deploy (or by hand), and the
+second is not Azure RBAC at all.
+
+1. **The worker's identity on the Automation account, only: Automation Job Operator** (role id
+   `4fe576fe-1146-4730-92eb-48519fa6bf9f`). It is the smallest built-in role that creates jobs and reads their output: it
+   holds `jobs/write`, `jobs/read` and `jobs/output/read` (plus stop, suspend, resume and stream read) and nothing that
+   edits runbooks, assets or the account. Microsoft documents it as "create and manage jobs for all runbooks in the
+   account": Azure Automation allows role assignments only at the account scope, so it cannot be limited to single
+   runbooks. The limit is that the app only ever asks for the seven runbooks above (`ALLOWED_RUNBOOKS` in
+   `app/mailbox_executor_azure.py`) and the account holds nothing else. Docs:
+   [role permissions](https://learn.microsoft.com/azure/automation/automation-role-based-access-control#automation-job-operator),
+   [built-in roles](https://learn.microsoft.com/azure/role-based-access-control/built-in-roles/management-and-governance#automation-job-operator).
+   Written by `automation.bicep` when `ASSIGN_ROLES` is unset (the owner's shell deploy, as for every other identity here), or by
+   hand:
+
+   ```powershell
+   az role assignment create --assignee-object-id <worker identity principal id> --assignee-principal-type ServicePrincipal `
+     --role "Automation Job Operator" --scope <MAILBOX_AUTOMATION_RESOURCE_ID>
+   ```
+
+   Not confirmed (staging check): the role does not list `runbooks/read` or `automationAccounts/read`, and the job-create
+   call names the runbook without reading it, so it should work. If Azure refuses, the next step up is **Automation Operator**
+   (`d3881f73-407a-4167-8283-e981cbba0404`), which adds read of the account and runbooks. Record which one worked.
+
+2. **The Automation account's identity in Microsoft Entra: the `Exchange.ManageAsApp` application permission and an Exchange
+   directory role.** **Preferred instead of the directory role:** the least-privilege setup in
+   [`docs/exchange-mailbox-role.md`](../docs/exchange-mailbox-role.md) (a custom Exchange role with only the commands and
+   parameters the runbooks use, limited to a group of mailboxes; on staging, test accounts only). Use the directory role
+   below only if that setup does not work with a managed identity. Both need a **Global Administrator or Privileged Role Administrator**; the deployer's Azure Owner does
+   not give that. **Who grants them: to be named here before go-live** (`docs/azure-setup.md` records the
+   deployer as a Global admin, the issue (#308) says the owner is not one: confirm which). Take the identity's object id from the
+   deployment output `mailboxAutomationIdentityPrincipalId`. From
+   [Microsoft's steps](https://learn.microsoft.com/powershell/exchange/connect-exo-powershell-managed-identity):
+
+   ```powershell
+   Connect-MgGraph -Scopes AppRoleAssignment.ReadWrite.All,Application.Read.All,RoleManagement.ReadWrite.Directory
+   $MI_ID = '<mailboxAutomationIdentityPrincipalId>'
+   $exo = Get-MgServicePrincipal -Filter "AppId eq '00000002-0000-0ff1-ce00-000000000000'"   # Office 365 Exchange Online
+   New-MgServicePrincipalAppRoleAssignment -ServicePrincipalId $MI_ID -PrincipalId $MI_ID `
+     -AppRoleId 'dc50a0fb-09a3-484d-be87-e023b12c6440' -ResourceId $exo.Id                   # Exchange.ManageAsApp
+   $role = Get-MgRoleManagementDirectoryRoleDefinition -Filter "DisplayName eq 'Exchange Administrator'"
+   New-MgRoleManagementDirectoryRoleAssignment -PrincipalId $MI_ID -RoleDefinitionId $role.Id -DirectoryScopeId '/'
+   ```
+
+   Microsoft's page documents **Exchange Administrator** for this (and lists Exchange Recipient Administrator, Global Reader and
+   others as supported directory roles without saying what each can do). Exchange Administrator is broad: the issue asks for a
+   staging test of a narrower role that still lets all seven runbooks work (try Exchange Recipient Administrator first,
+   `Add-RecipientPermission` and `Add-MailboxPermission` being recipient management). Record the answer in
+   `docs/azure-setup.md`. If `Get-MgServicePrincipal` returns nothing, follow the section "What to do if the Office 365
+   Exchange Online resource is not available" on the Microsoft page.
 
 ## Custom domain (at roll-out)
 

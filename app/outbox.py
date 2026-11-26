@@ -33,6 +33,7 @@ MSP_HANDOFF = "msp_handoff"  # a ticket sent to the MSP (app/msp.py); the text i
 MSP_RELEASE = "msp_release"  # "no longer needed", to the MSP, when IT resolved, closed or took back a ticket (app/msp_actions.py); the text is fixed when queued
 MSP_FORWARD = "msp_forward"  # an MSP message the user was left off, passed on to them (app/msp.py); the text is fixed when queued
 EMERGENCY_RESET = "emergency_reset"  # tells an agent their emergency password was cleared when outage mode ended (app/outage.py); about no ticket
+MAILBOX_CHANGE = "mailbox_change"  # tells the other person of a scheduled mailbox change it started or stopped (app/mailbox_changes.py); the text is fixed when queued
 FOLLOWER_UPDATE = "follower_update"  # an inbound update passed to someone who was not on the mail it came in
 
 # Kinds that go to the requester without an agent having just written them. These are what the
@@ -189,6 +190,22 @@ def queue_follower_update(session: Session, ticket: Ticket, message: Message, to
             session.flush()
     except IntegrityError:
         return None
+    return row
+
+
+def queue_mailbox_change_mail(
+    session: Session, ticket: Ticket, to_address: str, subject: str, body: str
+) -> Optional[OutboundEmail]:
+    """Queues the "mailbox access started / stopped" email to the other person of a scheduled mailbox change, with the
+    text built by app/mailbox_changes.py from the admin templates. It is about the request ticket but is not a message on it
+    (the person is not the requester and must not see the ticket). None when mail is off."""
+    if not is_on():
+        return None
+    session.flush()
+    row = OutboundEmail(
+        kind=MAILBOX_CHANGE, ticket_id=ticket.id, to_address=to_address.strip().lower(), subject=subject, body=body,
+    )
+    session.add(row)
     return row
 
 

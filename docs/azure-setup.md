@@ -53,6 +53,10 @@ below are marked:
 | 5.2 AcrPush for the GitHub identity | [Owner] | done (17 Nov 2026) |
 | 6 GitHub Environments, variables and secrets | [GitHub admin] | done for `staging` (SSO included; `GRAPH_CLIENT_ID`, `GRAPH_TENANT_ID` and `GRAPH_SHARED_MAILBOX` still to set before mail is switched on; Teams not yet) |
 | 7 Teams Workflows webhook | the Teams channel owner | not started (optional) |
+| 7a Register `Microsoft.Automation` | [Owner] (subscription) | not done; needed only for scheduled mailbox changes |
+| 7a Automation Job Operator for the worker on the Automation account | [Owner] (the deployer's shell deploy with `ASSIGN_ROLES` unset writes it) | not done |
+| 7a `Exchange.ManageAsApp` and an Exchange directory role for the Automation identity | [Global admin] or Privileged Role Administrator: **name the person here before go-live** (this table says the deployer is the Global admin; issue #308 says the owner is not one, so confirm) | not done |
+| 7a Preferred: the least-privilege custom Exchange role instead of the directory role (`docs/exchange-mailbox-role.md`; staging scope = a group of test accounts only) | `Exchange.ManageAsApp`: privileged Entra admin; the custom role, scope and role group: Exchange Administrator | not done (owner, later) |
 | 8 Run the Deploy workflow | [GitHub admin] (the workflow uses the GitHub identity) | done: run 44269591675 (18 Nov 2026) built, pushed, migrated and rolled out all three apps; `/health` ok on the public app. The first attempt stalled because Azure suspended the Container Apps environment (`ManagedClusterSuspended`, "unknown reasons"); it recovered by itself within about 30 minutes |
 | 9 Checks | the deployer, with the MSP for the end-to-end mail checks | |
 | 10 Budget alert on the group | [Contributor] | done: `budget-ticketing-staging`, 100 a month, to `ALERT_EMAIL` |
@@ -96,7 +100,8 @@ You have a subscription; this app has no resource group yet.
    ```powershell
    foreach ($p in 'Microsoft.App','Microsoft.ContainerRegistry','Microsoft.DBforPostgreSQL',
                   'Microsoft.KeyVault','Microsoft.Storage','Microsoft.Network',
-                  'Microsoft.OperationalInsights','Microsoft.Insights','Microsoft.ManagedIdentity') {
+                  'Microsoft.OperationalInsights','Microsoft.Insights','Microsoft.ManagedIdentity',
+                  'Microsoft.Automation') {   # Automation: only for scheduled mailbox changes (step 7a)
      az provider register --namespace $p
    }
    az provider show --namespace Microsoft.App --query registrationState   # wait for Registered
@@ -333,6 +338,24 @@ More variables and secrets arrive with the Teams and presence switches and with 
    `PUBLIC_BASE_URL` so cards link to tickets. Out of office needs `PRESENCE_ENABLED` on the
    worker and the Graph permissions from step 3.
 
+## 7a. Mailbox changes: the Automation account (optional until scheduled mailbox changes are switched on)
+
+Issue #308, tracker #305. Full description, the runbooks and the commands are in `infra/README.md`, "Mailbox changes: the
+Automation account". In order:
+
+1. **[Owner]** Register `Microsoft.Automation` (step 1.2).
+2. Set the GitHub Environment variables `MAILBOX_AUTOMATION_ENABLED=true` and `MAILBOX_TENANT_DOMAIN=<tenant>.onmicrosoft.com`.
+3. **[Owner]** Deploy from the owner's shell with `ASSIGN_ROLES` unset (as for any new identity): this creates the account and
+   writes **Automation Job Operator** (role id `4fe576fe-1146-4730-92eb-48519fa6bf9f`) for the worker on that account only. It
+   is the smallest built-in role that creates jobs and reads their output
+   ([Microsoft: Automation roles](https://learn.microsoft.com/azure/automation/automation-role-based-access-control#automation-job-operator)).
+4. The Deploy workflow publishes the seven runbooks from `infra/runbooks` (a no-op without the account).
+5. **[Global admin] or Privileged Role Administrator** (name them in the table in "Who does what"): give the Automation
+   account's identity (output `mailboxAutomationIdentityPrincipalId`) the `Exchange.ManageAsApp` application permission and the
+   **Exchange Administrator** directory role, with the commands in `infra/README.md`
+   ([Microsoft: managed identities and Exchange Online PowerShell](https://learn.microsoft.com/powershell/exchange/connect-exo-powershell-managed-identity)).
+6. Work through the mailbox-change checks in step 9.
+
 ## 8. Deploy the apps
 
 Run the **Deploy** workflow (Actions tab, `workflow_dispatch`, target `staging`) on a commit
@@ -424,6 +447,45 @@ Everything below can only be proved here. Tick each, note the date, and say what
 - [ ] Graph mail under RBAC for Applications: the subscription validation handshake, webhook
       delivery to the public URL, renewal and lifecycle events, the catch-up sweep, and mail in
       and out through Mimecast (allow an hour after creating the mailbox for its sync).
+
+Mailbox changes through Azure Automation (#308; the executor is tested with recorded ARM responses and the runbooks
+against fake Exchange cmdlets only; nothing Azure-specific has run). Test mailboxes only:
+
+- [ ] The Bicep deploys: the account, the PowerShell 7.4 runtime environment, the pinned `ExchangeOnlineManagement` package
+      (it can fail to import without `PowerShellGet` and `PackageManagement`, which Microsoft's runbook-types page lists as a
+      known issue for module 3.0.0 and later; if so, add them to the runtime environment) and the seven runbooks. The
+      runtime environment, `packages` and runbook `runtimeEnvironment` properties were written from Microsoft's REST
+      documentation and compile in Bicep, but were never sent to Azure.
+- [ ] The Deploy workflow's "Publish the mailbox-change runbooks" step uploads and publishes all seven (the `draft/content`
+      and `publish` calls with `Content-Type: text/powershell`) and each shows Published.
+- [ ] A later deploy leaves the runbooks as published: deploy twice, and check that after the template runs (before the
+      publish step) a job of each runbook still starts, or at least that the publish step restores them. The template
+      creates the runbooks with an empty `draft`; whether Azure resets a published runbook on a repeat `PUT` is not known.
+- [ ] The Automation identity connects to Exchange Online (`Connect-ExchangeOnline -ManagedIdentity`) once the
+      `Exchange.ManageAsApp` permission and the Exchange role are granted, and each runbook works against a test mailbox:
+      forwarding on and off (with and without a copy), full access and Send As granted and removed, each run a second time
+      ("already set" and "already removed" are success), and each read back. Run `Read-MailboxChange` against all three kinds.
+- [ ] A narrower Exchange role than Exchange Administrator works for all seven runbooks with managed-identity sign-in
+      (Microsoft documents only the directory role; try Exchange Recipient Administrator). Record the answer here:
+- [ ] The worker's Automation Job Operator role is enough to create jobs and read their output, and nothing more: the worker
+      cannot edit a runbook, read the account's assets or start anything outside the account. If job creation is refused
+      without `runbooks/read`, use Automation Operator and note it. Record which role worked here:
+- [ ] The worker's executor (`MAILBOX_EXECUTOR=azure`) completes a forwarding change end to end, a refused change comes back
+      `permanent` (a mailbox that does not exist), and a job left running past `MAILBOX_AUTOMATION_TIMEOUT_SECONDS` comes back
+      as no answer.
+- [ ] Timings: how long a job takes from start to output (cold start of the sandbox, module load, connect), whether the
+      default 600-second timeout and 5-second poll suit it, and how long full access takes to appear in the target's Outlook
+      (auto-mapping). The emails' "may take a short while" wording depends on it. Record the numbers here:
+- [ ] Throttling: start several changes at once and check what Exchange does (and that a throttled run comes back
+      `retryable` and is retried by the job). Check the runbook's read-back wait (4 reads, 5 seconds apart) is long enough.
+- [ ] A forwarding change set by hand to someone else is left alone by `Clear-MailForwarding` (reported `mismatch`,
+      `changed_elsewhere`), and `Set-MailForwarding` over an existing forward records `previous_forwarding_to`.
+- [ ] Forwarding to an address outside the organisation is refused: a mail contact, a mail user and a guest are rejected as
+      `invalid_parameter` (the runbook allows only `UserMailbox` and `SharedMailbox` targets), and the tenant's outbound spam
+      policy does not block internal forwarding.
+- [ ] Removals when the other end has left: with a test user deleted after the change, `Remove-FullAccess` and `Remove-SendAs`
+      report removed (`trustee_not_found`), and `Clear-MailForwarding` clears the forward that no longer resolves. Check what
+      Exchange actually leaves behind (an orphaned entry shown as a SID) and whether that matters.
 
 ## 10. Costs and clean-up
 

@@ -27,6 +27,7 @@ REACTIONS_COUNT_ID = f"Integer {REACTION_PROPERTY_SET} Name ReactionsCount"
 REACTIONS_BLOB_ID = f"Binary {REACTION_PROPERTY_SET} Name MapiReactionsBlob"
 SENT_ITEMS_SELECT = "id,subject,internetMessageId,sentDateTime,lastModifiedDateTime,toRecipients,ccRecipients"
 REACTION_EXPAND = f"singleValueExtendedProperties($filter=id eq '{REACTIONS_COUNT_ID}' or id eq '{REACTIONS_BLOB_ID}')"
+USER_SELECT = "id,displayName,mail,jobTitle,department,accountEnabled,userType"
 TOKEN_URL_TEMPLATE = "https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
 
 
@@ -111,6 +112,44 @@ class GraphClient:
             return None
         response.raise_for_status()
         return response.json().get("timeZone") or None
+
+    def search_users(self, text: str, limit: int = 25) -> list[dict]:
+        """People whose name or address matches `text` (GET /users with `$search`, which needs the `ConsistencyLevel: eventual`
+        header), for the portal's people picker (#309). Asks Graph for enabled accounts only (guests and the rest are refused in code, `userType` can be null) and the caller checks the
+        answer again (app/people_directory.py), since this is a hint, not the rule. Each row is Graph's own: id, displayName,
+        mail, jobTitle, department, accountEnabled, userType. Needs User.Read.All (application). Raises on a failed call.
+        $search with $filter is documented (Microsoft Learn, "Use the $search query parameter": the results are the AND of both). UNPROVED until staging: the exact $search/$filter combination is checked there (docs/build-plan.md, Azure-only list)."""
+        term = " ".join(text.replace('"', " ").replace("\\", " ").split())[:80]
+        if not term:
+            return []
+        response = httpx.get(
+            f"{GRAPH_BASE_URL}/users",
+            params={
+                "$search": f'"displayName:{term}" OR "mail:{term}"',
+                "$filter": "accountEnabled eq true",  # userType is checked in code: `userType eq 'Member'` hides accounts where it is null
+                "$select": USER_SELECT,
+                "$top": str(limit),
+                "$count": "true",
+            },
+            headers={**self._authorized(), "ConsistencyLevel": "eventual"},
+            timeout=15,
+        )
+        response.raise_for_status()
+        return list(response.json().get("value", []))
+
+    def get_user(self, object_id: str) -> dict | None:
+        """One person by Entra object id (GET /users/{oid}) with the fields the picker's re-check reads, or None when the
+        directory has no such user (404). Needs User.Read.All (application). Any other failure raises."""
+        response = httpx.get(
+            f"{GRAPH_BASE_URL}/users/{quote(object_id, safe='')}",
+            params={"$select": USER_SELECT},
+            headers=self._authorized(),
+            timeout=15,
+        )
+        if response.status_code in (400, 404):  # 400: not even an id Graph can read
+            return None
+        response.raise_for_status()
+        return response.json()
 
     def presences(self, object_ids: list[str]) -> list[dict]:
         """POST /communications/getPresencesByUserId: one reading per id, up to 650 ids a request

@@ -42,6 +42,7 @@ from app.models import (
     InboundMail,
     LinkCode,
     LinkedIdentity,
+    MailboxChange,
     Message,
     Notification,
     NotificationPreference,
@@ -133,6 +134,7 @@ EXPORTED_TABLES = {
     "ticketevent": "ticket_events.json", "ticket_reaction": "reactions.json", "ticket": "tickets.json", "ticketfollower": "tickets.json",
     "message": "tickets.json", "attachment": "attachments/", "approvalvote": "approvals.json",
     "notification": "notifications.json", "outboundemail": "mail.json", "inboundmail": "mail.json",
+    "mailbox_change": "mailbox_changes.json",
 }
 
 
@@ -430,6 +432,41 @@ def _reactions(session: Session, person: Person) -> list[dict]:
     ]
 
 
+def _mailbox_changes(session: Session, person: Person, name_other_person: bool = False) -> list[dict]:
+    """The scheduled mailbox changes (#307) on the person's mailbox or made for them: what, with whom, when it was to start and end
+    and what happened. Found by their addresses or their Entra object ids. The other person's address is left out ("another
+    person") unless the person running the export ticks "Name the other person in mailbox changes" (`name_other_person`). The raw Exchange messages and job ids are the team's
+    working notes and are not part of the export."""
+    oids = set(object_ids(session, person))
+    rows = session.exec(
+        select(MailboxChange, Ticket)
+        .join(Ticket, Ticket.id == MailboxChange.ticket_id)
+        .where(
+            or_(
+                email_matches(MailboxChange.owner_address, person),
+                email_matches(MailboxChange.target_address, person),
+                email_matches(MailboxChange.created_by, person),  # a request they made for someone else's mailbox (#311)
+                _in(func.lower(MailboxChange.owner_object_id), oids),
+                _in(func.lower(MailboxChange.target_object_id), oids),
+            )
+        )
+        .order_by(MailboxChange.id)
+    ).all()
+    return [
+        {
+            # The other person's address is theirs, not the one asked about: the export names only the asker's own side.
+            "request": t.reference, "kind": c.kind,
+            "mailbox": c.owner_address if name_other_person or c.owner_address.strip().lower() in person.addresses else "another person's",
+            "shared_with": c.target_address if name_other_person or c.target_address.strip().lower() in person.addresses else "another person",
+            "keep_copy": c.keep_copy if c.kind == "forwarding" else None, "starts_at": c.starts_at, "ends_at": c.ends_at,
+            "state": c.state, "applied_at": c.applied_at, "removed_at": c.removed_at,
+            "asked_by": c.created_by if name_other_person or c.created_by.strip().lower() in person.addresses else "another person",
+            "asked_at": c.created_at,
+        }
+        for c, t in rows
+    ]
+
+
 def _teams_bot(session: Session, person: Person) -> list[dict]:
     return [
         {
@@ -567,7 +604,10 @@ def _mail(session: Session, person: Person, in_scope: set[int]) -> dict:
 # ---- The export ---------------------------------------------------------------------------------------------
 
 
-def build_export(session: Session, storage: Storage, address: str, requested_by: User, now: Optional[datetime] = None) -> Export:
+def build_export(
+    session: Session, storage: Storage, address: str, requested_by: User, now: Optional[datetime] = None, *,
+    name_other_person: bool = False,
+) -> Export:
     """Builds the ZIP and records the audit entry (the caller commits). Does not keep the file anywhere."""
     now = now or datetime.now(timezone.utc)
     person = find_person(session, address)
@@ -618,6 +658,7 @@ def build_export(session: Session, storage: Storage, address: str, requested_by:
             "mail.json": _mail(session, person, in_scope),
             "ticket_events.json": _ticket_events(session, person, in_scope),
             "reactions.json": _reactions(session, person),
+            "mailbox_changes.json": _mailbox_changes(session, person, name_other_person),
             "staff_references.json": staff,
             "attachments_not_added.json": listed,
         }
@@ -656,6 +697,6 @@ def build_export(session: Session, storage: Storage, address: str, requested_by:
 
     log_action(
         session, requested_by.email, AUDIT_ENTITY, person.main.id if person.main is not None else 0, AUDIT_ACTION,
-        f"for {person.address}: {len(sections)} tickets, {len(files)} files, {size} bytes",
+        f"for {person.address}: {len(sections)} tickets, {len(files)} files, {size} bytes, other person named in mailbox changes: {'yes' if name_other_person else 'no'}",
     )
     return Export(handle, size, summary)

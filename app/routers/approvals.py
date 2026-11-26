@@ -20,9 +20,11 @@ from app.approvals import (
     WITHDRAWN,
     ApprovalError,
     describe_rule,
+    note_required,
     record_decision,
 )
 from app.database import get_session
+from app import portal_mailbox
 from app.messages import requester_visible_messages
 from app.rate_limit import APPROVALS, rate_limited
 from app.models import ApprovalVote, RequestType, Ticket, TicketApproval, TicketStatus, User
@@ -59,6 +61,8 @@ def _page(request: Request, session: Session, vote: ApprovalVote, token: str, me
             "withdrawn": approval.status == WITHDRAWN,
             "can_answer": vote.decision == PENDING and approval.status == PENDING and ticket.status == TicketStatus.AWAITING_APPROVAL,
             "rule": describe_rule(approval),
+            "note_required": note_required(session, ticket, approver),
+            "mailbox_summary": portal_mailbox.approval_summary(session, ticket),
             "max_comment_length": MAX_COMMENT_LENGTH,
             "message": message,
             "user": None,

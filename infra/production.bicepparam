@@ -51,6 +51,9 @@ var teamsBotIdentityRaw = trim(readEnvironmentVariable('TEAMS_BOT_IDENTITY', '')
 param teamsBotIdentity = empty(teamsBotIdentityRaw) ? 'managedIdentity' : teamsBotIdentityRaw
 param teamsBotAppId = readEnvironmentVariable('TEAMS_BOT_APP_ID', '')
 param teamsBotTenantIdOverride = readEnvironmentVariable('TEAMS_BOT_TENANT_ID', '')
+// Scheduled mailbox changes: off unless 'true'. Needs MAILBOX_TENANT_DOMAIN (the tenant's .onmicrosoft.com name).
+param mailboxAutomationEnabled = toLower(trim(readEnvironmentVariable('MAILBOX_AUTOMATION_ENABLED', 'false'))) == 'true'
+param mailboxTenantDomain = trim(readEnvironmentVariable('MAILBOX_TENANT_DOMAIN', ''))
 param presenceEnabled = toLower(trim(readEnvironmentVariable('PRESENCE_ENABLED', 'false'))) == 'true'
 param mailboxTimeZonesEnabled = toLower(trim(readEnvironmentVariable('MAILBOX_TIME_ZONES_ENABLED', 'false'))) == 'true'
 param entraAccountCheckEnabled = toLower(trim(readEnvironmentVariable('ENTRA_ACCOUNT_CHECK_ENABLED', 'false'))) == 'true'

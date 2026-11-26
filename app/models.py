@@ -687,10 +687,18 @@ class RequestType(SQLModel, table=True):
     # Off by default (#167): an approver who is also the requester counts as a voter and approves their own
     # request at once (app/approvals.py). Off: the requester is left out of the vote.
     approvers_may_self_approve: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
+    # Off by default (#311): on, the first answer of any voter settles the request (an approval approves it, a decline declines
+    # it), whatever the number of voters and the pass percentage (app/approvals.py `outcome`). Used by the mailbox types, where
+    # the voters are the owner of the mailbox or an IT approver and either one is enough.
+    any_one_approver: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
     # Shown first among the quick-start tiles on the portal's My requests page (#204, app/request_types.py `portal_tiles`).
     is_featured: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
     # The icon on the kind's card and tile (#206): a name from app/request_types.py `ICONS`; blank shows the generic one.
     icon: Optional[str] = Field(default=None)
+    # Blank for an ordinary request; else one of MAILBOX_KINDS (#309): the portal shows that kind's own form instead of form
+    # questions and the request makes a scheduled mailbox change (app/mailbox_changes.py). Such a type may have an approval group (#311), which then only applies to requests about SOMEONE ELSE'S mailbox, and
+    # needs all four self-triage defaults (app/request_types.py).
+    mailbox_action: Optional[str] = Field(default=None)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -771,6 +779,8 @@ class TicketApproval(SQLModel, table=True):
     pass_percent: int
     voters: int  # fixed when the approval starts
     status: str = Field(default="pending")  # pending, approved, declined, waived, withdrawn
+    # Copied from the request type when the round starts (#311): the first answer settles it (RequestType.any_one_approver).
+    any_one: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     settled_at: Optional[datetime] = Field(default=None)
     # Set once when the super admins were told this approval has waited too long (app/approval_reminders.py).
@@ -788,6 +798,9 @@ class ApprovalVote(SQLModel, table=True):
     voter_id: int = Field(foreign_key="user.id", index=True)
     decision: str = Field(default="pending")  # pending, approved, declined, not_needed
     comment: str = Field(default="")
+    # Added for this request on top of the approval group (#311: the owner of the mailbox asked about), so being in the group is
+    # not what lets them answer. Fixed when the round starts like every other voter.
+    extra_voter: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     decided_at: Optional[datetime] = Field(default=None)
     # Reminders queued to this voter and when the last one was (app/approval_reminders.py): what makes the
@@ -1357,3 +1370,53 @@ class PendingBlobDelete(SQLModel, table=True):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     attempts: int = Field(default=0, sa_column_kwargs={"server_default": "0"})
     last_error: Optional[str] = Field(default=None)
+
+
+# The states of a MailboxChange (app/mailbox_changes.py). Plain strings, so a state is not a database enum.
+MAILBOX_SCHEDULED, MAILBOX_APPLYING, MAILBOX_ACTIVE, MAILBOX_REMOVING = "scheduled", "applying", "active", "removing"
+MAILBOX_ENDED, MAILBOX_FAILED, MAILBOX_CANCELLED = "ended", "failed", "cancelled"
+MAILBOX_STATES = (
+    MAILBOX_SCHEDULED, MAILBOX_APPLYING, MAILBOX_ACTIVE, MAILBOX_REMOVING, MAILBOX_ENDED, MAILBOX_FAILED, MAILBOX_CANCELLED,
+)
+MAILBOX_KINDS = ("forwarding", "full_access", "send_as")
+
+
+class MailboxChange(SQLModel, table=True):
+    """One scheduled change to a mailbox in Exchange (app/mailbox_changes.py): mail forwarding, Full access or Send As,
+    from `starts_at` to `ends_at`. The ticket (always a Service Request) is the record people see; this row is what the worker
+    acts on and is the source of truth for what Exchange should hold. Only app/mailbox_executor.py talks to Exchange.
+
+    state: scheduled (waiting for starts_at, or for a retry of the start), applying (the worker is making the change now;
+    a row left in applying or removing past `next_attempt_at` means the worker died mid-call and is picked up again),
+    active (Exchange holds it, waiting for ends_at or a retry of the removal), removing, ended (removed), failed (a final
+    failure that an agent must settle: Try again, Done by hand or Cancel) and cancelled. `attempts` counts the tries of the
+    current step and is reset when the step succeeds. `last_error_category` is the executor's outcome word and `last_error`
+    the raw Exchange text, which only ever goes in an internal note, never to the requester. All times are UTC."""
+
+    __tablename__ = "mailbox_change"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ticket_id: int = Field(foreign_key="ticket.id", index=True)
+    incident_ticket_id: Optional[int] = Field(default=None, foreign_key="ticket.id", index=True)  # raised when the removal failed finally
+    kind: str  # one of MAILBOX_KINDS
+    # Whose mailbox, and who it is shared with (forwarding: who the copy goes to). The object id is the Entra id checked again
+    # when the change is made; the address is what Exchange is given and what people are shown.
+    owner_object_id: Optional[str] = Field(default=None)
+    owner_address: str
+    target_object_id: Optional[str] = Field(default=None)
+    target_address: str
+    keep_copy: bool = Field(default=True, sa_column_kwargs={"server_default": text("true")})  # forwarding only: leave a copy in the owner's mailbox
+    starts_at: datetime
+    ends_at: datetime
+    state: str = Field(default=MAILBOX_SCHEDULED, index=True)
+    attempts: int = Field(default=0, sa_column_kwargs={"server_default": "0"})
+    next_attempt_at: Optional[datetime] = Field(default=None)
+    last_error_category: Optional[str] = Field(default=None)
+    last_error: Optional[str] = Field(default=None)
+    last_found: Optional[str] = Field(default=None)  # what the read-back showed, for the internal note
+    last_job_id: Optional[str] = Field(default=None)
+    applied_at: Optional[datetime] = Field(default=None)
+    removed_at: Optional[datetime] = Field(default=None)
+    created_by: str  # the email of the person (or "system") who asked for it
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

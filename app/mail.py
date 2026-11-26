@@ -38,7 +38,7 @@ from app.messages import (
 )
 from app import emergency, outage
 from app.never_follow import is_listed
-from app.approval_groups import is_member
+from app.approvals import may_answer
 from app.notification_settings import APPROVAL_OVERDUE as APPROVAL_OVERDUE_EVENT, EMAIL, FOLLOWER_UPDATE as FOLLOWER_UPDATE_EVENT, is_enabled, wants_approval_email
 from app.identity import person_for_address
 from app.models import (
@@ -54,7 +54,7 @@ from app.models import (
     User,
     UserRole,
 )
-from app.outbox import ACKNOWLEDGEMENT, EMERGENCY_RESET, MSP_FORWARD, MSP_HANDOFF, MSP_RELEASE, APPROVAL, APPROVAL_OVERDUE, APPROVAL_REMINDER, APPROVAL_WITHDRAWN, AUTOMATIC_TO_REQUESTER, CHASE, FOLLOWER_UPDATE, NOTICE, SPLIT_NOTICE, RAISED_FOR, REPLY
+from app.outbox import ACKNOWLEDGEMENT, EMERGENCY_RESET, MAILBOX_CHANGE, MSP_FORWARD, MSP_HANDOFF, MSP_RELEASE, APPROVAL, APPROVAL_OVERDUE, APPROVAL_REMINDER, APPROVAL_WITHDRAWN, AUTOMATIC_TO_REQUESTER, CHASE, FOLLOWER_UPDATE, NOTICE, SPLIT_NOTICE, RAISED_FOR, REPLY
 from app.raising import should_tell_requester
 from app.settings_store import APPROVAL_LINK_MINUTES, AUTOMATIC_EMAIL_CAP, CHASE_RESOLVE_AFTER_DAYS, REGISTRY, SPLIT_EMAIL_ENABLED, get_flag, get_int_setting
 from app.storage import get_storage
@@ -287,7 +287,7 @@ def build_approval_mail(session: Session, row: OutboundEmail, template: str = "a
         raise Unsendable("Approval not found")
     if vote.decision != PENDING or approval.status != PENDING or ticket.status != TicketStatus.AWAITING_APPROVAL:
         raise Unsendable("The request no longer needs this approval")
-    if not is_member(session, approval.group_id, vote.voter_id):
+    if not may_answer(session, approval, vote):  # a group member, or the mailbox owner added for the request (#311)
         raise Unsendable("The person is no longer in the approval group")
     approver = session.get(User, vote.voter_id)
     if approver is None:
@@ -516,6 +516,19 @@ def build_msp_forward_mail(session: Session, row: OutboundEmail) -> Mail:
     )
 
 
+def build_mailbox_change_mail(session: Session, row: OutboundEmail) -> Mail:
+    """The started or stopped email to the other person of a mailbox change. The text was fixed when it was queued (the admin
+    templates, app/mailbox_changes.py); this only checks there is text and someone to send to. It carries no ticket content."""
+    ticket = _ticket_of(session, row)
+    if not row.body or not row.subject:
+        raise Unsendable("The email has no text")
+    _guard_recipient(row)
+    return Mail(
+        to=row.to_address, cc=[], subject=row.subject, body=row.body, record=row.body, automatic=True,
+        reference=ticket.reference,
+    )
+
+
 # One builder per kind: it turns the row into the email, or raises Unsendable (never) or NotReady
 # (not yet). A new kind of email is one builder and one entry here; the sending is shared.
 BUILDERS: dict[str, Callable[[Session, OutboundEmail], Mail]] = {
@@ -532,6 +545,7 @@ BUILDERS: dict[str, Callable[[Session, OutboundEmail], Mail]] = {
     MSP_HANDOFF: build_msp_handoff_mail,
     MSP_RELEASE: build_msp_release_mail,
     MSP_FORWARD: build_msp_forward_mail,
+    MAILBOX_CHANGE: build_mailbox_change_mail,
     FOLLOWER_UPDATE: build_follower_update_mail,
     EMERGENCY_RESET: build_emergency_reset_mail,
 }
