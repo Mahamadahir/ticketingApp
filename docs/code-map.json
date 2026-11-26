@@ -145,6 +145,7 @@
         "record_activity"
       ],
       "imported_by": [
+        "app.admin_people",
         "app.main",
         "app.routers.admin",
         "app.routers.auth"
@@ -159,7 +160,8 @@
       "summary": "Security and request activity: who did what, from where, and what happened.",
       "tables": [],
       "tests": [
-        "tests/test_activity_log.py"
+        "tests/test_activity_log.py",
+        "tests/test_admin_users_page.py"
       ]
     },
     {
@@ -196,6 +198,47 @@
       "tests": [
         "tests/test_admin_frame.py",
         "tests/test_notification_dismiss.py"
+      ]
+    },
+    {
+      "classes": [
+        "DrawnSection",
+        "Fact",
+        "FactValue",
+        "ListRow",
+        "PersonContext",
+        "Section"
+      ],
+      "file": "app/admin_people.py",
+      "functions": [
+        "glance",
+        "list_rows",
+        "person_chips",
+        "person_page_context",
+        "person_url",
+        "refusal_page",
+        "role_label",
+        "sections_for"
+      ],
+      "imported_by": [
+        "app.routers.admin"
+      ],
+      "imports": [
+        "app.activity",
+        "app.identity",
+        "app.linked_identities",
+        "app.models",
+        "app.permissions",
+        "app.sessions",
+        "app.status_display",
+        "app.templating"
+      ],
+      "module": "app.admin_people",
+      "routes": [],
+      "summary": "Admin > Users: a page per person (#322), built to grow.",
+      "tables": [],
+      "tests": [
+        "tests/test_admin_users_page.py"
       ]
     },
     {
@@ -1175,6 +1218,7 @@
       "tests": [
         "tests/conftest.py",
         "tests/test_access_context.py",
+        "tests/test_admin_users_page.py",
         "tests/test_anonymisation.py",
         "tests/test_approval_groups.py",
         "tests/test_approval_reminders.py",
@@ -1622,6 +1666,7 @@
         "resolve_sso_user"
       ],
       "imported_by": [
+        "app.admin_people",
         "app.approvals",
         "app.auth",
         "app.bot_cards",
@@ -1879,6 +1924,7 @@
         "user_foreign_keys"
       ],
       "imported_by": [
+        "app.admin_people",
         "app.routers.admin",
         "app.routers.link_account"
       ],
@@ -1901,6 +1947,7 @@
       "summary": "Linked identities (phase 6E, #165): one person known by a second identity.",
       "tables": [],
       "tests": [
+        "tests/test_admin_users_page.py",
         "tests/test_linked_identities.py",
         "tests/test_reactions.py"
       ]
@@ -2329,6 +2376,7 @@
         "app.action_links",
         "app.activity",
         "app.admin_home",
+        "app.admin_people",
         "app.anonymisation",
         "app.approval_groups",
         "app.approval_reminders",
@@ -3366,6 +3414,7 @@
       "file": "app/permissions.py",
       "functions": [],
       "imported_by": [
+        "app.admin_people",
         "app.routers.admin",
         "app.routers.data_protection",
         "app.routers.reports",
@@ -4139,6 +4188,7 @@
         "outage_off",
         "outage_on",
         "outage_page",
+        "person_page",
         "preview_email_template",
         "preview_link",
         "remove_approval_group_member",
@@ -4179,6 +4229,7 @@
       "imports": [
         "app.activity",
         "app.admin_home",
+        "app.admin_people",
         "app.approval_groups",
         "app.approvals",
         "app.audit",
@@ -4551,6 +4602,11 @@
           "handler": "create_local_user",
           "method": "POST",
           "path": "/admin/users"
+        },
+        {
+          "handler": "person_page",
+          "method": "GET",
+          "path": "/admin/users/{user_id}"
         },
         {
           "handler": "update_user",
@@ -5972,6 +6028,7 @@
       ],
       "imported_by": [
         "app.activity",
+        "app.admin_people",
         "app.auth",
         "app.breakglass",
         "app.emergency",
@@ -6291,6 +6348,7 @@
         "status_tone"
       ],
       "imported_by": [
+        "app.admin_people",
         "app.routers.tickets",
         "app.team_activity",
         "app.templating"
@@ -6910,9 +6968,11 @@
       "classes": [],
       "file": "app/templating.py",
       "functions": [
+        "is_boosted",
         "is_htmx"
       ],
       "imported_by": [
+        "app.admin_people",
         "app.main",
         "app.routers.action_links",
         "app.routers.admin",
@@ -7501,13 +7561,6 @@
         "detail": "select(Ticket) in a route",
         "file": "app/routers/admin.py",
         "in": "list_teams",
-        "rule": "access-in-visibility"
-      },
-      {
-        "allowed": "Admin pages are behind require_super_admin and count or list memberships for the admin tables; there is no per-agent access decision to make.",
-        "detail": "select(TeamMembership) in a route",
-        "file": "app/routers/admin.py",
-        "in": "list_users",
         "rule": "access-in-visibility"
       },
       {

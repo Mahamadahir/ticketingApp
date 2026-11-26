@@ -74,7 +74,7 @@ from app.settings_store import REQUIRED_BY_LEAD_DAYS, SPLIT_EMAIL_ENABLED, count
 from app.canned import active_canned, fill as fill_canned
 from app.approvals import SUPERSEDED, ApprovalError, approval_group_of, current_approval, describe_rule, is_waiting_for_approvers, votes_of, waive
 from app.notifications import AWAITING_YOU, mentionable_agents, notify_agent_emailed, notify_assigned, notify_mentions
-from app.identity import person_for_address
+from app.identity import person_for_address, requester_emails
 from app.presence import agent_label
 from app.ticket_actions import CARDS, action_chips
 from app.search import normalise, search_condition
@@ -202,6 +202,11 @@ def _list_link(q: str, source: str = "", status: str = "", sort: str = ""):
     return link
 
 
+def _person_id(value: Optional[str]) -> Optional[int]:
+    value = (value or "").strip()
+    return int(value) if value.isascii() and value.isdigit() and int(value) < 2**31 else None
+
+
 def _count(session: Session, query) -> int:
     return session.exec(select(func.count()).select_from(query.subquery())).one()
 
@@ -242,6 +247,8 @@ def list_tickets(
     source: Optional[str] = None,
     status: Optional[str] = None,
     sort: Optional[str] = None,
+    assignee: Optional[str] = None,
+    requester: Optional[str] = None,
     page: int = 1,
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
@@ -284,6 +291,16 @@ def list_tickets(
 
     if mine:
         query = query.where(Ticket.assigned_agent_id == user.id)
+    # Admin > Users links here (#322): one person's assigned tickets, or those raised under any of their addresses.
+    # It only narrows what was already made visible above, and a value that names nobody is ignored.
+    person_filters = []
+    assignee_id, requester_id = _person_id(assignee), _person_id(requester)
+    if assignee_id is not None and (assignee_user := session.get(User, assignee_id)) is not None:
+        query = query.where(Ticket.assigned_agent_id == assignee_id)
+        person_filters.append((f"assigned to {assignee_user.display_name}", "assignee", assignee_id))
+    if requester_id is not None and (requester_user := session.get(User, requester_id)) is not None:
+        query = query.where(func.lower(func.trim(Ticket.requester_email)).in_(requester_emails(requester_user, session)))
+        person_filters.append((f"raised by {requester_user.display_name}", "requester", requester_id))
     if untriaged:  # the sidebar's Untriaged item (app/navigation.py counts the same set)
         query = query.where(Ticket.triaged_at.is_(None), Ticket.status.notin_(FINISHED_STATUSES))
 
@@ -326,6 +343,7 @@ def list_tickets(
             "status": status,
             "status_options": status_options(),
             "sort": sort,
+            "person_filters": person_filters,
             "list_link": _list_link(q, source.value if source else "", status, sort),
         },
     )
