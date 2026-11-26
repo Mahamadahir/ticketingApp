@@ -86,7 +86,7 @@ def test_the_public_app_answers_without_signing_anyone_in(db_session):
 
 
 def production(**fields):
-    return Settings(env="production", session_secret_key="a-real-secret", graph_webhook_client_state="a-real-state", **fields)
+    return Settings(env="production", session_secret_key="a-real-secret", graph_webhook_client_state="a-real-state", **{"bcrypt_rounds": 12, **fields})
 
 
 def test_an_unknown_role_is_refused_even_in_dev():
@@ -106,7 +106,7 @@ def test_each_role_starts_with_real_secrets(role):
 def test_the_public_app_needs_a_real_client_state_even_before_graph_is_configured():
     config = Settings(env="production", app_role="public", session_secret_key="a-real-secret", graph_webhook_client_state="change-me")
     assert any("GRAPH_WEBHOOK_CLIENT_STATE" in e for e in unsafe_setting_errors(config))
-    web = Settings(env="production", app_role="web", session_secret_key="a-real-secret", graph_webhook_client_state="change-me")
+    web = Settings(env="production", app_role="web", session_secret_key="a-real-secret", graph_webhook_client_state="change-me", bcrypt_rounds=12)
     assert unsafe_setting_errors(web) == []  # web does not receive the webhook
 
 
