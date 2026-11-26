@@ -1,4 +1,5 @@
 import os
+import re
 
 import psycopg2
 from sqlalchemy.engine import make_url
@@ -83,6 +84,9 @@ def ensure_test_database(url: str) -> None:
         if cursor.fetchone() is None:
             cursor.execute(f'CREATE DATABASE "{parsed.database}"')
             CREATED_DATABASES.append(parsed.database)
+        # Commits stop waiting for the WAL flush: a test database holds nothing worth keeping, and a
+        # crash only loses rows the next run wipes anyway. Only here, behind the _test guard above.
+        cursor.execute(f'ALTER DATABASE "{parsed.database}" SET synchronous_commit = off')
     connection.close()
 
 
@@ -98,6 +102,8 @@ os.environ["SSO_CLIENT_SECRET"] = ""
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
 from sqlmodel import Session, SQLModel, select
 
 from app.database import engine
@@ -128,18 +134,57 @@ def pytest_sessionfinish(session, exitstatus):
     CREATED_DATABASES.clear()
 
 
-# Every table in one statement: emptying them is far cheaper than dropping and recreating the
-# schema for each test. RESTART IDENTITY puts the ids back to 1, as a fresh table would.
-_ALL_TABLES = ", ".join(f'"{table.name}"' for table in SQLModel.metadata.sorted_tables)
+# Emptying every table before every test costs a fixed amount per test (new files for every table, index
+# and sequence, and a lock on all of them), so a test only empties the tables it wrote to. Writes are
+# spotted where every one of them passes: the cursor of any SQLAlchemy engine in this process (the app's
+# own sessions, TestClient requests, job code, a test's own engine, `exec_driver_sql`, raw SQL). A statement
+# that contains a write keyword marks every known table named in it, which over-marks at worst (an extra
+# table emptied) and never under-marks. Foreign keys are no gap: TRUNCATE ... CASCADE empties the children
+# of a marked table, and a child written to is marked itself. Writes that bypass SQLAlchemy (a raw psycopg2
+# connection to the test database) are not seen: use a scratch database for those, as the migration tests do.
+# TEST_FULL_TRUNCATE=1 restores the old behaviour (every table, every test) to debug a suspected leak.
+_TABLE_NAMES = [table.name for table in SQLModel.metadata.sorted_tables]
+_WRITE_WORDS = re.compile(r"\b(INSERT|UPDATE|DELETE|COPY|MERGE)\b", re.IGNORECASE)
+_TABLE_WORDS = {name: re.compile(rf'(?<![\w])"?{re.escape(name)}"?(?![\w])', re.IGNORECASE) for name in _TABLE_NAMES}
+_DIRTY: set[str] = set()
+
+
+@event.listens_for(Engine, "before_cursor_execute")
+def _note_writes(connection, cursor, statement, parameters, context, executemany):
+    # A TRUNCATE leaves the table empty, so it dirties nothing (this is also the clean-up's own statement).
+    if _WRITE_WORDS.search(statement) and not statement.lstrip().upper().startswith("TRUNCATE"):
+        for name, pattern in _TABLE_WORDS.items():
+            if pattern.search(statement):
+                _DIRTY.add(name)
+
+
+def tables_to_empty() -> list[str]:
+    """The tables to empty before the next test, in a stable order; clears the record."""
+    if os.environ.get("TEST_FULL_TRUNCATE") == "1":
+        _DIRTY.clear()
+        return list(_TABLE_NAMES)
+    names = [name for name in _TABLE_NAMES if name in _DIRTY]
+    _DIRTY.clear()
+    return names
+
+
+def empty_dirty_tables() -> list[str]:
+    """Empties the tables written to since the last call (all of them with TEST_FULL_TRUNCATE=1), restarting
+    their ids, and returns their names."""
+    names = tables_to_empty()
+    if names:
+        listed = ", ".join(f'"{name}"' for name in names)
+        with engine.begin() as connection:
+            connection.exec_driver_sql(f"TRUNCATE {listed} RESTART IDENTITY CASCADE")
+    return names
 
 
 @pytest.fixture(autouse=True)
 def fresh_database(schema):
-    """Each test starts with empty tables. The schema itself is shared by the whole run, so a test
-    must never change it (no DDL against the test database); use a scratch database for that, as
-    the migration tests do."""
-    with engine.begin() as connection:
-        connection.exec_driver_sql(f"TRUNCATE {_ALL_TABLES} RESTART IDENTITY CASCADE")
+    """Each test starts with empty tables: the ones the previous test wrote to are truncated (all of them
+    with TEST_FULL_TRUNCATE=1). The schema itself is shared by the whole run, so a test must never change
+    it (no DDL against the test database); use a scratch database for that, as the migration tests do."""
+    empty_dirty_tables()
     yield
 
 
