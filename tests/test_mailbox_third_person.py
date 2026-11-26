@@ -195,3 +195,30 @@ def test_an_approved_request_does_not_say_it_was_declined(client, db_session, wo
     ticket = raised(client, db_session, world)
     answer(db_session, ticket, BEE, "approved", "")
     assert "was declined" not in client.get(f"/portal/{ticket.number}").text
+
+
+def later_date(days):
+    from datetime import datetime, timezone
+
+    return (datetime.now(timezone.utc) + timedelta(days=days)).strftime("%Y-%m-%d")
+
+
+def test_the_cancel_step_of_a_request_for_someone_elses_mailbox_names_their_mailbox(client, db_session, world, dev_mail):
+    ticket = raised(
+        client, db_session, world, start_mode="later", start_date=later_date(5), start_time="09:00", end_date=later_date(6), end_time="09:00",
+    )
+    answer(db_session, ticket, BEE, "approved", "")
+    signed_in(client, db_session)
+    page = html.unescape(client.get(f"/portal/{ticket.number}").text)
+    assert "Nothing will be changed on Bee Owner's mailbox" in page and "Nothing will be changed on your mailbox" not in page
+
+
+def test_two_people_forwarding_to_each_other_at_once_take_turns_on_both_mailboxes(client, db_session, world, directory, monkeypatch):
+    from app import mailbox_changes, portal_mailbox
+
+    taken = []
+    real = mailbox_changes.lock_owner
+    monkeypatch.setattr(portal_mailbox, "lock_owner", lambda session, address: (taken.append(address), real(session, address)))
+    signed_in(client, db_session)
+    assert ask(client, world.no_group, whose="mine", target_object_id=FRIEND_OID, target_name="Jane Friend").status_code == 303
+    assert taken[:2] == sorted([OWNER, JANE])  # the loop check is under both locks, taken in a fixed order

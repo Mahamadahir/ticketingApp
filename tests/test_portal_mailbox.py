@@ -900,7 +900,7 @@ def test_both_submits_take_the_owners_lock_before_the_overlap_check(client, db_s
     monkeypatch.setattr(portal_mailbox, "lock_owner", lambda session, address: (taken.append(address), real(session, address)))
     signed_in(client, db_session)
     assert post(client, world).status_code == 303
-    assert taken == [OWNER]
+    assert taken[:2] == ["alex@example.com", "jane@example.com"] and set(taken) == {OWNER, "jane@example.com"}  # both mailboxes, in order
 
 
 def test_a_second_session_waits_for_the_owners_lock_until_the_first_commits(db_session):

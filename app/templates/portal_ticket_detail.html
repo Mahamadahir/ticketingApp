@@ -37,7 +37,7 @@
       <summary>{{ mailbox.cancel_summary }}</summary>
       <form method="post" action="/portal/{{ ticket.number }}/mailbox/cancel">
         <input type="hidden" name="change_id" value="{{ mailbox.change_id }}" />
-        <p>Cancel before it starts? Nothing will be changed on your mailbox.</p>
+        <p>{{ mailbox.cancel_text }}</p>
         <div class="rq-actions"><button type="submit" class="btn btn-danger">Yes, cancel it</button></div>
       </form>
     </details>

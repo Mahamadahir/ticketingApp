@@ -229,6 +229,9 @@ def submit_forwarding(
     times = read_times(session, user, form, now)
     zone = zone_for_user(session, user)
     owner_party = owner or _myself(user)
+    # Both mailboxes' locks, in a fixed order, before the loop check: two people asking to forward to each other at once take turns (#325 review).
+    for address in sorted({owner_party.mail.strip().lower(), person.mail.strip().lower()}):
+        lock_owner(session, address)
     if _forwards_back(session, owner_party, identity.requester_emails(user) if owner is None else set(), person, times):
         mine = owner is None
         raise MailboxFormError(
@@ -449,6 +452,7 @@ class ChangeView:
     stop_text: str = "Stop now? Your mail goes back to arriving only in your own mailbox. IT Support will confirm by email when it has stopped."
     stop_button: str = "Yes, stop forwarding"
     cancel_summary: str = "Cancel this request"
+    cancel_text: str = "Cancel before it starts? Nothing will be changed on your mailbox."
 
 
 def _aware(moment: datetime) -> datetime:
@@ -513,6 +517,8 @@ def _view_of(session: Session, change: MailboxChange, user: User, now: datetime,
         )
         result.stop_button = f"Yes, remove {word}"
         result.cancel_summary = f"Cancel {word}"
+    if on_behalf:
+        result.cancel_text = f"Cancel before it starts? Nothing will be changed on {owner_name}'s mailbox."
     noun = "forwarding" if change.kind == "forwarding" else "access"
     if declined:
         result.line = DECLINED_LINE
