@@ -617,3 +617,52 @@ def test_the_it_approvers_own_vote_is_exported_to_them_with_the_note(client, db_
     assert approvals and approvals[0]["comment"] == NOTE
     other = zipfile.ZipFile(io.BytesIO(build_export(db_session, get_storage(), OWNER, admin).file.read()))
     assert NOTE not in other.read("approvals.json").decode() and IT1 not in other.read("mailbox_changes.json").decode()
+
+
+# ---- Review findings ------------------------------------------------------------------------------------------------------------------
+
+
+def test_the_approval_email_can_be_built_for_the_owner_who_is_not_in_the_group(client, db_session, world, dev_mail):
+    from app.mail import build_approval_mail
+
+    raised(client, db_session, world)
+    row = [m for m in mails(db_session) if m.kind == "approval" and m.to_address == BEE][0]
+    built = build_approval_mail(db_session, row)
+    assert BEE in str(built.to) and "/approvals/" in built.body
+
+
+def test_the_requesters_progress_line_follows_any_one_approver(client, db_session, world, dev_mail):
+    from app.messages import _approval_progress
+
+    world.forwarding.pass_percent = 100
+    db_session.add(world.forwarding)
+    db_session.commit()
+    ticket = raised(client, db_session, world)
+    assert _approval_progress(db_session, ticket_now(db_session, ticket)) == "Waiting for approval"
+
+
+def test_cancel_is_refused_while_the_request_waits_for_approval(client, db_session, world, dev_mail):
+    start_date, start_time = later(5)
+    ticket = raised(client, db_session, world, start_mode="later", start_date=start_date, start_time=start_time)
+    (change,) = changes(db_session, ticket)
+    page = client.get(f"/portal/{ticket.number}").text
+    assert "Cancel this request" not in page
+    client.post(f"/portal/{ticket.number}/mailbox/cancel", data={"change_id": change.id}, follow_redirects=False)
+    assert changes(db_session, ticket)[0].state == "scheduled" and ticket_now(db_session, ticket).status == TicketStatus.AWAITING_APPROVAL
+
+
+def test_only_a_super_admin_changes_who_approves_a_mailbox_type(client, db_session, world):
+    from app.models import UserPermission
+    from app.permissions import MANAGE_REQUEST_TEMPLATES
+    from tests.conftest import login_as, set_role
+
+    agent_id = login_as(client, "desk@example.com")
+    set_role(db_session, agent_id, UserRole.AGENT)
+    db_session.add(UserPermission(user_id=agent_id, permission=MANAGE_REQUEST_TEMPLATES))
+    db_session.commit()
+    base = {
+        "name": "Forward my mail", "pass_percent": 51, "is_active": "on", "mailbox_action": "forwarding", "approval_group_id": world.group.id,
+        "default_team_id": world.team.id, "default_category_id": world.category.id, "default_impact": "low", "default_urgency": "low",
+    }
+    assert client.post(f"/admin/request-types/{world.forwarding.id}", data=base).status_code == 403  # any_one_approver switched off
+    assert client.post(f"/admin/request-types/{world.forwarding.id}", data={**base, "any_one_approver": "on"}, follow_redirects=False).status_code == 303

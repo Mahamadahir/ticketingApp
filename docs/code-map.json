@@ -285,7 +285,6 @@
       ],
       "imported_by": [
         "app.approvals",
-        "app.mail",
         "app.request_types",
         "app.routers.admin"
       ],
@@ -1999,7 +1998,6 @@
       ],
       "imports": [
         "app.action_links",
-        "app.approval_groups",
         "app.approval_links",
         "app.approvals",
         "app.config",
@@ -2038,6 +2036,7 @@
         "tests/test_email_templates.py",
         "tests/test_follower_updates.py",
         "tests/test_linked_identities.py",
+        "tests/test_mailbox_on_behalf.py",
         "tests/test_msp.py",
         "tests/test_msp_actions.py",
         "tests/test_msp_mail.py",
@@ -2333,6 +2332,7 @@
         "tests/test_follower_updates.py",
         "tests/test_inbound_mail.py",
         "tests/test_mailbox_changes.py",
+        "tests/test_mailbox_on_behalf.py",
         "tests/test_message_channel.py",
         "tests/test_messages.py",
         "tests/test_msp_mail.py",
@@ -3528,6 +3528,7 @@
       "tests": [
         "tests/test_admin_users_page.py",
         "tests/test_anonymisation.py",
+        "tests/test_mailbox_on_behalf.py",
         "tests/test_permissions.py",
         "tests/test_portal_mailbox.py",
         "tests/test_reports.py",

@@ -1610,6 +1610,10 @@ def edit_request_type(
         raise HTTPException(status_code=404, detail="Request type not found")
     if ((mailbox_action or "").strip() or None) != request_type.mailbox_action and admin.role != UserRole.SUPER_ADMIN:
         raise HTTPException(status_code=403, detail="Only a super admin can change what a request type does to a mailbox")
+    if request_type.mailbox_action and admin.role != UserRole.SUPER_ADMIN and (
+        optional_int(approval_group_id) != request_type.approval_group_id or (any_one_approver == "on") != request_type.any_one_approver
+    ):
+        raise HTTPException(status_code=403, detail="Only a super admin can change who approves requests for someone else's mailbox")
     before = _type_snapshot(session, request_type)
     was_active = request_type.is_active
     try:

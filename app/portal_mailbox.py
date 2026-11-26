@@ -159,7 +159,19 @@ def _owner_of(session: Session, user: User, request_type: RequestType, form: For
     try:
         return resolve(session, user, form.owner_object_id)
     except DirectoryError as error:
-        raise OwnerRefused(str(error))
+        raise OwnerRefused(_owner_words(str(error)))
+
+
+def _owner_words(message: str) -> str:
+    """The people picker's refusals are worded for the person mail goes to; for the owner of the mailbox asked about they say
+    mailbox instead."""
+    return (
+        message.replace("so mail cannot go to them", "so there is no mailbox to ask about")
+        .replace("Mail can only go to people inside the organisation", "Only mailboxes of people inside the organisation can be asked about")
+        .replace("That person has no mailbox to send mail to", "That person has no mailbox")
+        .replace("Mail cannot be sent to that address", "That address cannot be asked about")
+        .replace("You cannot send your mail to yourself. Choose someone else.", "That is your own mailbox: choose Mine instead.")
+    )
 
 
 def _subject(person: Person, owner: Optional[Person] = None) -> str:

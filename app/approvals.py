@@ -186,8 +186,11 @@ def eligible_voters(session: Session, ticket: Ticket) -> list[User]:
 def mailbox_owner_address(session: Session, ticket: Ticket) -> Optional[str]:
     """The address of the mailbox owner when the request is about SOMEONE ELSE'S mailbox (#311): a mailbox change on the ticket whose
     owner is not the requester (or one of their linked addresses). None for an ordinary request and for one's own mailbox."""
+    owners = session.exec(select(MailboxChange.owner_address).where(MailboxChange.ticket_id == ticket.id).order_by(MailboxChange.id)).all()
+    if not owners:
+        return None  # an ordinary ticket: nothing more to look up
     requester = addresses_of(session, ticket.requester_email)
-    for address in session.exec(select(MailboxChange.owner_address).where(MailboxChange.ticket_id == ticket.id).order_by(MailboxChange.id)).all():
+    for address in owners:
         if address.strip().lower() not in requester:
             return address.strip().lower()
     return None

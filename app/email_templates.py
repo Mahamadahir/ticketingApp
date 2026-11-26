@@ -679,7 +679,7 @@ REGISTRY: dict[str, TemplateDef] = {
         ),
         TemplateDef(
             key="mailbox_started_owner",
-            label="Mailbox change: started on someone else's request (to the mailbox owner)",
+            label="Mailbox change: started, asked for by another person (to the mailbox owner)",
             description=(
                 "Sent to the owner of a mailbox when a request made by SOMEONE ELSE for their mailbox (forwarding, Full access or Send "
                 "As) has been carried out, whoever approved it and whether or not they voted. {change} is the sentence for the kind "
@@ -705,7 +705,7 @@ REGISTRY: dict[str, TemplateDef] = {
         ),
         TemplateDef(
             key="mailbox_stopped_owner",
-            label="Mailbox change: stopped on someone else's request (to the mailbox owner)",
+            label="Mailbox change: stopped, asked for by another person (to the mailbox owner)",
             description=(
                 "Sent to the owner of a mailbox when a change that someone else asked for on their mailbox has stopped. {change} is the "
                 "sentence for the kind of change; {approved_by} says who approved it. Never sent for a request about the person's own mailbox."

@@ -953,6 +953,8 @@ def cancel_by_requester(session: Session, change: MailboxChange, actor_email: st
     if change.state != MAILBOX_SCHEDULED or _aware(change.starts_at) <= now:
         raise MailboxChangeError("This change has already started or is about to: stop it once it is on instead")
     ticket = session.get(Ticket, change.ticket_id)
+    if ticket.status == TicketStatus.AWAITING_APPROVAL:
+        raise MailboxChangeError("This request is waiting for approval: withdraw the request instead (#311)")
     change.state, change.next_attempt_at, change.updated_at = MAILBOX_CANCELLED, None, now
     session.add(change)
     _audit(session, actor_email, change, "cancelled", "by the requester before the start")
