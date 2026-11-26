@@ -198,6 +198,20 @@ def test_a_mangled_count_on_the_outage_page_still_shows_the_page(client):
     assert response.status_code == 200 and "0 emergency session(s) ended, 0 emergency password(s) cleared." in response.text
 
 
+def test_a_boosted_request_gets_the_full_frame_and_a_plain_htmx_one_stays_partial(client, monkeypatch):
+    page_for(client, monkeypatch)
+    full = client.get("/admin/scheduled-jobs", headers={"HX-Request": "true", "HX-Boosted": "true"}).text
+    assert "<nav>" in full and "<html" in full.lower()
+    partial = client.get("/admin/scheduled-jobs", headers={"HX-Request": "true"}).text
+    assert "<nav>" not in partial and "<html" not in partial.lower()
+
+
+def test_the_run_now_confirm_form_is_a_plain_post(client, monkeypatch):
+    page_for(client, monkeypatch)
+    confirm = client.get("/admin/scheduled-jobs/count/run").text
+    assert 'action="/admin/scheduled-jobs/count/run"' in confirm and "hx-boost" not in confirm
+
+
 def test_every_outage_refusal_has_its_own_key():
     from app.job_errors import outage_refusal_key
     from app.outage import OutageError
