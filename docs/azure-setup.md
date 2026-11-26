@@ -56,6 +56,7 @@ below are marked:
 | 7a Register `Microsoft.Automation` | [Owner] (subscription) | not done; needed only for scheduled mailbox changes |
 | 7a Automation Job Operator for the worker on the Automation account | [Owner] (the deployer's shell deploy with `ASSIGN_ROLES` unset writes it) | not done |
 | 7a `Exchange.ManageAsApp` and an Exchange directory role for the Automation identity | [Global admin] or Privileged Role Administrator: **name the person here before go-live** (this table says the deployer is the Global admin; issue #308 says the owner is not one, so confirm) | not done |
+| 7a Preferred: the least-privilege custom Exchange role instead of the directory role (`docs/exchange-mailbox-role.md`; staging scope = a group of test accounts only) | `Exchange.ManageAsApp`: privileged Entra admin; the custom role, scope and role group: Exchange Administrator | not done (owner, later) |
 | 8 Run the Deploy workflow | [GitHub admin] (the workflow uses the GitHub identity) | done: run 44269591675 (18 Nov 2026) built, pushed, migrated and rolled out all three apps; `/health` ok on the public app. The first attempt stalled because Azure suspended the Container Apps environment (`ManagedClusterSuspended`, "unknown reasons"); it recovered by itself within about 30 minutes |
 | 9 Checks | the deployer, with the MSP for the end-to-end mail checks | |
 | 10 Budget alert on the group | [Contributor] | done: `budget-ticketing-staging`, 100 a month, to `ALERT_EMAIL` |

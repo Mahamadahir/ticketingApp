@@ -392,7 +392,10 @@ second is not Azure RBAC at all.
    (`d3881f73-407a-4167-8283-e981cbba0404`), which adds read of the account and runbooks. Record which one worked.
 
 2. **The Automation account's identity in Microsoft Entra: the `Exchange.ManageAsApp` application permission and an Exchange
-   directory role.** Both need a **Global Administrator or Privileged Role Administrator**; the deployer's Azure Owner does
+   directory role.** **Preferred instead of the directory role:** the least-privilege setup in
+   [`docs/exchange-mailbox-role.md`](../docs/exchange-mailbox-role.md) (a custom Exchange role with only the commands and
+   parameters the runbooks use, limited to a group of mailboxes; on staging, test accounts only). Use the directory role
+   below only if that setup does not work with a managed identity. Both need a **Global Administrator or Privileged Role Administrator**; the deployer's Azure Owner does
    not give that. **Who grants them: to be named here before go-live** (`docs/azure-setup.md` records the
    deployer as a Global admin, the issue (#308) says the owner is not one: confirm which). Take the identity's object id from the
    deployment output `mailboxAutomationIdentityPrincipalId`. From
