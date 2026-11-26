@@ -53,7 +53,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import and_, func, or_, text
 from sqlmodel import Session, select
 
-from app.approvals import APPROVED, WAIVED, current_approval, votes_of
+from app.approvals import APPROVED, DECLINED, WAIVED, current_approval, votes_of
 from app.audit import log_action
 from app.config import settings
 from app.email_templates import render_template, ticket_values
@@ -386,6 +386,20 @@ def after_approval(session: Session, ticket: Ticket, now: Optional[datetime] = N
     if not live:
         _resolve(session, ticket, "This request was approved after the end time you chose, so nothing was changed.", None, _others(session, ticket, waiting[0]))
         record_notice(session, ticket, render_template(session, "mailbox_expired_requester", ticket_values(ticket)).body)
+
+
+DECLINED_LINE = "This request was declined. Submit a new request."
+
+
+def was_declined(session: Session, ticket: Ticket) -> bool:
+    """Whether this request for someone else's mailbox was declined (#325): it has changes, every one cancelled before it was ever made,
+    and its latest approval was declined. Stays true if an agent reopens the ticket afterwards: the changes are not brought back, so
+    the pages say it was declined and offer no controls."""
+    changes = changes_for_ticket(session, ticket)
+    if not changes or any(c.state != MAILBOX_CANCELLED or c.applied_at is not None for c in changes):
+        return False
+    approval = current_approval(session, ticket)
+    return approval is not None and approval.status == DECLINED
 
 
 def drop_unstarted(session: Session, ticket: Ticket, reason: str, now: Optional[datetime] = None) -> None:

@@ -64,8 +64,8 @@
     }
   });
 
-  // ---- Whose mailbox: "Someone else's" shows the owner's picker. For giving access it is always the person asking who gets the
-  // access, so the "Give access to" picker goes; for forwarding the target picker stays (blank means the person asking).
+  // ---- Whose mailbox: "Someone else's" shows the owner's picker. The other-person picker ("Forward to", "Give access to") stays:
+  // left blank, the mail or the access goes to the person asking, else to the person chosen (#325).
   var access = form.getAttribute("data-warn") === "access";
   var ownerBlock = document.getElementById("mb-owner-block");
   var otherHint = document.getElementById("mb-other-target-hint");
@@ -78,7 +78,6 @@
     var other = isOther();
     if (ownerBlock) { ownerBlock.hidden = !other; }
     if (otherHint) { otherHint.hidden = !other; }
-    if (access && target && target.box) { target.box.hidden = other; }
     var mine = document.getElementById("mb-mine-line");
     if (mine) { mine.hidden = other; }
   }
@@ -130,8 +129,9 @@
     }
     var parts = [];
     if (other) {
-      if (form.elements.full_access.checked) { parts.push("You will be able to read all mail already in " + ownerName + "'s mailbox."); }
-      if (form.elements.send_as.checked) { parts.push("You will be able to send email that appears to come from " + ownerName + "."); }
+      var grantee = target && target.oid.value && target.nameField.value ? target.nameField.value : "You";
+      if (form.elements.full_access.checked) { parts.push(grantee + " will be able to read all mail already in " + ownerName + "'s mailbox."); }
+      if (form.elements.send_as.checked) { parts.push(grantee + " will be able to send email that appears to come from " + ownerName + "."); }
       return parts.join(" ") + " This lasts until " + endText() + ", if the request is approved.";
     }
     if (form.elements.full_access.checked) { parts.push(name + " will be able to read all mail already in your mailbox."); }

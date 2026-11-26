@@ -27,7 +27,8 @@ from sqlmodel import Session, select
 from app import identity
 from app.approvals import mailbox_owner_address, mailbox_owner_voter
 from app.mailbox_changes import (
-    MailboxChangeError, changes_for_ticket, create_mailbox_change, failed_phase, finish_on_behalf, lock_owner,
+    DECLINED_LINE,
+    MailboxChangeError, changes_for_ticket, create_mailbox_change, failed_phase, finish_on_behalf, lock_owner, was_declined,
 )
 from app.mailbox_executor import is_enabled
 from app.models import (
@@ -312,16 +313,17 @@ ACCESS_LABELS = {"full_access": "Full access", "send_as": "Send As"}
 ACCESS_NOT_AVAILABLE = "Giving someone access to your mailbox is not available right now. Please contact IT Support."
 
 
-def access_warning(name: str, kinds: list[str], until: str, owner: Optional[str] = None) -> str:
+def access_warning(name: str, kinds: list[str], until: str, owner: Optional[str] = None, grantee: Optional[str] = None) -> str:
     """The words of the access warning, shown by the modal (the script builds the same sentences), the no-script confirm block
     and the refusal. One sentence for each permission chosen. `owner` is given for someone else's mailbox (#311): the access is
-    for the person asking."""
+    for the person asking, or, when `grantee` is given (#325), for that other person."""
     if owner is not None:
+        who = grantee or "You"
         parts = []
         if "full_access" in kinds:
-            parts.append(f"You will be able to read all mail already in {owner}'s mailbox.")
+            parts.append(f"{who} will be able to read all mail already in {owner}'s mailbox.")
         if "send_as" in kinds:
-            parts.append(f"You will be able to send email that appears to come from {owner}.")
+            parts.append(f"{who} will be able to send email that appears to come from {owner}.")
         return " ".join(parts) + f" This lasts until {until}, if the request is approved."
     parts = []
     if "full_access" in kinds:
@@ -331,18 +333,23 @@ def access_warning(name: str, kinds: list[str], until: str, owner: Optional[str]
     return " ".join(parts) + f" This lasts until {until}."
 
 
-def _access_subject(person: Person, owner: Optional[Person] = None) -> str:
+def _access_subject(person: Person, owner: Optional[Person] = None, for_requester: bool = True) -> str:
     if owner is not None:
+        if not for_requester:
+            return f"Give {person.name} access to {owner.name}'s mailbox"[:MAX_SUBJECT_LENGTH]
         return f"Access to {owner.name}'s mailbox"[:MAX_SUBJECT_LENGTH]
     return f"Give {person.name} access to my mailbox"[:MAX_SUBJECT_LENGTH]
 
 
-def _access_description(person: Person, kinds: list[str], times: Times, zone: str, owner: Optional[Person] = None) -> str:
+def _access_description(
+    person: Person, kinds: list[str], times: Times, zone: str, owner: Optional[Person] = None, for_requester: bool = True,
+) -> str:
     start = "now" if times.starts_now else f"from {format_moment(times.starts_at, zone)}"
     words = " and ".join(ACCESS_LABELS[k] for k in kinds)
     if owner is not None:
+        who = "me" if for_requester else f"{person.name} ({person.mail})"
         return (
-            f"Please give me {words} on {owner.name}'s mailbox ({owner.mail}) {start} until {format_moment(times.ends_at, zone)}. "
+            f"Please give {who} {words} on {owner.name}'s mailbox ({owner.mail}) {start} until {format_moment(times.ends_at, zone)}. "
             "This is someone else's mailbox, so it needs approval from the mailbox owner or IT Support."
         )
     return f"Please give {person.name} ({person.mail}) {words} on my mailbox {start} until {format_moment(times.ends_at, zone)}."
@@ -358,13 +365,16 @@ def submit_access(
     if request_type.mailbox_action not in ACCESS_ACTIONS or not is_enabled():
         raise MailboxFormError(ACCESS_NOT_AVAILABLE)
     owner = _owner_of(session, user, request_type, form)
-    if owner is not None:
-        person = _myself(user)  # access to someone else's mailbox is always for the person asking
+    if owner is not None and not form.target_object_id.strip():
+        person = _myself(user)  # someone else's mailbox: the access is for the requester unless they choose another person (#325)
     else:
         try:
             person = resolve(session, user, form.target_object_id)
         except DirectoryError as error:
             raise TargetRefused(str(error))
+    if owner is not None and person.mail == owner.mail:
+        raise TargetRefused("The access cannot go to the person whose mailbox it is. Choose someone else.")
+    for_requester = owner is None or person.mail in identity.requester_emails(user)
     kinds = [kind for kind, chosen in (("full_access", form.full_access), ("send_as", form.send_as)) if chosen]
     if not kinds:
         raise MailboxFormError("Choose Full access, Send As, or both")
@@ -374,14 +384,17 @@ def submit_access(
     for kind in kinds:
         if _overlapping(session, owner_party.mail, times, kind, person.mail):
             raise MailboxFormError(
-                f"You already have {ACCESS_LABELS[kind]} on {owner.name}'s mailbox for some of that time. Cancel or stop it on its request "
-                "page first, or choose times that do not overlap"
+                (f"{'You already have' if for_requester else person.name + ' already has'} {ACCESS_LABELS[kind]} on {owner.name}'s mailbox for some "
+                 "of that time. Cancel or stop it on its request page first, or choose times that do not overlap")
                 if owner is not None else
                 f"{person.name} already has {ACCESS_LABELS[kind]} on your mailbox for some of that time. Cancel or stop it on its "
                 "request page first, or choose times that do not overlap"
             )
     if not form.confirm_access:
-        raise ConfirmAccess(access_warning(person.name, kinds, format_moment(times.ends_at, zone), owner.name if owner is not None else None))
+        raise ConfirmAccess(access_warning(
+            person.name, kinds, format_moment(times.ends_at, zone), owner.name if owner is not None else None,
+            None if for_requester else person.name,
+        ))
     try:
         def write_changes(ticket: Ticket) -> None:
             for kind in kinds:
@@ -392,7 +405,8 @@ def submit_access(
                 )
 
         ticket = raise_ticket(
-            session, user, subject=_access_subject(person, owner), description=_access_description(person, kinds, times, zone, owner),
+            session, user, subject=_access_subject(person, owner, for_requester),
+            description=_access_description(person, kinds, times, zone, owner, for_requester),
             request_type=request_type, after_create=write_changes if owner is not None else None,
         )
         session.flush()
@@ -457,9 +471,12 @@ def _view_of(session: Session, change: MailboxChange, user: User, now: datetime,
     on_behalf = change.owner_address not in identity.requester_emails(user, session)  # someone else's mailbox (#311)
     owner_name = identity.person_for_address(session, change.owner_address)
     owner_name = owner_name.display_name if owner_name is not None and owner_name.display_name else change.owner_address
+    declined = ticket is not None and change.state == MAILBOX_CANCELLED and was_declined(session, ticket)
     waiting_for_approval = on_behalf and ticket is not None and ticket.status == TicketStatus.AWAITING_APPROVAL and change.state == MAILBOX_SCHEDULED
     box = f"{owner_name}'s mailbox" if on_behalf else "your mailbox"
-    if waiting_for_approval:
+    if declined:
+        label, tone = "Declined", "red"
+    elif waiting_for_approval:
         label, tone = "Waiting for approval", "blue"
     elif change.state == MAILBOX_FAILED:
         # A failed removal is the team's to fix and the requester is told nothing until it is: the change still reads as stopping.
@@ -497,7 +514,9 @@ def _view_of(session: Session, change: MailboxChange, user: User, now: datetime,
         result.stop_button = f"Yes, remove {word}"
         result.cancel_summary = f"Cancel {word}"
     noun = "forwarding" if change.kind == "forwarding" else "access"
-    if waiting_for_approval:
+    if declined:
+        result.line = DECLINED_LINE
+    elif waiting_for_approval:
         result.line = (
             f"This needs approval first. It will start at {starts} or, if it is approved after that, at the next check once it is "
             f"approved, and end at {ends}."
@@ -562,6 +581,9 @@ def approval_summary(session: Session, ticket: Ticket) -> str:
     what = " and ".join(sorted({ACCESS_LABELS.get(c.kind, "mail forwarding") if c.kind != "forwarding" else "mail forwarding" for c in changes}))
     first = changes[0]
     zone = zone_for_user(session, owner) if owner is not None else "UTC"
+    if first.target_address.strip().lower() not in identity.addresses_of(session, ticket.requester_email):
+        grantee = identity.person_for_address(session, first.target_address)  # asked for a third person (#325): say who gets it
+        what += f" for {grantee.display_name if grantee is not None and grantee.display_name else first.target_address}"
     return (
         f"This is about {name}'s mailbox ({address}): {what}, from {format_moment(first.starts_at, zone)} until "
         f"{format_moment(first.ends_at, zone)}. {name} is told when it starts and ends, whoever approves it."

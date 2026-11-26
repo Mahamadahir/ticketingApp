@@ -152,10 +152,8 @@ def test_a_type_with_an_action_may_have_an_approval_group_for_someone_elses_mail
 
 
 def test_a_type_with_an_action_needs_all_four_defaults(db_session, world):
-    for partial in (
-        TypeDefaults(None, world.category.id, "low", "low"), TypeDefaults(world.team.id, None, "low", "low"),
-        TypeDefaults(world.team.id, world.category.id, None, "low"), TypeDefaults(world.team.id, world.category.id, "low", None),
-    ):
+    # (a blank impact or urgency is filled with Low, #325; the team and category are the admin's choice)
+    for partial in (TypeDefaults(None, world.category.id, "low", "low"), TypeDefaults(world.team.id, None, "low", "low")):
         with pytest.raises(RequestTypeError, match="triage itself"):
             update_request_type(db_session, world.type, "Forward my mail", "", None, 51, True, defaults=partial)
     with pytest.raises(RequestTypeError, match="triage itself"):
@@ -940,9 +938,9 @@ def test_a_second_session_waits_for_the_owners_lock_until_the_first_commits(db_s
 
 def test_an_account_with_a_blank_user_type_is_listed_and_accepted_but_a_guest_is_not(client, db_session, world, friend, directory):
     signed_in(client, db_session)
-    directory["n"] = raw_user("oid-null", "Jane Nulltype", "jane.null@example.com", kind=None)
-    directory["b"] = raw_user("oid-blank", "Jane Blanktype", "jane.blank@example.com", kind="  ")
-    directory["g"] = raw_user("oid-guest", "Jane Guestly", "jane.guest@example.com", kind="guest")
+    directory["oid-null"] = raw_user("oid-null", "Jane Nulltype", "jane.null@example.com", kind=None)
+    directory["oid-blank"] = raw_user("oid-blank", "Jane Blanktype", "jane.blank@example.com", kind="  ")
+    directory["oid-guest"] = raw_user("oid-guest", "Jane Guestly", "jane.guest@example.com", kind="guest")
     text = client.get("/portal/people?q=jane").text
     assert "Jane Nulltype" in text and "Jane Blanktype" in text and "Jane Guestly" not in text
     assert post(client, world, target_object_id="oid-null").status_code == 303  # and the submit's own check agrees

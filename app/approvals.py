@@ -359,6 +359,12 @@ def restart_after_reopen(session: Session, ticket: Ticket, actor_email: Optional
     approval = current_approval(session, ticket)
     if approval is None or approval.status not in (DECLINED, WITHDRAWN) or approval_group_of(session, ticket) is None:
         return False
+    from app.mailbox_changes import changes_for_ticket  # imported here: app.mailbox_changes builds on this module
+
+    if changes_for_ticket(session, ticket):
+        # A mailbox request's changes were cancelled with the decline and stay cancelled (#325): asking the approvers again would
+        # leave an approved request with nothing to make, so a reopened one is simply open, and says it was declined.
+        return False
     set_status(session, ticket, TicketStatus.AWAITING_APPROVAL, actor_email, detail="approval restarted", by_approval=True)
     start_approvals(session, ticket, actor_email or "system")
     log_action(session, actor_email or "system", "ticket", ticket.id, "approval_restarted", f"after {approval.status}")

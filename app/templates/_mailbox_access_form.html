@@ -15,6 +15,7 @@
   {% include "_mailbox_whose.html" %}
   <p class="mb-mailbox" id="mb-mine-line"><strong>Your mailbox:</strong> {{ user.email }} <span class="nr-hint">(always the mailbox you are signed in as)</span></p>
 
+  <p class="nr-hint" id="mb-other-target-hint" hidden>For someone else's mailbox, the access is for you unless you choose another person here.</p>
   {% set picker_legend = "Give access to" %}{% set picker_prefix = "mb" %}{% set picker_field = "target" %}{% set picker_oid = f.target_object_id %}{% set picker_name = f.target_name %}{% include "_mailbox_picker.html" %}
 
   <fieldset class="mb-fieldset" id="mb-permissions">

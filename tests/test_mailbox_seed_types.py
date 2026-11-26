@@ -148,7 +148,7 @@ def test_the_editor_shows_the_help_line_under_impact_and_urgency(client, db_sess
     from app.models import UserRole
 
     set_role(db_session, login_as(client, "boss@example.com"), UserRole.SUPER_ADMIN)
-    page = client.get("/admin/request-types").text
+    page = client.get("/admin/request-types?new=1").text
     assert "Impact x urgency sets the priority and SLA. Set all four defaults (team, category, impact, urgency) to let a request triage itself." in page
 
 
