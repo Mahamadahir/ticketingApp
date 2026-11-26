@@ -96,14 +96,18 @@ starting a phase, and `README.md` for how to run it.
   polish. Phase 9 restyles every page onto the 9A tokens and components (`docs/ui.md`), one issue at
   a time, so do not restyle a page outside its issue; use the 9A classes and tokens, never raw colours.
 - Schema changes need an Alembic migration (CI runs `alembic check`).
-- Run `pytest -n auto` (parallel, one database per worker) before saying work is done. Tests run against
+- **CI is the full test run.** Before saying work is done, run the test files you touched (and those of
+  the modules they change) locally, `pytest -n 2 <files>`, then push and wait for CI's full run on the PR's
+  final commit and report its result. Do not run the whole suite locally unless the user asks: several
+  agents share this machine, and a local full run takes 30 minutes or more and often never finishes (CI
+  takes 8 to 15). Tests run against
   Postgres 16 (compose `db` locally, a service container in CI), never SQLite.
   Start it with `docker compose up -d db`; the tests create and wipe a separate
   `ticketing_test` database. Python is 3.14. Run only one pytest process per test database
   (your own background suite included), and give your branch its own via `TEST_DATABASE_URL`;
   how, and what to do when the database is down, is in `docs/build-plan.md` (working agreement).
-- **Test runs can hang** (other agents share the Postgres). Before running the suite, read "When a run is
-  slow or hangs" in the working agreement in `docs/build-plan.md`: time-limit every full run, diagnose once,
+- **Test runs can hang** (other agents share the Postgres). Before running tests, read "When a run is
+  slow or hangs" in the working agreement in `docs/build-plan.md`: time-limit every run, diagnose once,
   kill only your own run, retry at most once and then lean on CI, push and report if stuck for more than
   30 minutes, and merge `main` before the final push (a conflicting PR gets no CI).
 - No secrets in the repo, Bicep parameter files or app definitions. Secrets

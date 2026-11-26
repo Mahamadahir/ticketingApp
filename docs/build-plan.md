@@ -277,9 +277,12 @@ with `createReply` (sendMail returns no id, so a sent message has none).
    `upgrade head`, `alembic check` (CI runs `alembic check`). Set `DATABASE_URL`
    for the shell, run `python -m alembic`.
 4. Tests run on Postgres (compose `db`, separate `ticketing_test`, which refuses any
-   database not named `*_test`). Run the full suite before saying done:
-   `.\.venv\Scripts\python.exe -m pytest -q -n auto` (`-n auto` runs one pytest-xdist worker
-   per core, each on its own database; plain `pytest -q` still works, one test at a time).
+   database not named `*_test`). **CI is the full run** (26 Nov 2026): locally, run the test files you
+   touched and those of the modules they change, `.\.venv\Scripts\python.exe -m pytest -q -n 2 <files>`
+   (each pytest-xdist worker gets its own database; plain `pytest -q` runs one test at a time), then push
+   and wait for CI's full run on the final commit and report it. Run the whole suite locally only when the
+   user asks: agents share this machine, and local full runs took 30 minutes or more and often never
+   finished, while CI takes 8 to 15.
 5. Break it on purpose: temporarily mutate the rule you added (flip a check, drop a
    lock, widen a query) and confirm a test fails; restore. Surviving mutations mean
    a missing test.
@@ -288,8 +291,8 @@ with `createReply` (sendMail returns no id, so a sent message has none).
    targeting `main`). `gh` is at `C:\Program Files\GitHub CLI\gh.exe`.
 8. Who does what: the orchestrating session writes the issue and hands it to one sub-agent (Sonnet).
    That sub-agent builds the PR, then runs `/code-review N` on it before the PR is marked ready, fixes
-   the real findings and explains the rejected ones, re-runs the full test suite after those fixes (a
-   green run from before the review does not count), and reports to the orchestrator: what was built,
+   the real findings and explains the rejected ones, re-runs the touched test files after those fixes and
+   waits for CI's full run on the final commit (a green run from before the review does not count), and reports to the orchestrator: what was built,
    the test results, and each finding accepted or rejected with why. The orchestrator relays the report
    to the user, marks the PR ready and puts the user's checkout on the PR's latest commit (detached) so the
    local WSL app shows it for a preview before "merge"; afterwards the checkout goes back to `main` (see CLAUDE.md).
@@ -324,8 +327,10 @@ on your database. Symptoms of a collision, which is not a code bug: `cannot drop
 objects depend on it` in test setup, runs that hang, or a run that ends with no summary line.
 
 **When a run is slow or hangs (#306 lost two hours to this).** Other agents' suites share the same
-Postgres, so a full run that takes minutes on a quiet machine can crawl or stall. Never wait on it in silence:
-- **Time-limit every full run**, for example `timeout 1800 .venv/Scripts/python.exe -m pytest -q -n 4` in bash
+Postgres, so a run that takes minutes on a quiet machine can crawl or stall. Since 26 Nov 2026 the full suite
+runs in CI, not locally (item 4); these rules cover the touched-file runs, and a full local run when the user asks
+for one. Never wait on a run in silence:
+- **Time-limit every run**, for example `timeout 1800 .venv/Scripts/python.exe -m pytest -q -n 2 <files>` in bash
   (30 minutes). A run that hits the limit, or prints no progress for 10 minutes, is hung, not slow.
 - **Diagnose once.** Look at your database's connections:
   `wsl -e docker exec ticketingapp-db-1 psql -U ticketing -d postgres -c "select datname, state, wait_event_type, wait_event, now()-query_start as running, left(query,80) from pg_stat_activity where datname like 'ticketing_<yourbranch>%'"`.
@@ -334,9 +339,8 @@ Postgres, so a full run that takes minutes on a quiet machine can crawl or stall
 - **Kill only your own run.** Match your pytest by its command line and `TEST_DATABASE_URL`, never every
   `pytest`, since another agent's suite may be running. Then clear your databases with
   `python tools/clean_test_dbs.py --prefix ticketing_<yourbranch> --yes`.
-- **One retry at most.** If the full suite still cannot finish, run the changed test files (and the
-  tests of the modules they touch) locally, push, and let CI run the full suite. Say so in your report.
-  Do not start a third full run.
+- **One retry at most.** If a run still cannot finish, narrow it to fewer files, push, and let CI decide.
+  Say so in your report. Do not start a third run.
 - **Push and report instead of going quiet.** The orchestrator cannot see inside a sub-agent. If you are
   stuck for more than 30 minutes, push what you have and report where it stopped (the command and its
   last output).
@@ -581,6 +585,7 @@ sleep, restart it and `docker start ticketingapp-db-1`.
 
 - 23 Nov 2026: **Queue Status filter, Time to breach sort and status colours (#290); choices taken in the PR where the issue left room.** (1) *One mapping:* `app/status_display.py` holds `STATUS_LABELS` and `STATUS_TONES` (blue New, Open, In progress; amber Awaiting user, Awaiting approval, With supplier, With MSP; green Resolved; gray Closed and Scheduled; red unused, kept for SLA breaches) and the `status_label` / `status_tone` Jinja filters; the queue, the ticket header, the Service level box, the linked, related and sub-ticket lists, bulk resolve, Category review, the status pickers, the email preview and Team activity (`team_activity.status_chip`) all use it, so no agent template spells a status itself. The portal keeps `messages.requester_status`. (2) *Filter:* `?status=` takes a status value or `active` (Not finished); blank is no filter, unknown is a 422 (as is an unknown sort); it is applied after visibility. The queue tabs keep the sort and clear the status, like the other filters. (3) *Sort:* `?sort=breach` uses `sla.breach_order`, built on the same `_clock_terms` as `queue_order`, so the Due date lead time agrees with the chip. A ticket is running when it has a next deadline, is not finished and not backdated; running tickets sort by that deadline (most overdue first, untriaged ones included and not pinned), then everything else by priority and latest update; paused and no-target tickets are not told apart under this sort.
 - 24 Nov 2026: **Scheduled jobs: Run now (#300); choices taken in the PR where the issue left room.** (1) *Only a request:* Run now (`run_now` in `app/scheduled_jobs.py`) sets the job's `next_run_at` to now and records who asked; the worker runs it on its next tick through the normal claim (lease, the job's own guards), so the web app never runs job code and two runs never overlap. Super admins only (the whole page is); a retired job is a 404 and has no button. (2) *Refusals change nothing:* an unexpired lease says "Already running, started at ..."; a job already due says "Already due; the worker will run it within 1 minute" (the tick is 60 s). Running is checked first, since a running job is also due. (3) *Schedule kept:* three columns on `scheduledjob` (`run_requested_at`, `run_requested_by`, `run_resume_at`; migration `e7a2c9d4b6f1`). The resume time is the due time the job had; the claim clears the request and is not "late" for it, `next_run_at` stays in the past during the run (so a crashed run is recovered as any is) and `_finish` puts the job back on its own grid from the resume time (without it a daily job would drift to the time of day it was run now). A requested run that fails is retried after the retry setting, but never later than the resume time. (4) *Descriptions:* `ScheduledJobDef` has `description` (plain words) and `warns` (`WARN_EMAIL`, `WARN_MSP`); a new job adds them on its registry line and the confirm page shows them. Warned: approval-reminders, auto-close and chase (email), msp-forwards and msp-handoff (email and MSP); msp-ack-alerts only raises alerts, so no warning. (5) *Audit:* `scheduled_job` / "Run now requested for job X" by the admin, entity id 0 like the worker's lines; the refusals write nothing. (6) *Not drawn:* no run-now for a job whose row does not exist yet (the worker creates it, due now, at its first tick).
+- 26 Nov 2026: **CI is the full test run (owner decision).** Sub-agents run only the test files they touched (and those of the modules they change) locally with `-n 2`, push, and wait for CI's full run on the final commit, which they report. The whole suite runs locally only when the owner asks. Why: several agents share this laptop and its Postgres, and local full runs on 25 and 26 Nov took 30 minutes or more, ran out of memory or never finished (the #306, #309, #310 and #311 agents each spent up to two hours on them), while CI runs the same suite in 8 to 15 minutes. Working agreement items 4 and 8, the "When a run is slow or hangs" rules and CLAUDE.md say so.
 - 25 Nov 2026: **Acknowledged by reaction: shown, with an auto-resolve backstop (#303; builds on #298 and #302); choices taken in the PR where the issue left room.** (1) *One decision:* `reactions.acknowledged_times` / `acknowledged_at` say whether a ticket's current Awaiting user wait is acknowledged and since when (the earliest standing positive reaction by the requester or a follower, on a resolution message or one asking for a reply, since the wait began; `waiting_since` moved there from `app/auto_close_chase.py`). The chase job, the chip, the Service level line and the queue filter all read it (the filter as SQL, `acknowledged_condition`, from the same rows), so a reply, a status change (a new wait starts) or a reaction taken back clears it everywhere with no stored state and no migration. (2) *Backstop:* new setting `acknowledged_wait_resolve_days` (Settings > Resolving, kind `off_days`: 0 to 3650, **placeholder default 14, TBC**, 0 = never; a `count` setting cannot be 0). New step `resolve_acknowledged` in the chase job: an Awaiting user, triaged, unsplit ticket whose acknowledging reaction is `days` or more old (`now >= reaction + days`, counted from the reaction, not the start of the wait, and checked again under the row lock) is auto-resolved through `resolve_ticket` with the usual `auto_resolve_note` and automatic resolution email: no new email, no new template. It applies whether or not a chase email had gone before the reaction. It runs under the chase switch (`chase_enabled`), as the rest of the auto-resolve does. The existing rule is unchanged: before that day the acknowledgement still stops the chase email and the chase-follow-up resolve. A reaction still never resolves anything by itself; the job does, late. (3) *Shown:* a blue `chip t-blue` "Acknowledged by reaction \u00b7 N days" ("today" on the first day) in the ticket header, in the Service level box with "Chases stopped. Auto-resolves in N days if there is no reply." (days left rounded up; "Will not auto-resolve." when the setting is 0; "at the next run" when due), and on the queue row after Escalated. (4) *Filter:* the queue's Status filter has "Awaiting user \u00b7 acknowledged" right after Awaiting user (value `awaiting_user_acknowledged`), applied after visibility like the other filters. (5) *Not tested locally:* nothing here is Azure-specific; real Teams reactions on staging are the #298 checklist item.
 
 ## Dependency lock
