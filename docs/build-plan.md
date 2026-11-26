@@ -349,6 +349,9 @@ for one. Never wait on a run in silence:
   (`gh pr checks` says "no checks reported"); check `gh pr view <n> --json mergeable`. If `main` gained a
   migration with the same parent as yours, point yours at the new one so there is a single head
   (`python -m alembic heads`), and regenerate the code map rather than hand-merging it.
+- **Find the slowest tests in a CI log.** `pytest.ini` sets `--durations=30`, so every run (local and CI) ends with a
+  "slowest 30 durations" table of the 30 slowest calls, setups and teardowns. In the CI log, open the test step and
+  scroll to the end (#329).
 - **Never hard-code dates in tests.** Build times from now (`datetime.now(timezone.utc) + timedelta(...)`);
   a test written for "yesterday" fails the next day (the `test_reactions` failures on 25 Nov 2026).
 
