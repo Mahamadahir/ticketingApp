@@ -47,6 +47,11 @@ function Disconnect-ExchangeOnline { param([switch]$Confirm) [void]$global:Calle
 function Get-Mailbox {
     param([string]$Identity)
     Enter-Fake 'Get-Mailbox'
+    # A recipient that is a mailbox but is not listed under "mailboxes" has one with no forwarding (a forwarding target, for example).
+    $isMailbox = ($global:Recipients -contains $Identity) -and (-not $global:RecipientTypes.ContainsKey($Identity) -or @('UserMailbox', 'SharedMailbox') -contains $global:RecipientTypes[$Identity])
+    if (-not $global:Mailboxes.ContainsKey($Identity) -and $isMailbox) {
+        return [pscustomobject]@{ ForwardingAddress = $null; ForwardingSmtpAddress = $null; DeliverToMailboxAndForward = $false }
+    }
     if (-not $global:Mailboxes.ContainsKey($Identity)) { throw "The operation couldn't be performed because object '$Identity' couldn't be found on 'x'." }
     $m = $global:Mailboxes[$Identity]
     return [pscustomobject]@{

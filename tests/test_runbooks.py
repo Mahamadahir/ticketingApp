@@ -399,3 +399,35 @@ def test_read_of_forwarding_includes_the_copy_setting_when_asked(built, tmp_path
     boxes = {OWNER: {"forwarding": TARGET, "keep_copy": keep_copy_on_exchange}}
     result, _ = run(built, tmp_path, "Read-MailboxChange", {"Kind": "forwarding", "Mailbox": OWNER, "Target": TARGET, "KeepCopy": asked}, mailboxes=boxes, recipients=[TARGET])
     assert result["found"]["present"] is present
+
+
+# ---- a forwarding loop is refused (#325) ----------------------------------------------------------------------------------
+
+
+@needs_pwsh
+@pytest.mark.parametrize("target_forwards_to", [OWNER, "A@Contoso.com"])
+def test_set_forwarding_is_refused_as_a_loop_when_the_target_already_forwards_back_and_nothing_changes(built, tmp_path, target_forwards_to):
+    boxes = {OWNER: {"forwarding": "", "keep_copy": False}, TARGET: {"forwarding": target_forwards_to, "keep_copy": True}}
+    result, state = run(built, tmp_path, "Set-MailForwarding", FWD, mailboxes=boxes)
+    assert result["outcome"] == "permanent" and result["error_category"] == "loop"
+    assert "loop" in result["error"] and TARGET in result["error"] and OWNER in result["error"]
+    assert state["mailboxes"] == boxes and "Set-Mailbox" not in state["called"]
+    assert state["called"][-1] == "Disconnect-ExchangeOnline"
+
+
+@needs_pwsh
+def test_set_forwarding_allows_a_chain_and_a_target_that_forwards_nowhere(built, tmp_path):
+    third = "c@contoso.com"
+    boxes = {OWNER: {"forwarding": "", "keep_copy": False}, TARGET: {"forwarding": third, "keep_copy": True}}
+    result, state = run(built, tmp_path, "Set-MailForwarding", FWD, mailboxes=boxes, recipients=[third])  # A to B, and B already to C
+    assert result["outcome"] == "succeeded" and state["mailboxes"][OWNER]["forwarding"] == TARGET
+    result, _ = run(built, tmp_path, "Set-MailForwarding", FWD, mailboxes=BOXES, recipients=[TARGET])
+    assert result["outcome"] == "succeeded"
+
+
+@needs_pwsh
+def test_the_loop_check_only_reads_the_target(built, tmp_path):
+    boxes = {OWNER: {"forwarding": "", "keep_copy": False}, TARGET: {"forwarding": "", "keep_copy": False}}
+    _, state = run(built, tmp_path, "Set-MailForwarding", FWD, mailboxes=boxes)
+    assert state["called"].count("Set-Mailbox") == 1  # the one write is the owner's own forwarding
+    assert state["mailboxes"][TARGET] == {"forwarding": "", "keep_copy": False}

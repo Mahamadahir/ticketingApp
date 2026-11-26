@@ -223,6 +223,12 @@ def test_a_completed_job_without_a_readable_result_is_no_answer(output):
     assert result.job_id == "job-guid-1"
 
 
+def test_a_loop_answer_is_a_permanent_error_that_names_the_category():
+    text = "b@contoso.com already forwards its mail to a@contoso.com, so this would create a loop. Nothing was changed."
+    result = executor(FakeArm(output=runbook_output(outcome="permanent", present=False, category="loop", error=text))).apply(change())
+    assert result.outcome == OUTCOME_PERMANENT and result.error == f"loop: {text}"
+
+
 def test_an_unknown_outcome_word_is_permanent():
     result = executor(FakeArm(output=runbook_output(outcome="fine"))).apply(change())
     assert result.outcome == OUTCOME_PERMANENT

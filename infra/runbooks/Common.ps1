@@ -6,7 +6,7 @@
 #   { "outcome": "succeeded" | "retryable" | "permanent" | "mismatch",
 #     "found": { ... what Exchange holds after the call ... },
 #     "error_category": "" | "throttled" | "timeout" | "not_found" | "access_denied" | "invalid_parameter"
-#                          | "changed_elsewhere" | "unknown",
+#                          | "changed_elsewhere" | "loop" | "unknown",
 #     "error": "" | the raw message }
 # Nothing here takes a script or a command from the caller: parameters are addresses and flags, checked again below.
 
@@ -73,7 +73,7 @@ function Get-ErrorCategory {
 function Get-OutcomeForCategory {
     param([string]$Category)
     switch ($Category) {
-        { $_ -in 'not_found', 'access_denied', 'invalid_parameter' } { return 'permanent' }
+        { $_ -in 'not_found', 'access_denied', 'invalid_parameter', 'loop' } { return 'permanent' }
         default { return 'retryable' }
     }
 }

@@ -4,6 +4,8 @@
 .DESCRIPTION
   Set-Mailbox -ForwardingAddress / -DeliverToMailboxAndForward. Already set means success.
   Parameters are fixed: addresses and a true/false flag, never a script or a command.
+  A loop is refused before anything changes: when the TARGET mailbox already forwards to this mailbox, each would send the
+  other's mail back, so the result is a permanent error with category 'loop'. Both ends are compared as primary SMTP addresses.
 #>
 param(
     [Parameter(Mandatory)][string]$Organization,
@@ -22,6 +24,14 @@ Invoke-MailboxRunbook -Organization $Organization -Body {
     $null = Get-ExistingMailbox $Mailbox
     $recipient = Get-ExistingRecipient $Target 'Target'
     $wanted = [string]$recipient.PrimarySmtpAddress
+
+    # Read only: does the target already send its mail back to this mailbox? (Get-Mailbox on the target, Get-Recipient for both ends.)
+    $ownerAddress = Find-RecipientAddress $Mailbox
+    $targetForward = Get-ForwardingState $wanted
+    if ($ownerAddress -and $targetForward.present -and ($targetForward.forwarding_to -ieq $ownerAddress)) {
+        Write-Result -Outcome 'permanent' -ErrorCategory 'loop' -ErrorText "$wanted already forwards its mail to $ownerAddress, so forwarding $ownerAddress to $wanted would create a loop. Nothing was changed."
+        return
+    }
 
     $before = Get-ForwardingState $Mailbox
     $alreadySet = $before.present -and ($before.forwarding_to -eq $wanted) -and ($before.keep_copy -eq $keep)
