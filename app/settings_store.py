@@ -104,6 +104,7 @@ MAIL_BACKFILL_DAYS = "mail_backfill_days"
 MAILBOX_CHANGES_MINUTES = "mailbox_changes_poll_minutes"  # how often the mailbox-changes job looks for due changes (#307)
 MAILBOX_CHANGE_MAX_ATTEMPTS = "mailbox_change_max_attempts"
 MAILBOX_CHANGE_RETRY_MINUTES = "mailbox_change_retry_minutes"
+MAILBOX_CHANGE_LEASE_MINUTES = "mailbox_change_lease_minutes"
 EMAIL_REACTIONS_MINUTES = "email_reactions_poll_minutes"  # how often the Outlook reactions job reads Sent Items (#299)
 EMAIL_REACTIONS_BACKFILL_DAYS = "email_reactions_backfill_days"
 # Ticket presence (issue #246, app/ticket_presence.py)
@@ -468,6 +469,18 @@ REGISTRY: dict[str, SettingDef] = {
             "pending. Placeholder until proved on staging."
         ),
         default="3",
+    ),
+    MAILBOX_CHANGE_LEASE_MINUTES: SettingDef(
+        key=MAILBOX_CHANGE_LEASE_MINUTES,
+        group=GROUP_MAILBOX,
+        label="Mailbox changes: how long one change may be in the hands of the worker (minutes)",
+        kind="minutes",
+        description=(
+            "While the worker makes or removes a change (a call to Exchange can take several minutes) the change is held for this "
+            "long. If the worker dies mid-call the change is picked up again after this. Set it longer than the slowest call takes "
+            "(the Azure Automation timeout, 10 minutes, plus a margin). Placeholder until proved on staging."
+        ),
+        default="15",
     ),
     MAILBOX_CHANGE_RETRY_MINUTES: SettingDef(
         key=MAILBOX_CHANGE_RETRY_MINUTES,

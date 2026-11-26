@@ -71,6 +71,7 @@ class ScheduledJobDef:
     run: Callable[[Session], None]  # given a session; the runner commits on return, rolls back on a raise
     description: str = ""  # what the job does, in plain words: shown on the Run now confirm page
     warns: tuple[str, ...] = ()  # WARN_EMAIL and/or WARN_MSP: shown as a warning on the Run now confirm page
+    min_lease_minutes: int = 0  # a job whose run can take long (calls that wait for Azure) holds its lease at least this long, whatever the setting
     interval_setting: Optional[str] = None  # a "minutes" setting that overrides every_seconds, so an admin can tune how often it runs
 
     def seconds(self, session: Session) -> int:
@@ -101,14 +102,14 @@ SCHEDULED_JOBS: list[ScheduledJobDef] = [
         "Reads the shared mailbox's Sent Items for reactions people made in Outlook to the emails the app sent, and records them on the "
         "tickets like Teams reactions. It only reads: it sends nothing. How often it runs is the setting \"Outlook reactions: how often "
         "Sent Items is read\".",
-        (), EMAIL_REACTIONS_MINUTES,
+        (), interval_setting=EMAIL_REACTIONS_MINUTES,
     ),
     ScheduledJobDef(
         "mailbox-changes", 300, run_mailbox_changes,
         "Makes the scheduled mailbox changes (mail forwarding, mailbox access) whose start time has come, removes those whose end "
         "has, and retries failed attempts, resolving or handing back the request ticket as it goes. Only the executor talks to "
         "Exchange. How often it runs is the setting \"Mailbox changes: how often the worker looks for due changes\".",
-        (WARN_EMAIL,), MAILBOX_CHANGES_MINUTES,
+        (WARN_EMAIL,), interval_setting=MAILBOX_CHANGES_MINUTES, min_lease_minutes=20,
     ),
     ScheduledJobDef("msp-ack-alerts", 300, run_msp_ack_alerts, "Raises an alert for a ticket sent to the MSP that the MSP has not confirmed in time."),
     ScheduledJobDef("msp-forwards", 300, run_msp_forwards, "Forwards mail the MSP sent on a ticket, left waiting for an agent, to the user once business hours end.", (WARN_EMAIL, WARN_MSP)),
@@ -194,7 +195,8 @@ def claim_next_due(session: Session, jobs: Sequence[ScheduledJobDef], owner: str
             f"due {row.next_run_at:%Y-%m-%d %H:%M} UTC, started {now:%Y-%m-%d %H:%M} UTC",
         )
     row.lease_owner = owner
-    row.lease_expires_at = now + timing(session, JOB_LEASE_MINUTES)
+    registered = next((job for job in jobs if job.name == row.name), None)
+    row.lease_expires_at = now + max(timing(session, JOB_LEASE_MINUTES), timedelta(minutes=registered.min_lease_minutes if registered else 0))
     row.last_started_at = now
     session.add(row)
     return row

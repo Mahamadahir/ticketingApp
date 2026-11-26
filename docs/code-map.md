@@ -355,7 +355,7 @@ any change that adds, removes or renames modules, routes, models, jobs, settings
 | `INBOUND_ENABLED` | `bool` | `False` |
 | `MAIL_CATCH_UP_ENABLED` | `bool` | `False` |
 | `MAIL_SENDING` | `str` | `'off'` |
-| `MAILBOX_EXECUTOR` | `str` | `'fake'` |
+| `MAILBOX_EXECUTOR` | `str` | `''` |
 | `MAILBOX_TIME_ZONES_ENABLED` | `bool` | `False` |
 | `PRESENCE_ENABLED` | `bool` | `False` |
 | `PUBLIC_BASE_URL` | `str` | `''` |
@@ -880,7 +880,7 @@ The only code that talks to Exchange about scheduled mailbox changes (#307; the 
 File: `app/mailbox_executor.py`
 
 - Classes: `ExecutorNotAvailable`, `ExecutorResult`, `FakeExecutor`, `MailboxExecutor`
-- Functions: `get_executor`, `make_executor`, `set_executor`
+- Functions: `get_executor`, `is_enabled`, `make_executor`, `set_executor`
 - Imports: `app.config`, `app.models`
 - Imported by: `app.mailbox_changes`
 - Tests: `test_mailbox_changes.py`

@@ -2094,6 +2094,7 @@
       "file": "app/mailbox_executor.py",
       "functions": [
         "get_executor",
+        "is_enabled",
         "make_executor",
         "set_executor"
       ],
@@ -7863,7 +7864,7 @@
       "type": "str"
     },
     {
-      "default": "'fake'",
+      "default": "''",
       "env": "MAILBOX_EXECUTOR",
       "name": "mailbox_executor",
       "type": "str"

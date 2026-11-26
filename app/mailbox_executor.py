@@ -43,9 +43,10 @@ The outcomes:
                 caller then calls `read`: if that shows the change already in place it counts as success, otherwise it retries
                 as `retryable`.
 
-An executor call must return within the lease the job gives each change (the `scheduled_job_lease_minutes` setting, 10 by
-default): a row whose call has not been answered by then is taken up again by the next run, which calls the executor a second
-time, and the first answer is dropped. So a call that waits for an automation job gives up (answers `no_answer`) before that.
+An executor call may take minutes (the Azure one polls an automation job for up to ten) but must return within the lease the
+job gives each change (the `mailbox_change_lease_minutes` setting, 15 by default): a row whose call has not been answered by
+then is taken up again by the next run, which calls the executor a second time, and the first answer is dropped. No database
+lock is held while an executor call is in progress (the row is leased, committed, and locked again for the answer).
 
 `apply` and `remove` read the change back before they return (that read-back is what makes `succeeded` and `mismatch`
 possible). `read` makes no change. All three may be called twice for one change (after a crash, or by Try again), and must be
@@ -54,10 +55,13 @@ safe to: apply on something already set succeeds, remove on something already re
 CHOOSING AN EXECUTOR
 --------------------
 
-`get_executor()` returns the one the `MAILBOX_EXECUTOR` environment value names: `fake` (the default; local development and
-tests; `FakeExecutor` below keeps its state in memory) or `azure` (#308). The worker refuses to start with `fake` anywhere but
-the dev environment (`app.config.unsafe_setting_errors`). #308 plugs in by replacing the `azure` branch of `make_executor`;
-nothing else changes. Only the worker process calls `get_executor()`.
+`MAILBOX_EXECUTOR` unset means the whole feature is OFF (`is_enabled()` is False): the `mailbox-changes` job does nothing and
+`create_mailbox_change` refuses with a clear error, so an environment not yet set up for it (staging before the Automation
+account exists) starts and runs as before. `get_executor()` returns the one the value names: `fake` (local development and
+tests; `FakeExecutor` below keeps its state in memory) or `azure` (#308). `fake` set explicitly anywhere but the dev environment
+is a start-up configuration error (`app.config.unsafe_setting_errors`, for the worker). #308 plugs in by replacing the `azure`
+branch of `make_executor`; nothing else changes. Only the worker process calls `get_executor()`; every process that creates
+a change (the web app, the public app) needs the variable set too, or it refuses.
 """
 
 import logging
@@ -220,8 +224,13 @@ def make_executor(kind: str) -> MailboxExecutor:
     raise ExecutorNotAvailable(f"Unknown MAILBOX_EXECUTOR {kind!r}")
 
 
+def is_enabled() -> bool:
+    """Whether scheduled mailbox changes are switched on in this process: an executor is in place (tests) or MAILBOX_EXECUTOR names one."""
+    return _executor is not None or settings.mailbox_executor in ("fake", "azure")
+
+
 def get_executor() -> MailboxExecutor:
-    """The process's executor, built once from `settings.mailbox_executor`."""
+    """The process's executor, built once from `settings.mailbox_executor`. Raises ExecutorNotAvailable when the feature is off."""
     global _executor
     with _executor_lock:
         if _executor is None:

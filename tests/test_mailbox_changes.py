@@ -580,8 +580,8 @@ def test_a_crash_between_claim_and_result_is_recovered_once_the_lease_has_passed
         assert work is not None and work.operation == "apply"
     change = reload(db_session, change)
     assert change.state == "applying" and change.attempts == 1
-    assert run(db_session, at + timedelta(minutes=1)) == 0  # the lease (10 minutes) has not run out
-    assert run(db_session, at + timedelta(minutes=11)) == 1
+    assert run(db_session, at + timedelta(minutes=1)) == 0  # the lease (15 minutes) has not run out
+    assert run(db_session, at + timedelta(minutes=16)) == 1
     change = reload(db_session, change)
     assert change.state == "active" and fake_exchange.holds(change)
 
@@ -604,24 +604,56 @@ def test_a_result_that_arrives_after_an_agent_settled_the_change_is_dropped(db_s
 # ---- Executor choice -----------------------------------------------------------------------------------------------
 
 
-def test_the_worker_refuses_the_fake_executor_outside_dev_and_accepts_azure():
+def test_fake_set_outside_dev_is_a_startup_error_but_unset_and_azure_are_not():
     base = dict(env="staging", app_role="worker", session_secret_key="a-real-secret-value-0123456789", mail_sending="off")
     assert any("MAILBOX_EXECUTOR=fake" in e for e in unsafe_setting_errors(Settings(mailbox_executor="fake", **base)))
     assert not any("MAILBOX_EXECUTOR" in e for e in unsafe_setting_errors(Settings(mailbox_executor="azure", **base)))
+    # unset means the feature is off: the worker still starts (staging deploys on every push to main)
+    assert not any("MAILBOX_EXECUTOR" in e for e in unsafe_setting_errors(Settings(mailbox_executor="", **base)))
     assert not any("MAILBOX_EXECUTOR" in e for e in unsafe_setting_errors(Settings(mailbox_executor="fake", **{**base, "env": "dev"})))
     assert any("MAILBOX_EXECUTOR must be" in e for e in unsafe_setting_errors(Settings(mailbox_executor="bogus", **{**base, "env": "dev"})))
-    # the web and public apps never run the executor, so they do not need to say azure
     assert not any("MAILBOX_EXECUTOR" in e for e in unsafe_setting_errors(Settings(mailbox_executor="fake", **{**base, "app_role": "web"})))
+    assert Settings(_env_file=None).mailbox_executor == ""
+
+
+def test_unset_means_off_the_job_does_nothing_and_a_change_cannot_be_created(db_session, fake_exchange, monkeypatch):
+    ticket, change = schedule(db_session)  # made while an executor was in place
+    set_executor(None)
+    monkeypatch.setattr(settings, "mailbox_executor", "")
+    assert run(db_session, change.starts_at + timedelta(minutes=1)) == 0
+    assert reload(db_session, change).state == "scheduled" and reload(db_session, change).attempts == 0
+    with pytest.raises(MailboxChangeError, match="not switched on"):
+        schedule(db_session)
 
 
 def test_the_azure_executor_is_not_built_yet_and_an_idle_run_does_not_ask_for_it(db_session, monkeypatch):
+    ticket, change = schedule(db_session)
     set_executor(None)
     monkeypatch.setattr(settings, "mailbox_executor", "azure")
-    assert run(db_session, now()) == 0  # nothing due, so the missing executor is not asked for
-    ticket, change = schedule(db_session)
+    assert run(db_session, change.starts_at - timedelta(minutes=5)) == 0  # nothing due, so the missing executor is not asked for
     with pytest.raises(Exception, match="not built yet"):
         run(db_session, change.starts_at + timedelta(minutes=1))
     assert reload(db_session, change).attempts == 0  # nothing was claimed, so no attempt was used up
+
+
+def test_a_run_takes_a_bounded_number_of_changes_and_the_rest_wait_for_the_next(db_session, fake_exchange, dev_mail, monkeypatch):
+    monkeypatch.setattr(mailbox_changes, "MAX_PER_RUN", 2)
+    changes = [schedule(db_session)[1] for _ in range(3)]
+    at = max(c.starts_at for c in changes) + timedelta(minutes=1)
+    assert run(db_session, at) == 2
+    assert run(db_session, at) == 1
+
+
+def test_a_change_is_held_for_the_long_lease_and_the_job_lease_is_at_least_as_long(db_session, fake_exchange):
+    from app.scheduled_jobs import SCHEDULED_JOBS
+
+    ticket, change = schedule(db_session)
+    at = change.starts_at + timedelta(minutes=1)
+    with Session(engine) as session:
+        mailbox_changes._claim_next(session, at, set())
+    assert reload(db_session, change).next_attempt_at == at + timedelta(minutes=15)  # longer than a ten-minute automation call
+    [job] = [j for j in SCHEDULED_JOBS if j.name == "mailbox-changes"]
+    assert job.min_lease_minutes >= 15
 
 
 def test_the_job_is_registered_with_a_five_minute_interval_setting():

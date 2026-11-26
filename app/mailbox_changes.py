@@ -33,6 +33,7 @@ address (`anonymisation.refusal`).
 """
 
 import logging
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -46,7 +47,7 @@ from app.config import settings
 from app.email_templates import render_template, ticket_values
 from app.identity import person_for_address
 from app.mailbox_executor import (
-    OUTCOME_MISMATCH, OUTCOME_NO_ANSWER, OUTCOME_PERMANENT, OUTCOME_RETRYABLE, OUTCOME_SUCCEEDED, ExecutorResult, get_executor,
+    OUTCOME_MISMATCH, OUTCOME_NO_ANSWER, OUTCOME_PERMANENT, OUTCOME_RETRYABLE, OUTCOME_SUCCEEDED, ExecutorResult, get_executor, is_enabled,
 )
 from app.messages import record_notice, record_system_note
 from app.models import (
@@ -58,7 +59,7 @@ from app.notifications import REF, notify_mailbox_change_failed
 from app.outbox import queue_mailbox_change_mail
 from app.resolution import ResolveError, resolve_ticket
 from app.settings_store import (
-    JOB_LEASE_MINUTES, MAILBOX_CHANGE_MAX_ATTEMPTS, MAILBOX_CHANGE_RETRY_MINUTES, REGISTRY, count_setting, get_int_setting,
+    MAILBOX_CHANGE_LEASE_MINUTES, MAILBOX_CHANGE_MAX_ATTEMPTS, MAILBOX_CHANGE_RETRY_MINUTES, REGISTRY, count_setting, get_int_setting,
 )
 from app.sla import Level, SlaStartError, apply_impact_urgency, recalculate_deadlines, start_clock_at
 from app.ticket_service import EVENT_TRIAGED, create_ticket, record_event, set_status
@@ -83,6 +84,8 @@ EVENT_INCIDENT = "mailbox_change_incident"  # on the request: to_value is the in
 EVENT_RAISED_FOR = "mailbox_change_raised_for"  # on the incident: to_value is the request it is about
 
 MAX_ERROR_LENGTH = 2000
+MAX_PER_RUN = 20  # changes one run takes; the rest wait for the next run (the job's lease allows a few slow calls, see scheduled_jobs)
+MAX_RUN_SECONDS = 240  # no new change is claimed once a run has been going this long
 SYSTEM_REQUESTER_FALLBACK = "it-support@mailbox-changes.invalid"  # the incident's requester when no shared mailbox is configured
 INCIDENT_IMPACT, INCIDENT_URGENCY = Level.HIGH, Level.MEDIUM  # P2: high priority, not a major incident
 
@@ -239,6 +242,8 @@ def create_mailbox_change(
     type whose defaults are all set triages itself when raised, `request_types.self_triage`). A request still waiting for approval
     (#311) is left as it is: the row waits, and the job does not touch it, until `schedule_ticket` is called when it is approved.
     Times are UTC; `ends_at` is required and after `starts_at`. Does not commit."""
+    if not is_enabled():
+        raise MailboxChangeError("Scheduled mailbox changes are not switched on (MAILBOX_EXECUTOR is not set in this environment)")
     if kind not in MAILBOX_KINDS:
         raise MailboxChangeError(f"Unknown kind of mailbox change {kind!r}")
     starts_at, ends_at = _aware(starts_at), _aware(ends_at)
@@ -481,7 +486,7 @@ def _claim_next(session: Session, now: datetime, skip: set[int]) -> Optional[_Wo
         operation = "apply" if starting else "remove"
         change.state = MAILBOX_APPLYING if operation == "apply" else MAILBOX_REMOVING
         change.attempts += 1
-        change.next_attempt_at = now + timedelta(minutes=_setting_minutes(session, JOB_LEASE_MINUTES))
+        change.next_attempt_at = now + timedelta(minutes=_setting_minutes(session, MAILBOX_CHANGE_LEASE_MINUTES))
         change.updated_at = now
         session.add(change)
         _audit(session, AUDIT_ACTOR, change, change.state, f"attempt {change.attempts}")
@@ -609,10 +614,13 @@ def run_mailbox_changes(session: Session, now: Optional[datetime] = None) -> int
     now = clock()
     handled = 0
     skip: set[int] = set()
-    if not _anything_due(session, now):
-        return 0
+    if not is_enabled() or not _anything_due(session, now):
+        return 0  # off (MAILBOX_EXECUTOR unset) or nothing due
+    began = time.monotonic()
     get_executor()  # raises ExecutorNotAvailable before anything is claimed, so no change loses an attempt to a missing executor
     while True:
+        if handled >= MAX_PER_RUN or time.monotonic() - began > MAX_RUN_SECONDS:
+            break  # a bounded run: what is left is due, and the next run takes it
         work = _claim_next(session, clock(), skip)
         if work is None:
             break
