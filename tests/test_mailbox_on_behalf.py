@@ -560,6 +560,23 @@ def test_the_admin_editor_saves_the_group_and_any_one_approver_on_a_mailbox_type
     assert any("any one approver is enough False -> True" in d for d in details)
 
 
+def test_a_mailbox_type_still_follows_the_mailbox_rules_when_the_percent_is_not_posted(client, db_session, world):
+    """#324: Percent to pass is hidden (and may be blank) without a group; the mailbox rules and the 403 check are unchanged."""
+    from tests.test_request_types import admin
+
+    admin(client, db_session)
+    base = {
+        "name": "Forward my mail", "is_active": "on", "mailbox_action": "forwarding", "pass_percent": "", "any_one_approver": "on",
+        "default_team_id": world.team.id, "default_category_id": world.category.id, "default_impact": "low", "default_urgency": "low",
+    }
+    assert client.post(f"/admin/request-types/{world.forwarding.id}", data={**base, "approval_group_id": ""}, follow_redirects=False).status_code == 303
+    db_session.refresh(world.forwarding)
+    assert world.forwarding.approval_group_id is None and world.forwarding.pass_percent == 51 and world.forwarding.mailbox_action == "forwarding"
+    assert client.post(f"/admin/request-types/{world.forwarding.id}", data={**base, "approval_group_id": world.group.id}).status_code == 400  # a group needs a percent
+    html = client.get(f"/admin/request-types?type={world.forwarding.id}").text
+    assert 'class="field pass-percent"' in html and 'name="any_one_approver" checked' in html
+
+
 # ---- Privacy: the subject access export ----------------------------------------------------------------------------------------------
 
 

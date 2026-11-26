@@ -3,7 +3,8 @@
 
 import re
 
-from app.models import RequestTypeQuestion
+from app.models import RequestType, RequestTypeQuestion
+from app.settings_store import APPROVAL_DEFAULT_PASS_PERCENT, get_setting
 from sqlmodel import select
 from tests.test_canned import admin, make as make_canned
 from tests.test_request_types import make
@@ -97,3 +98,43 @@ def test_a_query_value_that_means_nothing_shows_the_list(client, db_session):
                 "/admin/canned?response=99999999999", "/admin/canned?new=0"):
         page = client.get(url)
         assert page.status_code == 200 and "<form" not in page.text.split("</header>")[1].split("<table")[0], url
+
+
+# ---- Percent to pass only with an approval group (#324) ----------------------------------------------------------------------------------
+
+
+def test_the_approval_section_wraps_what_needs_a_group_and_the_percent_has_its_own_hook(client, db_session):
+    admin(client, db_session)
+    kind = make(db_session, "New starter")
+    for url in ("/admin/request-types?new=1", f"/admin/request-types?type={kind.id}"):
+        html = client.get(url).text
+        wrapper = re.search(r'<div class="needs-group">(.*?)</div>', html, re.S).group(1)
+        for name in ("pass_percent", "subrequests_need_own_approval", "any_one_approver", "approvers_may_self_approve"):
+            assert f'name="{name}"' in wrapper
+        assert 'name="approval_group_id"' not in wrapper and 'class="field pass-percent"' in wrapper
+        assert " required" not in re.search(r'<input type="number" name="pass_percent"[^>]*>', html).group(0)
+    css = open("app/static/styles.css", encoding="utf-8").read()
+    assert 'option[value=""]:checked) .needs-group { display: none; }' in css and "any_one_approver" in css
+
+
+def test_without_a_group_a_blank_percent_keeps_the_stored_value_and_a_new_type_gets_the_default(client, db_session):
+    admin(client, db_session)
+    created = client.post("/admin/request-types", data={"name": "Draft", "approval_group_id": "", "pass_percent": ""}, follow_redirects=False)
+    assert created.status_code == 303
+    draft = db_session.exec(select(RequestType).where(RequestType.name == "Draft")).one()
+    assert draft.pass_percent == get_setting(db_session, APPROVAL_DEFAULT_PASS_PERCENT) and draft.approval_group_id is None
+    kind = make(db_session, "Laptop", pass_percent=70)
+    saved = client.post(f"/admin/request-types/{kind.id}", data={"name": "Laptop", "approval_group_id": "", "pass_percent": ""}, follow_redirects=False)
+    assert saved.status_code == 303
+    db_session.expire_all()
+    assert db_session.get(RequestType, kind.id).pass_percent == 70 and db_session.get(RequestType, kind.id).approval_group_id is None
+
+
+def test_with_a_group_the_percent_is_still_required_and_held_to_1_to_100(client, db_session):
+    admin(client, db_session)
+    kind = make(db_session, "Laptop", pass_percent=70)
+    for bad in ("", "0", "101", "abc"):
+        response = client.post(f"/admin/request-types/{kind.id}", data={"name": "Laptop", "approval_group_id": kind.approval_group_id, "pass_percent": bad})
+        assert response.status_code in (400, 422), bad
+    db_session.expire_all()
+    assert db_session.get(RequestType, kind.id).pass_percent == 70

@@ -6387,6 +6387,7 @@
         "tests/test_acknowledged_backstop.py",
         "tests/test_acknowledgement.py",
         "tests/test_action_links.py",
+        "tests/test_admin_request_types_page.py",
         "tests/test_admin_settings.py",
         "tests/test_approval_inactive.py",
         "tests/test_approval_reminders.py",
