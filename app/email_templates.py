@@ -627,6 +627,57 @@ REGISTRY: dict[str, TemplateDef] = {
             sample=dict(_COMMON_SAMPLE),
         ),
         TemplateDef(
+            key="mailbox_full_access_started_target",
+            label="Mailbox change: Full access started (to the other person)",
+            description=(
+                "Sent to the person who was given Full access to someone's mailbox, once it has been made. It is the same as "
+                "'Mailbox change: started (to the other person)' for the other kinds, with a line that the mailbox can take a short "
+                "while to appear in Outlook. {change} is the sentence for the kind of change."
+            ),
+            subject_default="Mailbox access from {owner}",
+            subject_placeholders={"owner": "the mailbox owner's name"},
+            body_default=(
+                "{change}, until {until}.\n\nIt can take a short while to appear in Outlook.\n\n"
+                "This was set up by {owner}. If you were not expecting it, tell IT Support."
+            ),
+            body_placeholders={
+                "owner": "the mailbox owner's name", "change": "what is now in place, as a sentence",
+                "until": "when it ends, in the recipient's time zone", "kind": "what was set up (Full access)",
+            },
+            required=("until",),
+            sample={
+                "owner": "Alex Doe", "change": "You now have Full access to Alex Doe's mailbox",
+                "until": "12 Jan 2027 17:00 GMT", "kind": "Full access",
+            },
+        ),
+        TemplateDef(
+            key="mailbox_part_could_not_start_requester",
+            label="Mailbox change: one part could not start (to the mailbox owner)",
+            description=(
+                "Sent to the person whose mailbox was to be changed when one of the changes on a request that asked for two (Full "
+                "access and Send As) could not be made, after the retries. {kind} names the one that failed. It never carries the "
+                "Exchange error. It goes under the request's own subject."
+            ),
+            body_default=(
+                "We could not make the {kind} change you asked for on your mailbox, so that part has not been made. Anything else "
+                "on your request is unaffected by this. IT Support has your request {reference} and will be in touch."
+            ),
+            body_placeholders={**_COMMON, "kind": "which change could not be made (Full access or Send As)"},
+            sample={**_COMMON_SAMPLE, "kind": "Send As"},
+        ),
+        TemplateDef(
+            key="mailbox_part_cancelled_requester",
+            label="Mailbox change: one part cancelled by IT (to the mailbox owner)",
+            description=(
+                "Sent to the person whose mailbox was to be changed when an agent cancels one of the changes on a request that asked "
+                "for two (Full access and Send As) after it could not be made. {kind} names the one cancelled. It goes under the "
+                "request's own subject."
+            ),
+            body_default="IT Support has cancelled the {kind} part of your request {reference}. Nothing was changed on your mailbox for it.",
+            body_placeholders={**_COMMON, "kind": "which change was cancelled (Full access or Send As)"},
+            sample={**_COMMON_SAMPLE, "kind": "Send As"},
+        ),
+        TemplateDef(
             key="legal_privacy",
             label="Privacy page (Teams app)",
             description=(
@@ -667,6 +718,8 @@ AUDIENCE_OF: dict[str, str] = {
     "approval_declined": "requester", "approval_waived": "requester",
     "mailbox_started_requester": "requester", "mailbox_started_target": "requester", "mailbox_stopped_requester": "requester",
     "mailbox_stopped_target": "requester", "mailbox_could_not_start_requester": "requester", "mailbox_cancelled_requester": "requester",
+    "mailbox_full_access_started_target": "requester", "mailbox_part_could_not_start_requester": "requester",
+    "mailbox_part_cancelled_requester": "requester",
     "header_agent": "requester", "header_automatic": "requester", "header_reply": "requester",
     "approval_request": "agent", "approval_reminder": "agent", "approval_withdrawn": "agent",
     "emergency_password_reset": "agent", "msp_handoff": "agent", "msp_no_longer_needed": "agent",

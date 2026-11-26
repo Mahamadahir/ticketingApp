@@ -23,18 +23,20 @@
 
 <div class="rq-cols">
 <section class="rq-main" aria-label="Conversation">
-  {% if mailbox %}
-  {# The mailbox change this request made (#309), in plain words, with what the requester may still do. Each action asks first. #}
-  <section class="card rq-card" id="mailbox-change" aria-labelledby="mailbox-change-title">
-    <h2 id="mailbox-change-title">{{ mailbox.heading }} <span class="chip t-{{ mailbox.tone }}">{{ mailbox.state }}</span></h2>
+  {% for mailbox in mailboxes %}
+  {# Each mailbox change this request made (#309; Full access and Send As asked together are two, #310), in plain words, with what the
+     requester may still do. Each action asks first, and names its change. #}
+  <section class="card rq-card" id="mailbox-change{{ "" if loop.first else "-" ~ mailbox.change_id }}" aria-labelledby="mailbox-change-title-{{ mailbox.change_id }}">
+    <h2 id="mailbox-change-title-{{ mailbox.change_id }}">{{ mailbox.heading }} <span class="chip t-{{ mailbox.tone }}">{{ mailbox.state }}</span></h2>
     <dl class="dl">
       {% for label, value in mailbox.rows %}<dt>{{ label }}</dt><dd>{{ value }}</dd>{% endfor %}
     </dl>
     <p class="rq-hint">{{ mailbox.line }}</p>
     {% if mailbox.can_cancel %}
     <details class="mb-stop">
-      <summary>Cancel this request</summary>
+      <summary>{{ mailbox.cancel_summary }}</summary>
       <form method="post" action="/portal/{{ ticket.number }}/mailbox/cancel">
+        <input type="hidden" name="change_id" value="{{ mailbox.change_id }}" />
         <p>Cancel before it starts? Nothing will be changed on your mailbox.</p>
         <div class="rq-actions"><button type="submit" class="btn btn-danger">Yes, cancel it</button></div>
       </form>
@@ -42,15 +44,16 @@
     {% endif %}
     {% if mailbox.can_stop %}
     <details class="mb-stop">
-      <summary>Stop forwarding now</summary>
+      <summary>{{ mailbox.stop_summary }}</summary>
       <form method="post" action="/portal/{{ ticket.number }}/mailbox/stop">
-        <p>Stop now? Your mail goes back to arriving only in your own mailbox. IT Support will confirm by email when it has stopped.</p>
-        <div class="rq-actions"><button type="submit" class="btn btn-danger">Yes, stop forwarding</button></div>
+        <input type="hidden" name="change_id" value="{{ mailbox.change_id }}" />
+        <p>{{ mailbox.stop_text }}</p>
+        <div class="rq-actions"><button type="submit" class="btn btn-danger">{{ mailbox.stop_button }}</button></div>
       </form>
     </details>
     {% endif %}
   </section>
-  {% endif %}
+  {% endfor %}
   {% if can_comment %}
   <div class="card rq-reply{{ " rq-reply-wanted" if ticket.status.value == "awaiting_user" and is_requester else "" }}">
     <form hx-post="/portal/{{ ticket.number }}/comment" hx-encoding="multipart/form-data" hx-target="main" hx-swap="innerHTML" class="rq-form">

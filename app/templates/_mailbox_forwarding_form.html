@@ -2,11 +2,6 @@
    mailbox action `forwarding`. A plain POST (not htmx) so a refusal and the keep-a-copy confirm block come back as a page and it
    works without scripts, except choosing a person, which needs the search. The mailbox is never a field: it is whoever is signed
    in. Scripts: static/mailbox-form.js (the picker, the modal). #}
-{% macro time_select(name, selected, label) %}
-<select name="{{ name }}" aria-label="{{ label }}">
-  {% for t in quarter_times %}<option value="{{ t }}" {{ "selected" if t == selected else "" }}>{{ t }}</option>{% endfor %}
-</select>
-{% endmacro %}
 {% set f = mailbox_form %}
 <form class="nr-form card" id="mb-form" method="post" action="/portal/mailbox-change" data-zone="{{ mailbox_zone }}">
   <div class="nr-form-head">
@@ -19,45 +14,11 @@
 
   <p class="mb-mailbox"><strong>Your mailbox:</strong> {{ user.email }} <span class="nr-hint">(always the mailbox you are signed in as)</span></p>
 
-  <fieldset class="mb-fieldset" id="mb-picker">
-    <legend>Forward to</legend>
-    <input type="hidden" name="target_object_id" id="mb-oid" value="{{ f.target_object_id }}" />
-    <input type="hidden" name="target_name" id="mb-name" value="{{ f.target_name }}" />
-    <p class="mb-chosen" id="mb-chosen"{% if not f.target_object_id %} hidden{% endif %}>
-      <strong id="mb-chosen-name">{{ f.target_name }}</strong>
-      <button type="button" class="btn" id="mb-change">Choose someone else</button>
-    </p>
-    <div id="mb-search"{% if f.target_object_id %} hidden{% endif %}>
-      <label class="field">Search by name or email address
-        <input type="search" id="mb-q" name="q" autocomplete="off" maxlength="100" aria-describedby="mb-q-hint"
-               hx-get="/portal/people" hx-trigger="input changed delay:300ms, search" hx-target="#mb-results" hx-swap="innerHTML" hx-sync="this:replace" />
-      </label>
-      <p class="nr-hint" id="mb-q-hint">Only people in the organisation who have a mailbox are listed.</p>
-      <div id="mb-results" aria-live="polite"></div>
-      <noscript><p class="error">Choosing a person needs scripts switched on in your browser.</p></noscript>
-    </div>
-  </fieldset>
+  {% set picker_legend = "Forward to" %}{% include "_mailbox_picker.html" %}
 
   <label class="check"><input type="checkbox" name="keep_copy" id="mb-keep-copy" {{ "checked" if f.keep_copy else "" }} /> Keep a copy in my mailbox <span class="nr-hint">(recommended: you will still receive your mail)</span></label>
 
-  <fieldset class="mb-fieldset">
-    <legend>Start</legend>
-    <label class="mb-choice"><input type="radio" name="start_mode" value="now" {{ "checked" if f.start_mode != "later" else "" }} /> Now</label>
-    <div class="mb-row">
-      <label class="mb-choice"><input type="radio" name="start_mode" value="later" {{ "checked" if f.start_mode == "later" else "" }} /> On</label>
-      <input type="date" name="start_date" value="{{ f.start_date }}" aria-label="Start date" />
-      {{ time_select("start_time", f.start_time, "Start time") }}
-    </div>
-  </fieldset>
-
-  <fieldset class="mb-fieldset">
-    <legend>End (required)</legend>
-    <div class="mb-row">
-      <input type="date" name="end_date" id="mb-end-date" value="{{ f.end_date }}" required aria-label="End date" />
-      {{ time_select("end_time", f.end_time, "End time") }}
-    </div>
-    <p class="nr-hint">Times are in your time zone, {{ mailbox_zone }}, in 15-minute steps. Forwarding can last at most {{ mailbox_max_days }} days.</p>
-  </fieldset>
+  {% set times_what = "Forwarding" %}{% include "_mailbox_times.html" %}
 
   {% if mailbox_confirm_text %}
   {# Without scripts (or when the script did not stop the send) the same warning as the modal, on the page. #}

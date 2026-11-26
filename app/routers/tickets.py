@@ -2185,8 +2185,8 @@ def link(
 
 
 def _failed_mailbox_change(session: Session, ticket: Ticket):
-    change = mailbox_changes.change_for_ticket(session, ticket)
-    if change is None or mailbox_changes.failed_phase(change) is None:
+    change = mailbox_changes.failed_change_for_ticket(session, ticket)  # the oldest first, one at a time (#310)
+    if change is None:
         raise HTTPException(status_code=400, detail="This ticket has no mailbox change waiting for an agent")
     return change
 
@@ -2462,7 +2462,7 @@ def _render_ticket_detail(
     can_split = can_work and ticket.split_from_id is None and unfinished  # before triage too (#259): the parts are untriaged
     can_take_back = can_work and ticket.status == TicketStatus.WITH_MSP and not has_sub_tickets(session, ticket)
     can_backdate = may_backdate(ticket)
-    mailbox_change = mailbox_changes.change_for_ticket(session, ticket)
+    mailbox_change = mailbox_changes.failed_change_for_ticket(session, ticket)
     mailbox_phase = mailbox_changes.failed_phase(mailbox_change) if mailbox_change is not None else None
     chips = action_chips(
         can_work=can_work, can_note=may_add_note(user, ticket, levels), triaged=triaged, triaged_actions=triaged_actions,

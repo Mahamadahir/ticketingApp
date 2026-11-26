@@ -85,9 +85,9 @@ def _checked(session: Session, group_id: Optional[int], pass_percent: int, is_ac
 
 MAX_LEAD_DAYS = 365
 
-# The mailbox actions that have a portal form so far (#309: forwarding; #310 adds Full access and Send As). A type with
+# The mailbox actions that have a portal form so far (#309: forwarding; #310: Full access and Send As, which open the one "give someone access" form). A type with
 # another action can be saved but is not offered to anyone yet.
-PORTAL_MAILBOX_ACTIONS = ("forwarding",)
+PORTAL_MAILBOX_ACTIONS = ("forwarding", "full_access", "send_as")
 MAILBOX_ACTION_LABELS = {
     "forwarding": "Forward the person's own mail",
     "full_access": "Full access to a mailbox",

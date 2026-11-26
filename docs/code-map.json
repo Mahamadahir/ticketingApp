@@ -1197,6 +1197,7 @@
         "tests/test_inbound_mail.py",
         "tests/test_linking.py",
         "tests/test_mail_subscriptions.py",
+        "tests/test_mailbox_access.py",
         "tests/test_mailbox_changes.py",
         "tests/test_notification_dismiss.py",
         "tests/test_notification_followup.py",
@@ -1325,6 +1326,7 @@
         "tests/test_email_header.py",
         "tests/test_email_templates.py",
         "tests/test_follower_updates.py",
+        "tests/test_mailbox_access.py",
         "tests/test_msp_actions.py",
         "tests/test_resolution.py",
         "tests/test_teams_hold.py",
@@ -2051,8 +2053,10 @@
         "cancel",
         "cancel_by_requester",
         "change_for_ticket",
+        "changes_for_ticket",
         "create_mailbox_change",
         "done_by_hand",
+        "failed_change_for_ticket",
         "failed_phase",
         "max_attempts",
         "pending_change_condition",
@@ -2090,6 +2094,7 @@
       "summary": "Scheduled mailbox changes: what happens on the ticket and to the row (#307; tracker #305).",
       "tables": [],
       "tests": [
+        "tests/test_mailbox_access.py",
         "tests/test_mailbox_changes.py",
         "tests/test_portal_mailbox.py"
       ]
@@ -2122,6 +2127,7 @@
       "summary": "The only code that talks to Exchange about scheduled mailbox changes (#307; the real executor is #308).",
       "tables": [],
       "tests": [
+        "tests/test_mailbox_access.py",
         "tests/test_mailbox_changes.py",
         "tests/test_portal_mailbox.py"
       ]
@@ -2798,6 +2804,7 @@
         "tests/test_linking.py",
         "tests/test_login_lockout.py",
         "tests/test_mail_subscriptions.py",
+        "tests/test_mailbox_access.py",
         "tests/test_mailbox_changes.py",
         "tests/test_message_channel.py",
         "tests/test_messages.py",
@@ -3413,6 +3420,7 @@
         "tests/test_email_reactions.py",
         "tests/test_email_templates.py",
         "tests/test_follower_updates.py",
+        "tests/test_mailbox_access.py",
         "tests/test_mailbox_changes.py",
         "tests/test_msp_mail.py",
         "tests/test_outbound_mail.py",
@@ -3554,7 +3562,9 @@
     },
     {
       "classes": [
+        "AccessForm",
         "ChangeView",
+        "ConfirmAccess",
         "ConfirmNoCopy",
         "ForwardingForm",
         "MailboxFormError",
@@ -3563,10 +3573,13 @@
       ],
       "file": "app/portal_mailbox.py",
       "functions": [
+        "access_warning",
         "copy_off_warning",
         "read_times",
+        "submit_access",
         "submit_forwarding",
-        "view"
+        "view",
+        "views"
       ],
       "imported_by": [
         "app.routers.portal"
@@ -3586,6 +3599,7 @@
       "summary": "The portal's mailbox forms (#309; tracker #305): ask for your own mail to be forwarded to a colleague, and see and end it.",
       "tables": [],
       "tests": [
+        "tests/test_mailbox_access.py",
         "tests/test_portal_mailbox.py"
       ]
     },
@@ -4104,6 +4118,7 @@
       "tables": [],
       "tests": [
         "tests/test_approvals.py",
+        "tests/test_mailbox_access.py",
         "tests/test_portal_home.py",
         "tests/test_portal_mailbox.py",
         "tests/test_portal_new.py",
@@ -6311,6 +6326,7 @@
         "tests/test_inbound_mail.py",
         "tests/test_linked_identities.py",
         "tests/test_mail_subscriptions.py",
+        "tests/test_mailbox_access.py",
         "tests/test_mailbox_changes.py",
         "tests/test_msp.py",
         "tests/test_msp_actions.py",
@@ -8243,6 +8259,7 @@
     "tests/test_linking.py",
     "tests/test_login_lockout.py",
     "tests/test_mail_subscriptions.py",
+    "tests/test_mailbox_access.py",
     "tests/test_mailbox_changes.py",
     "tests/test_message_channel.py",
     "tests/test_message_channel_migration.py",

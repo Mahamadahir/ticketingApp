@@ -120,6 +120,7 @@ RESOLUTION_NOTE = {
     "full_access": "{target} has Full access to your mailbox until {until}",
     "send_as": "{target} can send email as you until {until}",
 }
+STARTED_TARGET_KEY = {"full_access": "mailbox_full_access_started_target"}  # the one kind whose email says more (Outlook can be slow)
 KIND_WORDS = {"forwarding": "mail forwarding", "full_access": "Full access", "send_as": "Send As"}
 
 
@@ -176,6 +177,23 @@ def change_for_ticket(session: Session, ticket: Ticket) -> Optional[MailboxChang
     ).first()
 
 
+def changes_for_ticket(session: Session, ticket: Ticket) -> list[MailboxChange]:
+    """Every mailbox change the request made, oldest first (one for forwarding; Full access and Send As asked together are two on
+    one ticket, #310). The incident raised for a failed removal has none of its own."""
+    return list(session.exec(select(MailboxChange).where(MailboxChange.ticket_id == ticket.id).order_by(MailboxChange.id)).all())
+
+
+def failed_change_for_ticket(session: Session, ticket: Ticket) -> Optional[MailboxChange]:
+    """The oldest change on the request (or on the incident raised for its failed removal) that is waiting for an agent. An agent
+    settles them one at a time: the next one shows once this one is dealt with."""
+    return session.exec(
+        select(MailboxChange)
+        .where(or_(MailboxChange.ticket_id == ticket.id, MailboxChange.incident_ticket_id == ticket.id), MailboxChange.state == MAILBOX_FAILED)
+        .order_by(MailboxChange.id)
+        .limit(1)
+    ).first()
+
+
 def failed_phase(change: MailboxChange) -> Optional[str]:
     """"start" or "removal" for a change in `failed`, else None. A change that was never applied failed at the start."""
     if change.state != MAILBOX_FAILED:
@@ -211,7 +229,9 @@ def schedule_ticket(session: Session, ticket: Ticket, change: MailboxChange) -> 
     ticket.due_set_by_hand = False
     session.add(ticket)
     set_status(session, ticket, TicketStatus.SCHEDULED, "system", detail="waiting for the mailbox change to start")
-    if _aware(change.starts_at) > _aware(ticket.created_at):
+    if ticket.sla_starts_at is not None and _aware(ticket.sla_starts_at) == _aware(change.starts_at):
+        pass  # a second change on the same request (Full access and Send As together) starts at the same moment: the clock is set
+    elif _aware(change.starts_at) > _aware(ticket.created_at):
         try:
             start_clock_at(session, ticket, change.starts_at, "system")
         except SlaStartError:
@@ -268,10 +288,42 @@ def create_mailbox_change(
 # ---- The ticket side of each outcome -------------------------------------------------------------------------------
 
 
-def _resolve(session: Session, ticket: Ticket, note: str, actor: Optional[User]) -> bool:
+def _others(session: Session, ticket: Ticket, change: MailboxChange) -> list[MailboxChange]:
+    """The other changes the same request made (Full access and Send As asked together, #310), with this one's state saved first."""
+    session.flush()
+    return [other for other in changes_for_ticket(session, ticket) if other.id != change.id]
+
+
+def _unsettled(others: list[MailboxChange]) -> bool:
+    """Whether any of these is still to be made or waiting for an agent to make it: the request is not done while one is."""
+    return any(o.state in (MAILBOX_SCHEDULED, MAILBOX_APPLYING) or (o.state == MAILBOX_FAILED and o.applied_at is None) for o in others)
+
+
+def _applied_note(session: Session, change: MailboxChange, others: list[MailboxChange]) -> str:
+    """The resolution note: one line for each change that was made, this one and the others, oldest first."""
+    made = sorted([change] + [o for o in others if o.applied_at is not None and o.state != MAILBOX_CANCELLED], key=lambda c: c.id)
+    lines = []
+    for item in made:
+        values = _lines(item, session.get(Ticket, item.ticket_id), session)
+        lines.append(RESOLUTION_NOTE.get(item.kind, "{target}: {kind}").format(target=values["target"], until=values["until_owner"]))
+    return ". ".join(lines)
+
+
+def _cancelled_part_note(session: Session, change: MailboxChange, others: list[MailboxChange]) -> str:
+    """The resolution note for a request with several changes when one was dropped: it says which, and what is in place instead."""
+    word = KIND_WORDS.get(change.kind, change.kind)
+    made = [o for o in others if o.applied_at is not None and o.state != MAILBOX_CANCELLED]
+    text = f"The {word} part of this request was cancelled, so nothing was changed for it."
+    return text + (" " + _applied_note(session, made[0], made[1:]) + "." if made else "")
+
+
+def _resolve(session: Session, ticket: Ticket, note: str, actor: Optional[User], others: Optional[list[MailboxChange]] = None) -> bool:
     """Resolves the request with `note` as its resolution, no resolution email (the started or cancelled notice is the email).
-    A ticket that is already finished, or cannot be resolved now, is left as it is."""
+    A ticket that is already finished, or cannot be resolved now, is left as it is, and so is one whose other changes (`others`,
+    from `_others`) are not all settled yet: it resolves when the last one has been made."""
     if ticket.status in FINISHED_STATUSES:
+        return False
+    if others and _unsettled(others):
         return False
     try:
         resolve_ticket(session, ticket, actor, note, send_email=False)
@@ -299,9 +351,10 @@ def _on_applied(session: Session, change: MailboxChange, ticket: Ticket, now: da
     change.updated_at = now
     session.add(change)
     values = _lines(change, ticket, session)
-    note = RESOLUTION_NOTE.get(change.kind, "{target}: {kind}").format(target=values["target"], until=values["until_owner"])
+    others = _others(session, ticket, change)
+    note = _applied_note(session, change, others)
     record_event(session, ticket, EVENT_STARTED, actor.email if actor else "system", to_value=change.kind, detail=("done by hand" if actor else None))
-    _resolve(session, ticket, note, actor)
+    _resolve(session, ticket, note, actor, others)
     body = render_template(
         session, "mailbox_started_requester",
         {
@@ -310,7 +363,7 @@ def _on_applied(session: Session, change: MailboxChange, ticket: Ticket, now: da
         },
     ).body
     record_notice(session, ticket, body)
-    _tell_target(session, change, ticket, "mailbox_started_target", STARTED_TARGET, values)
+    _tell_target(session, change, ticket, STARTED_TARGET_KEY.get(change.kind, "mailbox_started_target"), STARTED_TARGET, values)
 
 
 def _on_removed(session: Session, change: MailboxChange, ticket: Ticket, now: datetime, actor: Optional[User] = None) -> None:
@@ -335,7 +388,7 @@ def _internal_note(change: MailboxChange, phase: str, now: datetime) -> str:
     return (
         f"The mailbox change could not be {'made' if phase == 'start' else 'removed'}. This note is for the team: the requester "
         f"has not been shown the Exchange message.\n"
-        f"What was attempted: {what} {KIND_WORDS.get(change.kind, change.kind)} on {change.owner_address} for {change.target_address}"
+        f"What was attempted (change {change.id}, {KIND_WORDS.get(change.kind, change.kind)}): {what} {KIND_WORDS.get(change.kind, change.kind)} on {change.owner_address} for {change.target_address}"
         + (f" (keep a copy: {'yes' if change.keep_copy else 'no'})" if change.kind == "forwarding" else "")
         + f"; it was to run from {_aware(change.starts_at):%Y-%m-%d %H:%M} UTC to {_aware(change.ends_at):%Y-%m-%d %H:%M} UTC.\n"
         f"When: {now:%Y-%m-%d %H:%M} UTC. Attempts: {change.attempts}. Error category: {change.last_error_category or 'none'}.\n"
@@ -355,7 +408,8 @@ def _on_start_failed(session: Session, change: MailboxChange, ticket: Ticket, no
     internal note only, and the requester is told plainly (once) that nothing was changed."""
     change.state, change.next_attempt_at, change.updated_at = MAILBOX_FAILED, None, now
     session.add(change)
-    told_before = _event_count(session, ticket, EVENT_START_FAILED) > 0
+    told_before = _event_count(session, ticket, EVENT_START_FAILED, change.kind) > 0
+    several = len(_others(session, ticket, change)) > 0
     record_event(session, ticket, EVENT_START_FAILED, "system", to_value=change.kind, detail=f"{change.last_error_category}, {change.attempts} attempts")
     if ticket.status not in FINISHED_STATUSES and ticket.status not in (TicketStatus.OPEN, TicketStatus.AWAITING_APPROVAL):
         # Whatever an agent moved it to meanwhile (On hold, Awaiting user, With MSP): it goes back to the queue the team watches.
@@ -364,17 +418,24 @@ def _on_start_failed(session: Session, change: MailboxChange, ticket: Ticket, no
         set_assignee(session, ticket, None, None)
     record_system_note(session, ticket, _internal_note(change, "start", now))
     if not told_before:  # a second final failure (after Try again) does not email the requester again
-        body = render_template(session, "mailbox_could_not_start_requester", ticket_values(ticket)).body
+        if several:  # one of two changes on the request: say which, and that the other is not affected by it
+            body = render_template(
+                session, "mailbox_part_could_not_start_requester", {**ticket_values(ticket), "kind": KIND_WORDS.get(change.kind, change.kind)}
+            ).body
+        else:
+            body = render_template(session, "mailbox_could_not_start_requester", ticket_values(ticket)).body
         record_notice(session, ticket, body)
     notify_mailbox_change_failed(
         session, ticket, f"{REF} {ticket.subject}: the scheduled mailbox change could not be made, so the request is back in the team's queue"
     )
 
 
-def _event_count(session: Session, ticket: Ticket, event_type: str) -> int:
-    return session.exec(
-        select(func.count()).select_from(TicketEvent).where(TicketEvent.ticket_id == ticket.id, TicketEvent.event_type == event_type)
-    ).one()
+def _event_count(session: Session, ticket: Ticket, event_type: str, kind: Optional[str] = None) -> int:
+    """How many events of this type the ticket has, for one kind of change when `kind` is given (the event's to_value)."""
+    query = select(func.count()).select_from(TicketEvent).where(TicketEvent.ticket_id == ticket.id, TicketEvent.event_type == event_type)
+    if kind is not None:
+        query = query.where(TicketEvent.to_value == kind)
+    return session.exec(query).one()
 
 
 def _incident_requester() -> str:
@@ -480,7 +541,7 @@ def _claim_next(session: Session, now: datetime, skip: set[int]) -> Optional[_Wo
             session.add(change)
             _audit(session, AUDIT_ACTOR, change, "cancelled", "the end time passed before the change could start")
             record_event(session, ticket, EVENT_CANCELLED, "system", to_value=change.kind, detail="the end time passed before it could start")
-            _resolve(session, ticket, "The time for this change passed before it could be made, so nothing was changed.", None)
+            _resolve(session, ticket, "The time for this change passed before it could be made, so nothing was changed.", None, _others(session, ticket, change))
             session.commit()
             continue
         operation = "apply" if starting else "remove"
@@ -708,8 +769,16 @@ def cancel(session: Session, change: MailboxChange, actor: User, now: Optional[d
     session.add(change)
     _audit(session, actor.email, change, "cancelled", "by an agent")
     record_event(session, ticket, EVENT_CANCELLED, actor.email, to_value=change.kind, detail="by an agent")
-    _resolve(session, ticket, "This request was cancelled by IT Support. Nothing was changed on your mailbox.", actor)
-    body = render_template(session, "mailbox_cancelled_requester", ticket_values(ticket)).body
+    others = _others(session, ticket, change)
+    if others:  # one of several changes on the request: say which was dropped; the others carry on and settle the request
+        word = KIND_WORDS.get(change.kind, change.kind)
+        _resolve(session, ticket, _cancelled_part_note(session, change, others), actor, others)
+        body = render_template(
+            session, "mailbox_part_cancelled_requester", {**ticket_values(ticket), "kind": word}
+        ).body
+    else:
+        _resolve(session, ticket, "This request was cancelled by IT Support. Nothing was changed on your mailbox.", actor)
+        body = render_template(session, "mailbox_cancelled_requester", ticket_values(ticket)).body
     record_notice(session, ticket, body)
 
 
@@ -729,7 +798,9 @@ def cancel_by_requester(session: Session, change: MailboxChange, actor_email: st
     session.add(change)
     _audit(session, actor_email, change, "cancelled", "by the requester before the start")
     record_event(session, ticket, EVENT_CANCELLED, actor_email, to_value=change.kind, detail="by the requester")
-    _resolve(session, ticket, "You cancelled this request before it started, so nothing was changed.", None)
+    others = _others(session, ticket, change)
+    note = _cancelled_part_note(session, change, others) if others else "You cancelled this request before it started, so nothing was changed."
+    _resolve(session, ticket, note, None, others)
 
 
 def stop_now(session: Session, change: MailboxChange, actor_email: str, now: Optional[datetime] = None) -> None:

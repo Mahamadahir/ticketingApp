@@ -228,8 +228,9 @@ def test_a_post_while_the_feature_is_off_shows_not_available_and_writes_nothing(
     assert no_change(db_session)
 
 
-def test_only_forwarding_has_a_form_so_other_actions_are_not_offered(client, db_session, world):
+def test_an_action_without_a_portal_form_is_not_offered(client, db_session, world, monkeypatch):
     signed_in(client, db_session)
+    monkeypatch.setattr("app.request_types.PORTAL_MAILBOX_ACTIONS", ("forwarding",))  # as before #310
     world.type.mailbox_action = "send_as"
     db_session.add(world.type)
     db_session.commit()

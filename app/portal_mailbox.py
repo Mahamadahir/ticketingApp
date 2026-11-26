@@ -20,7 +20,7 @@ import logging
 from sqlmodel import Session, select
 
 from app import identity
-from app.mailbox_changes import MailboxChangeError, change_for_ticket, create_mailbox_change, failed_phase
+from app.mailbox_changes import MailboxChangeError, changes_for_ticket, create_mailbox_change, failed_phase
 from app.mailbox_executor import is_enabled
 from app.models import (
     MAILBOX_ACTIVE, MAILBOX_APPLYING, MAILBOX_CANCELLED, MAILBOX_ENDED, MAILBOX_FAILED, MAILBOX_REMOVING, MAILBOX_SCHEDULED,
@@ -37,6 +37,8 @@ QUARTER_HOUR = 15
 QUARTER_TIMES = [f"{hour:02d}:{minute:02d}" for hour in range(24) for minute in range(0, 60, QUARTER_HOUR)]
 NOW, LATER = "now", "later"
 
+ACCESS_ACTIONS = ("full_access", "send_as")  # a request type with either of these opens the one "give someone access" form
+
 NOT_AVAILABLE = "Forwarding your mail is not available right now. Please contact IT Support."
 
 
@@ -46,6 +48,11 @@ class MailboxFormError(ValueError):
 
 class TargetRefused(MailboxFormError):
     """The chosen person cannot be used: the form forgets them, so the person is asked to choose again."""
+
+
+class ConfirmAccess(MailboxFormError):
+    """Everything else is fine but access to the mailbox has not been confirmed (#310): the warning always comes first, so this
+    is the answer to every request that does not carry `confirm_access`."""
 
 
 class ConfirmNoCopy(MailboxFormError):
@@ -68,6 +75,15 @@ class ForwardingForm:
     confirm_no_copy: bool = False
 
 
+@dataclass
+class AccessForm(ForwardingForm):
+    """The "give someone access to my mailbox" form (#310): the same person and times as forwarding, and which permissions."""
+
+    full_access: bool = False
+    send_as: bool = False
+    confirm_access: bool = False
+
+
 @dataclass(frozen=True)
 class Times:
     starts_at: datetime
@@ -82,7 +98,7 @@ def _quarter(text: str, what: str) -> str:
     return text
 
 
-def read_times(session: Session, user: User, form: ForwardingForm, now: Optional[datetime] = None) -> Times:
+def read_times(session: Session, user: User, form: ForwardingForm, now: Optional[datetime] = None, what: str = "Forwarding") -> Times:
     """The start and end as UTC, from the dates and quarter-hour times typed in the person's own zone. Refuses a time that is not
     a quarter hour or does not exist (the clocks skip it), a start already past (Now is the way to start straight away), an end
     that is not after the start and a span over the `mailbox_change_max_days` setting."""
@@ -98,7 +114,7 @@ def read_times(session: Session, user: User, form: ForwardingForm, now: Optional
         else:
             starts_at = now
         if not form.end_date.strip():
-            raise MailboxFormError("Choose the end date: forwarding always has an end")
+            raise MailboxFormError(f"Choose the end date: {what.lower()} always has an end")
         ends_at = parse_local_moment(f"{form.end_date.strip()}T{_quarter(form.end_time, 'end')}", zone)
     except MomentError as error:
         raise MailboxFormError(str(error))
@@ -106,7 +122,7 @@ def read_times(session: Session, user: User, form: ForwardingForm, now: Optional
         raise MailboxFormError("The end must be after the start")
     longest = count_setting(session, MAILBOX_CHANGE_MAX_DAYS)
     if ends_at - starts_at > timedelta(days=longest):
-        raise MailboxFormError(f"Forwarding can last at most {longest} days. Choose an earlier end")
+        raise MailboxFormError(f"{what} can last at most {longest} days. Choose an earlier end")
     return Times(starts_at, ends_at, form.start_mode != LATER)
 
 
@@ -140,7 +156,7 @@ def submit_forwarding(
         raise TargetRefused(str(error))
     times = read_times(session, user, form, now)
     zone = zone_for_user(session, user)
-    if _overlapping(session, user, times):
+    if _overlapping(session, user, times, "forwarding"):
         raise MailboxFormError(
             "You already have forwarding set up for some of that time. Cancel or stop it on its request page first, or choose times that do not overlap"
         )
@@ -165,17 +181,91 @@ def submit_forwarding(
     return ticket
 
 
-def _overlapping(session: Session, user: User, times: Times) -> bool:
-    """Whether this person already has forwarding that is waiting, starting, on or stopping at any time in the same span. Exchange
-    holds one forwarding setting per mailbox, so a second would overwrite the first and the first one's removal would switch the
-    second off early. (It also stops a double click making two.)"""
+def _overlapping(session: Session, user: User, times: Times, kind: str, target_address: Optional[str] = None) -> bool:
+    """Whether this person already has a change of this kind that is waiting, starting, on or stopping at any time in the same span.
+    Exchange holds one forwarding setting per mailbox, so a second would overwrite the first and the first one's removal would
+    switch the second off early. For Full access and Send As (`target_address` given) it is the same permission for the same
+    other person: the first one's removal would take the second one's away early. (It also stops a double click making two.)"""
     live = (MAILBOX_SCHEDULED, MAILBOX_APPLYING, MAILBOX_ACTIVE, MAILBOX_REMOVING)
-    return session.exec(
-        select(MailboxChange.id).where(
-            MailboxChange.owner_address == user.email.lower(), MailboxChange.kind == "forwarding", MailboxChange.state.in_(live),
-            MailboxChange.starts_at < times.ends_at, MailboxChange.ends_at > times.starts_at,
+    query = select(MailboxChange.id).where(
+        MailboxChange.owner_address == user.email.lower(), MailboxChange.kind == kind, MailboxChange.state.in_(live),
+        MailboxChange.starts_at < times.ends_at, MailboxChange.ends_at > times.starts_at,
+    )
+    if target_address is not None:
+        query = query.where(MailboxChange.target_address == target_address.strip().lower())
+    return session.exec(query).first() is not None
+
+
+# ---- Giving someone access to my mailbox (#310) ------------------------------------------------------------------
+
+ACCESS_LABELS = {"full_access": "Full access", "send_as": "Send As"}
+ACCESS_NOT_AVAILABLE = "Giving someone access to your mailbox is not available right now. Please contact IT Support."
+
+
+def access_warning(name: str, kinds: list[str], until: str) -> str:
+    """The words of the access warning, shown by the modal (the script builds the same sentences), the no-script confirm block
+    and the refusal. One sentence for each permission chosen."""
+    parts = []
+    if "full_access" in kinds:
+        parts.append(f"{name} will be able to read all mail already in your mailbox.")
+    if "send_as" in kinds:
+        parts.append(f"{name} will be able to send email that appears to come from you.")
+    return " ".join(parts) + f" This lasts until {until}."
+
+
+def _access_subject(person: Person) -> str:
+    return f"Give {person.name} access to my mailbox"[:MAX_SUBJECT_LENGTH]
+
+
+def _access_description(person: Person, kinds: list[str], times: Times, zone: str) -> str:
+    start = "now" if times.starts_now else f"from {format_moment(times.starts_at, zone)}"
+    words = " and ".join(ACCESS_LABELS[k] for k in kinds)
+    return f"Please give {person.name} ({person.mail}) {words} on my mailbox {start} until {format_moment(times.ends_at, zone)}."
+
+
+def submit_access(
+    session: Session, user: User, request_type: RequestType, form: AccessForm, now: Optional[datetime] = None,
+) -> Ticket:
+    """Raises one request and writes one change for each permission chosen (Full access, Send As) on the signed-in person's own
+    mailbox, so each is made, fails and is removed on its own. The order is `submit_forwarding`'s: the person, the choice, the times,
+    the overlap, then the warning (always: `confirm_access` is required, so every other refusal is shown first), then the ticket
+    and the changes. Raises MailboxFormError (ConfirmAccess for the warning) with nothing written. Does not commit."""
+    if request_type.mailbox_action not in ACCESS_ACTIONS or not is_enabled():
+        raise MailboxFormError(ACCESS_NOT_AVAILABLE)
+    try:
+        person = resolve(session, user, form.target_object_id)
+    except DirectoryError as error:
+        raise TargetRefused(str(error))
+    kinds = [kind for kind, chosen in (("full_access", form.full_access), ("send_as", form.send_as)) if chosen]
+    if not kinds:
+        raise MailboxFormError("Choose Full access, Send As, or both")
+    times = read_times(session, user, form, now, what="Access")
+    zone = zone_for_user(session, user)
+    for kind in kinds:
+        if _overlapping(session, user, times, kind, person.mail):
+            raise MailboxFormError(
+                f"{person.name} already has {ACCESS_LABELS[kind]} on your mailbox for some of that time. Cancel or stop it on its "
+                "request page first, or choose times that do not overlap"
+            )
+    if not form.confirm_access:
+        raise ConfirmAccess(access_warning(person.name, kinds, format_moment(times.ends_at, zone)))
+    try:
+        ticket = raise_ticket(
+            session, user, subject=_access_subject(person), description=_access_description(person, kinds, times, zone),
+            request_type=request_type,
         )
-    ).first() is not None
+        session.flush()
+        for kind in kinds:
+            create_mailbox_change(
+                session, ticket, kind=kind, owner_address=user.email, target_address=person.mail, starts_at=times.starts_at,
+                ends_at=times.ends_at, created_by=user.email, owner_object_id=user.entra_object_id, target_object_id=person.object_id,
+            )
+    except RaiseError as error:
+        raise MailboxFormError(str(error))
+    except MailboxChangeError as error:
+        log.warning("mailbox change refused for %s: %s", user.email, error)  # the detail is for the log, not the requester
+        raise MailboxFormError("This request could not be set up right now. Please contact IT Support.")
+    return ticket
 
 
 # ---- The request page ---------------------------------------------------------------------------------------------
@@ -193,25 +283,28 @@ STATE_LABELS = {
 @dataclass
 class ChangeView:
     heading: str
+    change_id: int = 0
     rows: list[tuple[str, str]] = field(default_factory=list)
     state: str = ""
     tone: str = "gray"
     line: str = ""
     can_cancel: bool = False
     can_stop: bool = False
+    # What the stop step says (it differs per kind: forwarding stops "forwarding", the others remove the access).
+    stop_summary: str = "Stop forwarding now"
+    stop_text: str = "Stop now? Your mail goes back to arriving only in your own mailbox. IT Support will confirm by email when it has stopped."
+    stop_button: str = "Yes, stop forwarding"
+    cancel_summary: str = "Cancel this request"
 
 
 def _aware(moment: datetime) -> datetime:
     return moment if moment.tzinfo is not None else moment.replace(tzinfo=timezone.utc)
 
 
-def view(session: Session, ticket: Ticket, user: User, now: Optional[datetime] = None) -> Optional[ChangeView]:
-    """The mailbox change this request made, in plain words for its requester; None for any other ticket (and for the incident
-    raised for a failed removal, which is the team's, not the requester's). Only the person whose mailbox it is sees it."""
-    change = change_for_ticket(session, ticket)
-    if change is None or change.ticket_id != ticket.id or change.owner_address not in identity.requester_emails(user):
-        return None
-    now = now or datetime.now(timezone.utc)
+HEADINGS = {"forwarding": "Forwarding my mail", "full_access": "Full access to my mailbox", "send_as": "Send As on my mailbox"}
+
+
+def _view_of(session: Session, change: MailboxChange, user: User, now: datetime) -> ChangeView:
     zone = zone_for_user(session, user)
     person = identity.person_for_address(session, change.target_address)
     target = f"{person.display_name} ({change.target_address})" if person is not None and person.display_name else change.target_address
@@ -222,7 +315,7 @@ def view(session: Session, ticket: Ticket, user: User, now: Optional[datetime] =
     else:
         label, tone = STATE_LABELS.get(change.state, (change.state.replace("_", " ").capitalize(), "gray"))
     starts, ends = format_moment(change.starts_at, zone), format_moment(change.ends_at, zone)
-    result = ChangeView(heading="Forwarding my mail", state=label, tone=tone)
+    result = ChangeView(heading=HEADINGS.get(change.kind, "Mailbox change"), change_id=change.id or 0, state=label, tone=tone)
     if change.kind == "forwarding":
         result.rows = [
             ("Forwarded to", target),
@@ -230,8 +323,16 @@ def view(session: Session, ticket: Ticket, user: User, now: Optional[datetime] =
             ("From", starts), ("Until", ends),
         ]
     else:
-        result.heading = "Mailbox change"
-        result.rows = [("With", target), ("From", starts), ("Until", ends)]
+        word = ACCESS_LABELS.get(change.kind, "Access")
+        result.rows = [("Given to", target), ("From", starts), ("Until", ends)]
+        result.stop_summary = f"Remove {word} now"
+        result.stop_text = (
+            f"Remove {word} now? {person.display_name if person is not None and person.display_name else change.target_address} "
+            "will no longer have it. IT Support will confirm by email when it has been removed."
+        )
+        result.stop_button = f"Yes, remove {word}"
+        result.cancel_summary = f"Cancel {word}"
+    noun = "forwarding" if change.kind == "forwarding" else "access"
     if change.state in (MAILBOX_SCHEDULED, MAILBOX_APPLYING):
         result.line = f"This will start at {starts} and end at {ends}."
     elif change.state == MAILBOX_ACTIVE:
@@ -243,7 +344,22 @@ def view(session: Session, ticket: Ticket, user: User, now: Optional[datetime] =
     elif change.state == MAILBOX_FAILED and phase == "start":
         result.line = "IT Support could not set this up. Nothing was changed on your mailbox, and the team has been told."
     else:
-        result.line = "This is being stopped."
+        result.line = f"This {noun} is being stopped."
     result.can_cancel = change.state == MAILBOX_SCHEDULED and _aware(change.starts_at) > now
     result.can_stop = change.state == MAILBOX_ACTIVE
     return result
+
+
+def views(session: Session, ticket: Ticket, user: User, now: Optional[datetime] = None) -> list[ChangeView]:
+    """The mailbox changes this request made, in plain words for its requester, oldest first (one for forwarding; Full access and
+    Send As asked together are two, each with its own state and buttons). Empty for any other ticket (and for the incident raised
+    for a failed removal, which is the team's, not the requester's). Only the person whose mailbox it is sees them."""
+    now = now or datetime.now(timezone.utc)
+    mine = identity.requester_emails(user)
+    return [_view_of(session, change, user, now) for change in changes_for_ticket(session, ticket) if change.owner_address in mine]
+
+
+def view(session: Session, ticket: Ticket, user: User, now: Optional[datetime] = None) -> Optional[ChangeView]:
+    """The first of `views`, or None."""
+    found = views(session, ticket, user, now)
+    return found[0] if found else None

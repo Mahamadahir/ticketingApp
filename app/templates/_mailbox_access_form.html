@@ -1,0 +1,59 @@
+{# The portal's "give someone access to my mailbox" form (#310), shown on New request in place of the ordinary form when the chosen
+   kind has the mailbox action `full_access` or `send_as`. Like the forwarding form it is a plain POST and the mailbox is never a
+   field. The warning is ALWAYS shown (the server refuses until `confirm_access=1`): the modal with scripts (static/mailbox-form.js,
+   `data-warn="access"`), the confirm block without. Each permission ticked becomes its own change on the one request. #}
+{% set f = mailbox_form %}
+<form class="nr-form card" id="mb-form" method="post" action="/portal/mailbox-change" data-zone="{{ mailbox_zone }}" data-warn="access">
+  <div class="nr-form-head">
+    <h2>2. {{ chosen_title }}</h2>
+    <p class="nr-hint">Give a colleague access to your mailbox for the time you choose. You can remove it early from the request page.</p>
+  </div>
+  <input type="hidden" name="request_type_id" value="{{ chosen.id }}" />
+
+  {% if mailbox_error %}<p class="error" id="mb-error" role="alert">{{ mailbox_error }}</p>{% endif %}
+
+  <p class="mb-mailbox"><strong>Your mailbox:</strong> {{ user.email }} <span class="nr-hint">(always the mailbox you are signed in as)</span></p>
+
+  {% set picker_legend = "Give access to" %}{% include "_mailbox_picker.html" %}
+
+  <fieldset class="mb-fieldset" id="mb-permissions">
+    <legend>What they can do (choose at least one)</legend>
+    <label class="check"><input type="checkbox" name="full_access" id="mb-full-access" {{ "checked" if f.full_access else "" }} /> Full access <span class="nr-hint">(read, move and delete everything in your mailbox, including mail already there)</span></label>
+    <label class="check"><input type="checkbox" name="send_as" id="mb-send-as" {{ "checked" if f.send_as else "" }} /> Send As <span class="nr-hint">(send email that appears to come from you)</span></label>
+  </fieldset>
+
+  {% set times_what = "Access" %}{% include "_mailbox_times.html" %}
+
+  {% if mailbox_confirm_text %}
+  {# Without scripts (or when the script did not stop the send) the same warning as the modal, on the page. #}
+  <section class="mb-confirm" id="mb-confirm-block" aria-labelledby="mb-confirm-title" role="alert">
+    <h3 class="mb-confirm-head" id="mb-confirm-title">Give access to your mailbox?</h3>
+    <div class="mb-confirm-body">
+      <p>{{ mailbox_confirm_text }}</p>
+      <div class="rq-actions">
+        <button type="submit" name="confirm_access" value="1" class="btn btn-danger">Give access</button>
+        <a class="btn" href="/portal/new?request_type_id={{ chosen.id }}">Cancel</a>
+      </div>
+      <p class="nr-hint">To change who or what, change the form above and send the request again.</p>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if not mailbox_confirm_text %}<input type="hidden" name="confirm_access" id="mb-confirm-field" value="" />{% endif %}
+  <div class="nr-actions">
+    <button type="submit" class="btn btn-primary nr-send">Send request</button>
+  </div>
+</form>
+
+<dialog class="mb-dialog" id="mb-dialog" aria-labelledby="mb-dialog-title" aria-describedby="mb-dialog-text">
+  <h2 class="mb-dialog-head" id="mb-dialog-title">Give access to your mailbox?</h2>
+  <div class="mb-dialog-body">
+    <p id="mb-dialog-text"></p>
+    <p class="mb-countdown" id="mb-countdown" role="status" aria-live="polite"></p>
+  </div>
+  <div class="mb-dialog-actions">
+    <button type="button" class="btn" id="mb-dialog-cancel" autofocus>Cancel</button>
+    <button type="button" class="btn btn-danger" id="mb-dialog-confirm" disabled>Give access</button>
+  </div>
+</dialog>
+<script src="{{ static_url('mailbox-form.js') }}" defer></script>

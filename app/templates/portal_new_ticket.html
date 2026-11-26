@@ -27,6 +27,8 @@
 
     {% if mailbox_mode == "forwarding" %}
     {% include "_mailbox_forwarding_form.html" %}
+    {% elif mailbox_mode == "access" %}
+    {% include "_mailbox_access_form.html" %}
     {% elif mailbox_mode == "unavailable" %}
     <div class="nr-form card">
       <div class="nr-form-head"><h2>2. {{ chosen_title }}</h2></div>

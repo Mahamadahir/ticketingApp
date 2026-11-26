@@ -1,0 +1,20 @@
+{# The people picker shared by the portal's mailbox forms (#309, #310): the same ids, because static/mailbox-form.js looks them up.
+   Set `picker_legend` before including it. The object id is the only thing that counts: the server fetches the person again. #}
+  <fieldset class="mb-fieldset" id="mb-picker">
+    <legend>{{ picker_legend }}</legend>
+    <input type="hidden" name="target_object_id" id="mb-oid" value="{{ f.target_object_id }}" />
+    <input type="hidden" name="target_name" id="mb-name" value="{{ f.target_name }}" />
+    <p class="mb-chosen" id="mb-chosen"{% if not f.target_object_id %} hidden{% endif %}>
+      <strong id="mb-chosen-name">{{ f.target_name }}</strong>
+      <button type="button" class="btn" id="mb-change">Choose someone else</button>
+    </p>
+    <div id="mb-search"{% if f.target_object_id %} hidden{% endif %}>
+      <label class="field">Search by name or email address
+        <input type="search" id="mb-q" name="q" autocomplete="off" maxlength="100" aria-describedby="mb-q-hint"
+               hx-get="/portal/people" hx-trigger="input changed delay:300ms, search" hx-target="#mb-results" hx-swap="innerHTML" hx-sync="this:replace" />
+      </label>
+      <p class="nr-hint" id="mb-q-hint">Only people in the organisation who have a mailbox are listed.</p>
+      <div id="mb-results" aria-live="polite"></div>
+      <noscript><p class="error">Choosing a person needs scripts switched on in your browser.</p></noscript>
+    </div>
+  </fieldset>

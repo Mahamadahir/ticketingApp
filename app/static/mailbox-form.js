@@ -1,5 +1,6 @@
-/* The portal's mailbox forms (#309): the people picker and the keep-a-copy warning (the app's first modal, docs/ui.md "Modal").
-   Without this script the form still posts: the server refuses a copy-off request without confirm_no_copy=1 and shows the same
+/* The portal's mailbox forms (#309, #310): the people picker and the warning (the app's first modal, docs/ui.md "Modal"). Two forms
+   use it: forwarding (the warning shows only when the copy is turned off) and giving access (data-warn="access": it ALWAYS shows).
+   Without this script the form still posts: the server refuses until confirm_no_copy=1 / confirm_access=1 and shows the same
    warning as a block on the page. Choosing a person needs the search, which needs scripts. */
 (function () {
   "use strict";
@@ -24,7 +25,7 @@
     chosen.hidden = false;
     search.hidden = true;
     results.innerHTML = "";
-    var next = document.getElementById("mb-keep-copy");
+    var next = document.getElementById("mb-keep-copy") || document.getElementById("mb-full-access");
     if (next) { next.focus(); }
   });
 
@@ -51,7 +52,8 @@
   var dialog = document.getElementById("mb-dialog");
   var keepCopy = document.getElementById("mb-keep-copy");
   var confirmField = document.getElementById("mb-confirm-field");
-  if (!dialog || typeof dialog.showModal !== "function" || !keepCopy || !confirmField) { return; }
+  var access = form.getAttribute("data-warn") === "access";
+  if (!dialog || typeof dialog.showModal !== "function" || !confirmField || (!access && !keepCopy)) { return; }
 
   var text = document.getElementById("mb-dialog-text");
   var countdown = document.getElementById("mb-countdown");
@@ -72,17 +74,35 @@
     return parsed.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }) + " at " + time;
   }
 
+  var action = access ? "give access" : "turn off your copy";
+
   function waitText(left) {
-    return "You can turn off your copy in " + left + (left === 1 ? " second." : " seconds.");
+    return "You can " + action + " in " + left + (left === 1 ? " second." : " seconds.");
+  }
+
+  // The same words as the server's (app/portal_mailbox.py: access_warning, copy_off_warning).
+  function warningText(name) {
+    if (!access) {
+      return "Your mail will not be kept. Mail sent to you will go only to " + name +
+        ". Nothing will arrive in your own mailbox until " + endText() + ".";
+    }
+    var parts = [];
+    if (form.elements.full_access.checked) { parts.push(name + " will be able to read all mail already in your mailbox."); }
+    if (form.elements.send_as.checked) { parts.push(name + " will be able to send email that appears to come from you."); }
+    return parts.join(" ") + " This lasts until " + endText() + ".";
   }
 
   form.addEventListener("submit", function (event) {
-    if (keepCopy.checked || confirmField.value === "1") { return; }
-    if (event.submitter && event.submitter.name === "confirm_no_copy") { return; }
+    if (confirmField.value === "1") { return; }
+    if (!access && keepCopy.checked) { return; }
+    // Nothing chosen is the server's refusal to word, not a warning about nothing.
+    if (access && !form.elements.full_access.checked && !form.elements.send_as.checked) { return; }
+    // Likewise no person or no end yet: the server says so first, and the warning comes once the rest is in order.
+    if (access && (!oid.value || !form.elements.end_date.value)) { return; }
+    if (event.submitter && /^confirm_/.test(event.submitter.name)) { return; }
     event.preventDefault();
     var name = nameField.value || "the person you chose";
-    text.textContent = "Your mail will not be kept. Mail sent to you will go only to " + name +
-      ". Nothing will arrive in your own mailbox until " + endText() + ".";
+    text.textContent = warningText(name);
     var left = WAIT_SECONDS;
     confirm.disabled = true;
     countdown.textContent = waitText(left);
@@ -96,7 +116,7 @@
       } else {
         stopTimer();
         confirm.disabled = false;
-        countdown.textContent = "You can now turn off your copy.";
+        countdown.textContent = "You can now " + action + ".";
       }
     }, 1000);
   });
