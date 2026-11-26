@@ -775,3 +775,44 @@ def test_a_final_start_failure_returns_a_ticket_an_agent_put_on_hold_to_open(db_
     fake_exchange.script("apply", OUTCOME_PERMANENT)
     run(db_session, change.starts_at + timedelta(minutes=1))
     assert reload(db_session, ticket).status == TicketStatus.OPEN
+
+
+def test_the_export_box_names_the_other_person_only_when_ticked_and_the_audit_records_the_choice(client, db_session, fake_exchange, dev_mail):
+    import io
+    import json
+    import zipfile
+
+    ticket, change = schedule(db_session)
+    run(db_session, change.starts_at + timedelta(minutes=1))
+    set_role(db_session, login_as(client, "dpo@example.com"), UserRole.SUPER_ADMIN)
+    page = client.get("/admin/data-protection").text
+    assert 'name="name_other_person"' in page and "#319" in page and 'name="name_other_person" value="true" checked' not in page
+
+    def row(**data):
+        response = client.post("/admin/data-protection/subject-access", data={"address": OWNER, **data})
+        assert response.status_code == 200
+        return json.loads(zipfile.ZipFile(io.BytesIO(response.content)).read("mailbox_changes.json"))[0]
+
+    assert row()["shared_with"] == "another person"  # the default redacts
+    assert row(name_other_person="true")["shared_with"] == TARGET
+    db_session.expire_all()
+    details = [a.detail for a in db_session.exec(select(AuditLog).where(AuditLog.entity_type == "subject_access").order_by(AuditLog.id)).all()]
+    assert details[0].endswith("other person named in mailbox changes: no") and details[1].endswith("other person named in mailbox changes: yes")
+    assert row()["mailbox"] == OWNER
+
+
+def test_asked_as_the_other_person_ticked_names_the_owner(db_session, fake_exchange, dev_mail):
+    import io
+    import json
+    import zipfile
+
+    from app.storage import get_storage
+    from app.subject_access import build_export
+
+    ticket, change = schedule(db_session)
+    admin = User(email="dpo@example.com", display_name="DPO", role=UserRole.SUPER_ADMIN)
+    db_session.add(admin)
+    db_session.commit()
+    for named, expected in ((False, "another person's"), (True, OWNER)):
+        archive = zipfile.ZipFile(io.BytesIO(build_export(db_session, get_storage(), TARGET, admin, name_other_person=named).file.read()))
+        assert json.loads(archive.read("mailbox_changes.json"))[0]["mailbox"] == expected

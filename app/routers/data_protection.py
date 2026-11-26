@@ -2,7 +2,7 @@
 (super admins always; an agent a super admin names). What goes in the export is decided in app/subject_access.py."""
 
 import re
-from typing import Iterator
+from typing import Iterator, Optional
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
@@ -56,6 +56,7 @@ def _stream(handle) -> Iterator[bytes]:
 def subject_access(
     request: Request,
     address: str = Form(""),
+    name_other_person: Optional[str] = Form(None),
     user: User = Depends(require_data_protection),
     session: Session = Depends(get_session),
     storage: Storage = Depends(get_storage),
@@ -63,7 +64,7 @@ def subject_access(
     address = address.strip().lower()
     if not EMAIL_RE.match(address) or len(address) > 254:
         return _page(request, user, session, address=address, error="Enter an email address.", status=400)
-    export = build_export(session, storage, address, user)
+    export = build_export(session, storage, address, user, name_other_person=bool(name_other_person))
     session.commit()  # the audit entry: who exported whose data
     name = "subject-access-" + re.sub(r"[^a-z0-9]+", "-", address).strip("-") + ".zip"
     return StreamingResponse(
