@@ -2,7 +2,9 @@
 runs the clean-up the fixture runs before the next test (`empty_dirty_tables`) and looks at what is left, so
 the proof does not depend on which xdist worker runs which test."""
 
+import pytest
 from sqlalchemy import create_engine, text
+from sqlmodel import SQLModel
 
 from app.database import engine
 from app.models import Team
@@ -63,19 +65,40 @@ def test_an_update_and_a_cascading_child_are_covered(db_session):
     assert count("team") == 0
 
 
-def test_a_clean_table_is_not_truncated():
-    """Only dirty tables are named in the TRUNCATE: nothing written means nothing to empty."""
-    empty_dirty_tables()
+def test_only_the_written_tables_are_emptied():
+    """The tables named in the clean-up are the written ones and their cascading children, not every table."""
+    with engine.begin() as connection:
+        connection.exec_driver_sql("INSERT INTO numbercounter (name, last_number) VALUES ('only', 1)")
+    assert empty_dirty_tables() == ["numbercounter"]
     assert empty_dirty_tables() == []
 
 
+def test_a_function_that_writes_without_naming_a_table_empties_everything():
+    with engine.begin() as connection:
+        connection.exec_driver_sql("SELECT nextval('team_id_seq')")
+    assert empty_dirty_tables() == [table.name for table in SQLModel.metadata.sorted_tables]
+    assert count("team") == 0
+
+
+def test_a_failed_clean_up_keeps_the_tables_dirty(monkeypatch):
+    with engine.begin() as connection:
+        connection.exec_driver_sql("INSERT INTO numbercounter (name, last_number) VALUES ('fail', 1)")
+    real = engine.begin
+
+    def broken():
+        raise RuntimeError("lock timeout")
+
+    monkeypatch.setattr(engine, "begin", broken)
+    with pytest.raises(RuntimeError):
+        empty_dirty_tables()
+    monkeypatch.setattr(engine, "begin", real)
+    assert empty_dirty_tables() == ["numbercounter"]
+
+
 def test_the_opt_out_does_a_full_truncate(monkeypatch):
-    names = empty_dirty_tables()
-    assert names == []
+    assert empty_dirty_tables() == []
     monkeypatch.setenv("TEST_FULL_TRUNCATE", "1")
-    full = empty_dirty_tables()
-    assert "team" in full and "user" in full and "numbercounter" in full
-    assert len(full) > 20
+    assert empty_dirty_tables() == [table.name for table in SQLModel.metadata.sorted_tables]
 
 
 def test_no_table_holds_rows_after_the_clean_up():
