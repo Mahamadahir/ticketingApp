@@ -27,6 +27,7 @@ and, after a crash, to run twice.
 import logging
 import os
 import socket
+import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -72,6 +73,7 @@ class ScheduledJobDef:
     description: str = ""  # what the job does, in plain words: shown on the Run now confirm page
     warns: tuple[str, ...] = ()  # WARN_EMAIL and/or WARN_MSP: shown as a warning on the Run now confirm page
     min_lease_minutes: int = 0  # a job whose run can take long (calls that wait for Azure) holds its lease at least this long, whatever the setting
+    background: bool = False  # run in its own thread, so a run that waits a long time (calls that wait for Azure) never holds up the other jobs of the tick
     interval_setting: Optional[str] = None  # a "minutes" setting that overrides every_seconds, so an admin can tune how often it runs
 
     def seconds(self, session: Session) -> int:
@@ -109,7 +111,7 @@ SCHEDULED_JOBS: list[ScheduledJobDef] = [
         "Makes the scheduled mailbox changes (mail forwarding, mailbox access) whose start time has come, removes those whose end "
         "has, and retries failed attempts, resolving or handing back the request ticket as it goes. Only the executor talks to "
         "Exchange. How often it runs is the setting \"Mailbox changes: how often the worker looks for due changes\".",
-        (WARN_EMAIL,), interval_setting=MAILBOX_CHANGES_MINUTES, min_lease_minutes=20,
+        (WARN_EMAIL,), interval_setting=MAILBOX_CHANGES_MINUTES, min_lease_minutes=20, background=True,
     ),
     ScheduledJobDef("msp-ack-alerts", 300, run_msp_ack_alerts, "Raises an alert for a ticket sent to the MSP that the MSP has not confirmed in time."),
     ScheduledJobDef("msp-forwards", 300, run_msp_forwards, "Forwards mail the MSP sent on a ticket, left waiting for an agent, to the user once business hours end.", (WARN_EMAIL, WARN_MSP)),
@@ -263,6 +265,9 @@ def run_claimed(
     return error is None
 
 
+_background_threads: list[threading.Thread] = []  # the running background jobs (tests join them)
+
+
 def run_due_jobs(
     jobs: Optional[Sequence[ScheduledJobDef]] = None,
     owner: Optional[str] = None,
@@ -286,7 +291,16 @@ def run_due_jobs(
             name, due = row.name, row.run_resume_at or row.next_run_at  # a requested run keeps the job's own grid
             session.commit()  # the lease is now visible to every other worker
         ran.append(name)  # never twice in one tick, even if it is due again at once
-        run_claimed(by_name[name], owner, now, due, clock)
+        if by_name[name].background:
+            # Claimed and leased above, so no other tick or worker starts it; the thread records the outcome the same way
+            # (`run_claimed` -> `_finish`), so the Scheduled jobs page shows its last run, failure and Run now as for any job.
+            thread = threading.Thread(
+                target=run_claimed, args=(by_name[name], owner, now, due, clock), name=f"job-{name}", daemon=True,
+            )
+            _background_threads[:] = [t for t in _background_threads if t.is_alive()] + [thread]
+            thread.start()
+        else:
+            run_claimed(by_name[name], owner, now, due, clock)
     return ran
 
 
