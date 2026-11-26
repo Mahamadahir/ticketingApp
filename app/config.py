@@ -62,6 +62,15 @@ class Settings(BaseSettings):
     teams_bot_app_id: str = ""
     teams_bot_tenant_id: str = ""
     teams_bot_client_secret: str = ""
+    # Scheduled mailbox changes through Azure Automation (app/mailbox_executor_azure.py). Only the worker uses them.
+    # RESOURCE_ID is the Automation account (/subscriptions/.../automationAccounts/<name>), TENANT_DOMAIN the
+    # tenant's <name>.onmicrosoft.com that the runbooks sign in to Exchange with. Neither is a secret: the worker
+    # reaches Azure Resource Manager as its managed identity. TIMEOUT is how long one runbook job may take
+    # before the answer is "no answer" (the caller then reads the mailbox, so it is not a failure by itself).
+    mailbox_automation_resource_id: str = ""
+    mailbox_tenant_domain: str = ""
+    mailbox_automation_timeout_seconds: int = 600
+    mailbox_automation_poll_seconds: int = 5
     # The public route, per caller address per minute, per replica. Teams sends from few addresses.
     rate_limit_teams_bot_per_minute: int = 600
     rate_limit_legal_per_minute: int = 60
@@ -216,6 +225,11 @@ def unsafe_setting_errors(config: Settings) -> list[str]:
         errors.append(f"APP_ROLE must be one of {', '.join(APP_ROLES)}")
     if config.mailbox_executor not in MAILBOX_EXECUTORS:
         errors.append("MAILBOX_EXECUTOR must be unset (off), fake or azure")
+    if config.mailbox_executor == "azure" and config.app_role in ("worker", "all"):
+        # Only the worker calls Azure; web and public just need the variable set so they can create a change.
+        from app.mailbox_executor_azure import azure_executor_config_errors
+
+        errors.extend(azure_executor_config_errors(config))
     if config.teams_bot_enabled and not (config.teams_bot_app_id and config.teams_bot_tenant_id):
         errors.append("TEAMS_BOT_ENABLED needs TEAMS_BOT_APP_ID and TEAMS_BOT_TENANT_ID")
     if config.teams_bot_client_secret and config.app_role == "web":

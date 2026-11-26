@@ -607,7 +607,9 @@ def test_a_result_that_arrives_after_an_agent_settled_the_change_is_dropped(db_s
 def test_fake_set_outside_dev_is_a_startup_error_but_unset_and_azure_are_not():
     base = dict(env="staging", app_role="worker", session_secret_key="a-real-secret-value-0123456789", mail_sending="off")
     assert any("MAILBOX_EXECUTOR=fake" in e for e in unsafe_setting_errors(Settings(mailbox_executor="fake", **base)))
-    assert not any("MAILBOX_EXECUTOR" in e for e in unsafe_setting_errors(Settings(mailbox_executor="azure", **base)))
+    # azure on the worker needs the Automation settings (app/mailbox_executor_azure.py); the apps that only create changes do not
+    assert any("MAILBOX_AUTOMATION_RESOURCE_ID" in e for e in unsafe_setting_errors(Settings(mailbox_executor="azure", **base)))
+    assert not any("MAILBOX_" in e for e in unsafe_setting_errors(Settings(mailbox_executor="azure", **{**base, "app_role": "web"})))
     # unset means the feature is off: the worker still starts (staging deploys on every push to main)
     assert not any("MAILBOX_EXECUTOR" in e for e in unsafe_setting_errors(Settings(mailbox_executor="", **base)))
     assert not any("MAILBOX_EXECUTOR" in e for e in unsafe_setting_errors(Settings(mailbox_executor="fake", **{**base, "env": "dev"})))
@@ -626,12 +628,12 @@ def test_unset_means_off_the_job_does_nothing_and_a_change_cannot_be_created(db_
         schedule(db_session)
 
 
-def test_the_azure_executor_is_not_built_yet_and_an_idle_run_does_not_ask_for_it(db_session, monkeypatch):
+def test_an_unconfigured_azure_executor_fails_the_run_and_an_idle_run_does_not_ask_for_it(db_session, monkeypatch):
     ticket, change = schedule(db_session)
     set_executor(None)
     monkeypatch.setattr(settings, "mailbox_executor", "azure")
     assert run(db_session, change.starts_at - timedelta(minutes=5)) == 0  # nothing due, so the missing executor is not asked for
-    with pytest.raises(Exception, match="not built yet"):
+    with pytest.raises(Exception, match="MAILBOX_AUTOMATION_RESOURCE_ID"):
         run(db_session, change.starts_at + timedelta(minutes=1))
     assert reload(db_session, change).attempts == 0  # nothing was claimed, so no attempt was used up
 

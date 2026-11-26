@@ -216,11 +216,16 @@ _executor_lock = threading.Lock()
 
 
 def make_executor(kind: str) -> MailboxExecutor:
-    """Builds the executor `MAILBOX_EXECUTOR` names. #308 replaces the `azure` branch."""
+    """Builds the executor `MAILBOX_EXECUTOR` names (`azure` is app/mailbox_executor_azure.py, #308)."""
     if kind == "fake":
         return FakeExecutor()
     if kind == "azure":
-        raise ExecutorNotAvailable("MAILBOX_EXECUTOR=azure is not built yet (#308)")
+        from app.mailbox_executor_azure import azure_executor_config_errors, executor_from_settings
+
+        errors = azure_executor_config_errors(settings)
+        if errors:
+            raise ExecutorNotAvailable("; ".join(errors))
+        return executor_from_settings(settings)
     raise ExecutorNotAvailable(f"Unknown MAILBOX_EXECUTOR {kind!r}")
 
 

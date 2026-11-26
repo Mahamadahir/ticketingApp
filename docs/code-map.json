@@ -1062,6 +1062,7 @@
         "app.mail",
         "app.mailbox_changes",
         "app.mailbox_executor",
+        "app.mailbox_executor_azure",
         "app.main",
         "app.msp",
         "app.outbox",
@@ -1085,7 +1086,9 @@
         "app.telemetry",
         "app.worker"
       ],
-      "imports": [],
+      "imports": [
+        "app.mailbox_executor_azure"
+      ],
       "module": "app.config",
       "routes": [],
       "summary": "",
@@ -1110,6 +1113,7 @@
         "tests/test_linked_identities.py",
         "tests/test_mail_subscriptions.py",
         "tests/test_mailbox_changes.py",
+        "tests/test_mailbox_executor_azure.py",
         "tests/test_mailbox_third_person.py",
         "tests/test_message_channel.py",
         "tests/test_msp.py",
@@ -2134,11 +2138,13 @@
       ],
       "imported_by": [
         "app.mailbox_changes",
+        "app.mailbox_executor_azure",
         "app.portal_mailbox",
         "app.request_types"
       ],
       "imports": [
         "app.config",
+        "app.mailbox_executor_azure",
         "app.models"
       ],
       "module": "app.mailbox_executor",
@@ -2148,8 +2154,40 @@
       "tests": [
         "tests/test_mailbox_access.py",
         "tests/test_mailbox_changes.py",
+        "tests/test_mailbox_executor_azure.py",
         "tests/test_mailbox_on_behalf.py",
         "tests/test_portal_mailbox.py"
+      ]
+    },
+    {
+      "classes": [
+        "AzureAutomationExecutor",
+        "ChangeRequest",
+        "JobRequest"
+      ],
+      "file": "app/mailbox_executor_azure.py",
+      "functions": [
+        "azure_executor_config_errors",
+        "executor_from_settings",
+        "job_request",
+        "request_from_change"
+      ],
+      "imported_by": [
+        "app.config",
+        "app.mailbox_executor"
+      ],
+      "imports": [
+        "app.config",
+        "app.mailbox_executor",
+        "app.models"
+      ],
+      "module": "app.mailbox_executor_azure",
+      "routes": [],
+      "summary": "The real route to Exchange for mailbox changes: an Azure Automation account runs a fixed runbook.",
+      "tables": [],
+      "tests": [
+        "tests/test_mailbox_executor_azure.py",
+        "tests/test_runbooks.py"
       ]
     },
     {
@@ -2469,6 +2507,7 @@
         "app.mail",
         "app.mailbox_changes",
         "app.mailbox_executor",
+        "app.mailbox_executor_azure",
         "app.main",
         "app.messages",
         "app.msp",
@@ -2827,6 +2866,7 @@
         "tests/test_mail_subscriptions.py",
         "tests/test_mailbox_access.py",
         "tests/test_mailbox_changes.py",
+        "tests/test_mailbox_executor_azure.py",
         "tests/test_mailbox_on_behalf.py",
         "tests/test_mailbox_seed_types.py",
         "tests/test_mailbox_third_person.py",
@@ -8049,9 +8089,33 @@
       "type": "str"
     },
     {
+      "default": "5",
+      "env": "MAILBOX_AUTOMATION_POLL_SECONDS",
+      "name": "mailbox_automation_poll_seconds",
+      "type": "int"
+    },
+    {
+      "default": "''",
+      "env": "MAILBOX_AUTOMATION_RESOURCE_ID",
+      "name": "mailbox_automation_resource_id",
+      "type": "str"
+    },
+    {
+      "default": "600",
+      "env": "MAILBOX_AUTOMATION_TIMEOUT_SECONDS",
+      "name": "mailbox_automation_timeout_seconds",
+      "type": "int"
+    },
+    {
       "default": "''",
       "env": "MAILBOX_EXECUTOR",
       "name": "mailbox_executor",
+      "type": "str"
+    },
+    {
+      "default": "''",
+      "env": "MAILBOX_TENANT_DOMAIN",
+      "name": "mailbox_tenant_domain",
       "type": "str"
     },
     {
@@ -8307,6 +8371,7 @@
     "tests/test_mail_subscriptions.py",
     "tests/test_mailbox_access.py",
     "tests/test_mailbox_changes.py",
+    "tests/test_mailbox_executor_azure.py",
     "tests/test_mailbox_on_behalf.py",
     "tests/test_mailbox_seed_types.py",
     "tests/test_mailbox_third_person.py",
@@ -8349,6 +8414,7 @@
     "tests/test_requester_bell.py",
     "tests/test_required_by.py",
     "tests/test_resolution.py",
+    "tests/test_runbooks.py",
     "tests/test_scheduled_jobs.py",
     "tests/test_scheduled_status.py",
     "tests/test_search.py",
