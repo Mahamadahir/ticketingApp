@@ -18,7 +18,7 @@
   <p class="job-message" role="status"><strong>{{ refusal }}</strong> Nothing was changed.</p>
   <div class="form-actions"><a class="btn" href="/admin/scheduled-jobs">Back</a></div>
   {% else %}
-  <form method="post" action="/admin/scheduled-jobs/{{ job.name }}/run" hx-boost="true">
+  <form method="post" action="/admin/scheduled-jobs/{{ job.name }}/run">
     <div class="form-actions">
       <button type="submit" class="btn btn-primary">Run {{ job.name }} now</button>
       <a class="btn" href="/admin/scheduled-jobs">Cancel</a>

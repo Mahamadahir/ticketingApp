@@ -145,6 +145,7 @@
         "record_activity"
       ],
       "imported_by": [
+        "app.admin_people",
         "app.main",
         "app.routers.admin",
         "app.routers.auth"
@@ -159,7 +160,8 @@
       "summary": "Security and request activity: who did what, from where, and what happened.",
       "tables": [],
       "tests": [
-        "tests/test_activity_log.py"
+        "tests/test_activity_log.py",
+        "tests/test_admin_users_page.py"
       ]
     },
     {
@@ -197,6 +199,47 @@
         "tests/test_admin_frame.py",
         "tests/test_mailbox_seed_types.py",
         "tests/test_notification_dismiss.py"
+      ]
+    },
+    {
+      "classes": [
+        "DrawnSection",
+        "Fact",
+        "FactValue",
+        "ListRow",
+        "PersonContext",
+        "Section"
+      ],
+      "file": "app/admin_people.py",
+      "functions": [
+        "glance",
+        "list_rows",
+        "person_chips",
+        "person_page_context",
+        "person_url",
+        "refusal_page",
+        "role_label",
+        "sections_for"
+      ],
+      "imported_by": [
+        "app.routers.admin"
+      ],
+      "imports": [
+        "app.activity",
+        "app.identity",
+        "app.linked_identities",
+        "app.models",
+        "app.permissions",
+        "app.sessions",
+        "app.status_display",
+        "app.templating"
+      ],
+      "module": "app.admin_people",
+      "routes": [],
+      "summary": "Admin > Users: a page per person (#322), built to grow.",
+      "tables": [],
+      "tests": [
+        "tests/test_admin_users_page.py"
       ]
     },
     {
@@ -1196,6 +1239,7 @@
       "tests": [
         "tests/conftest.py",
         "tests/test_access_context.py",
+        "tests/test_admin_users_page.py",
         "tests/test_anonymisation.py",
         "tests/test_approval_groups.py",
         "tests/test_approval_reminders.py",
@@ -1218,6 +1262,7 @@
         "tests/test_outbound_mail.py",
         "tests/test_portal_mailbox.py",
         "tests/test_scheduled_jobs.py",
+        "tests/test_scheduled_jobs_page.py",
         "tests/test_split_family.py",
         "tests/test_splitting.py",
         "tests/test_team_activity_cards.py",
@@ -1652,6 +1697,7 @@
         "resolve_sso_user"
       ],
       "imported_by": [
+        "app.admin_people",
         "app.approvals",
         "app.auth",
         "app.bot_cards",
@@ -1802,6 +1848,31 @@
       ]
     },
     {
+      "classes": [],
+      "file": "app/job_errors.py",
+      "functions": [
+        "outage_refusal_key",
+        "outage_sentence",
+        "run_now_key",
+        "run_now_sentence",
+        "summarise_error"
+      ],
+      "imported_by": [
+        "app.routers.admin"
+      ],
+      "imports": [
+        "app.models",
+        "app.scheduled_jobs"
+      ],
+      "module": "app.job_errors",
+      "routes": [],
+      "summary": "How the Scheduled jobs page shows a job's stored error and a Run now result (#323), and the result sentences of the",
+      "tables": [],
+      "tests": [
+        "tests/test_scheduled_jobs_page.py"
+      ]
+    },
+    {
       "classes": [
         "Job"
       ],
@@ -1887,6 +1958,7 @@
         "user_foreign_keys"
       ],
       "imported_by": [
+        "app.admin_people",
         "app.routers.admin",
         "app.routers.link_account"
       ],
@@ -1909,6 +1981,7 @@
       "summary": "Linked identities (phase 6E, #165): one person known by a second identity.",
       "tables": [],
       "tests": [
+        "tests/test_admin_users_page.py",
         "tests/test_linked_identities.py",
         "tests/test_reactions.py"
       ]
@@ -2475,6 +2548,7 @@
         "app.action_links",
         "app.activity",
         "app.admin_home",
+        "app.admin_people",
         "app.anonymisation",
         "app.approval_groups",
         "app.approval_reminders",
@@ -2503,6 +2577,7 @@
         "app.identity",
         "app.inbound",
         "app.intake",
+        "app.job_errors",
         "app.linked_identities",
         "app.linking",
         "app.mail",
@@ -2909,6 +2984,7 @@
         "tests/test_required_by.py",
         "tests/test_resolution.py",
         "tests/test_scheduled_jobs.py",
+        "tests/test_scheduled_jobs_page.py",
         "tests/test_scheduled_status.py",
         "tests/test_search.py",
         "tests/test_self_approval.py",
@@ -3425,6 +3501,7 @@
         "tests/test_admin_frame.py",
         "tests/test_admin_system_log_pages.py",
         "tests/test_outage_mode.py",
+        "tests/test_scheduled_jobs_page.py",
         "tests/test_signin_pages.py"
       ]
     },
@@ -3561,6 +3638,7 @@
       "file": "app/permissions.py",
       "functions": [],
       "imported_by": [
+        "app.admin_people",
         "app.routers.admin",
         "app.routers.data_protection",
         "app.routers.reports",
@@ -4401,6 +4479,7 @@
         "outage_off",
         "outage_on",
         "outage_page",
+        "person_page",
         "preview_email_template",
         "preview_link",
         "remove_approval_group_member",
@@ -4441,6 +4520,7 @@
       "imports": [
         "app.activity",
         "app.admin_home",
+        "app.admin_people",
         "app.approval_groups",
         "app.approvals",
         "app.audit",
@@ -4456,6 +4536,7 @@
         "app.followers",
         "app.forms",
         "app.inbound",
+        "app.job_errors",
         "app.linked_identities",
         "app.models",
         "app.msp",
@@ -4812,6 +4893,11 @@
           "handler": "create_local_user",
           "method": "POST",
           "path": "/admin/users"
+        },
+        {
+          "handler": "person_page",
+          "method": "GET",
+          "path": "/admin/users/{user_id}"
         },
         {
           "handler": "update_user",
@@ -6194,6 +6280,7 @@
       ],
       "imported_by": [
         "app.admin_home",
+        "app.job_errors",
         "app.jobs",
         "app.routers.admin",
         "app.routers.tickets",
@@ -6240,6 +6327,7 @@
         "tests/test_notification_dismiss.py",
         "tests/test_reply_files.py",
         "tests/test_scheduled_jobs.py",
+        "tests/test_scheduled_jobs_page.py",
         "tests/test_sessions.py",
         "tests/test_teams_followups.py",
         "tests/test_ticket_presence.py",
@@ -6286,6 +6374,7 @@
       ],
       "imported_by": [
         "app.activity",
+        "app.admin_people",
         "app.auth",
         "app.breakglass",
         "app.emergency",
@@ -6614,6 +6703,7 @@
         "status_tone"
       ],
       "imported_by": [
+        "app.admin_people",
         "app.routers.tickets",
         "app.team_activity",
         "app.templating"
@@ -7237,9 +7327,11 @@
       "classes": [],
       "file": "app/templating.py",
       "functions": [
+        "is_boosted",
         "is_htmx"
       ],
       "imported_by": [
+        "app.admin_people",
         "app.main",
         "app.routers.action_links",
         "app.routers.admin",
@@ -7836,13 +7928,6 @@
         "rule": "access-in-visibility"
       },
       {
-        "allowed": "Admin pages are behind require_super_admin and count or list memberships for the admin tables; there is no per-agent access decision to make.",
-        "detail": "select(TeamMembership) in a route",
-        "file": "app/routers/admin.py",
-        "in": "list_users",
-        "rule": "access-in-visibility"
-      },
-      {
         "detail": "select(Ticket) in a route",
         "file": "app/routers/admin.py",
         "in": "list_users",
@@ -8423,6 +8508,7 @@
     "tests/test_resolution.py",
     "tests/test_runbooks.py",
     "tests/test_scheduled_jobs.py",
+    "tests/test_scheduled_jobs_page.py",
     "tests/test_scheduled_status.py",
     "tests/test_search.py",
     "tests/test_security.py",

@@ -13,7 +13,7 @@
   admin can switch it off. Switching it off ends every emergency session, clears every emergency password that was used
   during the outage and emails those agents asking for a new one. Every switch is audited and tells the super admins.
 </p>
-{% if message %}<p class="outage-message" role="status">{{ message }}</p>{% endif %}
+{% if message %}<div class="notice-bar" role="status">{{ message }}</div>{% endif %}
 
 <div class="outage-cards">
   <section class="card outage-card" aria-labelledby="out-status">

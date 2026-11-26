@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Admin: Link requests{% endblock %}
+{% block content %}
+{# Admin > Users > Link requests (#322): the link review that used to sit under the list. Forms post to the existing /admin/links routes. #}
+{% set tab = "links" %}
+{% include "_users_head.html" %}
+{% if link_error %}<p class="error" role="alert">{{ link_error }}</p>{% endif %}
+
+<section class="users-links" id="linked-identities" aria-labelledby="links-title">
+  <h2 id="links-title">Linked identities</h2>
+  <p class="note">
+    Super admins see everything and hold every extra permission. Agents also work every untriaged ticket.
+    An <b>extra permission</b> lets an agent do one more admin job without being a super admin.
+  </p>
+
+  {% if pending_links %}
+  <h3>Link requests waiting for you</h3>
+  <p class="note">Someone asked to link a second identity and an agent or super admin account is involved, so it needs a super admin.</p>
+  <div class="table-box">
+  <table class="table">
+    <thead><tr><th>Address</th><th>Main account</th><th>Other account</th><th>Asked by</th><th>How shown</th><th></th></tr></thead>
+    <tbody>
+      {% for row in pending_links %}
+      <tr>
+        <td>{{ row.link.email }}</td>
+        <td>{{ row.main.email }} ({{ row.main.role.value }})</td>
+        <td>{% if row.secondary %}{{ row.secondary.email }} ({{ row.secondary.role.value }}){% else %}address only{% endif %}</td>
+        <td>{{ row.requested_by.email if row.requested_by else "" }}</td>
+        <td>{{ row.link.method|replace("_", " ") }}</td>
+        <td>
+          <form method="post" action="/admin/links/{{ row.link.id }}/approve" class="inline-form"><button type="submit" class="btn">Approve</button></form>
+          <form method="post" action="/admin/links/{{ row.link.id }}/decline" class="inline-form"><button type="submit" class="btn">Decline</button></form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="note">No link requests are waiting.</p>
+  {% endif %}
+
+  <p class="note">
+    One person known by two identities. The main account keeps everything; the other account is kept, inactive, and its
+    tickets moved to the main one. Unlinking makes it its own account again (moved tickets stay where they are).
+  </p>
+  <p class="note">
+    {% if show_aliases %}Showing old addresses kept after an email change too. <a href="/admin/users?tab=links">Hide them</a>
+    {% else %}Old addresses kept after an Entra email change are not listed. <a href="/admin/users?tab=links&amp;aliases=1">Show them</a>{% endif %}
+  </p>
+  {% if active_links %}
+  <div class="table-box">
+  <table class="table">
+    <thead><tr><th>Address</th><th>Main account</th><th>Other account</th><th>How</th><th>What moved</th><th></th></tr></thead>
+    <tbody>
+      {% for row in active_links %}
+      <tr>
+        <td>{{ row.link.email }}</td>
+        <td><a href="/admin/users/{{ row.main.id }}">{{ row.main.email }}</a></td>
+        <td>{% if row.secondary %}<a href="/admin/users/{{ row.secondary.id }}">{{ row.secondary.email }}</a>{% else %}address only{% endif %}</td>
+        <td>{{ row.link.method|replace("_", " ") }}</td>
+        <td>{{ row.link.moved_summary or "" }}</td>
+        <td><form method="post" action="/admin/links/{{ row.link.id }}/unlink" class="inline-form"><button type="submit" class="btn">Unlink</button></form></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p>None.</p>
+  {% endif %}
+  <h3>Link two accounts</h3>
+  <form method="get" action="/admin/links/preview">
+    <div class="form-grid">
+      <label class="field">Main account email <input type="email" name="main_email" required /></label>
+      <label class="field">Account to link into it <input type="email" name="other_email" required /></label>
+    </div>
+    <div class="form-actions"><button type="submit" class="btn btn-primary">Review the link</button></div>
+  </form>
+</section>
+{% endblock %}
