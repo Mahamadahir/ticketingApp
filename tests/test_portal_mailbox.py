@@ -749,3 +749,14 @@ def test_the_blocklist_setting_is_tidied_and_checked(client, db_session):
         _clean_setting_value(db_session, REGISTRY[key], "nope")
     assert _clean_setting_value(db_session, REGISTRY[key], "") == ""
     assert REGISTRY[MAILBOX_CHANGE_MAX_DAYS].default == "365" and REGISTRY[key].group == REGISTRY[MAILBOX_CHANGE_MAX_DAYS].group
+
+
+def test_the_card_is_only_for_the_person_whose_mailbox_it_is_even_on_their_ticket(client, db_session, world, friend):
+    from app import portal_mailbox
+
+    signed_in(client, db_session)
+    ticket, change = make_request(client, db_session, world)
+    owner = db_session.exec(select(User).where(User.email == OWNER)).one()
+    other = person(db_session, "other@example.com", "Other One")
+    assert portal_mailbox.view(db_session, ticket, owner) is not None
+    assert portal_mailbox.view(db_session, ticket, other) is None

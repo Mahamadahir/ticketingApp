@@ -54,6 +54,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/b5e2c8a1f903_request_type_mailbox_action.py",
+        "revision": "b5e2c8a1f903"
+      },
+      {
         "file": "migrations/versions/d7a3f9b2c614_mailbox_change.py",
         "revision": "d7a3f9b2c614"
       },
@@ -68,17 +72,13 @@
       {
         "file": "migrations/versions/e3a7c5d9b1f4_ticket_reactions.py",
         "revision": "e3a7c5d9b1f4"
-      },
-      {
-        "file": "migrations/versions/e7a2c9d4b6f1_scheduled_job_run_now.py",
-        "revision": "e7a2c9d4b6f1"
       }
     ],
-    "count": 81,
+    "count": 82,
     "heads": [
       {
-        "file": "migrations/versions/d7a3f9b2c614_mailbox_change.py",
-        "revision": "d7a3f9b2c614"
+        "file": "migrations/versions/b5e2c8a1f903_request_type_mailbox_action.py",
+        "revision": "b5e2c8a1f903"
       }
     ]
   },
@@ -1058,6 +1058,7 @@
         "app.main",
         "app.msp",
         "app.outbox",
+        "app.people_directory",
         "app.rate_limit",
         "app.reply_files",
         "app.routers.admin",
@@ -1110,6 +1111,7 @@
         "tests/test_outage_mode.py",
         "tests/test_outbound_mail.py",
         "tests/test_portal_home.py",
+        "tests/test_portal_mailbox.py",
         "tests/test_portal_new.py",
         "tests/test_portal_request.py",
         "tests/test_presence.py",
@@ -1507,6 +1509,7 @@
         "app.messages",
         "app.msp",
         "app.notifications",
+        "app.people_directory",
         "app.raising",
         "app.reopening",
         "app.routers.admin",
@@ -1586,6 +1589,7 @@
         "app.entra_check",
         "app.inbound",
         "app.mail",
+        "app.people_directory",
         "app.presence",
         "app.subscriptions",
         "app.time_zones"
@@ -1604,6 +1608,7 @@
         "tests/test_mail_subscriptions.py",
         "tests/test_msp_mail.py",
         "tests/test_outbound_mail.py",
+        "tests/test_portal_mailbox.py",
         "tests/test_presence.py",
         "tests/test_time_zones.py"
       ]
@@ -1640,7 +1645,9 @@
         "app.mailbox_changes",
         "app.msp",
         "app.notifications",
+        "app.people_directory",
         "app.person_data",
+        "app.portal_mailbox",
         "app.raising",
         "app.reactions",
         "app.reply_channel",
@@ -2056,6 +2063,8 @@
         "utcnow"
       ],
       "imported_by": [
+        "app.portal_mailbox",
+        "app.routers.portal",
         "app.routers.tickets",
         "app.scheduled_jobs"
       ],
@@ -2081,7 +2090,8 @@
       "summary": "Scheduled mailbox changes: what happens on the ticket and to the row (#307; tracker #305).",
       "tables": [],
       "tests": [
-        "tests/test_mailbox_changes.py"
+        "tests/test_mailbox_changes.py",
+        "tests/test_portal_mailbox.py"
       ]
     },
     {
@@ -2099,7 +2109,9 @@
         "set_executor"
       ],
       "imported_by": [
-        "app.mailbox_changes"
+        "app.mailbox_changes",
+        "app.portal_mailbox",
+        "app.request_types"
       ],
       "imports": [
         "app.config",
@@ -2110,7 +2122,8 @@
       "summary": "The only code that talks to Exchange about scheduled mailbox changes (#307; the real executor is #308).",
       "tables": [],
       "tests": [
-        "tests/test_mailbox_changes.py"
+        "tests/test_mailbox_changes.py",
+        "tests/test_portal_mailbox.py"
       ]
     },
     {
@@ -2441,8 +2454,10 @@
         "app.notifications",
         "app.outage",
         "app.outbox",
+        "app.people_directory",
         "app.permissions",
         "app.person_data",
+        "app.portal_mailbox",
         "app.presence",
         "app.raising",
         "app.reactions",
@@ -2801,6 +2816,7 @@
         "tests/test_permissions.py",
         "tests/test_portal.py",
         "tests/test_portal_home.py",
+        "tests/test_portal_mailbox.py",
         "tests/test_portal_new.py",
         "tests/test_portal_request.py",
         "tests/test_presence.py",
@@ -3437,6 +3453,35 @@
     },
     {
       "classes": [
+        "DirectoryError",
+        "Person"
+      ],
+      "file": "app/people_directory.py",
+      "functions": [
+        "blocklist",
+        "resolve",
+        "search"
+      ],
+      "imported_by": [
+        "app.portal_mailbox",
+        "app.routers.portal"
+      ],
+      "imports": [
+        "app.config",
+        "app.followers",
+        "app.graph_client",
+        "app.identity",
+        "app.models",
+        "app.settings_store"
+      ],
+      "module": "app.people_directory",
+      "routes": [],
+      "summary": "The people picker's directory (#309): who a person may choose as the other person of a mailbox change.",
+      "tables": [],
+      "tests": []
+    },
+    {
+      "classes": [
         "Permission"
       ],
       "file": "app/permissions.py",
@@ -3459,6 +3504,7 @@
         "tests/test_admin_users_page.py",
         "tests/test_anonymisation.py",
         "tests/test_permissions.py",
+        "tests/test_portal_mailbox.py",
         "tests/test_reports.py",
         "tests/test_reports_more.py",
         "tests/test_subject_access.py"
@@ -3505,6 +3551,41 @@
         "tests/test_teams_followups.py",
         "tests/test_ticket_redesign.py"
       ]
+    },
+    {
+      "classes": [
+        "ChangeView",
+        "ConfirmNoCopy",
+        "ForwardingForm",
+        "MailboxFormError",
+        "TargetRefused",
+        "Times"
+      ],
+      "file": "app/portal_mailbox.py",
+      "functions": [
+        "copy_off_warning",
+        "read_times",
+        "submit_forwarding",
+        "view"
+      ],
+      "imported_by": [
+        "app.routers.portal"
+      ],
+      "imports": [
+        "app.identity",
+        "app.mailbox_changes",
+        "app.mailbox_executor",
+        "app.models",
+        "app.people_directory",
+        "app.raising",
+        "app.settings_store",
+        "app.time_zones"
+      ],
+      "module": "app.portal_mailbox",
+      "routes": [],
+      "summary": "The portal's mailbox forms (#309; tracker #305): ask for your own mail to be forwarded to a colleague, and see and end it.",
+      "tables": [],
+      "tests": []
     },
     {
       "classes": [],
@@ -3566,6 +3647,7 @@
       "imported_by": [
         "app.intake",
         "app.mail",
+        "app.portal_mailbox",
         "app.routers.portal",
         "app.routers.tickets"
       ],
@@ -3613,6 +3695,7 @@
         "app.routers.approvals",
         "app.routers.auth",
         "app.routers.legal",
+        "app.routers.portal",
         "app.routers.teams_bot",
         "app.routers.webhooks",
         "app.teams_intake"
@@ -3984,6 +4067,8 @@
         "approval_notice",
         "card_for",
         "create_request_type",
+        "is_offered",
+        "offered_request_types",
         "portal_cards",
         "portal_tiles",
         "problem_card",
@@ -4003,6 +4088,7 @@
         "app.approvals",
         "app.audit",
         "app.categories",
+        "app.mailbox_executor",
         "app.models",
         "app.request_icons",
         "app.request_questions",
@@ -4017,6 +4103,7 @@
       "tests": [
         "tests/test_approvals.py",
         "tests/test_portal_home.py",
+        "tests/test_portal_mailbox.py",
         "tests/test_portal_new.py",
         "tests/test_request_questions.py",
         "tests/test_request_type_defaults.py",
@@ -4672,7 +4759,9 @@
       ],
       "summary": "",
       "tables": [],
-      "tests": []
+      "tests": [
+        "tests/test_portal_mailbox.py"
+      ]
     },
     {
       "classes": [],
@@ -5318,15 +5407,19 @@
       "functions": [
         "add_comment",
         "add_ticket_follower",
+        "cancel_my_mailbox_change",
         "decide_approval",
+        "find_people",
         "list_my_tickets",
         "my_approvals",
         "new_ticket_form",
         "raise_new_ticket",
         "remove_ticket_follower",
         "reopen_my_ticket",
+        "request_mailbox_change",
         "request_questions",
         "set_my_required_by",
+        "stop_my_mailbox_change",
         "view_my_ticket",
         "withdraw_my_request"
       ],
@@ -5346,10 +5439,14 @@
         "app.followers",
         "app.forms",
         "app.identity",
+        "app.mailbox_changes",
         "app.messages",
         "app.models",
         "app.pagination",
+        "app.people_directory",
+        "app.portal_mailbox",
         "app.raising",
+        "app.rate_limit",
         "app.reopening",
         "app.reply_channel",
         "app.reply_files",
@@ -5379,6 +5476,11 @@
           "path": "/portal/approvals"
         },
         {
+          "handler": "request_mailbox_change",
+          "method": "POST",
+          "path": "/portal/mailbox-change"
+        },
+        {
           "handler": "new_ticket_form",
           "method": "GET",
           "path": "/portal/new"
@@ -5387,6 +5489,11 @@
           "handler": "raise_new_ticket",
           "method": "POST",
           "path": "/portal/new"
+        },
+        {
+          "handler": "find_people",
+          "method": "GET",
+          "path": "/portal/people"
         },
         {
           "handler": "request_questions",
@@ -5417,6 +5524,16 @@
           "handler": "remove_ticket_follower",
           "method": "POST",
           "path": "/portal/{number}/followers/{follower_id}/remove"
+        },
+        {
+          "handler": "cancel_my_mailbox_change",
+          "method": "POST",
+          "path": "/portal/{number}/mailbox/cancel"
+        },
+        {
+          "handler": "stop_my_mailbox_change",
+          "method": "POST",
+          "path": "/portal/{number}/mailbox/stop"
         },
         {
           "handler": "reopen_my_ticket",
@@ -6131,6 +6248,8 @@
         "app.note_purge",
         "app.notification_purge",
         "app.notifications",
+        "app.people_directory",
+        "app.portal_mailbox",
         "app.presence",
         "app.raising",
         "app.reactions",
@@ -6201,6 +6320,7 @@
         "tests/test_outage_mode.py",
         "tests/test_outbound_mail.py",
         "tests/test_portal_home.py",
+        "tests/test_portal_mailbox.py",
         "tests/test_portal_new.py",
         "tests/test_portal_request.py",
         "tests/test_presence.py",
@@ -7348,6 +7468,7 @@
         "app.mailbox_changes",
         "app.messages",
         "app.msp",
+        "app.portal_mailbox",
         "app.report_kit",
         "app.reports",
         "app.required_by",
@@ -7918,6 +8039,12 @@
       "type": "int"
     },
     {
+      "default": "60",
+      "env": "RATE_LIMIT_PEOPLE_SEARCH_PER_MINUTE",
+      "name": "rate_limit_people_search_per_minute",
+      "type": "int"
+    },
+    {
       "default": "600",
       "env": "RATE_LIMIT_TEAMS_BOT_PER_MINUTE",
       "name": "rate_limit_teams_bot_per_minute",
@@ -8134,6 +8261,7 @@
     "tests/test_permissions.py",
     "tests/test_portal.py",
     "tests/test_portal_home.py",
+    "tests/test_portal_mailbox.py",
     "tests/test_portal_new.py",
     "tests/test_portal_request.py",
     "tests/test_presence.py",
