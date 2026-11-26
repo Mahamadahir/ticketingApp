@@ -3585,7 +3585,9 @@
       "routes": [],
       "summary": "The portal's mailbox forms (#309; tracker #305): ask for your own mail to be forwarded to a colleague, and see and end it.",
       "tables": [],
-      "tests": []
+      "tests": [
+        "tests/test_portal_mailbox.py"
+      ]
     },
     {
       "classes": [],

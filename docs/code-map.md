@@ -1078,7 +1078,7 @@ File: `app/portal_mailbox.py`
 - Functions: `copy_off_warning`, `read_times`, `submit_forwarding`, `view`
 - Imports: `app.identity`, `app.mailbox_changes`, `app.mailbox_executor`, `app.models`, `app.people_directory`, `app.raising`, `app.settings_store`, `app.time_zones`
 - Imported by: `app.routers.portal`
-- Tests: none
+- Tests: `test_portal_mailbox.py`
 
 ### `app.presence`
 
