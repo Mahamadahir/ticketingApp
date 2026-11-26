@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Admin: Scheduled jobs{% endblock %}
 {% block content %}
-{# 9L, then #323: five columns (Job, Status, Last run, Next due, Run now). Run now (super admins, which this whole page is) only asks:
+{# 9L, then issue 323: five columns (Job, Status, Last run, Next due, Run now). Run now (super admins, which this whole page is) only asks:
    it sets the job's next due time to now and the worker runs it on its next tick. Each cell carries data-label, which the
    narrow layout shows when a row becomes a card. A stored error is shown as a short summary; the full text is in a details. #}
 <header class="admin-head">
