@@ -192,10 +192,12 @@ class AzureAutomationExecutor:
             raise ValueError("MAILBOX_TENANT_DOMAIN must be the tenant's <name>.onmicrosoft.com name")
         if timeout_seconds <= 0:
             raise ValueError("The Automation job timeout must be positive")
+        if poll_seconds < 1:  # 0 would poll Azure in a tight loop for the whole timeout
+            raise ValueError("The Automation job poll interval must be at least 1 second")
         self.account_id = automation_account_id.rstrip("/")
         self.organization = organization
         self.timeout_seconds = timeout_seconds
-        self.poll_seconds = max(poll_seconds, 0)
+        self.poll_seconds = poll_seconds
         self._token_provider = token_provider
         self._http = http or httpx.Client(timeout=30.0)
         self._sleep = sleep
@@ -222,7 +224,8 @@ class AzureAutomationExecutor:
             output = self._output(job_name, job_id)
         except _AzureError as exc:
             log.warning(
-                "mailbox executor change=%s action=%s runbook=%s outcome=%s", request.change_id, action, job.runbook, exc.outcome.value
+                "mailbox executor change=%s action=%s runbook=%s job=%s outcome=%s reason=%s",
+                request.change_id, action, job.runbook, exc.job_id or job_name, exc.outcome.value, exc.message,
             )
             return ExecutorResult(exc.outcome, error=exc.message, job_id=exc.job_id or job_name)
         result = self._map_output(output, action, job_id)
@@ -253,6 +256,17 @@ class AzureAutomationExecutor:
         text = response.text.strip().replace("\n", " ")
         return text[:500]
 
+    def _properties(self, response: httpx.Response, job_id: str = "") -> dict[str, Any]:
+        """The `properties` object of a job reply, or no answer when the body is not what the API documents (a proxy's
+        HTML page, an empty body): a raw parse error must never leave this class."""
+        try:
+            properties = response.json().get("properties", {})
+        except (ValueError, AttributeError):
+            properties = None
+        if not isinstance(properties, dict):
+            raise _AzureError(Outcome.NO_ANSWER, f"Azure answered with something that is not a job: {self._body_text(response)}", job_id)
+        return properties
+
     def _start(self, job: JobRequest) -> tuple[str, str]:
         if job.runbook not in ALLOWED_RUNBOOKS:  # defence in depth: job_request only ever builds these
             raise _AzureError(Outcome.PERMANENT, f"Runbook {job.runbook!r} is not one the app may start")
@@ -260,9 +274,10 @@ class AzureAutomationExecutor:
         body = {"properties": {"runbook": {"name": job.runbook}, "parameters": job.parameters, "runOn": ""}}
         response = self._send("PUT", self._url(name), json=body)
         if response.status_code in (200, 201):
+            # The job exists now whatever the body says; a body we cannot read only costs us the service's own job id.
             try:
-                job_id = str(response.json().get("properties", {}).get("jobId") or name)
-            except ValueError:
+                job_id = str(self._properties(response).get("jobId") or name)
+            except _AzureError:
                 job_id = name
             return name, job_id
         code, text = response.status_code, self._body_text(response)
@@ -285,7 +300,7 @@ class AzureAutomationExecutor:
             if response is not None:
                 code = response.status_code
                 if code == 200:
-                    properties = response.json().get("properties", {})
+                    properties = self._properties(response, job_id)
                     status = properties.get("status", "")
                     if status == "Completed":
                         return
@@ -371,6 +386,8 @@ def azure_executor_config_errors(config: Settings) -> list[str]:
         errors.append("MAILBOX_EXECUTOR=azure needs MAILBOX_TENANT_DOMAIN, the tenant's <name>.onmicrosoft.com name")
     if config.mailbox_automation_timeout_seconds <= 0:
         errors.append("MAILBOX_AUTOMATION_TIMEOUT_SECONDS must be positive")
+    if config.mailbox_automation_poll_seconds < 1:
+        errors.append("MAILBOX_AUTOMATION_POLL_SECONDS must be at least 1")
     return errors
 
 

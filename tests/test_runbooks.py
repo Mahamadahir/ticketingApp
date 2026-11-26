@@ -312,3 +312,81 @@ def test_read_says_what_exchange_holds_and_changes_nothing(built, tmp_path, kind
 def test_read_refuses_an_unknown_kind(built, tmp_path):
     result, _ = run(built, tmp_path, "Read-MailboxChange", {"Kind": "calendar", "Mailbox": OWNER, "Target": TARGET}, mailboxes=BOXES, recipients=[TARGET])
     assert result["outcome"] == "permanent" and result["error_category"] == "invalid_parameter"
+
+
+# ---- review follow-ups: who may be targeted, and removals when the other end has left -------------------------------------
+
+
+@needs_pwsh
+@pytest.mark.parametrize("runbook", ["Set-MailForwarding", "Grant-FullAccess", "Grant-SendAs"])
+@pytest.mark.parametrize("kind", ["MailContact", "MailUser", "MailUniversalDistributionGroup"])
+def test_only_mailboxes_of_the_organisation_can_be_targeted(built, tmp_path, runbook, kind):
+    params = {"Mailbox": OWNER, "Target" if runbook == "Set-MailForwarding" else "Trustee": "c@outside.example.com"}
+    result, state = run(
+        built, tmp_path, runbook, params, mailboxes=BOXES, recipients=["c@outside.example.com"],
+        recipient_types={"c@outside.example.com": kind},
+    )
+    assert result["outcome"] == "permanent" and result["error_category"] == "invalid_parameter"
+    assert not [c for c in state["called"] if c.startswith(("Set-", "Add-"))]
+
+
+@needs_pwsh
+def test_a_shared_mailbox_can_be_a_forwarding_target(built, tmp_path):
+    result, _ = run(built, tmp_path, "Set-MailForwarding", FWD, mailboxes=BOXES, recipients=[TARGET], recipient_types={TARGET: "SharedMailbox"})
+    assert result["outcome"] == "succeeded"
+
+
+GONE = {"Mailbox": OWNER, "Target": "gone@contoso.com"}
+
+
+@needs_pwsh
+def test_clear_forwarding_clears_a_stale_forward_when_the_target_has_left(built, tmp_path):
+    boxes = {OWNER: {"forwarding": "gone@contoso.com", "keep_copy": True}}  # no longer a recipient: it cannot be resolved
+    result, state = run(built, tmp_path, "Clear-MailForwarding", GONE, mailboxes=boxes)
+    assert result["outcome"] == "succeeded" and result["found"]["present"] is False
+    assert state["mailboxes"][OWNER]["forwarding"] == ""
+
+
+@needs_pwsh
+def test_clear_forwarding_with_a_departed_target_still_leaves_someone_elses_forward_alone(built, tmp_path):
+    boxes = {OWNER: {"forwarding": "other@contoso.com", "keep_copy": True}}
+    result, state = run(built, tmp_path, "Clear-MailForwarding", GONE, mailboxes=boxes, recipients=["other@contoso.com"])
+    assert result["outcome"] == "mismatch" and result["error_category"] == "changed_elsewhere"
+    assert "Set-Mailbox" not in state["called"]
+
+
+@needs_pwsh
+def test_clear_forwarding_with_a_departed_target_and_no_forward_is_already_removed(built, tmp_path):
+    result, state = run(built, tmp_path, "Clear-MailForwarding", GONE, mailboxes=BOXES)
+    assert result["outcome"] == "succeeded"
+    assert "Set-Mailbox" not in state["called"]
+
+
+@needs_pwsh
+@pytest.mark.parametrize(
+    ("runbook", "remove_cmd"), [("Remove-FullAccess", "Remove-MailboxPermission"), ("Remove-SendAs", "Remove-RecipientPermission")]
+)
+def test_removing_access_for_someone_who_has_left_is_reported_removed(built, tmp_path, runbook, remove_cmd):
+    result, state = run(built, tmp_path, runbook, {"Mailbox": OWNER, "Trustee": "gone@contoso.com"}, mailboxes=BOXES)
+    assert result["outcome"] == "succeeded"
+    assert result["found"]["present"] is False and result["found"]["trustee_not_found"] is True
+    assert remove_cmd not in state["called"]
+
+
+@needs_pwsh
+@pytest.mark.parametrize("kind", azure.KINDS)
+def test_read_for_a_target_who_has_left_says_nothing_is_held(built, tmp_path, kind):
+    result, _ = run(built, tmp_path, "Read-MailboxChange", {"Kind": kind, "Mailbox": OWNER, "Target": "gone@contoso.com"}, mailboxes=BOXES)
+    assert result["outcome"] == "succeeded" and result["found"]["present"] is False and result["found"]["target_not_found"] is True
+
+
+@needs_pwsh
+def test_status_numbers_inside_other_text_are_not_taken_for_http_errors(built, tmp_path):
+    message = "Something is wrong with user503@contoso.com and object 429"
+    result, _ = run(built, tmp_path, "Set-MailForwarding", FWD, mailboxes=BOXES, recipients=[TARGET], fail={"Set-Mailbox": message})
+    assert result["error_category"] == "unknown"
+    gate, _ = run(
+        built, tmp_path, "Set-MailForwarding", FWD, mailboxes=BOXES, recipients=[TARGET],
+        fail={"Set-Mailbox": "The remote server returned an error: (503) Server Unavailable."},
+    )
+    assert gate["error_category"] == "timeout"

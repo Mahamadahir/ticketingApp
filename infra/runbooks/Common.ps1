@@ -63,8 +63,9 @@ function Get-ErrorCategory {
     $text = "$($ErrorRecord.Exception.GetType().FullName) $($ErrorRecord.Exception.Message) $($ErrorRecord.FullyQualifiedErrorId)"
     if ($text -match 'ManagementObjectNotFound|couldn''t be found|could not be found|wasn''t found|was not found|doesn''t exist|does not exist|Couldn''t find object') { return 'not_found' }
     if ($text -match 'Unauthorized|Forbidden|access is denied|access denied|insufficient (access|permissions|privileges)|not authorized|isn''t supported in this scenario|AuthorizationFailed|You don''t have permission') { return 'access_denied' }
-    if ($text -match 'throttl|TooManyRequests|Too many requests|429|try again later|exceeded the (maximum|allowed)') { return 'throttled' }
-    if ($text -match 'timed out|timeout|TaskCanceled|ServiceUnavailable|temporarily unavailable|The server is busy|503|502|504|connection (was )?(closed|reset|aborted)|socket|transient') { return 'timeout' }
+    # Status numbers only count in the form Exchange writes them, "(429) Too Many Requests", never as bare digits.
+    if ($text -match 'throttl|TooManyRequests|Too many requests|\(429\)|try again later|exceeded the (maximum|allowed)') { return 'throttled' }
+    if ($text -match 'timed out|timeout|TaskCanceled|ServiceUnavailable|temporarily unavailable|The server is busy|\((502|503|504)\)|connection (was )?(closed|reset|aborted)|socket|transient') { return 'timeout' }
     return 'unknown'
 }
 
@@ -103,12 +104,31 @@ function Connect-Exchange {
     Connect-ExchangeOnline -ManagedIdentity -Organization $Organization -ShowBanner:$false -CommandName $commands | Out-Null
 }
 
-# Both ends must be real recipients of this organisation, whatever the caller said.
+# Where mail is forwarded to, or who is given access, must be a real mailbox of this organisation, whatever the caller said.
+# Get-Recipient also finds mail contacts and mail users that point outside the tenant; those are refused.
+$MailboxTypes = @('UserMailbox', 'SharedMailbox')
+
 function Get-ExistingRecipient {
     param([string]$Address, [string]$Name)
     $recipient = Get-Recipient -Identity $Address -ErrorAction Stop
     if (-not $recipient) { throw "The $Name recipient $Address couldn't be found." }
+    if ($MailboxTypes -notcontains [string]$recipient.RecipientTypeDetails) {
+        throw [System.ArgumentException]::new("The $Name $Address is a $($recipient.RecipientTypeDetails), not a mailbox of this organisation.")
+    }
     return $recipient
+}
+
+# For removals and reads: the other end may have left, so a recipient that no longer exists is an answer, not an error.
+# Returns its primary address, or $null when it does not exist (any other error is thrown).
+function Find-RecipientAddress {
+    param([string]$Address)
+    try {
+        return [string](Get-Recipient -Identity $Address -ErrorAction Stop).PrimarySmtpAddress
+    }
+    catch {
+        if ((Get-ErrorCategory $_) -eq 'not_found') { return $null }
+        throw
+    }
 }
 
 function Get-ExistingMailbox {
@@ -122,9 +142,11 @@ function Get-ForwardingState {
     param([string]$Mailbox)
     $mb = Get-ExistingMailbox $Mailbox
     $to = ''
+    $resolved = $true
     if ($mb.ForwardingAddress) {
         $to = [string]$mb.ForwardingAddress
-        try { $to = [string](Get-Recipient -Identity $to -ErrorAction Stop).PrimarySmtpAddress } catch { }
+        # A forward to a recipient that no longer exists cannot be resolved to an address: "resolved" says so.
+        try { $to = [string](Get-Recipient -Identity $to -ErrorAction Stop).PrimarySmtpAddress } catch { $resolved = $false }
     }
     elseif ($mb.ForwardingSmtpAddress) {
         $to = ([string]$mb.ForwardingSmtpAddress) -replace '^(?i)smtp:', ''
@@ -134,6 +156,7 @@ function Get-ForwardingState {
         present       = [bool]$to
         forwarding_to = $to
         keep_copy     = [bool]$mb.DeliverToMailboxAndForward
+        resolved      = $resolved
     }
 }
 

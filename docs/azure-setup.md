@@ -457,6 +457,9 @@ against fake Exchange cmdlets only; nothing Azure-specific has run). Test mailbo
       documentation and compile in Bicep, but were never sent to Azure.
 - [ ] The Deploy workflow's "Publish the mailbox-change runbooks" step uploads and publishes all seven (the `draft/content`
       and `publish` calls with `Content-Type: text/powershell`) and each shows Published.
+- [ ] A later deploy leaves the runbooks as published: deploy twice, and check that after the template runs (before the
+      publish step) a job of each runbook still starts, or at least that the publish step restores them. The template
+      creates the runbooks with an empty `draft`; whether Azure resets a published runbook on a repeat `PUT` is not known.
 - [ ] The Automation identity connects to Exchange Online (`Connect-ExchangeOnline -ManagedIdentity`) once the
       `Exchange.ManageAsApp` permission and the Exchange role are granted, and each runbook works against a test mailbox:
       forwarding on and off (with and without a copy), full access and Send As granted and removed, each run a second time
@@ -476,8 +479,12 @@ against fake Exchange cmdlets only; nothing Azure-specific has run). Test mailbo
       `retryable` and is retried by the job). Check the runbook's read-back wait (4 reads, 5 seconds apart) is long enough.
 - [ ] A forwarding change set by hand to someone else is left alone by `Clear-MailForwarding` (reported `mismatch`,
       `changed_elsewhere`), and `Set-MailForwarding` over an existing forward records `previous_forwarding_to`.
-- [ ] Forwarding to an address outside the organisation is refused (the runbook requires a recipient of this organisation)
-      and the tenant's outbound spam policy does not block internal forwarding.
+- [ ] Forwarding to an address outside the organisation is refused: a mail contact, a mail user and a guest are rejected as
+      `invalid_parameter` (the runbook allows only `UserMailbox` and `SharedMailbox` targets), and the tenant's outbound spam
+      policy does not block internal forwarding.
+- [ ] Removals when the other end has left: with a test user deleted after the change, `Remove-FullAccess` and `Remove-SendAs`
+      report removed (`trustee_not_found`), and `Clear-MailForwarding` clears the forward that no longer resolves. Check what
+      Exchange actually leaves behind (an orphaned entry shown as a SID) and whether that matters.
 
 ## 10. Costs and clean-up
 

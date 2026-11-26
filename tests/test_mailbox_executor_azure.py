@@ -362,3 +362,43 @@ def test_settings_read_the_environment_names(monkeypatch):
     monkeypatch.setenv("MAILBOX_AUTOMATION_TIMEOUT_SECONDS", "90")
     config = Settings(_env_file=None)
     assert (config.mailbox_automation_resource_id, config.mailbox_tenant_domain, config.mailbox_automation_timeout_seconds) == (ACCOUNT, ORG, 90)
+
+
+# ---- review follow-ups ------------------------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("body", ["<html>proxy error</html>", "", "[]", '{"properties": "x"}'])
+def test_a_poll_answered_with_something_that_is_not_a_job_is_no_answer_not_an_exception(body):
+    def odd(request):
+        if request.method == "PUT":
+            return httpx.Response(201, json=job_body("New"))
+        return httpx.Response(200, text=body)
+
+    ex = AzureAutomationExecutor(
+        automation_account_id=ACCOUNT, organization=ORG, timeout_seconds=10, poll_seconds=1,
+        token_provider=lambda: "t", http=httpx.Client(transport=httpx.MockTransport(odd)), sleep=lambda s: None,
+    )
+    result = ex.apply(change())
+    assert result.outcome is Outcome.NO_ANSWER
+    assert result.job_id == "job-guid-1"
+
+
+def test_a_created_job_whose_reply_cannot_be_read_still_gets_polled():
+    arm = FakeArm(put=httpx.Response(201, text="<html>"))
+    result = executor(arm).apply(change())
+    assert result.outcome is Outcome.SUCCEEDED
+    assert result.job_id == arm.puts[0].url.path.rsplit("/", 1)[1]  # no job id from the service: the job's own name
+
+
+def test_a_failure_is_logged_with_its_reason_and_job(caplog):
+    with caplog.at_level("WARNING", logger="app.mailbox_executor_azure"):
+        executor(FakeArm(put=httpx.Response(403, text="AuthorizationFailed"))).apply(change())
+    assert "Automation Job Operator" in caplog.text and "change=42" in caplog.text
+
+
+@pytest.mark.parametrize("poll", [0, -1, 0.5])
+def test_a_poll_interval_below_one_second_is_refused(poll):
+    with pytest.raises(ValueError):
+        AzureAutomationExecutor(automation_account_id=ACCOUNT, organization=ORG, timeout_seconds=10, poll_seconds=poll)
+    config = settings(mailbox_automation_resource_id=ACCOUNT, mailbox_tenant_domain=ORG, mailbox_automation_poll_seconds=int(poll))
+    assert any("POLL_SECONDS" in e for e in azure.azure_executor_config_errors(config))

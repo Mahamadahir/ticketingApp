@@ -1,6 +1,9 @@
 <#
 .SYNOPSIS
   Take Full Access to Mailbox away from Trustee, then read it back. Already removed means success.
+.DESCRIPTION
+  If Trustee has left the organisation there is no account left to hold the access: that is reported as removed
+  (found.trustee_not_found).
 #>
 param(
     [Parameter(Mandatory)][string]$Organization,
@@ -14,7 +17,11 @@ Invoke-MailboxRunbook -Organization $Organization -Body {
     Assert-Address $Trustee 'Trustee'
     Connect-Exchange $Organization
     $null = Get-ExistingMailbox $Mailbox
-    $who = [string](Get-ExistingRecipient $Trustee 'Trustee').PrimarySmtpAddress
+    $who = Find-RecipientAddress $Trustee
+    if (-not $who) {
+        Write-Result -Outcome 'succeeded' -Found @{ kind = 'full_access'; present = $false; mailbox = $Mailbox; trustee = $Trustee; trustee_not_found = $true }
+        return
+    }
 
     if (Test-FullAccess $Mailbox $who) {
         Remove-MailboxPermission -Identity $Mailbox -User $who -AccessRights FullAccess -InheritanceType All -Confirm:$false -ErrorAction Stop | Out-Null

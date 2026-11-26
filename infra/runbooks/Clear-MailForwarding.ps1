@@ -4,6 +4,7 @@
 .DESCRIPTION
   Clears only forwarding that still points at Target. No forwarding at all means it is already removed (success).
   Forwarding to someone else (changed by hand since) is left alone and reported as a mismatch.
+  If Target has left the organisation, forwarding to a recipient that no longer resolves is the stale forward and is cleared.
 #>
 param(
     [Parameter(Mandatory)][string]$Organization,
@@ -17,12 +18,15 @@ Invoke-MailboxRunbook -Organization $Organization -Body {
     Assert-Address $Target 'Target'
     Connect-Exchange $Organization
     $null = Get-ExistingMailbox $Mailbox
-    $recipient = Get-ExistingRecipient $Target 'Target'
-    $wanted = [string]$recipient.PrimarySmtpAddress
+    $wanted = Find-RecipientAddress $Target   # $null when the target has left
 
     $before = Get-ForwardingState $Mailbox
-    if ($before.present -and ($before.forwarding_to -ne $wanted)) {
-        Write-Result -Outcome 'mismatch' -Found $before -ErrorCategory 'changed_elsewhere' -ErrorText "The mailbox forwards to $($before.forwarding_to), not to $wanted. Nothing was changed."
+    $pointsAtTarget = $before.present -and (
+        ($wanted -and ($before.forwarding_to -eq $wanted)) -or
+        ((-not $wanted) -and (-not $before.resolved))
+    )
+    if ($before.present -and -not $pointsAtTarget) {
+        Write-Result -Outcome 'mismatch' -Found $before -ErrorCategory 'changed_elsewhere' -ErrorText "The mailbox forwards to $($before.forwarding_to), not to $Target. Nothing was changed."
         return
     }
     if ($before.present) {

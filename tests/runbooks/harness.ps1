@@ -6,7 +6,7 @@
 #
 # scenario.json: { "params": {...runbook parameters...},
 #                  "mailboxes": { "a@contoso.com": { "forwarding": "", "keep_copy": false } },
-#                  "recipients": ["b@contoso.com"],
+#                  "recipients": ["b@contoso.com"], "recipient_types": { "c@contoso.com": "MailContact" },   # default UserMailbox
 #                  "full_access": [["mailbox", "trustee"]], "send_as": [["mailbox", "trustee"]],
 #                  "fail": { "Set-Mailbox": "message to throw" },
 #                  "ignore": ["Add-MailboxPermission"] }     # cmdlets that succeed but change nothing
@@ -21,6 +21,7 @@ $s = Get-Content -Raw -Path $Scenario | ConvertFrom-Json -AsHashtable
 $global:Mailboxes = @{}
 foreach ($k in $s.mailboxes.Keys) { $global:Mailboxes[$k] = @{ forwarding = [string]$s.mailboxes[$k].forwarding; keep_copy = [bool]$s.mailboxes[$k].keep_copy } }
 $global:Recipients = @($s.recipients) + @($s.mailboxes.Keys)
+$global:RecipientTypes = if ($s.recipient_types) { $s.recipient_types } else { @{} }
 $global:FullAccess = [System.Collections.ArrayList]@()
 foreach ($e in @($s.full_access)) { if ($e) { [void]$global:FullAccess.Add("$($e[0])|$($e[1])") } }
 $global:SendAs = [System.Collections.ArrayList]@()
@@ -58,7 +59,8 @@ function Get-Recipient {
     param([string]$Identity)
     Enter-Fake 'Get-Recipient'
     if ($global:Recipients -notcontains $Identity) { throw "The operation couldn't be performed because object '$Identity' couldn't be found on 'x'." }
-    return [pscustomobject]@{ PrimarySmtpAddress = $Identity }
+    $type = if ($global:RecipientTypes.ContainsKey($Identity)) { $global:RecipientTypes[$Identity] } else { 'UserMailbox' }
+    return [pscustomobject]@{ PrimarySmtpAddress = $Identity; RecipientTypeDetails = $type }
 }
 function Set-Mailbox {
     param([string]$Identity, $ForwardingAddress, $ForwardingSmtpAddress, $DeliverToMailboxAndForward)
