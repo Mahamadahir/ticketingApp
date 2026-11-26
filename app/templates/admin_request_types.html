@@ -15,6 +15,14 @@
   <label class="field field-wide">Description (one short line, shown on the kind's card on New request and on the home page tiles)
     <textarea name="description" rows="2" maxlength="{{ max_description_length }}">{{ t.description if t else "" }}</textarea>
   </label>
+  <label class="field field-wide">Mailbox action (a super admin sets this)
+    {% if user.role.value != "super_admin" %}<input type="hidden" name="mailbox_action" value="{{ t.mailbox_action or '' if t else '' }}" />{% endif %}
+    <select {% if user.role.value == "super_admin" %}name="mailbox_action"{% else %}disabled{% endif %}>
+      <option value="">(none: an ordinary request with form questions)</option>
+      {% for key, label in mailbox_action_labels.items() %}<option value="{{ key }}" {{ "selected" if t and key == t.mailbox_action else "" }}>{{ label }}</option>{% endfor %}
+    </select>
+    <span class="note">A kind with an action shows its own form instead of form questions and changes the signed-in person's own mailbox at the times they choose. It needs no approval group (it cannot have one) and all four defaults (team, category, impact, urgency) so that it triages itself. Only forwarding has its form so far. Nothing is offered unless this environment has MAILBOX_EXECUTOR set.</span>
+  </label>
   <label class="check field-wide"><input type="checkbox" name="is_active" {{ "checked" if (t.is_active if t else true) else "" }} /> Available on the request form</label>
   <label class="check field-wide"><input type="checkbox" name="is_featured" {{ "checked" if t and t.is_featured else "" }} /> Feature on the portal home page (up to four kinds show as quick-start tiles; with none featured, the first four do)</label>
 {% endmacro %}

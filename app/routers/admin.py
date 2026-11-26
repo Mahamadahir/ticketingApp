@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from urllib.parse import urlencode
@@ -72,6 +73,7 @@ from app.subrequests import (
 )
 from app.request_types import (
     ICONS,
+    MAILBOX_ACTION_LABELS,
     MAX_DESCRIPTION_LENGTH as MAX_REQUEST_DESCRIPTION_LENGTH,
     MAX_NAME_LENGTH as MAX_REQUEST_NAME_LENGTH,
     RequestTypeError,
@@ -1461,7 +1463,7 @@ def _type_snapshot(session: Session, request_type: RequestType) -> tuple:
         request_type.pass_percent, request_type.offers_required_by,
         request_type.due_days_before, request_type.queue_lead_days,
         _defaults_text(session, request_type), request_type.subrequests_need_own_approval,
-        request_type.approvers_may_self_approve, request_type.is_featured, request_type.icon,
+        request_type.approvers_may_self_approve, request_type.is_featured, request_type.icon, request_type.mailbox_action,
     )
 
 
@@ -1517,6 +1519,7 @@ def list_request_types(
             "max_name_length": MAX_REQUEST_NAME_LENGTH,
             "max_description_length": MAX_REQUEST_DESCRIPTION_LENGTH,
             "icons": ICONS,
+            "mailbox_action_labels": MAILBOX_ACTION_LABELS,
             "teams": session.exec(select(Team).order_by(Team.name)).all(),
             "category_options": selectable(session),
             "impact_options": impact_options(),
@@ -1552,9 +1555,12 @@ def add_request_type(
     approvers_may_self_approve: Optional[str] = Form(None),
     is_featured: Optional[str] = Form(None),
     icon: Optional[str] = Form(None, max_length=40),
+    mailbox_action: Optional[str] = Form(None, max_length=40),
     admin: User = Depends(require_request_templates),
     session: Session = Depends(get_session),
 ):
+    if (mailbox_action or "").strip() and admin.role != UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Only a super admin can make a request type change a mailbox")
     try:
         request_type = create_request_type(
             session, name, description, optional_int(approval_group_id), pass_percent, is_active == "on",
@@ -1562,7 +1568,7 @@ def add_request_type(
             defaults=_defaults_from_form(default_team_id, default_category_id, default_impact, default_urgency),
             subrequests_need_own_approval=subrequests_need_own_approval == "on",
             approvers_may_self_approve=approvers_may_self_approve == "on",
-            is_featured=is_featured == "on", icon=icon,
+            is_featured=is_featured == "on", icon=icon, mailbox_action=mailbox_action,
         )
     except RequestTypeError as error:
         session.rollback()
@@ -1591,12 +1597,15 @@ def edit_request_type(
     approvers_may_self_approve: Optional[str] = Form(None),
     is_featured: Optional[str] = Form(None),
     icon: Optional[str] = Form(None, max_length=40),
+    mailbox_action: Optional[str] = Form(None, max_length=40),
     admin: User = Depends(require_request_templates),
     session: Session = Depends(get_session),
 ):
     request_type = session.get(RequestType, type_id)
     if request_type is None:
         raise HTTPException(status_code=404, detail="Request type not found")
+    if ((mailbox_action or "").strip() or None) != request_type.mailbox_action and admin.role != UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Only a super admin can change what a request type does to a mailbox")
     before = _type_snapshot(session, request_type)
     was_active = request_type.is_active
     try:
@@ -1607,7 +1616,7 @@ def edit_request_type(
             defaults=_defaults_from_form(default_team_id, default_category_id, default_impact, default_urgency),
             subrequests_need_own_approval=subrequests_need_own_approval == "on",
             approvers_may_self_approve=approvers_may_self_approve == "on",
-            is_featured=is_featured == "on", icon=icon, set_icon=True,
+            is_featured=is_featured == "on", icon=icon, set_icon=True, mailbox_action=mailbox_action, set_mailbox_action=True,
         )
     except RequestTypeError as error:
         session.rollback()
@@ -1641,6 +1650,8 @@ def edit_request_type(
             changes.append(f"featured on the portal {before[10]} -> {after[10]}")
         if before[11] != after[11]:
             changes.append(f"icon {before[11] or '(default)'} -> {after[11] or '(default)'}")
+        if before[12] != after[12]:
+            changes.append(f"mailbox action {before[12] or '(none)'} -> {after[12] or '(none)'}")
         log_action(session, admin.email, "request_type", request_type.id, "edited", "; ".join(changes))
     if request_type.is_active != was_active:
         log_action(
@@ -1951,7 +1962,15 @@ def _clean_setting_value(session: Session, definition, value: str, submitted: di
     (business hours start and end) are checked together."""
     key = definition.key
     value = value.strip()
-    if len(value) > (500 if definition.kind in ("regex", "reaction_map") else 200) and definition.kind != "dates":
+    if definition.kind == "emails" and value:
+        try:
+            addresses = sorted({normalise_email(part) for part in re.split(r"[,;\s]+", value) if part})
+        except InvalidEmail:
+            raise ValueError("Enter email addresses separated by commas or spaces, or leave it blank")
+        value = ", ".join(addresses)
+        if len(value) > 2000:
+            raise ValueError("That is too long (2000 characters at most)")
+    if len(value) > (500 if definition.kind in ("regex", "reaction_map") else 200) and definition.kind not in ("dates", "emails"):
         raise ValueError("That is too long (500 characters at most)" if definition.kind in ("regex", "reaction_map") else "That is too long (200 characters at most)")
     if definition.kind == "reaction_map":
         try:

@@ -691,6 +691,10 @@ class RequestType(SQLModel, table=True):
     is_featured: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
     # The icon on the kind's card and tile (#206): a name from app/request_types.py `ICONS`; blank shows the generic one.
     icon: Optional[str] = Field(default=None)
+    # Blank for an ordinary request; else one of MAILBOX_KINDS (#309): the portal shows that kind's own form instead of form
+    # questions and the request makes a scheduled mailbox change (app/mailbox_changes.py). Such a type has no approval group
+    # and all four self-triage defaults (app/request_types.py).
+    mailbox_action: Optional[str] = Field(default=None)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

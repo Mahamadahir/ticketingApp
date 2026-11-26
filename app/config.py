@@ -118,6 +118,8 @@ class Settings(BaseSettings):
     rate_limit_break_glass_per_minute: int = 10
     # The emergency password form (outage mode, #164), the same way.
     rate_limit_emergency_per_minute: int = 10
+    # The people picker on the portal's mailbox forms (#309): one search per keystroke pause, per caller address per minute.
+    rate_limit_people_search_per_minute: int = 60
     # Attachments (phase 3E, app/storage.py). STORAGE_BACKEND is "local" (a directory, for development
     # and tests) or "blob" (Azure Blob Storage through the app's managed identity: no account keys).
     # Left blank it is blob when STORAGE_ACCOUNT_NAME is set (the Bicep sets it) and local otherwise.

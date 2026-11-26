@@ -25,6 +25,14 @@
       {% endfor %}
     </nav>
 
+    {% if mailbox_mode == "forwarding" %}
+    {% include "_mailbox_forwarding_form.html" %}
+    {% elif mailbox_mode == "unavailable" %}
+    <div class="nr-form card">
+      <div class="nr-form-head"><h2>2. {{ chosen_title }}</h2></div>
+      <p class="error" role="alert">{{ mailbox_not_available }}</p>
+    </div>
+    {% else %}
     <form class="nr-form card" method="post" action="/portal/new" enctype="multipart/form-data"
           hx-post="/portal/new" hx-encoding="multipart/form-data" hx-target="#flash" hx-swap="innerHTML" hx-disabled-elt="find button[type=submit]">
       <div class="nr-form-head">
@@ -117,6 +125,7 @@
       </div>
       <p class="nr-hint">{% if not show_total %}Up to {{ max_files }} files, {{ max_file_mb }} MB each.{% else %}Up to {{ max_files }} files, {{ max_file_mb }} MB each and {{ max_total_mb }} MB in all.{% endif %}</p>
     </form>
+    {% endif %}
   </div>
 </div>
 {% endblock %}
