@@ -484,16 +484,18 @@ def test_the_admin_menu_stays_in_view_beside_the_page_and_is_static_when_it_sits
 
 def test_admin_users_forms_use_the_form_layout_with_their_field_names(client, db_session):
     set_role(db_session, login_as(client, "boss@example.com"), UserRole.SUPER_ADMIN)
-    page = client.get("/admin/users?new=1").text  # the new-account panel
+    page = client.get("/admin/users?new=1").text  # the new-account view
     create = page[page.index('<form method="post" action="/admin/users">'):]
     create = create[: create.index("</form>")]
     assert 'class="form-grid"' in create and 'class="form-actions"' in create and create.count('class="field"') == 6
     for name in ("email", "display_name", "password", "role", "team_id", "level"):
         assert f'name="{name}"' in create
+    page = client.get("/admin/users?tab=links").text  # the link review is its own tab
     link = page[page.index('action="/admin/links/preview"'):]
     link = link[: link.index("</form>")]
     assert 'class="form-grid"' in link and 'name="main_email"' in link and 'name="other_email"' in link
-    assert 'class="form-grid"' in page and 'role="search"' in page  # the filters are a plain GET form
+    assert 'class="form-grid"' in page
+    assert 'role="search"' in client.get("/admin/users").text  # the filters are a plain GET form
 
 
 def test_pressing_enter_in_the_time_zone_box_submits_use_this_time_zone_not_the_clear_button(client, db_session):

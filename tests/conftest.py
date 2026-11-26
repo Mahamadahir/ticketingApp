@@ -168,7 +168,8 @@ def no_layout_for_htmx(monkeypatch):
 
     def checked(self, request, name, *args, **kwargs):
         response = real(self, request, name, *args, **kwargs)
-        if request.headers.get("HX-Request") == "true" and (b"<html" in response.body or b"<nav>" in response.body):
+        boosted = request.headers.get("HX-Boosted") == "true"  # a boosted request swaps the whole body: it needs the full page
+        if request.headers.get("HX-Request") == "true" and not boosted and (b"<html" in response.body or b"<nav>" in response.body):
             raise AssertionError(f"{name} rendered the full page layout for an htmx request")
         return response
 

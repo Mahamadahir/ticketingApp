@@ -1,0 +1,14 @@
+{# Extra permissions (#322) #}
+{% if v.kind == "all" %}
+<p class="note">All (super admin).</p>
+{% elif v.kind == "form" %}
+<form method="post" action="/admin/users/{{ person.id }}/permissions" class="up-perms">
+  {% if not person.is_active %}<p class="note"><b>(inactive: none can be added)</b></p>{% endif %}
+  {% for key, perm in v.permissions.items() %}
+  <label class="field-check" title="{{ perm.description }}"><input type="checkbox" name="permissions" value="{{ key }}" {{ "checked" if key in v.granted else "" }} /> {{ perm.label }}</label>
+  {% endfor %}
+  <div class="form-actions"><button type="submit" class="btn btn-primary">Save permissions</button></div>
+</form>
+{% else %}
+<p class="note">None (agents only).</p>
+{% endif %}

@@ -598,7 +598,8 @@ def test_an_agent_linking_an_address_by_code_becomes_a_request_a_super_admin_dec
 
     client.post("/auth/logout")
     login_as(client, admin.email)
-    assert "Link requests waiting for you" in client.get("/admin/users").text
+    assert "Link requests waiting for you" in client.get("/admin/users?tab=links").text
+    assert 'Link requests <span class="chip t-amber">1</span>' in client.get("/admin/users").text
     client.post(f"/admin/links/{link.id}/approve")
     db_session.expire_all()
     assert db_session.get(LinkedIdentity, link.id).status == "active"
@@ -753,8 +754,9 @@ def test_the_admin_users_page_lists_links_and_marks_the_merged_away_account(clie
     main, other = mk(db_session, "ann@a.example"), mk(db_session, "ann@b.example")
     login_as(client, admin.email)
     client.post("/admin/links", data={"main_id": main.id, "secondary_id": other.id})
-    page = client.get("/admin/users").text
-    assert "Linked identities" in page and "merged into account" in page
+    page = client.get("/admin/users?tab=links").text
+    assert "Linked identities" in page and "ann@b.example" in page
+    assert "merged into ann@a.example" in client.get("/admin/users").text
     assert client.post(f"/admin/users/{other.id}/active", data={"is_active": "true"}).status_code == 400
 
 
