@@ -293,14 +293,14 @@ def list_tickets(
         query = query.where(Ticket.assigned_agent_id == user.id)
     # Admin > Users links here (#322): one person's assigned tickets, or those raised under any of their addresses.
     # It only narrows what was already made visible above, and a value that names nobody is ignored.
-    person_filter = None
+    person_filters = []
     assignee_id, requester_id = _person_id(assignee), _person_id(requester)
     if assignee_id is not None and (assignee_user := session.get(User, assignee_id)) is not None:
         query = query.where(Ticket.assigned_agent_id == assignee_id)
-        person_filter = (f"assigned to {assignee_user.display_name}", "assignee", assignee_id)
+        person_filters.append((f"assigned to {assignee_user.display_name}", "assignee", assignee_id))
     if requester_id is not None and (requester_user := session.get(User, requester_id)) is not None:
         query = query.where(func.lower(func.trim(Ticket.requester_email)).in_(requester_emails(requester_user, session)))
-        person_filter = (f"raised by {requester_user.display_name}", "requester", requester_id)
+        person_filters.append((f"raised by {requester_user.display_name}", "requester", requester_id))
     if untriaged:  # the sidebar's Untriaged item (app/navigation.py counts the same set)
         query = query.where(Ticket.triaged_at.is_(None), Ticket.status.notin_(FINISHED_STATUSES))
 
@@ -343,7 +343,7 @@ def list_tickets(
             "status": status,
             "status_options": status_options(),
             "sort": sort,
-            "person_filter": person_filter,
+            "person_filters": person_filters,
             "list_link": _list_link(q, source.value if source else "", status, sort),
         },
     )

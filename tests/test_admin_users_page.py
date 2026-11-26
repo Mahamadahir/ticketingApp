@@ -731,3 +731,35 @@ def test_the_chosen_filters_stay_selected_and_paging_keeps_them(client, db_sessi
     assert re.search(r'<option value="agent" selected>', html) and re.search(r'<option value="active" selected>', html)
     assert "role=agent" in html and "page=2" in html  # the pagination link carries the filters
     assert "agent54@example.com" in client.get("/admin/users?role=agent&status=active&page=2").text
+
+
+def test_a_merged_away_account_can_be_unlinked_from_its_own_page(client, db_session):
+    boss(client, db_session)
+    main = person(db_session, "ann@a.example", role=UserRole.END_USER)
+    other = person(db_session, "ann@b.example", role=UserRole.END_USER)
+    client.post("/admin/links", data={"main_id": main.id, "secondary_id": other.id})
+    html = card(page(client, other.id), "linked")
+    action = re.search(r'action="(/admin/links/\d+/unlink)"', html).group(1)
+    response = client.post(action, data={"back": str(other.id)}, follow_redirects=False)
+    assert response.headers["location"] == f"/admin/users/{other.id}?done=unlinked#sec-linked"
+    assert "No linked accounts." in card(page(client, other.id), "linked")
+
+
+def test_old_addresses_kept_after_an_email_change_are_not_listed_or_counted(client, db_session):
+    from app.models import LinkedIdentity
+
+    boss(client, db_session)
+    ann = person(db_session, "ann@example.com", role=UserRole.END_USER)
+    db_session.add(LinkedIdentity(main_user_id=ann.id, email="old@example.com", method="email_changed", status="active"))
+    db_session.commit()
+    html = page(client, ann.id)
+    assert "old@example.com" not in card(html, "linked") and glance_of(html)["linked"] == "0 linked identities"
+
+
+def test_the_queue_note_names_both_person_filters_and_keeps_both(client, db_session):
+    boss(client, db_session)
+    ann = person(db_session, "ann@example.com")
+    bob = person(db_session, "bob@example.com")
+    body = client.get(f"/tickets?assignee={ann.id}&requester={bob.id}").text
+    assert "assigned to ann and raised by bob" in body
+    assert f'name="assignee" value="{ann.id}"' in body and f'name="requester" value="{bob.id}"' in body

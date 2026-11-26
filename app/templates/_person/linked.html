@@ -1,6 +1,16 @@
 {# Linked identities (#322): each linked address with its own Unlink (the existing route, which sends the person back here). #}
 {% if v.merged_into %}
-<p>This account was merged into <a href="/admin/users/{{ v.merged_into.id }}">{{ v.merged_into.email }}</a> by a link.</p>
+<div class="pp-row">
+  <span class="pp-row-name">This account was merged into <a href="/admin/users/{{ v.merged_into.id }}">{{ v.merged_into.email }}</a> by a link.</span>
+  {% if v.merged_link %}
+  <div class="pp-row-actions">
+    <form method="post" action="/admin/links/{{ v.merged_link.id }}/unlink" class="pp-form">
+      <input type="hidden" name="back" value="{{ person.id }}" />
+      <button type="submit" class="btn" aria-label="Unlink this account from {{ v.merged_into.email }}">Unlink</button>
+    </form>
+  </div>
+  {% endif %}
+</div>
 {% endif %}
 {% for row in v.rows %}
 <div class="pp-row">

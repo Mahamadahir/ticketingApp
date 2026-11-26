@@ -125,9 +125,10 @@ class PersonContext:
 
     @cached_property
     def link_rows(self) -> list["links.LinkRow"]:
-        """The active links this person is the main account of (their other addresses and merged accounts)."""
+        """The active links this person is the main account of (their other addresses and merged accounts). The old
+        addresses the system keeps after an Entra email change are left out, as on the Link requests tab."""
         return [
-            row for row in links.rows_for(self.session, links.ACTIVE, user=self.person) if row.link.main_user_id == self.person.id
+            row for row in links.rows_for(self.session, links.ACTIVE, user=self.person, aliases=False) if row.link.main_user_id == self.person.id
         ]
 
     @cached_property
@@ -327,7 +328,7 @@ def _signin(ctx: PersonContext) -> dict:
 
 
 def _linked(ctx: PersonContext) -> dict:
-    return {"merged_into": ctx.merged_into, "rows": ctx.link_rows}
+    return {"merged_into": ctx.merged_into, "merged_link": ctx.merged_into_link, "rows": ctx.link_rows}
 
 
 def _status(ctx: PersonContext) -> dict:

@@ -25,7 +25,7 @@
   <form method="get" action="/tickets" class="queue-filters">
     {% if q %}<input type="hidden" name="q" value="{{ q }}" />{% endif %}
     {% if mine %}<input type="hidden" name="mine" value="true" />{% endif %}
-    {% if person_filter %}<input type="hidden" name="{{ person_filter[1] }}" value="{{ person_filter[2] }}" />{% endif %}
+    {% for label, name, value in person_filters %}<input type="hidden" name="{{ name }}" value="{{ value }}" />{% endfor %}
     {% if untriaged %}<input type="hidden" name="untriaged" value="true" />{% endif %}
     <label class="field">Team
       <select name="team_id">
@@ -55,7 +55,7 @@
     {% if q or team_id or source or status or sort %}<a href="{{ list_link(q='', source='', status='', sort='', team_id=None, mine=mine, untriaged=untriaged) }}" class="btn">Clear search and filters</a>{% endif %}
     <p class="queue-showing" role="status">Showing {{ page.items|length }} of {{ page.total_items }}</p>
   </form>
-  {% if person_filter %}<p class="note" role="status">Only tickets {{ person_filter[0] }}. <a href="{{ list_link(mine=mine, untriaged=untriaged) }}">Show all</a></p>{% endif %}
+  {% if person_filters %}<p class="note" role="status">Only tickets {{ person_filters|map(attribute=0)|join(" and ") }}. <a href="{{ list_link(mine=mine, untriaged=untriaged) }}">Show all</a></p>{% endif %}
   {% if q %}<p class="note">{{ page.total_items }} ticket{{ "" if page.total_items == 1 else "s" }} you can open match "{{ q }}" (subject, requester, number, and every message including internal notes).</p>{% endif %}
 
   {% if page.items %}
