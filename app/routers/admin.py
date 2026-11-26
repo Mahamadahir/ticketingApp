@@ -23,6 +23,7 @@ from app.bank_holidays import REGIONS as BANK_HOLIDAY_REGIONS
 from app import emergency, linked_identities as links, outage
 from app.audit import log_action
 from app.admin_home import area_cards, needs_attention
+from app.admin_people import ROLE_TONE, list_rows, person_page_context, person_url, refusal_page
 from app.auth import get_current_user, hash_password, require_permission, require_roles
 from app.user_filters import USER_STATUS_LABELS, filter_users
 from app.permissions import ASSIGNABLE_ROLES, MANAGE_REQUEST_TEMPLATES, PERMISSIONS
@@ -210,9 +211,16 @@ def admin_home(request: Request, user: User = Depends(get_current_user), session
     )
 
 
-def _panel_url(user_id: int) -> str:
-    """After a change to one person the page opens on that person's panel again."""
-    return f"/admin/users?user={user_id}"
+def _person_redirect(user_id: int, section: str = "", done: str = "") -> RedirectResponse:
+    """After a change to one person the browser goes back to their page, on the card the change came from."""
+    return RedirectResponse(person_url(user_id, section, done), status_code=303)
+
+
+LINKS_TAB = "/admin/users?tab=links"
+
+
+def _pending_link_count(session: Session) -> int:
+    return session.exec(select(func.count()).select_from(LinkedIdentity).where(LinkedIdentity.status == links.PENDING)).one()
 
 
 @router.get("/users", response_class=HTMLResponse)
@@ -228,9 +236,35 @@ def list_users(
     status: str = "",
     selected_id: str = Query("", alias="user"),
     new: str = "",
+    tab: str = "",
     user: User = Depends(require_super_admin),
     session: Session = Depends(get_session),
 ):
+    """The people table (#322); a person opens on their own page. `?user=<id>` is the old link to a person: it
+    redirects. `?new=1` is the new-account view and `?tab=links` the link requests. A value that means nothing
+    is "nobody", not an error page."""
+    if selected_id.isascii() and selected_id.isdigit() and int(selected_id) < 2**31:
+        return RedirectResponse(person_url(int(selected_id)), status_code=303)
+    teams = session.exec(select(Team).order_by(Team.name)).all()
+    if new.strip() not in ("", "0"):
+        return templates.TemplateResponse(
+            request, "admin_user_new.html", {"user": user, "teams": teams, "levels": list(MembershipLevel), "roles": list(UserRole)}
+        )
+    if tab == "links":
+        pending_links = links.rows_for(session, links.PENDING)
+        return templates.TemplateResponse(
+            request,
+            "admin_users_links.html",
+            {
+                "user": user,
+                "pending_links": pending_links,
+                "pending_count": len(pending_links),
+                "active_links": links.rows_for(session, links.ACTIVE, aliases=bool(aliases), limit=200),
+                "show_aliases": bool(aliases),
+                "link_error": link_error,
+            },
+        )
+
     query = select(User).order_by(User.email)
     # Inactive agents who still hold open tickets: the tickets need a new assignee (#158).
     only_stranded = inactive == "open_tickets"
@@ -243,84 +277,41 @@ def list_users(
         )
     query = filter_users(query, q, role, team, status)
     users_page = paginate(session, query, page, request.query_params)
-    teams = session.exec(select(Team).order_by(Team.name)).all()
-    teams_by_id = {team_row.id: team_row for team_row in teams}
-
-    # The person whose panel is open (a person outside the current filter or page can still be opened).
-    # `user` and `new` are read leniently: a hand-edited value that means nothing is "nobody", not an error page.
-    creating = new.strip() not in ("", "0")
-    user_id = int(selected_id) if selected_id.isascii() and selected_id.isdigit() and int(selected_id) < 2**31 else None
-    selected = session.get(User, user_id) if user_id else None
-    if creating:
-        selected = None
-    user_ids = [u.id for u in users_page.items]
-    if selected is not None and selected.id not in user_ids:
-        user_ids.append(selected.id)
-    memberships: dict[int, list[TeamMembership]] = {}
-    if user_ids:
-        rows = session.exec(select(TeamMembership).where(TeamMembership.user_id.in_(user_ids))).all()
-        for row in rows:
-            memberships.setdefault(row.user_id, []).append(row)
-
-    granted: dict[int, set[str]] = {}
-    if user_ids:
-        for row in session.exec(select(UserPermission).where(UserPermission.user_id.in_(user_ids))).all():
-            granted.setdefault(row.user_id, set()).add(row.permission)
-
-    merged_into = {
-        link.secondary_user_id: link.main_user_id
-        for link in session.exec(
-            select(LinkedIdentity).where(LinkedIdentity.status == links.ACTIVE, LinkedIdentity.secondary_user_id.in_(user_ids))
-        ).all()
-    } if user_ids else {}
-    # The accounts merged into the selected person, for the panel's "Linked identities" section.
-    merged_in: list[User] = []
-    if selected is not None:
-        for link in session.exec(
-            select(LinkedIdentity).where(LinkedIdentity.status == links.ACTIVE, LinkedIdentity.main_user_id == selected.id)
-        ).all():
-            other = session.get(User, link.secondary_user_id) if link.secondary_user_id else None
-            if other is not None:
-                merged_in.append(other)
-
-    # A row's link keeps the filters and the page, and adds the person.
-    row_query = {key: value for key, value in request.query_params.items() if key not in ("user", "new", "link_error") and value}
-
     return templates.TemplateResponse(
         request,
         "admin_users.html",
         {
             "only_stranded": only_stranded,
-            "permissions": PERMISSIONS,
-            "assignable_roles": ASSIGNABLE_ROLES,
-            "granted": granted,
             "page": users_page,
+            "rows": list_rows(session, users_page.items),
             "teams": teams,
-            "teams_by_id": teams_by_id,
-            "memberships": memberships,
-            "levels": list(MembershipLevel),
             "roles": list(UserRole),
+            "role_tone": ROLE_TONE,
             "statuses": USER_STATUS_LABELS,
             "filters": {"q": q.strip(), "role": role, "team": team.strip(), "status": status},
-            "row_query": row_query,
-            "selected": selected,
-            "selected_missing": bool(selected_id) and selected is None and not creating,
-            "creating": creating,
-            "merged_in": merged_in,
-            "now": datetime.now(timezone.utc),
-            "live_sessions": live_session_counts(session, user_ids),
-            "pending_links": links.rows_for(session, links.PENDING),
-            "active_links": links.rows_for(session, links.ACTIVE, aliases=bool(aliases), limit=200),
-            "show_aliases": bool(aliases),
-            "merged_into": merged_into,
-            "link_error": link_error,
+            "pending_count": _pending_link_count(session),
             "user": user,
         },
     )
 
 
+@router.get("/users/{user_id}", response_class=HTMLResponse)
+def person_page(
+    request: Request,
+    user_id: int,
+    done: str = "",
+    user: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    """One person on their own page (#322): At a glance, then a card per job (app/admin_people.py)."""
+    person = session.get(User, user_id) if 0 < user_id < 2**31 else None
+    if person is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    return templates.TemplateResponse(request, "admin_user_person.html", person_page_context(session, user, person, done=done))
+
+
 def _users_with_link_error(message: str) -> RedirectResponse:
-    return RedirectResponse("/admin/users?" + urlencode({"link_error": message}), status_code=303)
+    return RedirectResponse(LINKS_TAB + "&" + urlencode({"link_error": message}), status_code=303)
 
 
 @router.get("/links/preview", response_class=HTMLResponse)
@@ -368,7 +359,7 @@ def create_link(
     except links.LinkError as refusal:
         session.rollback()
         return _users_with_link_error(str(refusal))
-    return RedirectResponse("/admin/users", status_code=303)
+    return RedirectResponse(LINKS_TAB, status_code=303)
 
 
 def _link_or_404(session: Session, link_id: int) -> LinkedIdentity:
@@ -387,7 +378,7 @@ def approve_link(link_id: int, admin: User = Depends(require_super_admin), sessi
     except links.LinkError as refusal:
         session.rollback()
         return _users_with_link_error(str(refusal))
-    return RedirectResponse("/admin/users", status_code=303)
+    return RedirectResponse(LINKS_TAB, status_code=303)
 
 
 @router.post("/links/{link_id}/decline")
@@ -399,23 +390,35 @@ def decline_link(link_id: int, admin: User = Depends(require_super_admin), sessi
     except links.LinkError as refusal:
         session.rollback()
         return _users_with_link_error(str(refusal))
-    return RedirectResponse("/admin/users", status_code=303)
+    return RedirectResponse(LINKS_TAB, status_code=303)
 
 
 @router.post("/links/{link_id}/unlink")
-def unlink_link(link_id: int, admin: User = Depends(require_super_admin), session: Session = Depends(get_session)):
+def unlink_link(
+    request: Request,
+    link_id: int,
+    back: str = Form(""),
+    admin: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    """`back` is the person whose page the Unlink button is on (#322): the browser returns there, and a refusal
+    shows in that page's Linked identities card. Without it (the Link requests tab) it returns to the tab."""
     link = _link_or_404(session, link_id)
+    person = session.get(User, int(back)) if back.isascii() and back.isdigit() and int(back) < 2**31 else None
     try:
         links.unlink(session, link, admin)
         session.commit()
     except links.LinkError as refusal:
         session.rollback()
+        if person is not None:
+            return refusal_page(request, session, admin, person, "linked", str(refusal))
         return _users_with_link_error(str(refusal))
-    return RedirectResponse("/admin/users", status_code=303)
+    return _person_redirect(person.id, "linked", "unlinked") if person is not None else RedirectResponse(LINKS_TAB, status_code=303)
 
 
 @router.post("/users/{user_id}")
 def update_user(
+    request: Request,
     user_id: int,
     role: UserRole = Form(...),
     admin: User = Depends(require_super_admin),
@@ -426,7 +429,7 @@ def update_user(
         raise HTTPException(status_code=404, detail="User not found")
 
     if target.is_break_glass and role != UserRole.SUPER_ADMIN:
-        raise HTTPException(status_code=400, detail="A break-glass account stays a super admin; deactivate it instead")
+        return refusal_page(request, session, admin, target, "role", "A break-glass account stays a super admin; deactivate it instead")
     if target.role != role:
         log_action(session, admin.email, "user", target.id, "role_changed", f"{target.role.value} -> {role.value}")
         target.role = role
@@ -446,11 +449,12 @@ def update_user(
 
     session.add(target)
     session.commit()
-    return RedirectResponse(_panel_url(user_id), status_code=303)
+    return _person_redirect(user_id, "role", "role")
 
 
 @router.post("/users/{user_id}/permissions")
 def set_user_permissions(
+    request: Request,
     user_id: int,
     permissions: list[str] = Form(default=[]),
     admin: User = Depends(require_super_admin),
@@ -463,13 +467,13 @@ def set_user_permissions(
         raise HTTPException(status_code=404, detail="User not found")
     wanted = set(permissions)
     if not wanted <= set(PERMISSIONS):
-        raise HTTPException(status_code=400, detail="Unknown permission")
+        return refusal_page(request, session, admin, target, "perms", "Unknown permission")
     if wanted and target.role not in ASSIGNABLE_ROLES:
-        raise HTTPException(status_code=400, detail="Only agents can be given extra permissions")
+        return refusal_page(request, session, admin, target, "perms", "Only agents can be given extra permissions")
     rows = session.exec(select(UserPermission).where(UserPermission.user_id == target.id)).all()
     held = {row.permission: row for row in rows}
     if not target.is_active and wanted - set(held):
-        raise HTTPException(status_code=400, detail="An inactive account cannot be given extra permissions")
+        return refusal_page(request, session, admin, target, "perms", "An inactive account cannot be given extra permissions")
     for key in sorted(wanted - set(held)):
         try:
             with session.begin_nested():  # a double submit may have added it already: not an error
@@ -483,11 +487,12 @@ def set_user_permissions(
             session.delete(row)
             log_action(session, admin.email, "user", target.id, "permission_revoked", key)
     session.commit()
-    return RedirectResponse(_panel_url(user_id), status_code=303)
+    return _person_redirect(user_id, "perms", "perms")
 
 
 @router.post("/users/{user_id}/memberships")
 def set_membership(
+    request: Request,
     user_id: int,
     team_id: int = Form(...),
     level: MembershipLevel = Form(...),
@@ -502,7 +507,7 @@ def set_membership(
     if target.role == UserRole.END_USER:
         # Team access only applies to agents; a row here would do nothing now and
         # quietly take effect if the person is made an agent later.
-        raise HTTPException(status_code=400, detail="Make the user an agent before adding them to a team")
+        return refusal_page(request, session, admin, target, "teams", "Make the user an agent before adding them to a team")
 
     membership = session.get(TeamMembership, (user_id, team_id))
     if membership is None:
@@ -516,7 +521,7 @@ def set_membership(
         membership.level = level
         session.add(membership)
     session.commit()
-    return RedirectResponse(_panel_url(user_id), status_code=303)
+    return _person_redirect(user_id, "teams", "teams")
 
 
 @router.post("/users/{user_id}/memberships/{team_id}/remove")
@@ -537,11 +542,12 @@ def remove_membership(
     )
     session.delete(membership)
     session.commit()
-    return RedirectResponse(_panel_url(user_id), status_code=303)
+    return _person_redirect(user_id, "teams", "teams")
 
 
 @router.post("/users/{user_id}/active")
 def set_user_active(
+    request: Request,
     user_id: int,
     is_active: bool = Form(...),
     admin: User = Depends(require_super_admin),
@@ -553,7 +559,7 @@ def set_user_active(
     if target is None:
         raise HTTPException(status_code=404, detail="User not found")
     if is_active and links.link_of(session, target) is not None:
-        raise HTTPException(status_code=400, detail="This account was merged into another by a link; unlink it to use it again")
+        return refusal_page(request, session, admin, target, "status", "This account was merged into another by a link; unlink it to use it again")
     if target.is_active != is_active:
         log_action(session, admin.email, "user", target.id, "activated" if is_active else "deactivated", "")
         target.is_active = is_active
@@ -566,7 +572,7 @@ def set_user_active(
         else:
             start_waiting_rounds(session, admin.email)  # a request waiting for approvers may now have one (#161)
         session.commit()
-    return RedirectResponse(_panel_url(user_id), status_code=303)
+    return _person_redirect(user_id, "status", "activated" if is_active else "deactivated")
 
 
 @router.post("/users/{user_id}/sign-out")
@@ -582,11 +588,12 @@ def sign_out_user_everywhere(
     ended = revoke_user_sessions(session, target.id)
     log_action(session, admin.email, "user", target.id, "signed_out_everywhere", f"by a super admin; {ended} ended")
     session.commit()
-    return RedirectResponse(_panel_url(user_id), status_code=303)
+    return _person_redirect(user_id, "signin", "signed_out")
 
 
 @router.post("/users/{user_id}/clear-oid")
 def clear_user_object_id(
+    request: Request,
     user_id: int,
     admin: User = Depends(require_super_admin),
     session: Session = Depends(get_session),
@@ -597,13 +604,13 @@ def clear_user_object_id(
     if target is None:
         raise HTTPException(status_code=404, detail="User not found")
     if target.entra_object_id is None:
-        raise HTTPException(status_code=400, detail="This user has no stored object id")
+        return refusal_page(request, session, admin, target, "signin", "This user has no stored object id")
     log_action(session, admin.email, "user", target.id, "oid_cleared", f"was {target.entra_object_id}")
     target.entra_object_id = None
     session.add(target)
     revoke_user_sessions(session, target.id)
     session.commit()
-    return RedirectResponse(_panel_url(user_id), status_code=303)
+    return _person_redirect(user_id, "signin", "oid_cleared")
 
 
 @router.post("/users/{user_id}/unlock")
@@ -625,7 +632,7 @@ def unlock_user(
     target.locked_until = None
     session.add(target)
     session.commit()
-    return RedirectResponse(_panel_url(user_id), status_code=303)
+    return _person_redirect(user_id, "signin", "unlocked")
 
 
 @router.post("/users")
@@ -663,7 +670,7 @@ def create_local_user(
         session.add(TeamMembership(user_id=local_user.id, team_id=team.id, level=level))
         log_action(session, admin.email, "user", local_user.id, "membership_added", f"{team.name}: {level.value}")
     session.commit()
-    return RedirectResponse(_panel_url(local_user.id), status_code=303)
+    return _person_redirect(local_user.id)
 
 
 def _query_id(value: Optional[str]) -> Optional[int]:

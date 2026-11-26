@@ -1,0 +1,28 @@
+{# Sign-in (#322): how they sign in, unlock, clear the Microsoft link, sign out everywhere. #}
+{% if v.local %}
+<p>Local account (password){% if person.is_break_glass %} and authenticator code{% endif %}.</p>
+{% if v.locked %}<p class="note"><span class="chip t-red">Locked</span> until {{ v.locked_until|local_time }}</p>{% endif %}
+{% if person.failed_login_count %}<p class="note">{{ person.failed_login_count }} failed attempt{{ "" if person.failed_login_count == 1 else "s" }}</p>{% endif %}
+{% if v.show_unlock %}
+<form method="post" action="/admin/users/{{ person.id }}/unlock" class="up-inline pp-form"><button type="submit" class="btn">Unlock</button></form>
+{% endif %}
+{% if person.is_break_glass %}
+<p class="note">Reissue only with <code>python -m app.breakglass reset {{ v.username }}</code> in the container (never from this page).</p>
+{% endif %}
+{% else %}
+<p>Microsoft account (single sign-on).</p>
+{% endif %}
+{% if person.entra_object_id %}
+<p class="note">Entra id <code>{{ person.entra_object_id }}</code></p>
+{% elif not v.local %}
+<p class="note">No Entra id yet.</p>
+{% endif %}
+<p class="note">{{ v.sessions }} signed-in session{{ "" if v.sessions == 1 else "s" }}</p>
+<div class="up-actions">
+  <form method="post" action="/admin/users/{{ person.id }}/sign-out"><button type="submit" class="btn">Sign out everywhere</button></form>
+  {% if person.entra_object_id %}
+  <form method="post" action="/admin/users/{{ person.id }}/clear-oid">
+    <button type="submit" class="btn" title="For a re-hire or a recreated account: the next Entra sign-in with this email binds the new directory account">Clear Microsoft link</button>
+  </form>
+  {% endif %}
+</div>

@@ -1,0 +1,36 @@
+{# Teams (#322): change a level, remove, add. Both forms use the membership route. #}
+<p class="note">A <b>member</b> sees and works a team's tickets; a <b>viewer</b> can only read them.</p>
+{% for m, t in v.rows %}
+<div class="pp-row">
+  <span class="pp-row-name">{{ t.name }} <span class="chip t-blue">{{ m.level.value }}</span></span>
+  <div class="pp-row-actions">
+    {% if not v.is_end_user %}
+    <form method="post" action="/admin/users/{{ person.id }}/memberships" class="up-inline pp-form">
+      <input type="hidden" name="team_id" value="{{ t.id }}" />
+      <label class="field"><span class="sr-only">Level in {{ t.name }}</span>
+        <select name="level">{% for l in v.levels %}<option value="{{ l.value }}" {{ "selected" if m.level == l else "" }}>{{ l.value }}</option>{% endfor %}</select>
+      </label>
+      <button type="submit" class="btn">Change level</button>
+    </form>
+    {% endif %}
+    <form method="post" action="/admin/users/{{ person.id }}/memberships/{{ t.id }}/remove" class="pp-form">
+      <button type="submit" class="btn" aria-label="Remove from {{ t.name }}">Remove</button>
+    </form>
+  </div>
+</div>
+{% else %}
+<p class="note">No teams.</p>
+{% endfor %}
+{% if v.is_end_user %}
+<p class="note">Make this person an agent before adding them to a team.</p>
+{% elif v.teams %}
+<form method="post" action="/admin/users/{{ person.id }}/memberships" class="up-inline pp-form pp-add">
+  <label class="field">Add to a team
+    <select name="team_id" required>{% for t in v.teams %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}</select>
+  </label>
+  <label class="field">Level
+    <select name="level">{% for l in v.levels %}<option value="{{ l.value }}">{{ l.value }}</option>{% endfor %}</select>
+  </label>
+  <button type="submit" class="btn">Add or change</button>
+</form>
+{% endif %}
