@@ -651,7 +651,9 @@ def test_the_subject_access_export_lists_a_change_for_the_owner_and_for_the_othe
     for address in (OWNER, TARGET):
         archive = zipfile.ZipFile(io.BytesIO(build_export(db_session, get_storage(), address, admin).file.read()))
         [row] = json.loads(archive.read("mailbox_changes.json"))
-        assert row["kind"] == "forwarding" and row["mailbox"] == OWNER and row["shared_with"] == TARGET and row["state"] == "active"
+        assert row["kind"] == "forwarding" and row["state"] == "active"
+        # only the asker's own side is named; the other person's address is not theirs to be given
+        assert (row["mailbox"], row["shared_with"]) == ((OWNER, "another person") if address == OWNER else ("another person's", TARGET))
         assert "last_error" not in row and "job" not in " ".join(row)  # the team's working notes are not part of the export
 
 
@@ -677,3 +679,67 @@ def test_a_person_with_an_unfinished_change_is_not_anonymised_until_it_has_ended
     change = reload(db_session, change)
     assert change.target_address == "anonymised-7@invalid" and change.target_object_id is None
     assert change.owner_address == OWNER and change.owner_object_id == "oid-owner"  # the owner is not the person asked about
+
+
+def test_a_second_final_removal_failure_goes_to_the_same_incident(client, db_session, fake_exchange, dev_mail):
+    team, agent = team_with_agent(db_session)
+    ticket, change = schedule(db_session, ticket=request_ticket(db_session, team), team=team)
+    run(db_session, change.starts_at + timedelta(minutes=1))
+    fake_exchange.script("remove", OUTCOME_PERMANENT, times=2)
+    run(db_session, change.ends_at + timedelta(minutes=1))
+    first = reload(db_session, change).incident_ticket_id
+    agent_client(client, db_session, team)
+    client.post(f"/tickets/{ticket.number}/mailbox/try-again")
+    run(db_session, change.ends_at + timedelta(minutes=30))
+
+    change = reload(db_session, change)
+    assert change.state == "failed" and change.incident_ticket_id == first
+    assert len(db_session.exec(select(Ticket).where(Ticket.type == TicketType.INCIDENT)).all()) == 1
+    assert len(notes(db_session, db_session.get(Ticket, first), visible=False)) == 2
+
+
+def test_a_row_recovered_from_applying_after_its_end_is_not_cancelled_but_applied_and_removed(db_session, fake_exchange, dev_mail):
+    ticket, change = schedule(db_session)
+    with Session(engine) as session:  # claimed, the change was made in Exchange, the worker died
+        mailbox_changes._claim_next(session, change.starts_at + timedelta(minutes=1), set())
+    fake_exchange.held.add(mailbox_key(reload(db_session, change)))
+    late = change.ends_at + timedelta(minutes=30)
+
+    run(db_session, late)  # applied again (idempotent) ...
+    assert reload(db_session, change).state == "active"
+    run(db_session, late + timedelta(minutes=1))  # ... and removed
+    change = reload(db_session, change)
+    assert change.state == "ended" and not fake_exchange.holds(change)
+
+
+def test_a_result_that_cannot_be_recorded_hands_the_change_to_the_team_and_does_not_stop_the_run(db_session, fake_exchange, dev_mail, monkeypatch):
+    team, agent = team_with_agent(db_session)
+    ticket, change = schedule(db_session, ticket=request_ticket(db_session, team), team=team)
+    other_ticket, other = schedule(db_session)
+    calls = []
+    real = mailbox_changes._on_applied
+
+    def broken(session, ch, tk, at, actor=None):
+        calls.append(ch.id)
+        if len(calls) == 1:
+            raise RuntimeError("template broke")
+        return real(session, ch, tk, at, actor)
+
+    monkeypatch.setattr(mailbox_changes, "_on_applied", broken)
+    assert run(db_session, max(change.starts_at, other.starts_at) + timedelta(minutes=1)) == 2
+
+    failed, fine = reload(db_session, change, other) if calls[0] == change.id else reload(db_session, other, change)
+    assert failed.state == "failed" and failed.last_error_category == "recording_failed" and failed.applied_at is not None
+    assert fine.state == "active"
+    assert "recording_failed" in audit(db_session, failed)
+
+
+def test_a_final_start_failure_returns_a_ticket_an_agent_put_on_hold_to_open(db_session, fake_exchange, dev_mail):
+    ticket, change = schedule(db_session)
+    ticket = reload(db_session, ticket)
+    ticket.status = TicketStatus.WITH_SUPPLIER
+    db_session.add(ticket)
+    db_session.commit()
+    fake_exchange.script("apply", OUTCOME_PERMANENT)
+    run(db_session, change.starts_at + timedelta(minutes=1))
+    assert reload(db_session, ticket).status == TicketStatus.OPEN

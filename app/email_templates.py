@@ -557,7 +557,7 @@ REGISTRY: dict[str, TemplateDef] = {
             sample={
                 **_COMMON_SAMPLE, "change": "Mail sent to you is now going to Jane Smith as well", "target": "Jane Smith",
                 "until": "12 Jan 2027 17:00 GMT", "copy_text": "A copy stays in your mailbox.",
-                "link": "https://tickets.example/portal/tickets/1042",
+                "link": "https://tickets.example/portal/1042",
             },
         ),
         TemplateDef(

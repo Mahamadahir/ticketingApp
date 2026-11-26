@@ -201,6 +201,8 @@ def schedule_ticket(session: Session, ticket: Ticket, change: MailboxChange) -> 
     time. Set by the system, not through `prepare_scheduled` (that is the agent's form, which refuses a day whose morning has
     already begun, as a "Now" start would). Called by `create_mailbox_change`, and by the approval flow once a request for someone
     else's mailbox is approved (#311). Does not commit."""
+    if change.state != MAILBOX_SCHEDULED:
+        return  # cancelled (or already under way) while it waited for approval
     zone = zone_for_email(session, ticket.requester_email)
     ticket.due_on = _aware(change.starts_at).astimezone(ZoneInfo(zone)).date()
     ticket.due_set_by_hand = False
@@ -350,7 +352,8 @@ def _on_start_failed(session: Session, change: MailboxChange, ticket: Ticket, no
     session.add(change)
     told_before = _event_count(session, ticket, EVENT_START_FAILED) > 0
     record_event(session, ticket, EVENT_START_FAILED, "system", to_value=change.kind, detail=f"{change.last_error_category}, {change.attempts} attempts")
-    if ticket.status == TicketStatus.SCHEDULED:
+    if ticket.status not in FINISHED_STATUSES and ticket.status not in (TicketStatus.OPEN, TicketStatus.AWAITING_APPROVAL):
+        # Whatever an agent moved it to meanwhile (On hold, Awaiting user, With MSP): it goes back to the queue the team watches.
         set_status(session, ticket, TicketStatus.OPEN, "system", detail="the mailbox change could not be made")
     if ticket.status not in FINISHED_STATUSES:
         set_assignee(session, ticket, None, None)
@@ -380,6 +383,15 @@ def _on_removal_failed(session: Session, change: MailboxChange, ticket: Ticket, 
     change.state, change.next_attempt_at, change.updated_at = MAILBOX_FAILED, None, now
     session.add(change)
     record_event(session, ticket, EVENT_REMOVAL_FAILED, "system", to_value=change.kind, detail=f"{change.last_error_category}, {change.attempts} attempts")
+    earlier = session.get(Ticket, change.incident_ticket_id) if change.incident_ticket_id else None
+    if earlier is not None and earlier.status not in FINISHED_STATUSES:
+        # A second final failure (after Try again): the incident already open is the place for it, not a second incident.
+        record_system_note(session, earlier, "The removal was tried again and failed again.\n\n" + _internal_note(change, "removal", now))
+        record_event(session, earlier, EVENT_RAISED_FOR, "system", to_value=ticket.tag, detail="failed again after Try again")
+        notify_mailbox_change_failed(
+            session, earlier, f"{REF} {earlier.subject}: the scheduled mailbox change could not be removed again. Check Exchange by hand"
+        )
+        return earlier
     incident = create_ticket(
         session,
         subject=f"Mailbox change could not be removed: {change.kind.replace('_', ' ')} on {change.owner_address}",
@@ -448,14 +460,17 @@ def _claim_next(session: Session, now: datetime, skip: set[int]) -> Optional[_Wo
             skip.add(change.id)  # not approved (or not triaged) yet: it waits, whatever the time
             session.rollback()
             continue
-        if starting and ticket.status in FINISHED_STATUSES and change.applied_at is None:
+        # Only a row that is still waiting is cancelled here. One found in `applying` (the worker died after claiming it) may have
+        # been made in Exchange already, so it goes on to be applied again (idempotent) and removed in its turn, never dropped.
+        waiting = change.state == MAILBOX_SCHEDULED
+        if waiting and ticket.status in FINISHED_STATUSES and change.applied_at is None:
             # Closed or resolved before it began (declined, withdrawn, settled by hand): it is never made.
             change.state, change.next_attempt_at, change.updated_at = MAILBOX_CANCELLED, None, now
             session.add(change)
             _audit(session, AUDIT_ACTOR, change, "cancelled", "the request was finished before the change started")
             session.commit()
             continue
-        if starting and _aware(change.ends_at) <= now and change.applied_at is None:
+        if waiting and _aware(change.ends_at) <= now and change.applied_at is None:
             change.state, change.next_attempt_at, change.updated_at = MAILBOX_CANCELLED, None, now
             session.add(change)
             _audit(session, AUDIT_ACTOR, change, "cancelled", "the end time passed before the change could start")
@@ -560,27 +575,61 @@ def _record_result(session: Session, work: _Work, result: ExecutorResult, now: d
         _on_removal_failed(session, change, ticket, now)
 
 
+def _record_breakdown(session: Session, work: _Work, result: ExecutorResult, error: str, now: datetime) -> None:
+    """The result could not be recorded (a template, the ticket or a notification raised). Whatever Exchange now holds is kept in
+    the row: a made change counts as applied (so Cancel is not offered and the removal still runs), and the row is handed to the
+    team as failed, with the error and a bell, rather than retried for ever. The ticket is left as it was."""
+    change = session.exec(
+        select(MailboxChange).where(MailboxChange.id == work.change_id).with_for_update().execution_options(populate_existing=True)
+    ).first()
+    if change is None or change.state not in (MAILBOX_APPLYING, MAILBOX_REMOVING):
+        return
+    if result.outcome == OUTCOME_SUCCEEDED and change.applied_at is None:
+        change.applied_at = now
+    change.state, change.next_attempt_at, change.updated_at = MAILBOX_FAILED, None, now
+    change.last_error_category, change.last_error, change.last_job_id = "recording_failed", error[:MAX_ERROR_LENGTH], result.job_id
+    session.add(change)
+    _audit(session, AUDIT_ACTOR, change, "recording_failed", f"{work.operation}, executor said {result.outcome}")
+    ticket = session.get(Ticket, change.ticket_id)
+    if ticket is not None:
+        try:
+            with session.begin_nested():
+                record_system_note(session, ticket, _internal_note(change, "start" if change.applied_at is None else "removal", now))
+                notify_mailbox_change_failed(session, ticket, f"{REF} {ticket.subject}: a scheduled mailbox change needs an agent (it could not be recorded)")
+        except Exception:
+            log.exception("mailbox change %s: the breakdown note could not be written", change.id)
+
+
 def run_mailbox_changes(session: Session, now: Optional[datetime] = None) -> int:
     """The recurring job `mailbox-changes` (registered in app/scheduled_jobs.py): starts the changes whose time has come, removes
     those whose end has, and retries failed attempts that are due. Returns how many it handled. One row at a time, each claimed with
     FOR UPDATE SKIP LOCKED and committed before Exchange is called, so two runs at once never take the same change and a run late
     or twice does nothing the second time. Commits after each change (the runner commits at the end as well)."""
-    now = now or utcnow()
+    clock = (lambda: now) if now is not None else utcnow  # a long run takes the time afresh for each change
+    now = clock()
     handled = 0
     skip: set[int] = set()
     if not _anything_due(session, now):
         return 0
     get_executor()  # raises ExecutorNotAvailable before anything is claimed, so no change loses an attempt to a missing executor
     while True:
-        work = _claim_next(session, now, skip)
+        work = _claim_next(session, clock(), skip)
         if work is None:
             break
         change = session.get(MailboxChange, work.change_id)
         snapshot = _snapshot(change)
         session.rollback()  # nothing is held while Exchange is called
         result = _call(work.operation, snapshot)
-        _record_result(session, work, result, now)
-        session.commit()
+        try:
+            _record_result(session, work, result, clock())
+            session.commit()
+        except Exception as exc:
+            # Recording must not stop the run or leave the row to be re-claimed for ever: it is settled in a fresh transaction,
+            # and a change that cannot be recorded goes to the team as a failure.
+            log.exception("mailbox change %s: recording the result of %s failed", work.change_id, work.operation)
+            session.rollback()
+            _record_breakdown(session, work, result, f"{type(exc).__name__}: {exc}", clock())
+            session.commit()
         handled += 1
         skip.add(work.change_id)  # not twice in one run, whatever happened
     return handled

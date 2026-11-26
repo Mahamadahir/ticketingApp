@@ -452,7 +452,10 @@ def _mailbox_changes(session: Session, person: Person) -> list[dict]:
     ).all()
     return [
         {
-            "request": t.reference, "kind": c.kind, "mailbox": c.owner_address, "shared_with": c.target_address,
+            # The other person's address is theirs, not the one asked about: the export names only the asker's own side.
+            "request": t.reference, "kind": c.kind,
+            "mailbox": c.owner_address if c.owner_address.strip().lower() in person.addresses else "another person's",
+            "shared_with": c.target_address if c.target_address.strip().lower() in person.addresses else "another person",
             "keep_copy": c.keep_copy if c.kind == "forwarding" else None, "starts_at": c.starts_at, "ends_at": c.ends_at,
             "state": c.state, "applied_at": c.applied_at, "removed_at": c.removed_at, "asked_by": c.created_by,
             "asked_at": c.created_at,
