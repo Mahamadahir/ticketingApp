@@ -665,6 +665,8 @@ def try_again(session: Session, change: MailboxChange, actor: User, now: Optiona
     now = now or utcnow()
     change = _locked(session, change)
     phase = _require_failed(change)
+    if phase == "start" and _aware(change.ends_at) <= now:
+        raise MailboxChangeError("The end time of this change has passed, so it can no longer be made: use Cancel change, or Done by hand if you made it")
     ticket = session.get(Ticket, change.ticket_id)
     change.state = MAILBOX_SCHEDULED if phase == "start" else MAILBOX_ACTIVE
     change.attempts = max(max_attempts(session) - 1, 0)

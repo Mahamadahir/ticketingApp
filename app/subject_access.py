@@ -458,7 +458,8 @@ def _mailbox_changes(session: Session, person: Person, name_other_person: bool =
             "mailbox": c.owner_address if name_other_person or c.owner_address.strip().lower() in person.addresses else "another person's",
             "shared_with": c.target_address if name_other_person or c.target_address.strip().lower() in person.addresses else "another person",
             "keep_copy": c.keep_copy if c.kind == "forwarding" else None, "starts_at": c.starts_at, "ends_at": c.ends_at,
-            "state": c.state, "applied_at": c.applied_at, "removed_at": c.removed_at, "asked_by": c.created_by,
+            "state": c.state, "applied_at": c.applied_at, "removed_at": c.removed_at,
+            "asked_by": c.created_by if name_other_person or c.created_by.strip().lower() in person.addresses else "another person",
             "asked_at": c.created_at,
         }
         for c, t in rows

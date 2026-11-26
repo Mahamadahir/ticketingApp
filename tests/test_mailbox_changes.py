@@ -816,3 +816,82 @@ def test_asked_as_the_other_person_ticked_names_the_owner(db_session, fake_excha
     for named, expected in ((False, "another person's"), (True, OWNER)):
         archive = zipfile.ZipFile(io.BytesIO(build_export(db_session, get_storage(), TARGET, admin, name_other_person=named).file.read()))
         assert json.loads(archive.read("mailbox_changes.json"))[0]["mailbox"] == expected
+
+
+def test_asked_as_the_other_person_nothing_in_the_section_names_the_owner_unless_ticked(db_session, fake_exchange, dev_mail):
+    import io
+    import zipfile
+
+    from app.storage import get_storage
+    from app.subject_access import build_export
+
+    ticket, change = schedule(db_session)
+    run(db_session, change.starts_at + timedelta(minutes=1))
+    admin = User(email="dpo@example.com", display_name="DPO", role=UserRole.SUPER_ADMIN)
+    db_session.add(admin)
+    db_session.commit()
+
+    def section(named):
+        archive = zipfile.ZipFile(io.BytesIO(build_export(db_session, get_storage(), TARGET, admin, name_other_person=named).file.read()))
+        return archive.read("mailbox_changes.json").decode("utf-8")
+
+    plain = section(False)
+    assert OWNER not in plain and "OID-OWNER".lower() not in plain.lower() and TARGET in plain  # asked_by too
+    assert OWNER in section(True)
+
+
+def test_try_again_on_a_failed_start_is_refused_once_the_end_time_has_passed(db_session, fake_exchange, dev_mail):
+    team, agent = team_with_agent(db_session)
+    ticket, change = schedule(db_session, ticket=request_ticket(db_session, team), team=team)
+    fake_exchange.script("apply", OUTCOME_PERMANENT)
+    run(db_session, change.starts_at + timedelta(minutes=1))
+    change = reload(db_session, change)
+    with pytest.raises(MailboxChangeError, match="end time of this change has passed"):
+        mailbox_changes.try_again(db_session, change, agent, now=change.ends_at + timedelta(minutes=1))
+    db_session.rollback()
+    assert reload(db_session, change).state == "failed"  # untouched, not left for the next run to cancel silently
+    mailbox_changes.try_again(db_session, change, agent, now=change.ends_at - timedelta(minutes=1))  # before the end it still works
+
+
+def test_a_slow_mailbox_call_does_not_hold_up_another_due_job(db_session):
+    import time
+
+    from app import scheduled_jobs
+    from app.models import ScheduledJob
+    from app.scheduled_jobs import ScheduledJobDef, run_due_jobs
+
+    release, started, fast_ran = threading.Event(), threading.Event(), []
+
+    def slow(session):
+        started.set()
+        release.wait(30)
+
+    def fast(session):
+        fast_ran.append(1)
+
+    jobs = [ScheduledJobDef("a-slow", 3600, slow, background=True), ScheduledJobDef("b-fast", 3600, fast)]
+    began = time.monotonic()
+    ran = run_due_jobs(jobs, owner="test")
+    took = time.monotonic() - began
+    try:
+        assert started.wait(10)
+        assert sorted(ran) == ["a-slow", "b-fast"] and fast_ran == [1]  # the fast job ran while the slow one was still going
+        assert took < 5
+        db_session.expire_all()
+        slow_row = db_session.get(ScheduledJob, "a-slow")
+        assert slow_row.lease_owner == "test"  # held, so no second tick starts it beside the first
+        assert run_due_jobs(jobs, owner="test") == []
+    finally:
+        release.set()
+        for thread in list(scheduled_jobs._background_threads):
+            thread.join(10)
+    db_session.expire_all()
+    slow_row = db_session.get(ScheduledJob, "a-slow")
+    assert slow_row.lease_owner is None and slow_row.last_success_at is not None  # the outcome is recorded as for any job
+
+
+def test_the_mailbox_job_runs_in_the_background():
+    from app.scheduled_jobs import SCHEDULED_JOBS
+
+    [job] = [j for j in SCHEDULED_JOBS if j.name == "mailbox-changes"]
+    assert job.background
