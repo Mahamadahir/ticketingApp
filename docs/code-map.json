@@ -1672,6 +1672,7 @@
       "imports": [
         "app.config",
         "app.followers",
+        "app.identity",
         "app.never_follow",
         "app.people_directory",
         "app.quoted_text"
@@ -1747,6 +1748,7 @@
         "app.auth",
         "app.bot_cards",
         "app.email_reactions",
+        "app.forwards",
         "app.inbound",
         "app.linked_identities",
         "app.mail",
@@ -1890,6 +1892,7 @@
       "summary": "The rules every way in shares when a person's words become a ticket or a reply: email (app/inbound.py) and Teams",
       "tables": [],
       "tests": [
+        "tests/test_forward_mail.py",
         "tests/test_inbound_mail.py",
         "tests/test_teams_followups.py",
         "tests/test_teams_intake.py"

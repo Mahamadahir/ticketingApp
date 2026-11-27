@@ -795,7 +795,7 @@ File: `app/forwards.py`
 
 - Classes: `ForwardDecision`, `ForwardParts`
 - Functions: `decide`, `original_address`, `read_forward`
-- Imports: `app.config`, `app.followers`, `app.never_follow`, `app.people_directory`, `app.quoted_text`
+- Imports: `app.config`, `app.followers`, `app.identity`, `app.never_follow`, `app.people_directory`, `app.quoted_text`
 - Imported by: `app.inbound`
 - Tests: `test_forward_mail.py`
 
@@ -817,7 +817,7 @@ File: `app/identity.py`
 - Classes: `SsoRefused`
 - Functions: `addresses_of`, `is_follower_of`, `is_requester`, `keep_as_alias`, `merged_into`, `my_ticket_condition`, `my_tickets_query`, `normal_oid`, `object_ids_of`, `people_for_addresses`, `person_for_address`, `person_for_object_id`, `requester_emails`, `resolve_sso_user`
 - Imports: `app.audit`, `app.config`, `app.models`
-- Imported by: `app.admin_people`, `app.approvals`, `app.auth`, `app.bot_cards`, `app.email_reactions`, `app.inbound`, `app.linked_identities`, `app.mail`, `app.mailbox_changes`, `app.msp`, `app.notifications`, `app.people_directory`, `app.person_data`, `app.portal_mailbox`, `app.raising`, `app.reactions`, `app.reply_channel`, `app.routers.auth`, `app.routers.portal`, `app.routers.tickets`, `app.teams`, `app.teams_approvals`, `app.teams_conversations`, `app.teams_intake`, `app.teams_reactions`, `app.time_zones`, `app.visibility`
+- Imported by: `app.admin_people`, `app.approvals`, `app.auth`, `app.bot_cards`, `app.email_reactions`, `app.forwards`, `app.inbound`, `app.linked_identities`, `app.mail`, `app.mailbox_changes`, `app.msp`, `app.notifications`, `app.people_directory`, `app.person_data`, `app.portal_mailbox`, `app.raising`, `app.reactions`, `app.reply_channel`, `app.routers.auth`, `app.routers.portal`, `app.routers.tickets`, `app.teams`, `app.teams_approvals`, `app.teams_conversations`, `app.teams_intake`, `app.teams_reactions`, `app.time_zones`, `app.visibility`
 - Tests: `test_linked_identities.py`, `test_portal.py`
 
 ### `app.inbound`
@@ -840,7 +840,7 @@ File: `app/intake.py`
 - Functions: `clean_body`, `clean_subject`, `clean_text`, `ignored_as_never_follow`, `record_first_message`, `record_reply`, `store_files`
 - Imports: `app.attachments`, `app.audit`, `app.forms`, `app.messages`, `app.models`, `app.never_follow`, `app.raising`, `app.reply_channel`, `app.settings_store`, `app.splitting`, `app.storage`, `app.ticket_service`
 - Imported by: `app.inbound`, `app.teams_intake`, `app.teams_pending`
-- Tests: `test_inbound_mail.py`, `test_teams_followups.py`, `test_teams_intake.py`
+- Tests: `test_forward_mail.py`, `test_inbound_mail.py`, `test_teams_followups.py`, `test_teams_intake.py`
 
 ### `app.job_errors`
 

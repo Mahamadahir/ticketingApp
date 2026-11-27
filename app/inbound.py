@@ -154,6 +154,8 @@ class IncomingMail:
     body: str = ""
     # The whole message (Graph body) with the earlier chain under it: the email that opens a ticket keeps it. "" means body.
     full_body: str = ""
+    # Graph's uniqueBody as it came, blank or not; MSP mail reads it. None when built by hand: then body.
+    msp_body: Optional[str] = None
     internet_message_id: Optional[str] = None  # normalised, see _message_id
     conversation_id: Optional[str] = None
     cc: list[str] = field(default_factory=list)
@@ -234,6 +236,7 @@ def parse_graph_message(raw: dict) -> IncomingMail:
         subject=_text(raw.get("subject")),
         body=content,
         full_body=whole or content,
+        msp_body=content_of("uniqueBody") if isinstance(raw.get("uniqueBody"), dict) else None,
         internet_message_id=_message_id(raw.get("internetMessageId")),
         conversation_id=_text(raw.get("conversationId")) or None,
         cc=[a for a in (_address(e) for e in raw.get("ccRecipients") or []) if a],
@@ -435,7 +438,9 @@ def opening_text(mail: IncomingMail) -> str:
     return mail.full_body or mail.body
 
 
-def _body_of(mail: IncomingMail, *, opening: bool = False) -> str:
+def _body_of(mail: IncomingMail, *, opening: bool = False, msp: bool = False) -> str:
+    if msp and mail.msp_body is not None:
+        return clean_body(mail.msp_body)  # MSP mail keeps uniqueBody only, even when blank
     return clean_body(opening_text(mail) if opening else mail.body)
 
 
@@ -519,7 +524,7 @@ def _ingest_msp_mail(session, mail, sender, attachments, storage, now, settle) -
     ticket, how = _msp_ticket_for(session, mail, parsed, now)
     def park() -> None:
         park_unmatched(
-            session, graph_message_id=mail.graph_message_id, sender=sender, subject=_subject_of(mail), body=_body_of(mail),
+            session, graph_message_id=mail.graph_message_id, sender=sender, subject=_subject_of(mail), body=_body_of(mail, msp=True),
             to=mail.to, cc=mail.cc, parsed=parsed, verified=verified,
         )
 
@@ -532,14 +537,14 @@ def _ingest_msp_mail(session, mail, sender, attachments, storage, now, settle) -
         return settle(IGNORED_MSP)
     if parsed is not None and parsed.is_acknowledgement:
         message = receive_msp_acknowledgement(
-            session, ticket, sender=sender, body=_body_of(mail), number=parsed.number, learn=verified
+            session, ticket, sender=sender, body=_body_of(mail, msp=True), number=parsed.number, learn=verified
         )
         if message is None:  # its number is already another ticket's: an agent decides
             park()
             return settle(IGNORED_MSP)
     else:
         message = receive_msp_mail(
-            session, ticket, sender=sender, body=_body_of(mail), recipients=mail.to + mail.cc, now=now, verified=verified
+            session, ticket, sender=sender, body=_body_of(mail, msp=True), recipients=mail.to + mail.cc, now=now, verified=verified
         )
     message.graph_message_id = mail.graph_message_id
     session.flush()
@@ -651,13 +656,15 @@ def ingest_mail(
             session, new, EVENT_REFERENCE_NOT_USED, None, to_value=ticket.tag,
             detail="The subject or thread names that ticket, but the sender is not its requester or a follower",
         )
-    if forward is not None and forward.detail:
-        record_event(session, new, EVENT_MAIL_FORWARDED, sender, to_value=new.requester_email, detail=forward.detail)
-    if forward is not None and forward.follower:
-        try:
-            add_follower(session, new, forward.follower, sender)
-        except (InvalidEmail, NeverFollowListed, TooManyFollowers):
-            pass
+    if forward is not None:
+        detail = forward.detail
+        if forward.follower:
+            try:
+                add_follower(session, new, forward.follower, sender)
+            except (InvalidEmail, NeverFollowListed, TooManyFollowers):
+                detail += f" {forward.follower} could not be added as a follower."
+        if detail:
+            record_event(session, new, EVENT_MAIL_FORWARDED, sender, to_value=new.requester_email, detail=detail)
     message = record_first_message(
         session, new, sender=sender, body=_body_of(mail, opening=True), author_id=author_id, action="created_by_email",
         channel=EMAIL, graph_message_id=mail.graph_message_id,

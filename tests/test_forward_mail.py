@@ -273,3 +273,35 @@ def test_reading_the_from_line():
     assert read("FW: x", OUTLOOK_BLOCK).above == ""
     assert read("Re: x", OUTLOOK_BLOCK) is None
     assert forwards._ADDRESS.search("Sam [mailto:sam@outside.example]").group(0) == "sam@outside.example"
+
+
+def test_msp_mail_keeps_a_blank_unique_body_blank_while_a_reply_falls_back():
+    from app.inbound import _body_of
+    from app.intake import NO_TEXT
+
+    raw = graph_message(body="")
+    raw["body"] = {"content": "the whole chain"}
+    parsed = parse_graph_message(raw)
+    assert _body_of(parsed) == "the whole chain"  # a reply
+    assert _body_of(parsed, msp=True) == NO_TEXT
+
+
+def test_a_refused_follower_is_said_in_the_event(db_session, monkeypatch):
+    from app import followers as followers_module
+
+    person(db_session, "owen@corp.example", "Owen Owner")
+    monkeypatch.setattr(followers_module, "MAX_EXTERNAL_FOLLOWERS", 0)
+    ticket = forward(db_session, "Look\n\n" + OUTLOOK_BLOCK)
+    [event] = events_of(db_session, ticket, forwards.EVENT_MAIL_FORWARDED)
+    assert "could not be added as a follower" in event.detail
+
+
+def test_forwarding_ones_own_mail_from_another_linked_address_changes_nothing(db_session):
+    from app.models import LinkedIdentity
+
+    main = person(db_session, "owen@corp.example", "Owen Owner")
+    db_session.add(LinkedIdentity(main_user_id=main.id, email="owen@alt.example", status="active", method="admin"))
+    db_session.commit()
+    body = OUTLOOK_BLOCK.replace("sam@outside.example", "owen@alt.example")
+    ticket = forward(db_session, body)
+    assert ticket.requester_email == "owen@corp.example" and followers(db_session, ticket) == []

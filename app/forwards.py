@@ -24,7 +24,7 @@ from typing import Optional
 
 from sqlmodel import Session
 
-from app import people_directory
+from app import identity, people_directory
 from app.config import settings
 from app.followers import InvalidEmail, normalise_email
 from app.never_follow import is_listed, is_msp
@@ -109,7 +109,7 @@ def decide(session: Session, forwarder: str, subject: str, body: str) -> Optiona
         return None
     address, why = original_address(session, parts.from_text)
     mailbox = settings.graph_shared_mailbox.strip().lower()
-    if address is not None and address == forwarder:
+    if address is not None and address in identity.addresses_of(session, forwarder):
         return None  # they forwarded their own mail to themselves: nothing to change
     if address is not None and (address == mailbox or is_msp(session, address) or is_listed(session, address)):
         why = "it is the support mailbox, the MSP or an address on the never-follow list"
