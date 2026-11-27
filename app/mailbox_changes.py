@@ -94,6 +94,7 @@ EVENT_TRY_AGAIN = "mailbox_change_try_again"
 EVENT_DONE_BY_HAND = "mailbox_change_done_by_hand"
 EVENT_STOPPED_EARLY = "mailbox_change_stopped_early"
 EVENT_INCIDENT = "mailbox_change_incident"  # on the request: to_value is the incident raised for a failed removal
+EVENT_AGENT_CONFIRMED = "mailbox_change_confirmed"  # on the request: an agent set it up from the ticket (app/agent_mailbox.py, #364); detail is their note
 EVENT_RAISED_FOR = "mailbox_change_raised_for"  # on the incident: to_value is the request it is about
 
 MAX_ERROR_LENGTH = 2000
@@ -489,6 +490,12 @@ def _tell_target(session: Session, change: MailboxChange, ticket: Ticket, key: s
 def _approved_by(session: Session, ticket: Ticket) -> str:
     """Who approved a request for someone else's mailbox, as the end of a sentence for the owner: "you approved it", "it was approved by
     Sam Lee (IT Support)" or "it was approved by an administrator" (a waiver)."""
+    set_up = session.exec(
+        select(TicketEvent).where(TicketEvent.ticket_id == ticket.id, TicketEvent.event_type == EVENT_AGENT_CONFIRMED).order_by(TicketEvent.id)
+    ).first()
+    if set_up is not None:  # an agent set it up from the ticket (#364): their note is the approval, and it is for the team, not the owner
+        agent = session.exec(select(User).where(func.lower(User.email) == (set_up.actor_email or "").strip().lower())).first()
+        return f"it was set up and checked by {agent.display_name if agent is not None and agent.display_name else set_up.actor_email} (IT Support)"
     approval = current_approval(session, ticket)
     if approval is None:
         return "it was approved"

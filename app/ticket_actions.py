@@ -9,6 +9,7 @@ answers in as plain booleans so the rules for the row can be read, and tested, i
 - An untriaged ticket offers Triage in place of Re-assign and Escalate; a triaged one offers Re-assign and Escalate.
 - A ticket at the MSP offers Take back in place of Send to MSP.
 - Link and Split only when the agent may do them.
+- Set up mailbox change (#364) after them, on a triaged Service Request with no live mailbox change (`agent_mailbox.card_offered`).
 - Resolve is the one primary button; once the ticket is resolved it is Reopen (or Reclose).
 - Backdate and Close sit under the small more button.
 - A ticket whose scheduled mailbox change failed for good (#307) offers Try again, Done by hand and (only after a failed start)
@@ -65,6 +66,8 @@ CARDS: dict[str, tuple[str, str]] = {
     "mbx_retry": ("Try the mailbox change again", "retrying the mailbox change"),
     "mbx_done": ("Mailbox change done by hand", "settling the mailbox change by hand"),
     "mbx_cancel": ("Cancel the mailbox change", "cancelling the mailbox change"),
+    # Setting one up for a request that arrived by email or Teams (app/agent_mailbox.py, #364)
+    "mailbox": ("Set up mailbox change", "setting up a mailbox change"),
 }
 
 
@@ -89,6 +92,7 @@ def action_chips(
     can_close: bool,
     can_backdate: bool,
     mailbox_phase: Optional[str] = None,  # "start" or "removal" when a scheduled mailbox change on this ticket failed for good
+    can_mailbox: bool = False,  # a triaged Service Request with no live mailbox change (app/agent_mailbox.py card_offered)
 ) -> Chips:
     chips = Chips()
     if can_work and triaged:  # email to the requester is unavailable before triage (app/messages.py)
@@ -130,6 +134,8 @@ def action_chips(
         chips.row.append(Chip("link", "Link"))
     if can_split:
         chips.row.append(Chip("split", "Split"))
+    if can_mailbox:
+        chips.row.append(Chip("mailbox", "Set up mailbox change"))
 
     if triaged_actions and can_resolve:
         chips.primary = Chip("resolve", "Resolve", primary=True)

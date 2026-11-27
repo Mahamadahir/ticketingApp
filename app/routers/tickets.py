@@ -72,14 +72,14 @@ from app.required_by import (
     set_due,
     set_required_by,
 )
-from app.settings_store import REQUIRED_BY_LEAD_DAYS, SPLIT_EMAIL_ENABLED, count_setting, get_flag
+from app.settings_store import MAILBOX_CHANGE_MAX_DAYS, REQUIRED_BY_LEAD_DAYS, SPLIT_EMAIL_ENABLED, count_setting, get_flag
 from app.canned import active_canned, fill as fill_canned
-from app.approvals import SUPERSEDED, ApprovalError, approval_group_of, current_approval, describe_rule, is_waiting_for_approvers, votes_of, waive
+from app.approvals import MAX_COMMENT_LENGTH as MAX_APPROVAL_COMMENT, SUPERSEDED, ApprovalError, approval_group_of, current_approval, describe_rule, is_waiting_for_approvers, votes_of, waive
 from app.notifications import AWAITING_YOU, mentionable_agents, notify_agent_emailed, notify_assigned, notify_mentions
 from app.identity import person_for_address, requester_emails
 from app.presence import agent_label
 from app.ticket_actions import CARDS, action_chips
-from app import mailbox_changes, people_directory, portal_mailbox
+from app import agent_mailbox, mailbox_changes, people_directory, portal_mailbox
 from app.search import normalise, search_condition
 from app.splitting import (
     MAX_DETAILS,
@@ -539,6 +539,7 @@ def card_errors(card: str):
                         values.pop("draft")
                 response = _render_ticket_detail(
                     request, ticket, user, session, action=card, card_error=str(error.detail), card_values=values, card_must_open=error,
+                    card_confirm=bool(getattr(error, "needs_confirmation", False)),
                 )
                 if not is_htmx(request):
                     response.status_code = error.status_code
@@ -2368,6 +2369,74 @@ def mailbox_cancel(
     return _render_ticket_detail(request, ticket, user, session)
 
 
+def _mailbox_card(session: Session, user: User, ticket: Ticket, values: Optional[dict]) -> dict:
+    """What the Set up mailbox change card draws (#364): the form (what was typed when a refusal brings it back, else the first
+    display with the requester as the mailbox owner when they resolve to a person), the agent's zone and the choices. The
+    picker, times and script partials are the portal's (`_mailbox_picker.html`, `_mailbox_times.html`, static/mailbox-form.js)."""
+    form = agent_mailbox.AgentMailboxForm()
+    if values:  # a refusal: keep what was typed (a ticked box that is not sent is not ticked)
+        for field in (
+            "kind", "owner_object_id", "owner_name", "target_object_id", "target_name", "start_mode", "start_date", "start_time",
+            "end_date", "end_time", "note",
+        ):
+            setattr(form, field, values.get(field, getattr(form, field)))
+        form.keep_copy = "keep_copy" in values
+    else:
+        requester = agent_mailbox.requester_person(session, user, ticket)
+        if requester is not None:
+            form.owner_object_id, form.owner_name = requester.object_id, f"{requester.name} ({requester.mail})"
+    return {
+        "form": form, "kinds": agent_mailbox.KIND_CHOICES, "zone": zone_for_user(session, user),
+        "quarter_times": portal_mailbox.QUARTER_TIMES, "max_days": count_setting(session, MAILBOX_CHANGE_MAX_DAYS),
+        "max_note": MAX_APPROVAL_COMMENT,
+    }
+
+
+@router.post("/{number}/mailbox/set-up", response_class=HTMLResponse)
+@card_errors("mailbox")
+def mailbox_set_up(
+    number: int,
+    request: Request,
+    kind: str = Form(agent_mailbox.FORWARDING, max_length=20),
+    owner_object_id: str = Form("", max_length=100),
+    owner_name: str = Form("", max_length=200),
+    target_object_id: str = Form("", max_length=100),
+    target_name: str = Form("", max_length=200),
+    keep_copy: Optional[str] = Form(None, max_length=10),
+    start_mode: str = Form(portal_mailbox.NOW, max_length=10),
+    start_date: str = Form("", max_length=20),
+    start_time: str = Form("", max_length=10),
+    end_date: str = Form("", max_length=20),
+    end_time: str = Form("", max_length=10),
+    note: str = Form("", max_length=MAX_APPROVAL_COMMENT + 500),
+    confirmed: Optional[str] = Form(None, max_length=10),
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """Sets up a scheduled mailbox change on a request that arrived by email or Teams (app/agent_mailbox.py, #364): the agent's
+    required note is the approval, so no approval round starts. The checks are the portal's. Only an agent who works the ticket."""
+    ticket = _get_ticket(session, number, user)
+    form = agent_mailbox.AgentMailboxForm(
+        kind=kind, owner_object_id=owner_object_id.strip(), owner_name=owner_name.strip(), target_object_id=target_object_id.strip(),
+        target_name=target_name.strip(), keep_copy=keep_copy == "on",
+        start_mode=portal_mailbox.LATER if start_mode == portal_mailbox.LATER else portal_mailbox.NOW,
+        start_date=start_date, start_time=start_time, end_date=end_date, end_time=end_time, note=note, confirmed=confirmed == "1",
+    )
+    try:
+        agent_mailbox.submit(session, user, ticket, form)
+    except (portal_mailbox.ConfirmNoCopy, agent_mailbox.ConfirmAccess) as warning:
+        refusal = HTTPException(status_code=400, detail=str(warning))
+        refusal.needs_confirmation = True  # card_errors draws the red confirmation in place of a plain error
+        raise refusal
+    except portal_mailbox.MailboxFormError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    ticket.updated_at = datetime.now(timezone.utc)
+    session.add(ticket)
+    session.commit()
+    session.refresh(ticket)
+    return _render_ticket_detail(request, ticket, user, session)
+
+
 @router.post("/{number}/unlink", response_class=HTMLResponse)
 def unlink(
     number: int,
@@ -2495,6 +2564,7 @@ def _render_ticket_detail(
     request: Request, ticket: Ticket, user: User, session: Session, compose: Optional[dict] = None, hold: Optional[dict] = None,
     action: Optional[str] = None, edit: Optional[str] = None, card_error: Optional[str] = None,
     card_values: Optional[dict] = None, card_must_open: Optional[HTTPException] = None, notice: Optional[str] = None,
+    card_confirm: bool = False,
 ) -> HTMLResponse:
     """`compose` is set when a send was held back (`_send_warning`): the composer's card then opens with the text kept.
     `action` names the card to open at the top of the main column (app/ticket_actions.py) and `edit` the box row to show as
@@ -2586,6 +2656,7 @@ def _render_ticket_detail(
         assigned=assigned_agent is not None, can_reassign=can_reassign, with_msp=ticket.status == TicketStatus.WITH_MSP,
         can_take_back=can_take_back, can_link=can_link, can_split=can_split, can_resolve=can_resolve, can_reopen=can_reopen,
         can_reclose=can_reclose, can_close=can_close, can_backdate=can_backdate, mailbox_phase=mailbox_phase,
+        can_mailbox=can_work and agent_mailbox.card_offered(session, ticket),
     )
     if compose:
         card = compose["mode"]  # a held-back send reopens its own composer with the text kept
@@ -2624,6 +2695,7 @@ def _render_ticket_detail(
             split_shown = PREFILLED_PARTS
         split_parts += [("", "")] * (max(split_room, split_shown) - len(split_parts))
     card_title, card_doing = CARDS.get(card, ("", ""))
+    mailbox_card = _mailbox_card(session, user, ticket, card_values if card_error else None) if card == "mailbox" else None
     kept = {}
     if card == "triage" and card_error:
         try:
@@ -2650,6 +2722,8 @@ def _render_ticket_detail(
             "mailbox_phase": mailbox_phase,
             "card": card,
             "card_title": card_title,
+            "card_confirm": card_confirm,
+            "mailbox_card": mailbox_card,
             "card_doing": card_doing,
             "editing": editing,
             "editable": editable,
