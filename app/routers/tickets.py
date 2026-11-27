@@ -909,18 +909,18 @@ def rename_file(
     if attachment is None or attachment.ticket_id != ticket.id:
         raise HTTPException(status_code=404, detail="Attachment not found")
     # An emailed picture is shown once however many copies came (#345), so a rename applies to every copy this person can see.
-    renamed = None
+    old = shown_name(attachment)  # the event records the name the agent saw, whichever copies needed changing
+    changed = False
     try:
         for copy in picture_copies(session, user, access_context(session, user), ticket, attachment):
-            result = rename_attachment(copy, name)
-            session.add(copy)
-            if result and (renamed is None or copy.id == attachment.id):
-                renamed = result
+            if rename_attachment(copy, name):
+                session.add(copy)
+                changed = True
     except RenameRefused as error:
         session.rollback()
         raise HTTPException(status_code=400, detail=str(error))
-    if renamed:
-        old, new = renamed
+    if changed:
+        new = shown_name(attachment)
         ticket.updated_at = datetime.now(timezone.utc)
         session.add(ticket)
         record_event(session, ticket, EVENT_ATTACHMENT_RENAMED, user.email, old, new, detail=f"arrived as {attachment.filename}")
