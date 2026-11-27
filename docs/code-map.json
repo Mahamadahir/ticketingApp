@@ -244,6 +244,44 @@
     },
     {
       "classes": [
+        "AgentMailboxForm",
+        "ConfirmAccess"
+      ],
+      "file": "app/agent_mailbox.py",
+      "functions": [
+        "access_warning",
+        "card_offered",
+        "copy_off_warning",
+        "live_change",
+        "requester_person",
+        "submit"
+      ],
+      "imported_by": [
+        "app.routers.tickets"
+      ],
+      "imports": [
+        "app.approvals",
+        "app.audit",
+        "app.config",
+        "app.identity",
+        "app.mailbox_changes",
+        "app.mailbox_executor",
+        "app.models",
+        "app.people_directory",
+        "app.portal_mailbox",
+        "app.ticket_service",
+        "app.time_zones"
+      ],
+      "module": "app.agent_mailbox",
+      "routes": [],
+      "summary": "Set up a mailbox change from the agent ticket page (#364; tracker #305): for a request that arrived by email or Teams.",
+      "tables": [],
+      "tests": [
+        "tests/test_agent_mailbox.py"
+      ]
+    },
+    {
+      "classes": [
         "Context",
         "Outcome",
         "Preview",
@@ -450,6 +488,7 @@
         "withdraw"
       ],
       "imported_by": [
+        "app.agent_mailbox",
         "app.approval_reminders",
         "app.bot_cards",
         "app.entra_check",
@@ -604,6 +643,7 @@
         "log_action"
       ],
       "imported_by": [
+        "app.agent_mailbox",
         "app.anonymisation",
         "app.approval_reminders",
         "app.approvals",
@@ -1128,6 +1168,7 @@
       "imported_by": [
         "app.action_links",
         "app.admin_home",
+        "app.agent_mailbox",
         "app.anonymisation",
         "app.approval_links",
         "app.attachment_retries",
@@ -1788,6 +1829,7 @@
       ],
       "imported_by": [
         "app.admin_people",
+        "app.agent_mailbox",
         "app.approvals",
         "app.auth",
         "app.bot_cards",
@@ -2321,6 +2363,7 @@
         "was_declined"
       ],
       "imported_by": [
+        "app.agent_mailbox",
         "app.approvals",
         "app.portal_mailbox",
         "app.routers.portal",
@@ -2351,6 +2394,7 @@
       "summary": "Scheduled mailbox changes: what happens on the ticket and to the row (#307; tracker #305).",
       "tables": [],
       "tests": [
+        "tests/test_agent_mailbox.py",
         "tests/test_mailbox_access.py",
         "tests/test_mailbox_changes.py",
         "tests/test_mailbox_on_behalf.py",
@@ -2373,6 +2417,7 @@
         "set_executor"
       ],
       "imported_by": [
+        "app.agent_mailbox",
         "app.mailbox_changes",
         "app.mailbox_executor_azure",
         "app.portal_mailbox",
@@ -2388,6 +2433,7 @@
       "summary": "The only code that talks to Exchange about scheduled mailbox changes (#307; the real executor is #308).",
       "tables": [],
       "tests": [
+        "tests/test_agent_mailbox.py",
         "tests/test_mailbox_access.py",
         "tests/test_mailbox_changes.py",
         "tests/test_mailbox_executor_azure.py",
@@ -2716,6 +2762,7 @@
         "app.activity",
         "app.admin_home",
         "app.admin_people",
+        "app.agent_mailbox",
         "app.anonymisation",
         "app.approval_groups",
         "app.approval_reminders",
@@ -3080,6 +3127,7 @@
         "tests/test_admin_settings.py",
         "tests/test_admin_system_log_pages.py",
         "tests/test_admin_users_page.py",
+        "tests/test_agent_mailbox.py",
         "tests/test_anonymisation.py",
         "tests/test_approval_bell.py",
         "tests/test_approval_groups.py",
@@ -3746,6 +3794,7 @@
       "tests": [
         "tests/test_acknowledgement.py",
         "tests/test_action_links.py",
+        "tests/test_agent_mailbox.py",
         "tests/test_approval_reminders.py",
         "tests/test_auto_close_chase.py",
         "tests/test_bulk_resolve.py",
@@ -3811,6 +3860,7 @@
         "search"
       ],
       "imported_by": [
+        "app.agent_mailbox",
         "app.forwards",
         "app.portal_mailbox",
         "app.requester_change",
@@ -3938,6 +3988,7 @@
         "views"
       ],
       "imported_by": [
+        "app.agent_mailbox",
         "app.routers.approvals",
         "app.routers.portal",
         "app.routers.tickets"
@@ -4486,6 +4537,7 @@
       "summary": "The request catalogue (phase 1H): the kinds of service request people can raise, and who",
       "tables": [],
       "tests": [
+        "tests/test_agent_mailbox.py",
         "tests/test_approvals.py",
         "tests/test_mailbox_access.py",
         "tests/test_mailbox_on_behalf.py",
@@ -6100,6 +6152,7 @@
         "list_tickets",
         "mailbox_cancel",
         "mailbox_done_by_hand",
+        "mailbox_set_up",
         "mailbox_try_again",
         "mention_candidates",
         "msp_forward",
@@ -6140,6 +6193,7 @@
         "app.main"
       ],
       "imports": [
+        "app.agent_mailbox",
         "app.approvals",
         "app.attachments",
         "app.audit",
@@ -6340,6 +6394,11 @@
           "handler": "mailbox_done_by_hand",
           "method": "POST",
           "path": "/tickets/{number}/mailbox/done-by-hand"
+        },
+        {
+          "handler": "mailbox_set_up",
+          "method": "POST",
+          "path": "/tickets/{number}/mailbox/set-up"
         },
         {
           "handler": "mailbox_try_again",
@@ -6799,6 +6858,7 @@
         "tests/test_action_links.py",
         "tests/test_admin_request_types_page.py",
         "tests/test_admin_settings.py",
+        "tests/test_agent_mailbox.py",
         "tests/test_approval_inactive.py",
         "tests/test_approval_reminders.py",
         "tests/test_approvals.py",
@@ -7087,6 +7147,7 @@
       "summary": "Where attachment bytes live (docs/plan.md, \"Storage decisions\").",
       "tables": [],
       "tests": [
+        "tests/test_agent_mailbox.py",
         "tests/test_anonymisation.py",
         "tests/test_attachments.py",
         "tests/test_card_refusals.py",
@@ -7134,6 +7195,7 @@
       "summary": "Subject access export (issue #175): a ZIP of everything held on one person.",
       "tables": [],
       "tests": [
+        "tests/test_agent_mailbox.py",
         "tests/test_mailbox_changes.py",
         "tests/test_mailbox_on_behalf.py",
         "tests/test_reactions.py",
@@ -7914,6 +7976,7 @@
         "set_status"
       ],
       "imported_by": [
+        "app.agent_mailbox",
         "app.anonymisation",
         "app.approvals",
         "app.attachment_retries",
@@ -8031,6 +8094,7 @@
       ],
       "imported_by": [
         "app.admin_home",
+        "app.agent_mailbox",
         "app.auth",
         "app.backdating",
         "app.due_today",
@@ -8797,6 +8861,7 @@
     "tests/test_admin_settings.py",
     "tests/test_admin_system_log_pages.py",
     "tests/test_admin_users_page.py",
+    "tests/test_agent_mailbox.py",
     "tests/test_anonymisation.py",
     "tests/test_approval_bell.py",
     "tests/test_approval_groups.py",
