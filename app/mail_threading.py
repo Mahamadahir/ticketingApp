@@ -40,6 +40,7 @@ from app.subscriptions import parse_graph_time
 THREADED_KINDS = (
     outbox.REPLY, outbox.NOTICE, outbox.RAISED_FOR, outbox.ACKNOWLEDGEMENT, outbox.CHASE, outbox.SPLIT_NOTICE, outbox.FOLLOWER_UPDATE,
 )
+AMBIGUOUS_GAP = timedelta(seconds=30)
 SENT_MATCH_WINDOW = timedelta(minutes=15)  # how far Sent Items' time may be from the time the outbox says it sent the email
 _REPLY_PREFIX = re.compile(r"^\s*(?:(?:re|aw|sv|vs)\s*:\s*)+", re.IGNORECASE)
 
@@ -68,9 +69,6 @@ def _addresses(*values: Optional[str]) -> set[str]:
     return {a.strip().lower() for value in values for a in (value or "").split(",") if a.strip()}
 
 
-def _was_on(session: Session, on: set[str], recipient: str) -> bool:
-    """Whether the person behind this address was on a mail (under any of their addresses, app/identity.py)."""
-    return bool(on & addresses_of(session, recipient))
 
 
 def reply_target(session: Session, row: OutboundEmail, recipients: list[str]) -> Optional[str]:
@@ -85,6 +83,7 @@ def reply_target(session: Session, row: OutboundEmail, recipients: list[str]) ->
             )
         ).all()
     )
+    people = [addresses_of(session, recipient) for recipient in recipients]  # each person's addresses (app/identity.py), once
     candidates: list[tuple[datetime, str, set[str]]] = []
     # What reached the mailbox about this ticket. An MSP message and an agents-only one are never candidates; neither is a deleted note.
     for mail, message in session.exec(
@@ -112,7 +111,7 @@ def reply_target(session: Session, row: OutboundEmail, recipients: list[str]) ->
     ).all():
         candidates.append((_aware(sent.sent_at), sent.graph_message_id, _addresses(sent.to_address, sent.cc)))
     for _, graph_id, on in sorted(candidates, key=lambda c: c[0], reverse=True):
-        if graph_id not in refused and all(_was_on(session, on, recipient) for recipient in recipients):
+        if graph_id not in refused and all(on & person for person in people):
             return graph_id
     return None
 
@@ -125,18 +124,17 @@ def claim_sent_copy(session: Session, row: OutboundEmail, items: list[dict]) -> 
     wanted, to, sent_at = norm_subject(row.subject), row.to_address.strip().lower(), _aware(row.sent_at)
     ids = [item["id"] for item in items if isinstance(item, dict) and item.get("id")]
     taken = set(session.exec(select(OutboundEmail.graph_message_id).where(OutboundEmail.graph_message_id.in_(ids))).all()) if ids else set()
-    best: Optional[tuple[timedelta, str]] = None
+    gaps: list[tuple[timedelta, str]] = []
     for item in items:
         if not isinstance(item, dict) or not item.get("id") or item["id"] in taken or norm_subject(item.get("subject")) != wanted:
             continue
         when = parse_graph_time(item.get("sentDateTime"))
         if to not in recipients_of(item) or when is None or abs(when - sent_at) > SENT_MATCH_WINDOW:
             continue
-        gap = abs(when - sent_at)
-        if best is None or gap < best[0]:
-            best = (gap, item["id"])
-    if best is None:
-        return False
-    row.graph_message_id = best[1]
+        gaps.append((abs(when - sent_at), item["id"]))
+    gaps.sort()
+    if not gaps or (len(gaps) > 1 and gaps[1][0] - gaps[0][0] < AMBIGUOUS_GAP):
+        return False  # none, or two copies too close in time to tell apart: the reactions job (which has the same guard) decides later
+    row.graph_message_id = gaps[0][1]
     session.add(row)
     return True

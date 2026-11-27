@@ -97,6 +97,7 @@ class Mail:
     # email went fresh instead.
     reply_to: Optional[str] = None
     thread_note: Optional[str] = None
+    reply_gone: bool = False  # the reply failed because the target message is gone (404, 410): only then is it never tried again
 
 
 def _ticket_of(session: Session, row: OutboundEmail) -> Ticket:
@@ -630,6 +631,7 @@ def send_through_graph(mail: Mail) -> None:
             if not reply_was_refused(error):
                 raise  # other failures retry as any send does
             mail.thread_note = f"Sent as a new email: the reply was not possible ({describe_failure(error)})"
+            mail.reply_gone = error.response.status_code in (404, 410)
     graph_client.send_mail(mail.to, mail.subject, mail.body, cc=mail.cc, headers=headers, **extra)
 
 
@@ -751,7 +753,9 @@ def deliver_mail(
                 row.subject, row.cc, row.body = mail.subject, ", ".join(mail.cc) or None, mail.record
                 row.sent_at = datetime.now(timezone.utc)
                 row.last_error = None
-                row.reply_to_graph_id, row.thread_note = mail.reply_to, mail.thread_note
+                # A target that failed for another reason (a bad attachment, say) is not kept: it must stay usable (reply_target).
+                keep = mail.reply_to if not mail.thread_note or mail.reply_gone else None
+                row.reply_to_graph_id, row.thread_note = keep, mail.thread_note
                 if row.kind in (REPLY, NOTICE):
                     # What a reaction to it means (#299), decided now like a Teams message's kind: an agent's email is queued before the
                     # status it sets, so the ticket's status only settles by the time it goes.

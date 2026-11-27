@@ -258,7 +258,8 @@ def test_a_reply_that_graph_refuses_goes_fresh_and_the_row_says_so(client, db_se
     assert [c["how"] for c in sim.calls] == ["send", "reply"] and sim.calls[1]["to_id"] == "sent-1"
     [raised] = rows(db_session, outbox.RAISED_FOR)
     assert raised.sent_at is not None and raised.thread_note.startswith("Sent as a new email") and str(status) in raised.thread_note
-    assert raised.reply_to_graph_id == "in-1"
+    # Only a message that is gone is remembered as unusable: after another refusal (a bad attachment, say) it stays a possible target.
+    assert raised.reply_to_graph_id == ("in-1" if status == 404 else None)
     assert only_reply_rows(db_session, ticket)[0].thread_note is None
 
     email(client, ticket, "Again")  # the refused message is not tried again
@@ -326,6 +327,10 @@ def test_an_email_is_never_claimed_by_a_copy_that_belongs_to_another(client, db_
     mail.deliver_mail(db_session, send=mail.send_through_graph, recent_sent=lambda: [])
     first, second = [r for r in rows(db_session) if r.sent_at is not None][-2:]
 
+    # Two copies seconds apart cannot be told apart: nothing is claimed (the reactions job decides, with the same guard).
+    assert mail_threading.claim_sent_copy(db_session, first, sim.items) is False
+    for item, minutes in zip(sim.items, (5, 0, 10)):  # the newest copy 5 minutes off, the middle one on time, the oldest 10 off
+        item["sentDateTime"] = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat()
     assert mail_threading.claim_sent_copy(db_session, first, sim.items) is True
     assert mail_threading.claim_sent_copy(db_session, second, sim.items) is True
     assert first.graph_message_id != second.graph_message_id

@@ -162,6 +162,8 @@ def claim_sent_item(session: Session, item: dict) -> bool:
     to the same people replies to it). The same match as the reactions use, and nothing is claimed when two kinds of email are too close
     to tell apart. Returns whether an email was claimed."""
     subject = item.get("subject") if isinstance(item.get("subject"), str) else ""
+    if not item.get("id"):
+        return False
     row = outbox_row_for(session, subject, parse_graph_time(item.get("sentDateTime")), recipients_of(item), unclaimed_only=True)
     if row is None or session.exec(select(OutboundEmail.id).where(OutboundEmail.graph_message_id == item["id"])).first() is not None:
         return False
