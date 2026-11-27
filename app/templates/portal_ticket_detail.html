@@ -83,7 +83,7 @@
           <span class="rq-when">{{ message.created_at|local_time }}</span>
         </header>
         {% if about.get(message.id) %}<div class="note">{{ about[message.id] }}</div>{% endif %}
-        <div class="message-body">{{ message.body }}</div>
+        <div class="message-body">{{ email_body(message, message.body) }}</div>
         {% if row.files %}
         <ul class="note rq-files" aria-label="Attachments">
           {% for file in row.files %}<li><a href="/attachments/{{ file.id }}">{{ file.display_name or file.filename }}</a> ({{ file.size|file_size }})</li>{% endfor %}
