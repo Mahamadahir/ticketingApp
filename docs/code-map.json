@@ -1108,6 +1108,7 @@
         "app.email_reactions",
         "app.entra_check",
         "app.followers",
+        "app.forwards",
         "app.graph_client",
         "app.identity",
         "app.inbound",
@@ -1163,6 +1164,7 @@
         "tests/test_email_reactions.py",
         "tests/test_entra_check.py",
         "tests/test_follower_updates.py",
+        "tests/test_forward_mail.py",
         "tests/test_handoff_bells_holidays.py",
         "tests/test_inbound_mail.py",
         "tests/test_linked_identities.py",
@@ -1588,6 +1590,7 @@
         "app.approval_groups",
         "app.escalation",
         "app.follower_updates",
+        "app.forwards",
         "app.inbound",
         "app.mail",
         "app.messages",
@@ -1617,6 +1620,7 @@
         "tests/test_bell_access.py",
         "tests/test_follower_updates.py",
         "tests/test_followers.py",
+        "tests/test_forward_mail.py",
         "tests/test_inbound_mail.py",
         "tests/test_msp_mail.py",
         "tests/test_never_follow.py",
@@ -1666,6 +1670,36 @@
     },
     {
       "classes": [
+        "ForwardDecision",
+        "ForwardParts"
+      ],
+      "file": "app/forwards.py",
+      "functions": [
+        "decide",
+        "original_address",
+        "read_forward"
+      ],
+      "imported_by": [
+        "app.inbound"
+      ],
+      "imports": [
+        "app.config",
+        "app.followers",
+        "app.identity",
+        "app.never_follow",
+        "app.people_directory",
+        "app.quoted_text"
+      ],
+      "module": "app.forwards",
+      "routes": [],
+      "summary": "Forwards (#347): an email that opens a ticket and was forwarded to the mailbox by someone inside the organisation.",
+      "tables": [],
+      "tests": [
+        "tests/test_forward_mail.py"
+      ]
+    },
+    {
+      "classes": [
         "GraphClient"
       ],
       "file": "app/graph_client.py",
@@ -1690,6 +1724,7 @@
       "tests": [
         "tests/test_email_reactions.py",
         "tests/test_entra_check.py",
+        "tests/test_forward_mail.py",
         "tests/test_inbound_mail.py",
         "tests/test_mail_subscriptions.py",
         "tests/test_mail_threading.py",
@@ -1728,6 +1763,7 @@
         "app.auth",
         "app.bot_cards",
         "app.email_reactions",
+        "app.forwards",
         "app.inbound",
         "app.linked_identities",
         "app.mail",
@@ -1782,6 +1818,7 @@
         "may_reply",
         "msp_auto_reply",
         "msp_trust",
+        "opening_text",
         "parse_graph_message",
         "process_message",
         "process_notifications",
@@ -1798,12 +1835,14 @@
         "app.config",
         "app.follower_updates",
         "app.followers",
+        "app.forwards",
         "app.graph_client",
         "app.identity",
         "app.intake",
         "app.mail",
         "app.models",
         "app.msp",
+        "app.never_follow",
         "app.outbox",
         "app.reopening",
         "app.reply_channel",
@@ -1823,6 +1862,7 @@
         "tests/test_admin_mail_pages.py",
         "tests/test_anonymisation.py",
         "tests/test_follower_updates.py",
+        "tests/test_forward_mail.py",
         "tests/test_inbound_mail.py",
         "tests/test_msp_mail.py",
         "tests/test_msp_real_mail.py",
@@ -1870,6 +1910,7 @@
       "summary": "The rules every way in shares when a person's words become a ticket or a reply: email (app/inbound.py) and Teams",
       "tables": [],
       "tests": [
+        "tests/test_forward_mail.py",
         "tests/test_inbound_mail.py",
         "tests/test_teams_followups.py",
         "tests/test_teams_intake.py"
@@ -3060,6 +3101,7 @@
         "tests/test_feedback_views.py",
         "tests/test_follower_updates.py",
         "tests/test_followers.py",
+        "tests/test_forward_mail.py",
         "tests/test_handoff_bells_holidays.py",
         "tests/test_hardening.py",
         "tests/test_htmx_errors.py",
@@ -3362,6 +3404,8 @@
       ],
       "imported_by": [
         "app.followers",
+        "app.forwards",
+        "app.inbound",
         "app.intake",
         "app.linked_identities",
         "app.mail",
@@ -3702,6 +3746,7 @@
         "tests/test_email_reactions.py",
         "tests/test_email_templates.py",
         "tests/test_follower_updates.py",
+        "tests/test_forward_mail.py",
         "tests/test_mail_threading.py",
         "tests/test_mailbox_access.py",
         "tests/test_mailbox_changes.py",
@@ -3753,10 +3798,13 @@
       "file": "app/people_directory.py",
       "functions": [
         "blocklist",
+        "is_internal",
+        "people_named",
         "resolve",
         "search"
       ],
       "imported_by": [
+        "app.forwards",
         "app.portal_mailbox",
         "app.requester_change",
         "app.routers.portal",
@@ -3775,6 +3823,7 @@
       "summary": "The people picker's directory (#309): who a person may choose as the other person of a mailbox change.",
       "tables": [],
       "tests": [
+        "tests/test_forward_mail.py",
         "tests/test_requester_change.py"
       ]
     },
@@ -3937,9 +3986,12 @@
       "classes": [],
       "file": "app/quoted_text.py",
       "functions": [
+        "lines_of",
+        "quote_start",
         "split_quoted"
       ],
       "imported_by": [
+        "app.forwards",
         "app.thread"
       ],
       "imports": [],
@@ -3948,6 +4000,7 @@
       "summary": "Quoted email history (#255): splits a requester's emailed reply into what they wrote and the earlier conversation their",
       "tables": [],
       "tests": [
+        "tests/test_forward_mail.py",
         "tests/test_ticket_thread.py"
       ]
     },
@@ -6748,6 +6801,7 @@
         "tests/test_email_reactions.py",
         "tests/test_entra_check.py",
         "tests/test_follower_updates.py",
+        "tests/test_forward_mail.py",
         "tests/test_handoff_bells_holidays.py",
         "tests/test_inbound_mail.py",
         "tests/test_job_runs.py",
@@ -8764,6 +8818,7 @@
     "tests/test_feedback_views.py",
     "tests/test_follower_updates.py",
     "tests/test_followers.py",
+    "tests/test_forward_mail.py",
     "tests/test_handoff_bells_holidays.py",
     "tests/test_hardening.py",
     "tests/test_health.py",
