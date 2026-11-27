@@ -248,3 +248,19 @@ def test_the_new_columns_are_classified():
 
     for column in ("graph_message_id", "last_error"):
         assert COLUMNS[f"attachment_retry.{column}"].role == NOT_PERSON
+
+
+def test_taking_the_mail_without_files_still_decides_the_forward_before_the_claim(db_session, storage, monkeypatch):
+    real = inbound.decide_forward
+    calls = []
+
+    def spy(session, sender, subject, text):
+        calls.append(session.exec(select(inbound.InboundMail)).all() == [])  # True: asked before the mail was claimed
+        return real(session, sender, subject, text)
+
+    monkeypatch.setattr(inbound, "decide_forward", spy)
+    graph = GraphWithBrokenFiles()
+    graph.add("m1")
+    graph.attach("m1", "report.pdf", PDF)
+    result = inbound.process_message(db_session, "m1", graph, storage, skip_files=True)
+    assert result.files_unread and calls == [True]
