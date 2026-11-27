@@ -420,6 +420,8 @@ def test_the_fallback_ignores_a_verdict_not_written_by_exchange(db_session):
 def test_the_fallback_refuses_another_domain_until_it_is_accepted(db_session):
     person(db_session, "owen@corp.example", "Owen Owner")
     headers = _verdict("compauth=pass reason=100")
+    set_setting(db_session, ACCEPTED_DOMAINS, "other.example")  # set, so the mailbox's own domain is no longer the default
+    db_session.commit()
     _not_applied(db_session, forward(db_session, OUTLOOK_BLOCK, headers=headers))
     set_setting(db_session, ACCEPTED_DOMAINS, "Other.example, corp.example")
     db_session.commit()
