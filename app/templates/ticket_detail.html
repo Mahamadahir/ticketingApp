@@ -493,7 +493,7 @@
       <p class="note">Check what they wrote in the timeline, then pass it on to {{ ticket.requester_email }} or leave it with the agents. In business hours nothing is forwarded until you do; out of hours it is forwarded automatically.</p>
       {% for m in msp_pending %}
       <div>
-        <pre class="message-body">{{ m.body }}</pre>
+        <pre class="message-body">{{ email_body(m, m.body) }}</pre>
         <form hx-post="/tickets/{{ ticket.number }}/msp-forward/{{ m.id }}/preview" hx-target="#msp-forward-preview-{{ m.id }}" hx-swap="innerHTML" style="display:inline">
           <button type="submit" class="btn">Preview the forward</button>
         </form>

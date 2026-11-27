@@ -125,7 +125,7 @@ def digest(others: list[Here]) -> str:
     return hashlib.sha1(text.encode()).hexdigest()[:12]
 
 
-def purge_expired(session: Session) -> None:
+def purge_expired(session: Session) -> int:
     """The `presence-cleanup` recurring job: deletes every row past the "gone after" time. Safe to run late or twice."""
     cutoff = datetime.now(timezone.utc) - timedelta(seconds=gone_after_seconds(session))
-    session.execute(delete(TicketPresence).where(TicketPresence.last_seen_at < cutoff))
+    return session.execute(delete(TicketPresence).where(TicketPresence.last_seen_at < cutoff)).rowcount or 0

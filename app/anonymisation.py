@@ -38,6 +38,7 @@ from sqlmodel import Session, select
 from app.audit import log_action
 from app.closing import CloseError, check_can_close
 from app.config import settings
+from app.run_summary import RunSummary
 from app.models import (
     ActionToken,
     ActivityLog,
@@ -894,8 +895,9 @@ def purge_pending_blobs(session: Session, storage: Storage, keys: Optional[set[s
     return done, failed
 
 
-def run_blob_cleanup(session: Session) -> None:
-    """The recurring job `blob-cleanup` (app/scheduled_jobs.py): retries stored-file deletes that failed."""
+def run_blob_cleanup(session: Session) -> RunSummary:
+    """The recurring job `blob-cleanup` (app/scheduled_jobs.py): retries stored-file deletes that failed. Summary: deleted, failed."""
     from app.storage import get_storage
 
-    purge_pending_blobs(session, get_storage())
+    done, failed = purge_pending_blobs(session, get_storage())
+    return RunSummary.of(deleted=done, failed=failed)

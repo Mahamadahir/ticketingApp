@@ -144,6 +144,7 @@ from app.models import (
     RequestSubTemplate,
     RequestTypeQuestion,
     ScheduledJob,
+    ScheduledJobRun,
     Setting,
     MembershipLevel,
     Team,
@@ -155,6 +156,7 @@ from app.models import (
 )
 from app.pagination import paginate
 from app.reactions import parse_mapping
+from app.job_runs import OUTCOME_LABELS, OUTCOME_TONES, describe, latest_run_sentences, requested_label
 from app.job_errors import outage_refusal_key, outage_sentence, run_now_key, run_now_sentence, summarise_error
 from app.scheduled_jobs import SCHEDULED_JOBS, WARNINGS, job_health, run_now, run_now_refusal, status_line, timing, within_a_tick
 from app.settings_store import (
@@ -2495,7 +2497,67 @@ def view_scheduled_jobs(
             "overdue": set(job_health(rows, now, late, registered).overdue), "registered": registered,
             "intervals": {job_def.name: _every_text(job_def.seconds(session)) for job_def in SCHEDULED_JOBS}, "now": now, "user": user,
             "descriptions": {job_def.name: job_def.description for job_def in SCHEDULED_JOBS}, "errors": errors,
-            "result": run_now_sentence(done, job, registered),
+            "result": run_now_sentence(done, job, registered), "last_runs": latest_run_sentences(session),
+        },
+    )
+
+
+@router.get("/job-runs", response_class=HTMLResponse)
+def view_job_runs(
+    request: Request,
+    job: Optional[str] = None,
+    outcome: Optional[str] = None,
+    run_now_only: bool = False,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    page: int = 1,
+    user: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    """Logs > Job runs (#341): every recorded run of a scheduled job, newest first, with what it did in plain words (a fixed
+    sentence per job and count key, app/job_runs.py). Filters: job, outcome, Run now only and a date range."""
+    query = select(ScheduledJobRun).order_by(ScheduledJobRun.started_at.desc(), ScheduledJobRun.id.desc())
+    if job:
+        query = query.where(ScheduledJobRun.job_name == job)
+    if outcome in OUTCOME_LABELS:
+        query = query.where(ScheduledJobRun.outcome == outcome)
+    if run_now_only:
+        query = query.where(ScheduledJobRun.requested_by.is_not(None))
+    start, end = _parse_day(date_from), _parse_day(date_to)
+    if start is not None and end is not None and end < start:
+        raise HTTPException(status_code=400, detail="'To' date is before the 'From' date")
+    if start is not None:
+        query = query.where(ScheduledJobRun.started_at >= start)
+    if end is not None:
+        query = query.where(ScheduledJobRun.started_at < end + timedelta(days=1))
+    runs_page = paginate(session, query, page, request.query_params)
+    jobs = sorted({job_def.name for job_def in SCHEDULED_JOBS} | set(session.exec(select(ScheduledJobRun.job_name).distinct()).all()))
+    ticket_ids = {i for run in runs_page.items for i in run.ticket_ids}
+    tickets = {
+        ticket.id: ticket for ticket in session.exec(select(Ticket).where(Ticket.id.in_(ticket_ids))).all()
+    } if ticket_ids else {}
+    people = {
+        email: name for email, name in session.exec(
+            select(User.email, User.display_name).where(User.email.in_({r.requested_by for r in runs_page.items if r.requested_by}))
+        ).all()
+    } if any(r.requested_by for r in runs_page.items) else {}
+    rows = [
+        {
+            "run": run,
+            "what": describe(run.job_name, run.summary_counts) if run.outcome in ("did_work", "nothing_to_do") else "",
+            "tickets": [tickets[i] for i in run.ticket_ids if i in tickets],
+            "error": summarise_error(run.error),
+            "triggered": requested_label(session, run, people),
+            "label": OUTCOME_LABELS.get(run.outcome, run.outcome), "tone": OUTCOME_TONES.get(run.outcome, "t-gray"),
+        }
+        for run in runs_page.items
+    ]
+    return templates.TemplateResponse(
+        request,
+        "admin_job_runs.html",
+        {
+            "page": runs_page, "rows": rows, "jobs": jobs, "outcomes": OUTCOME_LABELS, "job": job or "", "outcome": outcome or "",
+            "run_now_only": run_now_only, "date_from": date_from or "", "date_to": date_to or "", "user": user,
         },
     )
 

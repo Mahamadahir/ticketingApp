@@ -118,6 +118,7 @@ ADMIN_GROUPS: tuple[tuple[str, tuple[AdminPage, ...]], ...] = (
     ("Logs", (
         AdminPage("audit-log", "Audit log", "/admin/audit-log"),
         AdminPage("activity-log", "Activity log", "/admin/activity-log"),
+        AdminPage("job-runs", "Job runs", "/admin/job-runs"),
         AdminPage("feedback", "Feedback", "/admin/feedback"),
     )),
 )
