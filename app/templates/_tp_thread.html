@@ -79,11 +79,11 @@
       <div class="message-body tp-msg-body">{{ box.notes }}</div></div>
     {% endif %}
     {% if box.body %}
-    <div class="message-body tp-msg-body">{{ box.body }}</div>
+    <div class="message-body tp-msg-body">{{ email_body(box.message, box.body) }}</div>
     {% if box.quoted %}
     <details class="tp-quoted">
       <summary>Show quoted text</summary>
-      <div class="message-body tp-msg-body tp-quoted-body">{{ box.quoted }}</div>
+      <div class="message-body tp-msg-body tp-quoted-body">{{ email_body(box.message, box.quoted) }}</div>
     </details>
     {% endif %}
     {% endif %}

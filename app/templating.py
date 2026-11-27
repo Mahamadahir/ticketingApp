@@ -12,6 +12,7 @@ from markupsafe import Markup, escape
 from sqlalchemy.orm import object_session
 from sqlmodel import Session
 
+from app.mail_display import body_html, mail_html
 from app.status_display import status_label, status_tone
 from fastapi.templating import Jinja2Templates
 
@@ -160,6 +161,8 @@ def _break_points(value) -> Markup:
 
 
 templates.env.filters["break_points"] = _break_points
+templates.env.filters["mail_html"] = mail_html
+templates.env.globals["email_body"] = body_html
 templates.env.filters["initials"] = _initials
 templates.env.filters["file_size"] = _file_size
 templates.env.filters["status_label"] = status_label

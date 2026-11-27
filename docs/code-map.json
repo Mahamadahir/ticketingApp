@@ -2175,6 +2175,26 @@
       ]
     },
     {
+      "classes": [],
+      "file": "app/mail_display.py",
+      "functions": [
+        "body_html",
+        "is_emailed",
+        "mail_html"
+      ],
+      "imported_by": [
+        "app.templating"
+      ],
+      "imports": [],
+      "module": "app.mail_display",
+      "routes": [],
+      "summary": "Tidy view of an emailed message (#343), display only: the stored `Message.body` is never changed.",
+      "tables": [],
+      "tests": [
+        "tests/test_mail_display.py"
+      ]
+    },
+    {
       "classes": [
         "MailboxChangeError"
       ],
@@ -2990,6 +3010,7 @@
         "tests/test_linked_identities.py",
         "tests/test_linking.py",
         "tests/test_login_lockout.py",
+        "tests/test_mail_display.py",
         "tests/test_mail_subscriptions.py",
         "tests/test_mailbox_access.py",
         "tests/test_mailbox_changes.py",
@@ -7452,6 +7473,7 @@
         "app.backdating",
         "app.database",
         "app.forms",
+        "app.mail_display",
         "app.models",
         "app.navigation",
         "app.outage",
@@ -8559,6 +8581,7 @@
     "tests/test_linked_identities.py",
     "tests/test_linking.py",
     "tests/test_login_lockout.py",
+    "tests/test_mail_display.py",
     "tests/test_mail_subscriptions.py",
     "tests/test_mailbox_access.py",
     "tests/test_mailbox_changes.py",
