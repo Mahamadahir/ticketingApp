@@ -182,9 +182,24 @@ class GraphClient:
         Raises on any failure; the exception text can hold the address, so callers record
         describe_failure() and never str() of it. Graph accepts only X- headers here, and threading
         rests on the ticket reference in the subject, which the inbound side matches on."""
-        message = {
+        message = self._mail_message(to_address, subject, cc, headers, attachments)
+        message["body"] = {"contentType": "Text", "content": body}
+        response = httpx.post(
+            f"{GRAPH_BASE_URL}/users/{quote(settings.graph_shared_mailbox, safe='@')}/sendMail",
+            json={"message": message, "saveToSentItems": True},
+            headers={"Authorization": f"Bearer {self._get_access_token()}"},
+            timeout=30,
+        )
+        response.raise_for_status()
+
+    @staticmethod
+    def _mail_message(
+        to_address: str, subject: str, cc: list[str] | None, headers: dict[str, str] | None,
+        attachments: list[tuple[str, str, bytes]] | None,
+    ) -> dict:
+        """The parts of a Graph message that sendMail and reply share: subject, explicit recipients, X- headers, files."""
+        message: dict = {
             "subject": subject,
-            "body": {"contentType": "Text", "content": body},
             "toRecipients": [{"emailAddress": {"address": to_address}}],
             "ccRecipients": [{"emailAddress": {"address": address}} for address in (cc or [])],
         }
@@ -199,13 +214,40 @@ class GraphClient:
             ]
         if headers:
             message["internetMessageHeaders"] = [{"name": name, "value": value} for name, value in headers.items()]
+        return message
+
+    def reply_to_message(
+        self,
+        message_id: str,
+        to_address: str,
+        subject: str,
+        comment: str,
+        cc: list[str] | None = None,
+        headers: dict[str, str] | None = None,
+        attachments: list[tuple[str, str, bytes]] | None = None,
+    ) -> None:
+        """Sends an email as a reply in an existing conversation: POST /users/{mailbox}/messages/{id}/reply (Mail.Send, application,
+        limited to that mailbox; never createReply, whose draft needs Mail.ReadWrite). The new text goes in `comment`, so Exchange
+        quotes the replied-to message and its history below it (Graph rejects `comment` together with `message.body`). The
+        recipients are set explicitly in `message`, never Graph's default reply recipients. Graph answers 202, saves the reply to
+        Sent Items and returns no id. Raises on any failure; a 404 means the replied-to message is gone."""
+        message = self._mail_message(to_address, subject, cc, headers, attachments)
         response = httpx.post(
-            f"{GRAPH_BASE_URL}/users/{quote(settings.graph_shared_mailbox, safe='@')}/sendMail",
-            json={"message": message, "saveToSentItems": True},
+            f"{GRAPH_BASE_URL}/users/{quote(settings.graph_shared_mailbox, safe='@')}/messages/{quote(message_id, safe='')}/reply",
+            json={"message": message, "comment": comment},
             headers={"Authorization": f"Bearer {self._get_access_token()}"},
             timeout=30,
         )
         response.raise_for_status()
+
+    def recent_sent_items(self, limit: int = 15) -> list[dict]:
+        """The newest messages in Sent Items (GET .../mailFolders/sentitems/messages, newest first: Mail.Read, limited to the mailbox),
+        with the fields that match one to an outbox row. Used right after a send to learn the id of the copy Graph saved."""
+        response = self._mail_get(
+            "mailFolders/sentitems/messages", params={"$select": SENT_ITEMS_SELECT, "$orderby": "sentDateTime desc", "$top": limit}
+        )
+        response.raise_for_status()
+        return response.json().get("value", [])
 
     def _authorized(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self._get_access_token()}"}

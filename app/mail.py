@@ -41,6 +41,7 @@ from app.never_follow import is_listed
 from app.approvals import may_answer
 from app.notification_settings import APPROVAL_OVERDUE as APPROVAL_OVERDUE_EVENT, EMAIL, FOLLOWER_UPDATE as FOLLOWER_UPDATE_EVENT, is_enabled, wants_approval_email
 from app.identity import person_for_address
+from app.mail_threading import THREADED_KINDS, claim_sent_copy, reply_target
 from app.models import (
     Attachment,
     Message,
@@ -91,6 +92,11 @@ class Mail:
     automatic: bool  # true for mail nobody just wrote, so receivers should not auto-reply to it
     reference: str
     files: list[tuple[str, str, bytes]] = field(default_factory=list)  # (name, content type, bytes) attached to it
+    # #350: the Graph id of the message to send this as a reply to (app/mail_threading.py decides, deliver_mail sets it just before
+    # sending); None sends a fresh email. `thread_note` is set by the sender when the reply was refused or the message gone and the
+    # email went fresh instead.
+    reply_to: Optional[str] = None
+    thread_note: Optional[str] = None
 
 
 def _ticket_of(session: Session, row: OutboundEmail) -> Ticket:
@@ -600,11 +606,30 @@ def is_permanent(error: Exception) -> bool:
     )
 
 
+def reply_was_refused(error: Exception) -> bool:
+    """A reply that Graph will not make: the replied-to message is gone (404) or Graph refused the call (other 4xx). Those go as a
+    fresh email instead. Not 401 (the app is not signed in, a fresh send would fail the same way) nor 408 and 429 (try later)."""
+    return (
+        isinstance(error, httpx.HTTPStatusError)
+        and 400 <= error.response.status_code < 500
+        and error.response.status_code not in (401, 408, 429)
+    )
+
+
 def send_through_graph(mail: Mail) -> None:
     headers = {"X-Ticket-Reference": mail.reference}
     if mail.automatic:
         headers["X-Auto-Response-Suppress"] = "All"  # tell the receiving Exchange not to auto-reply
     extra = {"attachments": mail.files} if mail.files else {}  # an MSP handoff or forward, or an agent reply with files
+    if mail.reply_to:
+        # A reply in the ticket's conversation (#350): the text is the `comment`, so the earlier mail is quoted below it.
+        try:
+            graph_client.reply_to_message(mail.reply_to, mail.to, mail.subject, mail.body, cc=mail.cc, headers=headers, **extra)
+            return
+        except Exception as error:
+            if not reply_was_refused(error):
+                raise  # other failures retry as any send does
+            mail.thread_note = f"Sent as a new email: the reply was not possible ({describe_failure(error)})"
     graph_client.send_mail(mail.to, mail.subject, mail.body, cc=mail.cc, headers=headers, **extra)
 
 
@@ -631,16 +656,29 @@ def _next_due(session: Session, now: datetime) -> Optional[OutboundEmail]:
     ).first()
 
 
+def _learn_sent_id(session: Session, row: OutboundEmail, recent_sent: Callable[[], list[dict]]) -> None:
+    """Best effort, after the email is committed as sent: read the newest Sent Items messages and note the id of this one's copy, so the
+    next email can reply to it. A failure changes nothing (the email-reactions job finds the id on its next run)."""
+    try:
+        if claim_sent_copy(session, row, recent_sent()):
+            session.commit()
+    except Exception:
+        session.rollback()
+        log.warning("Email %s: could not read its Sent Items id", row.id)
+
+
 def deliver_mail(
     session: Session,
     send: Optional[Callable[[Mail], None]] = None,
     limit: int = BATCH,
     now: Optional[datetime] = None,
+    recent_sent: Optional[Callable[[], list[dict]]] = None,
 ) -> tuple[int, int]:
     """Sends the oldest queued emails that are due, up to `limit`, one at a time and committing after
     each. Returns (sent, failed). A failure waits longer each time and is given up on at once when
     Graph refuses the message itself; a row that can never go (Unsendable, over the cap) is given up
-    with its reason. With MAIL_SENDING off it does nothing."""
+    with its reason. With MAIL_SENDING off it does nothing. `recent_sent` reads the newest Sent Items messages, to learn the Graph id of
+    the copy of what just went (#350); by default Graph's, and only when sending through Graph."""
     if settings.mail_sending == "off":
         return 0, 0
     if send is None:
@@ -648,6 +686,7 @@ def deliver_mail(
             send = record_only
         elif settings.graph_configured and settings.graph_shared_mailbox:
             send = send_through_graph
+            recent_sent = recent_sent or graph_client.recent_sent_items
         else:
             log.warning("Emails are waiting but GRAPH_* and GRAPH_SHARED_MAILBOX are not all set in this process")
             return 0, 0
@@ -671,6 +710,9 @@ def deliver_mail(
                 session.commit()
                 continue
             mail = builder(session, row)
+            if row.kind in THREADED_KINDS:
+                # The latest email on the ticket every recipient was already on, else a fresh email (app/mail_threading.py).
+                mail.reply_to = reply_target(session, row, [mail.to, *mail.cc])
         except Unsendable as reason:
             give_up(row, str(reason))
             failed += 1
@@ -709,6 +751,7 @@ def deliver_mail(
                 row.subject, row.cc, row.body = mail.subject, ", ".join(mail.cc) or None, mail.record
                 row.sent_at = datetime.now(timezone.utc)
                 row.last_error = None
+                row.reply_to_graph_id, row.thread_note = mail.reply_to, mail.thread_note
                 if row.kind in (REPLY, NOTICE):
                     # What a reaction to it means (#299), decided now like a Teams message's kind: an agent's email is queued before the
                     # status it sets, so the ticket's status only settles by the time it goes.
@@ -719,4 +762,6 @@ def deliver_mail(
                 sent += 1
         session.add(row)
         session.commit()  # now, so an email that went is recorded even if the next one fails
+        if row.sent_at is not None and row.graph_message_id is None and row.kind in THREADED_KINDS and recent_sent is not None:
+            _learn_sent_id(session, row, recent_sent)
     return sent, failed
