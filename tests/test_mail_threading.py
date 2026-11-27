@@ -149,21 +149,37 @@ def test_the_text_goes_in_comment_and_the_recipients_are_exactly_the_outbox(clie
     assert call["headers"]["X-Ticket-Reference"] == ticket.reference
 
 
-def test_a_follower_who_was_never_on_an_email_gets_a_fresh_one_and_one_who_was_gets_a_reply(client, db_session, dev_mail, sim):
+def test_a_follower_added_since_is_simply_on_the_reply_and_joins_the_chain(client, db_session, dev_mail, sim):
     ticket = ticket_for_email(client, db_session)
-    inbound_mail(db_session, ticket, "in-1")  # the requester wrote to the mailbox alone
+    inbound_mail(db_session, ticket, "in-1")  # the requester wrote to the mailbox alone; the follower is added afterwards
     follow(client, ticket, "late@example.com")
     email(client, ticket, "First answer")
     deliver(db_session)
 
+    # The target is what the REQUESTER was on, so the follower does not force a fresh email; the reply goes to exactly the outbox's recipients.
     answer = [c for c in sim.calls if "First answer" in (c.get("comment") or c.get("body") or "")][0]
-    assert answer["how"] == "send" and answer["cc"] == ["late@example.com"]  # the follower was not on in-1: a reply would quote it to them
+    assert answer["how"] == "reply" and answer["to_id"] != "" and answer["to"] == REQUESTER and answer["cc"] == ["late@example.com"]
 
     email(client, ticket, "Second answer")
     deliver(db_session)
 
     second = [c for c in sim.calls if "Second answer" in (c.get("comment") or c.get("body") or "")][0]
-    assert second["how"] == "reply" and second["cc"] == ["late@example.com"]  # now everyone was on the first answer
+    assert second["how"] == "reply" and second["cc"] == ["late@example.com"]
+
+
+def test_a_follower_update_to_someone_never_on_an_email_is_fresh(client, db_session, dev_mail, sim):
+    ticket = ticket_for_email(client, db_session)
+    follow(client, ticket, "boss@example.com")
+    inbound_mail(db_session, ticket, "in-1")  # the boss was never on it
+    other = inbound_mail(db_session, ticket, "in-2", minutes_ago=5)
+    row = outbox.queue_follower_update(db_session, db_session.get(Ticket, ticket.id), other, "boss@example.com")
+    db_session.commit()
+    assert row is not None
+
+    deliver(db_session)
+
+    [call] = [c for c in sim.calls if c["to"] == "boss@example.com"]
+    assert call["how"] == "send"  # no requester among the recipients: the strict rule, nothing the boss was on
 
 
 def test_a_follower_update_replies_only_to_an_email_that_follower_was_on(client, db_session, dev_mail, sim):

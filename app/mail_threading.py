@@ -6,8 +6,10 @@ Every email to a requester or follower about a ticket goes, where it can, as a G
 quoted below the new text. `reply` needs Mail.Send only. This module decides the one thing the sender cannot: the message to
 reply to.
 
-The rule, kept in one place: the latest email on this ticket that EVERY recipient of the new email was already on (as sender, To
-or Cc), because Exchange quotes the replied-to message to everyone the reply goes to. The candidates are
+The rule, kept in one place: the latest email on this ticket that the REQUESTER was already on (as sender, To or Cc); the reply
+goes to exactly the recipients the outbox decided, so a follower added since joins the chain (owner decision: the quoted history
+may show them earlier emails, which they see in the portal anyway). An email with no requester among its recipients keeps the
+strict rule: a message every recipient was on. The candidates are
 - the mail that reached the shared mailbox for this ticket (`InboundMail`: its Graph id, sender, To and Cc), never one from the
   MSP (`Message.msp_forward` is set on every message that came from them) and never an agents-only message; and
 - the emails this app sent about the ticket whose Sent Items id is known (`OutboundEmail.graph_message_id`), of the kinds that
@@ -32,7 +34,7 @@ from sqlmodel import Session, select
 
 from app import outbox
 from app.identity import addresses_of
-from app.models import InboundMail, Message, MessageDirection, MessageVisibility, OutboundEmail
+from app.models import InboundMail, Message, MessageDirection, MessageVisibility, OutboundEmail, Ticket
 from app.subscriptions import parse_graph_time
 
 # The kinds of email that go to a requester or follower about their ticket. Approval emails are their own conversation per approver,
@@ -73,7 +75,10 @@ def _addresses(*values: Optional[str]) -> set[str]:
 
 def reply_target(session: Session, row: OutboundEmail, recipients: list[str]) -> Optional[str]:
     """The Graph id of the message to send this email as a reply to, or None for a fresh email. `recipients` are all the addresses
-    it goes to (to and cc, exactly as the outbox decided); each must have been on the target."""
+    it goes to (to and cc, exactly as the outbox decided). When the requester is among them, the target is the latest eligible message
+    the REQUESTER was on: a follower added since is simply on this reply and joins the chain (the owner accepted that the quoted history
+    may show them earlier emails: they see the public conversation in the portal anyway). An email with no requester among its
+    recipients (a follower update to one follower) keeps the strict rule: only a message every recipient was on, else fresh."""
     if row.kind not in THREADED_KINDS or row.ticket_id is None or not recipients:
         return None
     refused = set(
@@ -84,6 +89,10 @@ def reply_target(session: Session, row: OutboundEmail, recipients: list[str]) ->
         ).all()
     )
     people = [addresses_of(session, recipient) for recipient in recipients]  # each person's addresses (app/identity.py), once
+    ticket = session.get(Ticket, row.ticket_id)
+    requester = addresses_of(session, ticket.requester_email) if ticket is not None else set()
+    if any(person & requester for person in people):
+        people = [requester]  # the requester decides; the reply still goes to exactly `recipients`
     candidates: list[tuple[datetime, str, set[str]]] = []
     # What reached the mailbox about this ticket. An MSP message and an agents-only one are never candidates; neither is a deleted note.
     for mail, message in session.exec(
