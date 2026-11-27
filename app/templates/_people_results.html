@@ -8,11 +8,19 @@
 {% else %}
 <ul class="mb-results" aria-label="People found">
   {% for p in people %}
-  <li><button type="button" class="mb-person" data-oid="{{ p.object_id }}" data-name="{{ p.name }}"
+  <li><button type="button" class="mb-person" data-oid="{{ p.object_id }}" data-name="{{ p.name }}" data-mail="{{ p.mail }}"
       data-detail="{{ [p.job_title, p.department, p.mail]|select|join(' · ') }}">
     <span class="mb-person-name">{{ p.name }}</span>
     <span class="mb-person-detail">{{ [p.job_title, p.department]|select|join(' · ') or p.mail }}{% if p.job_title or p.department %} · {{ p.mail }}{% endif %}</span>
   </button></li>
   {% endfor %}
+</ul>
+{% endif %}
+{% if use_address %}
+<ul class="mb-results" aria-label="Use this address">
+  <li><button type="button" class="mb-person" data-address="{{ use_address }}" data-name="{{ use_address }}" data-mail="{{ use_address }}" data-detail="{{ use_address }}">
+    <span class="mb-person-name">Use {{ use_address }}</span>
+    <span class="mb-person-detail">An outside address, not chosen from the directory</span>
+  </button></li>
 </ul>
 {% endif %}

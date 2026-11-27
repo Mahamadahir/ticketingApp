@@ -54,7 +54,7 @@ from app.models import (
     User,
     UserRole,
 )
-from app.outbox import ACKNOWLEDGEMENT, EMERGENCY_RESET, MAILBOX_CHANGE, MSP_FORWARD, MSP_HANDOFF, MSP_RELEASE, APPROVAL, APPROVAL_OVERDUE, APPROVAL_REMINDER, APPROVAL_WITHDRAWN, AUTOMATIC_TO_REQUESTER, CHASE, FOLLOWER_UPDATE, NOTICE, SPLIT_NOTICE, RAISED_FOR, REPLY
+from app.outbox import ACKNOWLEDGEMENT, EMERGENCY_RESET, MAILBOX_CHANGE, MSP_FORWARD, MSP_HANDOFF, MSP_RELEASE, APPROVAL, APPROVAL_OVERDUE, APPROVAL_REMINDER, APPROVAL_WITHDRAWN, AUTOMATIC_TO_REQUESTER, CHASE, FOLLOWER_UPDATE, NOTICE, SPLIT_NOTICE, RAISED_FOR, REPLY, REQUESTER_CHANGED
 from app.raising import should_tell_requester
 from app.settings_store import APPROVAL_LINK_MINUTES, AUTOMATIC_EMAIL_CAP, CHASE_RESOLVE_AFTER_DAYS, REGISTRY, SPLIT_EMAIL_ENABLED, get_flag, get_int_setting
 from app.storage import get_storage
@@ -206,6 +206,24 @@ def build_raised_for_mail(session: Session, row: OutboundEmail) -> Mail:
         "raised_by": creator.display_name if creator else "IT Support",
         "request_text": first.body if first else "",
     })
+    return Mail(
+        to=row.to_address, cc=[], subject=rendered.subject or mail_subject(session, ticket),
+        body=header + rendered.body, record=header + rendered.body, automatic=True, reference=ticket.reference,
+    )
+
+
+def build_requester_changed_mail(session: Session, row: OutboundEmail) -> Mail:
+    """"This ticket is now yours", to the person an agent made its end user. Like the receipt it carries only the reference
+    and subject; what they may read of the ticket is what the portal shows (messages.requester_visible_messages). Dropped if
+    the ticket has since moved to someone else, or is finished."""
+    ticket = _ticket_of(session, row)
+    if ticket.requester_email.strip().lower() != row.to_address.strip().lower():
+        raise Unsendable("The ticket is no longer this person's")
+    if ticket.status in (TicketStatus.RESOLVED, TicketStatus.CLOSED):
+        raise Unsendable("The ticket is already resolved or closed")
+    _guard_recipient(row)
+    header = email_header(session, ticket, HEADER_REPLY_ONLY)
+    rendered = render_template(session, "requester_changed", ticket_values(ticket))
     return Mail(
         to=row.to_address, cc=[], subject=rendered.subject or mail_subject(session, ticket),
         body=header + rendered.body, record=header + rendered.body, automatic=True, reference=ticket.reference,
@@ -536,6 +554,7 @@ BUILDERS: dict[str, Callable[[Session, OutboundEmail], Mail]] = {
     NOTICE: build_message_mail,
     SPLIT_NOTICE: build_split_notice_mail,
     RAISED_FOR: build_raised_for_mail,
+    REQUESTER_CHANGED: build_requester_changed_mail,
     APPROVAL: build_approval_mail,
     APPROVAL_REMINDER: build_approval_reminder_mail,
     APPROVAL_OVERDUE: build_approval_overdue_mail,
