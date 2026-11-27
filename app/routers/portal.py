@@ -361,16 +361,16 @@ def list_my_tickets(
     rows = []
     for ticket in tickets_page.items:
         mine = ticket.requester_email.strip().lower() in emails
-        mailbox_request = mailbox_changes.is_mailbox_request(session, ticket)
+        mailbox_request = mine and ticket.status == TicketStatus.RESOLVED and mailbox_changes.is_mailbox_request(session, ticket)
         status = requester_status(session, ticket, zone, can_reopen=mine and not mailbox_request, is_requester=mine)
         rows.append({
             "ticket": ticket,
             "kind": requester_kind(ticket, kinds.get(ticket.request_type_id)),
             "status": status,
-            "last_update": requester_last_update(session, ticket, zone, emails, can_reopen=mine, viewer_id=user.id, status=status),
+            "last_update": requester_last_update(session, ticket, zone, emails, can_reopen=mine and not mailbox_request, viewer_id=user.id, status=status),
             "following": not mine,
             "can_reopen": mine and ticket.status == TicketStatus.RESOLVED and not mailbox_request,
-            "new_request_url": mailbox_changes.new_request_path(ticket) if mine and mailbox_request and ticket.status == TicketStatus.RESOLVED else "",
+            "new_request_url": mailbox_changes.new_request_path(ticket) if mailbox_request else "",
         })
     return templates.TemplateResponse(
         request,
@@ -707,7 +707,7 @@ def add_comment(
     session.refresh(ticket)
 
     notice = ""
-    if ticket.status == TicketStatus.RESOLVED and _is_requester(ticket, user) and mailbox_changes.is_mailbox_request(session, ticket):
+    if ticket.status == TicketStatus.RESOLVED and ticket.triaged_at is not None and _is_requester(ticket, user) and mailbox_changes.is_mailbox_request(session, ticket):
         notice = "Your message has been passed to IT Support, but it has not reopened this request. " + mailbox_changes.NEW_REQUEST_LINE
     return _render_ticket(request, ticket, user, session, notice=notice)
 

@@ -45,6 +45,7 @@ FEEDBACK_MARKER = "(your personal feedback link is in the email)"
 REOPEN_MARKER = "(your personal reopen link is in the email)"
 # A mailbox request is not reopened by its requester (#363): its resolution email offers the new-request form instead, and the
 # stored text says so (the portal timeline shows it), so the requester is never told they can reopen it.
+DEFAULT_REOPEN_SENTENCE = "If this has not fixed the problem, tell us or reopen the ticket."  # the default resolution template's line
 NEW_REQUEST_MARKER = "(a link to make a new request is in the email)"
 MARKERS = {FEEDBACK: FEEDBACK_MARKER, REOPEN: REOPEN_MARKER}
 
@@ -190,7 +191,7 @@ def put_links_in(session: Session, ticket: Ticket, body: str) -> str:
             body = "\n".join("Make a new request: " + url if NEW_REQUEST_MARKER in line else line for line in body.split("\n"))
         else:
             body = _drop_lines_with(body, NEW_REQUEST_MARKER)
-        body = "\n".join(line for line in body.split("\n") if "reopen the ticket" not in line.lower())
+        body = "\n".join(line for line in body.split("\n") if line.strip() != DEFAULT_REOPEN_SENTENCE)
     for kind in (FEEDBACK, REOPEN):
         marker = MARKERS[kind]
         if marker not in body:
