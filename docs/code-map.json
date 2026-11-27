@@ -54,8 +54,16 @@
   "migrations": {
     "chain_tail": [
       {
-        "file": "migrations/versions/a359e1c7d2b4_treat_as_empty_rules.py",
-        "revision": "a359e1c7d2b4"
+        "file": "migrations/versions/a355c0de01b2_sla_reopen_restart.py",
+        "revision": "a355c0de01b2"
+      },
+      {
+        "file": "migrations/versions/c3e9a1d7b546_outbound_cap_override.py",
+        "revision": "c3e9a1d7b546"
+      },
+      {
+        "file": "migrations/versions/e5b81c4a7d29_attachment_retries.py",
+        "revision": "e5b81c4a7d29"
       },
       {
         "file": "migrations/versions/d41e7a9b3c05_scheduled_job_run.py",
@@ -64,21 +72,13 @@
       {
         "file": "migrations/versions/c3f8a2d6b941_seed_mailbox_request_types.py",
         "revision": "c3f8a2d6b941"
-      },
-      {
-        "file": "migrations/versions/c8d4a1e6f257_mailbox_on_behalf_approvals.py",
-        "revision": "c8d4a1e6f257"
-      },
-      {
-        "file": "migrations/versions/b5e2c8a1f903_request_type_mailbox_action.py",
-        "revision": "b5e2c8a1f903"
       }
     ],
-    "count": 86,
+    "count": 88,
     "heads": [
       {
-        "file": "migrations/versions/a359e1c7d2b4_treat_as_empty_rules.py",
-        "revision": "a359e1c7d2b4"
+        "file": "migrations/versions/a355c0de01b2_sla_reopen_restart.py",
+        "revision": "a355c0de01b2"
       }
     ]
   },
@@ -503,6 +503,37 @@
       ]
     },
     {
+      "classes": [],
+      "file": "app/attachment_retries.py",
+      "functions": [
+        "attachment_retries_job",
+        "retry_attachments"
+      ],
+      "imported_by": [
+        "app.scheduled_jobs"
+      ],
+      "imports": [
+        "app.config",
+        "app.graph_client",
+        "app.inbound",
+        "app.intake",
+        "app.mail",
+        "app.models",
+        "app.person_data",
+        "app.run_summary",
+        "app.storage",
+        "app.teams",
+        "app.ticket_service"
+      ],
+      "module": "app.attachment_retries",
+      "routes": [],
+      "summary": "Retrying the files of an email that was taken without them (#348).",
+      "tables": [],
+      "tests": [
+        "tests/test_attachment_retries.py"
+      ]
+    },
+    {
       "classes": [
         "AttachmentRejected",
         "NewFile",
@@ -611,7 +642,8 @@
         "app.subject_access",
         "app.subrequests",
         "app.teams_conversations",
-        "app.teams_intake"
+        "app.teams_intake",
+        "app.ticket_emails"
       ],
       "imports": [
         "app.models"
@@ -1098,6 +1130,7 @@
         "app.admin_home",
         "app.anonymisation",
         "app.approval_links",
+        "app.attachment_retries",
         "app.attachments",
         "app.auth",
         "app.bot_connector",
@@ -1199,6 +1232,7 @@
         "tests/test_teams_followups.py",
         "tests/test_teams_hold.py",
         "tests/test_teams_intake.py",
+        "tests/test_ticket_emails.py",
         "tests/test_time_zones.py",
         "tests/test_visibility.py",
         "tests/test_wiring_3f.py",
@@ -1683,16 +1717,14 @@
         "app.identity",
         "app.never_follow",
         "app.people_directory",
-        "app.quoted_text",
-        "app.treat_as_empty"
+        "app.quoted_text"
       ],
       "module": "app.forwards",
       "routes": [],
       "summary": "Forwards (#347): an email that opens a ticket and was forwarded to the mailbox by someone inside the organisation.",
       "tables": [],
       "tests": [
-        "tests/test_forward_mail.py",
-        "tests/test_treat_as_empty.py"
+        "tests/test_forward_mail.py"
       ]
     },
     {
@@ -1702,6 +1734,7 @@
       "file": "app/graph_client.py",
       "functions": [],
       "imported_by": [
+        "app.attachment_retries",
         "app.email_reactions",
         "app.entra_check",
         "app.inbound",
@@ -1729,8 +1762,7 @@
         "tests/test_portal_mailbox.py",
         "tests/test_presence.py",
         "tests/test_requester_change.py",
-        "tests/test_time_zones.py",
-        "tests/test_treat_as_empty.py"
+        "tests/test_time_zones.py"
       ]
     },
     {
@@ -1801,6 +1833,7 @@
     },
     {
       "classes": [
+        "AttachmentsUnreadable",
         "Handled",
         "IncomingMail",
         "MailSource"
@@ -1809,6 +1842,7 @@
       "functions": [
         "authenticated_as_internal",
         "automatic_reason",
+        "backoff_until",
         "find_ticket_for",
         "ingest_mail",
         "load_attachments",
@@ -1822,6 +1856,7 @@
         "referenced_ticket"
       ],
       "imported_by": [
+        "app.attachment_retries",
         "app.jobs",
         "app.routers.admin",
         "app.routers.dev_tools"
@@ -1858,6 +1893,7 @@
         "tests/test_acknowledgement.py",
         "tests/test_admin_mail_pages.py",
         "tests/test_anonymisation.py",
+        "tests/test_attachment_retries.py",
         "tests/test_follower_updates.py",
         "tests/test_forward_mail.py",
         "tests/test_inbound_mail.py",
@@ -1884,6 +1920,7 @@
         "store_files"
       ],
       "imported_by": [
+        "app.attachment_retries",
         "app.inbound",
         "app.teams_intake",
         "app.teams_pending"
@@ -1967,6 +2004,7 @@
       "summary": "The history of scheduled job runs (#341): one `scheduled_job_run` row per run, what it did in plain words, kept for a number of days.",
       "tables": [],
       "tests": [
+        "tests/test_attachment_retries.py",
         "tests/test_job_runs.py"
       ]
     },
@@ -2169,12 +2207,14 @@
         "send_through_graph"
       ],
       "imported_by": [
+        "app.attachment_retries",
         "app.auto_close_chase",
         "app.inbound",
         "app.jobs",
         "app.linked_identities",
         "app.msp",
-        "app.reply_channel"
+        "app.reply_channel",
+        "app.ticket_emails"
       ],
       "imports": [
         "app.action_links",
@@ -2228,6 +2268,7 @@
         "tests/test_resolution.py",
         "tests/test_split_before_triage.py",
         "tests/test_teams_followups.py",
+        "tests/test_ticket_emails.py",
         "tests/test_ticket_presence.py",
         "tests/test_withdraw.py"
       ]
@@ -2238,12 +2279,10 @@
       "functions": [
         "body_html",
         "is_emailed",
-        "is_picture_line",
         "mail_html"
       ],
       "imported_by": [
-        "app.templating",
-        "app.treat_as_empty"
+        "app.templating"
       ],
       "imports": [],
       "module": "app.mail_display",
@@ -2458,6 +2497,7 @@
         "tests/test_subject_access.py",
         "tests/test_teams_bot.py",
         "tests/test_teams_hold.py",
+        "tests/test_ticket_emails.py",
         "tests/test_ticket_page_queries.py",
         "tests/test_ticket_presence.py",
         "tests/test_ticket_redesign.py",
@@ -2594,6 +2634,7 @@
         "tests/test_split_family.py",
         "tests/test_teams_followups.py",
         "tests/test_teams_intake.py",
+        "tests/test_ticket_emails.py",
         "tests/test_ticket_presence.py",
         "tests/test_ticket_redesign.py",
         "tests/test_ticket_thread.py"
@@ -2608,6 +2649,7 @@
         "ApprovalGroupMember",
         "ApprovalVote",
         "Attachment",
+        "AttachmentRetry",
         "AuditLog",
         "BankHolidayCache",
         "BotMessage",
@@ -2661,7 +2703,6 @@
         "TicketSource",
         "TicketStatus",
         "TicketType",
-        "TreatAsEmptyRule",
         "User",
         "UserPermission",
         "UserRole",
@@ -2680,6 +2721,7 @@
         "app.approval_groups",
         "app.approval_reminders",
         "app.approvals",
+        "app.attachment_retries",
         "app.attachments",
         "app.audit",
         "app.auth",
@@ -2778,10 +2820,10 @@
         "app.thanks_rules",
         "app.theme",
         "app.thread",
+        "app.ticket_emails",
         "app.ticket_presence",
         "app.ticket_service",
         "app.time_zones",
-        "app.treat_as_empty",
         "app.triage",
         "app.user_filters",
         "app.visibility"
@@ -2818,6 +2860,10 @@
         {
           "class": "Attachment",
           "table": "attachment"
+        },
+        {
+          "class": "AttachmentRetry",
+          "table": "attachment_retry"
         },
         {
           "class": "AuditLog",
@@ -3008,10 +3054,6 @@
           "table": "ticket_reaction"
         },
         {
-          "class": "TreatAsEmptyRule",
-          "table": "treatasemptyrule"
-        },
-        {
           "class": "User",
           "table": "user"
         },
@@ -3045,6 +3087,7 @@
         "tests/test_approval_inactive.py",
         "tests/test_approval_reminders.py",
         "tests/test_approvals.py",
+        "tests/test_attachment_retries.py",
         "tests/test_attachments.py",
         "tests/test_auth.py",
         "tests/test_auto_close_chase.py",
@@ -3134,6 +3177,7 @@
         "tests/test_shell.py",
         "tests/test_signin_pages.py",
         "tests/test_sla.py",
+        "tests/test_sla_reopen.py",
         "tests/test_split_before_triage.py",
         "tests/test_split_family.py",
         "tests/test_splitting.py",
@@ -3155,6 +3199,7 @@
         "tests/test_teams_intake.py",
         "tests/test_thanks_rules.py",
         "tests/test_ticket_core.py",
+        "tests/test_ticket_emails.py",
         "tests/test_ticket_page.py",
         "tests/test_ticket_page_queries.py",
         "tests/test_ticket_presence.py",
@@ -3163,7 +3208,6 @@
         "tests/test_ticket_urls.py",
         "tests/test_tickets_rbac.py",
         "tests/test_time_zones.py",
-        "tests/test_treat_as_empty.py",
         "tests/test_triage.py",
         "tests/test_visibility.py",
         "tests/test_wiring_3f.py",
@@ -3688,7 +3732,8 @@
         "app.raising",
         "app.reply_channel",
         "app.requester_change",
-        "app.teams_intake"
+        "app.teams_intake",
+        "app.ticket_emails"
       ],
       "imports": [
         "app.config",
@@ -3722,6 +3767,7 @@
         "tests/test_resolution.py",
         "tests/test_split_before_triage.py",
         "tests/test_teams_approvals.py",
+        "tests/test_ticket_emails.py",
         "tests/test_withdraw.py"
       ]
     },
@@ -3761,7 +3807,6 @@
       "file": "app/people_directory.py",
       "functions": [
         "blocklist",
-        "internal_person",
         "is_internal",
         "people_named",
         "resolve",
@@ -3788,8 +3833,7 @@
       "tables": [],
       "tests": [
         "tests/test_forward_mail.py",
-        "tests/test_requester_change.py",
-        "tests/test_treat_as_empty.py"
+        "tests/test_requester_change.py"
       ]
     },
     {
@@ -3843,6 +3887,7 @@
       ],
       "imported_by": [
         "app.anonymisation",
+        "app.attachment_retries",
         "app.mail",
         "app.requester_change",
         "app.subject_access",
@@ -3860,6 +3905,7 @@
       "tables": [],
       "tests": [
         "tests/test_anonymisation.py",
+        "tests/test_attachment_retries.py",
         "tests/test_job_runs.py",
         "tests/test_mailbox_changes.py",
         "tests/test_reactions.py",
@@ -4157,6 +4203,7 @@
         "tests/test_auto_close_chase.py",
         "tests/test_closing_email.py",
         "tests/test_reopening.py",
+        "tests/test_sla_reopen.py",
         "tests/test_thanks_rules.py"
       ]
     },
@@ -4581,7 +4628,8 @@
         "tests/test_msp.py",
         "tests/test_msp_actions.py",
         "tests/test_reopening.py",
-        "tests/test_resolution.py"
+        "tests/test_resolution.py",
+        "tests/test_sla_reopen.py"
       ]
     },
     {
@@ -4654,7 +4702,6 @@
         "add_request_type",
         "add_subrequest_template",
         "add_thanks_rule_route",
-        "add_treat_as_empty",
         "add_type_question",
         "admin_home",
         "approve_link",
@@ -4666,7 +4713,6 @@
         "create_team",
         "decline_link",
         "delete_subrequest_template",
-        "delete_treat_as_empty",
         "delete_type_question",
         "dismiss_thanks_candidate",
         "edit_canned",
@@ -4674,7 +4720,6 @@
         "edit_request_type",
         "edit_subrequest_template",
         "edit_thanks_rule",
-        "edit_treat_as_empty",
         "edit_type_question",
         "list_approval_groups",
         "list_canned",
@@ -4684,7 +4729,6 @@
         "list_request_types",
         "list_teams",
         "list_thanks_rules",
-        "list_treat_as_empty",
         "list_users",
         "move_subrequest_template",
         "move_type_question",
@@ -4714,7 +4758,6 @@
         "sign_out_user_everywhere",
         "thanks_candidate_to_rule",
         "toggle_thanks_rule",
-        "toggle_treat_as_empty",
         "unlink_link",
         "unlock_user",
         "update_category",
@@ -4774,7 +4817,6 @@
         "app.thanks_rules",
         "app.ticket_service",
         "app.time_zones",
-        "app.treat_as_empty",
         "app.user_filters",
         "app.visibility"
       ],
@@ -5104,31 +5146,6 @@
           "handler": "toggle_thanks_rule",
           "method": "POST",
           "path": "/admin/thanks-rules/{rule_id}/{action}"
-        },
-        {
-          "handler": "list_treat_as_empty",
-          "method": "GET",
-          "path": "/admin/treat-as-empty"
-        },
-        {
-          "handler": "add_treat_as_empty",
-          "method": "POST",
-          "path": "/admin/treat-as-empty"
-        },
-        {
-          "handler": "edit_treat_as_empty",
-          "method": "POST",
-          "path": "/admin/treat-as-empty/{rule_id}"
-        },
-        {
-          "handler": "delete_treat_as_empty",
-          "method": "POST",
-          "path": "/admin/treat-as-empty/{rule_id}/delete"
-        },
-        {
-          "handler": "toggle_treat_as_empty",
-          "method": "POST",
-          "path": "/admin/treat-as-empty/{rule_id}/{action}"
         },
         {
           "handler": "list_users",
@@ -6109,6 +6126,7 @@
         "reopen",
         "resolve",
         "restore_note",
+        "send_email_anyway",
         "send_ticket_to_msp",
         "split",
         "take_back_from_msp_route",
@@ -6173,6 +6191,7 @@
         "app.templating",
         "app.thread",
         "app.ticket_actions",
+        "app.ticket_emails",
         "app.ticket_presence",
         "app.ticket_service",
         "app.time_zones",
@@ -6290,6 +6309,11 @@
           "handler": "preview_email_user",
           "method": "POST",
           "path": "/tickets/{number}/email/preview"
+        },
+        {
+          "handler": "send_email_anyway",
+          "method": "POST",
+          "path": "/tickets/{number}/emails/{email_id}/send-anyway"
         },
         {
           "handler": "escalate_ticket",
@@ -6526,6 +6550,7 @@
       "imported_by": [
         "app.anonymisation",
         "app.approval_reminders",
+        "app.attachment_retries",
         "app.auto_close_chase",
         "app.bank_holidays",
         "app.due_today",
@@ -6542,6 +6567,7 @@
       "summary": "What one scheduled job run did (#341): named counts and the tickets it changed.",
       "tables": [],
       "tests": [
+        "tests/test_attachment_retries.py",
         "tests/test_job_runs.py"
       ]
     },
@@ -6581,6 +6607,7 @@
       "imports": [
         "app.anonymisation",
         "app.approval_reminders",
+        "app.attachment_retries",
         "app.audit",
         "app.auto_close_chase",
         "app.bank_holidays",
@@ -6610,6 +6637,7 @@
         "tests/test_admin_system_log_pages.py",
         "tests/test_anonymisation.py",
         "tests/test_approval_reminders.py",
+        "tests/test_attachment_retries.py",
         "tests/test_auto_close_chase.py",
         "tests/test_due_date.py",
         "tests/test_email_reactions.py",
@@ -6778,6 +6806,7 @@
         "tests/test_approval_inactive.py",
         "tests/test_approval_reminders.py",
         "tests/test_approvals.py",
+        "tests/test_attachment_retries.py",
         "tests/test_auto_close_chase.py",
         "tests/test_backdating.py",
         "tests/test_break_glass.py",
@@ -6836,6 +6865,7 @@
         "tests/test_teams_followups.py",
         "tests/test_teams_hold.py",
         "tests/test_teams_intake.py",
+        "tests/test_ticket_emails.py",
         "tests/test_ticket_presence.py",
         "tests/test_ticket_thread.py",
         "tests/test_time_zones.py",
@@ -6857,6 +6887,7 @@
         "at_risk_percent",
         "breach_order",
         "describe_priority",
+        "due_date_is_target",
         "header_sla",
         "impact_options",
         "note_first_response",
@@ -6865,6 +6896,9 @@
         "queue_order",
         "queue_sla",
         "recalculate_deadlines",
+        "resolution_paused_seconds",
+        "resolution_start",
+        "restart_note",
         "set_impact_urgency",
         "sla_rows",
         "sla_start",
@@ -6908,6 +6942,7 @@
         "tests/test_resolution.py",
         "tests/test_scheduled_status.py",
         "tests/test_sla.py",
+        "tests/test_sla_reopen.py",
         "tests/test_ticket_page.py",
         "tests/test_ticket_redesign.py",
         "tests/test_with_supplier.py"
@@ -7036,6 +7071,7 @@
       ],
       "imported_by": [
         "app.anonymisation",
+        "app.attachment_retries",
         "app.attachments",
         "app.inbound",
         "app.intake",
@@ -7316,6 +7352,7 @@
       "imported_by": [
         "app.admin_home",
         "app.approval_reminders",
+        "app.attachment_retries",
         "app.auto_close_chase",
         "app.bot_cards",
         "app.bot_connector",
@@ -7325,6 +7362,7 @@
         "app.mail",
         "app.reply_channel",
         "app.routers.admin",
+        "app.ticket_emails",
         "app.ticket_service"
       ],
       "imports": [
@@ -7349,6 +7387,7 @@
         "tests/test_admin_frame.py",
         "tests/test_anonymisation.py",
         "tests/test_approval_reminders.py",
+        "tests/test_attachment_retries.py",
         "tests/test_auto_close_chase.py",
         "tests/test_email_header.py",
         "tests/test_inbound_mail.py",
@@ -7364,6 +7403,7 @@
         "tests/test_teams_followups.py",
         "tests/test_teams_hold.py",
         "tests/test_teams_intake.py",
+        "tests/test_ticket_emails.py",
         "tests/test_wiring_3f.py",
         "tests/test_withdraw.py"
       ]
@@ -7690,7 +7730,6 @@
         "add_rule",
         "all_rules",
         "candidate_to_rule",
-        "clean_pattern",
         "clean_rule",
         "describe",
         "dismiss_candidate",
@@ -7708,8 +7747,7 @@
         "app.reopening",
         "app.routers.admin",
         "app.splitting",
-        "app.teams_intake",
-        "app.treat_as_empty"
+        "app.teams_intake"
       ],
       "imports": [
         "app.models"
@@ -7721,8 +7759,7 @@
       "tests": [
         "tests/test_teams_followups.py",
         "tests/test_teams_intake.py",
-        "tests/test_thanks_rules.py",
-        "tests/test_treat_as_empty.py"
+        "tests/test_thanks_rules.py"
       ]
     },
     {
@@ -7768,6 +7805,7 @@
         "app.quoted_text",
         "app.reactions",
         "app.reply_channel",
+        "app.ticket_emails",
         "app.visibility"
       ],
       "module": "app.thread",
@@ -7797,6 +7835,40 @@
       "tables": [],
       "tests": [
         "tests/test_ticket_redesign.py"
+      ]
+    },
+    {
+      "classes": [
+        "Delivery",
+        "SendAnywayError"
+      ],
+      "file": "app/ticket_emails.py",
+      "functions": [
+        "describe",
+        "is_held",
+        "kind_label",
+        "send_anyway",
+        "state_of",
+        "ticket_emails"
+      ],
+      "imported_by": [
+        "app.routers.tickets",
+        "app.thread"
+      ],
+      "imports": [
+        "app.audit",
+        "app.mail",
+        "app.models",
+        "app.outbox",
+        "app.teams",
+        "app.ticket_service"
+      ],
+      "module": "app.ticket_emails",
+      "routes": [],
+      "summary": "Every email sent or queued about a ticket, as the agent thread shows it (#349), and \"Send anyway\" for one held back by the",
+      "tables": [],
+      "tests": [
+        "tests/test_ticket_emails.py"
       ]
     },
     {
@@ -7853,6 +7925,7 @@
       "imported_by": [
         "app.anonymisation",
         "app.approvals",
+        "app.attachment_retries",
         "app.auto_close_chase",
         "app.backdating",
         "app.bulk_resolve",
@@ -7886,6 +7959,7 @@
         "app.splitting",
         "app.subrequests",
         "app.teams_intake",
+        "app.ticket_emails",
         "app.triage"
       ],
       "imports": [
@@ -7921,6 +7995,7 @@
         "tests/test_requester_bell.py",
         "tests/test_requester_change.py",
         "tests/test_resolution.py",
+        "tests/test_sla_reopen.py",
         "tests/test_split_family.py",
         "tests/test_subject_access.py",
         "tests/test_subrequests.py",
@@ -8008,39 +8083,6 @@
         "tests/test_portal_home.py",
         "tests/test_requester_change.py",
         "tests/test_time_zones.py"
-      ]
-    },
-    {
-      "classes": [
-        "Judged"
-      ],
-      "file": "app/treat_as_empty.py",
-      "functions": [
-        "add_rule",
-        "all_rules",
-        "delete_rule",
-        "describe",
-        "enabled_rules",
-        "judge_above",
-        "matches_any",
-        "set_rule_enabled",
-        "update_rule"
-      ],
-      "imported_by": [
-        "app.forwards",
-        "app.routers.admin"
-      ],
-      "imports": [
-        "app.mail_display",
-        "app.models",
-        "app.thanks_rules"
-      ],
-      "module": "app.treat_as_empty",
-      "routes": [],
-      "summary": "\"Treat as empty\" rules (#359): lines above a forwarded block that do not count as text.",
-      "tables": [],
-      "tests": [
-        "tests/test_treat_as_empty.py"
       ]
     },
     {
@@ -8772,6 +8814,7 @@
     "tests/test_approval_inactive.py",
     "tests/test_approval_reminders.py",
     "tests/test_approvals.py",
+    "tests/test_attachment_retries.py",
     "tests/test_attachments.py",
     "tests/test_auth.py",
     "tests/test_auto_close_chase.py",
@@ -8868,6 +8911,7 @@
     "tests/test_shell.py",
     "tests/test_signin_pages.py",
     "tests/test_sla.py",
+    "tests/test_sla_reopen.py",
     "tests/test_split_before_triage.py",
     "tests/test_split_family.py",
     "tests/test_splitting.py",
@@ -8893,6 +8937,7 @@
     "tests/test_test_db_cleanup.py",
     "tests/test_thanks_rules.py",
     "tests/test_ticket_core.py",
+    "tests/test_ticket_emails.py",
     "tests/test_ticket_page.py",
     "tests/test_ticket_page_queries.py",
     "tests/test_ticket_presence.py",
@@ -8901,7 +8946,6 @@
     "tests/test_ticket_urls.py",
     "tests/test_tickets_rbac.py",
     "tests/test_time_zones.py",
-    "tests/test_treat_as_empty.py",
     "tests/test_triage.py",
     "tests/test_visibility.py",
     "tests/test_wiring_3f.py",

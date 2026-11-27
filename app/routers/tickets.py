@@ -163,6 +163,7 @@ from app.time_zones import MomentError, parse_local_moment, zone_for_email, zone
 from app.triage import TriageError, change_category, change_type, clean_reason, reassign_ticket, triage_ticket
 from app.reactions import acknowledged_condition, acknowledged_views, dismiss_negative, open_negative_ids
 from app.thread import build_thread
+from app.ticket_emails import SendAnywayError, send_anyway
 from app.visibility import (
     ASSIGNEE_ROLES,
     Access,
@@ -992,6 +993,26 @@ def restore_note(
 ):
     """Brings a deleted note back while its row still exists (the purge job has not removed it)."""
     return _note_action(number, note_id, request, user, session, lambda t, n: undo_delete_note(session, t, n, user))
+
+
+@router.post("/{number}/emails/{email_id}/send-anyway", response_class=HTMLResponse)
+def send_email_anyway(
+    number: int,
+    email_id: int,
+    request: Request,
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """Sends one email the per-ticket limit on automatic emails held back (#349), for an agent who may work the ticket. That one row
+    only; it goes out through the normal outbox. Recorded as an audit entry and a ticket event. A second click does nothing."""
+    ticket = _get_ticket(session, number, user, Access.WORK)
+    try:
+        send_anyway(session, ticket, email_id, user)
+    except SendAnywayError as error:
+        raise HTTPException(status_code=404, detail=str(error))
+    session.commit()
+    session.refresh(ticket)
+    return _render_ticket_detail(request, ticket, user, session)
 
 
 @router.get("/{number}/mentions")
