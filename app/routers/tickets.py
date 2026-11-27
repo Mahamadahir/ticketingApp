@@ -1175,8 +1175,13 @@ def change_end_user(
         session.rollback()
         raise HTTPException(status_code=403, detail=str(error))
     except RequesterChangeError as error:
+        # htmx does not swap a 4xx, so the refusal is drawn in the End user box (a plain post keeps the 400).
         session.rollback()
-        raise HTTPException(status_code=400, detail=str(error))
+        session.refresh(ticket)
+        page = _render_ticket_detail(request, ticket, user, session, notice=f"Not changed: {error}")
+        if not is_htmx(request):
+            page.status_code = 400
+        return page
     session.commit()
     session.refresh(ticket)
     return _render_ticket_detail(request, ticket, user, session, notice="; ".join(outcome.notes) or None)

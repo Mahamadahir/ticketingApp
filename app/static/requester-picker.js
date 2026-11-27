@@ -66,6 +66,14 @@
     if (keep) { keep.focus(); }
   });
 
+  // A search answer that arrives after a choice was made (inside the 300 ms delay) must not bring the list back.
+  document.addEventListener("htmx:beforeSwap", function (event) {
+    var chosen = byId("rp-chosen");
+    if (event.detail && event.detail.target && event.detail.target.id === "rp-results" && chosen && !chosen.hidden) {
+      event.detail.shouldSwap = false;
+    }
+  });
+
   document.addEventListener("keydown", function (event) {
     if (event.key === "Escape" && isOpen()) {
       setOpen(false);

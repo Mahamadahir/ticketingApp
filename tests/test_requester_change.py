@@ -643,3 +643,21 @@ def test_anonymising_the_old_requester_scrubs_the_event(client, db_session, desk
     [event] = events(db_session, ticket, "requester_changed")
     assert event.from_value.startswith("anonymised-") and event.to_value == NEW
     assert OLD not in (event.detail or "")
+
+
+def test_a_refusal_through_htmx_is_drawn_in_the_page_not_dropped(client, db_session, desk):
+    ticket = worked(db_session, desk)
+    response = client.post(f"/tickets/{ticket.number}/requester", data={"new_requester": OLD.upper()}, headers={"HX-Request": "true"})
+    assert response.status_code == 200 and "Not changed: That is already the end user" in response.text
+    empty = client.post(f"/tickets/{ticket.number}/requester", data={}, headers={"HX-Request": "true"})
+    assert empty.status_code == 200 and "Not changed: Choose a person" in empty.text
+    assert reload(db_session, ticket).requester_email == OLD
+
+
+def test_an_old_requester_who_already_follows_counts_as_kept(client, db_session, desk):
+    ticket = worked(db_session, desk)
+    db_session.add(TicketFollower(ticket_id=ticket.id, email=OLD, added_by_email="x"))
+    db_session.commit()
+    post(client, ticket)
+    [event] = events(db_session, ticket, "requester_changed")
+    assert "was kept as a follower" in event.detail

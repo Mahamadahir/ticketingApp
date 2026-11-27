@@ -154,7 +154,8 @@ def change_requester(
     notes: list[str] = []
     if keep_old_as_follower and not is_placeholder_address(old):
         try:
-            outcome.followed = add_follower(session, ticket, old, actor.email) is not None
+            added = add_follower(session, ticket, old, actor.email) is not None
+            outcome.followed = added or any(not f.is_internal and f.email == old.lower() for f in followers_of(session, ticket))
         except NeverFollowListed as error:
             notes.append(f"{error.email} was not kept as a follower: it is on the never-follow list")
         except TooManyFollowers:
