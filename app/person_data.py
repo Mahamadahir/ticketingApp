@@ -179,8 +179,8 @@ COLUMNS: dict[str, ColumnUse] = {
     "auditlog.actor_email": _use(SUBJECT, EMAIL, "audit entries the person made", anon=SCRUB),
     "auditlog.detail": _use(TEXT, FREE_TEXT, "audit entries", anon=SCRUB),
     "ticketevent.actor_email": _use(SUBJECT, EMAIL, "ticket events the person caused", anon=SCRUB),
-    "ticketevent.from_value": _use(SUBJECT, EMAIL, "an event can name an address (a follower added)", anon=SCRUB),
-    "ticketevent.to_value": _use(SUBJECT, EMAIL, "an event can name an address (a follower added)", anon=SCRUB),
+    "ticketevent.from_value": _use(SUBJECT, EMAIL, "an event can name an address (a follower added, the end user changed #279)", anon=SCRUB),
+    "ticketevent.to_value": _use(SUBJECT, EMAIL, "an event can name an address (a follower added, the end user changed #279)", anon=SCRUB),
     "ticketevent.detail": _use(TEXT, FREE_TEXT, "ticket events", anon=SCRUB),
     "ticketevent.group_id": _use(NOT_PERSON, LABEL, "a random id shared by the events one save wrote (#255); names no one"),
     # tickets

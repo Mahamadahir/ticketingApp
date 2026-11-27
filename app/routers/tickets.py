@@ -6,8 +6,9 @@ from html import escape
 from typing import Optional
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from app.rate_limit import PEOPLE_SEARCH, rate_limited
 from app.templating import is_htmx, templates
 from sqlalchemy import func, or_
 from sqlmodel import Session, select
@@ -57,6 +58,7 @@ from app.msp_actions import (
 )
 from app.escalation import EscalationError, escalate_ticket as escalate, escalation_target, escalators_of
 from app.raising import source_label
+from app.requester_change import NotAllowed, RequesterChangeError, change_requester, typed_address
 from app.request_questions import QuestionError, answer_rows, form_rows, save_answers
 from app.request_types import active_request_types, request_type_of
 from app.subrequests import TemplateError, after_triage as make_subrequests, answers_changed_note, pending_subjects, preview as preview_subrequests
@@ -77,7 +79,7 @@ from app.notifications import AWAITING_YOU, mentionable_agents, notify_agent_ema
 from app.identity import person_for_address, requester_emails
 from app.presence import agent_label
 from app.ticket_actions import CARDS, action_chips
-from app import mailbox_changes, portal_mailbox
+from app import mailbox_changes, people_directory, portal_mailbox
 from app.search import normalise, search_condition
 from app.splitting import (
     MAX_DETAILS,
@@ -167,6 +169,7 @@ from app.visibility import (
     NoTicketAccess,
     assignable_agents,
     may_add_note,
+    may_change_requester,
     may_manage_note,
     may_self_assign,
     may_set_due,
@@ -1120,6 +1123,74 @@ def change_due(
         session.commit()
         session.refresh(ticket)
     return _render_ticket_detail(request, ticket, user, session)
+
+
+@router.get("/{number}/people", response_class=HTMLResponse, dependencies=[Depends(rate_limited(PEOPLE_SEARCH))])
+def find_people_for_requester(
+    number: int,
+    request: Request,
+    q: str = Query("", max_length=100),
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """The End user picker (#279): the people picker's answer (app/people_directory.py, the same partial as the mailbox form),
+    for an agent who may change this ticket's end user, so the directory is not open to anyone with a ticket link. Unlike the
+    mailbox picker it keeps the searching agent and ignores `mailbox_target_blocklist`. When what was typed is an email address
+    that no result has, one more choice offers it ("Use {address}"), so someone with no account can still be chosen."""
+    ticket = _get_ticket(session, number, user, Access.READ)
+    if not may_change_requester(user, ticket, access_context(session, user)):
+        raise HTTPException(status_code=403, detail="You cannot change the end user of this ticket")
+    error = ""
+    try:
+        found = people_directory.search(session, user, q, exclude_self=False, use_blocklist=False)
+    except people_directory.DirectoryError as problem:
+        found, error = [], str(problem)
+    typed = typed_address(q)
+    return templates.TemplateResponse(
+        request, "_people_results.html",
+        {
+            "people": found, "error": error, "too_short": len(q.strip()) < people_directory.MIN_QUERY_LENGTH,
+            "use_address": typed if typed and all((p.mail or "").lower() != typed for p in found) else "",
+        },
+    )
+
+
+@router.post("/{number}/requester", response_class=HTMLResponse)
+def change_end_user(
+    number: int,
+    request: Request,
+    new_requester: str = Form("", max_length=320),
+    new_requester_oid: str = Form("", max_length=100),
+    keep_old: Optional[str] = Form(None),
+    email_new: Optional[str] = Form(None),
+    user: User = Depends(require_roles(*AGENT_ROLES)),
+    session: Session = Depends(get_session),
+):
+    """An agent who works the ticket changes its end user (app/requester_change.py does it; the rule is
+    visibility.may_change_requester). The new end user is a directory choice (`new_requester_oid`, fetched again by the server)
+    or a typed address (`new_requester`). The old end user is kept as a follower unless unticked; the new one is emailed only
+    when ticked."""
+    ticket = _get_ticket(session, number, user, Access.READ)
+    session.refresh(ticket, with_for_update=True)  # two changes at once must not both start from the same requester
+    try:
+        outcome = change_requester(
+            session, ticket, user, new_requester, object_id=new_requester_oid, keep_old_as_follower=keep_old == "on",
+            email_new=email_new == "on",
+        )
+    except NotAllowed as error:
+        session.rollback()
+        raise HTTPException(status_code=403, detail=str(error))
+    except RequesterChangeError as error:
+        # htmx does not swap a 4xx, so the refusal is drawn in the End user box (a plain post keeps the 400).
+        session.rollback()
+        session.refresh(ticket)
+        page = _render_ticket_detail(request, ticket, user, session, notice=f"Not changed: {error}")
+        if not is_htmx(request):
+            page.status_code = 400
+        return page
+    session.commit()
+    session.refresh(ticket)
+    return _render_ticket_detail(request, ticket, user, session, notice="; ".join(outcome.notes) or None)
 
 
 @router.post("/{number}/reassign", response_class=HTMLResponse)
@@ -2402,7 +2473,7 @@ REPORTED_BY = {
 def _render_ticket_detail(
     request: Request, ticket: Ticket, user: User, session: Session, compose: Optional[dict] = None, hold: Optional[dict] = None,
     action: Optional[str] = None, edit: Optional[str] = None, card_error: Optional[str] = None,
-    card_values: Optional[dict] = None, card_must_open: Optional[HTTPException] = None,
+    card_values: Optional[dict] = None, card_must_open: Optional[HTTPException] = None, notice: Optional[str] = None,
 ) -> HTMLResponse:
     """`compose` is set when a send was held back (`_send_warning`): the composer's card then opens with the text kept.
     `action` names the card to open at the top of the main column (app/ticket_actions.py) and `edit` the box row to show as
@@ -2507,7 +2578,7 @@ def _render_ticket_detail(
     can_set_due = may_set_due(user, ticket, levels)
     editable = {
         "type": can_edit_triage and ticket.status != TicketStatus.AWAITING_APPROVAL, "category": can_edit_triage, "priority": can_edit_triage, "status": can_edit_status,
-        "due": can_set_due, "required_by": can_set_required_by,
+        "due": can_set_due, "required_by": can_set_required_by, "requester": may_change_requester(user, ticket, levels),
     }
     files = ticket_files(session, user, levels, ticket)
     editing = None
@@ -2561,6 +2632,7 @@ def _render_ticket_detail(
             "card_doing": card_doing,
             "editing": editing,
             "editable": editable,
+            "notice": notice,
             "files": files,
             "requester_person": requester_person,
             "reported_by": REPORTED_BY.get(ticket.source, "someone"),

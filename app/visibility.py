@@ -235,6 +235,15 @@ def may_set_due(user: User, ticket: Ticket, levels: AccessContext) -> bool:
     return ticket_access(user, ticket, levels) == Access.WORK
 
 
+def may_change_requester(user: User, ticket: Ticket, levels: AccessContext) -> bool:
+    """Who may change a ticket's end user (its requester, app/requester_change.py): agents who work the ticket, until it is
+    finished (the same bar as editing answers). Never the requester or a follower: a requester cannot hand their own
+    request to someone else."""
+    if ticket.status in FINISHED_STATUSES or user.role not in (UserRole.AGENT, UserRole.SUPER_ADMIN):
+        return False
+    return ticket_access(user, ticket, levels) == Access.WORK
+
+
 def may_add_note(user: User, ticket: Ticket, levels: AccessContext) -> bool:
     """Notes are open to anyone who works the ticket, and to every agent while
     it is untriaged, so an agent can record what they learned without claiming
