@@ -166,9 +166,9 @@ def deactivate(session: Session, person: User, reason: str) -> None:
 def run_entra_account_check(session: Session, now: Optional[datetime] = None) -> RunSummary:
     """The recurring job (app/scheduled_jobs.py). Does nothing unless ENTRA_ACCOUNT_CHECK_ENABLED is on, Graph is
     configured and tonight's run is due. Raises when every lookup failed, so the failure is visible.
-    Summary: checked, deactivated, or skipped_not_due (it woke outside its nightly window, or the check is off)."""
+    Summary: checked, deactivated, skipped_not_due (it woke outside its nightly window) or skipped_off (the check is off or Graph is not configured)."""
     if not (settings.entra_account_check_enabled and settings.graph_configured):
-        return RunSummary.of(skipped_not_due=1)
+        return RunSummary.of(skipped_off=1)
     if not is_due(session, now or datetime.now(timezone.utc)):
         return RunSummary.of(skipped_not_due=1)
     result = check_accounts(session)

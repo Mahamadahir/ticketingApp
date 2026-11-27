@@ -10,7 +10,7 @@ from typing import Iterable, Optional
 
 
 # Counts that say what a run looked at, not what it changed: a run with only these is "nothing to do".
-NOT_WORK_KEYS = frozenset({"skipped_not_due", "read", "checked", "fetched"})
+NOT_WORK_KEYS = frozenset({"skipped_not_due", "skipped_off", "read", "checked", "fetched"})
 
 
 @dataclass

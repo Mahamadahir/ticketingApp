@@ -53,6 +53,7 @@ SENTENCES: dict[str, dict[str, tuple[str, str]]] = {
     "bank-holidays": {
         "fetched": _s("Fetched the bank holiday list", "Fetched the bank holiday list"),
         "added": _s("Added {n} new date", "Added {n} new dates"),
+        "fetch_failed": _s("Could not fetch from gov.uk; kept the last list", "Could not fetch from gov.uk; kept the last list"),
     },
     "blob-cleanup": {
         "deleted": _s("Deleted {n} stored file", "Deleted {n} stored files"),
@@ -67,6 +68,7 @@ SENTENCES: dict[str, dict[str, tuple[str, str]]] = {
         "checked": _s("Checked {n} account in Entra", "Checked {n} accounts in Entra"),
         "deactivated": _s("Deactivated {n} account", "Deactivated {n} accounts"),
         "skipped_not_due": _s("Not due: it checks once a night", "Not due: it checks once a night"),
+        "skipped_off": _s("Switched off or Graph is not configured", "Switched off or Graph is not configured"),
     },
     "email-reactions": {
         "read": _s("Read {n} sent email", "Read {n} sent emails"),
@@ -191,7 +193,7 @@ def purge_job_runs(session: Session, now: Optional[datetime] = None) -> RunSumma
     cutoff = now - timedelta(days=count_setting(session, JOB_RUN_KEEP_DAYS))
     total = 0
     for _ in range(PURGE_MAX_BATCHES):
-        ids = list(session.exec(select(ScheduledJobRun.id).where(ScheduledJobRun.started_at < cutoff).order_by(ScheduledJobRun.id).limit(PURGE_BATCH)).all())
+        ids = list(session.exec(select(ScheduledJobRun.id).where(ScheduledJobRun.started_at < cutoff, ScheduledJobRun.outcome != RUN_RUNNING).order_by(ScheduledJobRun.id).limit(PURGE_BATCH)).all())
         if not ids:
             break
         session.exec(delete(ScheduledJobRun).where(ScheduledJobRun.id.in_(ids)))

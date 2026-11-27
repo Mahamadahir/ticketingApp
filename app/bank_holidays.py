@@ -110,7 +110,7 @@ def refresh_bank_holidays(session: Session, now: Optional[datetime] = None) -> b
 
 def run_bank_holiday_fetch(session: Session) -> RunSummary:
     """The recurring job (daily, registered in app/scheduled_jobs.py). Summary: fetched (1 when the list was refreshed),
-    added (dates that were not in the stored list before)."""
+    added (dates that were not in the stored list before), fetch_failed (1 when gov.uk could not be read and the last good list was kept)."""
     region = region_setting(session)
     row = session.get(BankHolidayCache, region)
     before = set((row.dates or "").split(",")) if row is not None else set()
@@ -119,4 +119,4 @@ def run_bank_holiday_fetch(session: Session) -> RunSummary:
     row = session.get(BankHolidayCache, region)
     after = set((row.dates or "").split(",")) if row is not None else set()
     before.discard(""), after.discard("")
-    return RunSummary.of(fetched=int(refreshed), added=len(after - before) if refreshed else 0)
+    return RunSummary.of(fetched=int(refreshed), added=len(after - before) if refreshed else 0, fetch_failed=int(not refreshed))

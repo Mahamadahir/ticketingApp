@@ -212,9 +212,9 @@ def test_every_registered_job_returns_a_summary_and_finds_nothing_in_an_empty_da
 
 def test_every_count_key_a_job_can_return_has_a_sentence():
     expected_keys = {
-        "approval-reminders": {"reminded", "overdue_told"}, "auto-close": {"closed"}, "bank-holidays": {"fetched", "added"},
+        "approval-reminders": {"reminded", "overdue_told"}, "auto-close": {"closed"}, "bank-holidays": {"fetched", "added", "fetch_failed"},
         "blob-cleanup": {"deleted", "failed"}, "chase": {"chased", "resolved", "gave_up"},
-        "entra-account-check": {"checked", "deactivated", "skipped_not_due"}, "email-reactions": {"read", "recorded"},
+        "entra-account-check": {"checked", "deactivated", "skipped_not_due", "skipped_off"}, "email-reactions": {"read", "recorded"},
         "job-run-purge": {"deleted"}, "mailbox-changes": {"started", "removed", "retried", "failed"},
         "msp-ack-alerts": {"alerted"}, "msp-forwards": {"forwarded"}, "msp-handoff": {"sent", "warned"},
         "note-purge": {"deleted"}, "notification-purge": {"deleted"}, "presence-cleanup": {"deleted"}, "reply-files": {"deleted"},
@@ -225,7 +225,7 @@ def test_every_count_key_a_job_can_return_has_a_sentence():
         assert keys <= set(SENTENCES[name]), f"{name} has keys with no sentence: {keys - set(SENTENCES[name])}"
     for name, wording in SENTENCES.items():
         for key, (one, many) in wording.items():
-            assert "{n}" in many or key in ("fetched", "skipped_not_due"), f"{name}.{key}"
+            assert "{n}" in many or key in ("fetched", "skipped_not_due", "skipped_off", "fetch_failed"), f"{name}.{key}"
             one.format(n=1), many.format(n=2)
 
 
@@ -247,10 +247,10 @@ def test_the_bank_holiday_job_reports_the_dates_it_added_and_nothing_when_the_li
     monkeypatch.setattr("app.bank_holidays.fetch_feed", lambda region: days)
     first = run_bank_holiday_fetch(db_session)
     db_session.commit()
-    assert first.counts == {"fetched": 1, "added": 2} and first.did_work
+    assert first.counts == {"fetched": 1, "added": 2, "fetch_failed": 0} and first.did_work
     again = run_bank_holiday_fetch(db_session)
     db_session.commit()
-    assert again.counts == {"fetched": 1, "added": 0} and not again.did_work
+    assert again.counts == {"fetched": 1, "added": 0, "fetch_failed": 0} and not again.did_work
 
 
 def test_the_auto_close_job_reports_the_tickets_it_closed(db_session):
@@ -308,6 +308,29 @@ def test_the_purge_is_a_registered_daily_job_whose_own_runs_are_recorded(db_sess
     own = runs("job-run-purge")
     assert len(own) == 1 and own[0].outcome == RUN_DID_WORK and own[0].summary_counts == {"deleted": 1}
     assert runs("old") == []
+
+
+def test_the_purge_never_deletes_a_run_that_is_still_running(db_session):
+    db_session.add(ScheduledJobRun(job_name="count", started_at=datetime.now(timezone.utc) - timedelta(days=90), outcome=RUN_RUNNING))
+    db_session.commit()
+    assert purge_job_runs(db_session).counts == {"deleted": 0}
+
+
+def test_a_failed_bank_holiday_fetch_inside_the_grace_period_is_visible(db_session, monkeypatch):
+    from datetime import date
+
+    from app.bank_holidays import FetchError, run_bank_holiday_fetch
+
+    monkeypatch.setattr("app.bank_holidays.fetch_feed", lambda region: [date(2027, 1, 1)])
+    run_bank_holiday_fetch(db_session)
+    db_session.commit()
+
+    def down(region):
+        raise FetchError("down")
+
+    monkeypatch.setattr("app.bank_holidays.fetch_feed", down)
+    summary = run_bank_holiday_fetch(db_session)
+    assert summary.counts["fetch_failed"] == 1 and summary.did_work
 
 
 # ---- The pages ------------------------------------------------------------------------------------------
