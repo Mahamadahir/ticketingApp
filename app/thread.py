@@ -277,6 +277,8 @@ def _sentence(e: TicketEvent, n: Names) -> str:
         return f'A thank-you reply did not reopen the ticket: "{detail}"' if detail else "A thank-you reply did not reopen the ticket."
     if t == "mail_reference_not_used":
         return (detail + ".") if detail else "A reply named this ticket but was not matched to it."
+    if t in ("attachments_pending", "attachments_added", "attachments_failed") and detail:
+        return detail if detail.endswith(".") else detail + "."
     if t == "attachment_skipped":
         return f"A file was not saved: {to}." + (f" {detail}." if detail else "")
     if t == "chased":

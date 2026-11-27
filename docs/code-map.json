@@ -54,6 +54,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/e5b81c4a7d29_attachment_retries.py",
+        "revision": "e5b81c4a7d29"
+      },
+      {
         "file": "migrations/versions/d41e7a9b3c05_scheduled_job_run.py",
         "revision": "d41e7a9b3c05"
       },
@@ -68,17 +72,13 @@
       {
         "file": "migrations/versions/b5e2c8a1f903_request_type_mailbox_action.py",
         "revision": "b5e2c8a1f903"
-      },
-      {
-        "file": "migrations/versions/d7a3f9b2c614_mailbox_change.py",
-        "revision": "d7a3f9b2c614"
       }
     ],
-    "count": 85,
+    "count": 86,
     "heads": [
       {
-        "file": "migrations/versions/d41e7a9b3c05_scheduled_job_run.py",
-        "revision": "d41e7a9b3c05"
+        "file": "migrations/versions/e5b81c4a7d29_attachment_retries.py",
+        "revision": "e5b81c4a7d29"
       }
     ]
   },
@@ -498,6 +498,37 @@
         "tests/test_subrequests.py",
         "tests/test_teams_approvals.py",
         "tests/test_withdraw.py"
+      ]
+    },
+    {
+      "classes": [],
+      "file": "app/attachment_retries.py",
+      "functions": [
+        "attachment_retries_job",
+        "retry_attachments"
+      ],
+      "imported_by": [
+        "app.scheduled_jobs"
+      ],
+      "imports": [
+        "app.config",
+        "app.graph_client",
+        "app.inbound",
+        "app.intake",
+        "app.mail",
+        "app.models",
+        "app.person_data",
+        "app.run_summary",
+        "app.storage",
+        "app.teams",
+        "app.ticket_service"
+      ],
+      "module": "app.attachment_retries",
+      "routes": [],
+      "summary": "Retrying the files of an email that was taken without them (#348).",
+      "tables": [],
+      "tests": [
+        "tests/test_attachment_retries.py"
       ]
     },
     {
@@ -1095,6 +1126,7 @@
         "app.admin_home",
         "app.anonymisation",
         "app.approval_links",
+        "app.attachment_retries",
         "app.attachments",
         "app.auth",
         "app.bot_connector",
@@ -1692,6 +1724,7 @@
       "file": "app/graph_client.py",
       "functions": [],
       "imported_by": [
+        "app.attachment_retries",
         "app.email_reactions",
         "app.entra_check",
         "app.inbound",
@@ -1788,6 +1821,7 @@
     },
     {
       "classes": [
+        "AttachmentsUnreadable",
         "Handled",
         "IncomingMail",
         "MailSource"
@@ -1795,6 +1829,7 @@
       "file": "app/inbound.py",
       "functions": [
         "automatic_reason",
+        "backoff_until",
         "find_ticket_for",
         "ingest_mail",
         "load_attachments",
@@ -1808,6 +1843,7 @@
         "referenced_ticket"
       ],
       "imported_by": [
+        "app.attachment_retries",
         "app.jobs",
         "app.routers.admin",
         "app.routers.dev_tools"
@@ -1843,6 +1879,7 @@
         "tests/test_acknowledgement.py",
         "tests/test_admin_mail_pages.py",
         "tests/test_anonymisation.py",
+        "tests/test_attachment_retries.py",
         "tests/test_follower_updates.py",
         "tests/test_forward_mail.py",
         "tests/test_inbound_mail.py",
@@ -1869,6 +1906,7 @@
         "store_files"
       ],
       "imported_by": [
+        "app.attachment_retries",
         "app.inbound",
         "app.teams_intake",
         "app.teams_pending"
@@ -1952,6 +1990,7 @@
       "summary": "The history of scheduled job runs (#341): one `scheduled_job_run` row per run, what it did in plain words, kept for a number of days.",
       "tables": [],
       "tests": [
+        "tests/test_attachment_retries.py",
         "tests/test_job_runs.py"
       ]
     },
@@ -2153,6 +2192,7 @@
         "send_through_graph"
       ],
       "imported_by": [
+        "app.attachment_retries",
         "app.auto_close_chase",
         "app.inbound",
         "app.jobs",
@@ -2588,6 +2628,7 @@
         "ApprovalGroupMember",
         "ApprovalVote",
         "Attachment",
+        "AttachmentRetry",
         "AuditLog",
         "BankHolidayCache",
         "BotMessage",
@@ -2659,6 +2700,7 @@
         "app.approval_groups",
         "app.approval_reminders",
         "app.approvals",
+        "app.attachment_retries",
         "app.attachments",
         "app.audit",
         "app.auth",
@@ -2795,6 +2837,10 @@
         {
           "class": "Attachment",
           "table": "attachment"
+        },
+        {
+          "class": "AttachmentRetry",
+          "table": "attachment_retry"
         },
         {
           "class": "AuditLog",
@@ -3018,6 +3064,7 @@
         "tests/test_approval_inactive.py",
         "tests/test_approval_reminders.py",
         "tests/test_approvals.py",
+        "tests/test_attachment_retries.py",
         "tests/test_attachments.py",
         "tests/test_auth.py",
         "tests/test_auto_close_chase.py",
@@ -3805,6 +3852,7 @@
       ],
       "imported_by": [
         "app.anonymisation",
+        "app.attachment_retries",
         "app.mail",
         "app.subject_access",
         "app.teams",
@@ -3821,6 +3869,7 @@
       "tables": [],
       "tests": [
         "tests/test_anonymisation.py",
+        "tests/test_attachment_retries.py",
         "tests/test_job_runs.py",
         "tests/test_mailbox_changes.py",
         "tests/test_reactions.py",
@@ -6400,6 +6449,7 @@
       "imported_by": [
         "app.anonymisation",
         "app.approval_reminders",
+        "app.attachment_retries",
         "app.auto_close_chase",
         "app.bank_holidays",
         "app.due_today",
@@ -6416,6 +6466,7 @@
       "summary": "What one scheduled job run did (#341): named counts and the tickets it changed.",
       "tables": [],
       "tests": [
+        "tests/test_attachment_retries.py",
         "tests/test_job_runs.py"
       ]
     },
@@ -6455,6 +6506,7 @@
       "imports": [
         "app.anonymisation",
         "app.approval_reminders",
+        "app.attachment_retries",
         "app.audit",
         "app.auto_close_chase",
         "app.bank_holidays",
@@ -6484,6 +6536,7 @@
         "tests/test_admin_system_log_pages.py",
         "tests/test_anonymisation.py",
         "tests/test_approval_reminders.py",
+        "tests/test_attachment_retries.py",
         "tests/test_auto_close_chase.py",
         "tests/test_due_date.py",
         "tests/test_email_reactions.py",
@@ -6652,6 +6705,7 @@
         "tests/test_approval_inactive.py",
         "tests/test_approval_reminders.py",
         "tests/test_approvals.py",
+        "tests/test_attachment_retries.py",
         "tests/test_auto_close_chase.py",
         "tests/test_backdating.py",
         "tests/test_break_glass.py",
@@ -6907,6 +6961,7 @@
       ],
       "imported_by": [
         "app.anonymisation",
+        "app.attachment_retries",
         "app.attachments",
         "app.inbound",
         "app.intake",
@@ -7185,6 +7240,7 @@
       "imported_by": [
         "app.admin_home",
         "app.approval_reminders",
+        "app.attachment_retries",
         "app.auto_close_chase",
         "app.bot_cards",
         "app.bot_connector",
@@ -7218,6 +7274,7 @@
         "tests/test_admin_frame.py",
         "tests/test_anonymisation.py",
         "tests/test_approval_reminders.py",
+        "tests/test_attachment_retries.py",
         "tests/test_auto_close_chase.py",
         "tests/test_email_header.py",
         "tests/test_inbound_mail.py",
@@ -7719,6 +7776,7 @@
       "imported_by": [
         "app.anonymisation",
         "app.approvals",
+        "app.attachment_retries",
         "app.auto_close_chase",
         "app.backdating",
         "app.bulk_resolve",
@@ -8599,6 +8657,7 @@
     "tests/test_approval_inactive.py",
     "tests/test_approval_reminders.py",
     "tests/test_approvals.py",
+    "tests/test_attachment_retries.py",
     "tests/test_attachments.py",
     "tests/test_auth.py",
     "tests/test_auto_close_chase.py",

@@ -255,6 +255,8 @@ COLUMNS: dict[str, ColumnUse] = {
     "outboundemail.subject": _use(TEXT, FREE_TEXT, "emails sent to the person", anon=SCRUB),
     "outboundemail.last_error": _use(TEXT, FREE_TEXT, "why a send failed; Graph's wording can name the recipient", anon=SCRUB),
     "outboundemail.body": _use(TEXT, FREE_TEXT, "emails sent to the person; not exported (see the PR decisions)", anon=BLANK),
+    "attachment_retry.graph_message_id": _use(NOT_PERSON, LABEL, "Graph's id of the mail whose files are being retried (#348); names no one"),
+    "attachment_retry.last_error": _use(NOT_PERSON, LABEL, "describe_failure: an exception class or an HTTP status, never an address (#348)"),
     "inboundmail.sender": _use(SUBJECT, NAME, "mail the person sent to the shared mailbox (ids and outcome only)", anon=REPLACE),
     "inboundmail.to_addresses": _use(SUBJECT, EMAIL, "a comma-separated list", anon=REMOVE),
     "inboundmail.cc_addresses": _use(SUBJECT, EMAIL, "a comma-separated list", anon=REMOVE),

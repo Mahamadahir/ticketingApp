@@ -1106,6 +1106,27 @@ class GraphNotification(SQLModel, table=True):
     # one that never works is given up on instead of being fetched every run.
     attempts: int = Field(default=0, sa_column_kwargs={"server_default": "0"})
     next_attempt_at: Optional[datetime] = Field(default=None)
+    # #348: how many of those failures were reading the mail's attachments. After two, the mail is taken without its files and
+    # the files are retried on their own (AttachmentRetry); a failure of the message fetch does not count here.
+    attachment_failures: int = Field(default=0, sa_column_kwargs={"server_default": "0"})
+
+
+class AttachmentRetry(SQLModel, table=True):
+    """An email taken without its files because reading them failed twice (#348, app/inbound.py), and the retry of those files
+    on their own (app/attachment_retries.py, the `inbound-attachments` job). `attempts` counts every failed try from the first, the
+    notification's included, so the whole stops at MAX_ATTEMPTS. Deleted when the files are added, when it gives up, or when the
+    ticket was anonymised meanwhile. `last_error` is `describe_failure` (a class name or HTTP status), never an address."""
+
+    __tablename__ = "attachment_retry"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    graph_message_id: str = Field(unique=True)
+    message_id: int = Field(foreign_key="message.id")
+    ticket_id: int = Field(foreign_key="ticket.id", index=True)
+    attempts: int = Field(default=0)
+    next_attempt_at: datetime
+    last_error: Optional[str] = Field(default=None)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class InboundMail(SQLModel, table=True):
