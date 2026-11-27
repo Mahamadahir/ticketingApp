@@ -54,6 +54,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/c3e9a1d7b546_outbound_cap_override.py",
+        "revision": "c3e9a1d7b546"
+      },
+      {
         "file": "migrations/versions/e5b81c4a7d29_attachment_retries.py",
         "revision": "e5b81c4a7d29"
       },
@@ -68,17 +72,13 @@
       {
         "file": "migrations/versions/c8d4a1e6f257_mailbox_on_behalf_approvals.py",
         "revision": "c8d4a1e6f257"
-      },
-      {
-        "file": "migrations/versions/b5e2c8a1f903_request_type_mailbox_action.py",
-        "revision": "b5e2c8a1f903"
       }
     ],
-    "count": 86,
+    "count": 87,
     "heads": [
       {
-        "file": "migrations/versions/e5b81c4a7d29_attachment_retries.py",
-        "revision": "e5b81c4a7d29"
+        "file": "migrations/versions/c3e9a1d7b546_outbound_cap_override.py",
+        "revision": "c3e9a1d7b546"
       }
     ]
   },
@@ -642,7 +642,8 @@
         "app.subject_access",
         "app.subrequests",
         "app.teams_conversations",
-        "app.teams_intake"
+        "app.teams_intake",
+        "app.ticket_emails"
       ],
       "imports": [
         "app.models"
@@ -1231,6 +1232,7 @@
         "tests/test_teams_followups.py",
         "tests/test_teams_hold.py",
         "tests/test_teams_intake.py",
+        "tests/test_ticket_emails.py",
         "tests/test_time_zones.py",
         "tests/test_visibility.py",
         "tests/test_wiring_3f.py",
@@ -2210,7 +2212,8 @@
         "app.jobs",
         "app.linked_identities",
         "app.msp",
-        "app.reply_channel"
+        "app.reply_channel",
+        "app.ticket_emails"
       ],
       "imports": [
         "app.action_links",
@@ -2264,6 +2267,7 @@
         "tests/test_resolution.py",
         "tests/test_split_before_triage.py",
         "tests/test_teams_followups.py",
+        "tests/test_ticket_emails.py",
         "tests/test_ticket_presence.py",
         "tests/test_withdraw.py"
       ]
@@ -2492,6 +2496,7 @@
         "tests/test_subject_access.py",
         "tests/test_teams_bot.py",
         "tests/test_teams_hold.py",
+        "tests/test_ticket_emails.py",
         "tests/test_ticket_page_queries.py",
         "tests/test_ticket_presence.py",
         "tests/test_ticket_redesign.py",
@@ -2628,6 +2633,7 @@
         "tests/test_split_family.py",
         "tests/test_teams_followups.py",
         "tests/test_teams_intake.py",
+        "tests/test_ticket_emails.py",
         "tests/test_ticket_presence.py",
         "tests/test_ticket_redesign.py",
         "tests/test_ticket_thread.py"
@@ -2813,6 +2819,7 @@
         "app.thanks_rules",
         "app.theme",
         "app.thread",
+        "app.ticket_emails",
         "app.ticket_presence",
         "app.ticket_service",
         "app.time_zones",
@@ -3190,6 +3197,7 @@
         "tests/test_teams_intake.py",
         "tests/test_thanks_rules.py",
         "tests/test_ticket_core.py",
+        "tests/test_ticket_emails.py",
         "tests/test_ticket_page.py",
         "tests/test_ticket_page_queries.py",
         "tests/test_ticket_presence.py",
@@ -3722,7 +3730,8 @@
         "app.raising",
         "app.reply_channel",
         "app.requester_change",
-        "app.teams_intake"
+        "app.teams_intake",
+        "app.ticket_emails"
       ],
       "imports": [
         "app.config",
@@ -3756,6 +3765,7 @@
         "tests/test_resolution.py",
         "tests/test_split_before_triage.py",
         "tests/test_teams_approvals.py",
+        "tests/test_ticket_emails.py",
         "tests/test_withdraw.py"
       ]
     },
@@ -6112,6 +6122,7 @@
         "reopen",
         "resolve",
         "restore_note",
+        "send_email_anyway",
         "send_ticket_to_msp",
         "split",
         "take_back_from_msp_route",
@@ -6176,6 +6187,7 @@
         "app.templating",
         "app.thread",
         "app.ticket_actions",
+        "app.ticket_emails",
         "app.ticket_presence",
         "app.ticket_service",
         "app.time_zones",
@@ -6293,6 +6305,11 @@
           "handler": "preview_email_user",
           "method": "POST",
           "path": "/tickets/{number}/email/preview"
+        },
+        {
+          "handler": "send_email_anyway",
+          "method": "POST",
+          "path": "/tickets/{number}/emails/{email_id}/send-anyway"
         },
         {
           "handler": "escalate_ticket",
@@ -6844,6 +6861,7 @@
         "tests/test_teams_followups.py",
         "tests/test_teams_hold.py",
         "tests/test_teams_intake.py",
+        "tests/test_ticket_emails.py",
         "tests/test_ticket_presence.py",
         "tests/test_ticket_thread.py",
         "tests/test_time_zones.py",
@@ -7335,6 +7353,7 @@
         "app.mail",
         "app.reply_channel",
         "app.routers.admin",
+        "app.ticket_emails",
         "app.ticket_service"
       ],
       "imports": [
@@ -7375,6 +7394,7 @@
         "tests/test_teams_followups.py",
         "tests/test_teams_hold.py",
         "tests/test_teams_intake.py",
+        "tests/test_ticket_emails.py",
         "tests/test_wiring_3f.py",
         "tests/test_withdraw.py"
       ]
@@ -7776,6 +7796,7 @@
         "app.quoted_text",
         "app.reactions",
         "app.reply_channel",
+        "app.ticket_emails",
         "app.visibility"
       ],
       "module": "app.thread",
@@ -7805,6 +7826,40 @@
       "tables": [],
       "tests": [
         "tests/test_ticket_redesign.py"
+      ]
+    },
+    {
+      "classes": [
+        "Delivery",
+        "SendAnywayError"
+      ],
+      "file": "app/ticket_emails.py",
+      "functions": [
+        "describe",
+        "is_held",
+        "kind_label",
+        "send_anyway",
+        "state_of",
+        "ticket_emails"
+      ],
+      "imported_by": [
+        "app.routers.tickets",
+        "app.thread"
+      ],
+      "imports": [
+        "app.audit",
+        "app.mail",
+        "app.models",
+        "app.outbox",
+        "app.teams",
+        "app.ticket_service"
+      ],
+      "module": "app.ticket_emails",
+      "routes": [],
+      "summary": "Every email sent or queued about a ticket, as the agent thread shows it (#349), and \"Send anyway\" for one held back by the",
+      "tables": [],
+      "tests": [
+        "tests/test_ticket_emails.py"
       ]
     },
     {
@@ -7895,6 +7950,7 @@
         "app.splitting",
         "app.subrequests",
         "app.teams_intake",
+        "app.ticket_emails",
         "app.triage"
       ],
       "imports": [
@@ -8870,6 +8926,7 @@
     "tests/test_test_db_cleanup.py",
     "tests/test_thanks_rules.py",
     "tests/test_ticket_core.py",
+    "tests/test_ticket_emails.py",
     "tests/test_ticket_page.py",
     "tests/test_ticket_page_queries.py",
     "tests/test_ticket_presence.py",
