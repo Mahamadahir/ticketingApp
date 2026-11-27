@@ -252,6 +252,7 @@
         "access_warning",
         "card_offered",
         "copy_off_warning",
+        "fingerprint",
         "live_change",
         "requester_person",
         "submit"

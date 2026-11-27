@@ -2388,7 +2388,7 @@ def _mailbox_card(session: Session, user: User, ticket: Ticket, values: Optional
     return {
         "form": form, "kinds": agent_mailbox.KIND_CHOICES, "zone": zone_for_user(session, user),
         "quarter_times": portal_mailbox.QUARTER_TIMES, "max_days": count_setting(session, MAILBOX_CHANGE_MAX_DAYS),
-        "max_note": MAX_APPROVAL_COMMENT,
+        "max_note": MAX_APPROVAL_COMMENT, "token": agent_mailbox.fingerprint(form),
     }
 
 
@@ -2410,6 +2410,7 @@ def mailbox_set_up(
     end_time: str = Form("", max_length=10),
     note: str = Form("", max_length=MAX_APPROVAL_COMMENT + 500),
     confirmed: Optional[str] = Form(None, max_length=10),
+    confirm_token: str = Form("", max_length=100),
     user: User = Depends(require_roles(*AGENT_ROLES)),
     session: Session = Depends(get_session),
 ):
@@ -2420,7 +2421,7 @@ def mailbox_set_up(
         kind=kind, owner_object_id=owner_object_id.strip(), owner_name=owner_name.strip(), target_object_id=target_object_id.strip(),
         target_name=target_name.strip(), keep_copy=keep_copy == "on",
         start_mode=portal_mailbox.LATER if start_mode == portal_mailbox.LATER else portal_mailbox.NOW,
-        start_date=start_date, start_time=start_time, end_date=end_date, end_time=end_time, note=note, confirmed=confirmed == "1",
+        start_date=start_date, start_time=start_time, end_date=end_date, end_time=end_time, note=note, confirmed=confirmed == "1", confirm_token=confirm_token,
     )
     try:
         agent_mailbox.submit(session, user, ticket, form)

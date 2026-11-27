@@ -79,8 +79,21 @@ def form(world, **extra):
     return {k: v for k, v in data.items() if v is not None}
 
 
+def token_for(data):
+    """The token the confirm button carries: the fingerprint of the values the warning was shown for."""
+    shown = agent_mailbox.AgentMailboxForm(
+        kind=data["kind"], owner_object_id=data.get("owner_object_id", ""), target_object_id=data.get("target_object_id", ""),
+        keep_copy=data.get("keep_copy") == "on", start_mode=data["start_mode"], start_date=data.get("start_date", ""),
+        start_time=data.get("start_time", ""), end_date=data["end_date"], end_time=data["end_time"],
+    )
+    return agent_mailbox.fingerprint(shown)
+
+
 def setup(client, world, **extra):
-    return client.post(f"/tickets/{world.ticket.number}/mailbox/set-up", data=form(world, **extra))
+    data = form(world, **extra)
+    if data.get("confirmed") and "confirm_token" not in data:
+        data["confirm_token"] = token_for(data)  # as the confirm button posts it
+    return client.post(f"/tickets/{world.ticket.number}/mailbox/set-up", data=data)
 
 
 def changes_of(db_session, ticket):
@@ -384,3 +397,16 @@ def test_the_export_names_nobody_else_for_the_agent_the_owner_the_target_or_the_
     # the requester is not the owner, the target or the creator here: nothing of the change is theirs
     assert json.loads(export_rows(db_session, REQUESTER)) == []
     assert "agent@example.com" in export_rows(db_session, BEE, True)
+
+
+def test_a_confirmation_counts_only_for_the_values_it_was_shown_for(client, db_session, world):
+    warned = setup(client, world, keep_copy=None)  # the copy-off warning
+    assert warned.status_code == 400 and "mb-confirm-block" in warned.text
+    copy_off = form(world, keep_copy=None)
+    token = token_for(copy_off)
+    assert token in warned.text  # the confirm button carries it
+    # the agent switches to access and presses the confirm button: the access warning has not been shown, so it is shown now
+    again = setup(client, world, kind="both", keep_copy=None, confirmed="1", confirm_token=token)
+    assert again.status_code == 400 and "read all mail already in" in html.unescape(again.text)
+    assert setup(client, world, keep_copy=None, confirmed="1", confirm_token="forged").status_code == 400
+    assert nothing_made(db_session, world.ticket)

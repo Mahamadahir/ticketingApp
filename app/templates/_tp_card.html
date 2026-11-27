@@ -316,20 +316,20 @@
     </label>
     <p class="note">The note goes on the ticket for the team and in the audit log. The requester and the mailbox owner do not see it.</p>
 
+    <button type="submit" class="btn btn-primary">Set up</button>
     {% if card_confirm %}
     <section class="mb-confirm" id="mb-confirm-block" aria-labelledby="mb-confirm-title" role="alert">
       <h3 class="mb-confirm-head" id="mb-confirm-title">{{ "Turn off the copy?" if f.kind == "forwarding" else "Give access to the mailbox?" }}</h3>
       <div class="mb-confirm-body">
         <p>{{ card_error }}</p>
         <div class="rq-actions">
+          <input type="hidden" name="confirm_token" value="{{ mailbox_card.token }}" />
           <button type="submit" name="confirmed" value="1" class="btn btn-danger">{{ "Turn off the copy" if f.kind == "forwarding" else "Give access" }}</button>
           <a class="btn" href="/tickets/{{ ticket.number }}?action=mailbox">Cancel</a>
         </div>
         <p class="note">To change who or what, change the form above and press Set up again.</p>
       </div>
     </section>
-    {% else %}
-    <button type="submit" class="btn btn-primary">Set up</button>
     {% endif %}
   </form>
   <script src="{{ static_url('mailbox-form.js') }}" defer></script>

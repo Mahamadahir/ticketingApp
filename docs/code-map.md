@@ -480,7 +480,7 @@ Set up a mailbox change from the agent ticket page (#364; tracker #305): for a r
 File: `app/agent_mailbox.py`
 
 - Classes: `AgentMailboxForm`, `ConfirmAccess`
-- Functions: `access_warning`, `card_offered`, `copy_off_warning`, `live_change`, `requester_person`, `submit`
+- Functions: `access_warning`, `card_offered`, `copy_off_warning`, `fingerprint`, `live_change`, `requester_person`, `submit`
 - Imports: `app.approvals`, `app.audit`, `app.config`, `app.identity`, `app.mailbox_changes`, `app.mailbox_executor`, `app.models`, `app.people_directory`, `app.portal_mailbox`, `app.ticket_service`, `app.time_zones`
 - Imported by: `app.routers.tickets`
 - Tests: `test_agent_mailbox.py`

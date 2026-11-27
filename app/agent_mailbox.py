@@ -14,6 +14,7 @@ owner is not the other person, the times in the agent's own zone, no overlap wit
 loop, and last the confirmations (keep-a-copy off, and always for Full access and Send As) which the server insists on whatever the
 page did. Nothing is committed here: the route does that."""
 
+import hashlib
 import logging
 from dataclasses import dataclass
 from datetime import datetime
@@ -68,6 +69,18 @@ class AgentMailboxForm(ForwardingForm):
     kind: str = FORWARDING
     note: str = ""  # how the agent confirmed the request: required
     confirmed: bool = False  # the red confirmation of keep-a-copy off, or of access, was given
+    confirm_token: str = ""  # `fingerprint` of the form the warning was shown for: a confirmation counts only for those values
+
+
+def fingerprint(form: AgentMailboxForm) -> str:
+    """What the warning was shown for: the kind, the two people, the copy and the times. The confirm button posts it back, and the
+    server accepts `confirmed` only when the form still has the same values, so changing the kind or a person after the warning
+    asks again (an access warning is never skipped by a confirmation given for turning a copy off)."""
+    parts = (
+        form.kind, form.owner_object_id.strip().lower(), form.target_object_id.strip().lower(), str(bool(form.keep_copy)),
+        form.start_mode, form.start_date, form.start_time, form.end_date, form.end_time,
+    )
+    return hashlib.sha256("".join(parts).encode("utf-8")).hexdigest()
 
 
 def live_change(change: MailboxChange) -> bool:
@@ -197,10 +210,11 @@ def submit(
     for kind in kinds:
         if _overlapping(session, owner.mail, times, kind, None if kind == "forwarding" else person.mail):
             raise MailboxFormError(_overlap_words(owner, person, kind, times))
+    confirmed = form.confirmed and form.confirm_token == fingerprint(form)
     if kinds == ["forwarding"]:
-        if not form.keep_copy and not form.confirmed:
+        if not form.keep_copy and not confirmed:
             raise ConfirmNoCopy(copy_off_warning(owner.name, person.name, until))
-    elif not form.confirmed:
+    elif not confirmed:
         raise ConfirmAccess(access_warning(owner.name, person.name, kinds, until))
 
     try:
@@ -211,7 +225,7 @@ def submit(
             create_mailbox_change(
                 session, ticket, kind=kind, owner_address=owner.mail, target_address=person.mail, starts_at=times.starts_at,
                 ends_at=times.ends_at, created_by=agent.email, owner_object_id=owner.object_id, target_object_id=person.object_id,
-                keep_copy=form.keep_copy,
+                keep_copy=form.keep_copy if kind == "forwarding" else True,
             )
             for kind in kinds
         ]
