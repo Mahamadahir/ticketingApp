@@ -1825,6 +1825,7 @@
         "app.mail",
         "app.models",
         "app.msp",
+        "app.never_follow",
         "app.outbox",
         "app.reopening",
         "app.reply_channel",
@@ -3343,6 +3344,7 @@
       "imported_by": [
         "app.followers",
         "app.forwards",
+        "app.inbound",
         "app.intake",
         "app.linked_identities",
         "app.mail",

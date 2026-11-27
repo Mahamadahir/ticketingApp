@@ -37,6 +37,7 @@ EVENT_MAIL_FORWARDED = "mail_forwarded"
 _FORWARD_SUBJECT = re.compile(r"^\s*(?:fw|fwd)\s*:", re.IGNORECASE)
 _FROM_LINE = re.compile(r"^\s*\**From\**\s*:\s*(.*\S)\s*$", re.IGNORECASE)
 _ADDRESS = re.compile(r"[A-Za-z0-9._%+'\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
+_ANGLE = re.compile(r"(?:<|\[mailto:)\s*(" + _ADDRESS.pattern + r")")
 _BLOCK_LINES = 8  # how far below the marker the From: line may sit
 
 
@@ -73,10 +74,12 @@ class ForwardDecision:
 def original_address(session: Session, from_text: str) -> tuple[Optional[str], str]:
     """(the original sender's address or None, why not). An address in the line wins; a bare name must match exactly one
     enabled person in the directory."""
-    found = _ADDRESS.search(from_text)
+    # The address in <...> or [mailto:...] is the real one; a display name that looks like an address must not win.
+    angled = _ANGLE.search(from_text)
+    found = angled.group(1) if angled else (_ADDRESS.search(from_text) or [None])[0]
     if found:
         try:
-            return normalise_email(found.group(0)), ""
+            return normalise_email(found), ""
         except InvalidEmail:
             return None, "its address is not a valid email address"
     name = from_text.strip().strip("\"'").strip()

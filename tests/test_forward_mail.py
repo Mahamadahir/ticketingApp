@@ -332,3 +332,22 @@ def test_the_directory_is_asked_before_the_claim_and_never_inside_ingest(db_sess
 def test_a_re_fw_subject_is_not_a_forward():
     assert forwards.read_forward("RE: FW: Printer jam", OUTLOOK_BLOCK) is None
     assert forwards.read_forward("Re: Fwd: Printer jam", OUTLOOK_BLOCK) is None
+
+
+def test_the_address_in_angle_brackets_wins_over_a_display_name_that_looks_like_one(db_session):
+    person(db_session, "owen@corp.example", "Owen Owner")
+    body = OUTLOOK_BLOCK.replace("Sam Outside <sam@outside.example>", "it-director@corp.example <x@evil.example>")
+    assert forward(db_session, body).requester_email == "x@evil.example"
+    assert forwards.original_address(db_session, "Sam [mailto:sam@outside.example]") == ("sam@outside.example", "")
+
+
+def test_a_never_follow_or_flooding_sender_makes_no_directory_call(db_session, monkeypatch):
+    person(db_session, "owen@corp.example", "Owen Owner")
+    db_session.add(NeverFollowAddress(email="owen@corp.example", reason="x", added_by="a@corp.example"))
+    db_session.commit()
+    asked = []
+    monkeypatch.setattr(people_directory, "_rows_for", lambda session, text: asked.append(text) or [])
+    graph = FakeGraph()
+    graph.add("n1", sender="owen@corp.example", subject="FW: x", body=OUTLOOK_BLOCK)
+    process_message(db_session, "n1", graph)
+    assert asked == []

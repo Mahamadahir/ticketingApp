@@ -827,7 +827,7 @@ File: `app/inbound.py`
 
 - Classes: `Handled`, `IncomingMail`, `MailSource`
 - Functions: `automatic_reason`, `find_ticket_for`, `ingest_mail`, `load_attachments`, `may_reply`, `msp_auto_reply`, `msp_trust`, `opening_text`, `parse_graph_message`, `process_message`, `process_notifications`, `referenced_ticket`
-- Imports: `app.attachments`, `app.audit`, `app.config`, `app.follower_updates`, `app.followers`, `app.forwards`, `app.graph_client`, `app.identity`, `app.intake`, `app.mail`, `app.models`, `app.msp`, `app.outbox`, `app.reopening`, `app.reply_channel`, `app.settings_store`, `app.storage`, `app.subscriptions`, `app.teams`, `app.ticket_service`, `app.time_zones`
+- Imports: `app.attachments`, `app.audit`, `app.config`, `app.follower_updates`, `app.followers`, `app.forwards`, `app.graph_client`, `app.identity`, `app.intake`, `app.mail`, `app.models`, `app.msp`, `app.never_follow`, `app.outbox`, `app.reopening`, `app.reply_channel`, `app.settings_store`, `app.storage`, `app.subscriptions`, `app.teams`, `app.ticket_service`, `app.time_zones`
 - Imported by: `app.jobs`, `app.routers.admin`, `app.routers.dev_tools`
 - Tests: `test_acknowledgement.py`, `test_admin_mail_pages.py`, `test_anonymisation.py`, `test_follower_updates.py`, `test_forward_mail.py`, `test_inbound_mail.py`, `test_msp_mail.py`, `test_msp_real_mail.py`, `test_never_follow.py`, `test_reopening.py`, `test_thanks_rules.py`, `test_time_zones.py`
 
@@ -1032,7 +1032,7 @@ File: `app/never_follow.py`
 - Classes: `NeverFollowError`
 - Functions: `add_listed`, `all_listed`, `is_listed`, `is_msp`, `listed_among`, `listed_entry`, `remove_listed`
 - Imports: `app.models`, `app.settings_store`
-- Imported by: `app.followers`, `app.forwards`, `app.intake`, `app.linked_identities`, `app.mail`, `app.msp`, `app.routers.admin`
+- Imported by: `app.followers`, `app.forwards`, `app.inbound`, `app.intake`, `app.linked_identities`, `app.mail`, `app.msp`, `app.routers.admin`
 - Tests: `test_msp_mail.py`, `test_never_follow.py`, `test_requester_bell.py`, `test_teams_intake.py`
 
 ### `app.note_purge`

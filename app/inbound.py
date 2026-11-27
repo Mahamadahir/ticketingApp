@@ -76,6 +76,7 @@ from app.intake import (
     IncomingAttachment, clean_body, clean_subject, clean_text, ignored_as_never_follow,
     record_first_message, record_reply, store_files,
 )
+from app.never_follow import is_listed
 from app.forwards import EVENT_MAIL_FORWARDED, ForwardDecision, decide as decide_forward
 from app.identity import addresses_of, person_for_address
 from app.models import (
@@ -712,7 +713,11 @@ def process_message(
         files = load_attachments(session, client, graph_message_id)  # before any ticket is made: no lock is held while Graph answers
         mail.has_attachments = any(not item.inline for item in files)  # the list read now decides, not Graph's flag
     forward = None
-    if not from_msp and automatic_reason(mail) is None:
+    # Only for mail ingest_mail would handle (not automatic, flooding or never-follow), so a loop makes no directory calls.
+    if (
+        not from_msp and automatic_reason(mail) is None and not _flooding(session, mail.sender, now or datetime.now(timezone.utc))
+        and not is_listed(session, mail.sender)
+    ):
         try:
             forwarder = normalise_email(mail.sender)
         except InvalidEmail:
