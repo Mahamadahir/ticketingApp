@@ -402,6 +402,14 @@ class Ticket(SQLModel, table=True):
     # When the SLA clock starts, if not at created_at (a scheduled change starts its clock at the start time). Read it
     # only through app.sla.sla_start.
     sla_starts_at: Optional[datetime] = Field(default=None)
+    # A reopen restarts the resolution target (app/sla.py): it runs from resolution_restarted_at (the latest reopen), and the
+    # time paused before that (resolution_restart_paused_seconds) is not counted. On the first reopen the first resolution is
+    # kept for the reports: when it was, the deadline it was judged against and the pause then. All empty until a reopen.
+    resolution_restarted_at: Optional[datetime] = Field(default=None)
+    resolution_restart_paused_seconds: int = Field(default=0, sa_column_kwargs={"server_default": "0"})
+    first_resolved_at: Optional[datetime] = Field(default=None)
+    first_resolution_due_at: Optional[datetime] = Field(default=None)
+    first_resolution_paused_seconds: Optional[int] = Field(default=None)
 
     # Set when this ticket is linked to a Major Incident or Problem (app/linking.py).
     # One level only: a parent is never itself linked to anything.
@@ -1028,6 +1036,12 @@ class OutboundEmail(SQLModel, table=True):
     # Set once; the sender then skips the cap for this row only (app/mail.py).
     cap_override_by: Optional[str] = Field(default=None)
     cap_override_at: Optional[datetime] = Field(default=None)
+    # Mail threading (#350). `graph_message_id`: the Sent Items copy of this email, found after it went (sendMail and reply return no
+    # id), so a later email can reply to it. `reply_to_graph_id`: the message this one was sent as a reply to (or tried to be: with
+    # `thread_note` set the reply was refused or the message gone, the email went as a fresh one, and that target is not tried again).
+    graph_message_id: Optional[str] = Field(default=None, index=True)
+    reply_to_graph_id: Optional[str] = Field(default=None)
+    thread_note: Optional[str] = Field(default=None)
 
 
 class ScheduledJob(SQLModel, table=True):

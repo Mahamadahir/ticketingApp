@@ -261,9 +261,9 @@ def test_taking_the_mail_without_files_still_decides_the_forward_before_the_clai
     real = inbound.decide_forward
     calls = []
 
-    def spy(session, sender, subject, text):
+    def spy(session, sender, subject, text, *rest):
         calls.append(session.exec(select(inbound.InboundMail)).all() == [])  # True: asked before the mail was claimed
-        return real(session, sender, subject, text)
+        return real(session, sender, subject, text, *rest)
 
     monkeypatch.setattr(inbound, "decide_forward", spy)
     graph = GraphWithBrokenFiles()

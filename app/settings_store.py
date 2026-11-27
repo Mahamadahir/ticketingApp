@@ -16,7 +16,7 @@ from app.models import Setting
 class SettingDef:
     key: str
     label: str
-    kind: str  # "team": a team id, empty for none; "minutes": a whole number; "percent": 1 to 99; "vote_percent": 1 to 100; "flag": on or off; "count": a whole number, 1 to 1000; "hour": a whole number, 0 to 23; "clock": a time of day written 09:00 or 17:30; "time_zone": an IANA time zone name, blank for the default; "email": one email address, blank for none; "emails": a list of email addresses separated by commas or spaces, blank for none; "region": one of england-and-wales, scotland, northern-ireland; "dates": a list of dates (2026-12-25, separated by commas or spaces), blank for none; "off_minutes": a whole number of minutes, 0 is off; "off_days": a whole number of days, 0 to 3650, 0 is off; "regex": a regular expression with the named groups the setting says; "reaction_map": reaction=positive|negative|neutral pairs separated by commas
+    kind: str  # "team": a team id, empty for none; "minutes": a whole number; "percent": 1 to 99; "vote_percent": 1 to 100; "flag": on or off; "count": a whole number, 1 to 1000; "hour": a whole number, 0 to 23; "clock": a time of day written 09:00 or 17:30; "time_zone": an IANA time zone name, blank for the default; "email": one email address, blank for none; "domains": email domains separated by commas or spaces, blank for none; "emails": a list of email addresses separated by commas or spaces, blank for none; "region": one of england-and-wales, scotland, northern-ireland; "dates": a list of dates (2026-12-25, separated by commas or spaces), blank for none; "off_minutes": a whole number of minutes, 0 is off; "off_days": a whole number of days, 0 to 3650, 0 is off; "regex": a regular expression with the named groups the setting says; "reaction_map": reaction=positive|negative|neutral pairs separated by commas
     description: str
     default: str = ""
     group: str = ""  # one of GROUP_KEYS: the group of the Settings page this belongs to, declared with the setting (a test fails if it is missing)
@@ -88,6 +88,7 @@ SPLIT_EMAIL_ENABLED = "split_email_enabled"
 INBOUND_MAX_PER_SENDER_HOUR = "inbound_max_per_sender_hour"
 INBOUND_MAX_ATTACHMENTS = "inbound_max_attachments"
 INBOUND_MAX_CC = "inbound_max_cc"
+ACCEPTED_DOMAINS = "accepted_domains"
 TEAMS_MAX_PER_PERSON_HOUR = "teams_max_per_person_hour"
 TEAMS_HOLD_WHILE_ACTIVE_MINUTES = "teams_hold_while_active_minutes"
 TEAMS_PENDING_CHOICE_HOURS = "teams_pending_choice_hours"
@@ -401,6 +402,18 @@ REGISTRY: dict[str, SettingDef] = {
             "except the sender, the shared mailbox and never-follow addresses (the follower list has its own overall cap as well). The key is still inbound_max_cc. Placeholder."
         ),
         default="10",
+    ),
+    ACCEPTED_DOMAINS: SettingDef(
+        key=ACCEPTED_DOMAINS,
+        group=GROUP_MAIL,
+        label="Inbound mail: the organisation's own email domains",
+        kind="domains",
+        description=(
+            "Domains, separated by commas or spaces, that count as inside the organisation when Exchange's own verdict is the "
+            "only proof of who sent a mail (used for forwards, and only when Exchange did not stamp the mail as internal). "
+            "Blank means the domain of the shared mailbox."
+        ),
+        default="",
     ),
     TEAMS_MAX_PER_PERSON_HOUR: SettingDef(
         key=TEAMS_MAX_PER_PERSON_HOUR,

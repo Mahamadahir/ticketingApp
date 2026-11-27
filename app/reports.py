@@ -46,7 +46,7 @@ from app.report_kit import (
 from app.reopening import EVENT_RECLOSED, EVENT_REOPENED
 from app.ticket_service import EVENT_STATUS_CHANGED
 from app.msp import BY_AUTOMATIC, EVENT_MSP_ACKNOWLEDGED, EVENT_MSP_TOLD, EVENT_SENT_TO_MSP
-from app.sla import SLA_START_SQL
+from app.sla import DUE_DATE_IS_TARGET_SQL, SLA_START_SQL
 from app.msp_actions import EVENT_TAKEN_BACK
 from app.time_zones import format_moment
 from app.visibility import AccessContext, feedback_condition, visible_ticket_condition
@@ -111,11 +111,19 @@ def sla_compliance(session: Session, user: User, levels: AccessContext, filters:
     tracked = [Ticket.is_backdated.is_(False)]
     paused = Ticket.sla_paused_at.is_not(None)
     # A Due date does not move for a pause (app/sla.py), so a paused ticket with one is not undecided.
-    resolution_paused = and_(paused, Ticket.due_on.is_(None))
-    finished = Ticket.status.in_(FINISHED_STATUSES) & Ticket.resolved_at.is_not(None)
+    # A reopen restarts the resolution target (app/sla.py), so then the Due date is not what it is measured against.
+    resolution_paused = and_(paused, ~DUE_DATE_IS_TARGET_SQL)
+    # A ticket counts once, for its first resolution: a reopened ticket keeps the time and the deadline of that
+    # resolution (first_resolved_at, first_resolution_due_at), even while it is open again or resolved a second time.
+    # The reopen is the Reopen rate report's.
+    reopened = Ticket.first_resolved_at.is_not(None)
+    finished = reopened | (Ticket.status.in_(FINISHED_STATUSES) & Ticket.resolved_at.is_not(None))
+    resolved_when = func.coalesce(Ticket.first_resolved_at, Ticket.resolved_at)
+    # A NULL first_resolution_due_at on a reopened ticket means its first resolution had no target: not the restarted one.
+    resolution_due = case((reopened, Ticket.first_resolution_due_at), else_=Ticket.resolution_due_at)
     # Finished with no email to the requester (closed as a duplicate, resolved by phone): judged by when it
     # finished, so one closed before the deadline is not counted late afterwards.
-    responded = func.coalesce(Ticket.first_responded_at, case((finished, Ticket.resolved_at)))
+    responded = func.coalesce(Ticket.first_responded_at, case((finished, resolved_when)))
     # First response: met if an agent emailed by the deadline; breached if emailed late, or still not emailed
     # and the deadline has passed (a paused clock is not decided yet).
     fr_has = Ticket.first_response_due_at.is_not(None)
@@ -128,13 +136,13 @@ def sla_compliance(session: Session, user: User, levels: AccessContext, filters:
         ),
     )
     # Resolution: decided when finished (on time or late), or when open and already overdue.
-    res_has = Ticket.resolution_due_at.is_not(None)
-    res_met = and_(res_has, finished, Ticket.resolved_at <= Ticket.resolution_due_at)
+    res_has = resolution_due.is_not(None)
+    res_met = and_(res_has, finished, resolved_when <= resolution_due)
     res_breached = and_(
         res_has,
         or_(
-            and_(finished, Ticket.resolved_at > Ticket.resolution_due_at),
-            and_(~finished, Ticket.resolution_due_at < now, ~resolution_paused),
+            and_(finished, resolved_when > resolution_due),
+            and_(~finished, resolution_due < now, ~resolution_paused),
         ),
     )
     team_name = func.coalesce(Team.name, NO_TEAM)
@@ -183,7 +191,9 @@ def sla_compliance(session: Session, user: User, levels: AccessContext, filters:
             "Tickets created in the range. Met means done by the deadline; breached means done late, or not done and already "
             "overdue; % met is met out of met plus breached. The Awaiting user pause is already in the deadlines (a Due date "
             "does not move for it, so a ticket past its Due date is breached even while paused). A ticket finished without "
-            "an email to the requester is judged by when it finished."
+            "an email to the requester is judged by when it finished (resolving counts as the first response when there was none). "
+            "A ticket that was reopened is counted once, for its first resolution against the deadline it had then; the later "
+            "resolutions, and the restarted target a reopen gives it, are not counted here (the Reopen rate report counts the reopen)."
         ),
     )
 
@@ -201,8 +211,11 @@ def times(session: Session, user: User, levels: AccessContext, filters: ReportFi
     # given before that start counts as 0.
     first_seconds = func.greatest(func.extract("epoch", Ticket.first_responded_at - SLA_START_SQL), 0)
     # The clock stops in Awaiting user, so that wait is taken off a resolution time (as it is off the deadline).
+    # A reopened ticket is counted once, for its first resolution (as in the SLA compliance report).
+    resolved_when = func.coalesce(Ticket.first_resolved_at, Ticket.resolved_at)
     resolve_seconds = func.greatest(
-        func.extract("epoch", Ticket.resolved_at - SLA_START_SQL) - Ticket.sla_paused_seconds, 0
+        func.extract("epoch", resolved_when - SLA_START_SQL)
+        - func.coalesce(Ticket.first_resolution_paused_seconds, Ticket.sla_paused_seconds), 0
     )
     team_name = func.coalesce(Team.name, NO_TEAM)
 
@@ -216,7 +229,7 @@ def times(session: Session, user: User, levels: AccessContext, filters: ReportFi
         return {(name, priority): rest for name, priority, *rest in session.execute(query).all()}
 
     first_extra = [Ticket.first_responded_at.is_not(None)]
-    resolve_extra = [Ticket.status.in_(FINISHED_STATUSES), Ticket.resolved_at.is_not(None)]
+    resolve_extra = [or_(Ticket.first_resolved_at.is_not(None), and_(Ticket.status.in_(FINISHED_STATUSES), Ticket.resolved_at.is_not(None)))]
     first, resolve = stats(first_seconds, first_extra, True), stats(resolve_seconds, resolve_extra, True)
     first_all, resolve_all = stats(first_seconds, first_extra, False), stats(resolve_seconds, resolve_extra, False)
 
@@ -243,7 +256,7 @@ def times(session: Session, user: User, levels: AccessContext, filters: ReportFi
             "Elapsed time, not working time: the SLA clock runs 24 hours a day, every day (it stops only in Awaiting user). "
             "Tickets created in the range. Resolution time leaves out time spent in Awaiting user; first response is the plain "
             "time to the first email an agent sent. Times run from when the SLA clock starts (creation, unless a later start was set; an answer given before it counts as 0). Only tickets that have had a first response, or are "
-            "resolved or closed, are counted."
+            "resolved or closed, are counted. A ticket that was reopened is counted once, for its first resolution."
         ),
     )
 
