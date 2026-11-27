@@ -1192,3 +1192,9 @@ html.act-open { overflow: hidden; }
   .job-table td[data-label]::before { content: attr(data-label); display: block; color: var(--muted); font-size: 12px; }
   .job-error { max-width: none; }
 }
+
+/* Request types, Approval section (#324): what only means something with an approval group is hidden while "(none)" is chosen;
+   Percent to pass is also hidden while "Any one approver is enough" is ticked. The wrapper adds no box of its own. */
+.needs-group { display: contents; }
+.form-grid:has(select[name="approval_group_id"] option[value=""]:checked) .needs-group { display: none; }
+.form-grid:has(input[name="any_one_approver"]:checked) .pass-percent { display: none; }

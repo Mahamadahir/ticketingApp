@@ -64,10 +64,12 @@
       {% for g in groups %}<option value="{{ g.id }}" {{ "selected" if t and g.id == t.approval_group_id else "" }}>{{ g.name }}</option>{% endfor %}
     </select>
   </label>
-  <label class="field">Percent to pass <input type="number" name="pass_percent" value="{{ t.pass_percent if t else default_pass }}" min="1" max="100" required /></label>
-  <label class="check field-wide"><input type="checkbox" name="subrequests_need_own_approval" {{ "checked" if t and t.subrequests_need_own_approval else "" }} /> Sub-requests of this kind need their own approval (otherwise the request they come from covers them)</label>
-  <label class="check field-wide"><input type="checkbox" name="any_one_approver" {{ "checked" if t and t.any_one_approver else "" }} /> Any one approver is enough (the first answer settles it, whatever the number of approvers and the percent above; for a mailbox kind the approvers are the owner of the mailbox and the approval group)</label>
-  <label class="check field-wide"><input type="checkbox" name="approvers_may_self_approve" {{ "checked" if t and t.approvers_may_self_approve else "" }} /> Approvers may approve their own requests (an active member of the approval group who raises one of these has their approval recorded at once; never for a mailbox kind)</label>
+  <div class="needs-group">
+    <label class="field pass-percent">Percent to pass <input type="number" name="pass_percent" value="{{ t.pass_percent if t else default_pass }}" min="1" max="100" /></label>
+    <label class="check field-wide"><input type="checkbox" name="subrequests_need_own_approval" {{ "checked" if t and t.subrequests_need_own_approval else "" }} /> Sub-requests of this kind need their own approval (otherwise the request they come from covers them)</label>
+    <label class="check field-wide"><input type="checkbox" name="any_one_approver" {{ "checked" if t and t.any_one_approver else "" }} /> Any one approver is enough (the first answer settles it, whatever the number of approvers and the percent above; for a mailbox kind the approvers are the owner of the mailbox and the approval group)</label>
+    <label class="check field-wide"><input type="checkbox" name="approvers_may_self_approve" {{ "checked" if t and t.approvers_may_self_approve else "" }} /> Approvers may approve their own requests (an active member of the approval group who raises one of these has their approval recorded at once; never for a mailbox kind)</label>
+  </div>
 {% endmacro %}
 {% macro template_fields(tpl, t) %}
   <label class="field field-wide">Subject (use {Question} for an answer, e.g. Laptop for {Name})

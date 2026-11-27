@@ -171,6 +171,7 @@ from app.settings_store import (
     GROUP_KEYS,
     GROUPS,
     REGISTRY,
+    get_int_setting,
     get_setting,
     group_definitions,
     search_definitions,
@@ -1546,12 +1547,23 @@ def list_request_types(
     )
 
 
+def _posted_pass_percent(raw: Optional[str], approval_group_id: Optional[str], any_one_approver: Optional[str], kept: int) -> int:
+    """The editor hides Percent to pass while no approval group is chosen and while Any one approver is ticked (#324): a blank
+    value then keeps `kept`. Otherwise it is required; a value that is not a whole number from 1 to 100 is a 422, as before."""
+    text = (raw or "").strip()
+    if not text and (optional_int(approval_group_id) is None or any_one_approver == "on"):
+        return kept
+    if not text.isascii() or not text.isdigit() or not 1 <= int(text) <= 100:
+        raise HTTPException(status_code=422, detail="The pass percentage must be a whole number from 1 to 100")
+    return int(text)
+
+
 @router.post("/request-types")
 def add_request_type(
     name: str = Form(..., max_length=500),
     description: str = Form("", max_length=5000),
     approval_group_id: Optional[str] = Form(None),
-    pass_percent: int = Form(..., ge=1, le=100),
+    pass_percent: Optional[str] = Form(None),
     is_active: Optional[str] = Form(None),
     offers_required_by: Optional[str] = Form(None),
     due_days_before: Optional[str] = Form(None),
@@ -1573,7 +1585,8 @@ def add_request_type(
         raise HTTPException(status_code=403, detail="Only a super admin can make a request type change a mailbox")
     try:
         request_type = create_request_type(
-            session, name, description, optional_int(approval_group_id), pass_percent, is_active == "on",
+            session, name, description, optional_int(approval_group_id),
+            _posted_pass_percent(pass_percent, approval_group_id, any_one_approver, get_int_setting(session, APPROVAL_DEFAULT_PASS_PERCENT) or 51), is_active == "on",
             offers_required_by == "on", optional_int(due_days_before), optional_int(queue_lead_days),
             defaults=_defaults_from_form(default_team_id, default_category_id, default_impact, default_urgency),
             subrequests_need_own_approval=subrequests_need_own_approval == "on",
@@ -1595,7 +1608,7 @@ def edit_request_type(
     name: str = Form(..., max_length=500),
     description: str = Form("", max_length=5000),
     approval_group_id: Optional[str] = Form(None),
-    pass_percent: int = Form(..., ge=1, le=100),
+    pass_percent: Optional[str] = Form(None),
     is_active: Optional[str] = Form(None),
     offers_required_by: Optional[str] = Form(None),
     due_days_before: Optional[str] = Form(None),
@@ -1627,7 +1640,7 @@ def edit_request_type(
     try:
         update_request_type(
             session, request_type, name, description, optional_int(approval_group_id),
-            pass_percent, is_active == "on", offers_required_by == "on",
+            _posted_pass_percent(pass_percent, approval_group_id, any_one_approver, request_type.pass_percent), is_active == "on", offers_required_by == "on",
             optional_int(due_days_before), optional_int(queue_lead_days),
             defaults=_defaults_from_form(default_team_id, default_category_id, default_impact, default_urgency),
             subrequests_need_own_approval=subrequests_need_own_approval == "on",
