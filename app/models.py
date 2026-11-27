@@ -1049,6 +1049,12 @@ class OutboundEmail(SQLModel, table=True):
     # Set once; the sender then skips the cap for this row only (app/mail.py).
     cap_override_by: Optional[str] = Field(default=None)
     cap_override_at: Optional[datetime] = Field(default=None)
+    # Mail threading (#350). `graph_message_id`: the Sent Items copy of this email, found after it went (sendMail and reply return no
+    # id), so a later email can reply to it. `reply_to_graph_id`: the message this one was sent as a reply to (or tried to be: with
+    # `thread_note` set the reply was refused or the message gone, the email went as a fresh one, and that target is not tried again).
+    graph_message_id: Optional[str] = Field(default=None, index=True)
+    reply_to_graph_id: Optional[str] = Field(default=None)
+    thread_note: Optional[str] = Field(default=None)
 
 
 class ScheduledJob(SQLModel, table=True):

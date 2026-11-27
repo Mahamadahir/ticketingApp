@@ -177,7 +177,9 @@ name, the storage account name).
 
 What each Graph permission is for: `Mail.Read` reads new mail, attachments and the new-mail
 subscription (inbound); `Mail.Send` sends from the shared mailbox (replies, acknowledgements,
-approval emails, the MSP handoff); `Presence.Read.All` marks agents out of office in the
+approval emails, the MSP handoff; ticket emails go as Graph `reply` in the ticket's conversation,
+which needs `Mail.Send` only, #350); `Mail.Read` also reads Sent Items to learn the id of each
+email sent; `Presence.Read.All` marks agents out of office in the
 pickers; `User.Read.All` turns an agent's email into the Entra ID the presence API needs. The
 app never deletes, moves or marks mail, so `Mail.ReadWrite` is not needed. `User.Read.All` is
 wider than the one field it reads; a narrower permission is a later tidy-up.
