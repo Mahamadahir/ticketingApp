@@ -1007,3 +1007,12 @@ def test_the_portal_still_does_not_list_an_inline_picture_with_a_message(client,
     login_as(client, "me@example.com")
     portal = client.get(f"/portal/{ticket.number}").text
     assert f"/attachments/{picture.id}" not in portal and "pasted-shot.png" not in portal
+
+
+def test_renaming_a_picture_from_an_email_opens_the_fold(client, db_session, storage):
+    ticket, _ = triaged_ticket(client, db_session)
+    picture = add_picture(db_session, storage, ticket, "image001.png")
+    closed = files_box(page(client, ticket).text)
+    assert '<details class="tp-pictures">' in closed
+    editing = files_box(client.get(f"/tickets/{ticket.number}?edit=file-{picture.id}").text)
+    assert '<details class="tp-pictures" open>' in editing and 'name="name"' in editing

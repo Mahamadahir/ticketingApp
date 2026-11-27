@@ -240,7 +240,9 @@ def load_attachments(session: Session, client: MailSource, graph_message_id: str
     limit_mb = settings.attachment_max_bytes // (1024 * 1024)
     max_files = count_setting(session, INBOUND_MAX_ATTACHMENTS)
     found: list[IncomingAttachment] = []
-    for index, item in enumerate(client.get_attachments(graph_message_id)):
+    # Real files first, so pictures embedded in the body (logos, pasted shots) cannot use up the limit before a real file is reached.
+    items = sorted(client.get_attachments(graph_message_id), key=lambda a: bool(a.get("isInline")) if isinstance(a, dict) else False)
+    for index, item in enumerate(items):
         if not isinstance(item, dict):
             continue
         name = clean_filename(_text(item.get("name")))
@@ -422,7 +424,7 @@ def _has_real_attachment(mail: IncomingMail, files: list[IncomingAttachment]) ->
     does not count once the attachments have been read; until then Graph's hasAttachments flag decides."""
     if files:
         return any(not item.inline for item in files)
-    return mail.has_attachments  # nothing was read (automatic mail, a flood): Graph's flag stands
+    return mail.has_attachments  # nothing was read (automatic mail, a flood): Graph's flag stands; process_message sets it from the list once read
 
 
 _store_files = store_files

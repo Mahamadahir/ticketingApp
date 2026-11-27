@@ -777,6 +777,17 @@ def test_only_inline_pictures_is_not_a_real_attachment_and_a_real_file_is():
     assert inbound._has_real_attachment(plain, []) is False
 
 
+def test_pictures_in_the_body_cannot_use_up_the_file_limit_before_a_real_file(db_session, storage):
+    set_setting(db_session, INBOUND_MAX_ATTACHMENTS, "1")
+    graph = FakeGraph()
+    graph.add("m1")
+    graph.attach("m1", "image001.png", BIG_PNG, inline=True)
+    graph.attach("m1", "report.pdf", PDF)
+    process_message(db_session, "m1", graph, storage)
+    db_session.commit()
+    assert [a.filename for a in db_session.exec(select(Attachment)).all()] == ["report.pdf"]
+
+
 # ---- Reading Graph's answer ----------------------------------------------------------------------
 
 

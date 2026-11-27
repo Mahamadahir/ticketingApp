@@ -446,7 +446,7 @@
     {% endif %}
     {% if email_pictures %}
     {# Pictures embedded in an email's body (a pasted screenshot, a signature logo), folded after the real files (#345). #}
-    <details class="tp-pictures">
+    <details class="tp-pictures"{% for f in email_pictures if editing == "file-" ~ f.attachment.id %} open{% endfor %}>
       <summary>Pictures in emails ({{ email_pictures|length }})</summary>
       <ul class="tp-filelist">
         {% for f in email_pictures %}{{ file_row(f) }}{% endfor %}
