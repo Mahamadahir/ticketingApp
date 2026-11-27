@@ -62,16 +62,16 @@
         "revision": "c3e9a1d7b546"
       },
       {
+        "file": "migrations/versions/e5b81c4a7d29_attachment_retries.py",
+        "revision": "e5b81c4a7d29"
+      },
+      {
         "file": "migrations/versions/d41e7a9b3c05_scheduled_job_run.py",
         "revision": "d41e7a9b3c05"
       },
       {
         "file": "migrations/versions/c3f8a2d6b941_seed_mailbox_request_types.py",
         "revision": "c3f8a2d6b941"
-      },
-      {
-        "file": "migrations/versions/c8d4a1e6f257_mailbox_on_behalf_approvals.py",
-        "revision": "c8d4a1e6f257"
       }
     ],
     "count": 88,

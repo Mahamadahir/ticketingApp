@@ -413,9 +413,9 @@ Chain tail (newest first):
 
 - `e5b2c8d4f731` migrations/versions/e5b2c8d4f731_outbound_mail_threading.py
 - `c3e9a1d7b546` migrations/versions/c3e9a1d7b546_outbound_cap_override.py
+- `e5b81c4a7d29` migrations/versions/e5b81c4a7d29_attachment_retries.py
 - `d41e7a9b3c05` migrations/versions/d41e7a9b3c05_scheduled_job_run.py
 - `c3f8a2d6b941` migrations/versions/c3f8a2d6b941_seed_mailbox_request_types.py
-- `c8d4a1e6f257` migrations/versions/c8d4a1e6f257_mailbox_on_behalf_approvals.py
 
 ## Modules
 

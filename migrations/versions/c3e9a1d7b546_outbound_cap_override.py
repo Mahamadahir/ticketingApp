@@ -1,7 +1,7 @@
 """outbound email cap override (Send anyway, #349)
 
 Revision ID: c3e9a1d7b546
-Revises: d41e7a9b3c05
+Revises: e5b81c4a7d29
 Create Date: 2026-11-27 12:00:00.000000
 
 """
@@ -14,7 +14,7 @@ import sqlmodel
 
 # revision identifiers, used by Alembic.
 revision: str = 'c3e9a1d7b546'
-down_revision: Union[str, Sequence[str], None] = 'd41e7a9b3c05'
+down_revision: Union[str, Sequence[str], None] = 'e5b81c4a7d29'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
