@@ -235,7 +235,7 @@ def test_to_addresses_come_before_cc_in_the_order_the_mail_lists_them(db_session
 
 def test_the_mailbox_the_msp_a_never_follow_address_and_the_sender_on_the_to_line_never_follow(db_session):
     set_setting(db_session, MSP_ADDRESS, "msp@supplier.example")
-    db_session.add(NeverFollowAddress(email="list@example.com"))
+    db_session.add(NeverFollowAddress(email="list@example.com", added_by="admin@example.com"))
     db_session.commit()
     ticket = open_ticket(
         db_session, to=[MAILBOX, "msp@supplier.example", "list@example.com", "jo@example.com", "ok@example.com"],
