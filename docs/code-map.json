@@ -1188,6 +1188,7 @@
         "tests/test_admin_frame.py",
         "tests/test_anonymisation.py",
         "tests/test_approval_reminders.py",
+        "tests/test_attachment_retries.py",
         "tests/test_attachments.py",
         "tests/test_auto_close_chase.py",
         "tests/test_break_glass.py",
