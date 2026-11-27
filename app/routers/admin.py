@@ -112,6 +112,7 @@ from app.database import get_session
 from app.feedback import feedback_page, resolvers_with_feedback
 from app.forms import MAX_MESSAGE_LENGTH, optional_int
 from app.followers import InvalidEmail, normalise_email
+from app import treat_as_empty
 from app.thanks_rules import (
     MATCH_TYPES as THANKS_MATCH_TYPES,
     MAX_PATTERN_LENGTH as THANKS_MAX_PATTERN,
@@ -1210,6 +1211,90 @@ def toggle_thanks_rule(
     log_action(session, admin.email, "thanks_rule", rule.id, action + "d", describe_thanks_rule(rule))
     session.commit()
     return RedirectResponse("/admin/thanks-rules", status_code=303)
+
+
+# ---- "Treat as empty" rules (#359) ---------------------------------------------------------------
+
+
+@router.get("/treat-as-empty", response_class=HTMLResponse)
+def list_treat_as_empty(
+    request: Request,
+    user: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    return templates.TemplateResponse(
+        request, "admin_treat_as_empty.html",
+        {
+            "rules": treat_as_empty.all_rules(session), "match_types": THANKS_MATCH_TYPES, "max_pattern": THANKS_MAX_PATTERN,
+            "labels": treat_as_empty.CONTACT_LABELS, "user": user,
+        },
+    )
+
+
+@router.post("/treat-as-empty")
+def add_treat_as_empty(
+    match_type: str = Form(..., max_length=20),
+    pattern: str = Form(..., max_length=1000),
+    admin: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    try:
+        rule = treat_as_empty.add_rule(session, match_type, pattern, admin.email)
+    except ThanksRuleError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    log_action(session, admin.email, "treat_as_empty_rule", rule.id, "added", treat_as_empty.describe(rule))
+    session.commit()
+    return RedirectResponse("/admin/treat-as-empty", status_code=303)
+
+
+@router.post("/treat-as-empty/{rule_id}")
+def edit_treat_as_empty(
+    rule_id: int,
+    match_type: str = Form(..., max_length=20),
+    pattern: str = Form(..., max_length=1000),
+    admin: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    try:
+        rule = treat_as_empty.update_rule(session, rule_id, match_type, pattern)
+    except ThanksRuleError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    if rule is None:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    log_action(session, admin.email, "treat_as_empty_rule", rule.id, "edited", treat_as_empty.describe(rule))
+    session.commit()
+    return RedirectResponse("/admin/treat-as-empty", status_code=303)
+
+
+@router.post("/treat-as-empty/{rule_id}/delete")
+def delete_treat_as_empty(
+    rule_id: int,
+    admin: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    rule = treat_as_empty.delete_rule(session, rule_id)
+    if rule is None:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    log_action(session, admin.email, "treat_as_empty_rule", rule_id, "deleted", treat_as_empty.describe(rule))
+    session.commit()
+    return RedirectResponse("/admin/treat-as-empty", status_code=303)
+
+
+@router.post("/treat-as-empty/{rule_id}/{action}")
+def toggle_treat_as_empty(
+    rule_id: int,
+    action: str,
+    admin: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    if action not in ("enable", "disable"):
+        raise HTTPException(status_code=404, detail="Not found")
+    rule = treat_as_empty.set_rule_enabled(session, rule_id, action == "enable")
+    if rule is None:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    log_action(session, admin.email, "treat_as_empty_rule", rule.id, action + "d", treat_as_empty.describe(rule))
+    session.commit()
+    return RedirectResponse("/admin/treat-as-empty", status_code=303)
 
 
 MAX_FORM_TEXT = 50000  # a generous cap on posted template text; the real limits are in app/email_templates.py

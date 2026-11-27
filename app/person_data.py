@@ -282,6 +282,7 @@ COLUMNS: dict[str, ColumnUse] = {
     ),
     "thankscandidate.sample_text": _use(TEXT, FREE_TEXT, "a reply an agent reclosed; may quote a requester", anon=SCRUB),
     "thanksrule.created_by": _use(STAFF, EMAIL),
+    "treatasemptyrule.created_by": _use(STAFF, EMAIL),
     "emailtemplate.updated_by": _use(STAFF, EMAIL),
     "requestsubtemplate.assignee_id": _use(STAFF, USER_ID),
     "cannedresponse.body": _use(NOT_PERSON, LABEL, "admin-written wording"),

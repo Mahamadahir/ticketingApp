@@ -97,6 +97,11 @@ def _tidy_line(line: str) -> Markup:
     return out + escape(line[pos:])
 
 
+def is_picture_line(line: str) -> bool:
+    """A line that is only a bracketed picture name with a letter in it (`[Vardags]`, `[cid:image001.png@01D...]`)."""
+    return bool(_PICTURE_LINE.match(line))
+
+
 def mail_html(text) -> Markup:
     """The safe, tidied HTML for an emailed message's text (see the module docstring). Use in templates as `|mail_html`."""
     if not text:

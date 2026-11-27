@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Admin: Treat as empty{% endblock %}
+{% block content %}
+{# #359: the rules table with an edit panel per rule, the add form. On the Thanks rules pattern. #}
+<header class="admin-head">
+  <h1>Treat as empty</h1>
+  <p>Lines above a forwarded email that do not count as something the forwarder wrote.</p>
+</header>
+<p class="note">
+  When someone inside the organisation forwards an email to the support mailbox, the forward rules look at what they wrote
+  above the forwarded message. Nothing written means the person who sent the original is the requester; any words mean the
+  forwarder is. Mail programs add lines of their own (such as "Sent from my iPhone"), so a line that matches an enabled rule
+  below does not count as writing. Lines are compared in lower case with punctuation removed, and a pattern may use
+  <code>*</code> as a wildcard (for example <code>sent from outlook for*</code>). Regular expressions are not supported.
+</p>
+<p class="note">
+  Also never counted, without any rule: the forwarder's own signature, meaning a line that is only their name, job title or
+  department from the directory, a line that is only a bracketed picture name such as <code>[Vardags]</code>, and a line that
+  starts with {% for label in labels %}<code>{{ label }}:</code>{{ ", " if not loop.last }}{% endfor %}.
+  Only the forward decision is affected: the email is stored and shown whole, and Thanks rules are separate.
+</p>
+
+<section class="mail-section" aria-labelledby="te-rules">
+  <h2 id="te-rules">Rules</h2>
+  {% if rules %}
+  <div class="table-box">
+    <table class="table">
+      <thead><tr><th>Match</th><th>Pattern</th><th>Status</th><th>Added by</th><th><span class="sr-only">Actions</span></th></tr></thead>
+      <tbody>
+      {% for r in rules %}
+      <tr>
+        <td>{{ match_types.get(r.match_type, r.match_type) }}</td>
+        <td><code>{{ r.pattern }}</code></td>
+        <td>{% if r.enabled %}<span class="chip t-green">Enabled</span>{% else %}<span class="chip t-gray">Disabled</span>{% endif %}</td>
+        <td>{{ r.created_by }}</td>
+        <td>
+          <div class="mail-actions">
+            <details class="rule-edit">
+              <summary class="btn">Edit<span class="sr-only"> rule {{ r.pattern }}</span></summary>
+              <form id="rule-{{ r.id }}" method="post" action="/admin/treat-as-empty/{{ r.id }}" class="card rule-panel">
+                <div class="form-grid">
+                  <label class="field">Match
+                    <select name="match_type">
+                      {% for key, label in match_types.items() %}<option value="{{ key }}" {{ "selected" if key == r.match_type }}>{{ label }}</option>{% endfor %}
+                    </select>
+                  </label>
+                  <label class="field">Pattern <input type="text" name="pattern" value="{{ r.pattern }}" maxlength="{{ max_pattern }}" required /></label>
+                </div>
+                <div class="form-actions"><button type="submit" class="btn btn-primary">Save</button></div>
+              </form>
+            </details>
+            <form method="post" action="/admin/treat-as-empty/{{ r.id }}/{{ 'disable' if r.enabled else 'enable' }}">
+              <button type="submit" class="btn">{{ "Disable" if r.enabled else "Enable" }}<span class="sr-only"> rule {{ r.pattern }}</span></button>
+            </form>
+            <form method="post" action="/admin/treat-as-empty/{{ r.id }}/delete">
+              <button type="submit" class="btn">Delete<span class="sr-only"> rule {{ r.pattern }}</span></button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state"><strong>No rules.</strong><span>Only the forwarder's own signature is ignored when judging a forward.</span></div>
+  {% endif %}
+</section>
+
+<form method="post" action="/admin/treat-as-empty" class="card mail-form" aria-labelledby="te-add">
+  <h2 id="te-add">Add a rule</h2>
+  <div class="form-grid">
+    <label class="field">Match
+      <select name="match_type">{% for key, label in match_types.items() %}<option value="{{ key }}" {{ "selected" if key == "equals" }}>{{ label }}</option>{% endfor %}</select>
+    </label>
+    <label class="field">Pattern <input type="text" name="pattern" maxlength="{{ max_pattern }}" required /></label>
+  </div>
+  <div class="form-actions"><button type="submit" class="btn btn-primary">Add</button></div>
+</form>
+{% endblock %}

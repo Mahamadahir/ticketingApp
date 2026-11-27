@@ -178,15 +178,21 @@ def _rows_for(session: Session, text: str) -> list[dict]:
     return _local_search(session, text)
 
 
-def is_internal(session: Session, address: str) -> bool:
-    """Whether this address belongs to an enabled member account with a mailbox (the picker's own test, `_refusal`): a guest,
-    a disabled account and an outside address are not. Every address of the person counts, so a linked address is as good as
-    their main one (app/identity.py). Raises DirectoryError when the directory could not be asked."""
+def internal_person(session: Session, address: str) -> Optional[Person]:
+    """The enabled member account with a mailbox that owns this address (the picker's own test, `_refusal`: a guest, a disabled
+    account and an outside address are not), or None. Every address of the person counts, so a linked address is as good as
+    their main one (app/identity.py). The Person carries the directory's name, job title and department. Raises DirectoryError
+    when the directory could not be asked."""
     for candidate in sorted(identity.addresses_of(session, address)):
         for raw in _rows_for(session, candidate):
             if raw.get("id") and _refusal(raw) is None and (raw.get("mail") or "").strip().lower() == candidate:
-                return True
-    return False
+                return _person(raw)
+    return None
+
+
+def is_internal(session: Session, address: str) -> bool:
+    """Whether this address belongs to an internal person (`internal_person`). Raises DirectoryError like it."""
+    return internal_person(session, address) is not None
 
 
 def people_named(session: Session, name: str) -> list[Person]:

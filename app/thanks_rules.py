@@ -80,8 +80,9 @@ def normalise_pattern(pattern: str) -> str:
     return ("*" if lead else "") + "*".join(pieces) + ("*" if trail else "")
 
 
-def clean_rule(match_type: str, pattern: str, max_length) -> tuple[str, str, int]:
-    """Validates a rule and returns (match type, normalised pattern, maximum length). Raises ThanksRuleError."""
+def clean_pattern(match_type: str, pattern: str) -> tuple[str, str]:
+    """Validates a match type and pattern and returns (match type, normalised pattern). Raises ThanksRuleError. Shared by the
+    "Treat as empty" rules (app/treat_as_empty.py), which use the same patterns and the same matching."""
     if match_type not in MATCH_TYPES:
         raise ThanksRuleError("Choose a match type from the list")
     pattern = (pattern or "").strip()
@@ -92,6 +93,12 @@ def clean_rule(match_type: str, pattern: str, max_length) -> tuple[str, str, int
     cleaned = normalise_pattern(pattern)
     if not cleaned:
         raise ThanksRuleError("The pattern needs some words or letters, not just punctuation or wildcards")
+    return match_type, cleaned
+
+
+def clean_rule(match_type: str, pattern: str, max_length) -> tuple[str, str, int]:
+    """Validates a rule and returns (match type, normalised pattern, maximum length). Raises ThanksRuleError."""
+    match_type, cleaned = clean_pattern(match_type, pattern)
     try:
         longest = int(max_length)
     except (TypeError, ValueError):

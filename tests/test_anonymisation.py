@@ -110,7 +110,7 @@ teammembership.level user.role user.password_hash user.time_zone user.time_zone_
 linked_identity.method linked_identity.status link_code.code_hash requestertimezone.time_zone requestertimezone.source ticket.type
 ticket.status ticket.source ticket.impact ticket.urgency ticket.priority ticket.msp_ticket_number message.direction message.visibility
 message.graph_message_id message.msp_forward attachment.content_type attachment.content_hash attachment.blob_key cannedresponse.title
-thanksrule.match_type thanksrule.pattern thankscandidate.status userpermission.permission requesttype.description
+thanksrule.match_type thanksrule.pattern treatasemptyrule.match_type treatasemptyrule.pattern thankscandidate.status userpermission.permission requesttype.description
 requesttype.default_impact requesttype.default_urgency requestsubtemplate.impact requestsubtemplate.urgency requesttypequestion.label
 requesttypequestion.kind ticketanswer.question_label ticketanswer.question_kind ticketapproval.status approvalvote.decision
 actiontoken.kind actiontoken.token_hash notification.kind notificationpreference.kind notificationpreference.channel teamspost.kind

@@ -606,6 +606,19 @@ class ThanksRule(SQLModel, table=True):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class TreatAsEmptyRule(SQLModel, table=True):
+    """An admin-managed "Treat as empty" rule (app/treat_as_empty.py): a line above the forwarded block of a forward that
+    matches an enabled rule does not count as text when the forward rules decide the requester (app/forwards.py). Same
+    match types and patterns as ThanksRule; pattern is stored normalised and may use * as a wildcard."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    match_type: str
+    pattern: str
+    enabled: bool = Field(default=True)
+    created_by: str  # the admin's email, or "system" for a seeded rule
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 class ThanksCandidate(SQLModel, table=True):
     """A reply an agent reclosed as "user said thanks", waiting for an admin to make it a rule or dismiss
     it (app/thanks_rules.py). One row per distinct normalised text; occurrences counts how often it came

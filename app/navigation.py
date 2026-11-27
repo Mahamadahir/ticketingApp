@@ -106,6 +106,7 @@ ADMIN_GROUPS: tuple[tuple[str, tuple[AdminPage, ...]], ...] = (
         AdminPage("email-templates", "Email templates", "/admin/email-templates"),
         AdminPage("never-follow", "Never follow", "/admin/never-follow"),
         AdminPage("thanks-rules", "Thanks rules", "/admin/thanks-rules"),
+        AdminPage("treat-as-empty", "Treat as empty", "/admin/treat-as-empty"),
         AdminPage("mail-intake", "Mail intake", "/admin/mail-intake"),
         AdminPage("outbound-mail", "Outbound mail", "/admin/outbound-mail"),
     )),
