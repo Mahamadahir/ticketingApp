@@ -40,17 +40,17 @@ from app.models import (
     AuditLog,
     GraphNotification,
     InboundMail,
-    NeverFollowAddress,
-    User,
-    UserRole,
     Message,
     MessageDirection,
+    NeverFollowAddress,
     RequesterTimeZone,
     Ticket,
     TicketEvent,
     TicketFollower,
     TicketSource,
     TicketStatus,
+    User,
+    UserRole,
 )
 from app.storage import LocalStorage
 from app.teams import MAX_ATTEMPTS
@@ -247,6 +247,12 @@ def test_the_limit_counts_to_and_cc_together(db_session):
     set_setting(db_session, INBOUND_MAX_CC, "3")
     ticket = open_ticket(db_session, to=["t1@example.com", "t2@example.com"], cc=["c1@example.com", "c2@example.com"])
     assert _followers(db_session, ticket) == ["t1@example.com", "t2@example.com", "c1@example.com"]
+
+
+def test_the_mailbox_and_the_sender_do_not_use_up_the_limit(db_session):
+    set_setting(db_session, INBOUND_MAX_CC, "2")
+    ticket = open_ticket(db_session, to=[MAILBOX, "jo@example.com", "a@example.com"], cc=["b@example.com", "c@example.com"])
+    assert _followers(db_session, ticket) == ["a@example.com", "b@example.com"]
 
 
 def test_a_reply_on_an_existing_ticket_adds_nobody_from_its_to_line(db_session):

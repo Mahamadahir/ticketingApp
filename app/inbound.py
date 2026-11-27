@@ -702,10 +702,9 @@ def ingest_mail(
     )
     mailbox = settings.graph_shared_mailbox.strip().lower()
     # Everyone else on the opening mail, To first then Cc, up to one shared limit.
-    recipients = list(dict.fromkeys(a.strip().lower() for a in mail.to + mail.cc))
+    skip = {sender.strip().lower(), mailbox}
+    recipients = [a for a in dict.fromkeys(a.strip().lower() for a in mail.to + mail.cc) if a and a not in skip]
     for address in recipients[: count_setting(session, INBOUND_MAX_CC)]:
-        if address in (sender, mailbox):
-            continue
         try:
             add_follower(session, new, address, sender)
         except (InvalidEmail, NeverFollowListed):
