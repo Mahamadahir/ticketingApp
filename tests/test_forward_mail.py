@@ -305,3 +305,49 @@ def test_forwarding_ones_own_mail_from_another_linked_address_changes_nothing(db
     body = OUTLOOK_BLOCK.replace("sam@outside.example", "owen@alt.example")
     ticket = forward(db_session, body)
     assert ticket.requester_email == "owen@corp.example" and followers(db_session, ticket) == []
+
+
+def test_the_directory_is_asked_before_the_claim_and_never_inside_ingest(db_session, monkeypatch):
+    from app.models import InboundMail
+
+    person(db_session, "owen@corp.example", "Owen Owner")
+    asked = []
+    real = people_directory._rows_for
+
+    def spy(session, text):
+        asked.append(session.exec(select(InboundMail)).all())  # the claim is a row: none may exist yet
+        return real(session, text)
+
+    monkeypatch.setattr(people_directory, "_rows_for", spy)
+    forward(db_session, OUTLOOK_BLOCK.replace("Sam Outside <sam@outside.example>", "Owen Owner"))
+    assert asked and all(rows_ == [] for rows_ in asked)
+
+    asked.clear()
+    from app.inbound import ingest_mail
+
+    ingest_mail(db_session, mail("f9", sender="owen@corp.example", subject="FW: x", body=OUTLOOK_BLOCK))
+    assert asked == []  # ingest_mail makes no directory call: the decision is passed in
+
+
+def test_a_re_fw_subject_is_not_a_forward():
+    assert forwards.read_forward("RE: FW: Printer jam", OUTLOOK_BLOCK) is None
+    assert forwards.read_forward("Re: Fwd: Printer jam", OUTLOOK_BLOCK) is None
+
+
+def test_the_address_in_angle_brackets_wins_over_a_display_name_that_looks_like_one(db_session):
+    person(db_session, "owen@corp.example", "Owen Owner")
+    body = OUTLOOK_BLOCK.replace("Sam Outside <sam@outside.example>", "it-director@corp.example <x@evil.example>")
+    assert forward(db_session, body).requester_email == "x@evil.example"
+    assert forwards.original_address(db_session, "Sam [mailto:sam@outside.example]") == ("sam@outside.example", "")
+
+
+def test_a_never_follow_or_flooding_sender_makes_no_directory_call(db_session, monkeypatch):
+    person(db_session, "owen@corp.example", "Owen Owner")
+    db_session.add(NeverFollowAddress(email="owen@corp.example", reason="x", added_by="a@corp.example"))
+    db_session.commit()
+    asked = []
+    monkeypatch.setattr(people_directory, "_rows_for", lambda session, text: asked.append(text) or [])
+    graph = FakeGraph()
+    graph.add("n1", sender="owen@corp.example", subject="FW: x", body=OUTLOOK_BLOCK)
+    process_message(db_session, "n1", graph)
+    assert asked == []

@@ -80,7 +80,8 @@ from app.intake import (
     IncomingAttachment, clean_body, clean_subject, clean_text, ignored_as_never_follow,
     record_first_message, record_reply, store_files,
 )
-from app.forwards import EVENT_MAIL_FORWARDED, decide as decide_forward
+from app.never_follow import is_listed
+from app.forwards import EVENT_MAIL_FORWARDED, ForwardDecision, decide as decide_forward
 from app.identity import addresses_of, person_for_address
 from app.models import (
     AttachmentRetry,
@@ -590,6 +591,7 @@ def ingest_mail(
     attachments: Optional[list[IncomingAttachment]] = None,
     storage: Optional[Storage] = None,
     now: Optional[datetime] = None,
+    forward: Optional[ForwardDecision] = None,
 ) -> Handled:
     """Handles one mail: nothing (a duplicate, automatic or our own), a reply on a ticket, or a new
     ticket. Adds everything to the session; the caller commits, so the mail, its ticket, message,
@@ -643,7 +645,6 @@ def ingest_mail(
 
     ticket, how = find_ticket_for(session, mail)
     closed = None
-    forward = None
     if ticket is not None:
         # A thread that already carried on in a ticket opened after closure goes on in that one.
         newer = latest_follow_on(session, ticket)
@@ -674,10 +675,10 @@ def ingest_mail(
             session, closed, subject=_subject_of(mail), sender_email=sender, source=TicketSource.EMAIL,
             actor_email=None,
         )
+        forward = None  # a follow-on ticket's requester is the closed ticket's
     else:
-        # A forward from someone inside the organisation may name another requester (app/forwards.py); not a follow-on
-        # ticket, whose requester is the closed ticket's.
-        forward = decide_forward(session, sender, mail.subject, opening_text(mail))
+        # `forward` was decided by process_message before the claim (it needs the directory, so Graph): it may name
+        # another requester (app/forwards.py).
         new = create_ticket(
             session, subject=_subject_of(mail), requester_email=forward.requester if forward else sender, source=TicketSource.EMAIL
         )
@@ -742,11 +743,25 @@ def process_message(
     # would be lost (#345). The guards stay: automatic mail and a flooding sender cost no Graph call.
     if (msp_auto_reply(mail) if from_msp else automatic_reason(mail)) is None and not _flooding(session, mail.sender, now or datetime.now(timezone.utc)):
         if skip_files:
-            unread = True  # Graph's hasAttachments flag stands: the files could not be listed
+            unread = True  # Graph's hasAttachments flag stands: the files could not be listed (#348)
         else:
             files = load_attachments(session, client, graph_message_id)  # before any ticket is made: no lock is held while Graph answers
             mail.has_attachments = any(not item.inline for item in files)  # the list read now decides, not Graph's flag
-    result = ingest_mail(session, mail, files, storage, now)
+    forward = None
+    # Only for mail ingest_mail would handle (not automatic, flooding or never-follow), so a loop makes no directory calls.
+    # Also when the files are skipped: the directory is still asked here, before the claim, never after it.
+    if (
+        not from_msp and automatic_reason(mail) is None and not _flooding(session, mail.sender, now or datetime.now(timezone.utc))
+        and not is_listed(session, mail.sender)
+    ):
+        try:
+            forwarder = normalise_email(mail.sender)
+        except InvalidEmail:
+            forwarder = None
+        if forwarder is not None:
+            # The directory is asked here, before the claim, like the attachments: no lock is held while Graph answers (#347).
+            forward = decide_forward(session, forwarder, mail.subject, opening_text(mail))
+    result = ingest_mail(session, mail, files, storage, now, forward)
     result.files_unread = unread and result.message is not None and result.outcome in (TICKET_CREATED, REPLY_ADDED)
     return result
 
