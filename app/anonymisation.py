@@ -579,6 +579,7 @@ STEPS: dict[str, Callable[[Context], None]] = {
     "outboundemail.subject": _scrub_column(OutboundEmail, "subject", "Email subjects, address replaced"),
     "outboundemail.body": step_outbound_body,
     "outboundemail.last_error": _scrub_column(OutboundEmail, "last_error", "Email failure notes, address replaced"),
+    "outboundemail.cap_override_by": _scrub_column(OutboundEmail, "cap_override_by", "Email Send-anyway notes, address replaced"),
     "mspunmatchedmail.sender": _scrub_column(MspUnmatchedMail, "sender", "MSP mail, address replaced"),
     "mspunmatchedmail.to_addresses": _remove_column(MspUnmatchedMail, "to_addresses", "MSP mail, address taken out of To"),
     "mspunmatchedmail.cc_addresses": _remove_column(MspUnmatchedMail, "cc_addresses", "MSP mail, address taken out of Cc"),
