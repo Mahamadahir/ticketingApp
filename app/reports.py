@@ -119,7 +119,8 @@ def sla_compliance(session: Session, user: User, levels: AccessContext, filters:
     reopened = Ticket.first_resolved_at.is_not(None)
     finished = reopened | (Ticket.status.in_(FINISHED_STATUSES) & Ticket.resolved_at.is_not(None))
     resolved_when = func.coalesce(Ticket.first_resolved_at, Ticket.resolved_at)
-    resolution_due = func.coalesce(Ticket.first_resolution_due_at, Ticket.resolution_due_at)
+    # A NULL first_resolution_due_at on a reopened ticket means its first resolution had no target: not the restarted one.
+    resolution_due = case((reopened, Ticket.first_resolution_due_at), else_=Ticket.resolution_due_at)
     # Finished with no email to the requester (closed as a duplicate, resolved by phone): judged by when it
     # finished, so one closed before the deadline is not counted late afterwards.
     responded = func.coalesce(Ticket.first_responded_at, case((finished, resolved_when)))

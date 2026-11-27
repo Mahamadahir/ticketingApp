@@ -269,3 +269,13 @@ def test_times_count_a_reopened_ticket_once_for_its_first_resolution(db_session,
     rows_ = table(report)
     assert rows_[("Desk", "P1")][3:] == [2, 180.0, 180.0]  # resolution: tickets, mean (120 and 240), median
     assert "counted once" in report.description
+
+
+def test_a_reopened_ticket_whose_first_resolution_had_no_target_is_not_judged_by_the_restarted_one(db_session, world):  # noqa: F811
+    desk, _, admin = world
+    make_ticket(db_session, desk, at("2026-10-05"), priority="p1", status=TicketStatus.IN_PROGRESS,
+                first_response_due_at=at("2026-10-05", 10, 15), first_responded_at=at("2026-10-05", 10, 10),
+                resolution_due_at=at("2026-11-30"), resolution_restarted_at=at("2026-11-07"),
+                first_resolved_at=at("2026-10-05", 13), first_resolution_due_at=None)
+    report = run(db_session, admin, "sla")
+    assert table(report)[("Desk", "P1")][3:5] == [0, 0]
