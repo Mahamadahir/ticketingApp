@@ -158,6 +158,8 @@ def change_requester(
             outcome.followed = added or any(not f.is_internal and f.email == old.lower() for f in followers_of(session, ticket))
         except NeverFollowListed as error:
             notes.append(f"{error.email} was not kept as a follower: it is on the never-follow list")
+        except InvalidEmail:
+            notes.append(f"{old} was not kept as a follower: it is not a valid address")
         except TooManyFollowers:
             notes.append(f"{old} was not kept as a follower: the ticket already has the most followers allowed")
     detail = "the old end user was kept as a follower" if outcome.followed else "the old end user was not kept as a follower"

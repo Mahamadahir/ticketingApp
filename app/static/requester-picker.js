@@ -37,6 +37,10 @@
       if (q) { q.focus(); }
     } else {
       reset();
+      var keep = panel.querySelector("input[name=keep_old]");  // closed: the tick boxes go back to their defaults
+      var email = panel.querySelector("input[name=email_new]");
+      if (keep) { keep.checked = true; }
+      if (email) { email.checked = false; }
       toggle.focus();
     }
   }

@@ -1150,7 +1150,7 @@ def find_people_for_requester(
         request, "_people_results.html",
         {
             "people": found, "error": error, "too_short": len(q.strip()) < people_directory.MIN_QUERY_LENGTH,
-            "use_address": typed if typed and all(p.mail != typed for p in found) else "",
+            "use_address": typed if typed and all((p.mail or "").lower() != typed for p in found) else "",
         },
     )
 
