@@ -422,7 +422,7 @@ def _has_real_attachment(mail: IncomingMail, files: list[IncomingAttachment]) ->
     does not count once the attachments have been read; until then Graph's hasAttachments flag decides."""
     if files:
         return any(not item.inline for item in files)
-    return mail.has_attachments
+    return mail.has_attachments  # nothing was read (automatic mail, a flood): Graph's flag stands
 
 
 _store_files = store_files
@@ -664,8 +664,11 @@ def process_message(
     mail.graph_message_id = graph_message_id  # the id we asked for is the one we dedupe on
     files: list[IncomingAttachment] = []
     from_msp = bool(mail.sender) and not mail.is_draft and is_msp_sender(session, mail.sender)  # its List-Unsubscribe is not automatic
-    if mail.has_attachments and (msp_auto_reply(mail) if from_msp else automatic_reason(mail)) is None and not _flooding(session, mail.sender, now or datetime.now(timezone.utc)):
+    # Always asked, whatever hasAttachments says: Graph leaves inline pictures out of it, so a pasted screenshot on its own
+    # would be lost (#345). The guards stay: automatic mail and a flooding sender cost no Graph call.
+    if (msp_auto_reply(mail) if from_msp else automatic_reason(mail)) is None and not _flooding(session, mail.sender, now or datetime.now(timezone.utc)):
         files = load_attachments(session, client, graph_message_id)  # before any ticket is made: no lock is held while Graph answers
+        mail.has_attachments = any(not item.inline for item in files)  # the list read now decides, not Graph's flag
     return ingest_mail(session, mail, files, storage, now)
 
 

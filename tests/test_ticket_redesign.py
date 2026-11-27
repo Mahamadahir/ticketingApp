@@ -957,3 +957,53 @@ def test_a_refused_preview_shows_in_the_cards_preview_box(client, db_session):
     response = client.post(f"/tickets/{ticket.number}/send-to-msp/preview", data={"reason": " ", "scope": "thread"},
                            headers={**HTMX, "HX-Target": "msp-preview"})
     assert response.headers.get("HX-Retarget") == "#msp-preview" and 'role="alert"' in response.text
+
+
+# ---- Pictures from email bodies are folded under the real files (#345) --------------------------------------------
+
+BIG_PNG = b"\x89PNG\r\n\x1a\n" + b"\x01" * 8000
+
+
+def add_picture(db_session, storage, ticket, name, message=None):
+    attachment = store_attachment(db_session, storage, ticket=ticket, filename=name, data=BIG_PNG, message=message, inline=True)
+    db_session.commit()
+    db_session.refresh(attachment)
+    return attachment
+
+
+def test_a_picture_from_an_email_is_only_inside_the_folded_pictures_group(client, db_session, storage):
+    ticket, _ = triaged_ticket(client, db_session)
+    real = add_file(db_session, storage, ticket, "report.pdf", b"%PDF-1.7\n" + b"y" * 100)
+    picture = add_picture(db_session, storage, ticket, "image001.png")
+    box = files_box(page(client, ticket).text)
+
+    folded = box.split('<details class="tp-pictures">')[1]
+    assert "Pictures in emails (1)" in folded and "<details class=\"tp-pictures\" open" not in box
+    assert f'/attachments/{picture.id}"' in folded and "image001.png" in folded
+    before = box.split('<details class="tp-pictures">')[0]
+    assert f'/attachments/{real.id}"' in before and "report.pdf" in before
+    assert "image001.png" not in before and "No files on this ticket." not in before
+
+
+def test_only_pictures_in_emails_shows_the_empty_sentence_above_the_fold(client, db_session, storage):
+    ticket, _ = triaged_ticket(client, db_session)
+    add_picture(db_session, storage, ticket, "image001.png")
+    box = files_box(page(client, ticket).text)
+    assert box.index("No files on this ticket.") < box.index("Pictures in emails (1)")
+
+
+def test_no_pictures_means_no_fold(client, db_session):
+    ticket, _ = triaged_ticket(client, db_session)
+    assert "Pictures in emails" not in files_box(page(client, ticket).text)
+
+
+def test_the_portal_still_does_not_list_an_inline_picture_with_a_message(client, db_session, storage):
+    ticket, _ = triaged_ticket(client, db_session)
+    mail = Message(ticket_id=ticket.id, sender="Pat Requester <me@example.com>", body="see below", direction=MessageDirection.INBOUND)
+    db_session.add(mail)
+    db_session.commit()
+    picture = add_picture(db_session, storage, ticket, "pasted-shot.png", mail)
+    client.post("/auth/logout")
+    login_as(client, "me@example.com")
+    portal = client.get(f"/portal/{ticket.number}").text
+    assert f"/attachments/{picture.id}" not in portal and "pasted-shot.png" not in portal
