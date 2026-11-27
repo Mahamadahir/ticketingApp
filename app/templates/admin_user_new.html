@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Admin: New local account{% endblock %}
+{% block content %}
+{# Admin > Users > New local account (#322): its own view. The form posts to the existing POST /admin/users. #}
+<p class="pp-crumb"><a href="/admin/users">&larr; All users</a></p>
+<section class="card pp-new" aria-labelledby="new-h">
+  <h1 id="new-h">New local account</h1>
+  <p class="note">For contractors or anyone without a Microsoft tenant identity.</p>
+  <form method="post" action="/admin/users">
+    <div class="form-grid">
+      <label class="field">Email <input type="email" name="email" required /></label>
+      <label class="field">Display name <input type="text" name="display_name" required /></label>
+      <label class="field">Password <input type="password" name="password" required /></label>
+      <label class="field">Role
+        <select name="role">
+          {% for r in roles %}<option value="{{ r.value }}">{{ r.value|replace("_", " ")|capitalize }}</option>{% endfor %}
+        </select>
+      </label>
+      <label class="field">Team
+        <select name="team_id">
+          <option value="">No team</option>
+          {% for t in teams %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
+        </select>
+      </label>
+      <label class="field">Level
+        <select name="level">
+          {% for l in levels %}<option value="{{ l.value }}">{{ l.value }}</option>{% endfor %}
+        </select>
+      </label>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Create account</button>
+      <a class="btn" href="/admin/users">Cancel</a>
+    </div>
+  </form>
+</section>
+{% endblock %}

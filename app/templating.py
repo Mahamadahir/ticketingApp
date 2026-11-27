@@ -35,12 +35,17 @@ def is_htmx(request: Request) -> bool:
     return request.headers.get("HX-Request") == "true"
 
 
+def is_boosted(request: Request) -> bool:
+    """An hx-boost link or form: htmx swaps the response into the whole <body>, so it needs the full page."""
+    return request.headers.get("HX-Boosted") == "true"
+
+
 def _htmx_partial(request: Request) -> dict:
     """An htmx form swaps the response into <main>, so a full page rendered for it must come
     back as its content block only. base.html reads this and leaves out the header and scripts.
     Every full page an htmx request gets today targets <main>; htmx sends no HX-Target for it
     because <main> has no id, so the header alone is the rule."""
-    return {"htmx_partial": is_htmx(request)}
+    return {"htmx_partial": is_htmx(request) and not is_boosted(request)}
 
 
 templates = Jinja2Templates(directory="app/templates", context_processors=[_htmx_partial])

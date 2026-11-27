@@ -1,0 +1,15 @@
+{# Role (#322). The form posts to the existing route; `v` is built by app/admin_people.py. #}
+<dl class="dl pp-dl"><dt>Current role</dt><dd><span class="chip {{ v.tone }}">{{ v.current.value|replace("_", " ")|capitalize }}</span></dd></dl>
+{% if person.is_break_glass %}
+<p class="note">A break-glass account stays a super admin; deactivate it instead.</p>
+{% else %}
+<form method="post" action="/admin/users/{{ person.id }}" class="up-inline pp-form">
+  <label class="field">Role
+    <select name="role">
+      {% for r in v.roles %}<option value="{{ r.value }}" {{ "selected" if v.current == r else "" }}>{{ r.value|replace("_", " ")|capitalize }}</option>{% endfor %}
+    </select>
+  </label>
+  <button type="submit" class="btn btn-primary">Save role</button>
+</form>
+<p class="note">A new role ends this person's sessions; they sign in again.</p>
+{% endif %}

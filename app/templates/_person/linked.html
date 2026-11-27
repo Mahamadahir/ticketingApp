@@ -1,0 +1,29 @@
+{# Linked identities (#322): each linked address with its own Unlink (the existing route, which sends the person back here). #}
+{% if v.merged_into %}
+<div class="pp-row">
+  <span class="pp-row-name">This account was merged into <a href="/admin/users/{{ v.merged_into.id }}">{{ v.merged_into.email }}</a> by a link.</span>
+  {% if v.merged_link %}
+  <div class="pp-row-actions">
+    <form method="post" action="/admin/links/{{ v.merged_link.id }}/unlink" class="pp-form">
+      <input type="hidden" name="back" value="{{ person.id }}" />
+      <button type="submit" class="btn" aria-label="Unlink this account from {{ v.merged_into.email }}">Unlink</button>
+    </form>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+{% for row in v.rows %}
+<div class="pp-row">
+  <span class="pp-row-name">{{ row.link.email }}
+    <span class="note">{% if row.secondary %}account <a href="/admin/users/{{ row.secondary.id }}">{{ row.secondary.email }}</a> merged in{% else %}address only{% endif %}, {{ row.link.method|replace("_", " ") }}{% if row.link.moved_summary %}; moved: {{ row.link.moved_summary }}{% endif %}</span>
+  </span>
+  <div class="pp-row-actions">
+    <form method="post" action="/admin/links/{{ row.link.id }}/unlink" class="pp-form">
+      <input type="hidden" name="back" value="{{ person.id }}" />
+      <button type="submit" class="btn" aria-label="Unlink {{ row.link.email }}">Unlink</button>
+    </form>
+  </div>
+</div>
+{% endfor %}
+{% if not v.merged_into and not v.rows %}<p class="note">No linked accounts.</p>{% endif %}
+<p><a href="/admin/users?tab=links">Review and link identities</a></p>

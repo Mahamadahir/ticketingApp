@@ -346,7 +346,7 @@ def status_line(rows: Sequence[ScheduledJob], now: datetime, late: timedelta, re
         return "No recurring jobs have run yet."
     failing, stuck, overdue = health.failing, health.stuck, health.overdue
     if not failing and not stuck and not overdue:
-        return f"All {health.total} recurring job(s) are healthy."
+        return "The 1 recurring job is healthy." if health.total == 1 else f"All {health.total} recurring jobs are healthy."
     parts = []
     if failing:
         parts.append(f"failing: {', '.join(sorted(failing))}")

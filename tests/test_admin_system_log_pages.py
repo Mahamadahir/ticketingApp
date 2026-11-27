@@ -40,7 +40,7 @@ def test_scheduled_jobs_show_the_interval_a_result_chip_and_run_now(client, db_s
     monkeypatch.setattr("app.routers.admin.SCHEDULED_JOBS", scheduled_jobs.SCHEDULED_JOBS)
     run_due_jobs(None, "w1", Clock(datetime.now(timezone.utc)))
     page = client.get("/admin/scheduled-jobs").text
-    assert "table-box" in page and 'chip t-red">Failing' in page and "<th>Every</th>" in page and "Next due" in page
+    assert "table-box" in page and 'chip t-red">Failing' in page and "<th>Status</th>" in page and "Every 1 hour" in page and "Next due" in page
     assert "Run now</a>" in page and "RuntimeError: it broke" in page
 
 

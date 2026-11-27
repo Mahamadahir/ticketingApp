@@ -382,7 +382,7 @@ def test_status_line_reports_healthy_failing_and_stuck_jobs():
     stuck = ScheduledJob(name="c", next_run_at=now, lease_owner="w", lease_expires_at=now - timedelta(minutes=1))
     late = timedelta(minutes=3)
     assert status_line([], now, late) == "No recurring jobs have run yet."
-    assert status_line([healthy], now, late) == "All 1 recurring job(s) are healthy."
+    assert status_line([healthy], now, late) == "The 1 recurring job is healthy."
     assert "failing: b" in status_line([healthy, failing], now, late)
     assert "did not finish: c" in status_line([healthy, stuck], now, late)
 
@@ -393,7 +393,7 @@ def test_status_line_reports_a_job_the_worker_has_stopped_running_and_ignores_re
     just_due = ScheduledJob(name="b", next_run_at=START - timedelta(minutes=2))
     retired = ScheduledJob(name="gone", next_run_at=START, failures_in_a_row=5)
     assert "overdue (is the worker running?): a" in status_line([stale, just_due], START, late)
-    assert status_line([just_due, retired], START, late, {"b"}) == "All 1 recurring job(s) are healthy."
+    assert status_line([just_due, retired], START, late, {"b"}) == "The 1 recurring job is healthy."
 
 
 def test_the_admin_page_shows_the_status_and_the_last_error(client, monkeypatch):
@@ -529,7 +529,7 @@ def test_a_job_that_is_running_is_refused_and_not_changed(client, monkeypatch):
     confirm = client.get("/admin/scheduled-jobs/count/run").text
     assert "Already running, started at" in confirm and "Run count now</button>" not in confirm
     followed = client.post("/admin/scheduled-jobs/count/run")
-    assert "Already running, started at" in followed.text
+    assert "count is already running." in followed.text
     after = row("count")
     assert after.next_run_at == before.next_run_at and after.run_requested_at is None
     assert not [a for a in late_lines() if a.action.startswith("Run now")]
@@ -547,7 +547,7 @@ def test_a_job_that_is_already_due_is_reported_and_not_changed(client, monkeypat
     login_as(client, "admin@example.com")
 
     followed = client.post("/admin/scheduled-jobs/count/run")
-    assert "Already due; the worker will run it within 1 minute." in followed.text
+    assert "count is already due; the worker will run it within 1 minute." in followed.text
     after = row("count")
     assert after.next_run_at == due and after.run_requested_at is None
     assert not [a for a in late_lines() if a.action.startswith("Run now")]

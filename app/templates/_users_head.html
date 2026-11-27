@@ -1,0 +1,12 @@
+{# The head of Admin > Users (#322): title, the New local account button and the People / Link requests tabs. Needs `tab` and `pending_count`. #}
+<header class="users-head">
+  <div class="admin-head">
+    <h1>Users</h1>
+    <p>Everyone with an account. Open a person to change their role, teams and access.</p>
+  </div>
+  <a class="btn btn-primary users-new" href="/admin/users?new=1">New local account</a>
+</header>
+<nav class="tabs pp-tabs" aria-label="Users sections">
+  <a class="tab" href="/admin/users"{% if tab == "people" %} aria-current="page"{% endif %}>People</a>
+  <a class="tab" href="/admin/users?tab=links"{% if tab == "links" %} aria-current="page"{% endif %}>Link requests{% if pending_count %} <span class="chip t-amber">{{ pending_count }}</span>{% endif %}</a>
+</nav>

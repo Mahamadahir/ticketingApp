@@ -62,7 +62,7 @@ function Get-ErrorCategory {
     if ($ErrorRecord.Exception -is [System.ArgumentException]) { return 'invalid_parameter' }
     $text = "$($ErrorRecord.Exception.GetType().FullName) $($ErrorRecord.Exception.Message) $($ErrorRecord.FullyQualifiedErrorId)"
     if ($text -match 'ManagementObjectNotFound|couldn''t be found|could not be found|wasn''t found|was not found|doesn''t exist|does not exist|Couldn''t find object') { return 'not_found' }
-    if ($text -match 'Unauthorized|Forbidden|access is denied|access denied|insufficient (access|permissions|privileges)|not authorized|isn''t supported in this scenario|AuthorizationFailed|You don''t have permission') { return 'access_denied' }
+    if ($text -match 'Unauthorized|Forbidden|access is denied|access denied|insufficient (access|permissions|privileges)|not authorized|isn''t supported in this scenario|AuthorizationFailed|You don''t have permission|write scope') { return 'access_denied' }
     # Status numbers only count in the form Exchange writes them, "(429) Too Many Requests", never as bare digits.
     if ($text -match 'throttl|TooManyRequests|Too many requests|\(429\)|try again later|exceeded the (maximum|allowed)') { return 'throttled' }
     if ($text -match 'timed out|timeout|TaskCanceled|ServiceUnavailable|temporarily unavailable|The server is busy|\((502|503|504)\)|connection (was )?(closed|reset|aborted)|socket|transient') { return 'timeout' }
