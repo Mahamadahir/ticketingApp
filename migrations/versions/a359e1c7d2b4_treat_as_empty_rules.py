@@ -1,7 +1,7 @@
 """treat as empty rules
 
 Revision ID: a359e1c7d2b4
-Revises: d41e7a9b3c05
+Revises: e5b2c8d4f731
 Create Date: 2026-11-27 16:00:00.000000
 
 """
@@ -15,7 +15,7 @@ import sqlmodel
 
 # revision identifiers, used by Alembic.
 revision: str = 'a359e1c7d2b4'
-down_revision: Union[str, Sequence[str], None] = 'd41e7a9b3c05'
+down_revision: Union[str, Sequence[str], None] = 'e5b2c8d4f731'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
