@@ -234,9 +234,20 @@ label { cursor: pointer; }
 .tab:hover { color: var(--text); }
 .tab.on, .tab[aria-selected="true"], .tab[aria-current="page"], .tab[aria-current="true"] { color: var(--text); border-bottom-color: var(--accent); }
 
-.dl { display: grid; grid-template-columns: max-content 1fr; gap: 8px 20px; margin: 0; }
-.dl dt { color: var(--muted); font-weight: 600; }
-.dl dd { margin: 0; overflow-wrap: anywhere; }
+/* A definition list in a card (#294): the label column is capped so a long label wraps instead of squeezing the value, the value
+   column may shrink to nothing so it never pushes past the card, and a value breaks only when one word cannot fit. Below 600px
+   the label sits above its value. Lists with their own columns (.tp-dl, .rq-card .dl) keep them. */
+.dl { display: grid; grid-template-columns: minmax(110px, 40%) minmax(0, 1fr); gap: 8px 20px; margin: 0; }
+.dl dt { color: var(--muted); font-weight: 600; min-width: 0; overflow-wrap: break-word; }
+.dl dd { margin: 0; min-width: 0; overflow-wrap: break-word; }
+@media (max-width: 600px) {
+  .dl { grid-template-columns: minmax(0, 1fr); gap: 2px 0; }
+  .dl dd { margin-bottom: 8px; }
+  .tp-dl dd, .rq-card .dl dd { margin-bottom: 0; }
+}
+/* A long technical value (a resource path, an id, an address, a URL): small monospace, wrapping at the break points the
+   `break_points` filter adds after / - . @ _; anywhere only when a single piece is still too wide. */
+.mono-wrap { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.875em; overflow-wrap: anywhere; }
 
 .empty-state { padding: 40px 20px; text-align: center; color: var(--muted); border: 1px dashed var(--border); border-radius: var(--radius-lg); }
 .empty-state strong { display: block; margin-bottom: 4px; color: var(--text); }
@@ -327,6 +338,9 @@ label { cursor: pointer; }
 .tp-form > input, .tp-form > select { font-size: 14px; font-weight: 500; color: var(--text); width: 100%; }
 .tp-form fieldset, .tp-form > .tp-item { width: 100%; margin: 0; }
 .tp-form fieldset label { margin: 0; }
+.tp-form .tp-split-part > [data-clear-part] { margin-top: 10px; }
+.tp-form .tp-split-part > [data-remove-part] { margin-top: 10px; margin-left: 8px; vertical-align: top; }
+.tp-form .tp-split-part[hidden], .tp-form [data-add-part][hidden], .tp-form [data-remove-part][hidden] { display: none; }
 .tp-form > div { width: 100%; }
 .tp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; width: 100%; }
 
@@ -497,10 +511,6 @@ th, td { text-align: left; padding: 0.5rem; border-bottom: 1px solid var(--borde
 th { color: var(--muted); font-weight: 600; }
 
 .status { padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.85rem; background: var(--gray-bg); color: var(--gray); }
-.status-open { background: var(--amber-bg); color: var(--amber); }
-.status-in_progress { background: var(--blue-bg); color: var(--blue); }
-.status-resolved { background: var(--green-bg); color: var(--green); }
-.status-closed { background: var(--gray-bg); color: var(--gray); }
 
 .message { border: 1px solid var(--border); background: var(--surface); border-radius: var(--radius); padding: 0.75rem; margin-bottom: 0.75rem; }
 .message-outbound { background: var(--blue-bg); }
@@ -856,7 +866,9 @@ th { color: var(--muted); font-weight: 600; }
 .tpl-placeholders { padding-top: 12px; border-top: 1px solid var(--border); }
 .tpl-placeholders ul { margin: 0 0 8px; padding-left: 20px; }
 @media (min-width: 1100px) { .tpl-preview { position: sticky; top: 16px; } }
-.intake-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin: 0 0 24px; align-items: start; }
+.intake-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr)); gap: 16px; margin: 0 0 16px; align-items: start; }
+.intake-numbers { grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); margin-bottom: 24px; }
+.intake-card { min-width: 0; }
 .intake-card .card-header { margin-bottom: 10px; }
 .intake-card .card-header h2 { font-size: 16px; }
 .intake-card p { margin: 0 0 4px; }
@@ -866,9 +878,13 @@ th { color: var(--muted); font-weight: 600; }
 /* Admin > System and Logs pages (9L part 2): Scheduled jobs, Outage mode, Data protection, the logs and Feedback. Tokens only. */
 .job-status { margin: 0 0 16px; }
 .job-table td { vertical-align: top; }
+.job-message { margin: 0 0 16px; }
+.job-run-card { max-width: 640px; }
+.job-warning { margin: 0 0 12px; }
 .log-table td { vertical-align: top; overflow-wrap: anywhere; }
 .log-table { min-width: 720px; }
-.outage-cards, .dp-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; margin: 0 0 24px; align-items: start; }
+.outage-cards > *, .dp-cards > *, .admin-areas > * { min-width: 0; }
+.outage-cards, .dp-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: 16px; margin: 0 0 24px; align-items: start; }
 .outage-card .card-header h2, .dp-card > h2 { margin: 0 0 8px; font-size: 16px; }
 .dp-card .card-header { margin-bottom: 8px; }
 .dp-card h3 { margin: 16px 0 6px; font-size: 14px; }
@@ -992,7 +1008,7 @@ th { color: var(--muted); font-weight: 600; }
 /* The drawer: from the right edge over a dimmed backdrop, full width on a narrow window. */
 .act-drawer[hidden] { display: none; }
 .act-drawer { position: fixed; inset: 0; z-index: 60; display: flex; justify-content: flex-end; }
-.act-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.45); }
+.act-backdrop { position: absolute; inset: 0; background: var(--scrim); }
 .act-sheet {
   position: relative; display: flex; flex-direction: column; width: min(600px, 100vw); height: 100%; background: var(--surface);
   color: var(--text); border-left: 1px solid var(--border); box-shadow: -8px 0 24px rgba(0, 0, 0, 0.18); outline: none;
@@ -1028,3 +1044,157 @@ html.act-open { overflow: hidden; }
 .signin-more-body { display: flex; flex-direction: column; gap: 16px; padding-top: 12px; }
 .signin-dev { border-top: 1px solid var(--border); padding-top: 12px; }
 @media (max-width: 480px) { .signin-card { padding: 20px 16px; } }
+
+/* Reactions (#298): a small line under the message they were made to (or in a box of their own), and the red chip. */
+.tp-reactions { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 10px; }
+.tp-reaction { display: inline-flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+.tp-reaction-gone .tp-reaction-text { text-decoration: line-through; }
+.tp-negative-form { display: inline; margin: 0; }
+.tp-negative-form .btn { min-height: 24px; padding: 0 8px; font-size: 12px; }
+
+/* Mailbox forms (#309): the portal's forwarding form, its people picker, and the app's first modal (docs/ui.md, "Modal"). */
+.mb-fieldset { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; margin: 0; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.mb-fieldset > legend { font-weight: 600; font-size: 15px; padding: 0 6px; }
+.mb-mailbox { margin: 0; }
+.mb-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.mb-choice { display: flex; flex-direction: row; gap: 8px; align-items: center; font-weight: 600; }
+.mb-chosen[hidden] { display: none; }
+.mb-chosen { margin: 0; display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.mb-results { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.mb-person { width: 100%; display: flex; flex-direction: column; gap: 2px; align-items: flex-start; text-align: left; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--text); cursor: pointer; font: inherit; }
+.mb-person:hover, .mb-person:focus-visible { background: var(--accent-soft); border-color: var(--accent); }
+.mb-person-name { font-weight: 600; }
+.mb-person-detail { color: var(--muted); font-size: 14px; }
+.mb-confirm { border: 1px solid var(--red); border-radius: var(--radius); overflow: hidden; }
+.mb-confirm-head, .mb-dialog-head { margin: 0; padding: 10px 16px; background: var(--red-bg); color: var(--red); font-size: 16px; font-weight: 700; }
+.mb-confirm-body { padding: 12px 16px; display: flex; flex-direction: column; gap: 12px; }
+.mb-confirm-body p { margin: 0; }
+.mb-dialog { padding: 0; border: 1px solid var(--red); border-radius: var(--radius-lg); background: var(--surface); color: var(--text); width: min(480px, calc(100vw - 32px)); overflow: hidden; }
+.mb-dialog::backdrop { background: var(--scrim); }
+.mb-dialog-body { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.mb-dialog-body p { margin: 0; }
+.mb-dialog-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; padding: 0 16px 16px; }
+.mb-countdown { color: var(--muted); font-size: 14px; }
+.mb-stop { display: block; }
+.mb-stop > summary { cursor: pointer; font-weight: 600; min-height: 32px; display: flex; align-items: center; color: var(--accent); }
+.mb-stop form { display: flex; flex-direction: column; gap: 10px; padding-top: 8px; }
+.mb-stop form p { margin: 0; }
+
+/* ---- Admin > Users: the people table and a page per person (#322). Names start pp-; the 9I .users-* and .up-* classes
+   stay for Teams, Approval groups and the other list-and-panel pages. ---- */
+.pp-tabs { margin: 0 0 16px; }
+.pp-filters { display: grid; grid-template-columns: minmax(220px, 2fr) repeat(3, minmax(140px, 1fr)) auto; gap: 12px 16px; align-items: end; margin: 0 0 8px; }
+.pp-filter-actions { display: flex; gap: 8px; }
+.pp-filters-note { margin: 0 0 14px; }
+.pp-table td { vertical-align: middle; }
+.pp-person { display: flex; gap: 12px; align-items: center; min-width: 0; }
+.pp-person a { display: flex; flex-direction: column; min-width: 0; text-decoration: none; color: var(--text); }
+.pp-person a:hover .pp-name { color: var(--accent); }
+.pp-name { font-weight: 600; overflow-wrap: anywhere; }
+.pp-em { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.pp-merged-note { display: block; font-size: 12px; color: var(--muted); }
+.pp-avatar-sm, .pp-avatar {
+  flex: none; width: 32px; height: 32px; border-radius: 999px; background: var(--gray-bg); color: var(--gray);
+  display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px;
+}
+.pp-chiprow { display: flex; flex-wrap: wrap; gap: 4px 6px; }
+.pp-open { text-align: right; white-space: nowrap; }
+.pp-table tr.pp-stranded td:first-child { box-shadow: inset 3px 0 0 var(--amber); }
+.pp-table th:nth-child(1) { width: 34%; }
+.pp-table th:nth-child(2) { width: 11%; }
+.pp-table th:nth-child(3) { width: 27%; }
+
+.pp-crumb { margin: 0 0 12px; }
+.pp-new { max-width: 720px; }
+.pp-head { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; padding: 20px 24px; margin-bottom: 16px; }
+.pp-avatar { width: 44px; height: 44px; font-size: 16px; font-weight: 700; }
+.pp-title { flex: 1 1 260px; min-width: 0; }
+.pp-title h1 { margin: 0 0 2px; font-size: 22px; overflow-wrap: anywhere; }
+.pp-email { color: var(--muted); overflow-wrap: anywhere; }
+.pp-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.pp-done { margin: 0 0 16px; padding: 10px 14px; border-radius: var(--radius); background: var(--green-bg); color: var(--green); font-weight: 600; }
+
+.pp-glance { padding: 20px 24px; margin-bottom: 16px; }
+.pp-glance > h2 { font-size: 17px; margin: 0 0 12px; }
+.pp-facts { list-style: none; margin: 0 0 12px; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
+.pp-fact { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--raised); min-width: 0; }
+.pp-fact-label { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.pp-fact-value { font-weight: 600; overflow-wrap: anywhere; }
+.pp-fact-hint { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.pp-shortcuts { display: flex; flex-wrap: wrap; gap: 4px 20px; margin: 0; }
+
+.pp-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.pp-jump { display: flex; flex-wrap: wrap; gap: 4px 20px; margin: 0 0 16px; padding: 0; list-style: none; border-bottom: 1px solid var(--border); }
+.pp-jump a { display: inline-block; padding: 8px 2px; font-weight: 600; color: var(--muted); text-decoration: none; border-bottom: 2px solid transparent; }
+.pp-jump a:hover { color: var(--text); border-bottom-color: var(--accent); }
+.pp-jump a.pp-danger-link { color: var(--red); }
+.pp-stack { display: grid; gap: 16px; }
+.pp-card { padding: 20px 24px; scroll-margin-top: 16px; }
+.pp-card > h2 { font-size: 17px; margin: 0 0 2px; }
+.pp-lede { margin: 0 0 16px; color: var(--muted); }
+.pp-card .pp-dl { margin-bottom: 16px; }
+.pp-card .pp-form { max-width: 460px; }
+.pp-card .up-perms { max-width: 620px; }
+.pp-danger { border-color: var(--red); }
+.pp-danger > h2 { color: var(--red); }
+.pp-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding: 10px 0; border-top: 1px solid var(--border); max-width: 620px; }
+.pp-row-name { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.pp-row-name .note { display: block; font-weight: 400; }
+.pp-row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.pp-row-actions .pp-form { margin: 0; }
+.pp-add { padding-top: 12px; border-top: 1px solid var(--border); }
+
+@media (min-width: 1500px) {
+  .pp-body { grid-template-columns: 180px minmax(0, 1fr); align-items: start; }
+  .pp-jump { flex-direction: column; border-bottom: 0; border-left: 1px solid var(--border); position: sticky; top: 16px; gap: 0; margin: 0; }
+  .pp-jump a { padding: 6px 14px; }
+  .pp-stack { grid-column: 2; }
+}
+@media (max-width: 1240px) {
+  .pp-filters { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .pp-filters .pp-q, .pp-filter-actions { grid-column: 1 / -1; }
+}
+@media (max-width: 760px) {
+  .table-box:has(.pp-table) { background: none; border: 0; overflow: visible; }
+  .table-box .pp-table { min-width: 0; }
+  .pp-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .pp-table, .pp-table tbody, .pp-table tr, .pp-table td { display: block; width: 100%; }
+  .pp-table tr { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); margin-bottom: 10px; padding: 6px 4px; }
+  .pp-table tr.pp-stranded { border-left: 3px solid var(--amber); }
+  .pp-table td { border: 0; padding: 6px 12px; }
+  .pp-table td[data-l]::before { content: attr(data-l); display: block; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); margin-bottom: 2px; }
+  .pp-table tr.pp-stranded td:first-child { box-shadow: none; }
+  .pp-open { text-align: left; }
+  .pp-table th:nth-child(n) { width: auto; }
+}
+@media (max-width: 600px) {
+  .pp-filters { grid-template-columns: 1fr 1fr; }
+  .pp-head, .pp-card, .pp-glance { padding: 16px; }
+  .pp-card .up-inline .field { flex-basis: 100%; }
+}
+@media (max-width: 480px) { .pp-filters { grid-template-columns: 1fr; } }
+/* ---- end of Admin > Users (#322) ---- */
+
+/* Admin > Scheduled jobs (#323): five columns, a short error with the full text in a details, a card per job when narrow. Tokens only. */
+.job-table td { overflow-wrap: anywhere; }
+.job-error { margin-top: 6px; max-width: 46ch; }
+.job-error-full { margin-top: 2px; }
+.job-error-full summary { cursor: pointer; color: var(--muted); }
+.job-error-full .mono-wrap { margin-top: 4px; padding: 8px; background: var(--raised); border-radius: var(--radius); max-height: 14em; overflow: auto; }
+.job-error-now { border-left: 3px solid var(--red); padding-left: 8px; }
+@media (max-width: 760px) {
+  .job-table-box { background: none; border: 0; overflow: visible; }
+  .job-table-box table { min-width: 0; }
+  .job-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .job-table, .job-table tbody, .job-table tr, .job-table td { display: block; width: 100%; }
+  .job-table tr { margin: 0 0 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); }
+  .job-table td { border-bottom: 0; padding: 8px 14px; }
+  .job-table td[data-label]::before { content: attr(data-label); display: block; color: var(--muted); font-size: 12px; }
+  .job-error { max-width: none; }
+}
+
+/* Request types, Approval section (#324): what only means something with an approval group is hidden while "(none)" is chosen;
+   Percent to pass is also hidden while "Any one approver is enough" is ticked. The wrapper adds no box of its own. */
+.needs-group { display: contents; }
+.form-grid:has(select[name="approval_group_id"] option[value=""]:checked) .needs-group { display: none; }
+.form-grid:has(input[name="any_one_approver"]:checked) .pass-percent { display: none; }

@@ -5,7 +5,9 @@ in the requester's time zone, this job moves the ticket back to Open, tells the 
 due today"), and records a status event and an audit entry by `system`. It is a recurring job
 (app/scheduled_jobs.py): each ticket is locked with FOR UPDATE SKIP LOCKED, so a second worker skips it, and
 re-checked under the lock, so running late or twice does nothing the second time. A ticket whose status follows its
-sub-tickets is left to them.
+sub-tickets is left to them, and so is one waiting for a scheduled mailbox change to start (#307): the system put it in
+Scheduled with the start date as Due, and the mailbox-changes job resolves it when the change is made (or hands it to the
+team if it cannot be).
 """
 
 import logging
@@ -15,7 +17,7 @@ from typing import Optional
 from sqlmodel import Session, select
 
 from app.audit import log_action
-from app.models import Ticket, TicketStatus
+from app.models import MAILBOX_APPLYING, MAILBOX_SCHEDULED, MailboxChange, Ticket, TicketStatus
 from app.notifications import notify_due_today
 from app.splitting import has_sub_tickets
 from app.ticket_service import set_status
@@ -24,6 +26,7 @@ from app.time_zones import morning_of, scheduled_morning_hour, zone_for_email  #
 log = logging.getLogger("app.worker")
 
 AUDIT_ACTOR = "system"
+PENDING_MAILBOX_STATES = (MAILBOX_SCHEDULED, MAILBOX_APPLYING)  # a mailbox change that has not started yet
 AUDIT_DUE_TODAY = "due_today"
 
 
@@ -38,6 +41,10 @@ def _wake_one(session: Session, ticket_id: int, now: datetime, hour: int) -> boo
         return False
     if has_sub_tickets(session, ticket):
         return False
+    if session.exec(
+        select(MailboxChange.id).where(MailboxChange.ticket_id == ticket.id, MailboxChange.state.in_(PENDING_MAILBOX_STATES)).limit(1)
+    ).first() is not None:
+        return False  # waiting for a scheduled mailbox change to start (app/mailbox_changes.py): the mailbox-changes job ends Scheduled
     set_status(session, ticket, TicketStatus.OPEN, None, detail="due today")
     log_action(session, AUDIT_ACTOR, "ticket", ticket.id, AUDIT_DUE_TODAY, f"Scheduled ticket due {ticket.due_on.isoformat()}, back to Open")
     notify_due_today(session, ticket)

@@ -26,7 +26,7 @@ from app.identity import my_ticket_condition, people_for_addresses, person_for_a
 from app.models import FINISHED_STATUSES, Message, Notification, TeamsPost, Ticket, TicketStatus, User, UserRole, UserSession
 from app.notification_settings import IN_APP, TEAMS, is_enabled, offers, wants_approval_email
 from app.settings_store import NOTIFICATION_KEEP_DISMISSED_DAYS, TEAMS_HOLD_WHILE_ACTIVE_MINUTES, TEAMS_UNREAD_MINUTES, count_setting, get_int_setting
-from app.visibility import Access, access_context, team_members, ticket_access, visible_ticket_condition
+from app.visibility import Access, access_context, can_open_condition, team_members, ticket_access, visible_ticket_condition
 
 ASSIGNED = "assigned"
 MENTIONED = "mentioned"
@@ -36,6 +36,7 @@ APPROVAL_WITHDRAWN = "approval_withdrawn"
 APPROVAL_OVERDUE = "approval_overdue"
 APPROVAL_WAITING = "approval_waiting"
 DUE_TODAY = "due_today"
+MAILBOX_CHANGE_FAILED = "mailbox_change_failed"  # #307: a scheduled mailbox change failed for good; the team is told
 NO_ACTIVE_APPROVERS = "approval_no_active_approvers"  # #161: a request waits because nobody active can approve it (not a listed event type)
 LINK_REQUESTED = "link_requested"  # #165: someone asked to link two accounts and a super admin must decide (not a listed event type)
 OUTAGE_MODE = "outage_mode"  # #164: outage mode was switched on or off (not a listed event type)
@@ -162,39 +163,59 @@ def mentioned_in(session: Session, ticket: Ticket, body: str, author: User) -> l
     return found
 
 
-_MENTION_WORD = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+def _like_text(text: str) -> str:
+    """`text` as a LIKE pattern that matches only itself (what was typed is plain text, never a pattern)."""
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def mentionable_agents(session: Session, ticket: Ticket, author: User, query: str = "", limit: int = 8) -> list[tuple[User, str]]:
     """The agents the note composer's @ list offers (#254): active agents and super admins who can open this ticket
-    (`ticket_access` in app/visibility.py, the same test `mentioned_in` ends with), never the author, whose name or address
-    starts with what has been typed after the @. Each comes with the text to insert after the @: the part of the address
-    before the @, or the whole address when another agent shares that part (the same rule `mentioned_in` reads back, so what is
-    inserted notifies exactly that person). Someone whose address cannot be written as a mention is not offered."""
-    agents = session.exec(select(User).where(User.role.in_(AGENT_ROLES), User.is_active)).all()
-    locals_seen: dict[str, int] = {}
-    for agent in agents:
-        local = agent.email.lower().partition("@")[0]
-        locals_seen[local] = locals_seen.get(local, 0) + 1
+    (`can_open_condition` in app/visibility.py, the SQL form of `ticket_access`, the same test `mentioned_in` ends with),
+    never the author, whose name or address starts with what has been typed after the @ (or a word of either). Each
+    comes with the text to insert after the @: the part of the address before the @, or the whole address when another
+    agent shares that part (the same rule `mentioned_in` reads back, so what is inserted notifies exactly that person).
+    Someone whose address cannot be written as a mention is not offered.
+
+    Two queries however many agents there are (#261): the people, filtered, ordered and limited by the database, then
+    how many active agents share each address start (the sharing is counted across every agent, not only these)."""
+    email = func.lower(User.email)
+    local = func.split_part(email, "@", 1)
+    shown = func.lower(func.coalesce(User.display_name, ""))
     typed = (query or "").strip().lower()
-    found: list[tuple[User, str]] = []
-    levels_cache: dict[int, object] = {}
-    for agent in sorted(agents, key=lambda a: ((a.display_name or a.email).lower(), a.id)):
-        if agent.id == author.id:
-            continue
-        email = agent.email.lower()
-        local = email.partition("@")[0]
-        words = [part for part in re.split(r"[\s._-]+", f"{agent.display_name or ''} {local}".lower()) if part]
-        if typed and not (email.startswith(typed) or any(word.startswith(typed) for word in words) or (agent.display_name or "").lower().startswith(typed)):
-            continue
-        insert = local if locals_seen[local] == 1 else email
-        if not (_MENTION_WORD.fullmatch(local) and (insert == local or _MENTION_WORD.fullmatch(insert.partition("@")[0]))):
-            continue
-        levels = levels_cache.setdefault(agent.id, access_context(session, agent))
-        if ticket_access(agent, ticket, levels) >= Access.READ:
-            found.append((agent, insert))
-        if len(found) >= limit:
-            break
+    wanted = [
+        User.id != author.id,
+        User.role.in_(AGENT_ROLES),
+        User.is_active,
+        can_open_condition(ticket),
+        local.op("~")(r"^[A-Za-z0-9][A-Za-z0-9._-]*$"),  # one that can be written as a mention
+    ]
+    if typed:
+        like = _like_text(typed)
+        matches = [email.like(like + "%", escape="\\"), shown.like(like + "%", escape="\\")]
+        if not re.search(r"[\s._-]", typed):
+            # A word of the name or of the address's first part: what follows a space, dot, underscore or hyphen.
+            for separator in (" ", ".", "_", "-"):
+                after = "%" + _like_text(separator) + like + "%"
+                matches += [shown.like(after, escape="\\"), local.like(after, escape="\\")]
+        wanted.append(or_(*matches))
+    people = session.exec(
+        select(User)
+        .where(*wanted)
+        .order_by(func.lower(func.coalesce(func.nullif(User.display_name, ""), User.email)).collate("C"), User.id)
+        .limit(limit)
+    ).all()
+    if not people:
+        return []
+    starts = {person.email.lower().partition("@")[0] for person in people}
+    shared = dict(
+        session.exec(
+            select(local, func.count()).where(User.role.in_(AGENT_ROLES), User.is_active, local.in_(starts)).group_by(local)
+        ).all()
+    )
+    found = []
+    for person in people:
+        start = person.email.lower().partition("@")[0]
+        found.append((person, start if shared.get(start, 1) == 1 else person.email.lower()))
     return found
 
 
@@ -773,6 +794,20 @@ def notify_msp_unacknowledged(session: Session, ticket: Ticket) -> list[Notifica
     return made
 
 
+def notify_mailbox_change_failed(session: Session, ticket: Ticket, text: str) -> list[Notification]:
+    """Tells the working members of the ticket's team that a scheduled mailbox change failed for good (app/mailbox_changes.py):
+    `ticket` is the request (a start that failed) or the new incident (a removal that failed). `text` should start with REF.
+    Only people who can open the ticket. Does not commit."""
+    made = []
+    for person in team_members(session, ticket.team_id):
+        if not person.is_active or not _can_open(session, person, ticket):
+            continue
+        notification = notify(session, person, MAILBOX_CHANGE_FAILED, ticket, text, None)
+        if notification is not None:
+            made.append(notification)
+    return made
+
+
 def _assignee_who_can_open(session: Session, ticket: Ticket) -> Optional[User]:
     if ticket.assigned_agent_id is None:
         return None
@@ -781,25 +816,22 @@ def _assignee_who_can_open(session: Session, ticket: Ticket) -> Optional[User]:
 
 
 def notify_msp_handoff_warning(
-    session: Session, ticket: Ticket, handoff_label: str, since: datetime, now: Optional[datetime] = None
+    session: Session, ticket: Ticket, handoff_label: str, handoff_at: datetime
 ) -> Optional[Notification]:
     """Tells the assignee their ticket will go to the MSP at the handoff hour unless they Hold it (app/msp.py
-    `warn_before_handoff`). Once for each ticket and person from `since` (the start of this night's warning), whether or
-    not they have read it. Nobody assigned tells nobody. Does not commit."""
+    `warn_before_handoff`). Once for each ticket and person for each handoff moment (`handoff_at`), whether or not the bell
+    entry has been read or has since been deleted: "warned for tonight" is `ticket.msp_warned_for` and
+    `msp_warned_user_id`, not the existence of a Notification row (#271). Nobody assigned, or an assignee who wants neither channel, tells nobody and leaves the
+    ticket unmarked. A ticket given a new assignee after the warning warns the new one. Does not commit."""
     agent = _assignee_who_can_open(session, ticket)
     if agent is None:
         return None
-    already = session.exec(
-        select(Notification.id).where(
-            Notification.kind == MSP_HANDOFF_WARNING, Notification.ticket_id == ticket.id,
-            Notification.user_id == agent.id, Notification.created_at >= since,
-        ).limit(1)
-    ).first()
-    if already is not None:
+    if ticket.msp_warned_for == handoff_at and ticket.msp_warned_user_id == agent.id:
         return None
     made = notify(session, agent, MSP_HANDOFF_WARNING, ticket, f"{REF} will go to the MSP at {handoff_label}. Hold it to keep it.", None)
-    if made is not None and now is not None:
-        made.created_at = now  # the job's clock, so the once-a-night check compares like with like
+    if made is not None:
+        ticket.msp_warned_for, ticket.msp_warned_user_id = handoff_at, agent.id
+        session.add(ticket)
     return made
 
 

@@ -1,0 +1,24 @@
+{# Start and End for the portal's mailbox forms (#309, #310). Set `times_what` ("Forwarding" or "Access") before including it. #}
+{% macro time_select(name, selected, label) %}
+<select name="{{ name }}" aria-label="{{ label }}">
+  {% for t in quarter_times %}<option value="{{ t }}" {{ "selected" if t == selected else "" }}>{{ t }}</option>{% endfor %}
+</select>
+{% endmacro %}
+  <fieldset class="mb-fieldset">
+    <legend>Start</legend>
+    <label class="mb-choice"><input type="radio" name="start_mode" value="now" {{ "checked" if f.start_mode != "later" else "" }} /> Now</label>
+    <div class="mb-row">
+      <label class="mb-choice"><input type="radio" name="start_mode" value="later" {{ "checked" if f.start_mode == "later" else "" }} /> On</label>
+      <input type="date" name="start_date" value="{{ f.start_date }}" aria-label="Start date" />
+      {{ time_select("start_time", f.start_time, "Start time") }}
+    </div>
+  </fieldset>
+
+  <fieldset class="mb-fieldset">
+    <legend>End (required)</legend>
+    <div class="mb-row">
+      <input type="date" name="end_date" id="mb-end-date" value="{{ f.end_date }}" required aria-label="End date" />
+      {{ time_select("end_time", f.end_time, "End time") }}
+    </div>
+    <p class="nr-hint">Times are in your time zone, {{ mailbox_zone }}, in 15-minute steps. {{ times_what }} can last at most {{ mailbox_max_days }} days.</p>
+  </fieldset>

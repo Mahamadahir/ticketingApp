@@ -33,8 +33,8 @@
     </div>
     {% if subscription %}
     <dl class="dl">
-      <dt>Resource</dt><dd>{{ subscription.resource }}</dd>
-      <dt>Subscription id</dt><dd>{{ subscription.subscription_id or "none" }}</dd>
+      <dt>Resource</dt><dd class="mono-wrap">{{ subscription.resource|break_points }}</dd>
+      <dt>Subscription id</dt><dd class="mono-wrap">{{ (subscription.subscription_id or "none")|break_points }}</dd>
       <dt>Expires</dt><dd>{{ subscription.expires_at|local_time if subscription.expires_at else "unknown" }}</dd>
       <dt>Last created or renewed</dt><dd>{{ subscription.last_renewed_at|local_time if subscription.last_renewed_at else "never" }}</dd>
       <dt>Last checked</dt><dd>{{ subscription.last_checked_at|local_time if subscription.last_checked_at else "never" }}</dd>
@@ -63,11 +63,34 @@
     <p class="muted">The catch-up has not run (it is off, or has not run yet).</p>
     {% endif %}
   </section>
+  <section class="card intake-card" aria-labelledby="in-react">
+    <div class="card-header">
+      <h2 id="in-react">Outlook reactions</h2>
+      {% if not reactions_sync %}<span class="chip t-gray">Not run</span>
+      {% elif reactions_sync.last_error %}<span class="chip t-red">Last run failed</span>
+      {% elif reactions_sync.last_warning %}<span class="chip t-amber">Format not understood</span>
+      {% else %}<span class="chip t-green">Healthy</span>{% endif %}
+    </div>
+    {% if reactions_sync %}
+    <dl class="dl">
+      <dt>Last completed</dt><dd>{{ reactions_sync.last_synced_at|local_time if reactions_sync.last_synced_at else "never" }}</dd>
+      <dt>Reactions recorded at that run</dt><dd>{{ reactions_sync.last_handed_over }}</dd>
+      <dt>Part way through a long run</dt><dd>{{ "yes" if reactions_sync.resume_link else "no" }}</dd>
+      <dt>Last error</dt><dd>{% if reactions_sync.last_error %}{{ reactions_sync.last_error }} ({{ reactions_sync.last_error_at|local_time }}){% else %}none{% endif %}</dd>
+      <dt>Warning</dt><dd>{% if reactions_sync.last_warning %}{{ reactions_sync.last_warning }} ({{ reactions_sync.last_warning_at|local_time }}). Outlook stores reactions in a format Microsoft has not documented and may change; nothing was recorded from those messages.{% else %}none{% endif %}</dd>
+    </dl>
+    {% else %}
+    <p class="muted">The Outlook reactions job has not run (mail is off, or it has not run yet).</p>
+    {% endif %}
+  </section>
+</div>
 
+<div class="intake-cards intake-numbers">
   <section class="card intake-card" aria-labelledby="in-last">
-    <div class="card-header"><h2 id="in-last">Last mail received</h2></div>
-    <p class="intake-big">{{ last_received|local_time if last_received else "Nothing yet" }}</p>
-    <p class="muted">The most recent mail the intake handled, whatever came of it.</p>
+    <div class="card-header"><h2 id="in-last">Last mail arrived</h2></div>
+    <p class="intake-big">{{ last_arrived|local_time if last_arrived else ("Not recorded" if last_processed else "Nothing yet") }}</p>
+    <p class="muted">When the newest mail reached the mailbox, as the mailbox itself says. Mail handled before this was kept has no arrival time.</p>
+    <p class="muted">Last processed: {{ last_processed|local_time if last_processed else "nothing yet" }}. That is when the intake last handled a mail, which after an outage can be later than when it arrived.</p>
   </section>
 
   <section class="card intake-card" aria-labelledby="in-wait">

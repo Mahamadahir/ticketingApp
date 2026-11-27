@@ -51,6 +51,23 @@ starting a phase, and `README.md` for how to run it.
   and the ticket an agent escalated (`TicketEscalator`). Escalation is by category (`app/escalation.py`; the target is chosen when the category is
   created, and the reason is also an internal note); escalate and re-assign are separate actions
   over one shared `move_ticket` in `app/triage.py`; the MSP target waits for the phase 5 handoff.
+- **Built after Phase 9 (20 to 27 Nov 2026), all merged:** splitting before triage with pre-filled
+  parts and a split email (#259); refusals shown in their own card (#266 to #269); the MSP warning kept
+  on the ticket (#271); super admins can hold tickets, one assignee-roles helper
+  `visibility.ASSIGNEE_ROLES` (#288); the queue's Status filter, sort by time to breach and status
+  colours from one mapping in `app/status_display.py` (#290); Team activity's Person filter lists all
+  current agents, agent work decided from the step (#262, #270); ticket page query counts fixed
+  (#261, #263); cards that fit their content (#294); test databases dropped after each run and
+  `tools/clean_test_dbs.py` (#295); **Run now** on Scheduled jobs (sets `next_run_at`; the worker runs it)
+  (#300); **reactions**: Teams `messageReaction` and Outlook reactions read from Sent Items by the
+  `email-reactions` job, one model and one place for their effects in `app/reactions.py`, soft only
+  (feedback "from a reaction", acknowledgement stops chases; never closes a ticket) (#298, #299), with
+  the acknowledged-wait chip and auto-resolve backstop (#303); **Admin > Users design B**: a people
+  table and a page per person whose sections and At a glance facts come from registries in
+  `app/admin_people.py` (#322, replacing 9I's panel); the Scheduled jobs page with readable errors and
+  fixed result keys instead of `?message=` text, and boosted htmx requests always get the full frame
+  (#323); Percent to pass shown only with an approval group (#324); self-service mailbox changes
+  (tracker #305). Open follow-ups: #339, #340.
 - Phase 1 progress: 1A, 1B, 1C (messages and followers) are merged. 1D is split in
   two: **1D-i** (explicit triage, categories with the "Other" review queue,
   settings, the re-assign control) is built in `app/triage.py`,
@@ -96,12 +113,20 @@ starting a phase, and `README.md` for how to run it.
   polish. Phase 9 restyles every page onto the 9A tokens and components (`docs/ui.md`), one issue at
   a time, so do not restyle a page outside its issue; use the 9A classes and tokens, never raw colours.
 - Schema changes need an Alembic migration (CI runs `alembic check`).
-- Run `pytest -n auto` (parallel, one database per worker) before saying work is done. Tests run against
+- **CI is the full test run.** Before saying work is done, run the test files you touched (and those of
+  the modules they change) locally, `pytest -n 2 <files>`, then push and wait for CI's full run on the PR's
+  final commit and report its result. Do not run the whole suite locally unless the user asks: several
+  agents share this machine, and a local full run takes 30 minutes or more and often never finishes (CI
+  takes 8 to 15). Tests run against
   Postgres 16 (compose `db` locally, a service container in CI), never SQLite.
   Start it with `docker compose up -d db`; the tests create and wipe a separate
   `ticketing_test` database. Python is 3.14. Run only one pytest process per test database
   (your own background suite included), and give your branch its own via `TEST_DATABASE_URL`;
   how, and what to do when the database is down, is in `docs/build-plan.md` (working agreement).
+- **Test runs can hang** (other agents share the Postgres). Before running tests, read "When a run is
+  slow or hangs" in the working agreement in `docs/build-plan.md`: time-limit every run, diagnose once,
+  kill only your own run, retry at most once and then lean on CI, push and report if stuck for more than
+  30 minutes, and merge `main` before the final push (a conflicting PR gets no CI).
 - No secrets in the repo, Bicep parameter files or app definitions. Secrets
   come from the environment at deploy time and live in Key Vault.
 - Values marked TBC in the plan are settings or environment config, never
@@ -112,7 +137,7 @@ starting a phase, and `README.md` for how to run it.
   work up as a GitHub issue (what, rules, tests), then gives each issue to its own sub-agent running
   Sonnet. The sub-agent branches off `main` (or the branch it builds on), opens a draft PR, builds
   and tests it under the working agreement in `docs/build-plan.md`, then runs `/code-review <PR>`
-  itself and fixes the real findings. It reports back to the orchestrator: what it built, the test
+  itself and fixes the real findings, then re-runs the full test suite. It reports back to the orchestrator: what it built, the test
   results, and every review finding, accepted (fixed) or rejected (with the reason). The orchestrator
   checks the report, relays it to the user and marks the PR ready. Sub-agents work in their own worktrees, so their
   changes never reach the user's checkout (`C:\Projects\ticketingApp`), which the local WSL app serves with auto-reload.

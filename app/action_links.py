@@ -113,6 +113,11 @@ def submit_feedback(session: Session, row: ActionToken, rating: int, comment: st
         raise LinkError(f"The comment can be at most {MAX_COMMENT_LENGTH} characters")
     if not claim(session, row):
         raise LinkError("This link has already been used or has expired")
+    from app.reactions import drop_soft_feedback  # here: reactions need the identity code, which needs the models only; keep this module light
+
+    ticket = session.get(Ticket, row.ticket_id)
+    if ticket is not None:
+        drop_soft_feedback(session, ticket)  # a real answer replaces the quick rating a reaction made
     feedback = TicketFeedback(
         ticket_id=row.ticket_id, token_id=row.id, rating=rating, comment=comment, resolved_by_id=row.resolved_by_id
     )

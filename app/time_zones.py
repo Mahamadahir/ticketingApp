@@ -1,5 +1,7 @@
-"""Per-person time zones. Everything is stored and calculated in UTC; only what a person SEES is converted,
-and only here.
+"""Per-person time zones. Everything is stored and calculated in UTC; only what a person SEES or TYPES is
+converted, and only here, in both directions: UTC to a person's zone for display (`format_moment`,
+`format_date`) and a time typed in a person's zone to UTC (`parse_local_moment`, `end_of_day_utc`,
+`morning_of`).
 
 Where a person's zone comes from (each is an IANA name, validated with zoneinfo; an unknown name is ignored):
   1. Their account (`User.time_zone`): reported by their browser on every page (`set_browser_zone`, so it
@@ -159,6 +161,37 @@ def relative_time(moment: datetime, now: Optional[datetime] = None) -> str:
             count = seconds // size
             return f"{count} {unit}{'' if count == 1 else 's'} ago"
     return "just now"
+
+
+MOMENT_FORMAT = "%Y-%m-%dT%H:%M"  # what an HTML datetime-local input sends
+
+
+class MomentError(ValueError):
+    """A typed date and time that cannot be read, worded for the person who typed it."""
+
+
+def parse_local_moment(text: Optional[str], zone_name: str = "UTC") -> Optional[datetime]:
+    """A date and time typed as 2026-10-01T14:30 (seconds are accepted too), read in the typist's time zone
+    (UTC when none is given or the name is unknown) and returned as UTC. Blank means "leave as it is" and gives
+    None. Text that is not in that form raises MomentError.
+
+    Daylight saving: a local time that does not exist (the hour skipped when UK clocks go forward, for example
+    01:30 on 29 March 2026) is refused with MomentError rather than shifted silently. A local time that happens
+    twice (the repeated hour when clocks go back) is read as its FIRST occurrence (fold=0, the summer-time one)."""
+    text = (text or "").strip()
+    if not text:
+        return None
+    zone = ZoneInfo(valid_zone(zone_name) or "UTC")
+    for form in (MOMENT_FORMAT, MOMENT_FORMAT + ":%S"):
+        try:
+            local = datetime.strptime(text, form).replace(tzinfo=zone, fold=0)
+        except ValueError:
+            continue
+        moment = local.astimezone(timezone.utc)
+        if moment.astimezone(zone).replace(tzinfo=None) != local.replace(tzinfo=None):  # the clocks skipped it
+            raise MomentError(f"{text.replace('T', ' ')} does not exist in {zone.key} (the clocks go forward then). Choose a different time.")
+        return moment
+    raise MomentError("Enter the date and time as YYYY-MM-DDTHH:MM")
 
 
 def end_of_day_utc(day: date, zone_name: str) -> datetime:

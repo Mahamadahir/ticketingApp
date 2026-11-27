@@ -4,7 +4,8 @@ import pytest
 from sqlmodel import select
 
 from app import sla
-from app.backdating import BackdateError, backdate_ticket, parse_moment
+from app.backdating import BackdateError, backdate_ticket
+from app.time_zones import MomentError, parse_local_moment as parse_moment
 from app.models import AuditLog, Ticket, TicketSource, TicketStatus
 from tests.conftest import add_membership, create_category, create_team
 from tests.test_sla import triaged_ticket as _triaged_ticket
@@ -251,7 +252,7 @@ def test_the_dates_parse_only_in_the_expected_form():
     assert parse_moment("  ") is None and parse_moment(None) is None
     assert parse_moment("2026-10-01T14:30:45") == datetime(2026, 10, 1, 14, 30, 45, tzinfo=timezone.utc)  # seconds are tolerated
     for bad in ("2026-10-01", "2026-10-01 14:30", "01/10/2026", "2026-10-01T14:30:00:00", "x"):
-        with pytest.raises(BackdateError):
+        with pytest.raises(MomentError):
             parse_moment(bad)
 
 

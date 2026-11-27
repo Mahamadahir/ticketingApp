@@ -1,0 +1,3 @@
+{# After a refused send (card_errors in app/routers/tickets.py): a browser cannot refill a file input, so say so, and name the files that are still held from a preview. #}
+{% if card_values.get("had_files") %}<p class="note" id="refused-files">Choose your files again: the browser cannot keep them after a refusal.</p>{% endif %}
+{% if card_values.get("held_files") %}<p class="note">Still attached from before: {{ card_values.held_files|join(", ") }}.</p>{% endif %}

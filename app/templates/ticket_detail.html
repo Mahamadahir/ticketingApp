@@ -2,7 +2,6 @@
 {% block title %}{{ ticket.reference }}{% endblock %}
 {% block content %}
 {% from "_tp_macros.html" import chip_link, pencil, cancel_edit with context %}
-{% set status_label = ticket.status.value.replace("_", " ")|capitalize|replace("msp", "MSP") %}
 {% set requester_name = (requester_person.display_name if requester_person and requester_person.display_name else ticket.requester_email) %}
 <div class="tp">
 <p class="tp-crumbs"><a href="/tickets">&larr; back to tickets</a></p>
@@ -29,7 +28,7 @@
     <span class="chip t-gray tp-ref">{{ ticket.reference }}</span>
     <span class="chip t-gray">{{ ticket.type.value.replace("_", " ")|capitalize }}</span>
     <span class="chip {{ 't-red' if ticket.priority == 'p1' else ('t-amber' if ticket.priority == 'p2' else 't-gray') }}">{{ ticket.priority.upper() if ticket.priority else ("Untriaged" if not ticket.triaged_at else "No priority") }}</span>
-    <span class="chip {{ 't-green' if ticket.status.value == 'resolved' else ('t-blue' if ticket.status.value == 'with_msp' else 't-gray') }}">{{ status_label }}</span>
+    <span class="chip t-{{ ticket.status|status_tone }}">{{ ticket.status|status_label }}</span>
     <span class="chip t-{{ sla_chip.tone }}">
       <svg aria-hidden="true" focusable="false" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
       {{ sla_chip.text }}
@@ -37,8 +36,14 @@
     {% if ticket.is_escalated %}<span class="chip t-red">Escalated</span>{% endif %}
     {% if ticket.msp_hold %}<span class="chip t-amber">On hold for the MSP</span>{% endif %}
     {% if ticket.is_backdated %}<span class="chip t-gray">Backdated</span>{% endif %}
+    {% if acknowledged %}<span class="chip t-blue" title="The requester reacted with a thumbs-up since this wait began">{{ acknowledged.chip }}</span>{% endif %}
+    {% if negative_reaction %}<span class="chip t-red">Negative reaction</span>
+    {%- if can_work %}<form class="tp-negative-form" method="post" action="/tickets/{{ ticket.number }}/reactions/dismiss" hx-post="/tickets/{{ ticket.number }}/reactions/dismiss" hx-target="main" hx-swap="innerHTML">
+      <button type="submit" class="btn" title="Dismiss the Negative reaction chip. It shows again if someone reacts negatively again.">Dismiss</button>
+    </form>{% endif %}{% endif %}
   </div>
   <h1>{{ ticket.subject }}</h1>
+  {% if mailbox_declined %}<p class="note tp-declined" id="mailbox-declined" role="status">{{ mailbox_declined }}</p>{% endif %}
   <p class="tp-info">
     <span><span class="muted">Requester</span> <b title="{{ ticket.requester_email }}">{{ requester_name }}</b></span>
     <span><span class="muted">Team</span> <b>{{ team.name if team else "Unassigned" }}</b></span>
@@ -56,6 +61,7 @@
   </div>
   <script src="{{ static_url('ticket-presence.js') }}"></script>
   <script src="{{ static_url('ticket-mentions.js') }}"></script>
+  <script src="{{ static_url('split-card.js') }}"></script>
 
   {% if chips.row or chips.primary or chips.more %}
   {# One row under the info line: Email user and Add note first, then what this ticket's state offers; Resolve (or Reopen) is the
@@ -102,7 +108,7 @@
 </form>
 {% endif %}
 {% elif ticket.status.value == "awaiting_approval" %}
-<p class="note tp-banner"><b>Waiting for approval</b> ({{ approval_rule }}). The ticket moves on when its approvers decide; its status cannot be changed by hand until then. The SLA clock is running.</p>
+<p class="note tp-banner"><b>Waiting for approval</b> ({{ approval_rule }}). The ticket moves on when its approvers decide; its status cannot be changed by hand until then. The SLA clock is running.{% if approval_note %} {{ approval_note }}{% endif %}</p>
 {% endif %}
 
 {% if ticket.is_escalated %}
@@ -131,7 +137,7 @@
 <section class="card" aria-labelledby="feedback-heading">
   <h2 id="feedback-heading">Requester feedback</h2>
   {% for f in feedback %}
-  <p class="note">{{ f.rating }} out of 5, {{ f.created_at|local_time }}</p>
+  <p class="note">{{ f.rating }} out of 5, {{ f.created_at|local_time }}{% if f.from_reaction %} <span class="chip t-gray">from a reaction</span>{% endif %}</p>
   {% if f.comment %}<pre class="message-body">{{ f.comment }}</pre>{% endif %}
   {% endfor %}
 </section>
@@ -246,10 +252,12 @@
   {# 3. Service level: the clocks, Due and Required by, the status, and the hold. #}
   <section class="card tp-card tp-box" id="box-sla" aria-labelledby="sla-heading">
     <h2 id="sla-heading">Service level</h2>
-    {% if sla_rows %}
+    {% if sla_rows or acknowledged %}
     <ul class="tp-rows">
       {% for row in sla_rows %}<li><span>{{ row.label }}</span><span class="chip t-{{ row.tone }}">{{ row.text }}</span></li>{% endfor %}
+      {% if acknowledged %}<li><span>Acknowledged</span><span class="chip t-blue">{{ acknowledged.short }}</span></li>{% endif %}
     </ul>
+    {% if acknowledged %}<p class="note">{{ acknowledged.line }}</p>{% endif %}
     {% else %}
     <p class="muted">{{ sla_chip.text }}.</p>
     {% endif %}
@@ -264,7 +272,7 @@
           {% for s in statuses %}
           {% if s.value == "resolved" %}<button type="button" disabled class="button-active">resolved</button>
           {% elif s.value == "closed" and can_close %}<button type="button" disabled class="button-outline" title="Use Close in the ticket actions: it needs notes and emails the requester">closed</button>{% else %}
-          <button type="submit" name="status" value="{{ s.value }}" class="{{ 'button-active' if ticket.status == s else 'button-outline' }}">{{ s.value.replace("_", " ") }}</button>{% endif %}
+          <button type="submit" name="status" value="{{ s.value }}" class="{{ 'button-active' if ticket.status == s else 'button-outline' }}">{{ s|status_label }}</button>{% endif %}
           {% endfor %}
         </div>
         <label>Scheduled needs a date: Due
@@ -275,7 +283,7 @@
         <div class="tp-edit-actions">{{ cancel_edit("box-sla") }}</div>
       </form></dd>
       {% else %}
-      <dd class="tp-val"><span>{{ status_label }}</span>{% if editable.status %}{{ pencil("box-sla", "status", "status") }}{% endif %}</dd>
+      <dd class="tp-val"><span class="chip t-{{ ticket.status|status_tone }}">{{ ticket.status|status_label }}</span>{% if editable.status %}{{ pencil("box-sla", "status", "status") }}{% endif %}</dd>
       {% endif %}
 
       {% if ticket.required_by or can_set_required_by %}
@@ -344,7 +352,7 @@
   {# 4. Followers (with Add follower), then Linked. #}
   <section class="card tp-card tp-box" id="box-followers" aria-labelledby="followers-heading">
     <h2 id="followers-heading">Followers</h2>
-    <p class="note">Copied on every email to the requester. Internal followers are agents, such as whoever escalated the ticket; they are copied while they follow, and following does not give access to the ticket.</p>
+    <p class="note">Copied on every email to the requester. External followers also see the ticket in the portal and can reply there. Internal followers are agents, such as whoever escalated the ticket; they are copied while they follow, but following gives them no access to the ticket.</p>
     <ul class="tp-rows">
       {% for follower in followers %}
       <li>
@@ -384,7 +392,7 @@
     {% endif %}
     {% if linked or hidden_linked_count %}
     <ul class="tp-list">
-      {% for t in linked %}<li><a href="/tickets/{{ t.number }}">{{ t.reference }}</a> {{ t.subject }} <span class="status status-{{ t.status.value }}">{{ t.status.value.replace("_", " ") }}</span></li>{% endfor %}
+      {% for t in linked %}<li><a href="/tickets/{{ t.number }}">{{ t.reference }}</a> {{ t.subject }} <span class="chip t-{{ t.status|status_tone }}">{{ t.status|status_label }}</span></li>{% endfor %}
     </ul>
     {% if linked and can_work %}<p><a href="/bulk-resolve?parent={{ ticket.number }}">Resolve this ticket and its linked tickets together</a></p>{% endif %}
     {% if more_linked_count %}<p class="note">Showing the first {{ linked|length }}; {{ more_linked_count }} more you can open are not listed.</p>{% endif %}
@@ -394,7 +402,7 @@
     {% if related %}
     <h3 class="tp-sub">Related tickets</h3>
     <ul class="tp-list">
-      {% for t, which in related %}<li><a href="/tickets/{{ t.number }}">{{ t.reference }}</a> {{ t.subject }} <span class="status status-{{ t.status.value }}">{{ t.status.value.replace("_", " ") }}</span> <span class="note">({{ "this ticket follows on from it" if which == "earlier" else "opened after this one was closed" }})</span></li>{% endfor %}
+      {% for t, which in related %}<li><a href="/tickets/{{ t.number }}">{{ t.reference }}</a> {{ t.subject }} <span class="chip t-{{ t.status|status_tone }}">{{ t.status|status_label }}</span> <span class="note">({{ "this ticket follows on from it" if which == "earlier" else "opened after this one was closed" }})</span></li>{% endfor %}
     </ul>
     {% endif %}
 
@@ -407,7 +415,7 @@
     {% endif %}
     {% if sub_tickets or hidden_sub_count %}
     <ul class="tp-list">
-      {% for t in sub_tickets %}<li><a href="/tickets/{{ t.number }}">{{ t.reference }}</a> {{ t.subject }} <span class="status status-{{ t.status.value }}">{{ t.status.value.replace("_", " ") }}</span></li>{% endfor %}
+      {% for t in sub_tickets %}<li><a href="/tickets/{{ t.number }}">{{ t.reference }}</a> {{ t.subject }} <span class="chip t-{{ t.status|status_tone }}">{{ t.status|status_label }}</span></li>{% endfor %}
     </ul>
     {% if more_sub_count %}<p class="note">Showing the first {{ sub_tickets|length }}; {{ more_sub_count }} more you can open are not listed.</p>{% endif %}
     {% if hidden_sub_count %}<p class="note">{{ hidden_sub_count }} more sub-ticket{{ "s" if hidden_sub_count != 1 else "" }} you cannot open.</p>{% endif %}

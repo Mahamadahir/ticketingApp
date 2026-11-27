@@ -7,7 +7,7 @@
   <div class="queue-head">
     <div>
       <h1>Queue</h1>
-      <p class="muted">Sorted by time to breach. Untriaged tickets stay at the top.</p>
+      <p class="muted">{% if sort == 'breach' %}Sorted by time to breach, soonest first, untriaged tickets included.{% else %}Sorted by time to breach. Untriaged tickets stay at the top.{% endif %}</p>
     </div>
     <div class="queue-figures">
       <span class="chip t-red queue-figure">{{ figures.breached }} breached</span>
@@ -17,14 +17,15 @@
   </div>
 
   <nav class="tabs" aria-label="Queue views">
-    <a class="tab{{ ' on' if not mine and not untriaged else '' }}" href="{{ list_link(mine=False, untriaged=False, q='', source='') }}"{% if not mine and not untriaged %} aria-current="true"{% endif %}>All I can see <span class="chip t-gray">{{ figures.tab_all }}</span></a>
-    <a class="tab{{ ' on' if mine else '' }}" href="{{ list_link(mine=True, team_id=None, q='', source='') }}"{% if mine %} aria-current="true"{% endif %}>My queue <span class="chip t-gray">{{ figures.tab_mine }}</span></a>
-    <a class="tab{{ ' on' if untriaged else '' }}" href="{{ list_link(untriaged=True, q='', source='') }}"{% if untriaged %} aria-current="true"{% endif %}>Untriaged <span class="chip t-gray">{{ figures.tab_untriaged }}</span></a>
+    <a class="tab{{ ' on' if not mine and not untriaged else '' }}" href="{{ list_link(mine=False, untriaged=False, q='', source='', status='') }}"{% if not mine and not untriaged %} aria-current="true"{% endif %}>All I can see <span class="chip t-gray">{{ figures.tab_all }}</span></a>
+    <a class="tab{{ ' on' if mine else '' }}" href="{{ list_link(mine=True, team_id=None, q='', source='', status='') }}"{% if mine %} aria-current="true"{% endif %}>My queue <span class="chip t-gray">{{ figures.tab_mine }}</span></a>
+    <a class="tab{{ ' on' if untriaged else '' }}" href="{{ list_link(untriaged=True, q='', source='', status='') }}"{% if untriaged %} aria-current="true"{% endif %}>Untriaged <span class="chip t-gray">{{ figures.tab_untriaged }}</span></a>
   </nav>
 
   <form method="get" action="/tickets" class="queue-filters">
     {% if q %}<input type="hidden" name="q" value="{{ q }}" />{% endif %}
     {% if mine %}<input type="hidden" name="mine" value="true" />{% endif %}
+    {% for label, name, value in person_filters %}<input type="hidden" name="{{ name }}" value="{{ value }}" />{% endfor %}
     {% if untriaged %}<input type="hidden" name="untriaged" value="true" />{% endif %}
     <label class="field">Team
       <select name="team_id">
@@ -38,10 +39,23 @@
         {% for s in sources %}<option value="{{ s }}"{{ ' selected' if source == s else '' }}>{{ s|capitalize }}</option>{% endfor %}
       </select>
     </label>
+    <label class="field">Status
+      <select name="status">
+        <option value="">Any status</option>
+        {% for value, label in status_options %}<option value="{{ value }}"{{ ' selected' if status == value else '' }}>{{ label }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="field">Sort
+      <select name="sort">
+        <option value="">Queue order</option>
+        <option value="breach"{{ ' selected' if sort == 'breach' else '' }}>Time to breach</option>
+      </select>
+    </label>
     <button type="submit" class="btn">Apply filters</button>
-    {% if q or team_id or source %}<a href="{{ list_link(q='', source='', team_id=None, mine=mine, untriaged=untriaged) }}" class="btn">Clear search and filters</a>{% endif %}
+    {% if q or team_id or source or status or sort %}<a href="{{ list_link(q='', source='', status='', sort='', team_id=None, mine=mine, untriaged=untriaged) }}" class="btn">Clear search and filters</a>{% endif %}
     <p class="queue-showing" role="status">Showing {{ page.items|length }} of {{ page.total_items }}</p>
   </form>
+  {% if person_filters %}<p class="note" role="status">Only tickets {{ person_filters|map(attribute=0)|join(" and ") }}. <a href="{{ list_link(mine=mine, untriaged=untriaged) }}">Show all</a></p>{% endif %}
   {% if q %}<p class="note">{{ page.total_items }} ticket{{ "" if page.total_items == 1 else "s" }} you can open match "{{ q }}" (subject, requester, number, and every message including internal notes).</p>{% endif %}
 
   {% if page.items %}
@@ -71,6 +85,8 @@
                   <span class="ticket-ref">{{ ticket.reference }}</span>
                   {% if not ticket.triaged_at %}<span class="chip t-blue">Needs triage</span>{% endif %}
                   {% if ticket.is_escalated %}<span class="chip t-red">Escalated</span>{% endif %}
+                  {% if ticket.id in acknowledged %}<span class="chip t-blue">{{ acknowledged[ticket.id].chip }}</span>{% endif %}
+                  {% if ticket.id in negative_ids %}<span class="chip t-red">Negative reaction</span>{% endif %}
                   <span class="muted small">{{ ticket.source.value|capitalize }}</span>
                 </div>
                 <a class="subj" href="/tickets/{{ ticket.number }}">{{ ticket.subject }}</a>
@@ -79,7 +95,7 @@
             </td>
             <td><span class="chip {{ 't-red' if ticket.priority == 'p1' else ('t-amber' if ticket.priority == 'p2' else 't-gray') }}">{{ ticket.priority.upper() if ticket.priority else ("Untriaged" if not ticket.triaged_at else "None") }}</span></td>
             <td>
-              <span class="chip t-gray">{{ ticket.status.value.replace("_", " ")|capitalize }}</span>
+              <span class="chip t-{{ ticket.status|status_tone }}">{{ ticket.status|status_label }}</span>
               <div class="muted small">Updated {{ ticket.updated_at|local_time }}</div>
             </td>
             <td>
@@ -99,7 +115,7 @@
   </form>
   {% else %}
   <div class="empty-state">
-    {% if q or team_id or source %}
+    {% if q or team_id or source or status %}
       <strong>No tickets match.</strong>
       Try fewer words, or clear the filters.
     {% elif mine %}

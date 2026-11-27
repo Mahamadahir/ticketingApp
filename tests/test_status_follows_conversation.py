@@ -197,7 +197,7 @@ def test_both_forms_offer_the_same_six_statuses_and_never_resolved_or_closed(cli
     assert email_box[0] == [""] + OFFERED and note_box[0] == [""] + OFFERED
     assert email_box[1] == [""] and note_box[1] == [""]
     page = forms_page(client, ticket)
-    assert "Default: awaiting user" in page and "No change (in progress)" in page
+    assert "Default: Awaiting user" in page and "No change (In progress)" in page
 
 
 @pytest.mark.parametrize("chosen", OFFERED)
@@ -233,7 +233,7 @@ def test_emailing_a_ticket_with_the_supplier_defaults_to_leaving_it_there(client
     agent_for(client, db_session, team)
 
     page = forms_page(client, ticket)
-    assert "Default: with supplier" in page
+    assert "Default: With supplier" in page
     client.post(f"/tickets/{ticket.number}/email", data={"body": "Update"})
     assert status_of(db_session, ticket) == TicketStatus.WITH_SUPPLIER
 

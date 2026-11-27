@@ -12,7 +12,7 @@ in person, when it was resolved.
 """
 
 from datetime import date, datetime
-from typing import Optional
+from typing import Callable, Optional
 
 from sqlmodel import Session, select
 
@@ -99,6 +99,7 @@ def raise_ticket(
     answers: Optional[dict[int, str]] = None,
     files: Optional[list[NewFile]] = None,
     storage: Optional[Storage] = None,
+    after_create: Optional[Callable[[Ticket], None]] = None,
 ) -> Ticket:
     """Raises a ticket. With for_email an agent raises it on that person's behalf; without,
     the creator raises it for themselves. Only the agent mode can classify, assign or
@@ -195,6 +196,8 @@ def raise_ticket(
             session, ticket, sender=creator.display_name, body=description, author_user_id=creator.id, channel=PORTAL,
         )
     attach_files(session, ticket, first, creator, files, storage)
+    if after_create is not None:
+        after_create(ticket)  # before triage: a request for someone else's mailbox writes its changes here so the approval triage starts knows them (#311)
 
     if category is not None:
         triage_ticket(

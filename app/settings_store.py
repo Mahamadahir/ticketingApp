@@ -16,7 +16,7 @@ from app.models import Setting
 class SettingDef:
     key: str
     label: str
-    kind: str  # "team": a team id, empty for none; "minutes": a whole number; "percent": 1 to 99; "vote_percent": 1 to 100; "flag": on or off; "count": a whole number, 1 to 1000; "hour": a whole number, 0 to 23; "clock": a time of day written 09:00 or 17:30; "time_zone": an IANA time zone name, blank for the default; "email": one email address, blank for none; "region": one of england-and-wales, scotland, northern-ireland; "dates": a list of dates (2026-12-25, separated by commas or spaces), blank for none; "off_minutes": a whole number of minutes, 0 is off; "regex": a regular expression with the named groups the setting says
+    kind: str  # "team": a team id, empty for none; "minutes": a whole number; "percent": 1 to 99; "vote_percent": 1 to 100; "flag": on or off; "count": a whole number, 1 to 1000; "hour": a whole number, 0 to 23; "clock": a time of day written 09:00 or 17:30; "time_zone": an IANA time zone name, blank for the default; "email": one email address, blank for none; "emails": a list of email addresses separated by commas or spaces, blank for none; "region": one of england-and-wales, scotland, northern-ireland; "dates": a list of dates (2026-12-25, separated by commas or spaces), blank for none; "off_minutes": a whole number of minutes, 0 is off; "off_days": a whole number of days, 0 to 3650, 0 is off; "regex": a regular expression with the named groups the setting says; "reaction_map": reaction=positive|negative|neutral pairs separated by commas
     description: str
     default: str = ""
     group: str = ""  # one of GROUP_KEYS: the group of the Settings page this belongs to, declared with the setting (a test fails if it is missing)
@@ -32,7 +32,7 @@ class SettingDef:
         match = _TRAILING_UNIT.search(self.label)
         if match:
             return "%" if match.group(1) == "percent" else match.group(1)
-        return {"minutes": "minutes", "off_minutes": "minutes", "percent": "%", "vote_percent": "%"}.get(self.kind, "")
+        return {"minutes": "minutes", "off_minutes": "minutes", "off_days": "days", "percent": "%", "vote_percent": "%"}.get(self.kind, "")
 
     @property
     def display_label(self) -> str:
@@ -53,6 +53,7 @@ GROUP_PORTAL = "portal-and-uploads"
 GROUP_SIGN_IN = "sign-in-and-sessions"
 GROUP_DATA = "data-protection-and-reports"
 GROUP_TICKET_PAGE = "ticket-page"
+GROUP_MAILBOX = "mailbox-changes"
 GROUP_OTHER = "other"
 
 # The groups of the Settings page, in the order shown: (key, title, one line under the title).
@@ -68,6 +69,7 @@ GROUPS: tuple[tuple[str, str, str], ...] = (
     (GROUP_SIGN_IN, "Sign-in and sessions", "Idle time, session length, emergency passwords and linking another account."),
     (GROUP_DATA, "Data protection and reports", "Limits on reports and on the subject access export."),
     (GROUP_TICKET_PAGE, "Ticket page", "How the agent ticket page shows who else has the ticket open, and how long a deleted note is kept."),
+    (GROUP_MAILBOX, "Mailbox changes", "Scheduled mail forwarding and mailbox access: how often the worker looks for changes that are due, and how a failed attempt is retried."),
     (GROUP_OTHER, "Other", "Settings that belong with none of the groups above."),
 )
 GROUP_KEYS = tuple(key for key, _title, _text in GROUPS)
@@ -82,12 +84,14 @@ NOTIFICATION_KEEP_DISMISSED_DAYS = "notification_keep_dismissed_days"
 NOTIFICATION_DELETE_AFTER_DAYS = "notification_delete_after_days"
 MIN_NOTIFICATION_DELETE_DAYS = 7  # the age limit is never set shorter than a week
 AUTOMATIC_EMAIL_CAP = "automatic_email_cap_per_ticket"
+SPLIT_EMAIL_ENABLED = "split_email_enabled"
 INBOUND_MAX_PER_SENDER_HOUR = "inbound_max_per_sender_hour"
 INBOUND_MAX_ATTACHMENTS = "inbound_max_attachments"
 INBOUND_MAX_CC = "inbound_max_cc"
 TEAMS_MAX_PER_PERSON_HOUR = "teams_max_per_person_hour"
 TEAMS_HOLD_WHILE_ACTIVE_MINUTES = "teams_hold_while_active_minutes"
 TEAMS_PENDING_CHOICE_HOURS = "teams_pending_choice_hours"
+REACTION_SENTIMENTS = "reaction_sentiments"
 REPLY_ATTACH_MAX_MB = "reply_attach_max_mb"
 REQUESTER_UPLOAD_TOTAL_MB = "requester_upload_total_mb"
 REPLY_HELD_FILE_HOURS = "reply_held_file_hours"
@@ -97,6 +101,14 @@ SUBJECT_ACCESS_MAX_MB = "subject_access_max_mb"
 GRAPH_SUBSCRIPTION_MINUTES = "graph_subscription_minutes"
 GRAPH_RENEW_MARGIN_MINUTES = "graph_renew_margin_minutes"
 MAIL_BACKFILL_DAYS = "mail_backfill_days"
+MAILBOX_CHANGES_MINUTES = "mailbox_changes_poll_minutes"  # how often the mailbox-changes job looks for due changes (#307)
+MAILBOX_CHANGE_MAX_ATTEMPTS = "mailbox_change_max_attempts"
+MAILBOX_CHANGE_RETRY_MINUTES = "mailbox_change_retry_minutes"
+MAILBOX_CHANGE_LEASE_MINUTES = "mailbox_change_lease_minutes"
+MAILBOX_CHANGE_MAX_DAYS = "mailbox_change_max_days"  # the longest a person may ask for a mailbox change to last (#309)
+MAILBOX_TARGET_BLOCKLIST = "mailbox_target_blocklist"  # addresses that can never be the other person of a mailbox change (#309)
+EMAIL_REACTIONS_MINUTES = "email_reactions_poll_minutes"  # how often the Outlook reactions job reads Sent Items (#299)
+EMAIL_REACTIONS_BACKFILL_DAYS = "email_reactions_backfill_days"
 # Ticket presence (issue #246, app/ticket_presence.py)
 PRESENCE_CHECK_IN_SECONDS = "ticket_presence_check_in_seconds"
 PRESENCE_GONE_AFTER_SECONDS = "ticket_presence_gone_after_seconds"
@@ -127,6 +139,7 @@ CHASE_ENABLED = "chase_enabled"
 ACTIVITY_GROUP_MINUTES = "activity_group_minutes"
 CHASE_AFTER_DAYS = "chase_after_days"
 CHASE_RESOLVE_AFTER_DAYS = "chase_resolve_after_days"
+ACKNOWLEDGED_WAIT_RESOLVE_DAYS = "acknowledged_wait_resolve_days"
 BULK_RESOLVE_MAX = "bulk_resolve_max_tickets"
 MAX_SUB_TICKETS = "max_sub_tickets"  # shared by manual splitting and automatic sub-requests
 REQUIRED_BY_LEAD_DAYS = "required_by_lead_days"  # the queue lead time when a request type has none of its own
@@ -345,6 +358,18 @@ REGISTRY: dict[str, SettingDef] = {
         ),
         default="10",
     ),
+    SPLIT_EMAIL_ENABLED: SettingDef(
+        key=SPLIT_EMAIL_ENABLED,
+        group=GROUP_MAIL,
+        label="Split: email the requester when a ticket is split",
+        kind="flag",
+        description=(
+            "On: splitting a ticket emails its requester (copying the followers) to say the request has become separate tickets, "
+            "listing each new reference and subject. It goes out even before the ticket is triaged, and counts towards the "
+            "automatic email limit above. The wording is under Admin > Email templates (Split notice). Off: nothing is sent."
+        ),
+        default="on",
+    ),
     INBOUND_MAX_PER_SENDER_HOUR: SettingDef(
         key=INBOUND_MAX_PER_SENDER_HOUR,
         group=GROUP_MAIL,
@@ -423,6 +448,98 @@ REGISTRY: dict[str, SettingDef] = {
             "ago that was. Mail already collected is never collected twice."
         ),
         default="3",
+    ),
+    MAILBOX_CHANGES_MINUTES: SettingDef(
+        key=MAILBOX_CHANGES_MINUTES,
+        group=GROUP_MAILBOX,
+        label="Mailbox changes: how often the worker looks for due changes (minutes)",
+        kind="minutes",
+        description=(
+            "How often the worker looks for a mailbox change whose start or end time has come (or one waiting to be tried again). "
+            "A change starts or ends within about this long after its time. Placeholder until proved on staging."
+        ),
+        default="5",
+    ),
+    MAILBOX_CHANGE_MAX_ATTEMPTS: SettingDef(
+        key=MAILBOX_CHANGE_MAX_ATTEMPTS,
+        group=GROUP_MAILBOX,
+        label="Mailbox changes: attempts before a change is given up (attempts)",
+        kind="count",
+        description=(
+            "How many times the worker tries a start or a removal that fails with a temporary error before it gives up and hands "
+            "the ticket to the team. A permanent error is final at once. Nothing is shown to the requester while retries are "
+            "pending. Placeholder until proved on staging."
+        ),
+        default="3",
+    ),
+    MAILBOX_CHANGE_LEASE_MINUTES: SettingDef(
+        key=MAILBOX_CHANGE_LEASE_MINUTES,
+        group=GROUP_MAILBOX,
+        label="Mailbox changes: how long one change may be in the hands of the worker (minutes)",
+        kind="minutes",
+        description=(
+            "While the worker makes or removes a change (a call to Exchange can take several minutes) the change is held for this "
+            "long. If the worker dies mid-call the change is picked up again after this. Set it longer than the slowest call takes "
+            "(the Azure Automation timeout, 10 minutes, plus a margin). Placeholder until proved on staging."
+        ),
+        default="15",
+    ),
+    MAILBOX_CHANGE_RETRY_MINUTES: SettingDef(
+        key=MAILBOX_CHANGE_RETRY_MINUTES,
+        group=GROUP_MAILBOX,
+        label="Mailbox changes: wait before trying a failed attempt again (minutes)",
+        kind="minutes",
+        description=(
+            "After a temporary failure the same attempt waits this long, and a little longer each time (this long times the number "
+            "of attempts made so far). Placeholder until proved on staging."
+        ),
+        default="10",
+    ),
+    MAILBOX_CHANGE_MAX_DAYS: SettingDef(
+        key=MAILBOX_CHANGE_MAX_DAYS,
+        group=GROUP_MAILBOX,
+        label="Mailbox changes: longest a request may last (days)",
+        kind="count",
+        description=(
+            "The portal refuses a request to forward mail (or share a mailbox) for longer than this, counted from its start to its "
+            "end. 365 covers maternity leave. Placeholder, TBC."
+        ),
+        default="365",
+    ),
+    MAILBOX_TARGET_BLOCKLIST: SettingDef(
+        key=MAILBOX_TARGET_BLOCKLIST,
+        group=GROUP_MAILBOX,
+        label="Mailbox changes: addresses nobody may forward mail to",
+        kind="emails",
+        description=(
+            "Email addresses, separated by commas or spaces, that the portal refuses as the other person of a mailbox change. For "
+            "mailboxes hidden from the address book that the people picker cannot hide by itself, such as break-glass and service "
+            "accounts. Blank means none."
+        ),
+        default="",
+    ),
+    EMAIL_REACTIONS_MINUTES: SettingDef(
+        key=EMAIL_REACTIONS_MINUTES,
+        group=GROUP_MAIL,
+        label="Outlook reactions: how often Sent Items is read (minutes)",
+        kind="minutes",
+        description=(
+            "How often the worker looks at the shared mailbox's Sent Items for reactions people made in Outlook to the emails "
+            "the app sent. A reaction shows on the ticket within about this long. Placeholder until proved on staging."
+        ),
+        default="10",
+    ),
+    EMAIL_REACTIONS_BACKFILL_DAYS: SettingDef(
+        key=EMAIL_REACTIONS_BACKFILL_DAYS,
+        group=GROUP_MAIL,
+        label="Outlook reactions: how many days of sent mail the first read looks at",
+        kind="count",
+        description=(
+            "The first time the job runs (and if Microsoft discards its place) it reads sent mail from this many days back, so "
+            "a reaction to an email sent just before the job was switched on is still found. Later runs carry on from where the "
+            "last one stopped. Placeholder."
+        ),
+        default="14",
     ),
     JOB_LEASE_MINUTES: SettingDef(
         key=JOB_LEASE_MINUTES,
@@ -717,6 +834,18 @@ REGISTRY: dict[str, SettingDef] = {
         ),
         default="3",
     ),
+    ACKNOWLEDGED_WAIT_RESOLVE_DAYS: SettingDef(
+        key=ACKNOWLEDGED_WAIT_RESOLVE_DAYS,
+        group=GROUP_RESOLVING,
+        label="Chase: resolve an acknowledged wait automatically after (days)",
+        kind="off_days",
+        description=(
+            "A thumbs-up from the requester on a message waiting for their reply stops the chase emails and the automatic resolve. "
+            "If there is still no reply this many days after that reaction, the ticket is resolved automatically like any "
+            "unanswered one (same resolution email). 0 never resolves it: it waits until an agent acts. Placeholder, to be confirmed."
+        ),
+        default="14",
+    ),
     REQUIRED_BY_LEAD_DAYS: SettingDef(
         key=REQUIRED_BY_LEAD_DAYS,
         group=GROUP_SERVICE,
@@ -930,6 +1059,19 @@ REGISTRY: dict[str, SettingDef] = {
             "assignee (or the team's members when nobody is assigned) gets one bell entry. 0 turns it off. Placeholder."
         ),
         default="30",
+    ),
+    REACTION_SENTIMENTS: SettingDef(
+        key=REACTION_SENTIMENTS,
+        group=GROUP_TEAMS,
+        label="Reactions: what each one means",
+        kind="reaction_map",
+        description=(
+            "What a reaction to one of the bot's messages (or, later, to an email) means: positive, negative or neutral, written "
+            "as pairs like like=positive, sad=negative separated by commas. A positive reaction to a resolution message is a quick "
+            "rating, and to a resolution or a request for a reply it stops the reminders; a negative one shows a red chip until an "
+            "agent dismisses it. A reaction that is not listed is neutral: shown, never acted on. Placeholder values, TBC."
+        ),
+        default="like=positive, heart=positive, laugh=positive, sad=negative, angry=negative, surprised=neutral",
     ),
     MAX_SUB_TICKETS: SettingDef(
         key=MAX_SUB_TICKETS,

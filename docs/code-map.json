@@ -54,31 +54,31 @@
   "migrations": {
     "chain_tail": [
       {
-        "file": "migrations/versions/c255a3f8d1e6_thread_groups_and_deleted_notes.py",
-        "revision": "c255a3f8d1e6"
+        "file": "migrations/versions/c3f8a2d6b941_seed_mailbox_request_types.py",
+        "revision": "c3f8a2d6b941"
       },
       {
-        "file": "migrations/versions/b6d83f21a9c4_visible_note_and_attachment_name.py",
-        "revision": "b6d83f21a9c4"
+        "file": "migrations/versions/c8d4a1e6f257_mailbox_on_behalf_approvals.py",
+        "revision": "c8d4a1e6f257"
       },
       {
-        "file": "migrations/versions/a4e7b19c3d58_ticket_presence.py",
-        "revision": "a4e7b19c3d58"
+        "file": "migrations/versions/b5e2c8a1f903_request_type_mailbox_action.py",
+        "revision": "b5e2c8a1f903"
       },
       {
-        "file": "migrations/versions/c239d1a7e5b3_notification_dismissed_at.py",
-        "revision": "c239d1a7e5b3"
+        "file": "migrations/versions/d7a3f9b2c614_mailbox_change.py",
+        "revision": "d7a3f9b2c614"
       },
       {
-        "file": "migrations/versions/c4f7a2b9e813_request_type_icon_and_approval_notice.py",
-        "revision": "c4f7a2b9e813"
+        "file": "migrations/versions/a4d8e1b6c297_ticket_sla_starts_at.py",
+        "revision": "a4d8e1b6c297"
       }
     ],
-    "count": 73,
+    "count": 84,
     "heads": [
       {
-        "file": "migrations/versions/c255a3f8d1e6_thread_groups_and_deleted_notes.py",
-        "revision": "c255a3f8d1e6"
+        "file": "migrations/versions/c3f8a2d6b941_seed_mailbox_request_types.py",
+        "revision": "c3f8a2d6b941"
       }
     ]
   },
@@ -121,6 +121,7 @@
       "imports": [
         "app.config",
         "app.models",
+        "app.reactions",
         "app.reopening",
         "app.settings_store"
       ],
@@ -130,7 +131,8 @@
       "tables": [],
       "tests": [
         "tests/test_action_links.py",
-        "tests/test_closing_email.py"
+        "tests/test_closing_email.py",
+        "tests/test_reactions.py"
       ]
     },
     {
@@ -143,6 +145,7 @@
         "record_activity"
       ],
       "imported_by": [
+        "app.admin_people",
         "app.main",
         "app.routers.admin",
         "app.routers.auth"
@@ -157,7 +160,8 @@
       "summary": "Security and request activity: who did what, from where, and what happened.",
       "tables": [],
       "tests": [
-        "tests/test_activity_log.py"
+        "tests/test_activity_log.py",
+        "tests/test_admin_users_page.py"
       ]
     },
     {
@@ -193,7 +197,49 @@
       "tables": [],
       "tests": [
         "tests/test_admin_frame.py",
+        "tests/test_mailbox_seed_types.py",
         "tests/test_notification_dismiss.py"
+      ]
+    },
+    {
+      "classes": [
+        "DrawnSection",
+        "Fact",
+        "FactValue",
+        "ListRow",
+        "PersonContext",
+        "Section"
+      ],
+      "file": "app/admin_people.py",
+      "functions": [
+        "glance",
+        "list_rows",
+        "person_chips",
+        "person_page_context",
+        "person_url",
+        "refusal_page",
+        "role_label",
+        "sections_for"
+      ],
+      "imported_by": [
+        "app.routers.admin"
+      ],
+      "imports": [
+        "app.activity",
+        "app.identity",
+        "app.linked_identities",
+        "app.models",
+        "app.permissions",
+        "app.sessions",
+        "app.status_display",
+        "app.templating"
+      ],
+      "module": "app.admin_people",
+      "routes": [],
+      "summary": "Admin > Users: a page per person (#322), built to grow.",
+      "tables": [],
+      "tests": [
+        "tests/test_admin_users_page.py"
       ]
     },
     {
@@ -225,6 +271,7 @@
         "step_followers",
         "step_held_files",
         "step_inbound_sender",
+        "step_mailbox_changes",
         "step_message_body",
         "step_message_cc",
         "step_message_sender",
@@ -258,6 +305,8 @@
       "tables": [],
       "tests": [
         "tests/test_anonymisation.py",
+        "tests/test_mailbox_changes.py",
+        "tests/test_reactions.py",
         "tests/test_requester_change.py",
         "tests/test_teams_followups.py"
       ]
@@ -280,10 +329,7 @@
         "types_using"
       ],
       "imported_by": [
-        "app.approval_reminders",
         "app.approvals",
-        "app.bot_cards",
-        "app.mail",
         "app.request_types",
         "app.routers.admin"
       ],
@@ -301,8 +347,10 @@
         "tests/test_approval_reminders.py",
         "tests/test_approvals.py",
         "tests/test_entra_check.py",
+        "tests/test_mailbox_on_behalf.py",
         "tests/test_outbound_mail.py",
         "tests/test_portal_home.py",
+        "tests/test_portal_mailbox.py",
         "tests/test_portal_new.py",
         "tests/test_request_types.py",
         "tests/test_teams_approvals.py"
@@ -328,6 +376,7 @@
       "tables": [],
       "tests": [
         "tests/test_approvals.py",
+        "tests/test_mailbox_on_behalf.py",
         "tests/test_outbound_mail.py"
       ]
     },
@@ -341,7 +390,6 @@
         "app.scheduled_jobs"
       ],
       "imports": [
-        "app.approval_groups",
         "app.approvals",
         "app.audit",
         "app.models",
@@ -377,8 +425,12 @@
         "drop_votes_of",
         "eligible_voters",
         "is_waiting_for_approvers",
+        "mailbox_owner_address",
+        "mailbox_owner_voter",
+        "may_answer",
         "may_self_approve",
         "needs_approval",
+        "note_required",
         "outcome",
         "pending_for",
         "reconcile_approvals",
@@ -401,9 +453,11 @@
         "app.entra_check",
         "app.linked_identities",
         "app.mail",
+        "app.mailbox_changes",
         "app.messages",
         "app.navigation",
         "app.notifications",
+        "app.portal_mailbox",
         "app.request_types",
         "app.requester_change",
         "app.routers.admin",
@@ -419,6 +473,7 @@
         "app.audit",
         "app.email_templates",
         "app.identity",
+        "app.mailbox_changes",
         "app.messages",
         "app.models",
         "app.notifications",
@@ -436,6 +491,7 @@
         "tests/test_approvals.py",
         "tests/test_email_templates.py",
         "tests/test_linked_identities.py",
+        "tests/test_mailbox_on_behalf.py",
         "tests/test_outbound_mail.py",
         "tests/test_requester_bell.py",
         "tests/test_self_approval.py",
@@ -502,6 +558,7 @@
         "tests/test_msp_mail.py",
         "tests/test_reply_files.py",
         "tests/test_subject_access.py",
+        "tests/test_ticket_page_queries.py",
         "tests/test_ticket_redesign.py",
         "tests/test_ticket_thread.py"
       ]
@@ -529,11 +586,13 @@
         "app.inbound",
         "app.intake",
         "app.linked_identities",
+        "app.mailbox_changes",
         "app.messages",
         "app.msp",
         "app.msp_actions",
         "app.notification_settings",
         "app.outage",
+        "app.reactions",
         "app.reopening",
         "app.report_kit",
         "app.request_types",
@@ -628,11 +687,11 @@
       "functions": [
         "close_resolved_tickets",
         "report_given_up_chases",
+        "resolve_acknowledged",
         "resolve_unanswered",
         "run_auto_close",
         "run_chase",
-        "send_chases",
-        "waiting_since"
+        "send_chases"
       ],
       "imported_by": [
         "app.scheduled_jobs"
@@ -643,6 +702,7 @@
         "app.models",
         "app.notifications",
         "app.outbox",
+        "app.reactions",
         "app.resolution",
         "app.settings_store",
         "app.splitting",
@@ -654,8 +714,11 @@
       "summary": "Auto-close and chase (phase 4H): two recurring jobs on the database-driven scheduler",
       "tables": [],
       "tests": [
+        "tests/test_acknowledged_backstop.py",
         "tests/test_auto_close_chase.py",
-        "tests/test_closing_email.py"
+        "tests/test_closing_email.py",
+        "tests/test_email_reactions.py",
+        "tests/test_reactions.py"
       ]
     },
     {
@@ -665,8 +728,7 @@
       "file": "app/backdating.py",
       "functions": [
         "backdate_ticket",
-        "may_backdate",
-        "parse_moment"
+        "may_backdate"
       ],
       "imported_by": [
         "app.raising",
@@ -685,8 +747,7 @@
       "summary": "Logging tickets and fixes after the fact. Nothing here commits.",
       "tables": [],
       "tests": [
-        "tests/test_backdating.py",
-        "tests/test_time_zones.py"
+        "tests/test_backdating.py"
       ]
     },
     {
@@ -747,7 +808,6 @@
         "app.teams_intake"
       ],
       "imports": [
-        "app.approval_groups",
         "app.approvals",
         "app.identity",
         "app.messages",
@@ -1037,6 +1097,7 @@
         "app.breakglass",
         "app.check_settings",
         "app.database",
+        "app.email_reactions",
         "app.entra_check",
         "app.followers",
         "app.graph_client",
@@ -1045,9 +1106,13 @@
         "app.jobs",
         "app.linked_identities",
         "app.mail",
+        "app.mailbox_changes",
+        "app.mailbox_executor",
+        "app.mailbox_executor_azure",
         "app.main",
         "app.msp",
         "app.outbox",
+        "app.people_directory",
         "app.rate_limit",
         "app.reply_files",
         "app.requester_change",
@@ -1068,7 +1133,9 @@
         "app.telemetry",
         "app.worker"
       ],
-      "imports": [],
+      "imports": [
+        "app.mailbox_executor_azure"
+      ],
       "module": "app.config",
       "routes": [],
       "summary": "",
@@ -1085,12 +1152,16 @@
         "tests/test_break_glass.py",
         "tests/test_bulk_resolve.py",
         "tests/test_closing_email.py",
+        "tests/test_email_reactions.py",
         "tests/test_entra_check.py",
         "tests/test_follower_updates.py",
         "tests/test_handoff_bells_holidays.py",
         "tests/test_inbound_mail.py",
         "tests/test_linked_identities.py",
         "tests/test_mail_subscriptions.py",
+        "tests/test_mailbox_changes.py",
+        "tests/test_mailbox_executor_azure.py",
+        "tests/test_mailbox_third_person.py",
         "tests/test_message_channel.py",
         "tests/test_msp.py",
         "tests/test_msp_actions.py",
@@ -1099,6 +1170,7 @@
         "tests/test_outage_mode.py",
         "tests/test_outbound_mail.py",
         "tests/test_portal_home.py",
+        "tests/test_portal_mailbox.py",
         "tests/test_portal_new.py",
         "tests/test_portal_request.py",
         "tests/test_presence.py",
@@ -1157,6 +1229,7 @@
         "app.scheduled_jobs",
         "app.sessions",
         "app.teams_bot",
+        "app.teams_intake",
         "app.templating",
         "app.worker"
       ],
@@ -1170,6 +1243,7 @@
       "tests": [
         "tests/conftest.py",
         "tests/test_access_context.py",
+        "tests/test_admin_users_page.py",
         "tests/test_anonymisation.py",
         "tests/test_approval_groups.py",
         "tests/test_approval_reminders.py",
@@ -1184,16 +1258,23 @@
         "tests/test_inbound_mail.py",
         "tests/test_linking.py",
         "tests/test_mail_subscriptions.py",
+        "tests/test_mailbox_access.py",
+        "tests/test_mailbox_changes.py",
+        "tests/test_mailbox_on_behalf.py",
         "tests/test_notification_dismiss.py",
         "tests/test_notification_followup.py",
         "tests/test_outbound_mail.py",
+        "tests/test_portal_mailbox.py",
         "tests/test_scheduled_jobs.py",
+        "tests/test_scheduled_jobs_page.py",
         "tests/test_split_family.py",
         "tests/test_splitting.py",
+        "tests/test_team_activity_cards.py",
         "tests/test_teams_copy.py",
         "tests/test_teams_copy_sending.py",
         "tests/test_teams_intake.py",
         "tests/test_ticket_core.py",
+        "tests/test_ticket_page_queries.py",
         "tests/test_withdraw.py",
         "tests/test_worker.py"
       ]
@@ -1221,7 +1302,44 @@
       "summary": "The morning of a Scheduled ticket's Due date (issue #121). Nothing here commits.",
       "tables": [],
       "tests": [
-        "tests/test_due_date.py"
+        "tests/test_due_date.py",
+        "tests/test_mailbox_changes.py"
+      ]
+    },
+    {
+      "classes": [
+        "FormatNotUnderstood",
+        "Reaction",
+        "RunCounts"
+      ],
+      "file": "app/email_reactions.py",
+      "functions": [
+        "decode_blob",
+        "outbox_row_for",
+        "properties_of",
+        "recipients_of",
+        "run_email_reactions",
+        "went_to_a_party"
+      ],
+      "imported_by": [
+        "app.scheduled_jobs"
+      ],
+      "imports": [
+        "app.config",
+        "app.graph_client",
+        "app.identity",
+        "app.models",
+        "app.reactions",
+        "app.settings_store",
+        "app.subscriptions",
+        "app.ticket_service"
+      ],
+      "module": "app.email_reactions",
+      "routes": [],
+      "summary": "Reactions in Outlook (issue #299): the recurring job that reads them from the shared mailbox's Sent Items.",
+      "tables": [],
+      "tests": [
+        "tests/test_email_reactions.py"
       ]
     },
     {
@@ -1248,6 +1366,7 @@
         "app.approvals",
         "app.closing",
         "app.mail",
+        "app.mailbox_changes",
         "app.messages",
         "app.msp",
         "app.msp_actions",
@@ -1271,6 +1390,7 @@
         "tests/test_email_header.py",
         "tests/test_email_templates.py",
         "tests/test_follower_updates.py",
+        "tests/test_mailbox_access.py",
         "tests/test_msp_actions.py",
         "tests/test_requester_change.py",
         "tests/test_resolution.py",
@@ -1456,6 +1576,7 @@
         "app.messages",
         "app.msp",
         "app.notifications",
+        "app.people_directory",
         "app.raising",
         "app.reopening",
         "app.requester_change",
@@ -1484,10 +1605,12 @@
         "tests/test_never_follow.py",
         "tests/test_portal_new.py",
         "tests/test_portal_request.py",
+        "tests/test_reactions.py",
         "tests/test_reopening.py",
         "tests/test_reply_notification.py",
         "tests/test_requester_bell.py",
         "tests/test_requester_change.py",
+        "tests/test_split_before_triage.py",
         "tests/test_withdraw.py"
       ]
     },
@@ -1519,6 +1642,7 @@
       "tables": [],
       "tests": [
         "tests/test_canned.py",
+        "tests/test_htmx_errors.py",
         "tests/test_pagination_and_limits.py",
         "tests/test_resolution.py"
       ]
@@ -1530,9 +1654,11 @@
       "file": "app/graph_client.py",
       "functions": [],
       "imported_by": [
+        "app.email_reactions",
         "app.entra_check",
         "app.inbound",
         "app.mail",
+        "app.people_directory",
         "app.presence",
         "app.subscriptions",
         "app.time_zones"
@@ -1545,11 +1671,13 @@
       "summary": "Microsoft Graph client for the shared IT support mailbox.",
       "tables": [],
       "tests": [
+        "tests/test_email_reactions.py",
         "tests/test_entra_check.py",
         "tests/test_inbound_mail.py",
         "tests/test_mail_subscriptions.py",
         "tests/test_msp_mail.py",
         "tests/test_outbound_mail.py",
+        "tests/test_portal_mailbox.py",
         "tests/test_presence.py",
         "tests/test_time_zones.py"
       ]
@@ -1576,16 +1704,22 @@
         "resolve_sso_user"
       ],
       "imported_by": [
+        "app.admin_people",
         "app.approvals",
         "app.auth",
         "app.bot_cards",
+        "app.email_reactions",
         "app.inbound",
         "app.linked_identities",
         "app.mail",
+        "app.mailbox_changes",
         "app.msp",
         "app.notifications",
+        "app.people_directory",
         "app.person_data",
+        "app.portal_mailbox",
         "app.raising",
+        "app.reactions",
         "app.reply_channel",
         "app.requester_change",
         "app.routers.auth",
@@ -1595,6 +1729,7 @@
         "app.teams_approvals",
         "app.teams_conversations",
         "app.teams_intake",
+        "app.teams_reactions",
         "app.time_zones",
         "app.visibility"
       ],
@@ -1654,6 +1789,7 @@
         "app.reply_channel",
         "app.settings_store",
         "app.storage",
+        "app.subscriptions",
         "app.teams",
         "app.ticket_service",
         "app.time_zones"
@@ -1664,6 +1800,7 @@
       "tables": [],
       "tests": [
         "tests/test_acknowledgement.py",
+        "tests/test_admin_mail_pages.py",
         "tests/test_anonymisation.py",
         "tests/test_follower_updates.py",
         "tests/test_inbound_mail.py",
@@ -1716,6 +1853,31 @@
         "tests/test_inbound_mail.py",
         "tests/test_teams_followups.py",
         "tests/test_teams_intake.py"
+      ]
+    },
+    {
+      "classes": [],
+      "file": "app/job_errors.py",
+      "functions": [
+        "outage_refusal_key",
+        "outage_sentence",
+        "run_now_key",
+        "run_now_sentence",
+        "summarise_error"
+      ],
+      "imported_by": [
+        "app.routers.admin"
+      ],
+      "imports": [
+        "app.models",
+        "app.scheduled_jobs"
+      ],
+      "module": "app.job_errors",
+      "routes": [],
+      "summary": "How the Scheduled jobs page shows a job's stored error and a Run now result (#323), and the result sentences of the",
+      "tables": [],
+      "tests": [
+        "tests/test_scheduled_jobs_page.py"
       ]
     },
     {
@@ -1804,6 +1966,7 @@
         "user_foreign_keys"
       ],
       "imported_by": [
+        "app.admin_people",
         "app.routers.admin",
         "app.routers.link_account"
       ],
@@ -1826,7 +1989,9 @@
       "summary": "Linked identities (phase 6E, #165): one person known by a second identity.",
       "tables": [],
       "tests": [
-        "tests/test_linked_identities.py"
+        "tests/test_admin_users_page.py",
+        "tests/test_linked_identities.py",
+        "tests/test_reactions.py"
       ]
     },
     {
@@ -1893,12 +2058,14 @@
         "build_chase_mail",
         "build_emergency_reset_mail",
         "build_follower_update_mail",
+        "build_mailbox_change_mail",
         "build_message_mail",
         "build_msp_forward_mail",
         "build_msp_handoff_mail",
         "build_msp_release_mail",
         "build_raised_for_mail",
         "build_requester_changed_mail",
+        "build_split_notice_mail",
         "cap_release",
         "deliver_mail",
         "describe_failure",
@@ -1921,7 +2088,6 @@
       ],
       "imports": [
         "app.action_links",
-        "app.approval_groups",
         "app.approval_links",
         "app.approvals",
         "app.config",
@@ -1938,6 +2104,7 @@
         "app.outbox",
         "app.person_data",
         "app.raising",
+        "app.reactions",
         "app.settings_store",
         "app.storage",
         "app.teams"
@@ -1952,11 +2119,14 @@
         "tests/test_anonymisation.py",
         "tests/test_approval_reminders.py",
         "tests/test_auto_close_chase.py",
+        "tests/test_card_refusals.py",
         "tests/test_closing_email.py",
         "tests/test_email_header.py",
+        "tests/test_email_reactions.py",
         "tests/test_email_templates.py",
         "tests/test_follower_updates.py",
         "tests/test_linked_identities.py",
+        "tests/test_mailbox_on_behalf.py",
         "tests/test_msp.py",
         "tests/test_msp_actions.py",
         "tests/test_msp_mail.py",
@@ -1966,9 +2136,142 @@
         "tests/test_reply_files.py",
         "tests/test_requester_change.py",
         "tests/test_resolution.py",
+        "tests/test_split_before_triage.py",
         "tests/test_teams_followups.py",
         "tests/test_ticket_presence.py",
         "tests/test_withdraw.py"
+      ]
+    },
+    {
+      "classes": [
+        "MailboxChangeError"
+      ],
+      "file": "app/mailbox_changes.py",
+      "functions": [
+        "after_approval",
+        "cancel",
+        "cancel_by_requester",
+        "change_for_ticket",
+        "changes_for_ticket",
+        "create_mailbox_change",
+        "done_by_hand",
+        "drop_unstarted",
+        "failed_change_for_ticket",
+        "failed_phase",
+        "finish_on_behalf",
+        "lock_owner",
+        "max_attempts",
+        "pending_change_condition",
+        "run_mailbox_changes",
+        "schedule_ticket",
+        "stop_now",
+        "try_again",
+        "utcnow",
+        "was_declined"
+      ],
+      "imported_by": [
+        "app.approvals",
+        "app.portal_mailbox",
+        "app.routers.portal",
+        "app.routers.tickets",
+        "app.scheduled_jobs"
+      ],
+      "imports": [
+        "app.approvals",
+        "app.audit",
+        "app.config",
+        "app.email_templates",
+        "app.identity",
+        "app.mailbox_executor",
+        "app.messages",
+        "app.models",
+        "app.notifications",
+        "app.outbox",
+        "app.resolution",
+        "app.settings_store",
+        "app.sla",
+        "app.ticket_service",
+        "app.time_zones",
+        "app.triage"
+      ],
+      "module": "app.mailbox_changes",
+      "routes": [],
+      "summary": "Scheduled mailbox changes: what happens on the ticket and to the row (#307; tracker #305).",
+      "tables": [],
+      "tests": [
+        "tests/test_mailbox_access.py",
+        "tests/test_mailbox_changes.py",
+        "tests/test_mailbox_on_behalf.py",
+        "tests/test_mailbox_third_person.py",
+        "tests/test_portal_mailbox.py"
+      ]
+    },
+    {
+      "classes": [
+        "ExecutorNotAvailable",
+        "ExecutorResult",
+        "FakeExecutor",
+        "MailboxExecutor"
+      ],
+      "file": "app/mailbox_executor.py",
+      "functions": [
+        "get_executor",
+        "is_enabled",
+        "make_executor",
+        "set_executor"
+      ],
+      "imported_by": [
+        "app.mailbox_changes",
+        "app.mailbox_executor_azure",
+        "app.portal_mailbox",
+        "app.request_types"
+      ],
+      "imports": [
+        "app.config",
+        "app.mailbox_executor_azure",
+        "app.models"
+      ],
+      "module": "app.mailbox_executor",
+      "routes": [],
+      "summary": "The only code that talks to Exchange about scheduled mailbox changes (#307; the real executor is #308).",
+      "tables": [],
+      "tests": [
+        "tests/test_mailbox_access.py",
+        "tests/test_mailbox_changes.py",
+        "tests/test_mailbox_executor_azure.py",
+        "tests/test_mailbox_on_behalf.py",
+        "tests/test_portal_mailbox.py"
+      ]
+    },
+    {
+      "classes": [
+        "AzureAutomationExecutor",
+        "ChangeRequest",
+        "JobRequest"
+      ],
+      "file": "app/mailbox_executor_azure.py",
+      "functions": [
+        "azure_executor_config_errors",
+        "executor_from_settings",
+        "job_request",
+        "request_from_change"
+      ],
+      "imported_by": [
+        "app.config",
+        "app.mailbox_executor"
+      ],
+      "imports": [
+        "app.config",
+        "app.mailbox_executor",
+        "app.models"
+      ],
+      "module": "app.mailbox_executor_azure",
+      "routes": [],
+      "summary": "The real route to Exchange for mailbox changes: an Azure Automation account runs a fixed runbook.",
+      "tables": [],
+      "tests": [
+        "tests/test_mailbox_executor_azure.py",
+        "tests/test_runbooks.py"
       ]
     },
     {
@@ -2028,6 +2331,7 @@
         "tests/test_anonymisation.py",
         "tests/test_attachments.py",
         "tests/test_break_glass.py",
+        "tests/test_card_refusals.py",
         "tests/test_entra_check.py",
         "tests/test_health.py",
         "tests/test_htmx_errors.py",
@@ -2040,6 +2344,7 @@
         "tests/test_subject_access.py",
         "tests/test_teams_bot.py",
         "tests/test_teams_hold.py",
+        "tests/test_ticket_page_queries.py",
         "tests/test_ticket_presence.py",
         "tests/test_ticket_redesign.py",
         "tests/test_ticket_thread.py",
@@ -2065,6 +2370,7 @@
         "add_visible_note",
         "agent_timeline",
         "attach_files",
+        "can_email_now",
         "chosen_status",
         "default_status_after_email",
         "delete_note",
@@ -2085,6 +2391,8 @@
         "record_inbound",
         "record_msp_message",
         "record_notice",
+        "record_split_notice",
+        "record_system_note",
         "reopen_deadline",
         "requester_kind",
         "requester_last_update",
@@ -2105,6 +2413,7 @@
         "app.escalation",
         "app.intake",
         "app.mail",
+        "app.mailbox_changes",
         "app.msp",
         "app.msp_actions",
         "app.raising",
@@ -2128,6 +2437,7 @@
         "app.followers",
         "app.models",
         "app.notifications",
+        "app.outbox",
         "app.reply_channel",
         "app.request_questions",
         "app.settings_store",
@@ -2145,9 +2455,12 @@
       "tests": [
         "tests/test_email_header.py",
         "tests/test_email_preview.py",
+        "tests/test_email_reactions.py",
         "tests/test_escalation_tidy.py",
         "tests/test_follower_updates.py",
         "tests/test_inbound_mail.py",
+        "tests/test_mailbox_changes.py",
+        "tests/test_mailbox_on_behalf.py",
         "tests/test_message_channel.py",
         "tests/test_messages.py",
         "tests/test_msp_mail.py",
@@ -2156,12 +2469,14 @@
         "tests/test_outbound_mail.py",
         "tests/test_portal_home.py",
         "tests/test_portal_request.py",
+        "tests/test_reactions.py",
         "tests/test_reply_files.py",
         "tests/test_reply_notification.py",
         "tests/test_request_questions.py",
         "tests/test_requester_change.py",
         "tests/test_resolution.py",
         "tests/test_scheduled_status.py",
+        "tests/test_split_before_triage.py",
         "tests/test_split_family.py",
         "tests/test_teams_followups.py",
         "tests/test_teams_intake.py",
@@ -2181,6 +2496,7 @@
         "Attachment",
         "AuditLog",
         "BankHolidayCache",
+        "BotMessage",
         "CannedResponse",
         "Category",
         "EmailTemplate",
@@ -2190,6 +2506,7 @@
         "LinkCode",
         "LinkedIdentity",
         "MailSyncState",
+        "MailboxChange",
         "MembershipLevel",
         "Message",
         "MessageDirection",
@@ -2225,6 +2542,7 @@
         "TicketFeedback",
         "TicketFollower",
         "TicketPresence",
+        "TicketReaction",
         "TicketSource",
         "TicketStatus",
         "TicketType",
@@ -2241,6 +2559,7 @@
         "app.action_links",
         "app.activity",
         "app.admin_home",
+        "app.admin_people",
         "app.anonymisation",
         "app.approval_groups",
         "app.approval_reminders",
@@ -2258,6 +2577,7 @@
         "app.categories",
         "app.closing",
         "app.due_today",
+        "app.email_reactions",
         "app.email_templates",
         "app.emergency",
         "app.entra_check",
@@ -2268,9 +2588,13 @@
         "app.identity",
         "app.inbound",
         "app.intake",
+        "app.job_errors",
         "app.linked_identities",
         "app.linking",
         "app.mail",
+        "app.mailbox_changes",
+        "app.mailbox_executor",
+        "app.mailbox_executor_azure",
         "app.main",
         "app.messages",
         "app.msp",
@@ -2283,10 +2607,13 @@
         "app.notifications",
         "app.outage",
         "app.outbox",
+        "app.people_directory",
         "app.permissions",
         "app.person_data",
+        "app.portal_mailbox",
         "app.presence",
         "app.raising",
+        "app.reactions",
         "app.reopening",
         "app.reply_channel",
         "app.reply_files",
@@ -2319,6 +2646,7 @@
         "app.settings_store",
         "app.sla",
         "app.splitting",
+        "app.status_display",
         "app.subject_access",
         "app.subrequests",
         "app.subscriptions",
@@ -2328,6 +2656,7 @@
         "app.teams_conversations",
         "app.teams_intake",
         "app.teams_pending",
+        "app.teams_reactions",
         "app.templating",
         "app.thanks_rules",
         "app.theme",
@@ -2381,6 +2710,10 @@
           "table": "bankholidaycache"
         },
         {
+          "class": "BotMessage",
+          "table": "bot_message"
+        },
+        {
           "class": "CannedResponse",
           "table": "cannedresponse"
         },
@@ -2415,6 +2748,10 @@
         {
           "class": "MailSyncState",
           "table": "mailsyncstate"
+        },
+        {
+          "class": "MailboxChange",
+          "table": "mailbox_change"
         },
         {
           "class": "Message",
@@ -2545,6 +2882,10 @@
           "table": "ticket_presence"
         },
         {
+          "class": "TicketReaction",
+          "table": "ticket_reaction"
+        },
+        {
           "class": "User",
           "table": "user"
         },
@@ -2560,6 +2901,7 @@
       "tests": [
         "tests/conftest.py",
         "tests/test_access_context.py",
+        "tests/test_acknowledged_backstop.py",
         "tests/test_acknowledgement.py",
         "tests/test_action_links.py",
         "tests/test_activity_log.py",
@@ -2586,12 +2928,14 @@
         "tests/test_break_glass.py",
         "tests/test_bulk_resolve.py",
         "tests/test_canned.py",
+        "tests/test_card_refusals.py",
         "tests/test_category_admin.py",
         "tests/test_closing_email.py",
         "tests/test_due_date.py",
         "tests/test_due_date_review.py",
         "tests/test_email_header.py",
         "tests/test_email_preview.py",
+        "tests/test_email_reactions.py",
         "tests/test_email_templates.py",
         "tests/test_entra_check.py",
         "tests/test_escalation.py",
@@ -2608,6 +2952,12 @@
         "tests/test_linking.py",
         "tests/test_login_lockout.py",
         "tests/test_mail_subscriptions.py",
+        "tests/test_mailbox_access.py",
+        "tests/test_mailbox_changes.py",
+        "tests/test_mailbox_executor_azure.py",
+        "tests/test_mailbox_on_behalf.py",
+        "tests/test_mailbox_seed_types.py",
+        "tests/test_mailbox_third_person.py",
         "tests/test_message_channel.py",
         "tests/test_messages.py",
         "tests/test_msp.py",
@@ -2625,12 +2975,15 @@
         "tests/test_permissions.py",
         "tests/test_portal.py",
         "tests/test_portal_home.py",
+        "tests/test_portal_mailbox.py",
         "tests/test_portal_new.py",
         "tests/test_portal_request.py",
         "tests/test_presence.py",
         "tests/test_public_surface.py",
         "tests/test_queue_page.py",
+        "tests/test_queue_status_sort.py",
         "tests/test_raising.py",
+        "tests/test_reactions.py",
         "tests/test_reopening.py",
         "tests/test_reply_files.py",
         "tests/test_reply_notification.py",
@@ -2644,6 +2997,7 @@
         "tests/test_required_by.py",
         "tests/test_resolution.py",
         "tests/test_scheduled_jobs.py",
+        "tests/test_scheduled_jobs_page.py",
         "tests/test_scheduled_status.py",
         "tests/test_search.py",
         "tests/test_self_approval.py",
@@ -2651,12 +3005,14 @@
         "tests/test_shell.py",
         "tests/test_signin_pages.py",
         "tests/test_sla.py",
+        "tests/test_split_before_triage.py",
         "tests/test_split_family.py",
         "tests/test_splitting.py",
         "tests/test_sso_cancel.py",
         "tests/test_status_follows_conversation.py",
         "tests/test_subject_access.py",
         "tests/test_subrequests.py",
+        "tests/test_super_admin_assignee.py",
         "tests/test_team_activity.py",
         "tests/test_team_activity_cards.py",
         "tests/test_teams.py",
@@ -2671,6 +3027,7 @@
         "tests/test_thanks_rules.py",
         "tests/test_ticket_core.py",
         "tests/test_ticket_page.py",
+        "tests/test_ticket_page_queries.py",
         "tests/test_ticket_presence.py",
         "tests/test_ticket_redesign.py",
         "tests/test_ticket_thread.py",
@@ -2777,6 +3134,7 @@
         "tests/test_msp_mail.py",
         "tests/test_msp_real_mail.py",
         "tests/test_reports_more.py",
+        "tests/test_super_admin_assignee.py",
         "tests/test_ticket_thread.py"
       ]
     },
@@ -3034,6 +3392,7 @@
         "notify_chase_given_up",
         "notify_due_today",
         "notify_link_requested",
+        "notify_mailbox_change_failed",
         "notify_mentions",
         "notify_msp_handed_off",
         "notify_msp_handoff_warning",
@@ -3064,10 +3423,12 @@
         "app.escalation",
         "app.jobs",
         "app.linked_identities",
+        "app.mailbox_changes",
         "app.messages",
         "app.msp",
         "app.navigation",
         "app.outage",
+        "app.reactions",
         "app.reopening",
         "app.resolution",
         "app.routers.auth",
@@ -3112,6 +3473,7 @@
         "tests/test_teams_copy_sending.py",
         "tests/test_teams_dm.py",
         "tests/test_teams_hold.py",
+        "tests/test_ticket_page_queries.py",
         "tests/test_ticket_redesign.py",
         "tests/test_ticket_thread.py"
       ]
@@ -3152,6 +3514,7 @@
         "tests/test_admin_frame.py",
         "tests/test_admin_system_log_pages.py",
         "tests/test_outage_mode.py",
+        "tests/test_scheduled_jobs_page.py",
         "tests/test_signin_pages.py"
       ]
     },
@@ -3168,6 +3531,7 @@
         "queue_chase",
         "queue_emergency_reset",
         "queue_follower_update",
+        "queue_mailbox_change_mail",
         "queue_message",
         "queue_msp_forward",
         "queue_msp_handoff",
@@ -3182,6 +3546,8 @@
         "app.follower_updates",
         "app.inbound",
         "app.mail",
+        "app.mailbox_changes",
+        "app.messages",
         "app.msp",
         "app.msp_actions",
         "app.outage",
@@ -3193,7 +3559,8 @@
       "imports": [
         "app.config",
         "app.models",
-        "app.notification_settings"
+        "app.notification_settings",
+        "app.reactions"
       ],
       "module": "app.outbox",
       "routes": [],
@@ -3207,13 +3574,18 @@
         "tests/test_bulk_resolve.py",
         "tests/test_closing_email.py",
         "tests/test_email_header.py",
+        "tests/test_email_reactions.py",
         "tests/test_email_templates.py",
         "tests/test_follower_updates.py",
+        "tests/test_mailbox_access.py",
+        "tests/test_mailbox_changes.py",
+        "tests/test_mailbox_on_behalf.py",
         "tests/test_msp_mail.py",
         "tests/test_outbound_mail.py",
         "tests/test_reply_files.py",
         "tests/test_requester_change.py",
         "tests/test_resolution.py",
+        "tests/test_split_before_triage.py",
         "tests/test_teams_approvals.py",
         "tests/test_withdraw.py"
       ]
@@ -3242,8 +3614,38 @@
       "tests": [
         "tests/test_hardening.py",
         "tests/test_pagination_and_limits.py",
+        "tests/test_queue_status_sort.py",
         "tests/test_sla.py"
       ]
+    },
+    {
+      "classes": [
+        "DirectoryError",
+        "Person"
+      ],
+      "file": "app/people_directory.py",
+      "functions": [
+        "blocklist",
+        "resolve",
+        "search"
+      ],
+      "imported_by": [
+        "app.portal_mailbox",
+        "app.routers.portal"
+      ],
+      "imports": [
+        "app.config",
+        "app.followers",
+        "app.graph_client",
+        "app.identity",
+        "app.models",
+        "app.settings_store"
+      ],
+      "module": "app.people_directory",
+      "routes": [],
+      "summary": "The people picker's directory (#309): who a person may choose as the other person of a mailbox change.",
+      "tables": [],
+      "tests": []
     },
     {
       "classes": [
@@ -3252,6 +3654,7 @@
       "file": "app/permissions.py",
       "functions": [],
       "imported_by": [
+        "app.admin_people",
         "app.routers.admin",
         "app.routers.data_protection",
         "app.routers.reports",
@@ -3268,7 +3671,9 @@
       "tests": [
         "tests/test_admin_users_page.py",
         "tests/test_anonymisation.py",
+        "tests/test_mailbox_on_behalf.py",
         "tests/test_permissions.py",
+        "tests/test_portal_mailbox.py",
         "tests/test_reports.py",
         "tests/test_reports_more.py",
         "tests/test_subject_access.py"
@@ -3310,10 +3715,63 @@
       "tables": [],
       "tests": [
         "tests/test_anonymisation.py",
+        "tests/test_mailbox_changes.py",
+        "tests/test_reactions.py",
         "tests/test_requester_change.py",
         "tests/test_subject_access.py",
         "tests/test_teams_followups.py",
         "tests/test_ticket_redesign.py"
+      ]
+    },
+    {
+      "classes": [
+        "AccessForm",
+        "ChangeView",
+        "ConfirmAccess",
+        "ConfirmNoCopy",
+        "ForwardingForm",
+        "MailboxFormError",
+        "OwnerRefused",
+        "TargetRefused",
+        "Times"
+      ],
+      "file": "app/portal_mailbox.py",
+      "functions": [
+        "access_warning",
+        "approval_note",
+        "approval_summary",
+        "copy_off_warning",
+        "read_times",
+        "submit_access",
+        "submit_forwarding",
+        "view",
+        "views"
+      ],
+      "imported_by": [
+        "app.routers.approvals",
+        "app.routers.portal",
+        "app.routers.tickets"
+      ],
+      "imports": [
+        "app.approvals",
+        "app.identity",
+        "app.mailbox_changes",
+        "app.mailbox_executor",
+        "app.models",
+        "app.people_directory",
+        "app.raising",
+        "app.request_types",
+        "app.settings_store",
+        "app.time_zones"
+      ],
+      "module": "app.portal_mailbox",
+      "routes": [],
+      "summary": "The portal's mailbox forms (#309; tracker #305): ask for your own mail to be forwarded to a colleague, and see and end it.",
+      "tables": [],
+      "tests": [
+        "tests/test_mailbox_access.py",
+        "tests/test_mailbox_third_person.py",
+        "tests/test_portal_mailbox.py"
       ]
     },
     {
@@ -3376,6 +3834,7 @@
       "imported_by": [
         "app.intake",
         "app.mail",
+        "app.portal_mailbox",
         "app.routers.portal",
         "app.routers.tickets"
       ],
@@ -3423,6 +3882,7 @@
         "app.routers.approvals",
         "app.routers.auth",
         "app.routers.legal",
+        "app.routers.portal",
         "app.routers.teams_bot",
         "app.routers.webhooks",
         "app.teams_intake"
@@ -3440,6 +3900,70 @@
         "tests/test_teams_bot.py",
         "tests/test_teams_hold.py",
         "tests/test_teams_intake.py"
+      ]
+    },
+    {
+      "classes": [
+        "AcknowledgedView",
+        "Reactor"
+      ],
+      "file": "app/reactions.py",
+      "functions": [
+        "acknowledged_at",
+        "acknowledged_condition",
+        "acknowledged_since",
+        "acknowledged_times",
+        "acknowledged_views",
+        "apply_effects",
+        "backstop_days",
+        "backstop_due",
+        "dismiss_negative",
+        "display_of",
+        "drop_soft_feedback",
+        "find_bot_message",
+        "is_party",
+        "kind_of_notification",
+        "kind_of_requester_message",
+        "mapping",
+        "open_negative_ids",
+        "parse_mapping",
+        "reactions_for_ticket",
+        "record_bot_message",
+        "record_reaction",
+        "remove_reaction",
+        "sentiment_of",
+        "waiting_since"
+      ],
+      "imported_by": [
+        "app.action_links",
+        "app.auto_close_chase",
+        "app.email_reactions",
+        "app.mail",
+        "app.outbox",
+        "app.routers.admin",
+        "app.routers.tickets",
+        "app.team_activity",
+        "app.teams",
+        "app.teams_intake",
+        "app.teams_reactions",
+        "app.thread"
+      ],
+      "imports": [
+        "app.audit",
+        "app.identity",
+        "app.models",
+        "app.notifications",
+        "app.settings_store",
+        "app.ticket_service"
+      ],
+      "module": "app.reactions",
+      "routes": [],
+      "summary": "Reactions to messages about a ticket (issue #298, Teams; #299 reuses all of it for Outlook email reactions).",
+      "tables": [],
+      "tests": [
+        "tests/test_acknowledged_backstop.py",
+        "tests/test_email_reactions.py",
+        "tests/test_reactions.py"
       ]
     },
     {
@@ -3566,6 +4090,7 @@
       "summary": "Files an agent attaches to a reply or a note on the ticket page (#201).",
       "tables": [],
       "tests": [
+        "tests/test_card_refusals.py",
         "tests/test_portal_request.py",
         "tests/test_reply_files.py",
         "tests/test_ticket_presence.py"
@@ -3635,6 +4160,7 @@
         "app.msp_actions",
         "app.reopening",
         "app.report_kit",
+        "app.sla",
         "app.ticket_service",
         "app.time_zones",
         "app.visibility"
@@ -3729,6 +4255,9 @@
         "approval_notice",
         "card_for",
         "create_request_type",
+        "is_offered",
+        "offered_request_types",
+        "offers_someone_elses",
         "portal_cards",
         "portal_tiles",
         "problem_card",
@@ -3738,6 +4267,7 @@
         "update_request_type"
       ],
       "imported_by": [
+        "app.portal_mailbox",
         "app.raising",
         "app.routers.admin",
         "app.routers.portal",
@@ -3748,6 +4278,7 @@
         "app.approvals",
         "app.audit",
         "app.categories",
+        "app.mailbox_executor",
         "app.models",
         "app.request_icons",
         "app.request_questions",
@@ -3761,7 +4292,11 @@
       "tables": [],
       "tests": [
         "tests/test_approvals.py",
+        "tests/test_mailbox_access.py",
+        "tests/test_mailbox_on_behalf.py",
+        "tests/test_mailbox_seed_types.py",
         "tests/test_portal_home.py",
+        "tests/test_portal_mailbox.py",
         "tests/test_portal_new.py",
         "tests/test_request_questions.py",
         "tests/test_request_type_defaults.py",
@@ -3865,6 +4400,7 @@
       "imported_by": [
         "app.auto_close_chase",
         "app.bulk_resolve",
+        "app.mailbox_changes",
         "app.raising",
         "app.routers.bulk_resolve",
         "app.routers.tickets"
@@ -3889,6 +4425,7 @@
         "tests/test_auto_close_chase.py",
         "tests/test_bulk_resolve.py",
         "tests/test_email_header.py",
+        "tests/test_mailbox_changes.py",
         "tests/test_msp.py",
         "tests/test_msp_actions.py",
         "tests/test_reopening.py",
@@ -3998,6 +4535,7 @@
         "outage_off",
         "outage_on",
         "outage_page",
+        "person_page",
         "preview_email_template",
         "preview_link",
         "remove_approval_group_member",
@@ -4007,6 +4545,8 @@
         "reset_email_template",
         "reset_settings_group",
         "review_category",
+        "run_job_now",
+        "run_job_now_page",
         "save_email_template",
         "save_setting",
         "save_settings_group",
@@ -4036,6 +4576,7 @@
       "imports": [
         "app.activity",
         "app.admin_home",
+        "app.admin_people",
         "app.approval_groups",
         "app.approvals",
         "app.audit",
@@ -4051,6 +4592,7 @@
         "app.followers",
         "app.forms",
         "app.inbound",
+        "app.job_errors",
         "app.linked_identities",
         "app.models",
         "app.msp",
@@ -4059,6 +4601,7 @@
         "app.outage",
         "app.pagination",
         "app.permissions",
+        "app.reactions",
         "app.request_questions",
         "app.request_types",
         "app.scheduled_jobs",
@@ -4072,7 +4615,8 @@
         "app.thanks_rules",
         "app.ticket_service",
         "app.time_zones",
-        "app.user_filters"
+        "app.user_filters",
+        "app.visibility"
       ],
       "module": "app.routers.admin",
       "routes": [
@@ -4317,6 +4861,16 @@
           "path": "/admin/scheduled-jobs"
         },
         {
+          "handler": "run_job_now_page",
+          "method": "GET",
+          "path": "/admin/scheduled-jobs/{name}/run"
+        },
+        {
+          "handler": "run_job_now",
+          "method": "POST",
+          "path": "/admin/scheduled-jobs/{name}/run"
+        },
+        {
           "handler": "view_settings",
           "method": "GET",
           "path": "/admin/settings"
@@ -4397,6 +4951,11 @@
           "path": "/admin/users"
         },
         {
+          "handler": "person_page",
+          "method": "GET",
+          "path": "/admin/users/{user_id}"
+        },
+        {
           "handler": "update_user",
           "method": "POST",
           "path": "/admin/users/{user_id}"
@@ -4439,7 +4998,9 @@
       ],
       "summary": "",
       "tables": [],
-      "tests": []
+      "tests": [
+        "tests/test_portal_mailbox.py"
+      ]
     },
     {
       "classes": [],
@@ -4457,6 +5018,7 @@
         "app.database",
         "app.messages",
         "app.models",
+        "app.portal_mailbox",
         "app.rate_limit",
         "app.settings_store",
         "app.templating"
@@ -5085,15 +5647,19 @@
       "functions": [
         "add_comment",
         "add_ticket_follower",
+        "cancel_my_mailbox_change",
         "decide_approval",
+        "find_people",
         "list_my_tickets",
         "my_approvals",
         "new_ticket_form",
         "raise_new_ticket",
         "remove_ticket_follower",
         "reopen_my_ticket",
+        "request_mailbox_change",
         "request_questions",
         "set_my_required_by",
+        "stop_my_mailbox_change",
         "view_my_ticket",
         "withdraw_my_request"
       ],
@@ -5113,10 +5679,14 @@
         "app.followers",
         "app.forms",
         "app.identity",
+        "app.mailbox_changes",
         "app.messages",
         "app.models",
         "app.pagination",
+        "app.people_directory",
+        "app.portal_mailbox",
         "app.raising",
+        "app.rate_limit",
         "app.reopening",
         "app.reply_channel",
         "app.reply_files",
@@ -5146,6 +5716,11 @@
           "path": "/portal/approvals"
         },
         {
+          "handler": "request_mailbox_change",
+          "method": "POST",
+          "path": "/portal/mailbox-change"
+        },
+        {
           "handler": "new_ticket_form",
           "method": "GET",
           "path": "/portal/new"
@@ -5154,6 +5729,11 @@
           "handler": "raise_new_ticket",
           "method": "POST",
           "path": "/portal/new"
+        },
+        {
+          "handler": "find_people",
+          "method": "GET",
+          "path": "/portal/people"
         },
         {
           "handler": "request_questions",
@@ -5184,6 +5764,16 @@
           "handler": "remove_ticket_follower",
           "method": "POST",
           "path": "/portal/{number}/followers/{follower_id}/remove"
+        },
+        {
+          "handler": "cancel_my_mailbox_change",
+          "method": "POST",
+          "path": "/portal/{number}/mailbox/cancel"
+        },
+        {
+          "handler": "stop_my_mailbox_change",
+          "method": "POST",
+          "path": "/portal/{number}/mailbox/stop"
         },
         {
           "handler": "reopen_my_ticket",
@@ -5296,6 +5886,7 @@
         "change_status",
         "close",
         "discard_email_draft",
+        "dismiss_negative_reaction",
         "edit_category",
         "edit_type",
         "email_user",
@@ -5303,6 +5894,9 @@
         "fill_from_canned",
         "link",
         "list_tickets",
+        "mailbox_cancel",
+        "mailbox_done_by_hand",
+        "mailbox_try_again",
         "mention_candidates",
         "msp_forward",
         "msp_forward_dismiss",
@@ -5357,14 +5951,17 @@
         "app.forms",
         "app.identity",
         "app.linking",
+        "app.mailbox_changes",
         "app.messages",
         "app.models",
         "app.msp",
         "app.msp_actions",
         "app.notifications",
         "app.pagination",
+        "app.portal_mailbox",
         "app.presence",
         "app.raising",
+        "app.reactions",
         "app.reopening",
         "app.reply_files",
         "app.request_questions",
@@ -5372,10 +5969,12 @@
         "app.requester_change",
         "app.required_by",
         "app.resolution",
+        "app.scheduled_jobs",
         "app.search",
         "app.settings_store",
         "app.sla",
         "app.splitting",
+        "app.status_display",
         "app.storage",
         "app.subrequests",
         "app.team_activity",
@@ -5521,6 +6120,21 @@
           "path": "/tickets/{number}/link"
         },
         {
+          "handler": "mailbox_cancel",
+          "method": "POST",
+          "path": "/tickets/{number}/mailbox/cancel"
+        },
+        {
+          "handler": "mailbox_done_by_hand",
+          "method": "POST",
+          "path": "/tickets/{number}/mailbox/done-by-hand"
+        },
+        {
+          "handler": "mailbox_try_again",
+          "method": "POST",
+          "path": "/tickets/{number}/mailbox/try-again"
+        },
+        {
           "handler": "mention_candidates",
           "method": "GET",
           "path": "/tickets/{number}/mentions"
@@ -5584,6 +6198,11 @@
           "handler": "change_priority",
           "method": "POST",
           "path": "/tickets/{number}/priority"
+        },
+        {
+          "handler": "dismiss_negative_reaction",
+          "method": "POST",
+          "path": "/tickets/{number}/reactions/dismiss"
         },
         {
           "handler": "reassign",
@@ -5673,7 +6292,9 @@
       ],
       "summary": "",
       "tables": [],
-      "tests": []
+      "tests": [
+        "tests/test_queue_status_sort.py"
+      ]
     },
     {
       "classes": [],
@@ -5705,6 +6326,7 @@
     {
       "classes": [
         "JobHealth",
+        "RunNowResult",
         "ScheduledJobDef"
       ],
       "file": "app/scheduled_jobs.py",
@@ -5716,16 +6338,21 @@
         "registry_errors",
         "run_claimed",
         "run_due_jobs",
+        "run_now",
+        "run_now_refusal",
         "scheduled_jobs_tick",
         "status_line",
         "timing",
         "utcnow",
+        "within_a_tick",
         "worker_id"
       ],
       "imported_by": [
         "app.admin_home",
+        "app.job_errors",
         "app.jobs",
         "app.routers.admin",
+        "app.routers.tickets",
         "app.worker"
       ],
       "imports": [
@@ -5736,7 +6363,9 @@
         "app.bank_holidays",
         "app.database",
         "app.due_today",
+        "app.email_reactions",
         "app.entra_check",
+        "app.mailbox_changes",
         "app.models",
         "app.msp",
         "app.note_purge",
@@ -5758,13 +6387,16 @@
         "tests/test_approval_reminders.py",
         "tests/test_auto_close_chase.py",
         "tests/test_due_date.py",
+        "tests/test_email_reactions.py",
         "tests/test_entra_check.py",
         "tests/test_handoff_bells_holidays.py",
+        "tests/test_mailbox_changes.py",
         "tests/test_msp.py",
         "tests/test_msp_mail.py",
         "tests/test_notification_dismiss.py",
         "tests/test_reply_files.py",
         "tests/test_scheduled_jobs.py",
+        "tests/test_scheduled_jobs_page.py",
         "tests/test_sessions.py",
         "tests/test_teams_followups.py",
         "tests/test_ticket_presence.py",
@@ -5811,6 +6443,7 @@
       ],
       "imported_by": [
         "app.activity",
+        "app.admin_people",
         "app.auth",
         "app.breakglass",
         "app.emergency",
@@ -5858,20 +6491,25 @@
         "app.bank_holidays",
         "app.bulk_resolve",
         "app.categories",
+        "app.email_reactions",
         "app.emergency",
         "app.entra_check",
         "app.inbound",
         "app.intake",
         "app.linked_identities",
         "app.mail",
+        "app.mailbox_changes",
         "app.messages",
         "app.msp",
         "app.never_follow",
         "app.note_purge",
         "app.notification_purge",
         "app.notifications",
+        "app.people_directory",
+        "app.portal_mailbox",
         "app.presence",
         "app.raising",
+        "app.reactions",
         "app.reply_files",
         "app.report_kit",
         "app.required_by",
@@ -5905,8 +6543,10 @@
       "tables": [],
       "tests": [
         "tests/conftest.py",
+        "tests/test_acknowledged_backstop.py",
         "tests/test_acknowledgement.py",
         "tests/test_action_links.py",
+        "tests/test_admin_request_types_page.py",
         "tests/test_admin_settings.py",
         "tests/test_approval_inactive.py",
         "tests/test_approval_reminders.py",
@@ -5915,16 +6555,22 @@
         "tests/test_backdating.py",
         "tests/test_break_glass.py",
         "tests/test_bulk_resolve.py",
+        "tests/test_card_refusals.py",
         "tests/test_category_admin.py",
         "tests/test_closing_email.py",
         "tests/test_due_date.py",
         "tests/test_due_date_review.py",
+        "tests/test_email_reactions.py",
         "tests/test_entra_check.py",
         "tests/test_follower_updates.py",
         "tests/test_handoff_bells_holidays.py",
         "tests/test_inbound_mail.py",
         "tests/test_linked_identities.py",
         "tests/test_mail_subscriptions.py",
+        "tests/test_mailbox_access.py",
+        "tests/test_mailbox_changes.py",
+        "tests/test_mailbox_on_behalf.py",
+        "tests/test_mailbox_third_person.py",
         "tests/test_msp.py",
         "tests/test_msp_actions.py",
         "tests/test_msp_mail.py",
@@ -5935,10 +6581,12 @@
         "tests/test_outage_mode.py",
         "tests/test_outbound_mail.py",
         "tests/test_portal_home.py",
+        "tests/test_portal_mailbox.py",
         "tests/test_portal_new.py",
         "tests/test_portal_request.py",
         "tests/test_presence.py",
         "tests/test_raising.py",
+        "tests/test_reactions.py",
         "tests/test_reply_files.py",
         "tests/test_reports.py",
         "tests/test_request_types.py",
@@ -5947,6 +6595,9 @@
         "tests/test_scheduled_jobs.py",
         "tests/test_sessions.py",
         "tests/test_sla.py",
+        "tests/test_split_before_triage.py",
+        "tests/test_split_family.py",
+        "tests/test_splitting.py",
         "tests/test_subject_access.py",
         "tests/test_subrequests.py",
         "tests/test_team_activity_cards.py",
@@ -5967,12 +6618,14 @@
         "Priority",
         "QueueSla",
         "SlaRow",
+        "SlaStartError",
         "SlaView"
       ],
       "file": "app/sla.py",
       "functions": [
         "apply_impact_urgency",
         "at_risk_percent",
+        "breach_order",
         "describe_priority",
         "header_sla",
         "impact_options",
@@ -5984,14 +6637,18 @@
         "recalculate_deadlines",
         "set_impact_urgency",
         "sla_rows",
+        "sla_start",
         "sla_view",
+        "start_clock_at",
         "target_minutes",
         "urgency_options"
       ],
       "imported_by": [
         "app.backdating",
+        "app.mailbox_changes",
         "app.messages",
         "app.raising",
+        "app.reports",
         "app.request_types",
         "app.requester_change",
         "app.required_by",
@@ -6040,7 +6697,9 @@
         "lock_ticket",
         "make_sub_ticket",
         "max_sub_tickets",
+        "prefilled_parts",
         "refresh_open_sub_tickets",
+        "request_text",
         "split_ticket",
         "sub_ticket_count",
         "sub_tickets_summary",
@@ -6108,6 +6767,32 @@
       ]
     },
     {
+      "classes": [],
+      "file": "app/status_display.py",
+      "functions": [
+        "status_label",
+        "status_options",
+        "status_tone"
+      ],
+      "imported_by": [
+        "app.admin_people",
+        "app.routers.tickets",
+        "app.team_activity",
+        "app.templating"
+      ],
+      "imports": [
+        "app.models"
+      ],
+      "module": "app.status_display",
+      "routes": [],
+      "summary": "How an agent sees a ticket status: one label and one tone per status, used everywhere an agent sees one (the queue,",
+      "tables": [],
+      "tests": [
+        "tests/test_acknowledged_backstop.py",
+        "tests/test_queue_status_sort.py"
+      ]
+    },
+    {
       "classes": [
         "BlobStorage",
         "InvalidKey",
@@ -6147,7 +6832,10 @@
       "tests": [
         "tests/test_anonymisation.py",
         "tests/test_attachments.py",
+        "tests/test_card_refusals.py",
         "tests/test_inbound_mail.py",
+        "tests/test_mailbox_changes.py",
+        "tests/test_mailbox_on_behalf.py",
         "tests/test_msp_mail.py",
         "tests/test_portal_new.py",
         "tests/test_portal_request.py",
@@ -6157,6 +6845,7 @@
         "tests/test_subject_access.py",
         "tests/test_teams_followups.py",
         "tests/test_teams_intake.py",
+        "tests/test_ticket_page_queries.py",
         "tests/test_ticket_presence.py",
         "tests/test_ticket_redesign.py",
         "tests/test_ticket_thread.py"
@@ -6188,6 +6877,9 @@
       "summary": "Subject access export (issue #175): a ZIP of everything held on one person.",
       "tables": [],
       "tests": [
+        "tests/test_mailbox_changes.py",
+        "tests/test_mailbox_on_behalf.py",
+        "tests/test_reactions.py",
         "tests/test_requester_change.py",
         "tests/test_subject_access.py",
         "tests/test_teams_followups.py"
@@ -6252,11 +6944,13 @@
         "tests/test_approval_inactive.py",
         "tests/test_entra_check.py",
         "tests/test_self_approval.py",
-        "tests/test_subrequests.py"
+        "tests/test_subrequests.py",
+        "tests/test_super_admin_assignee.py"
       ]
     },
     {
       "classes": [
+        "HealthWarning",
         "MailIntake",
         "Outcome",
         "SubscriptionError"
@@ -6266,6 +6960,7 @@
         "catch_up",
         "client_state_fingerprint",
         "describe_failure",
+        "health_problems",
         "health_warnings",
         "keep_subscription_alive",
         "lifetime_minutes",
@@ -6273,10 +6968,13 @@
         "parse_graph_time",
         "record_for_processing",
         "renew_margin_minutes",
+        "sent_folder",
         "subscription_resource"
       ],
       "imported_by": [
         "app.admin_home",
+        "app.email_reactions",
+        "app.inbound",
         "app.jobs",
         "app.routers.admin",
         "app.routers.health"
@@ -6293,6 +6991,8 @@
       "tables": [],
       "tests": [
         "tests/test_admin_frame.py",
+        "tests/test_admin_mail_pages.py",
+        "tests/test_email_reactions.py",
         "tests/test_mail_subscriptions.py"
       ]
     },
@@ -6316,6 +7016,7 @@
         "load_timeline",
         "person_choices",
         "phrase_of",
+        "reaction_words",
         "role_of",
         "status_chip",
         "step_of"
@@ -6326,8 +7027,11 @@
       "imports": [
         "app.models",
         "app.notification_settings",
+        "app.reactions",
         "app.settings_store",
-        "app.time_zones"
+        "app.status_display",
+        "app.time_zones",
+        "app.visibility"
       ],
       "module": "app.team_activity",
       "routes": [],
@@ -6335,6 +7039,8 @@
       "tables": [],
       "tests": [
         "tests/test_msp_mail.py",
+        "tests/test_queue_status_sort.py",
+        "tests/test_reactions.py",
         "tests/test_team_activity.py",
         "tests/test_team_activity_cards.py"
       ]
@@ -6401,6 +7107,7 @@
         "app.models",
         "app.notifications",
         "app.person_data",
+        "app.reactions",
         "app.reply_channel",
         "app.teams_conversations"
       ],
@@ -6418,6 +7125,7 @@
         "tests/test_linked_identities.py",
         "tests/test_notification_dismiss.py",
         "tests/test_outbound_mail.py",
+        "tests/test_reactions.py",
         "tests/test_teams.py",
         "tests/test_teams_approvals.py",
         "tests/test_teams_bot.py",
@@ -6468,12 +7176,14 @@
         "installation_update",
         "invoke",
         "message",
+        "message_reaction",
         "receive"
       ],
       "imported_by": [
         "app.routers.teams_bot",
         "app.teams_approvals",
-        "app.teams_intake"
+        "app.teams_intake",
+        "app.teams_reactions"
       ],
       "imports": [
         "app.bot_cards",
@@ -6483,7 +7193,8 @@
         "app.teams_approvals",
         "app.teams_bot_auth",
         "app.teams_conversations",
-        "app.teams_intake"
+        "app.teams_intake",
+        "app.teams_reactions"
       ],
       "module": "app.teams_bot",
       "routes": [],
@@ -6580,6 +7291,7 @@
         "app.bot_cards",
         "app.bot_connector",
         "app.config",
+        "app.database",
         "app.email_templates",
         "app.follower_updates",
         "app.followers",
@@ -6590,6 +7302,7 @@
         "app.outbox",
         "app.person_data",
         "app.rate_limit",
+        "app.reactions",
         "app.reply_channel",
         "app.settings_store",
         "app.storage",
@@ -6642,6 +7355,28 @@
     },
     {
       "classes": [],
+      "file": "app/teams_reactions.py",
+      "functions": [
+        "handle",
+        "reactor_of"
+      ],
+      "imported_by": [
+        "app.teams_bot"
+      ],
+      "imports": [
+        "app.identity",
+        "app.models",
+        "app.reactions",
+        "app.teams_bot"
+      ],
+      "module": "app.teams_reactions",
+      "routes": [],
+      "summary": "Reactions in Teams (issue #298): what the `messageReaction` activity does.",
+      "tables": [],
+      "tests": []
+    },
+    {
+      "classes": [],
       "file": "app/telemetry.py",
       "functions": [
         "start_telemetry"
@@ -6666,9 +7401,11 @@
       "classes": [],
       "file": "app/templating.py",
       "functions": [
+        "is_boosted",
         "is_htmx"
       ],
       "imported_by": [
+        "app.admin_people",
         "app.main",
         "app.routers.action_links",
         "app.routers.admin",
@@ -6698,6 +7435,7 @@
         "app.presence",
         "app.request_icons",
         "app.static_url",
+        "app.status_display",
         "app.theme",
         "app.time_zones",
         "app.visibility"
@@ -6707,6 +7445,7 @@
       "summary": "The one place the Jinja2 environment is built, so every router renders the same way.",
       "tables": [],
       "tests": [
+        "tests/test_admin_mail_pages.py",
         "tests/test_reply_files.py",
         "tests/test_ticket_page.py"
       ]
@@ -6779,7 +7518,8 @@
     {
       "classes": [
         "Box",
-        "Names"
+        "Names",
+        "ReactionLine"
       ],
       "file": "app/thread.py",
       "functions": [
@@ -6792,6 +7532,7 @@
         "app.messages",
         "app.models",
         "app.quoted_text",
+        "app.reactions",
         "app.reply_channel",
         "app.visibility"
       ],
@@ -6883,15 +7624,18 @@
         "app.bulk_resolve",
         "app.closing",
         "app.due_today",
+        "app.email_reactions",
         "app.followers",
         "app.inbound",
         "app.intake",
         "app.linked_identities",
         "app.linking",
+        "app.mailbox_changes",
         "app.messages",
         "app.msp",
         "app.msp_actions",
         "app.raising",
+        "app.reactions",
         "app.reopening",
         "app.reports",
         "app.request_questions",
@@ -6925,13 +7669,17 @@
       "summary": "Changes to tickets that more than one route makes. Nothing here commits:",
       "tables": [],
       "tests": [
+        "tests/test_acknowledged_backstop.py",
         "tests/test_auto_close_chase.py",
         "tests/test_category_admin.py",
         "tests/test_due_date.py",
         "tests/test_email_preview.py",
+        "tests/test_email_reactions.py",
         "tests/test_linked_identities.py",
+        "tests/test_mailbox_third_person.py",
         "tests/test_msp_mail.py",
         "tests/test_portal.py",
+        "tests/test_reactions.py",
         "tests/test_reopening.py",
         "tests/test_reply_notification.py",
         "tests/test_request_questions.py",
@@ -6951,6 +7699,7 @@
     },
     {
       "classes": [
+        "MomentError",
         "RefreshResult"
       ],
       "file": "app/time_zones.py",
@@ -6969,6 +7718,7 @@
         "note_requester",
         "parse_clock",
         "parse_dates",
+        "parse_local_moment",
         "refresh_requester_zones",
         "relative_time",
         "scheduled_morning_hour",
@@ -6988,8 +7738,10 @@
         "app.entra_check",
         "app.inbound",
         "app.jobs",
+        "app.mailbox_changes",
         "app.messages",
         "app.msp",
+        "app.portal_mailbox",
         "app.report_kit",
         "app.reports",
         "app.required_by",
@@ -7011,9 +7763,11 @@
       ],
       "module": "app.time_zones",
       "routes": [],
-      "summary": "Per-person time zones. Everything is stored and calculated in UTC; only what a person SEES is converted,",
+      "summary": "Per-person time zones. Everything is stored and calculated in UTC; only what a person SEES or TYPES is",
       "tables": [],
       "tests": [
+        "tests/test_admin_mail_pages.py",
+        "tests/test_backdating.py",
         "tests/test_due_date.py",
         "tests/test_msp.py",
         "tests/test_msp_mail.py",
@@ -7038,6 +7792,7 @@
       ],
       "imported_by": [
         "app.escalation",
+        "app.mailbox_changes",
         "app.raising",
         "app.request_types",
         "app.routers.portal",
@@ -7093,6 +7848,7 @@
       "functions": [
         "access_context",
         "assignable_agents",
+        "can_open_condition",
         "feedback_condition",
         "has_permission",
         "is_untriaged",
@@ -7123,6 +7879,7 @@
         "app.report_kit",
         "app.reports",
         "app.requester_change",
+        "app.routers.admin",
         "app.routers.attachments",
         "app.routers.bulk_resolve",
         "app.routers.msp_mail",
@@ -7130,6 +7887,7 @@
         "app.routers.reports",
         "app.routers.tickets",
         "app.subrequests",
+        "app.team_activity",
         "app.templating",
         "app.thread",
         "app.ticket_presence",
@@ -7157,6 +7915,8 @@
         "tests/test_reply_files.py",
         "tests/test_reports.py",
         "tests/test_requester_change.py",
+        "tests/test_super_admin_assignee.py",
+        "tests/test_ticket_page_queries.py",
         "tests/test_ticket_thread.py",
         "tests/test_visibility.py"
       ]
@@ -7245,13 +8005,6 @@
         "detail": "select(Ticket) in a route",
         "file": "app/routers/admin.py",
         "in": "list_teams",
-        "rule": "access-in-visibility"
-      },
-      {
-        "allowed": "Admin pages are behind require_super_admin and count or list memberships for the admin tables; there is no per-agent access decision to make.",
-        "detail": "select(TeamMembership) in a route",
-        "file": "app/routers/admin.py",
-        "in": "list_users",
         "rule": "access-in-visibility"
       },
       {
@@ -7351,6 +8104,12 @@
         "detail": "select() on Message",
         "file": "app/search.py",
         "in": "search_condition",
+        "rule": "messages-via-messages-module"
+      },
+      {
+        "detail": "select() on Message",
+        "file": "app/splitting.py",
+        "in": "request_text",
         "rule": "messages-via-messages-module"
       },
       {
@@ -7496,6 +8255,36 @@
       "type": "str"
     },
     {
+      "default": "5",
+      "env": "MAILBOX_AUTOMATION_POLL_SECONDS",
+      "name": "mailbox_automation_poll_seconds",
+      "type": "int"
+    },
+    {
+      "default": "''",
+      "env": "MAILBOX_AUTOMATION_RESOURCE_ID",
+      "name": "mailbox_automation_resource_id",
+      "type": "str"
+    },
+    {
+      "default": "600",
+      "env": "MAILBOX_AUTOMATION_TIMEOUT_SECONDS",
+      "name": "mailbox_automation_timeout_seconds",
+      "type": "int"
+    },
+    {
+      "default": "''",
+      "env": "MAILBOX_EXECUTOR",
+      "name": "mailbox_executor",
+      "type": "str"
+    },
+    {
+      "default": "''",
+      "env": "MAILBOX_TENANT_DOMAIN",
+      "name": "mailbox_tenant_domain",
+      "type": "str"
+    },
+    {
       "default": "False",
       "env": "MAILBOX_TIME_ZONES_ENABLED",
       "name": "mailbox_time_zones_enabled",
@@ -7541,6 +8330,12 @@
       "default": "60",
       "env": "RATE_LIMIT_LEGAL_PER_MINUTE",
       "name": "rate_limit_legal_per_minute",
+      "type": "int"
+    },
+    {
+      "default": "60",
+      "env": "RATE_LIMIT_PEOPLE_SEARCH_PER_MINUTE",
+      "name": "rate_limit_people_search_per_minute",
       "type": "int"
     },
     {
@@ -7685,6 +8480,7 @@
   "tests": [
     "tests/conftest.py",
     "tests/test_access_context.py",
+    "tests/test_acknowledged_backstop.py",
     "tests/test_acknowledgement.py",
     "tests/test_action_links.py",
     "tests/test_activity_log.py",
@@ -7712,6 +8508,7 @@
     "tests/test_break_glass.py",
     "tests/test_bulk_resolve.py",
     "tests/test_canned.py",
+    "tests/test_card_refusals.py",
     "tests/test_category_admin.py",
     "tests/test_closing_email.py",
     "tests/test_code_map.py",
@@ -7719,6 +8516,7 @@
     "tests/test_due_date_review.py",
     "tests/test_email_header.py",
     "tests/test_email_preview.py",
+    "tests/test_email_reactions.py",
     "tests/test_email_templates.py",
     "tests/test_entra_check.py",
     "tests/test_escalation.py",
@@ -7737,6 +8535,12 @@
     "tests/test_linking.py",
     "tests/test_login_lockout.py",
     "tests/test_mail_subscriptions.py",
+    "tests/test_mailbox_access.py",
+    "tests/test_mailbox_changes.py",
+    "tests/test_mailbox_executor_azure.py",
+    "tests/test_mailbox_on_behalf.py",
+    "tests/test_mailbox_seed_types.py",
+    "tests/test_mailbox_third_person.py",
     "tests/test_message_channel.py",
     "tests/test_message_channel_migration.py",
     "tests/test_messages.py",
@@ -7756,12 +8560,15 @@
     "tests/test_permissions.py",
     "tests/test_portal.py",
     "tests/test_portal_home.py",
+    "tests/test_portal_mailbox.py",
     "tests/test_portal_new.py",
     "tests/test_portal_request.py",
     "tests/test_presence.py",
     "tests/test_public_surface.py",
     "tests/test_queue_page.py",
+    "tests/test_queue_status_sort.py",
     "tests/test_raising.py",
+    "tests/test_reactions.py",
     "tests/test_reopening.py",
     "tests/test_reply_files.py",
     "tests/test_reply_notification.py",
@@ -7774,7 +8581,9 @@
     "tests/test_requester_change.py",
     "tests/test_required_by.py",
     "tests/test_resolution.py",
+    "tests/test_runbooks.py",
     "tests/test_scheduled_jobs.py",
+    "tests/test_scheduled_jobs_page.py",
     "tests/test_scheduled_status.py",
     "tests/test_search.py",
     "tests/test_security.py",
@@ -7783,6 +8592,7 @@
     "tests/test_shell.py",
     "tests/test_signin_pages.py",
     "tests/test_sla.py",
+    "tests/test_split_before_triage.py",
     "tests/test_split_family.py",
     "tests/test_splitting.py",
     "tests/test_sso_cancel.py",
@@ -7791,6 +8601,7 @@
     "tests/test_storage.py",
     "tests/test_subject_access.py",
     "tests/test_subrequests.py",
+    "tests/test_super_admin_assignee.py",
     "tests/test_team_activity.py",
     "tests/test_team_activity_cards.py",
     "tests/test_teams.py",
@@ -7803,9 +8614,11 @@
     "tests/test_teams_followups.py",
     "tests/test_teams_hold.py",
     "tests/test_teams_intake.py",
+    "tests/test_test_db_cleanup.py",
     "tests/test_thanks_rules.py",
     "tests/test_ticket_core.py",
     "tests/test_ticket_page.py",
+    "tests/test_ticket_page_queries.py",
     "tests/test_ticket_presence.py",
     "tests/test_ticket_redesign.py",
     "tests/test_ticket_thread.py",

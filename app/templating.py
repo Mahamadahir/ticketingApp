@@ -1,14 +1,18 @@
 """The one place the Jinja2 environment is built, so every router renders the same way."""
 
 import logging
+import re
 from datetime import timezone
 from urllib.parse import parse_qs
 from zoneinfo import ZoneInfo
 
 from fastapi import Request
 from jinja2 import pass_context
+from markupsafe import Markup, escape
 from sqlalchemy.orm import object_session
 from sqlmodel import Session
+
+from app.status_display import status_label, status_tone
 from fastapi.templating import Jinja2Templates
 
 from app.request_icons import icon_path
@@ -31,12 +35,17 @@ def is_htmx(request: Request) -> bool:
     return request.headers.get("HX-Request") == "true"
 
 
+def is_boosted(request: Request) -> bool:
+    """An hx-boost link or form: htmx swaps the response into the whole <body>, so it needs the full page."""
+    return request.headers.get("HX-Boosted") == "true"
+
+
 def _htmx_partial(request: Request) -> dict:
     """An htmx form swaps the response into <main>, so a full page rendered for it must come
     back as its content block only. base.html reads this and leaves out the header and scripts.
     Every full page an htmx request gets today targets <main>; htmx sends no HX-Target for it
     because <main> has no id, so the header alone is the rule."""
-    return {"htmx_partial": is_htmx(request)}
+    return {"htmx_partial": is_htmx(request) and not is_boosted(request)}
 
 
 templates = Jinja2Templates(directory="app/templates", context_processors=[_htmx_partial])
@@ -144,8 +153,17 @@ def _file_size(size: int) -> str:
     return f"{size} bytes" if size < 1024 else f"{size / 1024:.1f} KB"
 
 
+def _break_points(value) -> Markup:
+    """Escape a long technical value (a resource path, an id, an address) and offer a line break after each of / - . @ _ so
+    it wraps at those, not in the middle of a word. Use with the `mono-wrap` class."""
+    return Markup(re.sub(r"([/\-.@_])", r"\1<wbr>", str(escape(value))))
+
+
+templates.env.filters["break_points"] = _break_points
 templates.env.filters["initials"] = _initials
 templates.env.filters["file_size"] = _file_size
+templates.env.filters["status_label"] = status_label
+templates.env.filters["status_tone"] = status_tone
 templates.env.filters["local_time"] = _local_time
 templates.env.filters["local_input"] = _local_input
 templates.env.filters["local_date"] = _local_date

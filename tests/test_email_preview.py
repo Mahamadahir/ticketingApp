@@ -59,7 +59,7 @@ def test_a_preview_shows_who_gets_it_and_what_it_says_and_records_nothing(client
     page = response.text
     assert "To:</b> walkin@example.com" in page and "boss@example.com" in page
     assert f"Subject:</b> [{ticket.reference}] Printer jam" in page and "Please restart it\nthen tell me" in page
-    assert "moves this ticket to awaiting user" in page
+    assert "moves this ticket to Awaiting user" in page
     assert recorded(db_session) == before
     db_session.refresh(ticket)
     assert ticket.status == TicketStatus.OPEN  # not moved by a preview
@@ -146,7 +146,7 @@ def test_a_split_originals_status_is_not_moved_and_a_part_is_about_itself(client
 
     assert "leaves the ticket's status as it is" in preview(client, original).text
     from_part = preview(client, part).text
-    assert "moves this ticket to awaiting user" in from_part
+    assert "moves this ticket to Awaiting user" in from_part
     assert f"Subject:</b> [{original.reference}] Two things" in from_part  # the family's one thread subject and reference
     assert f"About: {part.reference} Keyboard" in from_part
 
@@ -213,7 +213,7 @@ def test_the_preview_shows_the_chosen_status_and_carries_it_to_the_send(client, 
 
     page = preview(client, ticket, next_status="with_supplier").text
 
-    assert "Sending moves this ticket to with supplier." in page
+    assert "Sending moves this ticket to With supplier." in page
     assert "pauses its SLA clock" not in page
     assert 'name="next_status" value="with_supplier"' in page
 

@@ -29,6 +29,7 @@ from app.models import (
     User,
 )
 from app.quoted_text import split_quoted
+from app.reactions import NEGATIVE, POSITIVE, display_of, reactions_for_ticket
 from app.reply_channel import AGENT, EMAIL, PORTAL, SYSTEM, TEAMS_CHANNEL
 from app.visibility import AccessContext, may_manage_note
 
@@ -37,6 +38,7 @@ _EMAIL = re.compile(r"[\w.+'-]+@[\w-]+(?:\.[\w-]+)+")
 # Kinds of box. The template draws each one; the chip words and tones are here so a test and the page agree.
 EMAIL_OUT, EMAIL_IN, NOTE, VISIBLE_NOTE, NOTE_DELETED = "email_out", "email_in", "note", "visible_note", "note_deleted"
 CHANGE, TRIAGE, RESOLVED, SYSTEM_BOX = "change", "triage", "resolved", "system"
+REACTION = "reaction"  # a reaction to a bot message that is not one of the ticket's messages (an approval card, a notice)
 
 CHIPS = {
     EMAIL_OUT: ("Email", "blue"),
@@ -48,7 +50,26 @@ CHIPS = {
     TRIAGE: ("Triage", "green"),
     RESOLVED: ("Resolved", "green"),
     SYSTEM_BOX: ("System", "gray"),
+    REACTION: ("Reaction", "gray"),
 }
+REACTION_TONES = {POSITIVE: "green", NEGATIVE: "red"}  # a neutral reaction is gray
+REACTED_TO = {
+    "resolution": "the resolution message", "awaiting_user": "the request for a reply", "approval": "the approval request",
+}
+
+
+@dataclass
+class ReactionLine:
+    """A reaction as the thread draws it: the emoji or label as received, who, when, and whether it was taken back."""
+
+    text: str
+    who: str
+    at: datetime
+    tone: str
+    channel: str
+    removed_at: Optional[datetime] = None
+    sentiment: str = "neutral"
+    no_effect: bool = False  # not the requester or a follower: recorded and shown, nothing more
 
 
 @dataclass
@@ -77,6 +98,7 @@ class Box:
     deleted_at: Optional[datetime] = None
     alert: Optional[str] = None  # a red chip beside the kind chip (MSP mail whose sender was not verified)
     waits_for_triage: bool = False  # a visible note on an untriaged ticket: the requester sees it once triaged
+    reactions: list = field(default_factory=list)  # ReactionLines: reactions to this message (#298)
 
 
 # ---- names -----------------------------------------------------------------------------------------------------
@@ -160,6 +182,8 @@ def _sentence(e: TicketEvent, n: Names) -> str:
         return f"Changed the priority from {frm or 'none'} to {to or 'none'}.{_reason(detail)}"
     if t == "due_changed":
         return f"Changed the Due date from {frm or 'none'} to {to or 'none'}.{_reason(detail)}"
+    if t == "sla_start_changed":
+        return f"Changed when the SLA clock starts from {frm} to {to}."
     if t == "required_by_changed":
         return f"Changed Required by from {frm or 'none'} to {to or 'none'}."
     if t == "attachment_renamed":
@@ -267,7 +291,7 @@ def _sentence(e: TicketEvent, n: Names) -> str:
 
 _TITLES = {
     "assigned": "Assigned", "escalated": "Escalated", "team_changed": "Re-assigned", "type_changed": "Changed",
-    "category_changed": "Changed", "priority_changed": "Changed", "due_changed": "Changed", "required_by_changed": "Changed",
+    "category_changed": "Changed", "priority_changed": "Changed", "due_changed": "Changed", "required_by_changed": "Changed", "sla_start_changed": "Changed",
     "status_changed": "Changed", "reopened": "Reopened", "reclosed": "Closed again", "created": "Created",
     "note_visibility_changed": "Changed a note", "attachment_renamed": "Renamed a file", "sent_to_msp": "Sent to the MSP",
     "taken_back_from_msp": "Took back from the MSP", "linked": "Linked", "unlinked": "Unlinked", "split": "Split",
@@ -472,5 +496,33 @@ def build_thread(
 
     # Newest first. At the same moment an event comes before the message that caused it (the oldest-first order of
     # `agent_timeline` reversed), and the later row before the earlier.
+    _add_reactions(session, ticket, boxes)
     boxes.sort(key=lambda b: (b.at, 0 if b.message is not None else 1, b.num), reverse=True)
     return boxes
+
+
+def _add_reactions(session: Session, ticket: Ticket, boxes: list[Box]) -> None:
+    """Reactions (#298): a small line under the message they were made to, or a box of their own when that is not a message
+    on the ticket (an approval card, a notice). Agents only; the portal is unchanged."""
+    found = reactions_for_ticket(session, ticket)
+    if not found:
+        return
+    user_ids = {r.user_id for r in found if r.user_id}
+    names = {u.id: u.display_name or u.email for u in session.exec(select(User).where(User.id.in_(user_ids))).all()} if user_ids else {}
+    by_message = {b.message.id: b for b in boxes if b.message is not None and b.source is None}
+    for r in found:
+        who = names.get(r.user_id or 0) or r.reactor_name or "Someone"
+        line = ReactionLine(
+            text=display_of(r.raw_type, r.emoji), who=who, at=r.reacted_at, tone=REACTION_TONES.get(r.sentiment, "gray"), channel=r.channel,
+            removed_at=r.removed_at, sentiment=r.sentiment, no_effect=not r.by_party,
+        )
+        target = by_message.get(r.message_id) if r.message_id else None
+        if target is not None and target.kind != NOTE_DELETED:
+            target.reactions.append(line)
+            continue
+        chip, tone = CHIPS[REACTION]
+        where = REACTED_TO.get(r.message_kind, "a message from the bot")
+        boxes.append(Box(
+            id=f"r{r.id}", kind=REACTION, at=r.reacted_at, num=r.id or 0, who=who, who_email=None,
+            title=f"Reacted to {where} in {'Teams' if r.channel == 'teams' else 'an email'}", chip=chip, tone=tone, reactions=[line],
+        ))

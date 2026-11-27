@@ -25,7 +25,8 @@
     </dl>
     {% endif %}
     <form class="ap-form" hx-post="/portal/{{ ticket.number }}/approval" hx-target="main" hx-swap="innerHTML">
-      <label class="field">Comment (optional; shown to the requester if you decline)
+      {% if c.mailbox_note %}<p class="note">{{ c.mailbox_note }}</p>{% endif %}
+      <label class="field">{% if c.note_required %}Note (required to approve: who you checked with, for example "Spoke to J. Smith, line manager, by phone 09:10"){% else %}Comment (optional; shown to the requester if you decline){% endif %}
         <textarea name="comment" rows="2" maxlength="{{ max_comment_length }}"></textarea>
       </label>
       <div class="ap-actions">

@@ -27,6 +27,8 @@
     <form method="post" action="/admin/data-protection/subject-access">
       <div class="form-grid">
         <label class="field field-wide">Email address <input type="email" name="address" maxlength="254" required value="{{ address or '' }}" /></label>
+        <label class="field-check field-wide"><input type="checkbox" name="name_other_person" value="true" /> Name the other person in mailbox changes</label>
+        <p class="note field-wide">Unticked, a scheduled mailbox change names only this person; the other person is shown as "another person". Whether to name them is a question for the data protection lead (issue 319).</p>
       </div>
       <div class="form-actions"><button type="submit" class="btn btn-primary">Download export</button></div>
     </form>

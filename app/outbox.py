@@ -17,6 +17,7 @@ from sqlmodel import Session, select
 from app.config import settings
 from app.models import ApprovalVote, Attachment, Message, OutboundEmail, Ticket, TicketApproval, User, UserRole
 from app.notification_settings import APPROVAL_OVERDUE as OVERDUE_EVENT, EMAIL, is_enabled, wants_approval_email
+from app.reactions import AWAITING_USER
 
 REPLY = "reply"  # an agent's email to the requester (counts as a first response)
 NOTICE = "notice"  # an automatic message to the requester (an approval decision, say)
@@ -26,26 +27,29 @@ APPROVAL_REMINDER = "approval_reminder"  # chases an approver who has not answer
 APPROVAL_OVERDUE = "approval_overdue"  # tells a super admin a request has waited too long for its approvers
 APPROVAL_WITHDRAWN = "approval_withdrawn"  # tells an approver the requester withdrew the request
 ACKNOWLEDGEMENT = "acknowledgement"  # "your issue has been logged", once, for a ticket that arrived by email
+SPLIT_NOTICE = "split_notice"  # "your request was split into separate tickets", an automatic notice that goes before triage (messages.EMAIL_BEFORE_TRIAGE, `can_email_now`)
 CHASE = "chase"  # "is this still an issue?" to the requester of a ticket Awaiting user (app/auto_close_chase.py)
 MSP_HANDOFF = "msp_handoff"  # a ticket sent to the MSP (app/msp.py); the text is fixed when it is queued
 MSP_RELEASE = "msp_release"  # "no longer needed", to the MSP, when IT resolved, closed or took back a ticket (app/msp_actions.py); the text is fixed when queued
 MSP_FORWARD = "msp_forward"  # an MSP message the user was left off, passed on to them (app/msp.py); the text is fixed when queued
 EMERGENCY_RESET = "emergency_reset"  # tells an agent their emergency password was cleared when outage mode ended (app/outage.py); about no ticket
 REQUESTER_CHANGED = "requester_changed"  # "this ticket is now yours", to the new requester (app/requester_change.py)
+MAILBOX_CHANGE = "mailbox_change"  # tells the other person of a scheduled mailbox change it started or stopped (app/mailbox_changes.py); the text is fixed when queued
 FOLLOWER_UPDATE = "follower_update"  # an inbound update passed to someone who was not on the mail it came in
 
 # Kinds that go to the requester without an agent having just written them. These are what the
 # per-ticket cap counts; an agent's own reply never is.
-AUTOMATIC_TO_REQUESTER = (NOTICE, RAISED_FOR, ACKNOWLEDGEMENT, CHASE, REQUESTER_CHANGED)
+AUTOMATIC_TO_REQUESTER = (NOTICE, RAISED_FOR, ACKNOWLEDGEMENT, CHASE, SPLIT_NOTICE, REQUESTER_CHANGED)
 
 
 def is_on() -> bool:
     return settings.mail_sending != "off"
 
 
-def queue_message(session: Session, message: Message, ticket: Ticket) -> Optional[OutboundEmail]:
+def queue_message(session: Session, message: Message, ticket: Ticket, kind: Optional[str] = None) -> Optional[OutboundEmail]:
     """Queues the email for a public outbound message: an agent's reply (it has an author) or an
-    automatic notice (it has none). One email per message, enforced by the database."""
+    automatic notice (it has none), or the kind the caller names (the split notice). One email per message,
+    enforced by the database."""
     if not is_on():
         return None
     session.flush()  # the message needs its id
@@ -54,7 +58,7 @@ def queue_message(session: Session, message: Message, ticket: Ticket) -> Optiona
         select(Attachment.id).where(Attachment.message_id == message.id, Attachment.is_inline.is_(False)).order_by(Attachment.id)
     ).all()
     row = OutboundEmail(
-        kind=REPLY if message.author_user_id is not None else NOTICE,
+        kind=kind or (REPLY if message.author_user_id is not None else NOTICE),
         ticket_id=ticket.id,
         message_id=message.id,
         to_address=ticket.requester_email,
@@ -177,7 +181,7 @@ def queue_chase(session: Session, ticket: Ticket) -> Optional[OutboundEmail]:
     if not is_on():
         return None
     session.flush()
-    row = OutboundEmail(kind=CHASE, ticket_id=ticket.id, to_address=ticket.requester_email)
+    row = OutboundEmail(kind=CHASE, ticket_id=ticket.id, to_address=ticket.requester_email, reaction_kind=AWAITING_USER)
     session.add(row)
     return row
 
@@ -198,6 +202,22 @@ def queue_follower_update(session: Session, ticket: Ticket, message: Message, to
             session.flush()
     except IntegrityError:
         return None
+    return row
+
+
+def queue_mailbox_change_mail(
+    session: Session, ticket: Ticket, to_address: str, subject: str, body: str
+) -> Optional[OutboundEmail]:
+    """Queues the "mailbox access started / stopped" email to the other person of a scheduled mailbox change, with the
+    text built by app/mailbox_changes.py from the admin templates. It is about the request ticket but is not a message on it
+    (the person is not the requester and must not see the ticket). None when mail is off."""
+    if not is_on():
+        return None
+    session.flush()
+    row = OutboundEmail(
+        kind=MAILBOX_CHANGE, ticket_id=ticket.id, to_address=to_address.strip().lower(), subject=subject, body=body,
+    )
+    session.add(row)
     return row
 
 

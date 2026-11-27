@@ -524,7 +524,7 @@ def test_mail_from_a_sender_notes_them_for_a_mailbox_lookup_even_when_it_is_a_re
 
 
 def test_the_backdate_form_is_shown_and_read_in_the_agents_own_zone(client, db_session):
-    from app.backdating import parse_moment
+    from app.time_zones import parse_local_moment as parse_moment
     from app.models import Ticket, TicketSource
 
     assert parse_moment("2026-10-25T17:00", "Asia/Tokyo") == datetime(2026, 10, 25, 8, 0, tzinfo=timezone.utc)
@@ -538,3 +538,32 @@ def test_the_backdate_form_is_shown_and_read_in_the_agents_own_zone(client, db_s
     page = client.get(f"/tickets/{ticket.number}?action=backdate").text
     assert 'name="reported_at" value="2026-10-26T01:00"' in page  # 16:00 UTC is 01:00 the next day in Tokyo
     assert "times in your time zone (Asia/Tokyo)" in page
+
+
+def test_parse_local_moment_reads_winter_and_summer_time_in_london():
+    from app.time_zones import parse_local_moment
+
+    assert parse_local_moment("2026-01-15T09:00", "Europe/London") == datetime(2026, 1, 15, 9, 0, tzinfo=timezone.utc)
+    assert parse_local_moment("2026-07-15T09:00", "Europe/London") == datetime(2026, 7, 15, 8, 0, tzinfo=timezone.utc)
+    assert parse_local_moment("2026-07-15T09:00:30", "Europe/London") == datetime(2026, 7, 15, 8, 0, 30, tzinfo=timezone.utc)
+    assert parse_local_moment("  ", "Europe/London") is None and parse_local_moment(None, "Europe/London") is None
+
+
+def test_parse_local_moment_rejects_bad_text():
+    from app.time_zones import MomentError, parse_local_moment
+
+    for bad in ("2026-07-15", "15/07/2026 09:00", "x"):
+        with pytest.raises(MomentError):
+            parse_local_moment(bad, "Europe/London")
+
+
+def test_parse_local_moment_refuses_a_time_the_clocks_skip_and_takes_the_first_of_a_repeated_one():
+    from app.time_zones import MomentError, parse_local_moment
+
+    # UK clocks went forward at 01:00 on 29 March 2026: 01:30 never happened.
+    with pytest.raises(MomentError, match="does not exist"):
+        parse_local_moment("2026-03-29T01:30", "Europe/London")
+    assert parse_local_moment("2026-03-29T02:30", "Europe/London") == datetime(2026, 3, 29, 1, 30, tzinfo=timezone.utc)
+    assert parse_local_moment("2026-03-29T00:30", "Europe/London") == datetime(2026, 3, 29, 0, 30, tzinfo=timezone.utc)
+    # They went back at 02:00 BST on 25 October 2026: 01:30 happened twice; the first is BST (00:30 UTC).
+    assert parse_local_moment("2026-10-25T01:30", "Europe/London") == datetime(2026, 10, 25, 0, 30, tzinfo=timezone.utc)

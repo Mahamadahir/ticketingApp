@@ -27,7 +27,7 @@
     <tr>
       <td>{{ f.created_at|local_time }}</td>
       <td><a href="/tickets/{{ t.number }}">{{ t.reference }}</a></td>
-      <td>{{ f.rating }} / 5</td>
+      <td>{{ f.rating }} / 5{% if f.from_reaction %} <span class="chip t-gray">from a reaction</span>{% endif %}</td>
       <td>{{ f.comment }}</td>
     </tr>
     {% else %}

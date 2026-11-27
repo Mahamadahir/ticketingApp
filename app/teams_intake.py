@@ -397,14 +397,30 @@ def clean_body_of(text: str, files: list[IncomingAttachment]) -> str:
     return clean_body(text) if text.strip() or not files else FILES_ONLY
 
 
-def _reply(activity: dict, *, text: Optional[str] = None, card: Optional[dict] = None) -> bool:
-    """Answers the person in their chat. True when it went; a failure is logged and never raised (nobody is waiting)."""
+def _reply(activity: dict, *, text: Optional[str] = None, card: Optional[dict] = None, ticket_id: Optional[int] = None) -> bool:
+    """Answers the person in their chat. True when it went; a failure is logged and never raised (nobody is waiting).
+    An answer about a request (`ticket_id`) is remembered, so a reaction to it can be found (app/reactions.py)."""
     try:
-        bot_connector.reply_to(activity, text=text, card=card)
+        sent_id = bot_connector.reply_to(activity, text=text, card=card)
     except Exception as error:
         log.warning("Teams bot: reply failed: %s", type(error).__name__)
         return False
+    if ticket_id is not None and sent_id:
+        _remember(activity, sent_id, ticket_id)
     return True
+
+
+def _remember(activity: dict, sent_id: str, ticket_id: int) -> None:
+    """Keeps the id of the bot's answer about a request. Own session: this runs after the response was sent."""
+    from app.database import engine
+    from app.reactions import OTHER, record_bot_message
+
+    try:
+        with Session(engine) as own:
+            record_bot_message(own, ticket_id, sent_id, _text(_sub(activity, "conversation", "id")), OTHER)
+            own.commit()
+    except Exception as error:
+        log.warning("Teams bot: could not keep the id of an answer (%s)", type(error).__name__)
 
 
 def _say(activity: dict, text: str) -> Handled:
@@ -465,15 +481,16 @@ def answer(session: Session, activity: dict, storage: Optional[Storage] = None) 
         log.exception("Teams intake: handling a message failed")
         session.rollback()
         return _say(activity, FAILED)
+    ticket_id = result.ticket.id if result.ticket is not None else None
     if result.card is not None:
         text = result.text
 
         def send() -> None:
-            if not _reply(activity, card=result.card):
-                _reply(activity, text=text)  # the card could not be shown: the plain answer still goes
+            if not _reply(activity, card=result.card, ticket_id=ticket_id):
+                _reply(activity, text=text, ticket_id=ticket_id)  # the card could not be shown: the plain answer still goes
 
         return Handled(after=send)
-    return _say(activity, result.text)
+    return Handled(after=lambda: _reply(activity, text=result.text, ticket_id=ticket_id))
 
 
 def _ask(

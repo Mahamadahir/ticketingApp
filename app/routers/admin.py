@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from urllib.parse import urlencode
@@ -23,9 +24,11 @@ from app.bank_holidays import REGIONS as BANK_HOLIDAY_REGIONS
 from app import emergency, linked_identities as links, outage
 from app.audit import log_action
 from app.admin_home import area_cards, needs_attention
+from app.admin_people import ROLE_TONE, list_rows, person_page_context, person_url, refusal_page
 from app.auth import get_current_user, hash_password, require_permission, require_roles
 from app.user_filters import USER_STATUS_LABELS, filter_users
 from app.permissions import ASSIGNABLE_ROLES, MANAGE_REQUEST_TEMPLATES, PERMISSIONS
+from app.visibility import ASSIGNEE_ROLES
 from app.sla import impact_options, urgency_options
 from app.categories import (
     CATEGORY_REVIEW_CONDITIONS,
@@ -71,6 +74,7 @@ from app.subrequests import (
 )
 from app.request_types import (
     ICONS,
+    MAILBOX_ACTION_LABELS,
     MAX_DESCRIPTION_LENGTH as MAX_REQUEST_DESCRIPTION_LENGTH,
     MAX_NAME_LENGTH as MAX_REQUEST_NAME_LENGTH,
     RequestTypeError,
@@ -150,7 +154,9 @@ from app.models import (
     UserRole,
 )
 from app.pagination import paginate
-from app.scheduled_jobs import SCHEDULED_JOBS, job_health, status_line, timing
+from app.reactions import parse_mapping
+from app.job_errors import outage_refusal_key, outage_sentence, run_now_key, run_now_sentence, summarise_error
+from app.scheduled_jobs import SCHEDULED_JOBS, WARNINGS, job_health, run_now, run_now_refusal, status_line, timing, within_a_tick
 from app.settings_store import (
     BANK_HOLIDAY_REGION,
     APPROVAL_DEFAULT_PASS_PERCENT,
@@ -165,6 +171,7 @@ from app.settings_store import (
     GROUP_KEYS,
     GROUPS,
     REGISTRY,
+    get_int_setting,
     get_setting,
     group_definitions,
     search_definitions,
@@ -174,7 +181,7 @@ from app.msp import compile_subject_pattern
 from app.approvals import drop_votes_of, start_waiting_rounds
 from app.sessions import live_session_counts, revoke_user_sessions
 from app.inbound import IGNORED_FLOOD
-from app.subscriptions import health_warnings, mail_folder, subscription_resource
+from app.subscriptions import CATCH_UP_PROBLEM, SUBSCRIPTION_PROBLEM, health_problems, mail_folder, sent_folder, subscription_resource
 from app.teams import MAX_ATTEMPTS
 from app.navigation import allowed_admin_pages
 from app.time_zones import parse_clock, parse_dates, valid_zone, zone_for_user
@@ -208,9 +215,16 @@ def admin_home(request: Request, user: User = Depends(get_current_user), session
     )
 
 
-def _panel_url(user_id: int) -> str:
-    """After a change to one person the page opens on that person's panel again."""
-    return f"/admin/users?user={user_id}"
+def _person_redirect(user_id: int, section: str = "", done: str = "") -> RedirectResponse:
+    """After a change to one person the browser goes back to their page, on the card the change came from."""
+    return RedirectResponse(person_url(user_id, section, done), status_code=303)
+
+
+LINKS_TAB = "/admin/users?tab=links"
+
+
+def _pending_link_count(session: Session) -> int:
+    return session.exec(select(func.count()).select_from(LinkedIdentity).where(LinkedIdentity.status == links.PENDING)).one()
 
 
 @router.get("/users", response_class=HTMLResponse)
@@ -226,9 +240,35 @@ def list_users(
     status: str = "",
     selected_id: str = Query("", alias="user"),
     new: str = "",
+    tab: str = "",
     user: User = Depends(require_super_admin),
     session: Session = Depends(get_session),
 ):
+    """The people table (#322); a person opens on their own page. `?user=<id>` is the old link to a person: it
+    redirects. `?new=1` is the new-account view and `?tab=links` the link requests. A value that means nothing
+    is "nobody", not an error page."""
+    if selected_id.isascii() and selected_id.isdigit() and int(selected_id) < 2**31:
+        return RedirectResponse(person_url(int(selected_id)), status_code=303)
+    teams = session.exec(select(Team).order_by(Team.name)).all()
+    if new.strip() not in ("", "0"):
+        return templates.TemplateResponse(
+            request, "admin_user_new.html", {"user": user, "teams": teams, "levels": list(MembershipLevel), "roles": list(UserRole)}
+        )
+    if tab == "links":
+        pending_links = links.rows_for(session, links.PENDING)
+        return templates.TemplateResponse(
+            request,
+            "admin_users_links.html",
+            {
+                "user": user,
+                "pending_links": pending_links,
+                "pending_count": len(pending_links),
+                "active_links": links.rows_for(session, links.ACTIVE, aliases=bool(aliases), limit=200),
+                "show_aliases": bool(aliases),
+                "link_error": link_error,
+            },
+        )
+
     query = select(User).order_by(User.email)
     # Inactive agents who still hold open tickets: the tickets need a new assignee (#158).
     only_stranded = inactive == "open_tickets"
@@ -241,84 +281,41 @@ def list_users(
         )
     query = filter_users(query, q, role, team, status)
     users_page = paginate(session, query, page, request.query_params)
-    teams = session.exec(select(Team).order_by(Team.name)).all()
-    teams_by_id = {team_row.id: team_row for team_row in teams}
-
-    # The person whose panel is open (a person outside the current filter or page can still be opened).
-    # `user` and `new` are read leniently: a hand-edited value that means nothing is "nobody", not an error page.
-    creating = new.strip() not in ("", "0")
-    user_id = int(selected_id) if selected_id.isascii() and selected_id.isdigit() and int(selected_id) < 2**31 else None
-    selected = session.get(User, user_id) if user_id else None
-    if creating:
-        selected = None
-    user_ids = [u.id for u in users_page.items]
-    if selected is not None and selected.id not in user_ids:
-        user_ids.append(selected.id)
-    memberships: dict[int, list[TeamMembership]] = {}
-    if user_ids:
-        rows = session.exec(select(TeamMembership).where(TeamMembership.user_id.in_(user_ids))).all()
-        for row in rows:
-            memberships.setdefault(row.user_id, []).append(row)
-
-    granted: dict[int, set[str]] = {}
-    if user_ids:
-        for row in session.exec(select(UserPermission).where(UserPermission.user_id.in_(user_ids))).all():
-            granted.setdefault(row.user_id, set()).add(row.permission)
-
-    merged_into = {
-        link.secondary_user_id: link.main_user_id
-        for link in session.exec(
-            select(LinkedIdentity).where(LinkedIdentity.status == links.ACTIVE, LinkedIdentity.secondary_user_id.in_(user_ids))
-        ).all()
-    } if user_ids else {}
-    # The accounts merged into the selected person, for the panel's "Linked identities" section.
-    merged_in: list[User] = []
-    if selected is not None:
-        for link in session.exec(
-            select(LinkedIdentity).where(LinkedIdentity.status == links.ACTIVE, LinkedIdentity.main_user_id == selected.id)
-        ).all():
-            other = session.get(User, link.secondary_user_id) if link.secondary_user_id else None
-            if other is not None:
-                merged_in.append(other)
-
-    # A row's link keeps the filters and the page, and adds the person.
-    row_query = {key: value for key, value in request.query_params.items() if key not in ("user", "new", "link_error") and value}
-
     return templates.TemplateResponse(
         request,
         "admin_users.html",
         {
             "only_stranded": only_stranded,
-            "permissions": PERMISSIONS,
-            "assignable_roles": ASSIGNABLE_ROLES,
-            "granted": granted,
             "page": users_page,
+            "rows": list_rows(session, users_page.items),
             "teams": teams,
-            "teams_by_id": teams_by_id,
-            "memberships": memberships,
-            "levels": list(MembershipLevel),
             "roles": list(UserRole),
+            "role_tone": ROLE_TONE,
             "statuses": USER_STATUS_LABELS,
             "filters": {"q": q.strip(), "role": role, "team": team.strip(), "status": status},
-            "row_query": row_query,
-            "selected": selected,
-            "selected_missing": bool(selected_id) and selected is None and not creating,
-            "creating": creating,
-            "merged_in": merged_in,
-            "now": datetime.now(timezone.utc),
-            "live_sessions": live_session_counts(session, user_ids),
-            "pending_links": links.rows_for(session, links.PENDING),
-            "active_links": links.rows_for(session, links.ACTIVE, aliases=bool(aliases), limit=200),
-            "show_aliases": bool(aliases),
-            "merged_into": merged_into,
-            "link_error": link_error,
+            "pending_count": _pending_link_count(session),
             "user": user,
         },
     )
 
 
+@router.get("/users/{user_id}", response_class=HTMLResponse)
+def person_page(
+    request: Request,
+    user_id: int,
+    done: str = "",
+    user: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    """One person on their own page (#322): At a glance, then a card per job (app/admin_people.py)."""
+    person = session.get(User, user_id) if 0 < user_id < 2**31 else None
+    if person is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    return templates.TemplateResponse(request, "admin_user_person.html", person_page_context(session, user, person, done=done))
+
+
 def _users_with_link_error(message: str) -> RedirectResponse:
-    return RedirectResponse("/admin/users?" + urlencode({"link_error": message}), status_code=303)
+    return RedirectResponse(LINKS_TAB + "&" + urlencode({"link_error": message}), status_code=303)
 
 
 @router.get("/links/preview", response_class=HTMLResponse)
@@ -366,7 +363,7 @@ def create_link(
     except links.LinkError as refusal:
         session.rollback()
         return _users_with_link_error(str(refusal))
-    return RedirectResponse("/admin/users", status_code=303)
+    return RedirectResponse(LINKS_TAB, status_code=303)
 
 
 def _link_or_404(session: Session, link_id: int) -> LinkedIdentity:
@@ -385,7 +382,7 @@ def approve_link(link_id: int, admin: User = Depends(require_super_admin), sessi
     except links.LinkError as refusal:
         session.rollback()
         return _users_with_link_error(str(refusal))
-    return RedirectResponse("/admin/users", status_code=303)
+    return RedirectResponse(LINKS_TAB, status_code=303)
 
 
 @router.post("/links/{link_id}/decline")
@@ -397,23 +394,35 @@ def decline_link(link_id: int, admin: User = Depends(require_super_admin), sessi
     except links.LinkError as refusal:
         session.rollback()
         return _users_with_link_error(str(refusal))
-    return RedirectResponse("/admin/users", status_code=303)
+    return RedirectResponse(LINKS_TAB, status_code=303)
 
 
 @router.post("/links/{link_id}/unlink")
-def unlink_link(link_id: int, admin: User = Depends(require_super_admin), session: Session = Depends(get_session)):
+def unlink_link(
+    request: Request,
+    link_id: int,
+    back: str = Form(""),
+    admin: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+):
+    """`back` is the person whose page the Unlink button is on (#322): the browser returns there, and a refusal
+    shows in that page's Linked identities card. Without it (the Link requests tab) it returns to the tab."""
     link = _link_or_404(session, link_id)
+    person = session.get(User, int(back)) if back.isascii() and back.isdigit() and int(back) < 2**31 else None
     try:
         links.unlink(session, link, admin)
         session.commit()
     except links.LinkError as refusal:
         session.rollback()
+        if person is not None:
+            return refusal_page(request, session, admin, person, "linked", str(refusal))
         return _users_with_link_error(str(refusal))
-    return RedirectResponse("/admin/users", status_code=303)
+    return _person_redirect(person.id, "linked", "unlinked") if person is not None else RedirectResponse(LINKS_TAB, status_code=303)
 
 
 @router.post("/users/{user_id}")
 def update_user(
+    request: Request,
     user_id: int,
     role: UserRole = Form(...),
     admin: User = Depends(require_super_admin),
@@ -424,7 +433,7 @@ def update_user(
         raise HTTPException(status_code=404, detail="User not found")
 
     if target.is_break_glass and role != UserRole.SUPER_ADMIN:
-        raise HTTPException(status_code=400, detail="A break-glass account stays a super admin; deactivate it instead")
+        return refusal_page(request, session, admin, target, "role", "A break-glass account stays a super admin; deactivate it instead")
     if target.role != role:
         log_action(session, admin.email, "user", target.id, "role_changed", f"{target.role.value} -> {role.value}")
         target.role = role
@@ -444,11 +453,12 @@ def update_user(
 
     session.add(target)
     session.commit()
-    return RedirectResponse(_panel_url(user_id), status_code=303)
+    return _person_redirect(user_id, "role", "role")
 
 
 @router.post("/users/{user_id}/permissions")
 def set_user_permissions(
+    request: Request,
     user_id: int,
     permissions: list[str] = Form(default=[]),
     admin: User = Depends(require_super_admin),
@@ -461,13 +471,13 @@ def set_user_permissions(
         raise HTTPException(status_code=404, detail="User not found")
     wanted = set(permissions)
     if not wanted <= set(PERMISSIONS):
-        raise HTTPException(status_code=400, detail="Unknown permission")
+        return refusal_page(request, session, admin, target, "perms", "Unknown permission")
     if wanted and target.role not in ASSIGNABLE_ROLES:
-        raise HTTPException(status_code=400, detail="Only agents can be given extra permissions")
+        return refusal_page(request, session, admin, target, "perms", "Only agents can be given extra permissions")
     rows = session.exec(select(UserPermission).where(UserPermission.user_id == target.id)).all()
     held = {row.permission: row for row in rows}
     if not target.is_active and wanted - set(held):
-        raise HTTPException(status_code=400, detail="An inactive account cannot be given extra permissions")
+        return refusal_page(request, session, admin, target, "perms", "An inactive account cannot be given extra permissions")
     for key in sorted(wanted - set(held)):
         try:
             with session.begin_nested():  # a double submit may have added it already: not an error
@@ -481,11 +491,12 @@ def set_user_permissions(
             session.delete(row)
             log_action(session, admin.email, "user", target.id, "permission_revoked", key)
     session.commit()
-    return RedirectResponse(_panel_url(user_id), status_code=303)
+    return _person_redirect(user_id, "perms", "perms")
 
 
 @router.post("/users/{user_id}/memberships")
 def set_membership(
+    request: Request,
     user_id: int,
     team_id: int = Form(...),
     level: MembershipLevel = Form(...),
@@ -500,7 +511,7 @@ def set_membership(
     if target.role == UserRole.END_USER:
         # Team access only applies to agents; a row here would do nothing now and
         # quietly take effect if the person is made an agent later.
-        raise HTTPException(status_code=400, detail="Make the user an agent before adding them to a team")
+        return refusal_page(request, session, admin, target, "teams", "Make the user an agent before adding them to a team")
 
     membership = session.get(TeamMembership, (user_id, team_id))
     if membership is None:
@@ -514,7 +525,7 @@ def set_membership(
         membership.level = level
         session.add(membership)
     session.commit()
-    return RedirectResponse(_panel_url(user_id), status_code=303)
+    return _person_redirect(user_id, "teams", "teams")
 
 
 @router.post("/users/{user_id}/memberships/{team_id}/remove")
@@ -535,11 +546,12 @@ def remove_membership(
     )
     session.delete(membership)
     session.commit()
-    return RedirectResponse(_panel_url(user_id), status_code=303)
+    return _person_redirect(user_id, "teams", "teams")
 
 
 @router.post("/users/{user_id}/active")
 def set_user_active(
+    request: Request,
     user_id: int,
     is_active: bool = Form(...),
     admin: User = Depends(require_super_admin),
@@ -551,7 +563,7 @@ def set_user_active(
     if target is None:
         raise HTTPException(status_code=404, detail="User not found")
     if is_active and links.link_of(session, target) is not None:
-        raise HTTPException(status_code=400, detail="This account was merged into another by a link; unlink it to use it again")
+        return refusal_page(request, session, admin, target, "status", "This account was merged into another by a link; unlink it to use it again")
     if target.is_active != is_active:
         log_action(session, admin.email, "user", target.id, "activated" if is_active else "deactivated", "")
         target.is_active = is_active
@@ -564,7 +576,7 @@ def set_user_active(
         else:
             start_waiting_rounds(session, admin.email)  # a request waiting for approvers may now have one (#161)
         session.commit()
-    return RedirectResponse(_panel_url(user_id), status_code=303)
+    return _person_redirect(user_id, "status", "activated" if is_active else "deactivated")
 
 
 @router.post("/users/{user_id}/sign-out")
@@ -580,11 +592,12 @@ def sign_out_user_everywhere(
     ended = revoke_user_sessions(session, target.id)
     log_action(session, admin.email, "user", target.id, "signed_out_everywhere", f"by a super admin; {ended} ended")
     session.commit()
-    return RedirectResponse(_panel_url(user_id), status_code=303)
+    return _person_redirect(user_id, "signin", "signed_out")
 
 
 @router.post("/users/{user_id}/clear-oid")
 def clear_user_object_id(
+    request: Request,
     user_id: int,
     admin: User = Depends(require_super_admin),
     session: Session = Depends(get_session),
@@ -595,13 +608,13 @@ def clear_user_object_id(
     if target is None:
         raise HTTPException(status_code=404, detail="User not found")
     if target.entra_object_id is None:
-        raise HTTPException(status_code=400, detail="This user has no stored object id")
+        return refusal_page(request, session, admin, target, "signin", "This user has no stored object id")
     log_action(session, admin.email, "user", target.id, "oid_cleared", f"was {target.entra_object_id}")
     target.entra_object_id = None
     session.add(target)
     revoke_user_sessions(session, target.id)
     session.commit()
-    return RedirectResponse(_panel_url(user_id), status_code=303)
+    return _person_redirect(user_id, "signin", "oid_cleared")
 
 
 @router.post("/users/{user_id}/unlock")
@@ -623,7 +636,7 @@ def unlock_user(
     target.locked_until = None
     session.add(target)
     session.commit()
-    return RedirectResponse(_panel_url(user_id), status_code=303)
+    return _person_redirect(user_id, "signin", "unlocked")
 
 
 @router.post("/users")
@@ -661,7 +674,7 @@ def create_local_user(
         session.add(TeamMembership(user_id=local_user.id, team_id=team.id, level=level))
         log_action(session, admin.email, "user", local_user.id, "membership_added", f"{team.name}: {level.value}")
     session.commit()
-    return RedirectResponse(_panel_url(local_user.id), status_code=303)
+    return _person_redirect(local_user.id)
 
 
 def _query_id(value: Optional[str]) -> Optional[int]:
@@ -1459,7 +1472,8 @@ def _type_snapshot(session: Session, request_type: RequestType) -> tuple:
         request_type.pass_percent, request_type.offers_required_by,
         request_type.due_days_before, request_type.queue_lead_days,
         _defaults_text(session, request_type), request_type.subrequests_need_own_approval,
-        request_type.approvers_may_self_approve, request_type.is_featured, request_type.icon,
+        request_type.approvers_may_self_approve, request_type.is_featured, request_type.icon, request_type.mailbox_action,
+        request_type.any_one_approver,
     )
 
 
@@ -1515,6 +1529,7 @@ def list_request_types(
             "max_name_length": MAX_REQUEST_NAME_LENGTH,
             "max_description_length": MAX_REQUEST_DESCRIPTION_LENGTH,
             "icons": ICONS,
+            "mailbox_action_labels": MAILBOX_ACTION_LABELS,
             "teams": session.exec(select(Team).order_by(Team.name)).all(),
             "category_options": selectable(session),
             "impact_options": impact_options(),
@@ -1526,10 +1541,21 @@ def list_request_types(
             "question_kinds": QUESTION_KINDS,
             "sub_templates": sub_templates,
             "condition_text": {t.id: format_conditions(session, t.condition_groups, question_labels) for t in all_sub},
-            "agents": session.exec(select(User).where(User.role == UserRole.AGENT, User.is_active).order_by(User.display_name)).all(),
+            "agents": session.exec(select(User).where(User.role.in_(ASSIGNEE_ROLES), User.is_active, User.is_break_glass.is_(False)).order_by(User.display_name)).all(),
             "user": user,
         },
     )
+
+
+def _posted_pass_percent(raw: Optional[str], approval_group_id: Optional[str], any_one_approver: Optional[str], kept: int) -> int:
+    """The editor hides Percent to pass while no approval group is chosen and while Any one approver is ticked (#324): a blank
+    value then keeps `kept`. Otherwise it is required; a value that is not a whole number from 1 to 100 is a 422, as before."""
+    text = (raw or "").strip()
+    if not text and (optional_int(approval_group_id) is None or any_one_approver == "on"):
+        return kept
+    if not text.isascii() or not text.isdigit() or not 1 <= int(text) <= 100:
+        raise HTTPException(status_code=422, detail="The pass percentage must be a whole number from 1 to 100")
+    return int(text)
 
 
 @router.post("/request-types")
@@ -1537,7 +1563,7 @@ def add_request_type(
     name: str = Form(..., max_length=500),
     description: str = Form("", max_length=5000),
     approval_group_id: Optional[str] = Form(None),
-    pass_percent: int = Form(..., ge=1, le=100),
+    pass_percent: Optional[str] = Form(None),
     is_active: Optional[str] = Form(None),
     offers_required_by: Optional[str] = Form(None),
     due_days_before: Optional[str] = Form(None),
@@ -1550,17 +1576,23 @@ def add_request_type(
     approvers_may_self_approve: Optional[str] = Form(None),
     is_featured: Optional[str] = Form(None),
     icon: Optional[str] = Form(None, max_length=40),
+    mailbox_action: Optional[str] = Form(None, max_length=40),
+    any_one_approver: Optional[str] = Form(None),
     admin: User = Depends(require_request_templates),
     session: Session = Depends(get_session),
 ):
+    if (mailbox_action or "").strip() and admin.role != UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Only a super admin can make a request type change a mailbox")
     try:
         request_type = create_request_type(
-            session, name, description, optional_int(approval_group_id), pass_percent, is_active == "on",
+            session, name, description, optional_int(approval_group_id),
+            _posted_pass_percent(pass_percent, approval_group_id, any_one_approver, get_int_setting(session, APPROVAL_DEFAULT_PASS_PERCENT) or 51), is_active == "on",
             offers_required_by == "on", optional_int(due_days_before), optional_int(queue_lead_days),
             defaults=_defaults_from_form(default_team_id, default_category_id, default_impact, default_urgency),
             subrequests_need_own_approval=subrequests_need_own_approval == "on",
             approvers_may_self_approve=approvers_may_self_approve == "on",
-            is_featured=is_featured == "on", icon=icon,
+            is_featured=is_featured == "on", icon=icon, mailbox_action=mailbox_action,
+            any_one_approver=any_one_approver == "on",
         )
     except RequestTypeError as error:
         session.rollback()
@@ -1576,7 +1608,7 @@ def edit_request_type(
     name: str = Form(..., max_length=500),
     description: str = Form("", max_length=5000),
     approval_group_id: Optional[str] = Form(None),
-    pass_percent: int = Form(..., ge=1, le=100),
+    pass_percent: Optional[str] = Form(None),
     is_active: Optional[str] = Form(None),
     offers_required_by: Optional[str] = Form(None),
     due_days_before: Optional[str] = Form(None),
@@ -1589,23 +1621,32 @@ def edit_request_type(
     approvers_may_self_approve: Optional[str] = Form(None),
     is_featured: Optional[str] = Form(None),
     icon: Optional[str] = Form(None, max_length=40),
+    mailbox_action: Optional[str] = Form(None, max_length=40),
+    any_one_approver: Optional[str] = Form(None),
     admin: User = Depends(require_request_templates),
     session: Session = Depends(get_session),
 ):
     request_type = session.get(RequestType, type_id)
     if request_type is None:
         raise HTTPException(status_code=404, detail="Request type not found")
+    if ((mailbox_action or "").strip() or None) != request_type.mailbox_action and admin.role != UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Only a super admin can change what a request type does to a mailbox")
+    if request_type.mailbox_action and admin.role != UserRole.SUPER_ADMIN and (
+        optional_int(approval_group_id) != request_type.approval_group_id or (any_one_approver == "on") != request_type.any_one_approver
+    ):
+        raise HTTPException(status_code=403, detail="Only a super admin can change who approves requests for someone else's mailbox")
     before = _type_snapshot(session, request_type)
     was_active = request_type.is_active
     try:
         update_request_type(
             session, request_type, name, description, optional_int(approval_group_id),
-            pass_percent, is_active == "on", offers_required_by == "on",
+            _posted_pass_percent(pass_percent, approval_group_id, any_one_approver, request_type.pass_percent), is_active == "on", offers_required_by == "on",
             optional_int(due_days_before), optional_int(queue_lead_days),
             defaults=_defaults_from_form(default_team_id, default_category_id, default_impact, default_urgency),
             subrequests_need_own_approval=subrequests_need_own_approval == "on",
             approvers_may_self_approve=approvers_may_self_approve == "on",
-            is_featured=is_featured == "on", icon=icon, set_icon=True,
+            is_featured=is_featured == "on", icon=icon, set_icon=True, mailbox_action=mailbox_action, set_mailbox_action=True,
+            any_one_approver=any_one_approver == "on",
         )
     except RequestTypeError as error:
         session.rollback()
@@ -1639,6 +1680,10 @@ def edit_request_type(
             changes.append(f"featured on the portal {before[10]} -> {after[10]}")
         if before[11] != after[11]:
             changes.append(f"icon {before[11] or '(default)'} -> {after[11] or '(default)'}")
+        if before[12] != after[12]:
+            changes.append(f"mailbox action {before[12] or '(none)'} -> {after[12] or '(none)'}")
+        if before[13] != after[13]:
+            changes.append(f"any one approver is enough {before[13]} -> {after[13]}")
         log_action(session, admin.email, "request_type", request_type.id, "edited", "; ".join(changes))
     if request_type.is_active != was_active:
         log_action(
@@ -1949,8 +1994,23 @@ def _clean_setting_value(session: Session, definition, value: str, submitted: di
     (business hours start and end) are checked together."""
     key = definition.key
     value = value.strip()
-    if len(value) > (500 if definition.kind == "regex" else 200) and definition.kind != "dates":
-        raise ValueError("That is too long (200 characters at most)")
+    if definition.kind == "emails" and value:
+        try:
+            addresses = sorted({normalise_email(part) for part in re.split(r"[,;\s]+", value) if part})
+        except InvalidEmail:
+            raise ValueError("Enter email addresses separated by commas or spaces, or leave it blank")
+        value = ", ".join(addresses)
+        if len(value) > 2000:
+            raise ValueError("That is too long (2000 characters at most)")
+    if len(value) > (500 if definition.kind in ("regex", "reaction_map") else 200) and definition.kind not in ("dates", "emails"):
+        raise ValueError("That is too long (500 characters at most)" if definition.kind in ("regex", "reaction_map") else "That is too long (200 characters at most)")
+    if definition.kind == "reaction_map":
+        try:
+            # Stored as written, tidied: lower case names, one comma and space between pairs. A blank value would mean every
+            # reaction is neutral, which is allowed.
+            value = ", ".join(f"{name}={sentiment}" for name, sentiment in parse_mapping(value).items())
+        except ValueError as error:
+            raise ValueError(str(error))
     if definition.kind == "email" and value:
         try:
             value = normalise_email(value)
@@ -1991,6 +2051,9 @@ def _clean_setting_value(session: Session, definition, value: str, submitted: di
     if definition.kind == "off_minutes":
         if not (value.isascii() and value.isdigit()) or not 0 <= int(value) <= 525600:
             raise ValueError("Enter a whole number of minutes, 0 to 525600 (0 is off)")
+    if definition.kind == "off_days":
+        if not (value.isascii() and value.isdigit()) or not 0 <= int(value) <= 3650:
+            raise ValueError("Enter a whole number of days, 0 to 3650 (0 is never)")
     if definition.kind == "regex" and value:  # blank means the default pattern
         try:
             compile_subject_pattern(value)
@@ -2348,6 +2411,7 @@ def view_mail_intake(
         select(GraphSubscription).where(GraphSubscription.resource == subscription_resource())
     ).first()
     sync = session.exec(select(MailSyncState).where(MailSyncState.folder == mail_folder())).first()
+    reactions_sync = session.exec(select(MailSyncState).where(MailSyncState.folder == sent_folder())).first()
     waiting = session.exec(
         select(func.count()).select_from(GraphNotification).where(
             GraphNotification.processed_at.is_(None), GraphNotification.lifecycle_event.is_(None)
@@ -2370,17 +2434,22 @@ def view_mail_intake(
     flood_recent = session.exec(
         select(InboundMail).where(InboundMail.outcome == IGNORED_FLOOD).order_by(InboundMail.created_at.desc()).limit(10)
     ).all()
-    last_received = session.exec(select(func.max(InboundMail.created_at))).one()
-    warnings = health_warnings(session, now)
+    # Two different times: when the newest mail reached the mailbox, and when the intake last recorded one
+    # (after an outage the catch-up records old mail, so the two can be far apart).
+    last_arrived = session.exec(select(func.max(InboundMail.received_at))).one()
+    last_processed = session.exec(select(func.max(InboundMail.created_at))).one()
+    problems = health_problems(session, now)
     return templates.TemplateResponse(
         request,
         "admin_mail_intake.html",
         {
             "subscription": subscription, "sync": sync, "waiting": waiting, "oldest": oldest, "now": now,
             "flood_day": flood_day, "flood_total": flood_total, "flood_recent": flood_recent,
-            "warnings": warnings, "last_received": last_received,
-            "subscription_problem": any(w.startswith("Mail subscription") for w in warnings),
-            "catch_up_problem": any(w.startswith("Mail catch-up") for w in warnings),
+            "warnings": [p.text for p in problems],
+            "last_arrived": last_arrived, "last_processed": last_processed,
+            "subscription_problem": any(p.kind == SUBSCRIPTION_PROBLEM for p in problems),
+            "catch_up_problem": any(p.kind == CATCH_UP_PROBLEM for p in problems),
+            "reactions_sync": reactions_sync,
             "user": user,
         },
     )
@@ -2400,30 +2469,86 @@ def _every_text(seconds: int) -> str:
 @router.get("/scheduled-jobs", response_class=HTMLResponse)
 def view_scheduled_jobs(
     request: Request,
+    done: str = "",
+    job: str = "",
     user: User = Depends(require_super_admin),
     session: Session = Depends(get_session),
 ):
     """The recurring jobs driven by the scheduled_job table: when each is next due, when it last worked,
-    and why it last failed, under one status line."""
+    and why it last failed, under one status line. `done` is a Run now result key (never text) for `job`."""
     now = datetime.now(timezone.utc)
     rows = session.exec(select(ScheduledJob).order_by(ScheduledJob.name)).all()
-    late, registered = timing(session, JOB_LATE_MINUTES), {job.name for job in SCHEDULED_JOBS}
+    late, registered = timing(session, JOB_LATE_MINUTES), {job_def.name for job_def in SCHEDULED_JOBS}
+    # What the row shows of the stored error: a short summary, and whether the job has worked since (muted) or not (red).
+    errors = {
+        row.name: {
+            "summary": summarise_error(row.last_error),
+            "since_worked": bool(row.last_success_at and row.last_error_at and row.last_success_at > row.last_error_at),
+        }
+        for row in rows if row.last_error
+    }
     return templates.TemplateResponse(
         request,
         "admin_scheduled_jobs.html",
         {
             "rows": rows, "status": status_line(rows, now, late, registered),
             "overdue": set(job_health(rows, now, late, registered).overdue), "registered": registered,
-            "intervals": {job.name: _every_text(job.every_seconds) for job in SCHEDULED_JOBS}, "now": now, "user": user,
+            "intervals": {job_def.name: _every_text(job_def.seconds(session)) for job_def in SCHEDULED_JOBS}, "now": now, "user": user,
+            "descriptions": {job_def.name: job_def.description for job_def in SCHEDULED_JOBS}, "errors": errors,
+            "result": run_now_sentence(done, job, registered),
         },
     )
 
 
+def _registered_job(name: str):
+    """The registered job called `name`; a retired job (a row with no registration) or an unknown name is a 404."""
+    job = next((job for job in SCHEDULED_JOBS if job.name == name), None)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
+@router.get("/scheduled-jobs/{name}/run", response_class=HTMLResponse)
+def run_job_now_page(
+    name: str, request: Request, user: User = Depends(require_super_admin), session: Session = Depends(get_session),
+):
+    """The Run now confirm step: what the job does in plain words, a warning when it can email people or hand tickets to
+    the MSP, and the button. Says why instead when the job is running or already due."""
+    job = _registered_job(name)
+    row = session.get(ScheduledJob, name)
+    return templates.TemplateResponse(
+        request,
+        "admin_scheduled_job_run.html",
+        {
+            "job": job, "every": _every_text(job.seconds(session)), "warnings": [WARNINGS[w] for w in job.warns],
+            "within": within_a_tick(), "refusal": run_now_refusal(row, datetime.now(timezone.utc)), "user": user,
+        },
+    )
+
+
+@router.post("/scheduled-jobs/{name}/run")
+def run_job_now(name: str, user: User = Depends(require_super_admin), session: Session = Depends(get_session)):
+    """Run now: sets the job's next_run_at to now (app/scheduled_jobs.py `run_now`). The worker runs it on its next tick;
+    the web app never runs job code."""
+    job = _registered_job(name)
+    result = run_now(session, job, user.email)
+    key = run_now_key(session.get(ScheduledJob, job.name), result.requested, datetime.now(timezone.utc))
+    session.commit()
+    return RedirectResponse("/admin/scheduled-jobs?" + urlencode({"done": key, "job": job.name}), status_code=303)
+
+
+def _count(text: str) -> int:
+    """A display count from the URL: a non-negative integer, else 0 (a mangled link still shows the page)."""
+    return int(text) if text.isascii() and text.isdigit() and len(text) < 9 else 0
+
+
 @router.get("/outage", response_class=HTMLResponse)
 def outage_page(
-    request: Request, message: str = "", user: User = Depends(require_super_admin), session: Session = Depends(get_session),
+    request: Request, done: str = "", sessions: str = "", passwords: str = "",
+    user: User = Depends(require_super_admin), session: Session = Depends(get_session),
 ):
-    """Outage mode (#164, app/outage.py): the state, who may switch it on, and which agents have no emergency password yet."""
+    """Outage mode (#164, app/outage.py): the state, who may switch it on, and which agents have no emergency password yet.
+    `done` is a result key (never text); the two counts only go with `off`."""
     agents = session.exec(
         select(User).where(User.role.in_([UserRole.AGENT, UserRole.SUPER_ADMIN]), User.is_active, User.is_break_glass.is_(False)).order_by(User.email)
     ).all()
@@ -2431,7 +2556,7 @@ def outage_page(
         request,
         "admin_outage.html",
         {
-            "user": user, "message": message, "status": outage.status(session),
+            "user": user, "message": outage_sentence(done, _count(sessions), _count(passwords)), "status": outage.status(session),
             "without": [a for a in agents if not a.emergency_password_hash], "with_count": sum(1 for a in agents if a.emergency_password_hash),
         },
     )
@@ -2443,9 +2568,9 @@ def outage_on(user: User = Depends(require_super_admin), session: Session = Depe
         outage.turn_on(session, user)
     except outage.OutageError as refusal:
         session.rollback()
-        return RedirectResponse("/admin/outage?" + urlencode({"message": str(refusal)}), status_code=303)
+        return RedirectResponse("/admin/outage?" + urlencode({"done": outage_refusal_key(refusal)}), status_code=303)
     session.commit()
-    return RedirectResponse("/admin/outage?" + urlencode({"message": "Outage mode is on."}), status_code=303)
+    return RedirectResponse("/admin/outage?" + urlencode({"done": "on"}), status_code=303)
 
 
 @router.post("/outage/off")
@@ -2454,7 +2579,7 @@ def outage_off(user: User = Depends(require_super_admin), session: Session = Dep
         result = outage.turn_off(session, user)
     except outage.OutageError as refusal:
         session.rollback()
-        return RedirectResponse("/admin/outage?" + urlencode({"message": str(refusal)}), status_code=303)
+        return RedirectResponse("/admin/outage?" + urlencode({"done": outage_refusal_key(refusal)}), status_code=303)
     session.commit()
-    message = f"Outage mode is off. {result.sessions_ended} emergency session(s) ended, {result.passwords_invalidated} emergency password(s) cleared."
-    return RedirectResponse("/admin/outage?" + urlencode({"message": message}), status_code=303)
+    counts = {"done": "off", "sessions": result.sessions_ended, "passwords": result.passwords_invalidated}
+    return RedirectResponse("/admin/outage?" + urlencode(counts), status_code=303)

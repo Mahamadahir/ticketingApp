@@ -191,6 +191,7 @@ COLUMNS: dict[str, ColumnUse] = {
     "ticket.resolved_by_id": _use(STAFF, USER_ID),
     "ticket.triaged_by_id": _use(STAFF, USER_ID),
     "ticket.escalated_by_id": _use(STAFF, USER_ID),
+    "ticket.msp_warned_user_id": _use(STAFF, USER_ID),
     "ticket.escalation_reason": _use(TEXT, FREE_TEXT, "agent-written, internal", anon=SCRUB),
     "ticket.resolution_notes": _use(TEXT, FREE_TEXT, "the resolution the requester is told", anon=SCRUB),
     "ticket.graph_conversation_id": _use(NOT_PERSON, LABEL, "the mail thread; cleared so mail from the old address cannot join it", anon=NULL),
@@ -234,8 +235,14 @@ COLUMNS: dict[str, ColumnUse] = {
     "approvalvote.voter_id": _use(SUBJECT, USER_ID, "approval votes", anon=KEEP),
     "approvalvote.comment": _use(TEXT, FREE_TEXT, "approval votes", anon=BLANK),
     "ticketapproval.voters": _use(NOT_PERSON, LABEL, "a count"),
+    "approvalvote.extra_voter": _use(NOT_PERSON, LABEL, "a flag: the vote was added for the request, not from the group (#311)"),
     "actiontoken.resolved_by_id": _use(STAFF, USER_ID, "the agent a feedback link is about"),
     "ticketfeedback.resolved_by_id": _use(STAFF, USER_ID, "the agent a rating is about"),
+    "ticket_reaction.user_id": _use(SUBJECT, USER_ID, "reactions the person made to messages about a ticket (Teams or email)", anon=DELETE),
+    "ticket_reaction.reactor_ref": _use(SUBJECT, USER_ID, "reactions (found by this: their Entra object id, or their address for an email reaction)", anon=DELETE),
+    "ticket_reaction.reactor_name": _use(SUBJECT, NAME, "reactions: the name the platform gave", anon=WITH_ROW),
+    "ticket_reaction.reactor_address": _use(SUBJECT, EMAIL, "reactions: the address the platform gave, when it gave one", anon=WITH_ROW),
+    "ticket_reaction.dismissed_by_id": _use(STAFF, USER_ID, "the agent who dismissed the Negative reaction chip"),
     "ticketfeedback.comment": _use(TEXT, FREE_TEXT, "the requester's own words (build-plan, 22 Oct 2026)", anon=BLANK),
     # notifications and mail
     "notification.user_id": _use(SUBJECT, USER_ID, "the person's bell", anon=DELETE),
@@ -257,6 +264,14 @@ COLUMNS: dict[str, ColumnUse] = {
     "mspunmatchedmail.resolved_by": _use(STAFF, EMAIL),
     "mspunmatchedmail.subject": _use(TEXT, FREE_TEXT, "MSP mail", anon=SCRUB),
     "mspunmatchedmail.body": _use(TEXT, FREE_TEXT, "MSP mail", anon=SCRUB),
+    # scheduled mailbox changes (#307): the owner is the requester, the target is whoever it was shared with
+    "mailbox_change.owner_address": _use(SUBJECT, EMAIL, "scheduled mailbox changes on their mailbox", anon=REPLACE),
+    "mailbox_change.owner_object_id": _use(SUBJECT, USER_ID, "scheduled mailbox changes (found by this)", anon=NULL),
+    "mailbox_change.target_address": _use(SUBJECT, EMAIL, "scheduled mailbox changes made for them (forwarding, access)", anon=REPLACE),
+    "mailbox_change.target_object_id": _use(SUBJECT, USER_ID, "scheduled mailbox changes made for them (found by this)", anon=NULL),
+    "mailbox_change.created_by": _use(SUBJECT, EMAIL, "who asked for the change (usually the owner)", anon=SCRUB),
+    "mailbox_change.last_error": _use(TEXT, FREE_TEXT, "the raw Exchange message of a failed attempt; it can name the mailbox", anon=SCRUB),
+    "mailbox_change.last_found": _use(TEXT, FREE_TEXT, "what the read-back showed; it can name the mailbox", anon=SCRUB),
     # configuration that names people or things
     "neverfollowaddress.email": _use(OTHER, EMAIL, "shared mailboxes and lists, not people", anon=DELETE),
     "neverfollowaddress.added_by": _use(STAFF, EMAIL),
@@ -283,6 +298,7 @@ COLUMNS: dict[str, ColumnUse] = {
     "requesttype.offers_required_by": _use(NOT_PERSON, LABEL, "a flag"),
     "numbercounter.name": _use(NOT_PERSON, LABEL),
     "scheduledjob.name": _use(NOT_PERSON, LABEL),
+    "scheduledjob.run_requested_by": _use(STAFF, EMAIL, "the super admin who asked for a Run now; cleared when the worker starts the run"),
 }
 
 # Column names that suggest a person's data. A column the pattern finds that is not in COLUMNS fails the test.

@@ -82,6 +82,13 @@ EVENT_TYPES: tuple[EventType, ...] = (
         AGENT_ROLES, (IN_APP, TEAMS), (IN_APP, TEAMS),
     ),
     EventType(
+        "mailbox_change_failed", "A scheduled mailbox change could not be made or removed",
+        "A bell entry (and Teams) for the team when a scheduled mail forwarding or mailbox access change fails for good: "
+        "a start that could not be made (the request is back in the team's queue) or a removal that could not be made "
+        "(a new high-priority incident is raised). It goes to every working member of the team.",
+        AGENT_ROLES, (IN_APP, TEAMS), (IN_APP, TEAMS),
+    ),
+    EventType(
         "msp_unacknowledged", "The MSP has not confirmed a ticket you sent it",
         "A bell entry when a ticket sent to the MSP has no acknowledgement after the time set under Settings. It goes to the "
         "assigned agent, or to the team's members while nobody is assigned.",

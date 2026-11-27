@@ -42,6 +42,7 @@ from app.models import (
     InboundMail,
     LinkCode,
     LinkedIdentity,
+    MailboxChange,
     Message,
     Notification,
     NotificationPreference,
@@ -57,6 +58,7 @@ from app.models import (
     User,
     UserPermission,
     TeamsConversation,
+    TicketReaction,
     UserSession,
 )
 from app.messages import not_requester_visible_messages, requester_visible_answers, requester_visible_messages
@@ -129,9 +131,10 @@ EXPORTED_TABLES = {
     "teammembership": "account.json", "approvalgroupmember": "account.json", "linked_identity": "account.json",
     "link_code": "account.json (link_codes_asked)", "teams_conversation": "account.json (teams_bot)", "notificationpreference": "preferences.json",
     "requestertimezone": "preferences.json", "activitylog": "activity.csv", "auditlog": "audit.csv",
-    "ticketevent": "ticket_events.json", "ticket": "tickets.json", "ticketfollower": "tickets.json",
+    "ticketevent": "ticket_events.json", "ticket_reaction": "reactions.json", "ticket": "tickets.json", "ticketfollower": "tickets.json",
     "message": "tickets.json", "attachment": "attachments/", "approvalvote": "approvals.json",
     "notification": "notifications.json", "outboundemail": "mail.json", "inboundmail": "mail.json",
+    "mailbox_change": "mailbox_changes.json",
 }
 
 
@@ -273,7 +276,7 @@ def _tickets(session: Session, person: Person, roles: dict[int, set[str]], budge
             ]
             section["feedback"] = [
                 {
-                    "rating": f.rating, "comment": f.comment, "given_at": f.created_at,
+                    "rating": f.rating, "comment": f.comment, "given_at": f.created_at, "from_a_reaction": f.from_reaction,
                     "about": f"staff member user-{f.resolved_by_id}" if f.resolved_by_id else "automatic resolve",
                 }
                 for f in session.exec(select(TicketFeedback).where(TicketFeedback.ticket_id == ticket.id)).all()
@@ -401,6 +404,67 @@ def _preferences(session: Session, person: Person) -> dict:
             for z in session.exec(select(RequesterTimeZone).where(email_matches(RequesterTimeZone.email, person))).all()
         ],
     }
+
+
+def _reactions(session: Session, person: Person) -> list[dict]:
+    """The reactions the person made to messages about tickets (Teams or email, #298): what, when, to which kind of message,
+    on which ticket, and whether it was taken back. Found by their account, their object ids or their addresses."""
+    refs = set(object_ids(session, person)) | set(person.addresses)
+    rows = session.exec(
+        select(TicketReaction, Ticket)
+        .join(Ticket, Ticket.id == TicketReaction.ticket_id)
+        .where(
+            or_(
+                _in(TicketReaction.user_id, person.user_ids),
+                _in(func.lower(TicketReaction.reactor_ref), refs),
+                email_matches(TicketReaction.reactor_address, person),
+            )
+        )
+        .order_by(TicketReaction.id)
+    ).all()
+    return [
+        {
+            "ticket": t.reference, "channel": r.channel, "to": r.message_kind, "reaction": r.raw_type, "emoji": r.emoji,
+            "meaning_then": r.sentiment, "counted": r.by_party, "reacted_at": r.reacted_at, "taken_back_at": r.removed_at,
+            "name_as_received": r.reactor_name, "address_as_received": r.reactor_address, "reactor_ref": r.reactor_ref,
+        }
+        for r, t in rows
+    ]
+
+
+def _mailbox_changes(session: Session, person: Person, name_other_person: bool = False) -> list[dict]:
+    """The scheduled mailbox changes (#307) on the person's mailbox or made for them: what, with whom, when it was to start and end
+    and what happened. Found by their addresses or their Entra object ids. The other person's address is left out ("another
+    person") unless the person running the export ticks "Name the other person in mailbox changes" (`name_other_person`). The raw Exchange messages and job ids are the team's
+    working notes and are not part of the export."""
+    oids = set(object_ids(session, person))
+    rows = session.exec(
+        select(MailboxChange, Ticket)
+        .join(Ticket, Ticket.id == MailboxChange.ticket_id)
+        .where(
+            or_(
+                email_matches(MailboxChange.owner_address, person),
+                email_matches(MailboxChange.target_address, person),
+                email_matches(MailboxChange.created_by, person),  # a request they made for someone else's mailbox (#311)
+                _in(func.lower(MailboxChange.owner_object_id), oids),
+                _in(func.lower(MailboxChange.target_object_id), oids),
+            )
+        )
+        .order_by(MailboxChange.id)
+    ).all()
+    return [
+        {
+            # The other person's address is theirs, not the one asked about: the export names only the asker's own side.
+            "request": t.reference, "kind": c.kind,
+            "mailbox": c.owner_address if name_other_person or c.owner_address.strip().lower() in person.addresses else "another person's",
+            "shared_with": c.target_address if name_other_person or c.target_address.strip().lower() in person.addresses else "another person",
+            "keep_copy": c.keep_copy if c.kind == "forwarding" else None, "starts_at": c.starts_at, "ends_at": c.ends_at,
+            "state": c.state, "applied_at": c.applied_at, "removed_at": c.removed_at,
+            "asked_by": c.created_by if name_other_person or c.created_by.strip().lower() in person.addresses else "another person",
+            "asked_at": c.created_at,
+        }
+        for c, t in rows
+    ]
 
 
 def _teams_bot(session: Session, person: Person) -> list[dict]:
@@ -540,7 +604,10 @@ def _mail(session: Session, person: Person, in_scope: set[int]) -> dict:
 # ---- The export ---------------------------------------------------------------------------------------------
 
 
-def build_export(session: Session, storage: Storage, address: str, requested_by: User, now: Optional[datetime] = None) -> Export:
+def build_export(
+    session: Session, storage: Storage, address: str, requested_by: User, now: Optional[datetime] = None, *,
+    name_other_person: bool = False,
+) -> Export:
     """Builds the ZIP and records the audit entry (the caller commits). Does not keep the file anywhere."""
     now = now or datetime.now(timezone.utc)
     person = find_person(session, address)
@@ -590,6 +657,8 @@ def build_export(session: Session, storage: Storage, address: str, requested_by:
             "preferences.json": _preferences(session, person),
             "mail.json": _mail(session, person, in_scope),
             "ticket_events.json": _ticket_events(session, person, in_scope),
+            "reactions.json": _reactions(session, person),
+            "mailbox_changes.json": _mailbox_changes(session, person, name_other_person),
             "staff_references.json": staff,
             "attachments_not_added.json": listed,
         }
@@ -628,6 +697,6 @@ def build_export(session: Session, storage: Storage, address: str, requested_by:
 
     log_action(
         session, requested_by.email, AUDIT_ENTITY, person.main.id if person.main is not None else 0, AUDIT_ACTION,
-        f"for {person.address}: {len(sections)} tickets, {len(files)} files, {size} bytes",
+        f"for {person.address}: {len(sections)} tickets, {len(files)} files, {size} bytes, other person named in mailbox changes: {'yes' if name_other_person else 'no'}",
     )
     return Export(handle, size, summary)

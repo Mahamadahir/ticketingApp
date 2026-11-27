@@ -16,11 +16,10 @@ from typing import Callable, Optional
 
 from sqlmodel import Session
 
-from app.approval_groups import is_member
 from app.identity import is_requester
 from app.approvals import (
     APPROVED, DECLINED, MAX_COMMENT_LENGTH, NOT_NEEDED, PENDING, SUPERSEDED, WAIVED, WITHDRAWN,
-    describe_rule, vote_for,
+    describe_rule, may_answer, note_required, vote_for,
 )
 from app.messages import requester_visible_answers
 from app.models import ApprovalVote, Category, Notification, RequestType, Ticket, TicketApproval, TicketStatus, User
@@ -111,13 +110,16 @@ def approval_request_card(session: Session, notification: Notification, ticket: 
     approval = session.get(TicketApproval, vote.approval_id) if vote is not None else None
     if approval is None or approval.status != PENDING or vote.decision != PENDING or ticket.status != TicketStatus.AWAITING_APPROVAL:
         raise Unsendable("The request is no longer waiting for this person's answer")
-    if not person.is_active or is_requester(ticket, person) or not is_member(session, approval.group_id, person.id):
+    if not person.is_active or is_requester(ticket, person) or not may_answer(session, approval, vote):
         raise Unsendable("The person can no longer answer this request")  # the buttons would only be refused
     data = {"approval": approval.id, "vote": vote.id}
+    comment_prompt = (
+        "Note (required to approve: who you checked with)" if note_required(session, ticket, person) else "Comment (optional)"
+    )
     body = [
         {"type": "TextBlock", "text": plain(notification_text(notification, ticket)), "wrap": True, "weight": "Bolder"},
         {"type": "FactSet", "facts": request_facts(session, ticket, approval)},
-        {"type": "Input.Text", "id": "comment", "placeholder": "Comment (optional)", "isMultiline": True, "maxLength": MAX_COMMENT_LENGTH},
+        {"type": "Input.Text", "id": "comment", "placeholder": comment_prompt, "isMultiline": True, "maxLength": MAX_COMMENT_LENGTH},
     ]
     actions = [
         {"type": "Action.Execute", "title": "Approve", "verb": VERB_APPROVE, "data": data, "style": "positive"},

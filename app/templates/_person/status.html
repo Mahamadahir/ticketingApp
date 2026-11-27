@@ -1,0 +1,13 @@
+{# Account status (#322): Activate or Deactivate, last and red-bordered. #}
+<form method="post" action="/admin/users/{{ person.id }}/active">
+  <input type="hidden" name="is_active" value="{{ 'false' if person.is_active else 'true' }}" />
+  {% if person.is_active %}
+  <p class="note">They can no longer sign in, and every session ends at once.</p>
+  <button type="submit" class="btn btn-danger">Deactivate</button>
+  {% elif v.merged_into %}
+  <p class="note">This account was merged into another by a link; unlink it to use it again.</p>
+  <button type="submit" class="btn btn-primary" disabled aria-disabled="true">Activate</button>
+  {% else %}
+  <button type="submit" class="btn btn-primary">Activate</button>
+  {% endif %}
+</form>

@@ -404,7 +404,7 @@ def test_each_step_kind_is_drawn_as_its_sentence(client, db_session):
     page = hx(client, "/tickets/activity/latest").text
     card = re.search(r'<article class="act-card act-agent">.*?</article>', page, re.S).group(0)
 
-    assert re.search(r'Updated status: <span class="chip t-gray">New</span> <span class="act-arrow"[^>]*>&rarr;</span> <span class="chip t-blue">With MSP</span>', card)
+    assert re.search(r'Updated status: <span class="chip t-blue">New</span> <span class="act-arrow"[^>]*>&rarr;</span> <span class="chip t-amber">With MSP</span>', card)
     assert re.search(r'Added an internal note<blockquote class="act-quote act-note">Device enrolled</blockquote>', card)
     assert re.search(r'Emailed the requester<span class="act-first-line">On our way</span>', card) and "Second line" not in card
     assert "Assigned to <strong>Agent Ann</strong> (You)" in card
@@ -482,3 +482,95 @@ def test_the_drawer_keeps_the_day_headings_and_back_to_latest_keeps_the_filters(
     link = re.search(r'href="(\?[^"]*before=[^"]*)"[^>]*>Show earlier', first).group(1).replace("&amp;", "&")
     second = client.get("/tickets/activity" + link).text
     assert 'href="/tickets/activity?kind=notes">&larr; Back to the latest' in second
+
+
+# ---- #262 the Person filter reads a window, #270 agent work is decided from the step ------------------------------
+
+
+def _event(db_session, ticket, actor, event_type, days_ago):
+    db_session.add(TicketEvent(
+        ticket_id=ticket.id, event_type=event_type, actor_email=actor,
+        created_at=datetime.now(timezone.utc) - timedelta(days=days_ago),
+    ))
+    db_session.commit()
+
+
+def _people(db_session):
+    made = {}
+    for key, email, role, extra in (
+        ("agent", "zed@example.com", UserRole.AGENT, {}),
+        ("super", "amy@example.com", UserRole.SUPER_ADMIN, {}),
+        ("inactive", "gone@example.com", UserRole.AGENT, {"is_active": False}),
+        ("breakglass", "bg@example.com", UserRole.SUPER_ADMIN, {"is_break_glass": True}),
+        ("requester", "req@example.com", UserRole.END_USER, {}),
+    ):
+        user = User(email=email, display_name=key.capitalize(), role=role, **extra)
+        db_session.add(user)
+        made[key] = user
+    db_session.commit()
+    return made
+
+
+def test_the_person_filter_lists_every_active_agent_and_super_admin_without_reading_history(client, db_session):
+    from sqlalchemy import event
+
+    from app.database import engine
+    from app.team_activity import person_choices
+
+    desk(client, db_session)
+    _people(db_session)
+
+    seen = []
+
+    def record(conn, cursor, statement, *args):
+        seen.append(statement)
+
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        listed = [u.email for u in person_choices(db_session)]
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+    assert "zed@example.com" in listed and "amy@example.com" in listed  # no activity needed
+    assert not {"gone@example.com", "bg@example.com", "req@example.com"} & set(listed)
+    names = [u.display_name for u in person_choices(db_session)]
+    assert names == sorted(names)
+    assert seen and not any("ticketevent" in s or "FROM message" in s for s in seen)  # the user table only
+
+
+def test_a_demoted_person_is_not_listed_but_works_as_the_person_parameter(client, db_session):
+    team, category, _ = desk(client, db_session)
+    classified(client, category, "Long ago")
+    ticket = ticket_named(db_session, "Long ago")
+    people = _people(db_session)
+    _event(db_session, ticket, "zed@example.com", "priority_changed", 3)
+    set_role(db_session, people["agent"].id, UserRole.END_USER)
+
+    default = feed(client).text
+    assert 'value="zed@example.com"' not in default and 'value="amy@example.com"' in default
+    page = feed(client, person="zed@example.com").text
+    assert 'value="zed@example.com" selected' in page  # named in the filter though no longer an agent
+    assert "Priority changed" in page  # and their step shows
+    assert 'value="zed@example.com"' not in feed(client, tab="mine", person="zed@example.com").text  # My activity ignores it
+
+
+def test_a_demoted_agents_past_work_stays_agent_cards_and_their_own_requests_are_requester_cards(client, db_session):
+    team, category, ann_id = desk(client, db_session)
+    classified(client, category, "Ann's old work")  # Ann raised it herself: a created event, then triage
+    ticket = ticket_named(db_session, "Ann's old work")
+    client.post(f"/tickets/{ticket.number}/note", data={"body": "Checked the fuser"})
+    _event(db_session, ticket, "agent@example.com", "priority_changed", 0)
+    _event(db_session, ticket, "agent@example.com", "approval_outcome", 0)  # not agent-only: a role-based step
+    set_role(db_session, ann_id, UserRole.END_USER)
+    second_agent(client, db_session, team)
+
+    page = feed(client).text
+    assert "Approval outcome" in " ".join(re.findall(r'<article class="act-card act-requester">.*?</article>', page, re.S))
+    from app.team_activity import person_choices
+
+    assert "agent@example.com" not in [u.email for u in person_choices(db_session)]  # no longer an agent: not listed
+    assert "agent@example.com" in [u.email for u in person_choices(db_session, "agent@example.com")]  # but ?person= names her
+    agent_text = " ".join(re.findall(r'<article class="act-card act-agent">.*?</article>', page, re.S))
+    requester_text = " ".join(re.findall(r'<article class="act-card act-requester">.*?</article>', page, re.S))
+    assert "Priority changed" in agent_text and "Added an internal note" in agent_text and "Triaged" in agent_text
+    assert "Created" in requester_text  # a step a requester can take stays by role: the request itself
+    assert "Priority changed" not in requester_text and "Triaged" not in requester_text

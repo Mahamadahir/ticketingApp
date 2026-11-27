@@ -108,7 +108,7 @@
     var area = areaOf(event.target);
     if (!area || event.target.name !== "body") { return; }
     clearTimeout(timer);
-    timer = setTimeout(function () { ask(area); }, 120);
+    timer = setTimeout(function () { ask(area); }, 150);  // wait for a pause in the typing (#261): one request per pause, not per key
   });
 
   document.addEventListener("keydown", function (event) {

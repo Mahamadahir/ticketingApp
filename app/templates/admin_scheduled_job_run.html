@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Admin: Run {{ job.name }} now{% endblock %}
+{% block content %}
+{# The Run now confirm step. Only a super admin reaches it. Confirming sets the job's next due time to now; the worker runs it. #}
+<header class="admin-head">
+  <h1>Run {{ job.name }} now</h1>
+  <p><a href="/admin/scheduled-jobs">Back to Scheduled jobs</a></p>
+</header>
+
+<section class="card job-run-card" aria-labelledby="run-what">
+  <div class="card-header"><h2 id="run-what">What this job does</h2><span class="chip t-gray">Every {{ every }}</span></div>
+  <p>{{ job.description or "No description has been written for this job." }}</p>
+  {% for warning in warnings %}
+  <p class="job-warning" role="alert"><span class="chip t-amber">Warning</span> {{ warning }}</p>
+  {% endfor %}
+  <p class="note">Run now does not run the job here. It marks the job as due now and the worker starts it on its next tick ({{ within }}), the same way as any run: one run at a time, and the job keeps its own rules.</p>
+  {% if refusal %}
+  <p class="job-message" role="status"><strong>{{ refusal }}</strong> Nothing was changed.</p>
+  <div class="form-actions"><a class="btn" href="/admin/scheduled-jobs">Back</a></div>
+  {% else %}
+  <form method="post" action="/admin/scheduled-jobs/{{ job.name }}/run">
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Run {{ job.name }} now</button>
+      <a class="btn" href="/admin/scheduled-jobs">Cancel</a>
+    </div>
+  </form>
+  {% endif %}
+</section>
+{% endblock %}

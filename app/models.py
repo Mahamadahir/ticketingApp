@@ -399,6 +399,9 @@ class Ticket(SQLModel, table=True):
     first_responded_at: Optional[datetime] = Field(default=None)
     sla_paused_at: Optional[datetime] = Field(default=None)
     sla_paused_seconds: int = Field(default=0, sa_column_kwargs={"server_default": "0"})
+    # When the SLA clock starts, if not at created_at (a scheduled change starts its clock at the start time). Read it
+    # only through app.sla.sla_start.
+    sla_starts_at: Optional[datetime] = Field(default=None)
 
     # Set when this ticket is linked to a Major Incident or Problem (app/linking.py).
     # One level only: a parent is never itself linked to anything.
@@ -417,6 +420,11 @@ class Ticket(SQLModel, table=True):
     # one of ours. msp_ack_alerted_at is when the "MSP has not confirmed" alert was last raised (once per handoff).
     msp_ticket_number: Optional[str] = Field(default=None, unique=True, index=True)
     msp_ack_alerted_at: Optional[datetime] = Field(default=None)
+    # The handoff moment this ticket's "goes to the MSP tonight" warning was last sent for (#271). Kept on the ticket, not
+    # found by looking for the bell entry, so deleting or purging that entry cannot make the job warn a second time.
+    # msp_warned_user_id is who was told, so a ticket re-assigned after the warning warns its new assignee too.
+    msp_warned_for: Optional[datetime] = Field(default=None)
+    msp_warned_user_id: Optional[int] = Field(default=None, foreign_key="user.id")
 
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -426,7 +434,11 @@ class Ticket(SQLModel, table=True):
 
 class Message(SQLModel, table=True):
     # The note purge (app/note_purge.py) looks only for deleted rows.
-    __table_args__ = (Index("ix_message_deleted", "deleted_at", postgresql_where=text("deleted_at IS NOT NULL")),)
+    # created_at: the Team activity feed and its Person filter read a window of recent messages (#262).
+    __table_args__ = (
+        Index("ix_message_deleted", "deleted_at", postgresql_where=text("deleted_at IS NOT NULL")),
+        Index("ix_message_created_at", "created_at"),
+    )
 
     id: Optional[int] = Field(default=None, primary_key=True)
     ticket_id: int = Field(foreign_key="ticket.id")
@@ -675,10 +687,18 @@ class RequestType(SQLModel, table=True):
     # Off by default (#167): an approver who is also the requester counts as a voter and approves their own
     # request at once (app/approvals.py). Off: the requester is left out of the vote.
     approvers_may_self_approve: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
+    # Off by default (#311): on, the first answer of any voter settles the request (an approval approves it, a decline declines
+    # it), whatever the number of voters and the pass percentage (app/approvals.py `outcome`). Used by the mailbox types, where
+    # the voters are the owner of the mailbox or an IT approver and either one is enough.
+    any_one_approver: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
     # Shown first among the quick-start tiles on the portal's My requests page (#204, app/request_types.py `portal_tiles`).
     is_featured: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
     # The icon on the kind's card and tile (#206): a name from app/request_types.py `ICONS`; blank shows the generic one.
     icon: Optional[str] = Field(default=None)
+    # Blank for an ordinary request; else one of MAILBOX_KINDS (#309): the portal shows that kind's own form instead of form
+    # questions and the request makes a scheduled mailbox change (app/mailbox_changes.py). Such a type may have an approval group (#311), which then only applies to requests about SOMEONE ELSE'S mailbox, and
+    # needs all four self-triage defaults (app/request_types.py).
+    mailbox_action: Optional[str] = Field(default=None)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -759,6 +779,8 @@ class TicketApproval(SQLModel, table=True):
     pass_percent: int
     voters: int  # fixed when the approval starts
     status: str = Field(default="pending")  # pending, approved, declined, waived, withdrawn
+    # Copied from the request type when the round starts (#311): the first answer settles it (RequestType.any_one_approver).
+    any_one: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     settled_at: Optional[datetime] = Field(default=None)
     # Set once when the super admins were told this approval has waited too long (app/approval_reminders.py).
@@ -776,6 +798,9 @@ class ApprovalVote(SQLModel, table=True):
     voter_id: int = Field(foreign_key="user.id", index=True)
     decision: str = Field(default="pending")  # pending, approved, declined, not_needed
     comment: str = Field(default="")
+    # Added for this request on top of the approval group (#311: the owner of the mailbox asked about), so being in the group is
+    # not what lets them answer. Fixed when the round starts like every other voter.
+    extra_voter: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     decided_at: Optional[datetime] = Field(default=None)
     # Reminders queued to this voter and when the last one was (app/approval_reminders.py): what makes the
@@ -809,10 +834,76 @@ class TicketFeedback(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     ticket_id: int = Field(foreign_key="ticket.id", index=True)
-    token_id: int = Field(foreign_key="actiontoken.id", unique=True)
+    # The link it was given through; empty for a quick rating that came from a reaction (`from_reaction`, app/reactions.py).
+    token_id: Optional[int] = Field(default=None, foreign_key="actiontoken.id", unique=True)
     rating: int
     comment: str = Field(default="")
     resolved_by_id: Optional[int] = Field(default=None, foreign_key="user.id", index=True)
+    # A soft rating made from a positive or negative reaction (5 or 1): a later answer through the real link replaces it
+    # (app/action_links.submit_feedback), and taking the reaction back removes it.
+    from_reaction: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
+    reaction_id: Optional[int] = Field(default=None, foreign_key="ticket_reaction.id", ondelete="SET NULL")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class BotMessage(SQLModel, table=True):
+    """A message or card the Teams bot sent about a ticket (app/reactions.py `record_bot_message`). Teams tells the bot which
+    message was reacted to by its activity id only, so the id is kept here with the ticket, the kind of message and, for
+    a message an agent wrote, which one (`message_id`)."""
+
+    __tablename__ = "bot_message"
+    __table_args__ = (UniqueConstraint("conversation_id", "activity_id", name="uq_bot_message_activity"),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    activity_id: str
+    conversation_id: str
+    ticket_id: int = Field(foreign_key="ticket.id", index=True)
+    message_id: Optional[int] = Field(default=None, foreign_key="message.id", ondelete="SET NULL")
+    kind: str  # resolution, awaiting_user, approval, other
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class TicketReaction(SQLModel, table=True):
+    """A reaction to a message about a ticket, from Teams or (#299) from an email: the one record both channels write
+    (app/reactions.py). Reactions are soft signals: they are shown on the ticket and in Team activity, and the one place
+    that decides what they do is `app/reactions.py`. `raw_type` and `emoji` are kept exactly as the platform sent them;
+    `sentiment` is what the admin mapping said at the time. A removed reaction keeps its row with `removed_at`."""
+
+    __tablename__ = "ticket_reaction"
+    __table_args__ = (
+        # The same person's same reaction to the same message is one row while it stands: Teams sending it twice records it once.
+        Index(
+            "uq_ticket_reaction_live", "channel", "message_ref", "reactor_ref", "raw_type", unique=True,
+            postgresql_where=text("removed_at IS NULL"),
+        ),
+        # The queue and the ticket header look only for reactions still showing the red chip.
+        Index(
+            "ix_ticket_reaction_open_negative", "ticket_id",
+            postgresql_where=text("sentiment = 'negative' AND removed_at IS NULL AND dismissed_at IS NULL AND by_party"),
+        ),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ticket_id: int = Field(foreign_key="ticket.id", index=True)
+    channel: str  # teams, email
+    message_kind: str  # resolution, awaiting_user, approval, other
+    message_ref: str  # the platform's id of the message reacted to (a Teams activity id)
+    message_id: Optional[int] = Field(default=None, foreign_key="message.id", ondelete="SET NULL")  # the ticket message it was, when known
+    # When that message was sent, when the channel knows: a reaction to a message sent before the ticket's latest resolution
+    # (or before the current wait began) is about an earlier round and has no effect on this one.
+    message_sent_at: Optional[datetime] = Field(default=None)
+    user_id: Optional[int] = Field(default=None, foreign_key="user.id", index=True, ondelete="SET NULL")  # the person, when matched
+    reactor_ref: str  # who the platform says: the Entra object id (Teams) or the address (email), as received
+    reactor_name: Optional[str] = Field(default=None)
+    reactor_address: Optional[str] = Field(default=None)
+    raw_type: str
+    emoji: Optional[str] = Field(default=None)  # any emoji or unicode the platform sent with it
+    sentiment: str = Field(default="neutral")  # positive, negative, neutral
+    by_party: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})  # the requester or a follower: only theirs can have an effect
+    reacted_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    removed_at: Optional[datetime] = Field(default=None)
+    dismissed_at: Optional[datetime] = Field(default=None)  # an agent dismissed its red Negative reaction chip
+    dismissed_by_id: Optional[int] = Field(default=None, foreign_key="user.id", ondelete="SET NULL")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -930,6 +1021,9 @@ class OutboundEmail(SQLModel, table=True):
     body: Optional[str] = Field(default=None)
     # An email to the MSP: the ids of the ticket's attachments sent with it (comma separated), fixed when it was queued.
     attachment_ids: Optional[str] = Field(default=None)
+    # What a reaction to this email counts as (app/reactions.py: resolution, awaiting_user, other), decided when it is SENT (a chase:
+    # when queued), like the Teams copy's kind. Empty for an email nobody reacts meaningfully to (and every email sent before #299).
+    reaction_kind: Optional[str] = Field(default=None)
 
 
 class ScheduledJob(SQLModel, table=True):
@@ -948,6 +1042,11 @@ class ScheduledJob(SQLModel, table=True):
     last_error: Optional[str] = Field(default=None)
     last_error_at: Optional[datetime] = Field(default=None)
     failures_in_a_row: int = Field(default=0, sa_column_kwargs={"server_default": "0"})
+    # "Run now" (an admin asked for a run): set with next_run_at = now, cleared when the worker claims the job. The
+    # resume time is the due time the job had, put back at the claim so the job keeps its place on its schedule.
+    run_requested_at: Optional[datetime] = Field(default=None)
+    run_requested_by: Optional[str] = Field(default=None)
+    run_resume_at: Optional[datetime] = Field(default=None)
 
 
 class GraphNotification(SQLModel, table=True):
@@ -999,6 +1098,9 @@ class InboundMail(SQLModel, table=True):
     outcome: str  # ticket_created, reply_added or ignored_*
     ticket_id: Optional[int] = Field(default=None, foreign_key="ticket.id", index=True)
     message_id: Optional[int] = Field(default=None, foreign_key="message.id")
+    # When the mail reached the mailbox (Graph's receivedDateTime). `created_at` is when the intake recorded it,
+    # which after an outage and a catch-up is later. None for rows from before this column and for mail built by hand.
+    received_at: Optional[datetime] = Field(default=None)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -1127,6 +1229,10 @@ class MailSyncState(SQLModel, table=True):
     last_handed_over: int = Field(default=0, sa_column_kwargs={"server_default": "0"})  # new ids at the last run
     last_error: Optional[str] = Field(default=None)
     last_error_at: Optional[datetime] = Field(default=None)
+    # A run that finished but could not use something Graph sent (the Outlook reactions job, #299: a reaction blob in a
+    # format it does not understand). Not a failure: the run succeeded. Cleared by a later run that read every blob.
+    last_warning: Optional[str] = Field(default=None)
+    last_warning_at: Optional[datetime] = Field(default=None)
 
 
 TICKET_COUNTER = "ticket"
@@ -1145,7 +1251,10 @@ class TicketEvent(SQLModel, table=True):
     Separate from the audit log, which covers the whole system."""
 
     # The reports (app/reports.py) look events up by type and time.
-    __table_args__ = (Index("ix_ticketevent_type_created", "event_type", "created_at"),)
+    __table_args__ = (
+        Index("ix_ticketevent_type_created", "event_type", "created_at"),
+        Index("ix_ticketevent_created_at", "created_at"),  # the Team activity feed reads a window of recent events (#262)
+    )
 
     id: Optional[int] = Field(default=None, primary_key=True)
     ticket_id: int = Field(foreign_key="ticket.id", index=True)
@@ -1261,3 +1370,53 @@ class PendingBlobDelete(SQLModel, table=True):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     attempts: int = Field(default=0, sa_column_kwargs={"server_default": "0"})
     last_error: Optional[str] = Field(default=None)
+
+
+# The states of a MailboxChange (app/mailbox_changes.py). Plain strings, so a state is not a database enum.
+MAILBOX_SCHEDULED, MAILBOX_APPLYING, MAILBOX_ACTIVE, MAILBOX_REMOVING = "scheduled", "applying", "active", "removing"
+MAILBOX_ENDED, MAILBOX_FAILED, MAILBOX_CANCELLED = "ended", "failed", "cancelled"
+MAILBOX_STATES = (
+    MAILBOX_SCHEDULED, MAILBOX_APPLYING, MAILBOX_ACTIVE, MAILBOX_REMOVING, MAILBOX_ENDED, MAILBOX_FAILED, MAILBOX_CANCELLED,
+)
+MAILBOX_KINDS = ("forwarding", "full_access", "send_as")
+
+
+class MailboxChange(SQLModel, table=True):
+    """One scheduled change to a mailbox in Exchange (app/mailbox_changes.py): mail forwarding, Full access or Send As,
+    from `starts_at` to `ends_at`. The ticket (always a Service Request) is the record people see; this row is what the worker
+    acts on and is the source of truth for what Exchange should hold. Only app/mailbox_executor.py talks to Exchange.
+
+    state: scheduled (waiting for starts_at, or for a retry of the start), applying (the worker is making the change now;
+    a row left in applying or removing past `next_attempt_at` means the worker died mid-call and is picked up again),
+    active (Exchange holds it, waiting for ends_at or a retry of the removal), removing, ended (removed), failed (a final
+    failure that an agent must settle: Try again, Done by hand or Cancel) and cancelled. `attempts` counts the tries of the
+    current step and is reset when the step succeeds. `last_error_category` is the executor's outcome word and `last_error`
+    the raw Exchange text, which only ever goes in an internal note, never to the requester. All times are UTC."""
+
+    __tablename__ = "mailbox_change"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ticket_id: int = Field(foreign_key="ticket.id", index=True)
+    incident_ticket_id: Optional[int] = Field(default=None, foreign_key="ticket.id", index=True)  # raised when the removal failed finally
+    kind: str  # one of MAILBOX_KINDS
+    # Whose mailbox, and who it is shared with (forwarding: who the copy goes to). The object id is the Entra id checked again
+    # when the change is made; the address is what Exchange is given and what people are shown.
+    owner_object_id: Optional[str] = Field(default=None)
+    owner_address: str
+    target_object_id: Optional[str] = Field(default=None)
+    target_address: str
+    keep_copy: bool = Field(default=True, sa_column_kwargs={"server_default": text("true")})  # forwarding only: leave a copy in the owner's mailbox
+    starts_at: datetime
+    ends_at: datetime
+    state: str = Field(default=MAILBOX_SCHEDULED, index=True)
+    attempts: int = Field(default=0, sa_column_kwargs={"server_default": "0"})
+    next_attempt_at: Optional[datetime] = Field(default=None)
+    last_error_category: Optional[str] = Field(default=None)
+    last_error: Optional[str] = Field(default=None)
+    last_found: Optional[str] = Field(default=None)  # what the read-back showed, for the internal note
+    last_job_id: Optional[str] = Field(default=None)
+    applied_at: Optional[datetime] = Field(default=None)
+    removed_at: Optional[datetime] = Field(default=None)
+    created_by: str  # the email of the person (or "system") who asked for it
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

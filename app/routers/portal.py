@@ -1,7 +1,7 @@
 from dataclasses import replace
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from app.templating import templates
 from sqlalchemy import func
@@ -30,11 +30,12 @@ from app.approvals import (
     withdraw,
     count_pending_for,
     describe_rule,
+    note_required,
     pending_for,
     vote_for,
     record_decision,
 )
-from app.backdating import FORMAT as MOMENT_FORMAT, BackdateError, parse_moment
+from app.backdating import FORMAT as MOMENT_FORMAT
 from app.categories import CategoryError, selectable
 from app.forms import MAX_MESSAGE_LENGTH, form_answers, optional_int
 from app.raising import (
@@ -47,7 +48,7 @@ from app.raising import (
 )
 from app.sla import IMPACT_LABELS, URGENCY_LABELS, Level
 from app.triage import TriageError
-from app.visibility import Access, access_context, may_set_required_by, ticket_access
+from app.visibility import ASSIGNEE_ROLES, Access, access_context, may_set_required_by, ticket_access
 from app.attachments import files_by_message
 from app import reply_files
 from app.storage import Storage, get_storage
@@ -68,7 +69,13 @@ from app.reopening import ReopenError, latest_follow_on, open_follow_on_ticket, 
 from app.reply_channel import PORTAL, note_requester_wrote
 from app.splitting import apply_requester_reply
 from app.request_questions import answer_rows, form_rows
-from app.request_types import PROBLEM_TITLE, active_request_types, approval_notice, portal_cards, portal_tiles, request_type_of
+from app.request_types import (
+    PROBLEM_TITLE, active_request_types, approval_notice, is_offered, offers_someone_elses, portal_cards, portal_tiles, request_type_of,
+)
+from app import people_directory, portal_mailbox
+from app.mailbox_changes import MailboxChangeError, cancel_by_requester, changes_for_ticket, stop_now
+from app.portal_mailbox import AccessForm, ConfirmAccess, ConfirmNoCopy, ForwardingForm, MailboxFormError, OwnerRefused, TargetRefused
+from app.rate_limit import PEOPLE_SEARCH, rate_limited
 from app.required_by import RequiredByError, offers_required_by, parse_required_by, set_required_by
 from app.models import FINISHED_STATUSES, Category, MessageDirection, RequestType, Ticket, TicketSource, TicketStatus, TicketType, User, UserRole
 from app.ticket_service import get_by_number
@@ -76,8 +83,8 @@ from app import identity
 from app.identity import is_follower_of, is_requester, my_tickets_query
 from app.pagination import paginate
 from app.reply_channel import AGENT
-from app.settings_store import INBOUND_MAX_ATTACHMENTS, REQUESTER_UPLOAD_TOTAL_MB, count_setting
-from app.time_zones import format_moment, zone_for_user
+from app.settings_store import INBOUND_MAX_ATTACHMENTS, MAILBOX_CHANGE_MAX_DAYS, REQUESTER_UPLOAD_TOTAL_MB, count_setting
+from app.time_zones import MomentError, format_moment, parse_local_moment, zone_for_user
 
 router = APIRouter(prefix="/portal", tags=["portal"])
 
@@ -140,14 +147,37 @@ def _upload_hint(session: Session, user: User) -> dict:
     return {**_upload_limits(session), "show_total": not is_agent(user)}
 
 
-def _render_new_form(request: Request, user: User, session: Session, chosen_type_id: Optional[int] = None) -> HTMLResponse:
+def _render_new_form(
+    request: Request, user: User, session: Session, chosen_type_id: Optional[int] = None,
+    mailbox_form: Optional[ForwardingForm] = None, form_error: str = "", confirm_text: str = "", status_code: int = 200,
+) -> HTMLResponse:
     types = active_request_types(session)
     chosen = next((t for t in types if t.id == chosen_type_id), None)  # a card's kind; one no longer offered is ignored
     agent = is_agent(user)
+    mailbox_mode = ""  # "forwarding" or "access": that kind's own form; "unavailable": a kind with a mailbox action that cannot be used now
+    if chosen is not None and chosen.mailbox_action:
+        if not is_offered(chosen):
+            mailbox_mode = "unavailable"
+        else:
+            mailbox_mode = "access" if chosen.mailbox_action in portal_mailbox.ACCESS_ACTIONS else "forwarding"
+        if mailbox_mode == "access" and mailbox_form is None:
+            # The box the kind is named for starts ticked; the person can tick the other as well.
+            mailbox_form = AccessForm(full_access=chosen.mailbox_action == "full_access", send_as=chosen.mailbox_action == "send_as")
     return templates.TemplateResponse(
         request,
         "portal_new_ticket.html",
         {
+            "mailbox_mode": mailbox_mode,
+            "mailbox_can_other": chosen is not None and offers_someone_elses(chosen),
+            "mailbox_form": mailbox_form or ForwardingForm(),
+            "mailbox_error": form_error,
+            "mailbox_confirm_text": confirm_text,
+            "mailbox_zone": zone_for_user(session, user),
+            "quarter_times": portal_mailbox.QUARTER_TIMES,
+            "mailbox_max_days": count_setting(session, MAILBOX_CHANGE_MAX_DAYS),
+            "mailbox_not_available": portal_mailbox.ACCESS_NOT_AVAILABLE if (
+                chosen is not None and chosen.mailbox_action in portal_mailbox.ACCESS_ACTIONS
+            ) else portal_mailbox.NOT_AVAILABLE,
             "user": user,
             "is_agent": agent,
             "ticket_types": list(TicketType),
@@ -167,6 +197,7 @@ def _render_new_form(request: Request, user: User, session: Session, chosen_type
             "approval_notice": approval_notice(session, chosen, user) if chosen else None,
             **_upload_hint(session, user),
         },
+        status_code=status_code,
     )
 
 
@@ -262,8 +293,11 @@ def _render_ticket(request: Request, ticket: Ticket, user: User, session: Sessio
             "request_info": request_info,
             "answers": requester_visible_answers(session, ticket),
             "my_approval": _my_pending_approval(session, ticket, user),
+            "my_approval_note_required": note_required(session, ticket, user),
+            "mailbox_summary": portal_mailbox.approval_summary(session, ticket) if _my_pending_approval(session, ticket, user) else "",
             "is_approver": vote_for(session, ticket, user) is not None,
             "approval_rule": _approval_rule(session, ticket),
+            "approval_note": portal_mailbox.approval_note(session, ticket) if mine else "",
             "self_approved": _self_approved(session, ticket, user),
             # Only the requester sees who else is copied; a follower must not learn
             # the other followers' addresses, and internal followers are never shown.
@@ -285,6 +319,7 @@ def _render_ticket(request: Request, ticket: Ticket, user: User, session: Sessio
             # The requester and ordinary followers can reply; an internal follower is an
             # agent and replies from the agent console.
             "can_comment": _is_requester(ticket, user) or is_follower_of(session, ticket, user, include_internal=False),
+            "mailboxes": portal_mailbox.views(session, ticket, user) if mine else [],
             "user": user,
         },
     )
@@ -372,6 +407,89 @@ def request_questions(
     )
 
 
+@router.get("/people", response_class=HTMLResponse, dependencies=[Depends(rate_limited(PEOPLE_SEARCH))])
+def find_people(
+    request: Request,
+    q: str = Query("", max_length=100),
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """The people picker (#309): up to ten people matching what was typed (at least two characters), as a list of buttons the
+    form's script turns into a choice. Only enabled members with a mail address, never the person themselves. The object id
+    in each button is what the form stores; the server fetches it again on submit."""
+    error = ""
+    try:
+        found = people_directory.search(session, user, q)
+    except people_directory.DirectoryError as problem:
+        found, error = [], str(problem)
+    return templates.TemplateResponse(
+        request, "_people_results.html",
+        {"people": found, "error": error, "too_short": len(q.strip()) < people_directory.MIN_QUERY_LENGTH},
+    )
+
+
+@router.post("/mailbox-change")
+def request_mailbox_change(
+    request: Request,
+    request_type_id: str = Form(..., max_length=20),
+    target_object_id: str = Form("", max_length=100),
+    target_name: str = Form("", max_length=200),
+    whose: str = Form(portal_mailbox.MINE, max_length=10),
+    owner_object_id: str = Form("", max_length=100),
+    owner_name: str = Form("", max_length=200),
+    keep_copy: Optional[str] = Form(None, max_length=10),
+    start_mode: str = Form(portal_mailbox.NOW, max_length=10),
+    start_date: str = Form("", max_length=20),
+    start_time: str = Form("", max_length=10),
+    end_date: str = Form("", max_length=20),
+    end_time: str = Form("", max_length=10),
+    confirm_no_copy: Optional[str] = Form(None, max_length=10),
+    full_access: Optional[str] = Form(None, max_length=10),
+    send_as: Optional[str] = Form(None, max_length=10),
+    confirm_access: Optional[str] = Form(None, max_length=10),
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """Ask for the signed-in person's OWN mail to be forwarded (#309), or for someone to be given Full access and/or Send As on it
+    (#310). The mailbox is never a field: it is whoever is signed in, and a posted mailbox is ignored. The other person is only ever
+    the object id the people picker stored, fetched again here. The kind of request decides which form this is."""
+    type_id = optional_int(request_type_id)
+    chosen = session.get(RequestType, type_id) if type_id is not None else None
+    access = chosen is not None and chosen.mailbox_action in portal_mailbox.ACCESS_ACTIONS
+    if chosen is None or not chosen.is_active or not (access or chosen.mailbox_action == "forwarding"):
+        raise HTTPException(status_code=400, detail="Choose a kind of request from the list")
+    common = dict(
+        target_object_id=target_object_id.strip(), target_name=target_name.strip(), keep_copy=keep_copy == "on",
+        whose=portal_mailbox.OTHER if whose == portal_mailbox.OTHER else portal_mailbox.MINE,
+        owner_object_id=owner_object_id.strip(), owner_name=owner_name.strip(),
+        start_mode=portal_mailbox.LATER if start_mode == portal_mailbox.LATER else portal_mailbox.NOW,
+        start_date=start_date, start_time=start_time, end_date=end_date, end_time=end_time, confirm_no_copy=confirm_no_copy == "1",
+    )
+    form = (
+        AccessForm(**common, full_access=full_access == "on", send_as=send_as == "on", confirm_access=confirm_access == "1")
+        if access else ForwardingForm(**common)
+    )
+    try:
+        if access:
+            ticket = portal_mailbox.submit_access(session, user, chosen, form)
+        else:
+            ticket = portal_mailbox.submit_forwarding(session, user, chosen, form)
+        log_action(session, user.email, "ticket", ticket.id, "raised", ticket.source.value)
+        session.flush()
+    except (ConfirmNoCopy, ConfirmAccess) as warning:
+        session.rollback()
+        return _render_new_form(request, user, session, chosen.id, form, confirm_text=str(warning), status_code=200)
+    except MailboxFormError as error:
+        session.rollback()
+        if isinstance(error, TargetRefused):
+            form.target_object_id = form.target_name = ""  # asked to choose again
+        if isinstance(error, OwnerRefused):
+            form.owner_object_id = form.owner_name = ""
+        return _render_new_form(request, user, session, chosen.id, form, form_error=str(error), status_code=400)
+    session.commit()
+    return RedirectResponse(f"/portal/{ticket.number}", status_code=303)
+
+
 @router.post("/new")
 def raise_new_ticket(
     request: Request,
@@ -413,19 +531,22 @@ def raise_new_ticket(
         chosen_request_type = session.get(RequestType, type_choice) if type_choice is not None else None
         if type_choice is not None and chosen_request_type is None:
             raise RaiseError("Choose a kind of request from the list")
+        if chosen_request_type is not None and chosen_request_type.mailbox_action:
+            # Only its own form makes the change; raised here it would be a ticket with nothing to do.
+            raise RaiseError("This kind of request has its own form: choose it from New request")
         chosen_agent = optional_int(agent_id)
         assignee = session.get(User, chosen_agent) if chosen_agent is not None else None
-        if chosen_agent is not None and (assignee is None or assignee.role != UserRole.AGENT):
+        if chosen_agent is not None and (assignee is None or assignee.role not in ASSIGNEE_ROLES):
             raise RaiseError("Choose an agent from the list")
         try:
             level_impact = Level(impact) if impact else None
             level_urgency = Level(urgency) if urgency else None
             zone = zone_for_user(session, user)  # the form is shown and read in the agent's own time zone
-            moments = (parse_moment(reported_at, zone), parse_moment(resolved_at, zone))
+            moments = (parse_local_moment(reported_at, zone), parse_local_moment(resolved_at, zone))
             day = parse_required_by(required_by)
-        except (ValueError, BackdateError, RequiredByError) as error:
+        except (ValueError, MomentError, RequiredByError) as error:
             raise RaiseError(
-                str(error) if isinstance(error, (BackdateError, RequiredByError)) else "Choose impact and urgency from the lists"
+                str(error) if isinstance(error, (MomentError, RequiredByError)) else "Choose impact and urgency from the lists"
             )
         ticket = raise_ticket(
             session, user, subject=subject, description=description, for_email=for_email,
@@ -470,6 +591,8 @@ def my_approvals(
             "answers": answer_rows(session, ticket),
             "rule": describe_rule(approval) if approval is not None else None,
             "kind": (request_type_of(session, ticket) or (None, None))[0],
+            "note_required": note_required(session, ticket, user),
+            "mailbox_note": portal_mailbox.approval_summary(session, ticket),
         })
     return templates.TemplateResponse(
         request, "portal_approvals.html", {"cards": cards, "max_comment_length": MAX_COMMENT_LENGTH, "zone": zone, "user": user}
@@ -616,6 +739,58 @@ def withdraw_my_request(
         withdraw(session, ticket, user.email)
     except ApprovalError:
         session.rollback()  # decided or closed since the page was drawn: show them the ticket as it is now
+        return RedirectResponse(f"/portal/{ticket.number}", status_code=303)
+    session.commit()
+    return RedirectResponse(f"/portal/{ticket.number}", status_code=303)
+
+
+def _own_mailbox_change(session: Session, number: int, user: User, change_id: Optional[str] = None):
+    """The ticket and one mailbox change it made, for the requester (their own mailbox or, #311, someone else's that they asked
+    about); 404 for anyone else, any other ticket or a change that belongs to another ticket. A request with several changes (#310) says which in `change_id`; without it, a request
+    with one change means that one."""
+    ticket = _get_own_ticket(session, number, user)
+    found = list(changes_for_ticket(session, ticket))  # `_get_own_ticket` has checked that the user is the requester
+    wanted = optional_int(change_id)
+    if wanted is not None:
+        found = [c for c in found if c.id == wanted]
+    elif len(found) > 1:
+        found = []
+    if len(found) != 1:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    return ticket, found[0]
+
+
+@router.post("/{number}/mailbox/cancel")
+def cancel_my_mailbox_change(
+    number: int,
+    change_id: Optional[str] = Form(None, max_length=20),
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """Cancel the change before it starts (#309). The page asked first (a confirm step); once the start has come it is refused."""
+    ticket, change = _own_mailbox_change(session, number, user, change_id)
+    try:
+        cancel_by_requester(session, change, user.email)
+    except MailboxChangeError:
+        session.rollback()  # started since the page was drawn: show it as it is now
+        return RedirectResponse(f"/portal/{ticket.number}", status_code=303)
+    session.commit()
+    return RedirectResponse(f"/portal/{ticket.number}", status_code=303)
+
+
+@router.post("/{number}/mailbox/stop")
+def stop_my_mailbox_change(
+    number: int,
+    change_id: Optional[str] = Form(None, max_length=20),
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """Stop forwarding now (#309): the end becomes now and the worker's next run removes it."""
+    ticket, change = _own_mailbox_change(session, number, user, change_id)
+    try:
+        stop_now(session, change, user.email)
+    except MailboxChangeError:
+        session.rollback()
         return RedirectResponse(f"/portal/{ticket.number}", status_code=303)
     session.commit()
     return RedirectResponse(f"/portal/{ticket.number}", status_code=303)

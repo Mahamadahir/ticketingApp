@@ -129,6 +129,18 @@ def needs_attention(session: Session, allowed: frozenset[str], now: datetime, zo
                 "blue", "Review", _plural(review, 'resolved ticket triaged as "Other" needs', 'resolved tickets triaged as "Other" need') + " a proper category.",
                 "/admin/category-review", "Review",
             ))
+    if "request-types" in allowed:
+        # The seeded mailbox types (#325) are off and have no team until an admin chooses one: say so until they do.
+        waiting = session.exec(
+            select(RequestType.id).where(
+                RequestType.mailbox_action.is_not(None), RequestType.is_active.is_(False), RequestType.default_team_id.is_(None)
+            ).order_by(RequestType.id)
+        ).all()
+        if waiting:
+            lines.append(Attention(
+                "blue", "Setup", "Mailbox request types need a team before they can be offered.",
+                f"/admin/request-types?type={waiting[0]}", "Open request types",
+            ))
     return lines
 
 

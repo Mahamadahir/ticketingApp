@@ -7,7 +7,7 @@ the ticket is Awaiting user (Scheduled does not stop it). A ticket with a Due da
 (app/required_by.py) is measured against the end of that day in the requester's time zone
 instead of the resolution target, and the wait never moves that date.
 
-Deadlines are stored on the ticket: created_at + target + time spent paused. They
+Deadlines are stored on the ticket: sla_start (created_at unless `sla_starts_at` is set) + target + time spent paused. They
 move only when the priority changes or a pause ends, so the queue can sort on them
 in SQL. While a ticket is paused its stored deadlines are not final, so it is shown
 as paused and sorted after tickets whose clock is running.
@@ -24,7 +24,7 @@ from sqlmodel import Session
 from app.models import FINISHED_STATUSES, RequestType, Ticket, TicketStatus
 from app.settings_store import SLA_AT_RISK_PERCENT, get_int_setting, sla_key
 from app.time_zones import end_of_day_for_email
-from app.ticket_service import EVENT_PRIORITY_CHANGED, record_event
+from app.ticket_service import EVENT_PRIORITY_CHANGED, EVENT_SLA_START_CHANGED, record_event
 
 
 class Level(str, Enum):
@@ -87,8 +87,38 @@ def _aware(value: datetime) -> datetime:
     return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
 
+SLA_START_SQL = func.coalesce(Ticket.sla_starts_at, Ticket.created_at)  # sla_start(ticket), for queries
+
+
+def sla_start(ticket: Ticket) -> datetime:
+    """When the ticket's SLA clock starts: `sla_starts_at` when one was set (a scheduled change starts its clock at
+    the start time), else created_at. The one place the clock's start is read; SQL uses the same coalesce."""
+    return _aware(ticket.sla_starts_at or ticket.created_at)
+
+
+class SlaStartError(ValueError):
+    """A reason the clock cannot start at that moment, worded for the person."""
+
+
+def start_clock_at(session: Session, ticket: Ticket, moment: datetime, actor_email: Optional[str]) -> None:
+    """Starts the ticket's SLA clock at `moment` instead of when it was raised, works both deadlines out again from
+    it and records a ticket event (from and to). A moment before created_at, or after the ticket was resolved or closed, is refused with SlaStartError.
+    Nothing commits. Used by scheduled mailbox changes; no form sets it yet."""
+    moment = _aware(moment)
+    if moment < _aware(ticket.created_at):
+        raise SlaStartError("The SLA cannot start before the ticket was created.")
+    finished_at = ticket.resolved_at or ticket.closed_at
+    if finished_at is not None and moment > _aware(finished_at):
+        raise SlaStartError("The SLA cannot start after the ticket was resolved.")
+    previous = sla_start(ticket)
+    ticket.sla_starts_at = moment
+    recalculate_deadlines(session, ticket)
+    session.add(ticket)
+    record_event(session, ticket, EVENT_SLA_START_CHANGED, actor_email, f"{previous:%Y-%m-%d %H:%M} UTC", f"{moment:%Y-%m-%d %H:%M} UTC")
+
+
 def recalculate_deadlines(session: Session, ticket: Ticket) -> None:
-    """Sets both deadlines from created_at, the current targets and the time already
+    """Sets both deadlines from sla_start(ticket), the current targets and the time already
     spent paused. A ticket with no priority has none, and neither has a backdated one.
     A Due date replaces the resolution target (app/required_by.py): it is the end of that day in
     the requester's time zone, so time spent paused does not move it, and it needs no priority."""
@@ -96,7 +126,7 @@ def recalculate_deadlines(session: Session, ticket: Ticket) -> None:
     if ticket.is_backdated or (priority is None and ticket.due_on is None):
         ticket.first_response_due_at = ticket.resolution_due_at = None
         return
-    base = _aware(ticket.created_at) + timedelta(seconds=ticket.sla_paused_seconds)
+    base = sla_start(ticket) + timedelta(seconds=ticket.sla_paused_seconds)
     first = target_minutes(session, priority, "first_response") if priority else None
     resolution = target_minutes(session, priority, "resolution") if priority else None
     ticket.first_response_due_at = base + timedelta(minutes=first) if first else None
@@ -225,7 +255,7 @@ def sla_view(ticket: Ticket, now: datetime, at_risk_percent: int) -> SlaView:
     remaining = _aware(due) - now
     if remaining.total_seconds() < 0:
         return SlaView("breached", f"{label.rstrip(',')} overdue {_span(remaining)}", due, which)
-    window = _aware(due) - _aware(ticket.created_at)
+    window = _aware(due) - sla_start(ticket)
     if which not in ("required by", "due"):
         window -= timedelta(seconds=ticket.sla_paused_seconds)
     if window.total_seconds() > 0 and remaining <= window * at_risk_percent / 100:
@@ -286,7 +316,7 @@ def _clock_row(label: str, due: Optional[datetime], done_at: Optional[datetime],
         return None
     due = _aware(due)
     if done_at is not None:
-        spent = _aware(done_at) - _aware(ticket.created_at) - (timedelta(seconds=paused_seconds) if minus_pause else timedelta(0))
+        spent = _aware(done_at) - sla_start(ticket) - (timedelta(seconds=paused_seconds) if minus_pause else timedelta(0))
         taken = _span(max(timedelta(0), spent))
         return SlaRow(label, "red", f"Missed · {taken}") if _aware(done_at) > due else SlaRow(label, "green", f"Met · {taken}")
     if ticket.sla_paused_at is not None:
@@ -294,7 +324,7 @@ def _clock_row(label: str, due: Optional[datetime], done_at: Optional[datetime],
     remaining = due - now
     if remaining.total_seconds() < 0:
         return SlaRow(label, "red", f"Breached {_span(remaining)} ago")
-    window = due - _aware(ticket.created_at) - timedelta(seconds=paused_seconds)
+    window = due - sla_start(ticket) - timedelta(seconds=paused_seconds)
     at_risk = window.total_seconds() > 0 and remaining <= window * at_risk_percent / 100
     return SlaRow(label, "amber" if at_risk else "green", f"{_span(remaining)} left")
 
@@ -321,6 +351,21 @@ def at_risk_percent(session: Session) -> int:
     return value if value is not None and 0 < value < 100 else 25
 
 
+def breach_order(default_lead_days: int):
+    """The "Time to breach" sort: every ticket with a running clock first, soonest breach first (a breached ticket's
+    deadline is in the past, so the most overdue comes first), untriaged ones included and not pinned; then the tickets
+    with no running clock (paused, no target, backdated, finished). Same clock as `queue_order` and the SLA chip."""
+    _paused, next_due, finished = _clock_terms(default_lead_days)
+    running = and_(next_due.is_not(None), ~finished, Ticket.is_backdated.is_(False))
+    return [
+        case((running, 0), else_=1),
+        case((running, next_due)).asc().nulls_last(),
+        Ticket.priority.asc().nulls_last(),
+        Ticket.updated_at.desc(),
+        Ticket.id.desc(),
+    ]
+
+
 def queue_order(default_lead_days: int):
     """The agents' queue: untriaged tickets pinned to the top (oldest first), then
     running clocks by time to breach, then paused clocks, then tickets without a
@@ -328,6 +373,28 @@ def queue_order(default_lead_days: int):
     A ticket with a Due date counts as due some days before the end of that day, so work that takes
     time rises early: its request type's queue lead time (RequestType.queue_lead_days) or, when
     that is blank, `default_lead_days` (the REQUIRED_BY_LEAD_DAYS setting)."""
+    paused, next_due, finished = _clock_terms(default_lead_days)
+    group = case(
+        (Ticket.triaged_at.is_(None), 0),
+        (finished, 4),
+        (paused, 2),
+        (next_due.is_(None), 3),
+        else_=1,
+    )
+    return [
+        group,
+        case((Ticket.triaged_at.is_(None), SLA_START_SQL)),
+        next_due.asc().nulls_last(),
+        Ticket.priority.asc().nulls_last(),
+        Ticket.updated_at.desc(),
+        Ticket.id.desc(),  # a total order, so pages never repeat or skip a ticket
+    ]
+
+
+def _clock_terms(default_lead_days: int):
+    """(paused, next_due, finished): the SQL terms for a ticket's running clock, shared by both queue sorts so they
+    agree with each other and with the SLA chip (`sla_view`). `next_due` is the first response until an agent has
+    emailed, then the resolution, with a Due date counting as due some days early (see `queue_order`)."""
     type_lead = sa_select(RequestType.queue_lead_days).where(RequestType.id == Ticket.request_type_id).scalar_subquery()
     lead_days = func.coalesce(type_lead, default_lead_days)
     resolution_due = case(
@@ -346,19 +413,4 @@ def queue_order(default_lead_days: int):
         ),
         else_=resolution_due,
     )
-    finished = Ticket.status.in_(FINISHED_STATUSES)
-    group = case(
-        (Ticket.triaged_at.is_(None), 0),
-        (finished, 4),
-        (paused, 2),
-        (next_due.is_(None), 3),
-        else_=1,
-    )
-    return [
-        group,
-        case((Ticket.triaged_at.is_(None), Ticket.created_at)),
-        next_due.asc().nulls_last(),
-        Ticket.priority.asc().nulls_last(),
-        Ticket.updated_at.desc(),
-        Ticket.id.desc(),  # a total order, so pages never repeat or skip a ticket
-    ]
+    return paused, next_due, Ticket.status.in_(FINISHED_STATUSES)

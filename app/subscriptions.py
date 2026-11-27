@@ -320,6 +320,11 @@ def mail_folder() -> str:
     return f"users/{settings.graph_shared_mailbox}/mailFolders/inbox"
 
 
+def sent_folder() -> str:
+    """The sync-state key of the Sent Items delta the Outlook reactions job keeps (app/email_reactions.py, #299)."""
+    return f"users/{settings.graph_shared_mailbox}/mailFolders/sentitems"
+
+
 def catch_up(session: Session, graph=None, intake: Optional[MailIntake] = None, now: Optional[datetime] = None) -> int:
     """One catch-up run: asks Graph for the inbox messages that changed since the stored deltaLink
     (the first time ever: from now, handing nothing over), hands their ids to the intake, and stores the
@@ -393,23 +398,47 @@ def _sync_pages(session: Session, graph, intake: MailIntake, state: MailSyncStat
 # ---- Health ---------------------------------------------------------------------------------------
 
 
-def health_warnings(session: Session, now: Optional[datetime] = None) -> list[str]:
-    """What /health reports about mail intake. Empty when nothing is wrong or nothing has been set up
-    (no subscription row means the worker has never managed one)."""
+# What kind of trouble a health warning reports. The admin Mail intake page decides its status chips from these,
+# never from the wording of `text`, so a warning can be reworded without a chip turning green.
+SUBSCRIPTION_PROBLEM = "subscription"
+CATCH_UP_PROBLEM = "catch_up"
+REACTION_FORMAT_PROBLEM = "reaction_format"  # the Outlook reactions job could not read what Outlook stored (#299)
+REACTIONS_RUN_PROBLEM = "reactions_run"  # the Outlook reactions job's last run failed (#299)
+
+
+@dataclass(frozen=True)
+class HealthWarning:
+    kind: str  # SUBSCRIPTION_PROBLEM or CATCH_UP_PROBLEM
+    text: str
+
+
+def health_problems(session: Session, now: Optional[datetime] = None) -> list[HealthWarning]:
+    """What /health reports about mail intake, each with its kind. Empty when nothing is wrong or nothing has
+    been set up (no subscription row means the worker has never managed one)."""
     now = now or _now()
-    warnings = []
+    warnings: list[HealthWarning] = []
     row = session.exec(select(GraphSubscription).where(GraphSubscription.resource == subscription_resource())).first()
     if row is not None:
         expires = _utc(row.expires_at)
         if row.subscription_id is None or expires is None:
-            warnings.append("Mail subscription does not exist yet")
+            warnings.append(HealthWarning(SUBSCRIPTION_PROBLEM, "Mail subscription does not exist yet"))
         elif expires <= now:
-            warnings.append("Mail subscription has expired")
+            warnings.append(HealthWarning(SUBSCRIPTION_PROBLEM, "Mail subscription has expired"))
         elif expires - now < timedelta(minutes=renew_margin_minutes(session)):
-            warnings.append("Mail subscription expires soon and has not been renewed")
+            warnings.append(HealthWarning(SUBSCRIPTION_PROBLEM, "Mail subscription expires soon and has not been renewed"))
         if row.last_error:
-            warnings.append("Mail subscription: the last check failed")
+            warnings.append(HealthWarning(SUBSCRIPTION_PROBLEM, "Mail subscription: the last check failed"))
     sync = session.exec(select(MailSyncState).where(MailSyncState.folder == mail_folder())).first()
     if sync is not None and sync.last_error:
-        warnings.append("Mail catch-up: the last run failed")
+        warnings.append(HealthWarning(CATCH_UP_PROBLEM, "Mail catch-up: the last run failed"))
+    reactions_sync = session.exec(select(MailSyncState).where(MailSyncState.folder == sent_folder())).first()
+    if reactions_sync is not None and reactions_sync.last_error:
+        warnings.append(HealthWarning(REACTIONS_RUN_PROBLEM, "Outlook reactions: the last run failed"))
+    if reactions_sync is not None and reactions_sync.last_warning:
+        warnings.append(HealthWarning(REACTION_FORMAT_PROBLEM, "Outlook reactions: reaction format not understood (Outlook may have changed it)"))
     return warnings
+
+
+def health_warnings(session: Session, now: Optional[datetime] = None) -> list[str]:
+    """The text of each of `health_problems`, for /health and the admin home."""
+    return [problem.text for problem in health_problems(session, now)]

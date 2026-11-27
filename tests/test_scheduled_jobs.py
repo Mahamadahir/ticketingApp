@@ -382,7 +382,7 @@ def test_status_line_reports_healthy_failing_and_stuck_jobs():
     stuck = ScheduledJob(name="c", next_run_at=now, lease_owner="w", lease_expires_at=now - timedelta(minutes=1))
     late = timedelta(minutes=3)
     assert status_line([], now, late) == "No recurring jobs have run yet."
-    assert status_line([healthy], now, late) == "All 1 recurring job(s) are healthy."
+    assert status_line([healthy], now, late) == "The 1 recurring job is healthy."
     assert "failing: b" in status_line([healthy, failing], now, late)
     assert "did not finish: c" in status_line([healthy, stuck], now, late)
 
@@ -393,7 +393,7 @@ def test_status_line_reports_a_job_the_worker_has_stopped_running_and_ignores_re
     just_due = ScheduledJob(name="b", next_run_at=START - timedelta(minutes=2))
     retired = ScheduledJob(name="gone", next_run_at=START, failures_in_a_row=5)
     assert "overdue (is the worker running?): a" in status_line([stale, just_due], START, late)
-    assert status_line([just_due, retired], START, late, {"b"}) == "All 1 recurring job(s) are healthy."
+    assert status_line([just_due, retired], START, late, {"b"}) == "The 1 recurring job is healthy."
 
 
 def test_the_admin_page_shows_the_status_and_the_last_error(client, monkeypatch):
@@ -411,3 +411,193 @@ def test_the_admin_page_shows_the_status_and_the_last_error(client, monkeypatch)
 def test_only_a_super_admin_sees_the_page(client):
     login_as(client, "agent@example.com")
     assert client.get("/admin/scheduled-jobs").status_code == 403
+
+
+# ---- Run now (#300) -----------------------------------------------------------------------------------
+
+
+def registered(monkeypatch, *jobs):
+    monkeypatch.setattr(scheduled_jobs, "SCHEDULED_JOBS", list(jobs))
+    monkeypatch.setattr("app.routers.admin.SCHEDULED_JOBS", scheduled_jobs.SCHEDULED_JOBS)
+
+
+def real_now():
+    return datetime.now(timezone.utc)
+
+
+def ticked_once(job):
+    """The worker has ticked: the job has a row, it ran, and its next run is an hour away."""
+    run_due_jobs([job], "w1", Clock(real_now()))
+
+
+def run_now_post(client, name="count"):
+    return client.post(f"/admin/scheduled-jobs/{name}/run", follow_redirects=False)
+
+
+def test_run_now_sets_next_run_at_to_now_and_audits_it(client, monkeypatch):
+    job, calls = counting_job()
+    registered(monkeypatch, job)
+    ticked_once(job)
+    before = row("count").next_run_at
+    login_as(client, "admin@example.com")
+
+    response = run_now_post(client)
+    assert response.status_code == 303
+    saved = row("count")
+    assert saved.next_run_at < before and abs(saved.next_run_at - real_now()) < timedelta(seconds=30)
+    assert saved.run_requested_by == "admin@example.com" and saved.run_requested_at is not None
+    lines = [a for a in late_lines() if a.action == "Run now requested for job count"]
+    assert len(lines) == 1 and lines[0].actor_email == "admin@example.com"
+    assert len(calls) == 1  # the web app ran nothing
+
+    page = client.get("/admin/scheduled-jobs").text
+    assert "Run requested at" in page and "by admin@example.com" in page
+
+
+def test_the_worker_runs_a_requested_job_on_its_next_tick_and_keeps_its_schedule(client, monkeypatch):
+    job, calls = counting_job()
+    registered(monkeypatch, job)
+    ticked_once(job)
+    original_due = row("count").next_run_at
+    login_as(client, "admin@example.com")
+    run_now_post(client)
+
+    assert run_due_jobs([job], "w1", Clock(real_now() + timedelta(minutes=1))) == ["count"]
+    assert len(calls) == 2
+    saved = row("count")
+    assert saved.next_run_at == original_due  # still on its own hourly grid, not now + 1 hour
+    assert saved.run_requested_at is None and saved.run_requested_by is None and saved.run_resume_at is None
+    assert not [a for a in late_lines() if "ran late" in a.action]
+    assert "Run requested" not in client.get("/admin/scheduled-jobs").text
+
+
+def test_the_lease_still_blocks_a_concurrent_run_of_a_requested_job(client, monkeypatch):
+    job, calls = counting_job()
+    registered(monkeypatch, job)
+    ticked_once(job)
+    login_as(client, "admin@example.com")
+    run_now_post(client)
+
+    later = real_now() + timedelta(minutes=1)
+    with Session(engine) as first:
+        assert claim_next_due(first, [job], "w1", later) is not None
+        first.commit()
+    assert run_due_jobs([job], "w2", Clock(later)) == []  # w1 holds the lease
+    assert len(calls) == 1
+
+
+def test_a_retired_job_cannot_be_run(client, monkeypatch):
+    job, _ = counting_job()
+    registered(monkeypatch, job)
+    with Session(engine) as session:
+        session.add(ScheduledJob(name="gone", next_run_at=real_now() + timedelta(hours=1)))
+        session.commit()
+    login_as(client, "admin@example.com")
+
+    assert client.get("/admin/scheduled-jobs/gone/run").status_code == 404
+    assert run_now_post(client, "gone").status_code == 404
+    assert row("gone").run_requested_at is None
+    assert "/admin/scheduled-jobs/gone/run" not in client.get("/admin/scheduled-jobs").text
+
+
+def test_an_agent_cannot_run_a_job_now(client, monkeypatch):
+    job, _ = counting_job()
+    registered(monkeypatch, job)
+    ticked_once(job)
+    before = row("count").next_run_at
+    login_as(client, "agent@example.com")
+
+    assert client.get("/admin/scheduled-jobs/count/run").status_code == 403
+    assert run_now_post(client).status_code == 403
+    assert row("count").next_run_at == before
+
+
+def test_a_job_that_is_running_is_refused_and_not_changed(client, monkeypatch):
+    job, _ = counting_job()
+    registered(monkeypatch, job)
+    ticked_once(job)
+    now = real_now()
+    with Session(engine) as session:
+        saved = session.get(ScheduledJob, "count")
+        saved.next_run_at = now - timedelta(minutes=1)
+        session.commit()
+        assert claim_next_due(session, [job], "w1", now) is not None
+        session.commit()
+    before = row("count")
+    login_as(client, "admin@example.com")
+
+    confirm = client.get("/admin/scheduled-jobs/count/run").text
+    assert "Already running, started at" in confirm and "Run count now</button>" not in confirm
+    followed = client.post("/admin/scheduled-jobs/count/run")
+    assert "count is already running." in followed.text
+    after = row("count")
+    assert after.next_run_at == before.next_run_at and after.run_requested_at is None
+    assert not [a for a in late_lines() if a.action.startswith("Run now")]
+
+
+def test_a_job_that_is_already_due_is_reported_and_not_changed(client, monkeypatch):
+    job, _ = counting_job()
+    registered(monkeypatch, job)
+    ticked_once(job)
+    due = real_now() - timedelta(minutes=5)
+    with Session(engine) as session:
+        saved = session.get(ScheduledJob, "count")
+        saved.next_run_at = due
+        session.commit()
+    login_as(client, "admin@example.com")
+
+    followed = client.post("/admin/scheduled-jobs/count/run")
+    assert "count is already due; the worker will run it within 1 minute." in followed.text
+    after = row("count")
+    assert after.next_run_at == due and after.run_requested_at is None
+    assert not [a for a in late_lines() if a.action.startswith("Run now")]
+
+
+def test_the_confirm_page_shows_the_description_and_the_warnings(client, monkeypatch):
+    plain = ScheduledJobDef("plain", 3600, lambda session: None, "Tidies up old rows.")
+    mailing = ScheduledJobDef("mailing", 3600, lambda session: None, "Writes to requesters.", (scheduled_jobs.WARN_EMAIL,))
+    handoff = ScheduledJobDef("handoff", 3600, lambda session: None, "Sends tickets over.", (scheduled_jobs.WARN_EMAIL, scheduled_jobs.WARN_MSP))
+    registered(monkeypatch, plain, mailing, handoff)
+    run_due_jobs([plain, mailing, handoff], "w1", Clock(real_now()))
+    login_as(client, "admin@example.com")
+
+    page = client.get("/admin/scheduled-jobs/plain/run").text
+    assert "Tidies up old rows." in page and "Warning" not in page and "Run plain now</button>" in page
+    page = client.get("/admin/scheduled-jobs/mailing/run").text
+    assert "Writes to requesters." in page and "can send email" in page and "hand tickets to the MSP" not in page
+    page = client.get("/admin/scheduled-jobs/handoff/run").text
+    assert "can send email" in page and "hand tickets to the MSP" in page
+
+
+def test_every_registered_job_has_a_description_and_the_mail_jobs_warn():
+    assert all(job.description for job in scheduled_jobs.SCHEDULED_JOBS)
+    by_name = {job.name: job for job in scheduled_jobs.SCHEDULED_JOBS}
+    assert scheduled_jobs.WARN_MSP in by_name["msp-handoff"].warns and scheduled_jobs.WARN_EMAIL in by_name["msp-handoff"].warns
+    assert scheduled_jobs.WARN_EMAIL in by_name["chase"].warns
+    assert not by_name["session-cleanup"].warns
+
+
+def test_a_requested_run_keeps_the_grid_even_when_claimed_after_the_original_due_time(client, monkeypatch):
+    job, calls = counting_job()
+    registered(monkeypatch, job)
+    ticked_once(job)
+    original_due = row("count").next_run_at
+    login_as(client, "admin@example.com")
+    run_now_post(client)
+
+    assert run_due_jobs([job], "w1", Clock(original_due + timedelta(seconds=10))) == ["count"]  # claimed after the original due time
+    assert row("count").next_run_at == original_due + timedelta(hours=1)
+
+
+def test_a_requested_run_that_fails_is_retried_and_does_not_push_the_normal_run_later(client, monkeypatch):
+    job = failing_job(name="count", every=3600)
+    registered(monkeypatch, job)
+    run_due_jobs([ScheduledJobDef("count", 3600, lambda session: None)], "w1", Clock(real_now()))
+    original_due = row("count").next_run_at
+    login_as(client, "admin@example.com")
+    run_now_post(client)
+
+    run_due_jobs([job], "w1", Clock(real_now() + timedelta(minutes=1)))
+    saved = row("count")
+    assert saved.failures_in_a_row == 1 and saved.run_resume_at is None
+    assert saved.next_run_at < original_due  # retried in minutes, never later than the normal run

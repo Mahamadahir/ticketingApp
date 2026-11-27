@@ -18,7 +18,7 @@ from tests.test_subject_access import admin_client, storage, world  # noqa: F401
 
 TEMPLATES = Path(__file__).resolve().parent.parent / "app" / "templates"
 PAGES = (
-    "admin_scheduled_jobs.html", "admin_outage.html", "admin_data_protection.html", "admin_anonymise.html",
+    "admin_scheduled_jobs.html", "admin_scheduled_job_run.html", "admin_outage.html", "admin_data_protection.html", "admin_anonymise.html",
     "admin_audit_log.html", "admin_activity_log.html", "admin_feedback.html",
 )
 
@@ -33,15 +33,15 @@ def test_the_system_and_log_pages_use_tokens_never_raw_colours():
         assert not re.search(r"#[0-9a-fA-F]{3,8}\b|rgb\(|style=", text), name
 
 
-def test_scheduled_jobs_show_the_interval_a_result_chip_and_no_invented_run_now(client, db_session, monkeypatch):
+def test_scheduled_jobs_show_the_interval_a_result_chip_and_run_now(client, db_session, monkeypatch):
     admin(client, db_session)
     assert "empty-state" in client.get("/admin/scheduled-jobs").text
     monkeypatch.setattr(scheduled_jobs, "SCHEDULED_JOBS", [failing_job()])
     monkeypatch.setattr("app.routers.admin.SCHEDULED_JOBS", scheduled_jobs.SCHEDULED_JOBS)
     run_due_jobs(None, "w1", Clock(datetime.now(timezone.utc)))
     page = client.get("/admin/scheduled-jobs").text
-    assert "table-box" in page and 'chip t-red">Failing' in page and "<th>Every</th>" in page and "Next due" in page
-    assert "Run now" not in page and "RuntimeError: it broke" in page
+    assert "table-box" in page and 'chip t-red">Failing' in page and "<th>Status</th>" in page and "Every 1 hour" in page and "Next due" in page
+    assert "Run now</a>" in page and "RuntimeError: it broke" in page
 
 
 def test_outage_mode_is_a_status_card_with_the_existing_rules(client, db_session):

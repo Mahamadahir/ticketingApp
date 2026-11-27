@@ -21,12 +21,28 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import Integer, String, case, cast, func, literal, null, or_, union_all
 from sqlmodel import Session, select
 
-from app.models import Message, MessageDirection, Ticket, TicketEvent, User
+from app.models import Message, MessageDirection, Ticket, TicketEvent, TicketReaction, User
+from app.reactions import display_of
 from app.notification_settings import AGENT_ROLES
 from app.settings_store import ACTIVITY_GROUP_MINUTES, count_setting
+from app.status_display import status_label, status_tone
 from app.time_zones import format_long_date, valid_zone
+from app.visibility import ASSIGNEE_ROLES
 
 EXCERPT = 160
+
+# Event types only an agent can cause (triage, assignment, escalation, links, splits, the MSP steps, dates, priority and
+# so on). A step of one of these types is agent work whatever the person's role is now (#270): a demoted agent's past
+# changes stay agent cards. Every other event type (created, reopened, status and approval steps, follower steps, and any
+# type added later) is decided by the person's role, so a new type that a requester can cause is never shown as an
+# agent's by mistake. Add a type here only when a requester or approver can never cause it.
+AGENT_ONLY_EVENTS = (
+    "triaged", "assigned", "escalated", "team_changed", "type_changed", "priority_changed", "category_changed",
+    "category_reviewed", "attachment_renamed", "note_visibility_changed", "backdated", "due_changed", "required_by_changed",
+    "linked", "unlinked", "child_linked", "child_unlinked", "split", "split_from", "reclosed",
+    "sent_to_msp", "msp_hold", "msp_hold_released", "msp_forwarded", "msp_forward_dismissed", "msp_acknowledged",
+    "msp_told_no_longer_needed", "msp_not_told", "with_msp_through", "taken_back_from_msp", "linked_taken_back_from_msp",
+)
 
 
 class Kind(str, Enum):
@@ -60,7 +76,14 @@ def feed_query(
             TicketEvent.detail.label("detail"),
             Ticket.requester_email.label("requester"),
             cast(null(), Integer).label("author_id"),
-            case((User.id.is_(None), False), else_=User.role.in_(AGENT_ROLES)).label("agent"),
+            # Agent work is decided from what the step was, not only from the person's role now (#270): a note, a
+            # change or an email can only have been made by an agent, so a demoted agent's past work stays agent work.
+            # Only the types in AGENT_ONLY_EVENTS are decided that way; every other step goes by the person's role.
+            case(
+                (User.id.is_(None), False),
+                (TicketEvent.event_type.in_(AGENT_ONLY_EVENTS), True),
+                else_=User.role.in_(AGENT_ROLES),
+            ).label("agent"),
         )
         .join(Ticket, Ticket.id == TicketEvent.ticket_id)
         .join(User, func.lower(User.email) == func.lower(TicketEvent.actor_email), isouter=True)
@@ -91,14 +114,43 @@ def feed_query(
         .join(User, User.id == Message.author_user_id, isouter=True)
         .where(Message.deleted_at.is_(None))  # a deleted note vanishes from here too (#255)
     )
+    # Reactions to the bot's messages (#298) are requester steps: the emoji as received in from_value, its sentiment in
+    # to_value and the name Teams gave in detail. Only the requester's and followers' reactions (`by_party`) are steps; anyone
+    # else's (an agent's thumbs-up on a notification card) shows on the ticket's thread only, so it is never read as the
+    # requester acting. Taking one back is a step of its own, at the time it was taken back.
+    def reaction_steps(what: str, moment, *where):
+        return (
+            select(
+                literal("reaction").label("kind"),
+                moment.label("at"),
+                TicketReaction.id.label("row_id"),
+                TicketReaction.ticket_id.label("ticket_id"),
+                literal(what).label("what"),
+                func.coalesce(User.email, TicketReaction.reactor_address, TicketReaction.reactor_name).label("actor"),
+                func.coalesce(TicketReaction.emoji, TicketReaction.raw_type).label("from_value"),
+                TicketReaction.sentiment.label("to_value"),
+                TicketReaction.reactor_name.label("detail"),
+                Ticket.requester_email.label("requester"),
+                cast(null(), Integer).label("author_id"),
+                literal(False).label("agent"),
+            )
+            .join(Ticket, Ticket.id == TicketReaction.ticket_id)
+            .join(User, User.id == TicketReaction.user_id, isouter=True)
+            .where(TicketReaction.by_party.is_(True), *where)
+        )
+
+    reactions = [
+        reaction_steps("reaction", TicketReaction.reacted_at),
+        reaction_steps("reaction_removed", TicketReaction.removed_at, TicketReaction.removed_at.is_not(None)),
+    ]
     if kind == Kind.EVENTS:
         branches = [events]
     elif kind == Kind.CONVERSATION:
-        branches = [messages.where(Message.direction != MessageDirection.INTERNAL, Message.visible_note.is_(False))]
+        branches = [messages.where(Message.direction != MessageDirection.INTERNAL, Message.visible_note.is_(False)), *reactions]
     elif kind == Kind.NOTES:
         branches = [messages.where(or_(Message.direction == MessageDirection.INTERNAL, Message.visible_note.is_(True)))]
     else:
-        branches = [events, messages]
+        branches = [events, messages, *reactions]
 
     scoped = []
     for branch in branches:
@@ -134,8 +186,16 @@ _MESSAGE_WHAT = {
 }
 
 
+def reaction_words(row) -> str:
+    """A reaction as one phrase: "Reacted 👍 like", "Took back 👍 like" (the reaction is shown as received)."""
+    shown = display_of(row.from_value or "")
+    return f"Took back {shown}" if row.what == "reaction_removed" else f"Reacted {shown}"
+
+
 def describe(row) -> str:
     """One line for a feed row."""
+    if row.kind == "reaction":
+        return reaction_words(row) + (f" in Teams ({row.detail})" if row.detail else "")
     if row.kind == "message":
         # The database may hand back the enum's name (OUTBOUND) or its value (outbound).
         text = _MESSAGE_WHAT.get(row.what.lower(), row.what)
@@ -310,6 +370,8 @@ _PRIORITY = re.compile(r"\bP[1-4]\b")
 
 def phrase_of(row, names: Mapping[str, str]) -> str:
     """The short wording of a step for a card's summary line."""
+    if row.kind == "reaction":
+        return reaction_words(row)
     if row.kind == "message":
         what = row.what.lower()
         return {
@@ -345,6 +407,8 @@ def phrase_of(row, names: Mapping[str, str]) -> str:
 def role_of(row) -> str:
     """Who took a step. Requester replies and system steps are never an agent's."""
     actor = (row.actor or "").lower()
+    if row.kind == "reaction":
+        return ROLE_REQUESTER  # shown as a requester step, whoever reacted
     if row.kind == "message":
         if row.what.lower() == MessageDirection.INBOUND.value:
             return ROLE_REQUESTER
@@ -357,14 +421,14 @@ def role_of(row) -> str:
 
 
 def status_chip(value: Optional[str]) -> tuple[str, str]:
-    """(label, chip tone) of a status, the tones the ticket page uses: green Resolved, blue With MSP, gray the rest."""
-    value = (value or "none").lower()
-    label = value.replace("_", " ").capitalize().replace("msp", "MSP")
-    return label, "green" if value == "resolved" else ("blue" if value == "with_msp" else "gray")
+    """(label, chip tone) of a status: the one mapping in app/status_display.py."""
+    return status_label(value), status_tone(value)
 
 
 def step_of(row, names: Mapping[str, str], viewer: Optional[str] = None) -> Step:
-    if row.kind == "message":
+    if row.kind == "reaction":
+        group = "conversation"
+    elif row.kind == "message":
         group = "notes" if row.what.lower() in (MessageDirection.INTERNAL.value, "visible_note") else "conversation"
     else:
         group = "events"
@@ -498,12 +562,15 @@ def _lookups(session: Session, rows) -> tuple[dict[str, str], dict[int, Ticket],
     return people, tickets, teams
 
 
-def person_choices(session: Session, visible, team_id: Optional[int] = None) -> list[User]:
-    """The agents whose steps appear in this viewer's feed (the choices of the person filter)."""
-    feed = feed_query(visible, team_id).subquery()
-    actors = select(func.lower(feed.c.actor)).distinct()
-    query = select(User).where(func.lower(User.email).in_(actors), User.role.in_(AGENT_ROLES)).order_by(User.display_name)
-    return list(session.exec(query).all())
+def person_choices(session: Session, chosen: Optional[str] = None) -> list[User]:
+    """The Person filter's choices (#262): every current agent, that is every active user who can hold tickets
+    (ASSIGNEE_ROLES, break-glass accounts left out as for assignment), by display name. A query on the user table only,
+    never a read of the ticket history. `chosen` is the address in the URL: that person is listed too, whatever their role
+    now, so a demoted agent whose past steps are agent cards can still be picked and stays selected."""
+    listed = User.role.in_(ASSIGNEE_ROLES) & User.is_active & User.is_break_glass.is_(False)
+    if chosen:
+        listed = or_(listed, func.lower(User.email) == chosen.lower())
+    return list(session.exec(select(User).where(listed).order_by(User.display_name)).all())
 
 
 def count_steps_today(session: Session, visible, person: str, zone: str, now: Optional[datetime] = None) -> int:

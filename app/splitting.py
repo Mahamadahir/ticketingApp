@@ -1,10 +1,13 @@
 """Splitting one request into sub-tickets. Nothing here commits.
 
-An agent splits a triaged, unfinished ticket into parts, each with its own subject and
-details. Every part is a real ticket (own number, type, category, assignee, status and
-SLA) made by triaging a new ticket with the original's type, category, impact and urgency,
-which the agent can then amend with the usual controls. It keeps the original's requester
-and source. It is one level only: a sub-ticket is never split again. Who may split is
+An agent splits an unfinished ticket into parts, each with its own subject and details.
+Every part is a real ticket (own number, type, category, assignee, status and SLA).
+Splitting a triaged ticket triages each part with the original's type, category, impact and urgency,
+which the agent can then amend with the usual controls. Splitting an untriaged ticket makes untriaged parts: each
+goes to the untriaged queue and is triaged on its own, and the original, which keeps the requester's conversation,
+becomes their parent with no category of its own: the split marks it triaged (as a parent, so its status can follow its
+parts and an agent can resolve it and email the requester when they are all done). Each part keeps the original's requester
+and source. When the original is split the requester is emailed once (`messages.record_split_notice`). It is one level only: a sub-ticket is never split again. Who may split is
 decided by the route (work access on the original); who may *see* the parts is decided by
 visibility, as for links.
 
@@ -18,8 +21,10 @@ from typing import Optional
 from sqlalchemy import func
 from sqlmodel import Session, select
 
-from app.messages import add_note
-from app.models import FINISHED_STATUSES, Category, RequestType, Ticket, TicketStatus, User
+from app.messages import add_note, record_split_notice
+from app.models import (
+    FINISHED_STATUSES, Category, Message, MessageDirection, MessageVisibility, RequestType, Ticket, TicketStatus, User,
+)
 from app.settings_store import MAX_SUB_TICKETS, count_setting
 from app.sla import Level, recalculate_deadlines
 from app.ticket_service import create_ticket, record_event, set_status
@@ -28,6 +33,7 @@ from app.triage import TriageError, triage_ticket
 EVENT_SPLIT = "split"  # on the original: to_value is the new sub-ticket
 EVENT_SPLIT_FROM = "split_from"  # on the sub-ticket: to_value is the original
 
+UNTRIAGED_SPLIT_DETAIL = "split before triage: the parts are triaged one by one"
 MIN_PARTS = 2  # a split leaves at least two sub-tickets in all
 MAX_LISTED = 50
 
@@ -40,6 +46,32 @@ def max_sub_tickets(session: Session) -> int:
     """The most sub-tickets one ticket can have in all, whether an agent split them off or the request type's
     templates made them (the admin setting `max_sub_tickets`)."""
     return count_setting(session, MAX_SUB_TICKETS)
+
+
+MAX_SUBJECT = 200  # what the Split card accepts for a part's subject and details (the route checks the same)
+MAX_DETAILS = 5000
+PREFILLED_PARTS = 2  # the Split card starts with this many parts, each holding the original's subject and text
+
+
+def request_text(session: Session, ticket: Ticket) -> str:
+    """What the requester wrote on this ticket: its first message from them (not a note, not a deleted one), or ""."""
+    message = session.exec(
+        select(Message).where(
+            Message.ticket_id == ticket.id,
+            Message.direction == MessageDirection.INBOUND,
+            Message.visibility == MessageVisibility.PUBLIC,
+            Message.deleted_at.is_(None),
+        ).order_by(Message.created_at, Message.id).limit(1)
+    ).first()
+    return (message.body if message is not None else "").strip()
+
+
+def prefilled_parts(session: Session, ticket: Ticket, slots: int) -> list[tuple[str, str]]:
+    """The (subject, details) of each part box on a fresh Split card: the first PREFILLED_PARTS hold the original's subject and
+    what the requester wrote, for the agent to trim down to that part's issue; the rest are blank. Nothing is made until the
+    agent confirms. Cut to what the form accepts."""
+    subject, text = ticket.subject[:MAX_SUBJECT], request_text(session, ticket)[:MAX_DETAILS]
+    return [(subject, text) if i < PREFILLED_PARTS else ("", "") for i in range(slots)]
 
 
 def sub_ticket_count(session: Session, original: Ticket) -> int:
@@ -84,7 +116,9 @@ def lock_ticket(session: Session, ticket_id: int) -> None:
 
 def sync_original_status(session: Session, original_id: int) -> bool:
     """Re-derives the original's status from its sub-tickets and records a system event
-    when it changes. Returns whether it changed. A finished or untriaged original is left alone."""
+    when it changes. Returns whether it changed. A finished original is left alone. An original split before triage
+    is marked triaged as a parent by `split_ticket`, so it follows its parts like any other; a ticket with no
+    triage and no parts (it cannot have any) is left alone."""
     # Lock the original and read the statuses after, so two parts changing at once end with
     # the last one seeing the other's change.
     lock_ticket(session, original_id)
@@ -194,14 +228,15 @@ def make_sub_ticket(
     actor: Optional[User],
     *,
     subject: str,
-    category: Category,
-    impact: Level,
-    urgency: Level,
+    category: Optional[Category],
+    impact: Optional[Level],
+    urgency: Optional[Level],
     details: Optional[str] = None,
     request_type: Optional[RequestType] = None,
     approval_covered: bool = False,
     answers_required: bool = True,
     parent_event: str = EVENT_SPLIT,
+    event_detail: Optional[str] = None,
 ) -> Ticket:
     """Makes one sub-ticket of `original`: a new ticket with the original's requester, type and source, triaged
     into `category` with the given impact and urgency, linked to the original (`split_from_id`) and recorded on both.
@@ -209,7 +244,8 @@ def make_sub_ticket(
     app/subrequests.py both come through here, so the derived status, the shared thread and "resolve the original
     when every part is done" are the same for both. `actor` None is the system. It does not re-derive the original's
     status (the caller does, once, when every part exists) and does not check the limit or that the original may
-    be split (the callers do). Raises TriageError when the part cannot be triaged."""
+    be split (the callers do). With no `category` the part is left untriaged (an agent's split of an untriaged
+    original), in the untriaged queue. Raises TriageError when the part cannot be triaged."""
     actor_email = actor.email if actor is not None else "system"
     sub = create_ticket(
         session,
@@ -222,11 +258,12 @@ def make_sub_ticket(
         created_by_id=original.created_by_id,
         announce=False,
     )
-    triage_ticket(
-        session, sub, actor,
-        ticket_type=original.type, category=category, impact=impact, urgency=urgency,
-        request_type=request_type, approval_covered=approval_covered, answers_required=answers_required,
-    )
+    if category is not None:
+        triage_ticket(
+            session, sub, actor,
+            ticket_type=original.type, category=category, impact=impact, urgency=urgency,
+            request_type=request_type, approval_covered=approval_covered, answers_required=answers_required,
+        )
     # Linked after triage, so triaging the part does not re-derive the original's status
     # once per part; it is derived once, by the caller, when every part exists.
     sub.split_from_id = original.id
@@ -238,7 +275,7 @@ def make_sub_ticket(
     if (details or "").strip():
         add_note(session, sub, actor, details.strip())
     record_event(session, sub, EVENT_SPLIT_FROM, actor_email, to_value=original.tag)
-    record_event(session, original, parent_event, actor_email, to_value=sub.tag)
+    record_event(session, original, parent_event, actor_email, to_value=sub.tag, detail=event_detail)
     return sub
 
 
@@ -253,14 +290,13 @@ def split_ticket(
 
     if original.split_from_id is not None:
         raise SplitError("This ticket is itself a sub-ticket, so it cannot be split again")
-    if original.triaged_at is None:
-        raise SplitError("Triage this ticket before splitting it")
     if original.status in FINISHED_STATUSES:
         raise SplitError("A resolved or closed ticket cannot be split")
     if original.status == TicketStatus.AWAITING_APPROVAL:
         raise SplitError("This request is waiting for approval; split it once it has been approved")
-    category = session.get(Category, original.category_id) if original.category_id else None
-    if category is None or original.impact is None or original.urgency is None:
+    untriaged = original.triaged_at is None
+    category = None if untriaged else (session.get(Category, original.category_id) if original.category_id else None)
+    if not untriaged and (category is None or original.impact is None or original.urgency is None):
         raise SplitError("This ticket has no category, impact and urgency to give its parts")
     subjects = [(subject or "").strip() for subject, _ in parts]
     if any(not subject for subject in subjects):
@@ -268,6 +304,10 @@ def split_ticket(
 
     if not parts:
         raise SplitError("Enter a subject for at least one part")
+    # The card starts with the original's text in every part, so two parts left exactly alike are an untrimmed card, not a split.
+    shapes = [(subject.casefold(), " ".join((details or "").split()).casefold()) for subject, (_, details) in zip(subjects, parts)]
+    if len(set(shapes)) < len(shapes):
+        raise SplitError("Two parts are exactly the same: change each to its own issue, or empty the part you do not need")
     existing = sub_ticket_count(session, original)
     if existing + len(parts) < MIN_PARTS:
         raise SplitError(f"Split into at least {MIN_PARTS} parts")
@@ -280,12 +320,21 @@ def split_ticket(
         try:
             made.append(make_sub_ticket(
                 session, original, actor, subject=subject, details=details, category=category,
-                impact=Level(original.impact), urgency=Level(original.urgency),
+                impact=Level(original.impact) if original.impact else None,
+                urgency=Level(original.urgency) if original.urgency else None,
+                event_detail=UNTRIAGED_SPLIT_DETAIL if untriaged else None,
             ))
         except TriageError as error:
             # The parts take this ticket's category, so the cause is the original's.
             raise SplitError(f"The parts cannot take this ticket's category. {error}")
-    original.updated_at = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc)
+    if untriaged:
+        # The original is now the parent of untriaged parts: marked triaged with no category, team change or priority, so it
+        # leaves the untriaged queue (the parts are in it), its status can follow theirs and an agent can resolve it.
+        original.triaged_at = now
+        original.triaged_by_id = actor.id
+    original.updated_at = now
     session.add(original)
     sync_original_status(session, original.id)
+    record_split_notice(session, original, made)
     return made
