@@ -526,7 +526,7 @@ Attachments: the one place a file is checked and stored (docs/plan.md, "Storage 
 File: `app/attachments.py`
 
 - Classes: `AttachmentRejected`, `NewFile`, `RenameRefused`, `TicketFile`
-- Functions: `attachments_of`, `blob_key`, `check_file`, `clean_filename`, `detect_content_type`, `files_by_message`, `is_inline_type`, `keys_in_use`, `lock_blob`, `rename_attachment`, `serving_headers`, `shown_name`, `store_attachment`, `store_blob`, `ticket_files`, `try_lock_blob`
+- Functions: `attachments_of`, `blob_key`, `check_file`, `clean_filename`, `detect_content_type`, `files_by_message`, `is_inline_type`, `keys_in_use`, `lock_blob`, `picture_copies`, `rename_attachment`, `serving_headers`, `shown_name`, `store_attachment`, `store_blob`, `ticket_files`, `try_lock_blob`
 - Imports: `app.config`, `app.models`, `app.storage`, `app.visibility`
 - Imported by: `app.anonymisation`, `app.inbound`, `app.intake`, `app.messages`, `app.note_purge`, `app.raising`, `app.reply_files`, `app.routers.attachments`, `app.routers.portal`, `app.routers.tickets`, `app.subject_access`, `app.teams_intake`, `app.teams_pending`
 - Tests: `test_anonymisation.py`, `test_attachments.py`, `test_inbound_mail.py`, `test_msp_mail.py`, `test_reply_files.py`, `test_subject_access.py`, `test_ticket_page_queries.py`, `test_ticket_redesign.py`, `test_ticket_thread.py`

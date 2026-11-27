@@ -270,6 +270,7 @@ class TicketFile:
     name: str
     who: str
     viewable: bool  # a picture: View shows it in the browser; anything else downloads either way
+    copies: int = 1  # an emailed picture: how many copies of it this person can see (shown once, "sent N times", #345)
 
 
 def ticket_files(session: Session, user: User, levels: AccessContext, ticket: Ticket) -> list[TicketFile]:
@@ -290,4 +291,36 @@ def ticket_files(session: Session, user: User, levels: AccessContext, ticket: Ti
             continue
         who = (person.display_name or person.email) if person is not None else (message.sender if message is not None else None) or "Unknown"
         files.append(TicketFile(attachment, shown_name(attachment), who, is_inline_type(attachment.content_type)))
-    return files
+    return _one_entry_per_picture(files)
+
+
+def _one_entry_per_picture(files: list[TicketFile]) -> list[TicketFile]:
+    """Identical emailed pictures (the same `content_hash`, a signature logo that arrives on every reply) become one entry: the
+    most recent copy (the list is newest first), with `copies` set. Display only: the rows stay. Real files are never grouped.
+    Only the files passed in are counted, which are the ones this person may see."""
+    first: dict[str, TicketFile] = {}
+    out = []
+    for f in files:
+        if not f.attachment.is_inline:
+            out.append(f)
+            continue
+        kept = first.get(f.attachment.content_hash)
+        if kept is None:
+            first[f.attachment.content_hash] = f
+            out.append(f)
+        else:
+            kept.copies += 1
+    return out
+
+
+def picture_copies(session: Session, user: User, levels: AccessContext, ticket: Ticket, attachment: Attachment) -> list[Attachment]:
+    """The rows a rename of this file applies to: for an emailed picture, every copy of it on the ticket this person may see
+    (what the page shows as one entry); for anything else, just the file."""
+    if not attachment.is_inline:
+        return [attachment]
+    same = session.exec(
+        select(Attachment).where(
+            Attachment.ticket_id == ticket.id, Attachment.is_inline, Attachment.content_hash == attachment.content_hash
+        ).order_by(Attachment.id)
+    ).all()
+    return [a for a in same if a.id == attachment.id or may_view_attachment(session, user, a, ticket, levels)]

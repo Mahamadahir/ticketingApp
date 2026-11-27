@@ -407,13 +407,8 @@
   </section>
   {% endif %}
 
-  {# 5. Attachments: every file on the ticket, newest first. View shows a picture in the browser (anything else downloads);
-     Rename changes only the shown name and records it; nothing is ever deleted here. #}
-  <section class="card tp-card tp-box" id="box-files" aria-labelledby="files-heading">
-    <h2 id="files-heading">Attachments</h2>
-    {% if files %}
-    <ul class="tp-filelist">
-      {% for f in files %}
+  {# One row of the Attachments box: a real file or a picture from an email body. #}
+  {% macro file_row(f) %}
       <li>
         {% if editing == "file-" ~ f.attachment.id %}
         <form class="tp-form tp-edit" method="post" action="/tickets/{{ ticket.number }}/attachments/{{ f.attachment.id }}/rename" hx-post="/tickets/{{ ticket.number }}/attachments/{{ f.attachment.id }}/rename" hx-target="main" hx-swap="innerHTML" data-doing="renaming a file">
@@ -426,7 +421,7 @@
         {% else %}
         <span class="tp-fname">{{ f.name }} <span class="muted small">({{ f.attachment.size|file_size }})</span></span>
         {% if f.attachment.display_name %}<span class="muted small">Arrived as {{ f.attachment.filename }}</span>{% endif %}
-        <span class="muted small">Added by {{ f.who }} &middot; {{ f.attachment.created_at|local_time }}</span>
+        <span class="muted small">Added by {{ f.who }} &middot; {{ f.attachment.created_at|local_time }}{% if f.copies > 1 %} &middot; sent {{ f.copies }} times{% endif %}</span>
         <span class="tp-factions">
           <a href="/attachments/{{ f.attachment.id }}" target="_blank" rel="noopener">View</a>
           <a href="/attachments/{{ f.attachment.id }}?download=1">Download</a>
@@ -434,10 +429,29 @@
         </span>
         {% endif %}
       </li>
-      {% endfor %}
+  {% endmacro %}
+
+  {# 5. Attachments: every file on the ticket, newest first. View shows a picture in the browser (anything else downloads);
+     Rename changes only the shown name and records it; nothing is ever deleted here. #}
+  <section class="card tp-card tp-box" id="box-files" aria-labelledby="files-heading">
+    <h2 id="files-heading">Attachments</h2>
+    {% set real_files = files|rejectattr("attachment.is_inline")|list %}
+    {% set email_pictures = files|selectattr("attachment.is_inline")|list %}
+    {% if real_files %}
+    <ul class="tp-filelist">
+      {% for f in real_files %}{{ file_row(f) }}{% endfor %}
     </ul>
     {% else %}
     <p class="muted">No files on this ticket.</p>
+    {% endif %}
+    {% if email_pictures %}
+    {# Pictures embedded in an email's body (a pasted screenshot, a signature logo), folded after the real files (#345). #}
+    <details class="tp-pictures"{% for f in email_pictures if editing == "file-" ~ f.attachment.id %} open{% endfor %}>
+      <summary>Pictures in emails ({{ email_pictures|length }})</summary>
+      <ul class="tp-filelist">
+        {% for f in email_pictures %}{{ file_row(f) }}{% endfor %}
+      </ul>
+    </details>
     {% endif %}
   </section>
 
