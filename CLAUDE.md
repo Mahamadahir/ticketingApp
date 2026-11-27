@@ -51,6 +51,23 @@ starting a phase, and `README.md` for how to run it.
   and the ticket an agent escalated (`TicketEscalator`). Escalation is by category (`app/escalation.py`; the target is chosen when the category is
   created, and the reason is also an internal note); escalate and re-assign are separate actions
   over one shared `move_ticket` in `app/triage.py`; the MSP target waits for the phase 5 handoff.
+- **Built after Phase 9 (20 to 27 Nov 2026), all merged:** splitting before triage with pre-filled
+  parts and a split email (#259); refusals shown in their own card (#266 to #269); the MSP warning kept
+  on the ticket (#271); super admins can hold tickets, one assignee-roles helper
+  `visibility.ASSIGNEE_ROLES` (#288); the queue's Status filter, sort by time to breach and status
+  colours from one mapping in `app/status_display.py` (#290); Team activity's Person filter lists all
+  current agents, agent work decided from the step (#262, #270); ticket page query counts fixed
+  (#261, #263); cards that fit their content (#294); test databases dropped after each run and
+  `tools/clean_test_dbs.py` (#295); **Run now** on Scheduled jobs (sets `next_run_at`; the worker runs it)
+  (#300); **reactions**: Teams `messageReaction` and Outlook reactions read from Sent Items by the
+  `email-reactions` job, one model and one place for their effects in `app/reactions.py`, soft only
+  (feedback "from a reaction", acknowledgement stops chases; never closes a ticket) (#298, #299), with
+  the acknowledged-wait chip and auto-resolve backstop (#303); **Admin > Users design B**: a people
+  table and a page per person whose sections and At a glance facts come from registries in
+  `app/admin_people.py` (#322, replacing 9I's panel); the Scheduled jobs page with readable errors and
+  fixed result keys instead of `?message=` text, and boosted htmx requests always get the full frame
+  (#323); Percent to pass shown only with an approval group (#324); self-service mailbox changes
+  (tracker #305). Open follow-ups: #339, #340.
 - Phase 1 progress: 1A, 1B, 1C (messages and followers) are merged. 1D is split in
   two: **1D-i** (explicit triage, categories with the "Other" review queue,
   settings, the re-assign control) is built in `app/triage.py`,
