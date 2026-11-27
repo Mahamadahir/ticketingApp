@@ -1049,6 +1049,35 @@ class ScheduledJob(SQLModel, table=True):
     run_resume_at: Optional[datetime] = Field(default=None)
 
 
+RUN_RUNNING, RUN_DID_WORK, RUN_NOTHING, RUN_FAILED, RUN_DID_NOT_FINISH = "running", "did_work", "nothing_to_do", "failed", "did_not_finish"
+RUN_OUTCOMES = (RUN_RUNNING, RUN_DID_WORK, RUN_NOTHING, RUN_FAILED, RUN_DID_NOT_FINISH)
+
+
+class ScheduledJobRun(SQLModel, table=True):
+    """One run of a scheduled job (#341): inserted when the worker claims the job, finished when the run ends. `summary_counts` is
+    a fixed-key dict of numbers and `ticket_ids` the tickets the run changed (capped at 20, `tickets_more` is how many were left
+    out): no free text and no person data. app/job_runs.py writes and reads these rows and words them for the admin pages."""
+
+    __tablename__ = "scheduled_job_run"
+    __table_args__ = (
+        Index("ix_scheduled_job_run_job_started", "job_name", text("started_at DESC")),
+        Index("ix_scheduled_job_run_started_at", "started_at"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    job_name: str
+    started_at: datetime
+    finished_at: Optional[datetime] = Field(default=None)  # null while running
+    duration_ms: Optional[int] = Field(default=None)
+    outcome: str = Field(default=RUN_RUNNING)
+    summary_counts: dict = Field(default_factory=dict, sa_column=Column(JSON, nullable=False, server_default="{}"))
+    ticket_ids: list = Field(default_factory=list, sa_column=Column(JSON, nullable=False, server_default="[]"))
+    tickets_more: int = Field(default=0, sa_column_kwargs={"server_default": "0"})
+    error: Optional[str] = Field(default=None)
+    requested_by: Optional[str] = Field(default=None)  # the super admin's email for a Run now, else null
+    worker: Optional[str] = Field(default=None)  # the lease owner
+
+
 class GraphNotification(SQLModel, table=True):
     """A change notification Microsoft Graph sent to the webhook (phase 3A). The webhook only checks
     the clientState and stores one row per notification, then answers 202 within Graph's three

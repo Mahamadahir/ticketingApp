@@ -299,6 +299,10 @@ COLUMNS: dict[str, ColumnUse] = {
     "numbercounter.name": _use(NOT_PERSON, LABEL),
     "scheduledjob.name": _use(NOT_PERSON, LABEL),
     "scheduledjob.run_requested_by": _use(STAFF, EMAIL, "the super admin who asked for a Run now; cleared when the worker starts the run"),
+    "scheduled_job_run.job_name": _use(NOT_PERSON, LABEL),
+    "scheduled_job_run.requested_by": _use(STAFF, EMAIL, "the super admin who asked for this Run now; kept with the run for the job history"),
+    "scheduled_job_run.summary_counts": _use(NOT_PERSON, LABEL, "fixed keys and numbers only, never a name or address"),
+    "scheduled_job_run.ticket_ids": _use(NOT_PERSON, LABEL, "ticket ids only"),
 }
 
 # Column names that suggest a person's data. A column the pattern finds that is not in COLUMNS fails the test.

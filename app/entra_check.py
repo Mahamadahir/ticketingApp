@@ -34,6 +34,7 @@ from sqlmodel import Session, select
 from app.approvals import drop_votes_of
 from app.audit import log_action
 from app.config import settings
+from app.run_summary import RunSummary
 from app.models import Setting, User, UserRole
 from app.notifications import notify_account_deactivated
 from app.sessions import revoke_user_sessions
@@ -162,13 +163,14 @@ def deactivate(session: Session, person: User, reason: str) -> None:
         notify_account_deactivated(session, admin, person, reason)
 
 
-def run_entra_account_check(session: Session, now: Optional[datetime] = None) -> None:
+def run_entra_account_check(session: Session, now: Optional[datetime] = None) -> RunSummary:
     """The recurring job (app/scheduled_jobs.py). Does nothing unless ENTRA_ACCOUNT_CHECK_ENABLED is on, Graph is
-    configured and tonight's run is due. Raises when every lookup failed, so the failure is visible."""
+    configured and tonight's run is due. Raises when every lookup failed, so the failure is visible.
+    Summary: checked, deactivated, skipped_not_due (it woke outside its nightly window) or skipped_off (the check is off or Graph is not configured)."""
     if not (settings.entra_account_check_enabled and settings.graph_configured):
-        return
+        return RunSummary.of(skipped_off=1)
     if not is_due(session, now or datetime.now(timezone.utc)):
-        return
+        return RunSummary.of(skipped_not_due=1)
     result = check_accounts(session)
     if result.looked_at and (result.gave_up or result.failed == result.looked_at):
         raise RuntimeError(
@@ -176,3 +178,4 @@ def run_entra_account_check(session: Session, now: Optional[datetime] = None) ->
             f"lookups failed ({result.first_error}); is User.Read.All granted?"
         )
     _mark_done(session, now or datetime.now(timezone.utc))
+    return RunSummary.of(checked=result.looked_at, deactivated=result.deactivated)

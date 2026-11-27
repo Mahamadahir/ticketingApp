@@ -1,5 +1,5 @@
 /* The End user picker on the agent ticket page (#279). The chevron after the End user's name opens an inline panel: a search box
-   (htmx fetches GET /tickets/{number}/people as the agent types), the results as buttons, then the two tick boxes and Save / Cancel.
+   (htmx fetches GET /tickets/{number}/people as the agent types), the results as buttons, then the two tick boxes, the confirm line ("Change end user from ... to ...?", filled in once someone is chosen, hidden again by Choose someone else) and Save / Cancel.
    A result button stores its directory object id (new_requester_oid); "Use {address}" stores a typed address (new_requester) for
    someone with no Entra account. The server checks either choice again. Escape or Cancel closes the panel and gives focus back to the
    chevron. Defined once; it listens on the document, so it keeps working after the page swaps <main>. */
@@ -16,6 +16,9 @@
     byId("rp-oid").value = "";
     byId("rp-address").value = "";
     byId("rp-chosen").hidden = true;
+    var confirm = byId("rp-confirm");
+    confirm.hidden = true;
+    confirm.textContent = "";
     byId("rp-search").hidden = false;
     byId("rp-results").innerHTML = "";
     q.value = "";
@@ -62,6 +65,13 @@
     byId("rp-address").value = oid ? "" : (button.getAttribute("data-address") || "");
     byId("rp-chosen-name").textContent = button.getAttribute("data-detail") || button.getAttribute("data-name");
     byId("rp-chosen").hidden = false;
+    // The confirm line above Save (no browser pop-up): the current end user and the one just chosen.
+    var confirm = byId("rp-confirm");
+    var name = button.getAttribute("data-name") || "";
+    var mail = button.getAttribute("data-mail") || button.getAttribute("data-address") || "";
+    confirm.textContent = "Change end user from " + confirm.getAttribute("data-old-name") + " (" + confirm.getAttribute("data-old-address") + ") to " +
+      name + (mail && mail !== name ? " (" + mail + ")" : "") + "?";
+    confirm.hidden = false;
     byId("rp-search").hidden = true;
     byId("rp-results").innerHTML = "";
     var keep = panel.querySelector("input[name=keep_old]");

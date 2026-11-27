@@ -157,9 +157,10 @@ def live_session_counts(session: Session, user_ids: list[int]) -> dict[int, int]
     return {user_id: count for user_id, count in rows}
 
 
-def purge_ended_sessions(session: Session) -> None:
+def purge_ended_sessions(session: Session) -> int:
     """The recurring job (app/scheduled_jobs.py): deletes the record of sessions that expired or were
     revoked more than `session_keep_days` ago. A session that merely went idle is not ended by this job;
     it is deleted once its absolute expiry has passed that long."""
     cutoff = _now() - timedelta(days=count_setting(session, SESSION_KEEP_DAYS))
-    session.exec(delete(UserSession).where(or_(UserSession.expires_at < cutoff, UserSession.revoked_at < cutoff)))
+    result = session.exec(delete(UserSession).where(or_(UserSession.expires_at < cutoff, UserSession.revoked_at < cutoff)))
+    return result.rowcount or 0

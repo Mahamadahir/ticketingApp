@@ -77,6 +77,7 @@ class FakeGraph:
         self.broken: Exception | None = None
         self.fetched: list[str] = []
         self.downloaded: list[str] = []
+        self.listed: list[str] = []  # each get_attachments call
 
     def add(self, message_id="m1", **fields):
         self.messages[message_id] = graph_message(message_id, **fields)
@@ -88,7 +89,7 @@ class FakeGraph:
             "isInline": inline, "@odata.type": "#microsoft.graph.fileAttachment", **extra,
         }
         self.files.setdefault(message_id, []).append((item, data))
-        self.messages[message_id]["hasAttachments"] = True
+        self.messages[message_id]["hasAttachments"] = not inline  # Graph's flag leaves inline pictures out (#345)
 
     def get_message(self, message_id):
         self.fetched.append(message_id)
@@ -97,6 +98,7 @@ class FakeGraph:
         return self.messages.get(message_id)
 
     def get_attachments(self, message_id):
+        self.listed.append(message_id)
         return [item for item, _ in self.files.get(message_id, [])]
 
     def get_attachment_bytes(self, message_id, attachment_id):
@@ -728,6 +730,62 @@ def test_files_on_an_automatic_reply_are_not_even_fetched(db_session, storage):
     graph.attach("m1", "report.pdf", PDF)
     process_message(db_session, "m1", graph, storage)
     assert graph.downloaded == [] and db_session.exec(select(Attachment)).all() == []
+
+
+# ---- Inline pictures: always asked for, whatever hasAttachments says (#345) ---------------------------
+
+
+def test_a_pasted_screenshot_on_its_own_is_kept_although_graph_says_no_attachments(db_session, storage):
+    graph = FakeGraph()
+    graph.add("m1")
+    graph.attach("m1", "image001.png", BIG_PNG, inline=True)
+    assert graph.messages["m1"]["hasAttachments"] is False
+    result = process_message(db_session, "m1", graph, storage)
+    db_session.commit()
+    [kept] = db_session.exec(select(Attachment)).all()
+    assert (kept.filename, kept.is_inline, kept.message_id) == ("image001.png", True, result.message.id)
+
+
+def test_a_mail_with_no_attachments_makes_one_attachments_call_and_keeps_nothing(db_session, storage):
+    graph = FakeGraph()
+    graph.add("m1")
+    result = process_message(db_session, "m1", graph, storage)
+    assert result.outcome == TICKET_CREATED
+    assert graph.listed == ["m1"] and graph.downloaded == []
+    assert db_session.exec(select(Attachment)).all() == []
+
+
+def test_automatic_mail_and_a_flooding_sender_still_make_no_attachments_call(db_session, storage):
+    set_setting(db_session, INBOUND_MAX_PER_SENDER_HOUR, "1")
+    graph = FakeGraph()
+    graph.add("auto", internetMessageHeaders=headers(Auto_Submitted="auto-replied"))
+    graph.add("m1")
+    graph.add("m2")
+    process_message(db_session, "auto", graph, storage)
+    assert process_message(db_session, "m1", graph, storage).outcome == TICKET_CREATED
+    assert process_message(db_session, "m2", graph, storage).outcome == IGNORED_FLOOD
+    assert graph.listed == ["m1"]
+
+
+def test_only_inline_pictures_is_not_a_real_attachment_and_a_real_file_is():
+    def incoming(name, inline):
+        return inbound.IncomingAttachment(name, data=b"x", inline=inline)
+
+    plain = IncomingMail(graph_message_id="x", sender="jo@example.com", has_attachments=False)
+    assert inbound._has_real_attachment(plain, [incoming("logo.png", True)]) is False
+    assert inbound._has_real_attachment(plain, [incoming("logo.png", True), incoming("a.pdf", False)]) is True
+    assert inbound._has_real_attachment(plain, []) is False
+
+
+def test_pictures_in_the_body_cannot_use_up_the_file_limit_before_a_real_file(db_session, storage):
+    set_setting(db_session, INBOUND_MAX_ATTACHMENTS, "1")
+    graph = FakeGraph()
+    graph.add("m1")
+    graph.attach("m1", "image001.png", BIG_PNG, inline=True)
+    graph.attach("m1", "report.pdf", PDF)
+    process_message(db_session, "m1", graph, storage)
+    db_session.commit()
+    assert [a.filename for a in db_session.exec(select(Attachment)).all()] == ["report.pdf"]
 
 
 # ---- Reading Graph's answer ----------------------------------------------------------------------

@@ -116,6 +116,7 @@ NOTE_KEEP_DELETED_DAYS = "note_keep_deleted_days"
 JOB_LEASE_MINUTES = "scheduled_job_lease_minutes"
 JOB_RETRY_MINUTES = "scheduled_job_retry_minutes"
 JOB_LATE_MINUTES = "scheduled_job_late_minutes"
+JOB_RUN_KEEP_DAYS = "job_run_keep_days"
 PRESENCE_RETRY_MINUTES = "presence_retry_minutes"
 ENTRA_CHECK_TIME = "entra_check_time"
 SESSION_IDLE_MINUTES = "session_idle_minutes"
@@ -572,6 +573,14 @@ REGISTRY: dict[str, SettingDef] = {
         kind="minutes",
         description="After a failure the job is tried again after this long, or at its next normal time if that is sooner.",
         default="5",
+    ),
+    JOB_RUN_KEEP_DAYS: SettingDef(
+        key=JOB_RUN_KEEP_DAYS,
+        group=GROUP_OTHER,
+        label="Scheduled job history: days kept (days)",
+        kind="count",
+        description="A daily job deletes the record of a scheduled job run (Admin > Logs > Job runs) once it started more than this many days ago. Default 30.",
+        default="30",
     ),
     JOB_LATE_MINUTES: SettingDef(
         key=JOB_LATE_MINUTES,

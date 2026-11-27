@@ -58,13 +58,17 @@
         </td>
         <td data-label="Last run">
           {{ row.last_started_at|local_time if row.last_started_at else "never" }}
+          {% if last_runs.get(row.name) %}<div class="small">{{ last_runs[row.name] }}</div>{% endif %}
           {% if row.lease_owner %}<div class="muted small">Held by {{ row.lease_owner }} until {{ row.lease_expires_at|local_time }}</div>{% endif %}
         </td>
         <td data-label="Next due">
           {{ row.next_run_at|local_time }}
           {% if row.run_requested_at %}<div class="muted small">Run requested at {{ row.run_requested_at|local_time }} by {{ row.run_requested_by }}</div>{% endif %}
         </td>
-        <td class="job-action">{% if row.name in registered %}<a class="btn" href="/admin/scheduled-jobs/{{ row.name }}/run">Run now</a>{% endif %}</td>
+        <td class="job-action">
+          <a class="btn" href="/admin/job-runs?job={{ row.name|urlencode }}">History</a>
+          {% if row.name in registered %}<a class="btn" href="/admin/scheduled-jobs/{{ row.name }}/run">Run now</a>{% endif %}
+        </td>
       </tr>
       {% endfor %}
     </tbody>

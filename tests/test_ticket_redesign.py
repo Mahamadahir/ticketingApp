@@ -957,3 +957,131 @@ def test_a_refused_preview_shows_in_the_cards_preview_box(client, db_session):
     response = client.post(f"/tickets/{ticket.number}/send-to-msp/preview", data={"reason": " ", "scope": "thread"},
                            headers={**HTMX, "HX-Target": "msp-preview"})
     assert response.headers.get("HX-Retarget") == "#msp-preview" and 'role="alert"' in response.text
+
+
+# ---- Pictures from email bodies are folded under the real files (#345) --------------------------------------------
+
+BIG_PNG = b"\x89PNG\r\n\x1a\n" + b"\x01" * 8000
+
+
+def add_picture(db_session, storage, ticket, name, message=None):
+    attachment = store_attachment(db_session, storage, ticket=ticket, filename=name, data=BIG_PNG, message=message, inline=True)
+    db_session.commit()
+    db_session.refresh(attachment)
+    return attachment
+
+
+def test_a_picture_from_an_email_is_only_inside_the_folded_pictures_group(client, db_session, storage):
+    ticket, _ = triaged_ticket(client, db_session)
+    real = add_file(db_session, storage, ticket, "report.pdf", b"%PDF-1.7\n" + b"y" * 100)
+    picture = add_picture(db_session, storage, ticket, "image001.png")
+    box = files_box(page(client, ticket).text)
+
+    folded = box.split('<details class="tp-pictures">')[1]
+    assert "Pictures in emails (1)" in folded and "<details class=\"tp-pictures\" open" not in box
+    assert f'/attachments/{picture.id}"' in folded and "image001.png" in folded
+    before = box.split('<details class="tp-pictures">')[0]
+    assert f'/attachments/{real.id}"' in before and "report.pdf" in before
+    assert "image001.png" not in before and "No files on this ticket." not in before
+
+
+def test_only_pictures_in_emails_shows_the_empty_sentence_above_the_fold(client, db_session, storage):
+    ticket, _ = triaged_ticket(client, db_session)
+    add_picture(db_session, storage, ticket, "image001.png")
+    box = files_box(page(client, ticket).text)
+    assert box.index("No files on this ticket.") < box.index("Pictures in emails (1)")
+
+
+def test_no_pictures_means_no_fold(client, db_session):
+    ticket, _ = triaged_ticket(client, db_session)
+    assert "Pictures in emails" not in files_box(page(client, ticket).text)
+
+
+def test_the_portal_still_does_not_list_an_inline_picture_with_a_message(client, db_session, storage):
+    ticket, _ = triaged_ticket(client, db_session)
+    mail = Message(ticket_id=ticket.id, sender="Pat Requester <me@example.com>", body="see below", direction=MessageDirection.INBOUND)
+    db_session.add(mail)
+    db_session.commit()
+    picture = add_picture(db_session, storage, ticket, "pasted-shot.png", mail)
+    client.post("/auth/logout")
+    login_as(client, "me@example.com")
+    portal = client.get(f"/portal/{ticket.number}").text
+    assert f"/attachments/{picture.id}" not in portal and "pasted-shot.png" not in portal
+
+
+def test_renaming_a_picture_from_an_email_opens_the_fold(client, db_session, storage):
+    ticket, _ = triaged_ticket(client, db_session)
+    picture = add_picture(db_session, storage, ticket, "image001.png")
+    closed = files_box(page(client, ticket).text)
+    assert '<details class="tp-pictures">' in closed
+    editing = files_box(client.get(f"/tickets/{ticket.number}?edit=file-{picture.id}").text)
+    assert '<details class="tp-pictures" open>' in editing and 'name="name"' in editing
+
+
+# ---- Identical emailed pictures are shown once (#345, owner decision 27 Nov 2026) ---------------------------------
+
+OTHER_PNG = b"\x89PNG\r\n\x1a\n" + b"\x02" * 8000
+
+
+def mail_on(db_session, ticket):
+    mail = Message(ticket_id=ticket.id, sender="Pat Requester <me@example.com>", body="hello", direction=MessageDirection.INBOUND)
+    db_session.add(mail)
+    db_session.commit()
+    return mail
+
+
+def picture_on(db_session, storage, ticket, name, mail, data=BIG_PNG):
+    attachment = store_attachment(db_session, storage, ticket=ticket, filename=name, data=data, message=mail, inline=True)
+    db_session.commit()
+    db_session.refresh(attachment)
+    return attachment
+
+
+def test_three_copies_of_one_picture_are_one_entry_sent_three_times(client, db_session, storage):
+    ticket, _ = triaged_ticket(client, db_session)
+    for name in ("logo-1.png", "logo-2.png", "logo-3.png"):
+        picture_on(db_session, storage, ticket, name, mail_on(db_session, ticket))
+    box = files_box(page(client, ticket).text)
+    assert "Pictures in emails (1)" in box and "sent 3 times" in box
+    assert "logo-3.png" in box and "logo-1.png" not in box and "logo-2.png" not in box
+
+
+def test_two_different_pictures_are_two_entries_and_a_single_one_has_no_count(client, db_session, storage):
+    ticket, _ = triaged_ticket(client, db_session)
+    picture_on(db_session, storage, ticket, "a.png", mail_on(db_session, ticket))
+    picture_on(db_session, storage, ticket, "b.png", mail_on(db_session, ticket), OTHER_PNG)
+    box = files_box(page(client, ticket).text)
+    assert "Pictures in emails (2)" in box and "a.png" in box and "b.png" in box and "sent " not in box
+
+
+def test_a_copy_on_a_message_this_person_cannot_see_is_not_counted(client, db_session, storage):
+    ticket, _ = triaged_ticket(client, db_session)
+    picture_on(db_session, storage, ticket, "logo-1.png", mail_on(db_session, ticket))
+    gone = mail_on(db_session, ticket)
+    picture_on(db_session, storage, ticket, "logo-2.png", gone)
+    gone.deleted_at = datetime.now(timezone.utc)
+    db_session.add(gone)
+    db_session.commit()
+    box = files_box(page(client, ticket).text)
+    assert "Pictures in emails (1)" in box and "sent " not in box and "logo-1.png" in box
+
+
+def test_renaming_a_grouped_picture_renames_every_copy_with_one_event(client, db_session, storage):
+    ticket, _ = triaged_ticket(client, db_session)
+    copies = [picture_on(db_session, storage, ticket, f"logo-{i}.png", mail_on(db_session, ticket)) for i in range(3)]
+    ok = client.post(f"/tickets/{ticket.number}/attachments/{copies[-1].id}/rename", data={"name": "Company logo.png"})
+    assert ok.status_code == 200
+    for copy in copies:
+        db_session.refresh(copy)
+        assert copy.display_name == "Company logo.png"
+    assert len(events_of(db_session, ticket, "attachment_renamed")) == 1
+    assert "Company logo.png" in files_box(page(client, ticket).text)
+
+
+def test_a_real_file_sent_twice_is_still_listed_twice(client, db_session, storage):
+    ticket, _ = triaged_ticket(client, db_session)
+    data = b"%PDF-1.7\n" + b"z" * 100
+    add_file(db_session, storage, ticket, "report.pdf", data, message=mail_on(db_session, ticket))
+    add_file(db_session, storage, ticket, "report.pdf", data, message=mail_on(db_session, ticket))
+    box = files_box(page(client, ticket).text)
+    assert box.count("report.pdf") >= 2 and "sent " not in box and "Pictures in emails" not in box

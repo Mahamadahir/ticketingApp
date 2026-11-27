@@ -3,6 +3,7 @@ portal access, the email, the reply channel, the Due date's time zone, approvals
 
 import io
 import json
+import re
 import zipfile
 from datetime import date, datetime, timedelta, timezone
 
@@ -217,6 +218,21 @@ def test_the_script_opens_and_closes_the_panel_with_the_chevron_cancel_and_escap
     script = Path("app/static/requester-picker.js").read_text(encoding="utf-8")
     assert 'setAttribute("aria-expanded"' in script and "data-rp-toggle" in script and "data-rp-cancel" in script
     assert '"Escape"' in script and "toggle.focus()" in script
+
+
+def test_the_confirm_line_names_the_current_end_user_and_follows_the_choice(client, db_session, desk):
+    from pathlib import Path
+
+    ticket = worked(db_session, desk)
+    page = client.get(f"/tickets/{ticket.number}").text
+    assert 'id="rp-confirm"' in page and f'data-old-address="{OLD}"' in page and 'data-old-name="' in page
+    assert re.search(r"id=.rp-confirm.[^>]*[ ]hidden[ >]", page)  # nothing chosen yet: no line
+    assert page.index('id="rp-confirm"') < page.index('class="btn btn-primary">Save')  # above Save
+    script = Path("app/static/requester-picker.js").read_text(encoding="utf-8")
+    assert '"Change end user from "' in script and 'getAttribute("data-old-name")' in script and 'getAttribute("data-old-address")' in script
+    assert "confirm.hidden = false" in script and "confirm.hidden = true" in script  # shown on a choice, gone when cleared
+    results = client.get(f"/tickets/{ticket.number}/people", params={"q": "someone@example.org"}).text
+    assert 'data-mail="someone@example.org"' in results  # the "Use {address}" choice carries the address for the line
 
 
 # ---- Who it can become -------------------------------------------------------------------------------
