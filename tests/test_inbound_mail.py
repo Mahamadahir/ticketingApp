@@ -13,7 +13,7 @@ from sqlmodel import select
 from app import inbound, intake
 from app.attachments import store_attachment
 from app.config import settings
-from app.settings_store import INBOUND_MAX_ATTACHMENTS, INBOUND_MAX_CC, INBOUND_MAX_PER_SENDER_HOUR, set_setting
+from app.settings_store import INBOUND_MAX_ATTACHMENTS, INBOUND_MAX_CC, INBOUND_MAX_PER_SENDER_HOUR, MSP_ADDRESS, set_setting
 from app.database import engine
 from app.graph_client import GraphClient
 from app.inbound import (
@@ -40,6 +40,9 @@ from app.models import (
     AuditLog,
     GraphNotification,
     InboundMail,
+    NeverFollowAddress,
+    User,
+    UserRole,
     Message,
     MessageDirection,
     RequesterTimeZone,
@@ -212,6 +215,62 @@ def test_the_cc_line_is_limited_so_one_mail_cannot_fill_the_follower_list(db_ses
     result = ingest_mail(db_session, mail(cc=[f"p{i}@example.com" for i in range(6)]))
     db_session.commit()
     assert len(db_session.exec(select(TicketFollower).where(TicketFollower.ticket_id == result.ticket.id)).all()) == 2
+
+
+def _followers(db_session, ticket):
+    db_session.expire_all()
+    rows = db_session.exec(select(TicketFollower).where(TicketFollower.ticket_id == ticket.id).order_by(TicketFollower.id)).all()
+    return [f.email for f in rows]
+
+
+def test_a_colleague_on_the_to_line_follows_the_ticket(db_session):
+    ticket = open_ticket(db_session, to=[MAILBOX, "Ann@example.com"])
+    assert _followers(db_session, ticket) == ["ann@example.com"]
+
+
+def test_to_addresses_come_before_cc_in_the_order_the_mail_lists_them(db_session):
+    ticket = open_ticket(db_session, to=[MAILBOX, "a@example.com", "c@example.com"], cc=["b@example.com", "A@example.com"])
+    assert _followers(db_session, ticket) == ["a@example.com", "c@example.com", "b@example.com"]
+
+
+def test_the_mailbox_the_msp_a_never_follow_address_and_the_sender_on_the_to_line_never_follow(db_session):
+    set_setting(db_session, MSP_ADDRESS, "msp@supplier.example")
+    db_session.add(NeverFollowAddress(email="list@example.com"))
+    db_session.commit()
+    ticket = open_ticket(
+        db_session, to=[MAILBOX, "msp@supplier.example", "list@example.com", "jo@example.com", "ok@example.com"],
+    )
+    assert _followers(db_session, ticket) == ["ok@example.com"]
+
+
+def test_the_limit_counts_to_and_cc_together(db_session):
+    set_setting(db_session, INBOUND_MAX_CC, "3")
+    ticket = open_ticket(db_session, to=["t1@example.com", "t2@example.com"], cc=["c1@example.com", "c2@example.com"])
+    assert _followers(db_session, ticket) == ["t1@example.com", "t2@example.com", "c1@example.com"]
+
+
+def test_a_reply_on_an_existing_ticket_adds_nobody_from_its_to_line(db_session):
+    ticket = open_ticket(db_session, message_id="a")
+    result = ingest_mail(db_session, mail("x1", conversation_id="conv-a", subject="Re: Printer jam", to=[MAILBOX, "lee@example.com"]))
+    db_session.commit()
+    assert result.outcome == REPLY_ADDED
+    assert _followers(db_session, ticket) == []
+
+
+def test_a_forward_with_text_follows_the_original_sender_and_the_other_recipients(db_session):
+    db_session.add(User(email="owen@corp.example", display_name="Owen Owner", role=UserRole.END_USER))
+    db_session.commit()
+    graph = FakeGraph()
+    graph.add(
+        "f1", sender="owen@corp.example", subject="FW: Printer jam",
+        toRecipients=[{"emailAddress": {"address": a}} for a in (MAILBOX, "kim@example.com", "owen@corp.example")],
+        body="Please look\n\n________________________________\nFrom: Sam Outside <sam@outside.example>\nSent: 27 November 2026 09:00\n"
+             "To: Owen Owner <owen@corp.example>\nSubject: Printer jam\n\nIt is jammed.",
+    )
+    result = process_message(db_session, "f1", graph)
+    db_session.commit()
+    assert result.ticket.requester_email == "owen@corp.example"
+    assert sorted(_followers(db_session, result.ticket)) == ["kim@example.com", "sam@outside.example"]
 
 
 def test_a_mail_with_no_subject_or_text_still_opens_a_ticket(db_session):

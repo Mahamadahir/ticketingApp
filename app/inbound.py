@@ -701,7 +701,9 @@ def ingest_mail(
         channel=EMAIL, graph_message_id=mail.graph_message_id,
     )
     mailbox = settings.graph_shared_mailbox.strip().lower()
-    for address in mail.cc[: count_setting(session, INBOUND_MAX_CC)]:
+    # Everyone else on the opening mail, To first then Cc, up to one shared limit.
+    recipients = list(dict.fromkeys(a.strip().lower() for a in mail.to + mail.cc))
+    for address in recipients[: count_setting(session, INBOUND_MAX_CC)]:
         if address in (sender, mailbox):
             continue
         try:

@@ -394,11 +394,11 @@ REGISTRY: dict[str, SettingDef] = {
     INBOUND_MAX_CC: SettingDef(
         key=INBOUND_MAX_CC,
         group=GROUP_MAIL,
-        label="Inbound mail: most Cc addresses made followers from one email",
+        label="Inbound mail: most To and Cc addresses made followers from one email",
         kind="count",
         description=(
-            "When an email opens a ticket, the first this many addresses on its Cc line become followers "
-            "(the follower list has its own overall cap as well). Placeholder."
+            "When an email opens a ticket, the first this many addresses on its To and Cc lines (To first) become followers, "
+            "except the sender, the shared mailbox and never-follow addresses (the follower list has its own overall cap as well). The key is still inbound_max_cc. Placeholder."
         ),
         default="10",
     ),
