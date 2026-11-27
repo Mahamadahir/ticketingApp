@@ -115,6 +115,15 @@ def decide(session: Session, forwarder: str, subject: str, body: str, authentica
     if not internal:
         return None
     if not authenticated:
+        # A forward of their own mail changes nothing either way, so it gets no misleading event (the address read here is
+        # the line's own, never a directory lookup).
+        angled = _ANGLE.search(parts.from_text)
+        written = angled.group(1) if angled else (_ADDRESS.search(parts.from_text) or [None])[0]
+        try:
+            if written and normalise_email(written) in identity.addresses_of(session, forwarder):
+                return None
+        except InvalidEmail:
+            pass
         log.warning("forward from %s: the mail was not authenticated as internal, so the forward rules were not applied", forwarder)
         return ForwardDecision(
             requester=forwarder,

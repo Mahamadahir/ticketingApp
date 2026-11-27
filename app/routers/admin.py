@@ -2005,6 +2005,8 @@ def _clean_setting_value(session: Session, definition, value: str, submitted: di
         if len(value) > 2000:
             raise ValueError("That is too long (2000 characters at most)")
     if definition.kind == "domains" and value:
+        if len(value) > 1000:
+            raise ValueError("That is too long (1000 characters at most)")
         parts = sorted({part.lower() for part in re.split(r"[,;\s]+", value) if part})
         if not all(re.fullmatch(r"[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+", part) for part in parts):
             raise ValueError("Enter domains such as example.com separated by commas or spaces, or leave it blank")

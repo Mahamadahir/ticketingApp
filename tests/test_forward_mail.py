@@ -436,6 +436,14 @@ def test_a_present_non_internal_stamp_is_not_rescued_by_the_fallback(db_session)
     _not_applied(db_session, forward(db_session, OUTLOOK_BLOCK, headers=headers))
 
 
+def test_forwarding_ones_own_mail_without_the_stamp_gets_no_event(db_session):
+    person(db_session, "owen@corp.example", "Owen Owner")
+    body = OUTLOOK_BLOCK.replace("Sam Outside <sam@outside.example>", "Owen Owner <owen@corp.example>")
+    ticket = forward(db_session, body, headers=[])
+    assert ticket.requester_email == "owen@corp.example"
+    assert events_of(db_session, ticket, forwards.EVENT_MAIL_FORWARDED) == []
+
+
 def test_ordinary_mail_is_unchanged_without_the_stamp(db_session):
     graph = FakeGraph()
     graph.add("o1", sender="owen@corp.example", subject="Printer jam", body="It is stuck")
