@@ -201,7 +201,7 @@ def test_an_unconfirmed_draft_expires_and_its_files_are_queued_for_deletion(clie
 
 
 def test_the_expiry_is_a_recurring_job():
-    assert [j for j in scheduled_jobs.SCHEDULED_JOBS if j.name == "reply-files"][0].run is reply_files.expire
+    assert [j for j in scheduled_jobs.SCHEDULED_JOBS if j.name == "reply-files"][0].run.__wrapped__ is reply_files.expire
 
 
 def test_a_blob_another_holder_uses_is_not_queued_for_deletion(client, db_session, storage):

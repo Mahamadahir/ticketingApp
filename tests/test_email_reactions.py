@@ -15,7 +15,7 @@ from sqlmodel import select
 from app import email_reactions, outbox, reactions
 from app.auto_close_chase import run_chase
 from app.config import settings
-from app.email_reactions import FORMAT_WARNING, decode_blob, run_email_reactions
+from app.email_reactions import FORMAT_WARNING, decode_blob, email_reactions_job, run_email_reactions
 from app.graph_client import REACTIONS_BLOB_ID, REACTIONS_COUNT_ID
 from app.messages import mail_subject
 from app.models import MailSyncState, OutboundEmail, Ticket, TicketEvent, TicketFeedback, TicketReaction, TicketStatus, User, UserRole
@@ -590,7 +590,7 @@ def test_without_graph_configured_the_job_does_nothing(db_session, monkeypatch):
 def test_the_job_is_registered_sends_nothing_and_its_interval_is_a_setting(db_session):
     [job] = [j for j in SCHEDULED_JOBS if j.name == "email-reactions"]
 
-    assert job.description and job.warns == () and job.run is run_email_reactions
+    assert job.description and job.warns == () and job.run is email_reactions_job
     assert job.seconds(db_session) == 600
     set_setting(db_session, EMAIL_REACTIONS_MINUTES, "3")
     db_session.commit()

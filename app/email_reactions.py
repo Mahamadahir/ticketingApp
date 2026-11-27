@@ -44,6 +44,7 @@ from app import reactions
 from app.config import settings
 from app.graph_client import REACTIONS_BLOB_ID, REACTIONS_COUNT_ID, graph_client
 from app.identity import addresses_of, person_for_address
+from app.run_summary import RunSummary
 from app.models import MailSyncState, OutboundEmail, Ticket, TicketFollower, TicketReaction
 from app.settings_store import EMAIL_REACTIONS_BACKFILL_DAYS, count_setting
 from app.subscriptions import MAX_PAGES_PER_RUN, SubscriptionError, _lock_row, describe_failure, parse_graph_time, sent_folder
@@ -184,6 +185,13 @@ class RunCounts:
     skipped: int = 0  # no ticket, not sent to the requester or a follower, or a reactor with no account here
     unreadable: set = field(default_factory=set)  # message refs whose reaction properties were not understood
     understood: int = 0  # messages whose blob was read
+
+
+def email_reactions_job(session: Session) -> RunSummary:
+    """The registered job: `run_email_reactions`, reported as a summary: read (Sent Items messages whose reactions were read),
+    recorded (reactions added or taken back)."""
+    counts = run_email_reactions(session)
+    return RunSummary.of(read=counts.understood, recorded=counts.recorded + counts.removed)
 
 
 def run_email_reactions(session: Session, graph=None, now: Optional[datetime] = None) -> RunCounts:

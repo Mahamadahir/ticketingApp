@@ -62,6 +62,7 @@ from app.mailbox_executor import (
     OUTCOME_MISMATCH, OUTCOME_NO_ANSWER, OUTCOME_PERMANENT, OUTCOME_RETRYABLE, OUTCOME_SUCCEEDED, ExecutorResult, get_executor, is_enabled,
 )
 from app.messages import record_notice, record_system_note
+from app.run_summary import RunSummary
 from app.models import (
     FINISHED_STATUSES, MAILBOX_ACTIVE, MAILBOX_APPLYING, MAILBOX_CANCELLED, MAILBOX_ENDED, MAILBOX_FAILED, MAILBOX_KINDS,
     MAILBOX_REMOVING, MAILBOX_SCHEDULED, MailboxChange, RelatedTicket, Ticket, TicketEvent, TicketSource, TicketStatus, TicketType,
@@ -804,7 +805,9 @@ def _settle_no_answer(executor, operation: str, snapshot: MailboxChange, result:
     )
 
 
-def _record_result(session: Session, work: _Work, result: ExecutorResult, now: datetime) -> None:
+def _record_result(session: Session, work: _Work, result: ExecutorResult, now: datetime) -> Optional[str]:
+    """Settles the change from the executor's result. Returns what happened, for the run's summary: "started", "removed",
+    "retried" or "failed", or None when another worker or an agent had already settled it."""
     change = session.exec(
         select(MailboxChange).where(MailboxChange.id == work.change_id).with_for_update().execution_options(populate_existing=True)
     ).first()
@@ -813,7 +816,7 @@ def _record_result(session: Session, work: _Work, result: ExecutorResult, now: d
         # An agent or another worker settled it while the executor was working: their record wins.
         log.warning("mailbox change %s: result of %s dropped, the row is no longer %s", work.change_id, work.operation, expected)
         session.rollback()
-        return
+        return None
     ticket = session.get(Ticket, change.ticket_id)
     change.last_job_id = result.job_id or change.last_job_id
     change.last_found = result.found_detail or (None if result.found is None else ("in place" if result.found else "not in place"))
@@ -823,7 +826,7 @@ def _record_result(session: Session, work: _Work, result: ExecutorResult, now: d
             _on_applied(session, change, ticket, now)
         else:
             _on_removed(session, change, ticket, now)
-        return
+        return "started" if work.operation == "apply" else "removed"
     change.last_error_category = result.outcome
     change.last_error = (result.error or "")[:MAX_ERROR_LENGTH] or None
     final = result.outcome in (OUTCOME_PERMANENT, OUTCOME_MISMATCH) or change.attempts >= max_attempts(session)
@@ -834,12 +837,13 @@ def _record_result(session: Session, work: _Work, result: ExecutorResult, now: d
         change.updated_at = now
         session.add(change)
         _audit(session, AUDIT_ACTOR, change, "retry_scheduled", f"{result.outcome}, attempt {change.attempts}")
-        return
+        return "retried"
     _audit(session, AUDIT_ACTOR, change, "start_failed" if work.operation == "apply" else "removal_failed", f"{result.outcome}, attempts {change.attempts}")
     if work.operation == "apply":
         _on_start_failed(session, change, ticket, now)
     else:
         _on_removal_failed(session, change, ticket, now)
+    return "failed"
 
 
 def _record_breakdown(session: Session, work: _Work, result: ExecutorResult, error: str, now: datetime) -> None:
@@ -867,7 +871,15 @@ def _record_breakdown(session: Session, work: _Work, result: ExecutorResult, err
             log.exception("mailbox change %s: the breakdown note could not be written", change.id)
 
 
-def run_mailbox_changes(session: Session, now: Optional[datetime] = None) -> int:
+def mailbox_changes_job(session: Session) -> RunSummary:
+    """The registered job: `run_mailbox_changes`, reported as a summary: started, removed, retried, failed (changes that went
+    to an agent, or whose result could not be recorded)."""
+    tally: dict[str, int] = {"started": 0, "removed": 0, "retried": 0, "failed": 0}
+    run_mailbox_changes(session, None, tally)
+    return RunSummary.of(**tally)
+
+
+def run_mailbox_changes(session: Session, now: Optional[datetime] = None, tally: Optional[dict[str, int]] = None) -> int:
     """The recurring job `mailbox-changes` (registered in app/scheduled_jobs.py): starts the changes whose time has come, removes
     those whose end has, and retries failed attempts that are due. Returns how many it handled. One row at a time, each claimed with
     FOR UPDATE SKIP LOCKED and committed before Exchange is called, so two runs at once never take the same change and a run late
@@ -891,8 +903,10 @@ def run_mailbox_changes(session: Session, now: Optional[datetime] = None) -> int
         session.rollback()  # nothing is held while Exchange is called
         result = _call(work.operation, snapshot)
         try:
-            _record_result(session, work, result, clock())
+            outcome = _record_result(session, work, result, clock())
             session.commit()
+            if tally is not None and outcome is not None:
+                tally[outcome] += 1
         except Exception as exc:
             # Recording must not stop the run or leave the row to be re-claimed for ever: it is settled in a fresh transaction,
             # and a change that cannot be recorded goes to the team as a failure.
@@ -900,6 +914,8 @@ def run_mailbox_changes(session: Session, now: Optional[datetime] = None) -> int
             session.rollback()
             _record_breakdown(session, work, result, f"{type(exc).__name__}: {exc}", clock())
             session.commit()
+            if tally is not None:
+                tally["failed"] += 1
         handled += 1
         skip.add(work.change_id)  # not twice in one run, whatever happened
     return handled

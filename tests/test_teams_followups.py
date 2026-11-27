@@ -805,7 +805,7 @@ def test_pressing_a_button_after_it_expired_says_so_and_does_nothing(public, con
 def test_the_expiry_runs_as_a_recurring_job(db_session):
     from app import scheduled_jobs
 
-    assert [j for j in scheduled_jobs.SCHEDULED_JOBS if j.name == "teams-pending"][0].run is teams_pending.expire_pending
+    assert [j for j in scheduled_jobs.SCHEDULED_JOBS if j.name == "teams-pending"][0].run.__wrapped__ is teams_pending.expire_pending
 
 
 def test_an_answered_question_is_not_expired(public, connector, db_session, ann, downloads, storage):
