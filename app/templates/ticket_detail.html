@@ -421,7 +421,7 @@
         {% else %}
         <span class="tp-fname">{{ f.name }} <span class="muted small">({{ f.attachment.size|file_size }})</span></span>
         {% if f.attachment.display_name %}<span class="muted small">Arrived as {{ f.attachment.filename }}</span>{% endif %}
-        <span class="muted small">Added by {{ f.who }} &middot; {{ f.attachment.created_at|local_time }}</span>
+        <span class="muted small">Added by {{ f.who }} &middot; {{ f.attachment.created_at|local_time }}{% if f.copies > 1 %} &middot; sent {{ f.copies }} times{% endif %}</span>
         <span class="tp-factions">
           <a href="/attachments/{{ f.attachment.id }}" target="_blank" rel="noopener">View</a>
           <a href="/attachments/{{ f.attachment.id }}?download=1">Download</a>

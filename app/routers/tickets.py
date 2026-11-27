@@ -118,7 +118,7 @@ from app.messages import (
     status_choices,
 )
 from app.models import FINISHED_STATUSES, Attachment, CannedResponse, Category, Message, MessageDirection, RequestType, Team, Ticket, TicketSource, TicketStatus, TicketType, User, UserRole
-from app.attachments import RenameRefused, files_by_message, rename_attachment, shown_name, ticket_files
+from app.attachments import RenameRefused, files_by_message, picture_copies, rename_attachment, shown_name, ticket_files
 from app.pagination import paginate
 from app.status_display import AWAITING_ACKNOWLEDGED, NOT_FINISHED, status_options
 from app.team_activity import (
@@ -908,13 +908,19 @@ def rename_file(
     attachment = session.get(Attachment, attachment_id)
     if attachment is None or attachment.ticket_id != ticket.id:
         raise HTTPException(status_code=404, detail="Attachment not found")
+    # An emailed picture is shown once however many copies came (#345), so a rename applies to every copy this person can see.
+    renamed = None
     try:
-        renamed = rename_attachment(attachment, name)
+        for copy in picture_copies(session, user, access_context(session, user), ticket, attachment):
+            result = rename_attachment(copy, name)
+            session.add(copy)
+            if result and (renamed is None or copy.id == attachment.id):
+                renamed = result
     except RenameRefused as error:
+        session.rollback()
         raise HTTPException(status_code=400, detail=str(error))
     if renamed:
         old, new = renamed
-        session.add(attachment)
         ticket.updated_at = datetime.now(timezone.utc)
         session.add(ticket)
         record_event(session, ticket, EVENT_ATTACHMENT_RENAMED, user.email, old, new, detail=f"arrived as {attachment.filename}")
