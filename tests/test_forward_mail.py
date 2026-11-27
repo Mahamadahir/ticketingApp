@@ -11,7 +11,7 @@ from app.config import settings
 from app.inbound import REPLY_ADDED, TICKET_CREATED, parse_graph_message, process_message
 from app.models import NeverFollowAddress, TicketFollower, User, UserRole
 from app.quoted_text import split_quoted
-from app.settings_store import MSP_ADDRESS, set_setting
+from app.settings_store import ACCEPTED_DOMAINS, MSP_ADDRESS, set_setting
 from tests.test_inbound_mail import MAILBOX, FakeGraph, events_of, graph_message, messages_of, mail, open_ticket, tickets
 from tests.test_outbound_mail import dev_mail, rows  # noqa: F401  (dev_mail is a fixture)
 
@@ -42,9 +42,12 @@ def followers(db_session, ticket):
     return sorted(f.email for f in db_session.exec(select(TicketFollower).where(TicketFollower.ticket_id == ticket.id)).all())
 
 
-def forward(db_session, body, *, sender="owen@corp.example", subject="FW: Printer jam", message_id="f1"):
+INTERNAL = [{"name": "X-MS-Exchange-Organization-AuthAs", "value": "Internal"}]
+
+
+def forward(db_session, body, *, sender="owen@corp.example", subject="FW: Printer jam", message_id="f1", headers=INTERNAL):
     graph = FakeGraph()
-    graph.add(message_id, sender=sender, subject=subject, body=body)
+    graph.add(message_id, sender=sender, subject=subject, body=body, internetMessageHeaders=headers)
     result = process_message(db_session, message_id, graph)
     db_session.commit()
     assert result.outcome == TICKET_CREATED
@@ -351,3 +354,90 @@ def test_a_never_follow_or_flooding_sender_makes_no_directory_call(db_session, m
     graph.add("n1", sender="owen@corp.example", subject="FW: x", body=OUTLOOK_BLOCK)
     process_message(db_session, "n1", graph)
     assert asked == []
+
+
+# ---- Only mail Exchange authenticated as internal (#356) ----------------------------------------------------------
+
+DOMAIN = MAILBOX.split("@")[1]
+
+
+def _not_applied(db_session, ticket, requester="owen@corp.example"):
+    assert ticket.requester_email == requester
+    assert followers(db_session, ticket) == []
+    (event,) = events_of(db_session, ticket, forwards.EVENT_MAIL_FORWARDED)
+    assert "not authenticated as internal" in event.detail
+
+
+def _verdict(result):
+    return [{"name": "Authentication-Results", "value": f"mx.microsoft.com 1; spf=pass; dkim=pass; {result}"}]
+
+
+def test_an_internal_forward_with_the_stamp_applies_the_rules(db_session):
+    person(db_session, "owen@corp.example", "Owen Owner")
+    assert forward(db_session, OUTLOOK_BLOCK).requester_email == "sam@outside.example"
+
+
+@pytest.mark.parametrize("value", ["Anonymous", "External", "Partner"])
+def test_the_forward_without_the_internal_stamp_is_an_outside_forward_with_an_event(db_session, value):
+    person(db_session, "owen@corp.example", "Owen Owner")
+    headers = [{"name": "X-MS-Exchange-Organization-AuthAs", "value": value}]
+    _not_applied(db_session, forward(db_session, OUTLOOK_BLOCK, headers=headers))
+
+
+def test_no_stamp_and_no_verdict_is_an_outside_forward_with_an_event(db_session):
+    person(db_session, "owen@corp.example", "Owen Owner")
+    _not_applied(db_session, forward(db_session, OUTLOOK_BLOCK, headers=[]))
+
+
+def test_a_stamp_further_down_the_headers_does_not_count(db_session):
+    person(db_session, "owen@corp.example", "Owen Owner")
+    headers = [
+        {"name": "X-MS-Exchange-Organization-AuthAs", "value": "Anonymous"},
+        {"name": "X-MS-Exchange-Organization-AuthAs", "value": "Internal"},
+    ]
+    _not_applied(db_session, forward(db_session, OUTLOOK_BLOCK, headers=headers))
+
+
+def test_the_fallback_accepts_a_compauth_pass_from_exchange_for_the_mailbox_domain(db_session):
+    person(db_session, f"owen@{DOMAIN}", "Owen Owner")
+    ticket = forward(db_session, OUTLOOK_BLOCK, sender=f"owen@{DOMAIN}", headers=_verdict("compauth=pass reason=100"))
+    assert ticket.requester_email == "sam@outside.example"
+
+
+@pytest.mark.parametrize("result", ["compauth=softpass reason=202", "compauth=fail reason=000", "spf=pass"])
+def test_the_fallback_refuses_a_softpass_a_fail_or_no_compauth(db_session, result):
+    person(db_session, f"owen@{DOMAIN}", "Owen Owner")
+    ticket = forward(db_session, OUTLOOK_BLOCK, sender=f"owen@{DOMAIN}", headers=_verdict(result))
+    _not_applied(db_session, ticket, f"owen@{DOMAIN}")
+
+
+def test_the_fallback_ignores_a_verdict_not_written_by_exchange(db_session):
+    person(db_session, f"owen@{DOMAIN}", "Owen Owner")
+    headers = [{"name": "Authentication-Results", "value": "evil.example 1; compauth=pass reason=100"}]
+    _not_applied(db_session, forward(db_session, OUTLOOK_BLOCK, sender=f"owen@{DOMAIN}", headers=headers), f"owen@{DOMAIN}")
+
+
+def test_the_fallback_refuses_another_domain_until_it_is_accepted(db_session):
+    person(db_session, "owen@corp.example", "Owen Owner")
+    headers = _verdict("compauth=pass reason=100")
+    _not_applied(db_session, forward(db_session, OUTLOOK_BLOCK, headers=headers))
+    set_setting(db_session, ACCEPTED_DOMAINS, "Other.example, corp.example")
+    db_session.commit()
+    assert forward(db_session, OUTLOOK_BLOCK, headers=headers, message_id="f2").requester_email == "sam@outside.example"
+
+
+def test_a_present_non_internal_stamp_is_not_rescued_by_the_fallback(db_session):
+    person(db_session, "owen@corp.example", "Owen Owner")
+    set_setting(db_session, ACCEPTED_DOMAINS, "corp.example")
+    db_session.commit()
+    headers = [{"name": "X-MS-Exchange-Organization-AuthAs", "value": "Anonymous"}] + _verdict("compauth=pass")
+    _not_applied(db_session, forward(db_session, OUTLOOK_BLOCK, headers=headers))
+
+
+def test_ordinary_mail_is_unchanged_without_the_stamp(db_session):
+    graph = FakeGraph()
+    graph.add("o1", sender="owen@corp.example", subject="Printer jam", body="It is stuck")
+    result = process_message(db_session, "o1", graph)
+    db_session.commit()
+    assert result.outcome == TICKET_CREATED and result.ticket.requester_email == "owen@corp.example"
+    assert events_of(db_session, result.ticket, forwards.EVENT_MAIL_FORWARDED) == []

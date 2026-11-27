@@ -57,7 +57,9 @@ from sqlmodel import Session, func, select
 from app.attachments import clean_filename
 from app.audit import log_action
 from app.config import settings
-from app.settings_store import INBOUND_MAX_ATTACHMENTS, INBOUND_MAX_CC, INBOUND_MAX_PER_SENDER_HOUR, count_setting
+from app.settings_store import (
+    ACCEPTED_DOMAINS, INBOUND_MAX_ATTACHMENTS, INBOUND_MAX_CC, INBOUND_MAX_PER_SENDER_HOUR, count_setting, get_setting,
+)
 from app.follower_updates import queue_follower_updates
 from app.reopening import latest_follow_on, open_follow_on_ticket
 from app.followers import (
@@ -165,6 +167,8 @@ class IncomingMail:
     # Every header literally named Authentication-Results, in Graph's order (headers keeps only the first of a name, which
     # may not be the receiving server's own). Empty when built by hand: `headers` is then read instead.
     auth_results: list[str] = field(default_factory=list)
+    # Every X-MS-Exchange-Organization-AuthAs header, in Graph's order (#356); read only by authenticated_as_internal.
+    auth_as: list[str] = field(default_factory=list)
     in_reply_to: list[str] = field(default_factory=list)  # normalised Message-IDs, nearest first
     is_draft: bool = False
     has_attachments: bool = False
@@ -221,10 +225,13 @@ def parse_graph_message(raw: dict) -> IncomingMail:
         content = whole
     headers: dict[str, str] = {}
     auth_results: list[str] = []
+    auth_as: list[str] = []
     for header in raw.get("internetMessageHeaders") or []:
         if isinstance(header, dict) and isinstance(header.get("name"), str):
             if header["name"].strip().lower() == "authentication-results":
                 auth_results.append(_text(header.get("value")).strip())
+            elif header["name"].strip().lower() == "x-ms-exchange-organization-authas":
+                auth_as.append(_text(header.get("value")).strip())
             # The first of a repeated header is the nearest one to us.
             headers.setdefault(header["name"].strip().lower(), _text(header.get("value")).strip())
     references = re.findall(r"<[^<>\s]+>", headers.get("in-reply-to", ""))
@@ -244,6 +251,7 @@ def parse_graph_message(raw: dict) -> IncomingMail:
         to=[a for a in (_address(e) for e in raw.get("toRecipients") or []) if a],
         headers=headers,
         auth_results=auth_results,
+        auth_as=auth_as,
         in_reply_to=[m for m in (_message_id(r) for r in references) if m],
         is_draft=bool(raw.get("isDraft")),
         has_attachments=bool(raw.get("hasAttachments")),
@@ -352,6 +360,30 @@ def msp_trust(mail: IncomingMail) -> str:
         verdict = found.group(1).lower() if found else ""
         return TRUST_PASS if verdict == "pass" else TRUST_FAIL if verdict == "fail" else TRUST_UNVERIFIED
     return TRUST_UNVERIFIED
+
+
+def authenticated_as_internal(session: Session, mail: IncomingMail) -> bool:
+    """Whether our Exchange authenticated this mail as coming from inside the organisation (#356), so an internal forwarder's
+    rules (app/forwards.py) may apply. The From address alone proves nothing: outside mail can claim any.
+
+    Primary signal: the organisation header `X-MS-Exchange-Organization-AuthAs`, which Exchange sets to `Internal` when the
+    sender authenticated to the tenant (other values: Anonymous, External, Partner). Exchange's header firewall removes it from
+    mail arriving from untrusted sources, and only the first copy (nearest to us, as `msp_trust` reads Authentication-Results)
+    is believed, so a copy further down never counts. When the header is present its value decides: a present non-Internal
+    value is never rescued by the fallback.
+
+    Fallback, only when the header is absent altogether (it is not guaranteed to reach Graph; an Azure-only check): Exchange's
+    own `Authentication-Results` verdict (`msp_trust`: compauth=pass from mx.microsoft.com) together with the sender's domain
+    being an accepted domain (setting `accepted_domains`; blank means the shared mailbox's domain)."""
+    if mail.auth_as or mail.headers.get("x-ms-exchange-organization-authas"):
+        first = mail.auth_as[0] if mail.auth_as else mail.headers["x-ms-exchange-organization-authas"]
+        return first.strip().lower() == "internal"
+    if msp_trust(mail) != TRUST_PASS:
+        return False
+    domain = mail.sender.rpartition("@")[2].strip().lower()
+    listed = get_setting(session, ACCEPTED_DOMAINS)
+    accepted = {d for d in re.split(r"[,;\s]+", listed.lower()) if d} or {settings.graph_shared_mailbox.rpartition("@")[2].strip().lower()}
+    return bool(domain) and domain in accepted
 
 
 def _ticket_of_conversation(session: Session, conversation_id: Optional[str]) -> Optional[Ticket]:
@@ -724,7 +756,9 @@ def process_message(
             forwarder = None
         if forwarder is not None:
             # The directory is asked here, before the claim, like the attachments: no lock is held while Graph answers (#347).
-            forward = decide_forward(session, forwarder, mail.subject, opening_text(mail))
+            forward = decide_forward(
+                session, forwarder, mail.subject, opening_text(mail), authenticated_as_internal(session, mail)
+            )
     return ingest_mail(session, mail, files, storage, now, forward)
 
 
