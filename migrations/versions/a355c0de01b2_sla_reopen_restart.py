@@ -20,10 +20,10 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade schema."""
-    op.add_column('ticket', sa.Column('resolution_restarted_at', sa.DateTime(), nullable=True))
+    op.add_column('ticket', sa.Column('resolution_restarted_at', sa.DateTime(timezone=True), nullable=True))
     op.add_column('ticket', sa.Column('resolution_restart_paused_seconds', sa.Integer(), server_default='0', nullable=False))
-    op.add_column('ticket', sa.Column('first_resolved_at', sa.DateTime(), nullable=True))
-    op.add_column('ticket', sa.Column('first_resolution_due_at', sa.DateTime(), nullable=True))
+    op.add_column('ticket', sa.Column('first_resolved_at', sa.DateTime(timezone=True), nullable=True))
+    op.add_column('ticket', sa.Column('first_resolution_due_at', sa.DateTime(timezone=True), nullable=True))
     op.add_column('ticket', sa.Column('first_resolution_paused_seconds', sa.Integer(), nullable=True))
     # Tickets reopened before this change: keep the first resolution on record so the reports count each once. Their
     # deadline was never restarted, so it is still the one the first resolution was judged against. The restart itself is
