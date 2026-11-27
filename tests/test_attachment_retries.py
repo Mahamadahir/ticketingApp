@@ -5,17 +5,19 @@ Graph is the fake from test_inbound_mail, with a switch that makes the attachmen
 from datetime import datetime, timedelta, timezone
 
 import httpx
+import pytest
 from sqlmodel import select
 
 from app import inbound
 from app.attachment_retries import attachment_retries_job, retry_attachments
+from app.config import settings
 from app.inbound import process_notifications
 from app.job_runs import SENTENCES
 from app.models import Attachment, AttachmentRetry
 from app.run_summary import RunSummary
 from app.scheduled_jobs import SCHEDULED_JOBS
 from app.teams import MAX_ATTEMPTS
-from tests.test_inbound_mail import BIG_PNG, PDF, FakeGraph, events_of, messages_of, row_of, stored, storage, tickets  # noqa: F401
+from tests.test_inbound_mail import BIG_PNG, MAILBOX, PDF, FakeGraph, events_of, messages_of, row_of, stored, storage, tickets  # noqa: F401
 
 
 class GraphWithBrokenFiles(FakeGraph):
@@ -37,6 +39,11 @@ PENDING = "This email's attachments couldn't be read yet. Still trying."
 def retries(db_session):
     db_session.expire_all()
     return db_session.exec(select(AttachmentRetry)).all()
+
+
+@pytest.fixture(autouse=True)
+def mailbox(monkeypatch):
+    monkeypatch.setattr(settings, "graph_shared_mailbox", MAILBOX)  # the mail's To line is the mailbox, never a follower
 
 
 def kinds(db_session, ticket):
