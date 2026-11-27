@@ -288,7 +288,7 @@ def test_the_keep_period_is_a_setting(db_session):
 
 def test_the_cleanup_job_is_registered_daily():
     [job] = [job for job in scheduled_jobs.SCHEDULED_JOBS if job.name == "session-cleanup"]
-    assert job.every_seconds == 86400 and job.run is purge_ended_sessions
+    assert job.every_seconds == 86400 and job.run.__wrapped__ is purge_ended_sessions
 
 
 # ---- matching on the Entra object id ----------------------------------------------------------------------

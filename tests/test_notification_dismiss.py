@@ -543,7 +543,7 @@ def test_a_bad_setting_falls_back_to_its_default(db_session, person):
 
 def test_the_purge_is_one_daily_line_in_the_registry_and_runs_through_the_runner(db_session, person):
     job = next(j for j in SCHEDULED_JOBS if j.name == "notification-purge")
-    assert job.every_seconds == 86400 and job.run is purge_notifications and registry_errors(SCHEDULED_JOBS) == []
+    assert job.every_seconds == 86400 and job.run.__wrapped__ is purge_notifications and registry_errors(SCHEDULED_JOBS) == []
     db_session.add(Notification(user_id=person.id, kind="assigned", text="ancient", created_at=datetime.now(timezone.utc) - timedelta(days=400)))
     db_session.add(Notification(user_id=person.id, kind="assigned", text="fresh"))
     db_session.commit()

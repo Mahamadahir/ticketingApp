@@ -54,6 +54,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/d41e7a9b3c05_scheduled_job_run.py",
+        "revision": "d41e7a9b3c05"
+      },
+      {
         "file": "migrations/versions/c3f8a2d6b941_seed_mailbox_request_types.py",
         "revision": "c3f8a2d6b941"
       },
@@ -68,17 +72,13 @@
       {
         "file": "migrations/versions/d7a3f9b2c614_mailbox_change.py",
         "revision": "d7a3f9b2c614"
-      },
-      {
-        "file": "migrations/versions/a4d8e1b6c297_ticket_sla_starts_at.py",
-        "revision": "a4d8e1b6c297"
       }
     ],
-    "count": 84,
+    "count": 85,
     "heads": [
       {
-        "file": "migrations/versions/c3f8a2d6b941_seed_mailbox_request_types.py",
-        "revision": "c3f8a2d6b941"
+        "file": "migrations/versions/d41e7a9b3c05_scheduled_job_run.py",
+        "revision": "d41e7a9b3c05"
       }
     ]
   },
@@ -295,6 +295,7 @@
         "app.models",
         "app.person_data",
         "app.reply_files",
+        "app.run_summary",
         "app.storage",
         "app.teams_pending",
         "app.ticket_service"
@@ -394,6 +395,7 @@
         "app.models",
         "app.notifications",
         "app.outbox",
+        "app.run_summary",
         "app.settings_store",
         "app.teams"
       ],
@@ -701,6 +703,7 @@
         "app.outbox",
         "app.reactions",
         "app.resolution",
+        "app.run_summary",
         "app.settings_store",
         "app.splitting",
         "app.teams",
@@ -715,6 +718,7 @@
         "tests/test_auto_close_chase.py",
         "tests/test_closing_email.py",
         "tests/test_email_reactions.py",
+        "tests/test_job_runs.py",
         "tests/test_reactions.py"
       ]
     },
@@ -768,6 +772,7 @@
       "imports": [
         "app.audit",
         "app.models",
+        "app.run_summary",
         "app.settings_store"
       ],
       "module": "app.bank_holidays",
@@ -775,7 +780,8 @@
       "summary": "UK bank holidays from gov.uk (issue #151). A recurring job (every six hours, so a failed fetch is tried again the same day) (`run_bank_holiday_fetch`, in app/scheduled_jobs.py)",
       "tables": [],
       "tests": [
-        "tests/test_handoff_bells_holidays.py"
+        "tests/test_handoff_bells_holidays.py",
+        "tests/test_job_runs.py"
       ]
     },
     {
@@ -1251,6 +1257,7 @@
         "tests/test_hardening.py",
         "tests/test_health.py",
         "tests/test_inbound_mail.py",
+        "tests/test_job_runs.py",
         "tests/test_linking.py",
         "tests/test_mail_subscriptions.py",
         "tests/test_mailbox_access.py",
@@ -1288,6 +1295,7 @@
         "app.audit",
         "app.models",
         "app.notifications",
+        "app.run_summary",
         "app.splitting",
         "app.ticket_service",
         "app.time_zones"
@@ -1310,6 +1318,7 @@
       "file": "app/email_reactions.py",
       "functions": [
         "decode_blob",
+        "email_reactions_job",
         "outbox_row_for",
         "properties_of",
         "recipients_of",
@@ -1325,6 +1334,7 @@
         "app.identity",
         "app.models",
         "app.reactions",
+        "app.run_summary",
         "app.settings_store",
         "app.subscriptions",
         "app.ticket_service"
@@ -1451,6 +1461,7 @@
         "app.graph_client",
         "app.models",
         "app.notifications",
+        "app.run_summary",
         "app.sessions",
         "app.settings_store",
         "app.time_zones"
@@ -1872,6 +1883,38 @@
       ]
     },
     {
+      "classes": [],
+      "file": "app/job_runs.py",
+      "functions": [
+        "abandon_running",
+        "close_run",
+        "count_sentence",
+        "describe",
+        "latest_run_sentences",
+        "open_run",
+        "outcome_for",
+        "purge_job_runs",
+        "requested_label",
+        "run_sentence"
+      ],
+      "imported_by": [
+        "app.routers.admin",
+        "app.scheduled_jobs"
+      ],
+      "imports": [
+        "app.models",
+        "app.run_summary",
+        "app.settings_store"
+      ],
+      "module": "app.job_runs",
+      "routes": [],
+      "summary": "The history of scheduled job runs (#341): one `scheduled_job_run` row per run, what it did in plain words, kept for a number of days.",
+      "tables": [],
+      "tests": [
+        "tests/test_job_runs.py"
+      ]
+    },
+    {
       "classes": [
         "Job"
       ],
@@ -2169,6 +2212,7 @@
         "failed_phase",
         "finish_on_behalf",
         "lock_owner",
+        "mailbox_changes_job",
         "max_attempts",
         "pending_change_condition",
         "run_mailbox_changes",
@@ -2197,6 +2241,7 @@
         "app.notifications",
         "app.outbox",
         "app.resolution",
+        "app.run_summary",
         "app.settings_store",
         "app.sla",
         "app.ticket_service",
@@ -2533,6 +2578,7 @@
         "RequestTypeQuestion",
         "RequesterTimeZone",
         "ScheduledJob",
+        "ScheduledJobRun",
         "Setting",
         "Team",
         "TeamMembership",
@@ -2597,6 +2643,7 @@
         "app.inbound",
         "app.intake",
         "app.job_errors",
+        "app.job_runs",
         "app.linked_identities",
         "app.linking",
         "app.mail",
@@ -2821,6 +2868,10 @@
           "table": "scheduledjob"
         },
         {
+          "class": "ScheduledJobRun",
+          "table": "scheduled_job_run"
+        },
+        {
           "class": "Setting",
           "table": "setting"
         },
@@ -2955,6 +3006,7 @@
         "tests/test_htmx_errors.py",
         "tests/test_htmx_partials.py",
         "tests/test_inbound_mail.py",
+        "tests/test_job_runs.py",
         "tests/test_linked_identities.py",
         "tests/test_linking.py",
         "tests/test_login_lockout.py",
@@ -3125,6 +3177,7 @@
         "app.never_follow",
         "app.notifications",
         "app.outbox",
+        "app.run_summary",
         "app.settings_store",
         "app.splitting",
         "app.ticket_service",
@@ -3227,6 +3280,7 @@
       "tables": [],
       "tests": [
         "tests/test_admin_frame.py",
+        "tests/test_job_runs.py",
         "tests/test_shell.py"
       ]
     },
@@ -3718,6 +3772,7 @@
       "tables": [],
       "tests": [
         "tests/test_anonymisation.py",
+        "tests/test_job_runs.py",
         "tests/test_mailbox_changes.py",
         "tests/test_reactions.py",
         "tests/test_subject_access.py",
@@ -4529,6 +4584,7 @@
         "view_activity_log",
         "view_audit_log",
         "view_feedback",
+        "view_job_runs",
         "view_mail_intake",
         "view_outbound_mail",
         "view_scheduled_jobs",
@@ -4557,6 +4613,7 @@
         "app.forms",
         "app.inbound",
         "app.job_errors",
+        "app.job_runs",
         "app.linked_identities",
         "app.models",
         "app.msp",
@@ -4698,6 +4755,11 @@
           "handler": "view_feedback",
           "method": "GET",
           "path": "/admin/feedback"
+        },
+        {
+          "handler": "view_job_runs",
+          "method": "GET",
+          "path": "/admin/job-runs"
         },
         {
           "handler": "create_link",
@@ -6276,6 +6338,36 @@
     },
     {
       "classes": [
+        "RunSummary"
+      ],
+      "file": "app/run_summary.py",
+      "functions": [
+        "adapt"
+      ],
+      "imported_by": [
+        "app.anonymisation",
+        "app.approval_reminders",
+        "app.auto_close_chase",
+        "app.bank_holidays",
+        "app.due_today",
+        "app.email_reactions",
+        "app.entra_check",
+        "app.job_runs",
+        "app.mailbox_changes",
+        "app.msp",
+        "app.scheduled_jobs"
+      ],
+      "imports": [],
+      "module": "app.run_summary",
+      "routes": [],
+      "summary": "What one scheduled job run did (#341): named counts and the tickets it changed.",
+      "tables": [],
+      "tests": [
+        "tests/test_job_runs.py"
+      ]
+    },
+    {
+      "classes": [
         "JobHealth",
         "RunNowResult",
         "ScheduledJobDef"
@@ -6283,6 +6375,7 @@
       "file": "app/scheduled_jobs.py",
       "functions": [
         "claim_next_due",
+        "counted",
         "ensure_rows",
         "job_health",
         "next_slot",
@@ -6316,12 +6409,14 @@
         "app.due_today",
         "app.email_reactions",
         "app.entra_check",
+        "app.job_runs",
         "app.mailbox_changes",
         "app.models",
         "app.msp",
         "app.note_purge",
         "app.notification_purge",
         "app.reply_files",
+        "app.run_summary",
         "app.sessions",
         "app.settings_store",
         "app.teams_pending",
@@ -6341,6 +6436,7 @@
         "tests/test_email_reactions.py",
         "tests/test_entra_check.py",
         "tests/test_handoff_bells_holidays.py",
+        "tests/test_job_runs.py",
         "tests/test_mailbox_changes.py",
         "tests/test_msp.py",
         "tests/test_msp_mail.py",
@@ -6447,6 +6543,7 @@
         "app.entra_check",
         "app.inbound",
         "app.intake",
+        "app.job_runs",
         "app.linked_identities",
         "app.mail",
         "app.mailbox_changes",
@@ -6516,6 +6613,7 @@
         "tests/test_follower_updates.py",
         "tests/test_handoff_bells_holidays.py",
         "tests/test_inbound_mail.py",
+        "tests/test_job_runs.py",
         "tests/test_linked_identities.py",
         "tests/test_mail_subscriptions.py",
         "tests/test_mailbox_access.py",
@@ -7956,6 +8054,12 @@
         "rule": "access-in-visibility"
       },
       {
+        "detail": "select(Ticket) in a route",
+        "file": "app/routers/admin.py",
+        "in": "view_job_runs",
+        "rule": "access-in-visibility"
+      },
+      {
         "allowed": "Admin pages are behind require_super_admin (super admins see every ticket): team ticket counts, the category review queue and ticket lookups for the outbound mail table.",
         "detail": "select(Ticket) in a route",
         "file": "app/routers/admin.py",
@@ -8473,6 +8577,7 @@
     "tests/test_htmx_js_vals.py",
     "tests/test_htmx_partials.py",
     "tests/test_inbound_mail.py",
+    "tests/test_job_runs.py",
     "tests/test_linked_identities.py",
     "tests/test_linking.py",
     "tests/test_login_lockout.py",
