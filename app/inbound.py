@@ -42,6 +42,10 @@ Rules that live here and nowhere else:
   is passed on to the followers who were not on its To or Cc (app/follower_updates.py).
 - Files go through `store_attachment` (app/attachments.py), the only place a file is checked. A file
   that is refused, too large or beyond the limit leaves an event on the ticket, never an error.
+- Reading a mail's files can fail (#348). The first failure retries the whole notification, as any failure does; after the second the
+  mail is taken without its files (an agent-only event says so) and the files are retried on their own, on the same backoff, up to
+  MAX_ATTEMPTS tries in all counted from the first failure (`AttachmentRetry`, app/attachment_retries.py). A failure of the message
+  fetch is not an attachment failure: it retries the whole mail as before.
 """
 
 import logging
@@ -76,8 +80,11 @@ from app.intake import (
     IncomingAttachment, clean_body, clean_subject, clean_text, ignored_as_never_follow,
     record_first_message, record_reply, store_files,
 )
+from app.never_follow import is_listed
+from app.forwards import EVENT_MAIL_FORWARDED, ForwardDecision, decide as decide_forward
 from app.identity import addresses_of, person_for_address
 from app.models import (
+    AttachmentRetry,
     TICKET_TYPE_PREFIXES,
     GraphNotification,
     InboundMail,
@@ -148,7 +155,13 @@ class IncomingMail:
     graph_message_id: str
     sender: str  # the From address, lower case, "" if there is none
     subject: str = ""
+    # The new text only (Graph uniqueBody, or body when that is blank): a reply, MSP mail, the thanks rules and the split
+    # check read this one.
     body: str = ""
+    # The whole message (Graph body) with the earlier chain under it: the email that opens a ticket keeps it. "" means body.
+    full_body: str = ""
+    # Graph's uniqueBody as it came, blank or not; MSP mail reads it. None when built by hand: then body.
+    msp_body: Optional[str] = None
     internet_message_id: Optional[str] = None  # normalised, see _message_id
     conversation_id: Optional[str] = None
     cc: list[str] = field(default_factory=list)
@@ -168,6 +181,7 @@ class Handled:
     outcome: str
     ticket: Optional[Ticket] = None
     message: Optional[Message] = None
+    files_unread: bool = False  # the mail was taken without its files, which are still to be read (#348)
 
 
 class MailSource(Protocol):
@@ -201,8 +215,16 @@ def parse_graph_message(raw: dict) -> IncomingMail:
     """A Graph message (the fields `GraphClient.get_message` selects) as an IncomingMail. Anything
     missing or oddly shaped becomes empty rather than an error: a mail we cannot read is ignored, it
     does not stop the ones behind it."""
-    body = raw.get("uniqueBody") or raw.get("body") or {}
-    content = body.get("content") if isinstance(body, dict) else None
+    def content_of(key: str) -> str:
+        part = raw.get(key)
+        return _text(part.get("content") if isinstance(part, dict) else None)
+
+    # uniqueBody is only what is new in the conversation: Graph leaves out forwarded and quoted text, so an empty forward
+    # comes back blank. A blank one falls back to the whole body, never "(no message text)" (#347).
+    whole = content_of("body")
+    content = content_of("uniqueBody")
+    if not content.strip():
+        content = whole
     headers: dict[str, str] = {}
     auth_results: list[str] = []
     for header in raw.get("internetMessageHeaders") or []:
@@ -219,7 +241,9 @@ def parse_graph_message(raw: dict) -> IncomingMail:
         graph_message_id=str(raw.get("id") or ""),
         sender=sender,
         subject=_text(raw.get("subject")),
-        body=_text(content),
+        body=content,
+        full_body=whole or content,
+        msp_body=content_of("uniqueBody") if isinstance(raw.get("uniqueBody"), dict) else None,
         internet_message_id=_message_id(raw.get("internetMessageId")),
         conversation_id=_text(raw.get("conversationId")) or None,
         cc=[a for a in (_address(e) for e in raw.get("ccRecipients") or []) if a],
@@ -233,6 +257,23 @@ def parse_graph_message(raw: dict) -> IncomingMail:
     )
 
 
+ATTACHMENT_FAILURES_BEFORE_SKIPPING = 2
+EVENT_ATTACHMENTS_PENDING = "attachments_pending"
+EVENT_ATTACHMENTS_ADDED = "attachments_added"
+EVENT_ATTACHMENTS_FAILED = "attachments_failed"
+PENDING_TEXT = "This email's attachments couldn't be read yet. Still trying."
+ADDED_TEXT = "Attachments added after a retry"
+FAILED_TEXT = "This email's attachments could not be read"
+
+
+class AttachmentsUnreadable(Exception):
+    """Listing or reading a mail's files failed (#348). `reason` is `describe_failure` of the cause: a class name or HTTP status."""
+
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
+
+
 def load_attachments(session: Session, client: MailSource, graph_message_id: str) -> list[IncomingAttachment]:
     """The files on a message, fetched within the limits (settings, TBC): how many, and how large each
     is. One over a limit is listed as skipped, with why, and never downloaded. app/attachments.py then
@@ -241,7 +282,11 @@ def load_attachments(session: Session, client: MailSource, graph_message_id: str
     max_files = count_setting(session, INBOUND_MAX_ATTACHMENTS)
     found: list[IncomingAttachment] = []
     # Real files first, so pictures embedded in the body (logos, pasted shots) cannot use up the limit before a real file is reached.
-    items = sorted(client.get_attachments(graph_message_id), key=lambda a: bool(a.get("isInline")) if isinstance(a, dict) else False)
+    try:
+        listed = client.get_attachments(graph_message_id)
+    except Exception as error:
+        raise AttachmentsUnreadable(describe_failure(error)) from error
+    items = sorted(listed, key=lambda a: bool(a.get("isInline")) if isinstance(a, dict) else False)
     for index, item in enumerate(items):
         if not isinstance(item, dict):
             continue
@@ -254,7 +299,10 @@ def load_attachments(session: Session, client: MailSource, graph_message_id: str
         elif not isinstance(item.get("size"), int) or item["size"] > settings.attachment_max_bytes:
             found.append(IncomingAttachment(name, skipped=f"larger than the {limit_mb} MB limit", inline=inline))
         else:
-            data = client.get_attachment_bytes(graph_message_id, str(item.get("id")))
+            try:
+                data = client.get_attachment_bytes(graph_message_id, str(item.get("id")))
+            except Exception as error:
+                raise AttachmentsUnreadable(describe_failure(error)) from error
             if data is None:
                 found.append(IncomingAttachment(name, skipped="no longer available", inline=inline))
             elif len(data) > settings.attachment_max_bytes:
@@ -415,8 +463,16 @@ def _subject_of(mail: IncomingMail) -> str:
     return clean_subject(mail.subject)
 
 
-def _body_of(mail: IncomingMail) -> str:
-    return clean_body(mail.body)
+def opening_text(mail: IncomingMail) -> str:
+    """What the email that opens a ticket keeps: the whole message with the earlier chain or the forwarded email under it
+    (the thread folds it, app/quoted_text.py), not only the new lines a reply keeps (#347)."""
+    return mail.full_body or mail.body
+
+
+def _body_of(mail: IncomingMail, *, opening: bool = False, msp: bool = False) -> str:
+    if msp and mail.msp_body is not None:
+        return clean_body(mail.msp_body)  # MSP mail keeps uniqueBody only, even when blank
+    return clean_body(opening_text(mail) if opening else mail.body)
 
 
 def _has_real_attachment(mail: IncomingMail, files: list[IncomingAttachment]) -> bool:
@@ -499,7 +555,7 @@ def _ingest_msp_mail(session, mail, sender, attachments, storage, now, settle) -
     ticket, how = _msp_ticket_for(session, mail, parsed, now)
     def park() -> None:
         park_unmatched(
-            session, graph_message_id=mail.graph_message_id, sender=sender, subject=_subject_of(mail), body=_body_of(mail),
+            session, graph_message_id=mail.graph_message_id, sender=sender, subject=_subject_of(mail), body=_body_of(mail, msp=True),
             to=mail.to, cc=mail.cc, parsed=parsed, verified=verified,
         )
 
@@ -512,14 +568,14 @@ def _ingest_msp_mail(session, mail, sender, attachments, storage, now, settle) -
         return settle(IGNORED_MSP)
     if parsed is not None and parsed.is_acknowledgement:
         message = receive_msp_acknowledgement(
-            session, ticket, sender=sender, body=_body_of(mail), number=parsed.number, learn=verified
+            session, ticket, sender=sender, body=_body_of(mail, msp=True), number=parsed.number, learn=verified
         )
         if message is None:  # its number is already another ticket's: an agent decides
             park()
             return settle(IGNORED_MSP)
     else:
         message = receive_msp_mail(
-            session, ticket, sender=sender, body=_body_of(mail), recipients=mail.to + mail.cc, now=now, verified=verified
+            session, ticket, sender=sender, body=_body_of(mail, msp=True), recipients=mail.to + mail.cc, now=now, verified=verified
         )
     message.graph_message_id = mail.graph_message_id
     session.flush()
@@ -535,6 +591,7 @@ def ingest_mail(
     attachments: Optional[list[IncomingAttachment]] = None,
     storage: Optional[Storage] = None,
     now: Optional[datetime] = None,
+    forward: Optional[ForwardDecision] = None,
 ) -> Handled:
     """Handles one mail: nothing (a duplicate, automatic or our own), a reply on a ticket, or a new
     ticket. Adds everything to the session; the caller commits, so the mail, its ticket, message,
@@ -618,15 +675,29 @@ def ingest_mail(
             session, closed, subject=_subject_of(mail), sender_email=sender, source=TicketSource.EMAIL,
             actor_email=None,
         )
+        forward = None  # a follow-on ticket's requester is the closed ticket's
     else:
-        new = create_ticket(session, subject=_subject_of(mail), requester_email=sender, source=TicketSource.EMAIL)
+        # `forward` was decided by process_message before the claim (it needs the directory, so Graph): it may name
+        # another requester (app/forwards.py).
+        new = create_ticket(
+            session, subject=_subject_of(mail), requester_email=forward.requester if forward else sender, source=TicketSource.EMAIL
+        )
     if ticket is not None:
         record_event(
             session, new, EVENT_REFERENCE_NOT_USED, None, to_value=ticket.tag,
             detail="The subject or thread names that ticket, but the sender is not its requester or a follower",
         )
+    if forward is not None:
+        detail = forward.detail
+        if forward.follower:
+            try:
+                add_follower(session, new, forward.follower, sender)
+            except (InvalidEmail, NeverFollowListed, TooManyFollowers):
+                detail += f" {forward.follower} could not be added as a follower."
+        if detail:
+            record_event(session, new, EVENT_MAIL_FORWARDED, sender, to_value=new.requester_email, detail=detail)
     message = record_first_message(
-        session, new, sender=sender, body=body, author_id=author_id, action="created_by_email",
+        session, new, sender=sender, body=_body_of(mail, opening=True), author_id=author_id, action="created_by_email",
         channel=EMAIL, graph_message_id=mail.graph_message_id,
     )
     mailbox = settings.graph_shared_mailbox.strip().lower()
@@ -642,20 +713,21 @@ def ingest_mail(
     _store_files(session, storage, new, message, files)
     # A receipt to a real person only: automatic mail, bounces, our own mail, floods and mail from a
     # never-follow address (a list or shared mailbox) were all set aside above.
-    if is_on() and sender == new.requester_email:
+    if is_on() and (sender == new.requester_email or (forward is not None and forward.applied)):
         queue_acknowledgement(session, new)
     return settle(TICKET_CREATED, new, message)
 
 
 def process_message(
     session: Session, graph_message_id: str, client: Optional[MailSource] = None, storage: Optional[Storage] = None,
-    now: Optional[datetime] = None,
+    now: Optional[datetime] = None, skip_files: bool = False,
 ) -> Handled:
     """Reads one message from the shared mailbox and handles it (see ingest_mail). The entry point the
     catch-up job (3C) uses. Safe to call twice and from two places at once. Does not commit. Raises if
     Graph fails (the caller retries); a message Graph no longer has is `GONE`. A given `now` is the one moment the whole
     mail is handled at (the flood check before the files are fetched, then ingest_mail). Without one, each reads the real
-    time when it runs, as before: ingest's moment is taken after the Graph fetch and downloads, not before them."""
+    time when it runs, as before: ingest's moment is taken after the Graph fetch and downloads, not before them.
+    `skip_files` takes the mail without reading its files (#348, after two failed reads): the result says `files_unread`."""
     client = client or graph_client
     if session.exec(select(InboundMail.id).where(InboundMail.graph_message_id == graph_message_id)).first():
         return Handled(DUPLICATE)  # the cheap check: no need to fetch a mail we have
@@ -665,16 +737,54 @@ def process_message(
     mail = parse_graph_message(raw)
     mail.graph_message_id = graph_message_id  # the id we asked for is the one we dedupe on
     files: list[IncomingAttachment] = []
+    unread = False
     from_msp = bool(mail.sender) and not mail.is_draft and is_msp_sender(session, mail.sender)  # its List-Unsubscribe is not automatic
     # Always asked, whatever hasAttachments says: Graph leaves inline pictures out of it, so a pasted screenshot on its own
     # would be lost (#345). The guards stay: automatic mail and a flooding sender cost no Graph call.
     if (msp_auto_reply(mail) if from_msp else automatic_reason(mail)) is None and not _flooding(session, mail.sender, now or datetime.now(timezone.utc)):
-        files = load_attachments(session, client, graph_message_id)  # before any ticket is made: no lock is held while Graph answers
-        mail.has_attachments = any(not item.inline for item in files)  # the list read now decides, not Graph's flag
-    return ingest_mail(session, mail, files, storage, now)
+        if skip_files:
+            unread = True  # Graph's hasAttachments flag stands: the files could not be listed (#348)
+        else:
+            files = load_attachments(session, client, graph_message_id)  # before any ticket is made: no lock is held while Graph answers
+            mail.has_attachments = any(not item.inline for item in files)  # the list read now decides, not Graph's flag
+    forward = None
+    # Only for mail ingest_mail would handle (not automatic, flooding or never-follow), so a loop makes no directory calls.
+    # Also when the files are skipped: the directory is still asked here, before the claim, never after it.
+    if (
+        not from_msp and automatic_reason(mail) is None and not _flooding(session, mail.sender, now or datetime.now(timezone.utc))
+        and not is_listed(session, mail.sender)
+    ):
+        try:
+            forwarder = normalise_email(mail.sender)
+        except InvalidEmail:
+            forwarder = None
+        if forwarder is not None:
+            # The directory is asked here, before the claim, like the attachments: no lock is held while Graph answers (#347).
+            forward = decide_forward(session, forwarder, mail.subject, opening_text(mail))
+    result = ingest_mail(session, mail, files, storage, now, forward)
+    result.files_unread = unread and result.message is not None and result.outcome in (TICKET_CREATED, REPLY_ADDED)
+    return result
 
 
 # ---- The worker job ----------------------------------------------------------------------------
+
+
+def backoff_until(attempts: int, now: datetime) -> datetime:
+    """When the next try is due after `attempts` failures: 1, 2, 4 ... minutes, at most MAX_BACKOFF_MINUTES (the notification's
+    backoff, and the attachment retries' too)."""
+    return now + timedelta(minutes=min(2 ** (attempts - 1), MAX_BACKOFF_MINUTES))
+
+
+def _defer_files(session: Session, result: Handled, graph_message_id: str, attempts: int, last_error: Optional[str], now: datetime) -> None:
+    """The mail was taken without its files (#348): say so to the agents and keep what the retry needs. Agent-only: a ticket event is
+    never shown to the requester, and nobody is emailed."""
+    record_event(session, result.ticket, EVENT_ATTACHMENTS_PENDING, None, detail=PENDING_TEXT)
+    session.add(
+        AttachmentRetry(
+            graph_message_id=graph_message_id, message_id=result.message.id, ticket_id=result.ticket.id,
+            attempts=attempts, next_attempt_at=backoff_until(attempts, now), last_error=last_error,
+        )
+    )
 
 
 def _due(session: Session, now: datetime) -> list[int]:
@@ -704,7 +814,8 @@ def process_notifications(
     that was handled is recorded even if the next one fails. Returns (done, failed). A notification that
     is not about a new message is simply marked done. A failure backs off like the other outboxes and,
     after MAX_ATTEMPTS, is marked done with the reason: the catch-up job (3C) reads the mailbox itself and
-    will find the mail."""
+    will find the mail. A mail whose files could not be read twice is taken without them and the files are retried on their own
+    (#348, `_defer_files`); only the second failure of reading files, not of fetching the message, does that."""
     now = now or datetime.now(timezone.utc)
     done = failed = 0
     for notification_id in _due(session, now):
@@ -716,23 +827,33 @@ def process_notifications(
         try:
             if notification.change_type == "created" and notification.resource_id:
                 with session.begin_nested():
-                    result = process_message(session, notification.resource_id, client, storage)
+                    skip = notification.attachment_failures >= ATTACHMENT_FAILURES_BEFORE_SKIPPING
+                    result = process_message(session, notification.resource_id, client, storage, skip_files=skip)
+                    if result.files_unread:
+                        _defer_files(session, result, notification.resource_id, notification.attempts, notification.last_error, now)
                 if on_handled is not None:
                     on_handled(result)
             notification.processed_at = datetime.now(timezone.utc)
             notification.last_error = None
             done += 1
         except Exception as error:
-            log.warning("Mail notification %s failed: %s", notification_id, describe_failure(error))
+            reason = error.reason if isinstance(error, AttachmentsUnreadable) else describe_failure(error)
+            log.warning("Mail notification %s failed: %s", notification_id, reason)
             session.rollback()
             notification = session.get(GraphNotification, notification_id)
             notification.attempts += 1
-            notification.last_error = describe_failure(error)
+            notification.last_error = reason
+            skipping_next = False
+            if isinstance(error, AttachmentsUnreadable):
+                notification.attachment_failures += 1
+                skipping_next = notification.attachment_failures >= ATTACHMENT_FAILURES_BEFORE_SKIPPING
             if notification.attempts >= MAX_ATTEMPTS:
                 notification.processed_at = datetime.now(timezone.utc)
                 notification.last_error = f"Gave up after {MAX_ATTEMPTS} tries: {notification.last_error}"
+            elif skipping_next:
+                notification.next_attempt_at = now  # the second failed read: the next run takes the mail without its files, no waiting
             else:
-                notification.next_attempt_at = now + timedelta(minutes=min(2 ** (notification.attempts - 1), MAX_BACKOFF_MINUTES))
+                notification.next_attempt_at = backoff_until(notification.attempts, now)
             failed += 1
         session.add(notification)
         session.commit()

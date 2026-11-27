@@ -1,7 +1,7 @@
 """sla reopen restart
 
 Revision ID: a355c0de01b2
-Revises: d41e7a9b3c05
+Revises: c3e9a1d7b546
 Create Date: 2026-11-27 14:30:00.000000
 
 """
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = 'a355c0de01b2'
-down_revision: Union[str, Sequence[str], None] = 'd41e7a9b3c05'
+down_revision: Union[str, Sequence[str], None] = 'c3e9a1d7b546'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

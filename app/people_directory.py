@@ -103,9 +103,12 @@ def _local_search(session: Session, text: str) -> list[dict]:
     return [_raw_from_user(u) for u in users]
 
 
-def search(session: Session, user: User, text: str) -> list[Person]:
+def search(
+    session: Session, user: User, text: str, *, exclude_self: bool = True, use_blocklist: bool = True,
+) -> list[Person]:
     """At most MAX_RESULTS people who could be chosen, matching `text` (at least MIN_QUERY_LENGTH characters, else none). Raises
-    DirectoryError when the directory could not be asked."""
+    DirectoryError when the directory could not be asked. The mailbox picker keeps the two exclusions (the person themselves,
+    the `mailbox_target_blocklist`); the agent's End user picker (#279) turns both off, since neither is about a requester."""
     text = (text or "").strip()
     if len(text) < MIN_QUERY_LENGTH:
         return []
@@ -119,13 +122,13 @@ def search(session: Session, user: User, text: str) -> list[Person]:
             raise DirectoryError("The directory could not be searched just now. Try again in a minute.")
     else:
         rows = _local_search(session, text)
-    blocked = blocklist(session)
+    blocked = blocklist(session) if use_blocklist else set()
     found: list[Person] = []
     for raw in rows:
         if not raw.get("id") or _refusal(raw) is not None:
             continue
         person = _person(raw)
-        if person.mail in blocked or _is_self(session, user, person):
+        if person.mail in blocked or (exclude_self and _is_self(session, user, person)):
             continue
         found.append(person)
         if len(found) == MAX_RESULTS:
@@ -133,8 +136,9 @@ def search(session: Session, user: User, text: str) -> list[Person]:
     return found
 
 
-def resolve(session: Session, user: User, object_id: str) -> Person:
-    """The person with this object id, fetched again now, or DirectoryError saying why they cannot be chosen."""
+def resolve(session: Session, user: User, object_id: str, *, exclude_self: bool = True, use_blocklist: bool = True) -> Person:
+    """The person with this object id, fetched again now, or DirectoryError saying why they cannot be chosen. The same two
+    exclusions as `search`, switched off together with it."""
     object_id = (object_id or "").strip().lower()
     if not object_id:
         raise DirectoryError("Choose who to forward your mail to")
@@ -158,8 +162,49 @@ def resolve(session: Session, user: User, object_id: str) -> Person:
     if reason is not None:
         raise DirectoryError(reason)
     person = _person(raw)
-    if _is_self(session, user, person):
+    if exclude_self and _is_self(session, user, person):
         raise DirectoryError("You cannot send your mail to yourself. Choose someone else.")
-    if person.mail in blocklist(session):
+    if use_blocklist and person.mail in blocklist(session):
         raise DirectoryError("Mail cannot be sent to that address. Choose someone else.")
     return person
+
+
+def _rows_for(session: Session, text: str) -> list[dict]:
+    """Directory rows matching `text` (name or address), from Graph or the local stand-in. DirectoryError when Graph fails."""
+    if _graph_on():
+        from app.graph_client import graph_client
+
+        try:
+            return list(graph_client.search_users(text))
+        except Exception as error:
+            log.warning("people lookup failed: %s", error)
+            raise DirectoryError("The directory could not be searched just now.")
+    return _local_search(session, text)
+
+
+def is_internal(session: Session, address: str) -> bool:
+    """Whether this address belongs to an enabled member account with a mailbox (the picker's own test, `_refusal`): a guest,
+    a disabled account and an outside address are not. Every address of the person counts, so a linked address is as good as
+    their main one (app/identity.py). Raises DirectoryError when the directory could not be asked."""
+    for candidate in sorted(identity.addresses_of(session, address)):
+        for raw in _rows_for(session, candidate):
+            if raw.get("id") and _refusal(raw) is None and (raw.get("mail") or "").strip().lower() == candidate:
+                return True
+    return False
+
+
+def people_named(session: Session, name: str) -> list[Person]:
+    """Enabled members whose display name is exactly `name` (any case), for reading a forward that shows a name and no
+    address. The caller uses the answer only when it holds one person. Raises DirectoryError when the directory could not be
+    asked."""
+    wanted = " ".join((name or "").lower().split())
+    if len(wanted) < MIN_QUERY_LENGTH:
+        return []
+    found: dict[str, Person] = {}
+    for raw in _rows_for(session, wanted):
+        if not raw.get("id") or _refusal(raw) is not None:
+            continue
+        if " ".join((raw.get("displayName") or "").lower().split()) == wanted:
+            person = _person(raw)
+            found[person.mail] = person
+    return list(found.values())
