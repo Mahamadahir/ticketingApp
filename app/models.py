@@ -402,6 +402,14 @@ class Ticket(SQLModel, table=True):
     # When the SLA clock starts, if not at created_at (a scheduled change starts its clock at the start time). Read it
     # only through app.sla.sla_start.
     sla_starts_at: Optional[datetime] = Field(default=None)
+    # A reopen restarts the resolution target (app/sla.py): it runs from resolution_restarted_at (the latest reopen), and the
+    # time paused before that (resolution_restart_paused_seconds) is not counted. On the first reopen the first resolution is
+    # kept for the reports: when it was, the deadline it was judged against and the pause then. All empty until a reopen.
+    resolution_restarted_at: Optional[datetime] = Field(default=None)
+    resolution_restart_paused_seconds: int = Field(default=0, sa_column_kwargs={"server_default": "0"})
+    first_resolved_at: Optional[datetime] = Field(default=None)
+    first_resolution_due_at: Optional[datetime] = Field(default=None)
+    first_resolution_paused_seconds: Optional[int] = Field(default=None)
 
     # Set when this ticket is linked to a Major Incident or Problem (app/linking.py).
     # One level only: a parent is never itself linked to anything.

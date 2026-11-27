@@ -58,6 +58,10 @@
         "revision": "e5b2c8d4f731"
       },
       {
+        "file": "migrations/versions/a355c0de01b2_sla_reopen_restart.py",
+        "revision": "a355c0de01b2"
+      },
+      {
         "file": "migrations/versions/c3e9a1d7b546_outbound_cap_override.py",
         "revision": "c3e9a1d7b546"
       },
@@ -68,13 +72,9 @@
       {
         "file": "migrations/versions/d41e7a9b3c05_scheduled_job_run.py",
         "revision": "d41e7a9b3c05"
-      },
-      {
-        "file": "migrations/versions/c3f8a2d6b941_seed_mailbox_request_types.py",
-        "revision": "c3f8a2d6b941"
       }
     ],
-    "count": 88,
+    "count": 89,
     "heads": [
       {
         "file": "migrations/versions/e5b2c8d4f731_outbound_mail_threading.py",
@@ -3214,6 +3214,7 @@
         "tests/test_shell.py",
         "tests/test_signin_pages.py",
         "tests/test_sla.py",
+        "tests/test_sla_reopen.py",
         "tests/test_split_before_triage.py",
         "tests/test_split_family.py",
         "tests/test_splitting.py",
@@ -4241,6 +4242,7 @@
         "tests/test_auto_close_chase.py",
         "tests/test_closing_email.py",
         "tests/test_reopening.py",
+        "tests/test_sla_reopen.py",
         "tests/test_thanks_rules.py"
       ]
     },
@@ -4665,7 +4667,8 @@
         "tests/test_msp.py",
         "tests/test_msp_actions.py",
         "tests/test_reopening.py",
-        "tests/test_resolution.py"
+        "tests/test_resolution.py",
+        "tests/test_sla_reopen.py"
       ]
     },
     {
@@ -6923,6 +6926,7 @@
         "at_risk_percent",
         "breach_order",
         "describe_priority",
+        "due_date_is_target",
         "header_sla",
         "impact_options",
         "note_first_response",
@@ -6931,6 +6935,9 @@
         "queue_order",
         "queue_sla",
         "recalculate_deadlines",
+        "resolution_paused_seconds",
+        "resolution_start",
+        "restart_note",
         "set_impact_urgency",
         "sla_rows",
         "sla_start",
@@ -6974,6 +6981,7 @@
         "tests/test_resolution.py",
         "tests/test_scheduled_status.py",
         "tests/test_sla.py",
+        "tests/test_sla_reopen.py",
         "tests/test_ticket_page.py",
         "tests/test_ticket_redesign.py",
         "tests/test_with_supplier.py"
@@ -8027,6 +8035,7 @@
         "tests/test_requester_bell.py",
         "tests/test_requester_change.py",
         "tests/test_resolution.py",
+        "tests/test_sla_reopen.py",
         "tests/test_split_family.py",
         "tests/test_subject_access.py",
         "tests/test_subrequests.py",
@@ -8949,6 +8958,7 @@
     "tests/test_shell.py",
     "tests/test_signin_pages.py",
     "tests/test_sla.py",
+    "tests/test_sla_reopen.py",
     "tests/test_split_before_triage.py",
     "tests/test_split_family.py",
     "tests/test_splitting.py",

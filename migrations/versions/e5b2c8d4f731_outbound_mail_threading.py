@@ -1,7 +1,7 @@
 """outbound email threading: the Sent Items id, the message replied to, a fallback note (#350)
 
 Revision ID: e5b2c8d4f731
-Revises: c3e9a1d7b546
+Revises: a355c0de01b2
 Create Date: 2026-11-27 15:00:00.000000
 
 """
@@ -14,7 +14,7 @@ import sqlmodel
 
 # revision identifiers, used by Alembic.
 revision: str = 'e5b2c8d4f731'
-down_revision: Union[str, Sequence[str], None] = 'c3e9a1d7b546'
+down_revision: Union[str, Sequence[str], None] = 'a355c0de01b2'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
