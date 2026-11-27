@@ -224,6 +224,7 @@ def set_status(
 
         lock_ticket(session, ticket.split_from_id)
     now = datetime.now(timezone.utc)
+    resolved_at_before = ticket.resolved_at  # the SLA keeps it when this is a reopen
     ticket.status = new_status
     ticket.updated_at = now
     if new_status in FINISHED_STATUSES:
@@ -250,7 +251,7 @@ def set_status(
     # because app.sla builds on this module.
     from app.sla import on_status_change
 
-    on_status_change(session, ticket, previous, new_status, now)
+    on_status_change(session, ticket, previous, new_status, now, resolved_at_before)
     session.add(ticket)
     record_event(session, ticket, EVENT_STATUS_CHANGED, actor_email, previous.value, new_status.value, detail)
     if not by_approval and not from_parts:

@@ -7,6 +7,12 @@ the ticket is Awaiting user (Scheduled does not stop it). A ticket with a Due da
 (app/required_by.py) is measured against the end of that day in the requester's time zone
 instead of the resolution target, and the wait never moves that date.
 
+A reopen restarts the resolution target (#355): the new deadline is the reopen time plus the priority's resolution
+target, counting only the time paused after the reopen, and a Due date is then no longer the target (it stays on the
+ticket). `resolution_restarted_at` holds the latest reopen. The first resolution is kept on the ticket
+(`first_resolved_at`, `first_resolution_due_at`, `first_resolution_paused_seconds`) so the reports judge it once, against
+the target it had. Resolving or closing an open ticket that nobody answered counts as the first response (`on_status_change`).
+
 Deadlines are stored on the ticket: sla_start (created_at unless `sla_starts_at` is set) + target + time spent paused. They
 move only when the priority changes or a pause ends, so the queue can sort on them
 in SQL. While a ticket is paused its stored deadlines are not final, so it is shown
@@ -90,6 +96,27 @@ def _aware(value: datetime) -> datetime:
 SLA_START_SQL = func.coalesce(Ticket.sla_starts_at, Ticket.created_at)  # sla_start(ticket), for queries
 
 
+def due_date_is_target(ticket: Ticket) -> bool:
+    """Whether the Due date is the ticket's resolution target: it has one and has not been reopened since (a reopen
+    restarts the target from the priority instead). The one place that decides it; SQL uses `DUE_DATE_IS_TARGET_SQL`."""
+    return ticket.due_on is not None and ticket.resolution_restarted_at is None
+
+
+DUE_DATE_IS_TARGET_SQL = and_(Ticket.due_on.is_not(None), Ticket.resolution_restarted_at.is_(None))
+
+
+def resolution_start(ticket: Ticket) -> datetime:
+    """When the resolution clock runs from: the latest reopen, else the start of the SLA clock."""
+    return _aware(ticket.resolution_restarted_at) if ticket.resolution_restarted_at is not None else sla_start(ticket)
+
+
+def resolution_paused_seconds(ticket: Ticket) -> int:
+    """The time spent paused that counts against the resolution target: only what came after the latest reopen."""
+    if ticket.resolution_restarted_at is None:
+        return ticket.sla_paused_seconds
+    return max(0, ticket.sla_paused_seconds - ticket.resolution_restart_paused_seconds)
+
+
 def sla_start(ticket: Ticket) -> datetime:
     """When the ticket's SLA clock starts: `sla_starts_at` when one was set (a scheduled change starts its clock at
     the start time), else created_at. The one place the clock's start is read; SQL uses the same coalesce."""
@@ -123,17 +150,20 @@ def recalculate_deadlines(session: Session, ticket: Ticket) -> None:
     A Due date replaces the resolution target (app/required_by.py): it is the end of that day in
     the requester's time zone, so time spent paused does not move it, and it needs no priority."""
     priority = Priority(ticket.priority) if ticket.priority else None
-    if ticket.is_backdated or (priority is None and ticket.due_on is None):
+    dated = due_date_is_target(ticket)
+    if ticket.is_backdated or (priority is None and not dated):
         ticket.first_response_due_at = ticket.resolution_due_at = None
         return
     base = sla_start(ticket) + timedelta(seconds=ticket.sla_paused_seconds)
     first = target_minutes(session, priority, "first_response") if priority else None
     resolution = target_minutes(session, priority, "resolution") if priority else None
     ticket.first_response_due_at = base + timedelta(minutes=first) if first else None
-    if ticket.due_on is not None:
+    if dated:
         ticket.resolution_due_at = end_of_day_for_email(session, ticket.due_on, ticket.requester_email)
     else:
-        ticket.resolution_due_at = base + timedelta(minutes=resolution) if resolution else None
+        # From the latest reopen when there was one, counting only the pause since.
+        resolution_base = resolution_start(ticket) + timedelta(seconds=resolution_paused_seconds(ticket))
+        ticket.resolution_due_at = resolution_base + timedelta(minutes=resolution) if resolution else None
 
 
 def apply_impact_urgency(session: Session, ticket: Ticket, impact: Level, urgency: Level) -> bool:
@@ -173,10 +203,19 @@ PAUSING_STATUSES = (TicketStatus.AWAITING_USER,)
 
 
 def on_status_change(
-    session: Session, ticket: Ticket, previous: TicketStatus, new: TicketStatus, now: datetime
+    session: Session, ticket: Ticket, previous: TicketStatus, new: TicketStatus, now: datetime,
+    resolved_at_before: Optional[datetime] = None,
 ) -> None:
-    """Awaiting user stops the clock; leaving it starts the clock again and pushes the deadlines
-    out by the time spent waiting. A Due date never moves: the ticket is shown as paused, the date stays."""
+    """Called by `set_status` on every change. Awaiting user stops the clock; leaving it starts the clock again and pushes
+    the deadlines out by the time spent waiting. A Due date never moves: the ticket is shown as paused, the date stays.
+    Resolving or closing an open ticket that no agent has emailed counts as its first response, whoever or whatever did it
+    (an agent, the mailbox-change job, auto-resolve, bulk resolve). Reopening a finished ticket restarts the resolution
+    target from now, keeping the first resolution on record; `resolved_at_before` is the resolution time `set_status` has
+    just cleared."""
+    if new in FINISHED_STATUSES and ticket.first_responded_at is None:
+        ticket.first_responded_at = now
+    if previous in FINISHED_STATUSES and new not in FINISHED_STATUSES:
+        _restart_resolution(session, ticket, now, resolved_at_before)
     if new in PAUSING_STATUSES and ticket.sla_paused_at is None:
         ticket.sla_paused_at = now
     elif previous in PAUSING_STATUSES and new not in PAUSING_STATUSES and ticket.sla_paused_at is not None:
@@ -184,6 +223,25 @@ def on_status_change(
         ticket.sla_paused_seconds += waited
         ticket.sla_paused_at = None
         recalculate_deadlines(session, ticket)
+
+
+def _restart_resolution(session: Session, ticket: Ticket, now: datetime, resolved_at_before: Optional[datetime]) -> None:
+    """A reopen: the resolution target runs again from `now` (each reopen restarts it). On the first reopen the first
+    resolution is kept, with the deadline it was judged against."""
+    if ticket.first_resolved_at is None:
+        ticket.first_resolved_at = resolved_at_before or now
+        ticket.first_resolution_due_at = ticket.resolution_due_at
+        ticket.first_resolution_paused_seconds = ticket.sla_paused_seconds
+    ticket.resolution_restarted_at = now
+    ticket.resolution_restart_paused_seconds = ticket.sla_paused_seconds
+    recalculate_deadlines(session, ticket)
+
+
+def restart_note(ticket: Ticket) -> Optional[str]:
+    """"restarted when reopened on 27 Nov 2026" for a ticket whose resolution target a reopen restarted (UTC date)."""
+    if ticket.resolution_restarted_at is None:
+        return None
+    return f"restarted when reopened on {_aware(ticket.resolution_restarted_at):%d %b %Y}"
 
 
 def note_first_response(ticket: Ticket, now: datetime) -> None:
@@ -216,7 +274,7 @@ def _span(delta: timedelta) -> str:
 
 def _date_which(ticket: Ticket) -> Optional[str]:
     """What the resolution deadline is called: the requester's date where there is one, else the Due date."""
-    if ticket.due_on is None:
+    if not due_date_is_target(ticket):
         return None
     return "required by" if ticket.required_by is not None else "due"
 
@@ -239,7 +297,7 @@ def sla_view(ticket: Ticket, now: datetime, at_risk_percent: int) -> SlaView:
             return SlaView("none", "")
         late = _aware(ticket.resolved_at) > due
         text = "resolved late" if late else "resolved in time"
-        if ticket.due_on is not None:
+        if due_date_is_target(ticket):
             text += f" ({_date_label(ticket)})"
         return SlaView("breached" if late else "met", text, due, _date_which(ticket))
     if ticket.sla_paused_at is not None:  # the wait is shown, but a Due date does not move for it
@@ -255,9 +313,12 @@ def sla_view(ticket: Ticket, now: datetime, at_risk_percent: int) -> SlaView:
     remaining = _aware(due) - now
     if remaining.total_seconds() < 0:
         return SlaView("breached", f"{label.rstrip(',')} overdue {_span(remaining)}", due, which)
-    window = _aware(due) - sla_start(ticket)
-    if which not in ("required by", "due"):
-        window -= timedelta(seconds=ticket.sla_paused_seconds)
+    if which == "first response":
+        window = _aware(due) - sla_start(ticket) - timedelta(seconds=ticket.sla_paused_seconds)
+    elif which in ("required by", "due"):
+        window = _aware(due) - sla_start(ticket)
+    else:
+        window = _aware(due) - resolution_start(ticket) - timedelta(seconds=resolution_paused_seconds(ticket))
     if window.total_seconds() > 0 and remaining <= window * at_risk_percent / 100:
         return SlaView("at_risk", f"{label} due in {_span(remaining)}", due, which)
     return SlaView("ok", f"{label} due in {_span(remaining)}", due, which)
@@ -309,14 +370,17 @@ class SlaRow:
 
 
 def _clock_row(label: str, due: Optional[datetime], done_at: Optional[datetime], ticket: Ticket, now: datetime,
-               at_risk_percent: int, paused_seconds: int = 0, minus_pause: bool = False) -> Optional[SlaRow]:
+               at_risk_percent: int, paused_seconds: int = 0, minus_pause: bool = False,
+               start: Optional[datetime] = None) -> Optional[SlaRow]:
     """One target of the Service level card: met or missed once done_at is set, else time left or overrun. For the
-    resolution target the time the clock was stopped (which also moved the deadline) is not counted as time taken."""
+    resolution target the time the clock was stopped (which also moved the deadline) is not counted as time taken. `start`
+    is when the target runs from (the SLA start unless a reopen restarted the resolution)."""
     if due is None:
         return None
     due = _aware(due)
+    start = start or sla_start(ticket)
     if done_at is not None:
-        spent = _aware(done_at) - sla_start(ticket) - (timedelta(seconds=paused_seconds) if minus_pause else timedelta(0))
+        spent = _aware(done_at) - start - (timedelta(seconds=paused_seconds) if minus_pause else timedelta(0))
         taken = _span(max(timedelta(0), spent))
         return SlaRow(label, "red", f"Missed · {taken}") if _aware(done_at) > due else SlaRow(label, "green", f"Met · {taken}")
     if ticket.sla_paused_at is not None:
@@ -324,7 +388,7 @@ def _clock_row(label: str, due: Optional[datetime], done_at: Optional[datetime],
     remaining = due - now
     if remaining.total_seconds() < 0:
         return SlaRow(label, "red", f"Breached {_span(remaining)} ago")
-    window = due - sla_start(ticket) - timedelta(seconds=paused_seconds)
+    window = due - start - timedelta(seconds=paused_seconds)
     at_risk = window.total_seconds() > 0 and remaining <= window * at_risk_percent / 100
     return SlaRow(label, "amber" if at_risk else "green", f"{_span(remaining)} left")
 
@@ -332,16 +396,22 @@ def _clock_row(label: str, due: Optional[datetime], done_at: Optional[datetime],
 def sla_rows(ticket: Ticket, now: datetime, at_risk_percent: int) -> list[SlaRow]:
     """The first response and resolution rows of the ticket page's Service level card, in the same words as the
     queue. Empty when the ticket has no clock (untriaged, or backdated: those are out of SLA figures)."""
-    if ticket.is_backdated or (not ticket.priority and ticket.due_on is None):
+    if ticket.is_backdated or (not ticket.priority and not due_date_is_target(ticket)):
         return []
+    dated = due_date_is_target(ticket)
     unanswered = ticket.status in FINISHED_STATUSES and ticket.first_responded_at is None  # nothing left to measure
+    resolution = _clock_row(
+        "Resolution", ticket.resolution_due_at,
+        (ticket.resolved_at or ticket.closed_at) if ticket.status in FINISHED_STATUSES else None,
+        ticket, now, at_risk_percent, 0 if dated else resolution_paused_seconds(ticket), minus_pause=not dated,
+        start=resolution_start(ticket),
+    )
+    if resolution is not None and (note := restart_note(ticket)):
+        resolution.text += f" · {note}"
     rows = [
         None if unanswered else _clock_row("First response", ticket.first_response_due_at, ticket.first_responded_at, ticket,
                                            now, at_risk_percent, ticket.sla_paused_seconds),
-        _clock_row("Resolution", ticket.resolution_due_at,
-                   (ticket.resolved_at or ticket.closed_at) if ticket.status in FINISHED_STATUSES else None,
-                   ticket, now, at_risk_percent,
-                   0 if ticket.due_on is not None else ticket.sla_paused_seconds, minus_pause=ticket.due_on is None),
+        resolution,
     ]
     return [r for r in rows if r is not None]
 
@@ -398,7 +468,7 @@ def _clock_terms(default_lead_days: int):
     type_lead = sa_select(RequestType.queue_lead_days).where(RequestType.id == Ticket.request_type_id).scalar_subquery()
     lead_days = func.coalesce(type_lead, default_lead_days)
     resolution_due = case(
-        (Ticket.due_on.is_not(None), Ticket.resolution_due_at - lead_days * timedelta(days=1)),
+        (DUE_DATE_IS_TARGET_SQL, Ticket.resolution_due_at - lead_days * timedelta(days=1)),
         else_=Ticket.resolution_due_at,
     )
     paused = Ticket.sla_paused_at.is_not(None)  # a Due date does not move, but the ticket still sorts as paused

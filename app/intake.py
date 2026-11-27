@@ -27,7 +27,7 @@ from app.messages import record_inbound
 from app.models import AuditLog, Message, Ticket
 from app.never_follow import listed_entry
 from app.raising import MAX_SUBJECT_LENGTH
-from app.reply_channel import note_requester_wrote
+from app.reply_channel import is_the_requester, note_requester_wrote
 from app.settings_store import INBOUND_MAX_PER_SENDER_HOUR, count_setting
 from app.splitting import apply_requester_reply
 from app.storage import Storage, get_storage
@@ -104,7 +104,12 @@ def record_reply(
     note_requester_wrote(session, ticket, sender, channel)
     message.graph_message_id = graph_message_id
     session.flush()
+    from app.reopening import reply_not_reopened_count, tell_reply_did_not_reopen  # here: app.reopening builds on this module's callers
+
+    not_reopened = reply_not_reopened_count(session, ticket)
     moved = apply_requester_reply(session, ticket, sender, text=text, has_attachment=has_attachment)
+    if channel == "email" and is_the_requester(session, ticket, sender):
+        tell_reply_did_not_reopen(session, ticket, not_reopened)  # a finished mailbox request: once, "make a new request" (#363)
     log_action(session, sender, "ticket", ticket.id, action, how)
     if moved:
         log_action(session, sender, "ticket", ticket.id, "status_changed", f"{moved[0]} -> {moved[1]}")
