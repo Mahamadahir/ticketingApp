@@ -79,10 +79,6 @@
       {
         "file": "migrations/versions/e5b2c8d4f731_outbound_mail_threading.py",
         "revision": "e5b2c8d4f731"
-      },
-      {
-        "file": "migrations/versions/e5b81c4a7d29_attachment_retries.py",
-        "revision": "e5b81c4a7d29"
       }
     ]
   },

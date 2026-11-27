@@ -407,8 +407,7 @@ any change that adds, removes or renames modules, routes, models, jobs, settings
 
 ## Migrations
 
-88 revisions. Head: `e5b2c8d4f731`, `e5b81c4a7d29`.
-MORE THAN ONE HEAD: merge them.
+88 revisions. Head: `e5b2c8d4f731`.
 
 Chain tail (newest first):
 
