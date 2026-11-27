@@ -839,7 +839,7 @@ Inbound mail (phase 3B): turning a mail in the shared mailbox into a ticket or a
 File: `app/inbound.py`
 
 - Classes: `AttachmentsUnreadable`, `Handled`, `IncomingMail`, `MailSource`
-- Functions: `automatic_reason`, `backoff_until`, `find_ticket_for`, `ingest_mail`, `load_attachments`, `may_reply`, `msp_auto_reply`, `msp_trust`, `opening_text`, `parse_graph_message`, `process_message`, `process_notifications`, `referenced_ticket`
+- Functions: `authenticated_as_internal`, `automatic_reason`, `backoff_until`, `find_ticket_for`, `ingest_mail`, `load_attachments`, `may_reply`, `msp_auto_reply`, `msp_trust`, `opening_text`, `parse_graph_message`, `process_message`, `process_notifications`, `referenced_ticket`
 - Imports: `app.attachments`, `app.audit`, `app.config`, `app.follower_updates`, `app.followers`, `app.forwards`, `app.graph_client`, `app.identity`, `app.intake`, `app.mail`, `app.models`, `app.msp`, `app.never_follow`, `app.outbox`, `app.reopening`, `app.reply_channel`, `app.settings_store`, `app.storage`, `app.subscriptions`, `app.teams`, `app.ticket_service`, `app.time_zones`
 - Imported by: `app.attachment_retries`, `app.jobs`, `app.routers.admin`, `app.routers.dev_tools`
 - Tests: `test_acknowledgement.py`, `test_admin_mail_pages.py`, `test_anonymisation.py`, `test_attachment_retries.py`, `test_follower_updates.py`, `test_forward_mail.py`, `test_inbound_mail.py`, `test_msp_mail.py`, `test_msp_real_mail.py`, `test_never_follow.py`, `test_reopening.py`, `test_thanks_rules.py`, `test_time_zones.py`

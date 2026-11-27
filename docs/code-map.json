@@ -1840,6 +1840,7 @@
       ],
       "file": "app/inbound.py",
       "functions": [
+        "authenticated_as_internal",
         "automatic_reason",
         "backoff_until",
         "find_ticket_for",
