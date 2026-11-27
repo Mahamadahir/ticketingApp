@@ -220,6 +220,8 @@ def _sentence(e: TicketEvent, n: Names) -> str:
         return "The requester withdrew the request while it waited for approval."
     if t == "backdated":
         return f"Backdated the {detail or 'ticket'} from {frm or 'none'} to {to or 'none'} (UTC)."
+    if t == "requester_changed":
+        return f"Changed the end user from {n.of(frm)} to {n.of(to)}." + (f" ({detail})" if detail else "")
     if t == "follower_added":
         return f"Added {n.of(to)} as a follower."
     if t == "follower_removed":
@@ -281,6 +283,8 @@ def _sentence(e: TicketEvent, n: Names) -> str:
         return f'A thank-you reply did not reopen the ticket: "{detail}"' if detail else "A thank-you reply did not reopen the ticket."
     if t == "mail_reference_not_used":
         return (detail + ".") if detail else "A reply named this ticket but was not matched to it."
+    if t in ("attachments_pending", "attachments_added", "attachments_failed") and detail:
+        return detail if detail.endswith(".") else detail + "."
     if t == "attachment_skipped":
         return f"A file was not saved: {to}." + (f" {detail}." if detail else "")
     if t == "chased":
@@ -299,7 +303,7 @@ _TITLES = {
     "taken_back_from_msp": "Took back from the MSP", "linked": "Linked", "unlinked": "Unlinked", "split": "Split",
     "split_from": "Split", "backdated": "Backdated", "follower_added": "Added a follower", "follower_removed": "Removed a follower",
     "approval_requested": "Asked for approval", "approval_decided": "Decided", "approval_outcome": "Approval",
-    "chased": "Chased", "auto_closed": "Closed", "answer_changed": "Updated an answer",
+    "chased": "Chased", "requester_changed": "Changed the end user", "auto_closed": "Closed", "answer_changed": "Updated an answer",
 }
 
 

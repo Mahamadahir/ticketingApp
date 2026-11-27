@@ -45,6 +45,7 @@ from app.auto_close_chase import run_auto_close, run_chase
 from app.bank_holidays import run_bank_holiday_fetch
 from app.database import engine
 from app.due_today import run_scheduled_due
+from app.attachment_retries import attachment_retries_job
 from app.email_reactions import email_reactions_job
 from app.entra_check import JOB_NAME as ENTRA_CHECK_JOB, run_entra_account_check
 from app.job_runs import abandon_running, close_run, open_run, purge_job_runs
@@ -108,6 +109,11 @@ def counted(key: str, work: Callable[[Session], Optional[int]]) -> Callable[[Ses
 
 # The registry: add a ScheduledJobDef here to add a recurring job.
 SCHEDULED_JOBS: list[ScheduledJobDef] = [
+    ScheduledJobDef(
+        "inbound-attachments", 60, attachment_retries_job,
+        "Reads again the attachments of incoming emails that were taken without them after two failed reads, on the same backoff as a "
+        "failed email (up to 8 tries in all), and adds them to the ticket's message. After the last try it leaves a note on the ticket.",
+    ),
     ScheduledJobDef("approval-reminders", 3600, send_approval_reminders, "Reminds approvers who have not voted on a request, and tells the agent when an approval is overdue.", (WARN_EMAIL,)),
     ScheduledJobDef("auto-close", 3600, run_auto_close, "Closes Resolved tickets that nobody has answered for the auto-close period, and emails the requester that it was closed (only when auto-close is on).", (WARN_EMAIL,)),
     ScheduledJobDef("bank-holidays", 21600, run_bank_holiday_fetch, "Fetches the gov.uk bank holidays and keeps them in the database for SLA and due-date calculations; a failed fetch is retried the same day."),

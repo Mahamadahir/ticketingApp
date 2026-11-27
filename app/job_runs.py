@@ -74,6 +74,11 @@ SENTENCES: dict[str, dict[str, tuple[str, str]]] = {
         "read": _s("Read {n} sent email", "Read {n} sent emails"),
         "recorded": _s("Recorded {n} reaction", "Recorded {n} reactions"),
     },
+    "inbound-attachments": {
+        "retried": _s("Read the attachments of {n} email again", "Read the attachments of {n} emails again"),
+        "added": _s("Added the attachments of {n} email", "Added the attachments of {n} emails"),
+        "gave_up": _s("Could not read the attachments of {n} email, so gave up", "Could not read the attachments of {n} emails, so gave up"),
+    },
     "job-run-purge": {"deleted": _s("Deleted {n} old run record", "Deleted {n} old run records")},
     "mailbox-changes": {
         "started": _s("Started {n} mailbox change", "Started {n} mailbox changes"),

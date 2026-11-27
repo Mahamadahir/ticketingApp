@@ -130,6 +130,21 @@ REGISTRY: dict[str, TemplateDef] = {
             sample={**_COMMON_SAMPLE, "raised_by": "Alex Agent", "request_text": "The printer shows a paper jam error."},
         ),
         TemplateDef(
+            key="requester_changed",
+            label="Ticket now yours (end user changed)",
+            description=(
+                "Sent to the new end user when an agent changes who a ticket is for and ticks \"Email the new end user\". "
+                "Nothing is sent to the previous end user. It carries only the reference and subject: what they may read of the "
+                "ticket is what the portal shows any requester."
+            ),
+            body_default=(
+                "IT Support has made you the person this ticket is for.\n\n"
+                "Reference: {reference}\nSubject: {subject}"
+            ),
+            body_placeholders={**_COMMON},
+            sample={**_COMMON_SAMPLE},
+        ),
+        TemplateDef(
             key="acknowledgement",
             label="Acknowledgement",
             description=(
@@ -771,7 +786,7 @@ AUDIENCES: tuple[tuple[str, str, str], ...] = (
     ("legal", "Legal pages", "Not emails: the Teams app's privacy and terms pages."),
 )
 AUDIENCE_OF: dict[str, str] = {
-    "raised_for": "requester", "acknowledgement": "requester", "split_notice": "requester", "follower_update": "requester", "resolution": "requester",
+    "raised_for": "requester", "requester_changed": "requester", "acknowledgement": "requester", "split_notice": "requester", "follower_update": "requester", "resolution": "requester",
     "closed": "requester", "chase": "requester", "auto_resolve_note": "requester", "link_code": "requester",
     "msp_forward": "requester", "msp_sent_notice": "requester", "approval_approved": "requester",
     "approval_declined": "requester", "approval_waived": "requester",

@@ -218,7 +218,7 @@ def test_every_count_key_a_job_can_return_has_a_sentence():
         "job-run-purge": {"deleted"}, "mailbox-changes": {"started", "removed", "retried", "failed"},
         "msp-ack-alerts": {"alerted"}, "msp-forwards": {"forwarded"}, "msp-handoff": {"sent", "warned"},
         "note-purge": {"deleted"}, "notification-purge": {"deleted"}, "presence-cleanup": {"deleted"}, "reply-files": {"deleted"},
-        "scheduled-due": {"reopened"}, "session-cleanup": {"deleted"}, "teams-pending": {"expired"},
+        "inbound-attachments": {"retried", "added", "gave_up"}, "scheduled-due": {"reopened"}, "session-cleanup": {"deleted"}, "teams-pending": {"expired"},
     }
     assert {job.name for job in SCHEDULED_JOBS} == set(expected_keys)  # a new job must be listed here, with its wording
     for name, keys in expected_keys.items():
