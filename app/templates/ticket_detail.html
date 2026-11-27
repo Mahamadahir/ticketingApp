@@ -62,6 +62,7 @@
   <script src="{{ static_url('ticket-presence.js') }}"></script>
   <script src="{{ static_url('ticket-mentions.js') }}"></script>
   <script src="{{ static_url('split-card.js') }}"></script>
+  <script src="{{ static_url('requester-picker.js') }}"></script>
 
   {% if chips.row or chips.primary or chips.more %}
   {# One row under the info line: Email user and Add note first, then what this ticket's state offers; Resolve (or Reopen) is the
@@ -153,27 +154,39 @@
     <div class="tp-person">
       <span class="avatar tp-avatar" aria-hidden="true">{{ requester_name|initials }}</span>
       <div>
-        <b>{{ requester_name }}</b><br>
+        <b>{{ requester_name }}</b>{% if editable.requester %}
+        <button type="button" class="icon-btn rp-toggle" id="rp-toggle" aria-expanded="false" aria-controls="rp-panel" aria-label="Change end user" data-rp-toggle>
+          <svg aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"></path></svg>
+        </button>{% endif %}<br>
         <a href="mailto:{{ ticket.requester_email }}">{{ ticket.requester_email }}</a><br>
         <span class="muted small">{{ requester_zone }}</span>
       </div>
     </div>
     {% if notice %}<p class="note" role="status">{{ notice }}</p>{% endif %}
-    {% if editing == "requester" %}
-    <form class="tp-form tp-edit" method="post" action="/tickets/{{ ticket.number }}/requester" hx-post="/tickets/{{ ticket.number }}/requester" hx-target="main" hx-swap="innerHTML" data-doing="changing the end user">
-      <label>New end user (a name or an email address)
-        <input type="text" name="new_requester" list="requester-options" maxlength="320" required autocomplete="off"
-               hx-get="/tickets/{{ ticket.number }}/requester-search" hx-trigger="input changed delay:300ms" hx-target="#requester-options" hx-swap="innerHTML" />
-        <datalist id="requester-options"></datalist>
-      </label>
-      <label><input type="checkbox" name="keep_old" value="on" checked /> Keep {{ requester_name }} as a follower (unticked, they lose this ticket in the portal)</label>
-      <label><input type="checkbox" name="email_new" value="on" /> Email the new end user</label>
-      <p class="note">The new end user sees what any requester sees. Nothing is emailed to {{ requester_name }}.</p>
-      <div class="tp-edit-actions"><button type="submit" class="btn btn-primary">Change end user</button>{{ cancel_edit("box-enduser") }}</div>
-    </form>
-    {% elif editable.requester %}
-    <p class="tp-val"><a class="btn" href="/tickets/{{ ticket.number }}?edit=requester#box-enduser"
-       hx-get="/tickets/{{ ticket.number }}?edit=requester" hx-target="#box-enduser" hx-select="#box-enduser" hx-swap="outerHTML" hx-push-url="false">Change</a></p>
+    {% if editable.requester %}
+    {# The End user picker (#279): the chevron opens this panel in place (static/requester-picker.js); a result or "Use {address}" sets
+       one of the two hidden fields, and the server checks the choice again. Without scripts the panel stays closed. #}
+    <div class="rp-panel" id="rp-panel" hidden data-rp-panel>
+      <form class="tp-form tp-edit" method="post" action="/tickets/{{ ticket.number }}/requester" hx-post="/tickets/{{ ticket.number }}/requester" hx-target="main" hx-swap="innerHTML" data-doing="changing the end user">
+        <input type="hidden" name="new_requester_oid" id="rp-oid" value="" />
+        <input type="hidden" name="new_requester" id="rp-address" value="" />
+        <p class="mb-chosen" id="rp-chosen" hidden>
+          <strong id="rp-chosen-name"></strong>
+          <button type="button" class="btn" id="rp-change">Choose someone else</button>
+        </p>
+        <div id="rp-search">
+          <label class="field">Type a name or email address
+            <input type="search" id="rp-q" name="q" autocomplete="off" maxlength="100"
+                   hx-get="/tickets/{{ ticket.number }}/people" hx-trigger="input changed delay:300ms, search" hx-target="#rp-results" hx-swap="innerHTML" hx-sync="this:replace" />
+          </label>
+          <div id="rp-results" aria-live="polite"></div>
+        </div>
+        <label><input type="checkbox" name="keep_old" value="on" checked /> Keep {{ requester_name }} as a follower (unticked, they lose this ticket in the portal)</label>
+        <label><input type="checkbox" name="email_new" value="on" /> Email the new end user</label>
+        <p class="note">The new end user sees what any requester sees. Nothing is emailed to {{ requester_name }}.</p>
+        <div class="tp-edit-actions"><button type="submit" class="btn btn-primary">Save</button><button type="button" class="btn" data-rp-cancel>Cancel</button></div>
+      </form>
+    </div>
     {% endif %}
   </section>
 

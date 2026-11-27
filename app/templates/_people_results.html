@@ -16,3 +16,11 @@
   {% endfor %}
 </ul>
 {% endif %}
+{% if use_address %}
+<ul class="mb-results" aria-label="Use this address">
+  <li><button type="button" class="mb-person" data-address="{{ use_address }}" data-name="{{ use_address }}" data-detail="{{ use_address }}">
+    <span class="mb-person-name">Use {{ use_address }}</span>
+    <span class="mb-person-detail">An outside address, not chosen from the directory</span>
+  </button></li>
+</ul>
+{% endif %}

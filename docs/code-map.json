@@ -1679,6 +1679,7 @@
         "tests/test_outbound_mail.py",
         "tests/test_portal_mailbox.py",
         "tests/test_presence.py",
+        "tests/test_requester_change.py",
         "tests/test_time_zones.py"
       ]
     },
@@ -3631,7 +3632,9 @@
       ],
       "imported_by": [
         "app.portal_mailbox",
-        "app.routers.portal"
+        "app.requester_change",
+        "app.routers.portal",
+        "app.routers.tickets"
       ],
       "imports": [
         "app.config",
@@ -3645,7 +3648,9 @@
       "routes": [],
       "summary": "The people picker's directory (#309): who a person may choose as the other person of a mailbox change.",
       "tables": [],
-      "tests": []
+      "tests": [
+        "tests/test_requester_change.py"
+      ]
     },
     {
       "classes": [
@@ -3884,6 +3889,7 @@
         "app.routers.legal",
         "app.routers.portal",
         "app.routers.teams_bot",
+        "app.routers.tickets",
         "app.routers.webhooks",
         "app.teams_intake"
       ],
@@ -4313,7 +4319,7 @@
       "functions": [
         "change_requester",
         "resolve_address",
-        "suggestions"
+        "typed_address"
       ],
       "imported_by": [
         "app.routers.tickets"
@@ -4326,6 +4332,7 @@
         "app.identity",
         "app.models",
         "app.outbox",
+        "app.people_directory",
         "app.person_data",
         "app.reply_channel",
         "app.sla",
@@ -5892,6 +5899,7 @@
         "email_user",
         "escalate_ticket",
         "fill_from_canned",
+        "find_people_for_requester",
         "link",
         "list_tickets",
         "mailbox_cancel",
@@ -5918,7 +5926,6 @@
         "reopen",
         "resolve",
         "restore_note",
-        "search_requester",
         "send_ticket_to_msp",
         "split",
         "take_back_from_msp_route",
@@ -5958,9 +5965,11 @@
         "app.msp_actions",
         "app.notifications",
         "app.pagination",
+        "app.people_directory",
         "app.portal_mailbox",
         "app.presence",
         "app.raising",
+        "app.rate_limit",
         "app.reactions",
         "app.reopening",
         "app.reply_files",
@@ -6185,6 +6194,11 @@
           "path": "/tickets/{number}/notes/{note_id}/visibility"
         },
         {
+          "handler": "find_people_for_requester",
+          "method": "GET",
+          "path": "/tickets/{number}/people"
+        },
+        {
           "handler": "presence_check_in",
           "method": "POST",
           "path": "/tickets/{number}/presence"
@@ -6223,11 +6237,6 @@
           "handler": "change_end_user",
           "method": "POST",
           "path": "/tickets/{number}/requester"
-        },
-        {
-          "handler": "search_requester",
-          "method": "GET",
-          "path": "/tickets/{number}/requester-search"
         },
         {
           "handler": "change_required_by",
@@ -6590,6 +6599,7 @@
         "tests/test_reply_files.py",
         "tests/test_reports.py",
         "tests/test_request_types.py",
+        "tests/test_requester_change.py",
         "tests/test_required_by.py",
         "tests/test_resolution.py",
         "tests/test_scheduled_jobs.py",

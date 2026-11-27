@@ -154,6 +154,10 @@ The app's first modal (#309), a deliberate exception to "never a pop-over" (the 
 - **Access warning (#310):** the form carries `data-warn="access"`; the title is "Give access to your mailbox?", the text one sentence for each permission ticked ("<name> will be able to read all mail already in your mailbox.", "<name> will be able to send email that appears to come from you.") then "This lasts until <end>.", the confirm is "Give access" with the same 5-second countdown, and the server check is `confirm_access=1`. The script does not open it when nothing is ticked, no person is chosen or no end is set: the server words those refusals first.
 - **Without scripts:** the server refuses the action until it is confirmed (`confirm_no_copy=1`) and answers with the same words in `section.mb-confirm` (a red header, the text, the confirm `.btn-danger` and a Cancel link) on the page.
 
+## Inline person picker
+
+The End user box on the agent ticket page (#279): a small `.icon-btn.rp-toggle` (chevron, `aria-expanded`, `aria-controls`) after the name opens `.rp-panel` in place; Escape or Cancel closes it and focus returns to the chevron. Inside: a `type=search` field whose results are the `.mb-person` buttons of `_people_results.html` (shared with the portal's mailbox form), then the form's tick boxes and Save / Cancel. Script: `app/static/requester-picker.js`. Chosen people show in `.mb-chosen` with Choose someone else.
+
 ## Font
 
 Inter 4.0 variable (`app/static/fonts/Inter-4.0-variable.woff2`), SIL Open Font License 1.1, licence in

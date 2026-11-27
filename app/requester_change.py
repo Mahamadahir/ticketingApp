@@ -3,8 +3,8 @@
 An agent who works a ticket can change who it is for: it was raised for the wrong person, a PA wrote in for someone
 else, or a shared address sent it. `change_requester` is the one place that does it; the route only calls it.
 
-Who may: `visibility.may_change_requester` (checked again here, so no caller can skip it). The new person is an
-account found by name or address, or any address typed in. Whether it is the same person as now is asked of
+Who may: `visibility.may_change_requester` (checked again here, so no caller can skip it). The new person is chosen from the
+directory (app/people_directory.py, the picker on the ticket page) or is an address typed in. Whether it is the same person as now is asked of
 app/identity.py (linked identities), never by comparing two addresses.
 
 What follows, each decided in one place:
@@ -28,9 +28,9 @@ Nothing here commits.
 from dataclasses import dataclass
 from typing import Optional
 
-from sqlalchemy import func, or_
 from sqlmodel import Session, select
 
+from app import people_directory
 from app.approvals import PENDING, current_approval
 from app.audit import log_action
 from app.config import settings
@@ -48,7 +48,6 @@ from app.ticket_service import record_event
 from app.visibility import access_context, may_change_requester
 
 EVENT_REQUESTER_CHANGED = "requester_changed"  # from_value: the old address; to_value: the new one
-MAX_SUGGESTIONS = 8
 
 
 class RequesterChangeError(ValueError):
@@ -68,40 +67,26 @@ class Outcome:
     notes: tuple[str, ...] = ()  # things that were asked for and could not be done, worded for the agent
 
 
-def suggestions(session: Session, text: str) -> list[User]:
-    """Active accounts (any role) whose name or address contains what was typed, for the picker. A merged-away
-    account is left out (`identity.person_for_address` points its address at the main person)."""
-    text = (text or "").strip().lower()
-    if len(text) < 2:
-        return []
-    like = "%" + text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
-    found = session.exec(
-        select(User)
-        .where(User.is_active, or_(func.lower(User.email).like(like, escape="\\"), func.lower(User.display_name).like(like, escape="\\")))
-        .order_by(User.display_name, User.email)
-        .limit(MAX_SUGGESTIONS * 2)
-    ).all()
-    main = [u for u in found if (person_for_address(session, u.email) or u).id == u.id]
-    return main[:MAX_SUGGESTIONS]
-
-
-def resolve_address(session: Session, text: str) -> str:
-    """The address the agent meant: an address (a display name around it is dropped), or the exact name of one active
-    account. Raises RequesterChangeError when it is neither."""
+def typed_address(text: str) -> Optional[str]:
+    """The normalised address in what was typed (a display name around it is dropped), or None when it is not an address."""
     text = (text or "").strip()
-    if not text:
-        raise RequesterChangeError("Enter a name or an email address")
     if "@" not in text:
-        named = session.exec(select(User).where(User.is_active, func.lower(User.display_name) == text.lower())).all()
-        if len(named) != 1:
-            raise RequesterChangeError(
-                "No single person has that name. Type their email address, or pick one from the list"
-            )
-        return normalise_email(named[0].email)
+        return None
     try:
         return normalise_email(bare_address(text))
     except InvalidEmail:
+        return None
+
+
+def resolve_address(text: str) -> str:
+    """The address the agent typed (the "Use {address}" choice of the picker). Raises RequesterChangeError when it is not one."""
+    text = (text or "").strip()
+    if not text:
+        raise RequesterChangeError("Choose a person from the list, or type an email address and use it")
+    address = typed_address(text)
+    if address is None:
         raise RequesterChangeError(f"{text} is not a valid email address")
+    return address
 
 
 def _refuse_if_unfit(session: Session, ticket: Ticket, new: str) -> None:
@@ -132,13 +117,25 @@ def _refuse_if_unfit(session: Session, ticket: Ticket, new: str) -> None:
 
 
 def change_requester(
-    session: Session, ticket: Ticket, actor: User, raw_new: str, *, keep_old_as_follower: bool = True, email_new: bool = False,
+    session: Session, ticket: Ticket, actor: User, raw_new: str = "", *, object_id: str = "", keep_old_as_follower: bool = True,
+    email_new: bool = False,
 ) -> Outcome:
-    """Makes `raw_new` (a name or an address) the ticket's end user. Raises NotAllowed (the rule in visibility) or
+    """Makes the chosen person the ticket's end user: `object_id` is a directory choice (the server fetches it again and
+    refuses anyone not found, switched off or without mail), else `raw_new` is an address that was typed. Raises NotAllowed
+    (the rule in visibility) or
     RequesterChangeError (a reason worded for the agent). The caller locks the ticket row first and commits after."""
     if not may_change_requester(actor, ticket, access_context(session, actor)):
         raise NotAllowed("You cannot change the end user of this ticket")
-    new = resolve_address(session, raw_new)
+    if (object_id or "").strip():
+        try:
+            chosen = people_directory.resolve(session, actor, object_id, exclude_self=False, use_blocklist=False)
+            new = normalise_email(chosen.mail)
+        except people_directory.DirectoryError as error:
+            raise RequesterChangeError(str(error))
+        except InvalidEmail:
+            raise RequesterChangeError("That person has no usable email address")
+    else:
+        new = resolve_address(raw_new)
     _refuse_if_unfit(session, ticket, new)
     old = ticket.requester_email.strip()
 

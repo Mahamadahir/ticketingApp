@@ -372,6 +372,10 @@ label { cursor: pointer; }
 .tp-edit-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .tp-person { display: flex; gap: 12px; align-items: flex-start; overflow-wrap: anywhere; }
 .tp-person .avatar { flex: none; }
+.rp-toggle { width: 28px; height: 28px; vertical-align: middle; margin-left: 4px; }
+.rp-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
+.rp-panel[hidden] { display: none; }
+.rp-panel { margin-top: 12px; }
 .tp-filelist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
 .tp-filelist li { display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
 .tp-fname { font-weight: 600; }

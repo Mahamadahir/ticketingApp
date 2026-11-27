@@ -12,6 +12,7 @@ from sqlmodel import select
 from app import mail, outbox
 from app.anonymisation import run as anonymise_person
 from app.config import settings
+from app.settings_store import MAILBOX_TARGET_BLOCKLIST, set_setting
 from app.email_templates import REGISTRY, current_text
 from app.followers import is_follower
 from app.models import (
@@ -29,7 +30,9 @@ from app.models import (
     UserRole,
 )
 from app.person_data import COLUMNS
-from app.requester_change import NotAllowed, RequesterChangeError, change_requester, resolve_address, suggestions
+from app import graph_client as graph_module
+from app.people_directory import DirectoryError
+from app.requester_change import NotAllowed, RequesterChangeError, change_requester, resolve_address, typed_address
 from app.subject_access import build_export
 from app.ticket_service import create_ticket
 from app.time_zones import end_of_day_utc
@@ -63,6 +66,25 @@ def post(client, ticket, who=NEW, **extra):
     data.update(extra)
     data = {k: v for k, v in data.items() if v is not None}
     return client.post(f"/tickets/{ticket.number}/requester", data=data)
+
+
+def raw_user(oid, name, mail, enabled=True, kind="Member", job="", dept=""):
+    return {"id": oid, "displayName": name, "mail": mail, "jobTitle": job, "department": dept, "accountEnabled": enabled, "userType": kind}
+
+
+@pytest.fixture
+def graph_directory(monkeypatch):
+    """Graph on, with a directory the test fills in: {object id: raw Graph user}."""
+    entries: dict[str, dict] = {}
+    monkeypatch.setattr(settings, "graph_tenant_id", "t")
+    monkeypatch.setattr(settings, "graph_client_id", "c")
+    monkeypatch.setattr(settings, "graph_client_secret", "s")
+    monkeypatch.setattr(
+        graph_module.graph_client, "search_users",
+        lambda text, limit=25: [r for r in entries.values() if text.lower() in (r["displayName"] + (r["mail"] or "")).lower()],
+    )
+    monkeypatch.setattr(graph_module.graph_client, "get_user", lambda oid: entries.get(oid))
+    return entries
 
 
 def reload(db_session, ticket):
@@ -132,7 +154,7 @@ def test_the_requester_and_a_follower_cannot_change_it(client, db_session):
         client.post("/auth/logout")
         login_as(client, email)
         assert post(client, ticket).status_code == 403
-        assert client.get(f"/tickets/{ticket.number}/requester-search?new_requester=ne").status_code == 403
+        assert client.get(f"/tickets/{ticket.number}/people?q=ne").status_code == 403
     assert reload(db_session, ticket).requester_email == OLD
 
 
@@ -171,30 +193,40 @@ def test_the_service_checks_the_rule_itself(client, db_session):
     assert ticket.requester_email == OLD
 
 
-def test_the_page_offers_change_only_to_those_who_may(client, db_session, desk):
+def test_the_page_offers_the_chevron_and_the_panel_only_to_those_who_may(client, db_session, desk):
     ticket = worked(db_session, desk)
-    assert "?edit=requester" in client.get(f"/tickets/{ticket.number}").text
-    form = client.get(f"/tickets/{ticket.number}?edit=requester").text
-    assert 'name="new_requester"' in form and 'name="email_new"' in form and 'name="keep_old"' in form
-    assert 'name="email_new" value="on" checked' not in form  # unticked by default
-    assert 'name="keep_old" value="on" checked' in form  # ticked by default
+    page = client.get(f"/tickets/{ticket.number}").text
+    assert 'id="rp-toggle"' in page and 'aria-expanded="false"' in page and 'aria-controls="rp-panel"' in page
+    assert 'id="rp-panel" hidden' in page  # closed until the chevron is used
+    assert 'name="new_requester_oid"' in page and 'name="new_requester"' in page and 'name="email_new"' in page and 'name="keep_old"' in page
+    assert f'hx-get="/tickets/{ticket.number}/people"' in page and "Type a name or email address" in page
+    assert "data-rp-cancel" in page and "requester-picker.js" in page
+    assert 'name="email_new" value="on" checked' not in page  # unticked by default
+    assert 'name="keep_old" value="on" checked' in page  # ticked by default
+    assert "datalist" not in page and "?edit=requester" not in page
     ticket.status = TicketStatus.RESOLVED
     db_session.add(ticket)
     db_session.commit()
-    page = client.get(f"/tickets/{ticket.number}?edit=requester").text
-    assert "?edit=requester" not in page and 'name="new_requester"' not in page
+    page = client.get(f"/tickets/{ticket.number}").text
+    assert 'id="rp-toggle"' not in page and 'name="new_requester"' not in page
+
+
+def test_the_script_opens_and_closes_the_panel_with_the_chevron_cancel_and_escape():
+    from pathlib import Path
+
+    script = Path("app/static/requester-picker.js").read_text(encoding="utf-8")
+    assert 'setAttribute("aria-expanded"' in script and "data-rp-toggle" in script and "data-rp-cancel" in script
+    assert '"Escape"' in script and "toggle.focus()" in script
 
 
 # ---- Who it can become -------------------------------------------------------------------------------
 
 
-def test_change_to_an_existing_user_by_address_or_by_name(client, db_session, desk):
+def test_change_to_an_existing_user_by_a_typed_address(client, db_session, desk):
     person(db_session, "pat@example.com", "Pat Smith")
-    first, second = worked(db_session, desk), worked(db_session, desk)
-    assert post(client, first, "Pat Smith <PAT@example.com>").status_code == 200
-    assert post(client, second, "pat smith").status_code == 200
-    assert reload(db_session, first).requester_email == "pat@example.com"
-    assert reload(db_session, second).requester_email == "pat@example.com"
+    ticket = worked(db_session, desk)
+    assert post(client, ticket, "Pat Smith <PAT@example.com>").status_code == 200
+    assert reload(db_session, ticket).requester_email == "pat@example.com"
 
 
 def test_change_to_an_address_with_no_account_is_normalised(client, db_session, desk):
@@ -203,7 +235,7 @@ def test_change_to_an_address_with_no_account_is_normalised(client, db_session, 
     assert reload(db_session, ticket).requester_email == "visitor@outside.org"
 
 
-@pytest.mark.parametrize("typed", ["not an address", "a@b", "nobody knows", ""])
+@pytest.mark.parametrize("typed", ["not an address", "a@b", "nobody knows", "Pat Smith", ""])
 def test_a_bad_entry_is_refused_with_a_plain_message(client, db_session, desk, typed):
     ticket = worked(db_session, desk)
     response = post(client, ticket, typed)
@@ -240,21 +272,138 @@ def test_the_support_mailbox_an_anonymised_address_and_a_switched_off_account_ar
     assert reload(db_session, ticket).requester_email == OLD
 
 
-def test_the_picker_lists_active_accounts_by_name_or_address(client, db_session, desk):
+def test_resolve_address_wants_an_address():
+    assert resolve_address(" Pat <PAT@Example.com> ") == "pat@example.com"
+    assert typed_address("pat smith") is None and typed_address("a@b") is None
+    with pytest.raises(RequesterChangeError):
+        resolve_address("Sam Jones")
+
+
+# ---- The directory picker (GET /tickets/{number}/people) --------------------------------------------------
+
+
+def test_the_picker_route_refuses_a_requester_and_an_agent_who_cannot_work_the_ticket(client, db_session):
+    team, other = create_team(db_session, "Service Desk"), create_team(db_session, "Network")
+    ticket = worked(db_session, team)
+    person(db_session, "pat@example.com", "Pat Smith")
+    reader = agent(client, db_session, email="reader@example.com")
+    add_membership(db_session, reader, team.id, MembershipLevel.VIEWER)
+    assert client.get(f"/tickets/{ticket.number}/people?q=pat").status_code == 403
+    client.post("/auth/logout")
+    outsider = agent(client, db_session, member_of=[other], email="outsider@example.com")
+    assert client.get(f"/tickets/{ticket.number}/people?q=pat").status_code in (403, 404)
+    client.post("/auth/logout")
+    login_as(client, OLD)
+    response = client.get(f"/tickets/{ticket.number}/people?q=pat")
+    assert response.status_code == 403 and "Pat Smith" not in response.text
+
+
+def test_the_picker_route_is_rate_limited_like_the_portal_one(client, db_session, desk, monkeypatch):
+    monkeypatch.setattr(settings, "rate_limit_people_search_per_minute", 3)
+    ticket = worked(db_session, desk)
+    codes = [client.get(f"/tickets/{ticket.number}/people?q=pat").status_code for _ in range(5)]
+    assert codes[:3] == [200, 200, 200] and 429 in codes[3:]
+
+
+def test_the_picker_lists_local_people_with_name_and_address_and_waits_for_two_letters(client, db_session, desk):
     person(db_session, "pat@example.com", "Pat Smith")
     person(db_session, "patrick@example.com", "Patrick Off", is_active=False)
     ticket = worked(db_session, desk)
-    page = client.get(f"/tickets/{ticket.number}/requester-search?new_requester=pat").text
-    assert "pat@example.com" in page and "Pat Smith" in page and "patrick@example.com" not in page
-    assert client.get(f"/tickets/{ticket.number}/requester-search?new_requester=p").text == ""  # too short to search
-    assert [u.email for u in suggestions(db_session, "SMITH")] == ["pat@example.com"]
+    text = client.get(f"/tickets/{ticket.number}/people?q=pat").text
+    assert "Pat Smith" in text and "pat@example.com" in text and 'data-oid="local-' in text and "patrick@example.com" not in text
+    assert "at least 2" in client.get(f"/tickets/{ticket.number}/people?q=p").text
 
 
-def test_resolve_address_needs_a_single_exact_name(db_session):
-    person(db_session, "a1@example.com", "Sam Jones")
-    person(db_session, "a2@example.com", "Sam Jones")
+def test_the_picker_includes_the_agent_themselves_and_a_blocklisted_address(client, db_session, desk):
+    person(db_session, "break@example.com", "Break Glassy")
+    set_setting(db_session, MAILBOX_TARGET_BLOCKLIST, "break@example.com")
+    db_session.commit()
+    ticket = worked(db_session, desk)
+    me = client.get(f"/tickets/{ticket.number}/people?q=agent@").text
+    assert "agent@example.com" in me and "data-oid" in me
+    assert "Break Glassy" in client.get(f"/tickets/{ticket.number}/people?q=break").text
+    # the mailbox picker keeps both exclusions
+    assert "Break Glassy" not in client.get("/portal/people?q=break").text
+    assert "data-oid" not in client.get("/portal/people?q=agent@").text
+
+
+def test_a_directory_person_who_has_never_signed_in_can_be_chosen(client, db_session, desk, graph_directory):
+    graph_directory["oid-sam"] = raw_user("oid-sam", "Sam Newhire", "sam.newhire@example.com", job="Analyst", dept="Finance")
+    ticket = worked(db_session, desk)
+    text = client.get(f"/tickets/{ticket.number}/people?q=sam").text
+    assert "Sam Newhire" in text and "Analyst" in text and "Finance" in text and 'data-oid="oid-sam"' in text
+    assert "Use sam" not in text
+    response = client.post(f"/tickets/{ticket.number}/requester", data={"new_requester_oid": "oid-sam", "keep_old": "on"})
+    assert response.status_code == 200, response.text
+    assert reload(db_session, ticket).requester_email == "sam.newhire@example.com"
+    assert db_session.exec(select(User).where(User.email == "sam.newhire@example.com")).first() is None  # no account was made
+
+
+def test_a_doctored_object_id_is_refused(client, db_session, desk, graph_directory):
+    graph_directory["oid-off"] = raw_user("oid-off", "Off Person", "off@example.com", enabled=False)
+    graph_directory["oid-guest"] = raw_user("oid-guest", "Guest Person", "guest@other.com", kind="Guest")
+    graph_directory["oid-nomail"] = raw_user("oid-nomail", "No Mail", None)
+    ticket = worked(db_session, desk)
+    for oid in ("oid-nobody", "oid-off", "oid-guest", "oid-nomail", "oid-sam@example.com"):
+        response = client.post(f"/tickets/{ticket.number}/requester", data={"new_requester_oid": oid})
+        assert response.status_code == 400, oid
+    assert reload(db_session, ticket).requester_email == OLD
+    assert events(db_session, ticket, "requester_changed") == []
+
+
+def test_a_directory_choice_cannot_send_a_directory_failure_through(client, db_session, desk, graph_directory, monkeypatch):
+    def broken(oid):
+        raise RuntimeError("graph is down")
+
+    monkeypatch.setattr(graph_module.graph_client, "get_user", broken)
+    ticket = worked(db_session, desk)
+    response = client.post(f"/tickets/{ticket.number}/requester", data={"new_requester_oid": "oid-sam"})
+    assert response.status_code == 400 and "could not check" in response.text
+    assert reload(db_session, ticket).requester_email == OLD
+
+
+def test_a_directory_choice_still_meets_every_refusal_of_the_service(client, db_session, desk, graph_directory, monkeypatch):
+    graph_directory["oid-old"] = raw_user("oid-old", "Old Person", "OLD@example.com")
+    graph_directory["oid-box"] = raw_user("oid-box", "Support", "itsupport@example.com")
+    monkeypatch.setattr(settings, "graph_shared_mailbox", "itsupport@example.com")
+    ticket = worked(db_session, desk)
+    for oid in ("oid-old", "oid-box"):
+        assert client.post(f"/tickets/{ticket.number}/requester", data={"new_requester_oid": oid}).status_code == 400, oid
+    assert reload(db_session, ticket).requester_email == OLD
+
+
+def test_a_directory_refusal_in_the_service_is_a_requester_change_error(db_session, desk, monkeypatch):
+    ticket = worked(db_session, desk)
+    agent_user = db_session.exec(select(User).where(User.email == "agent@example.com")).one()
     with pytest.raises(RequesterChangeError):
-        resolve_address(db_session, "Sam Jones")
+        change_requester(db_session, ticket, agent_user, object_id="local-999999")
+    assert issubclass(DirectoryError, ValueError)
+
+
+def test_the_use_address_choice_is_offered_for_an_address_no_result_has(client, db_session, desk):
+    person(db_session, "pat@example.com", "Pat Smith")
+    ticket = worked(db_session, desk)
+    text = client.get(f"/tickets/{ticket.number}/people?q=Visitor@Outside.ORG").text
+    assert "Use visitor@outside.org" in text and 'data-address="visitor@outside.org"' in text
+    # a result that has the address makes the extra choice unnecessary
+    known = client.get(f"/tickets/{ticket.number}/people?q=pat@example.com").text
+    assert "Pat Smith" in known and "Use pat@example.com" not in known
+    assert "Use " not in client.get(f"/tickets/{ticket.number}/people?q=patsy").text  # not an address
+
+
+def test_the_use_address_choice_works_for_an_external_address(client, db_session, desk):
+    ticket = worked(db_session, desk)
+    response = client.post(f"/tickets/{ticket.number}/requester", data={"new_requester": "visitor@outside.org", "keep_old": "on"})
+    assert response.status_code == 200
+    assert reload(db_session, ticket).requester_email == "visitor@outside.org"
+
+
+def test_a_directory_choice_is_used_over_a_typed_address(client, db_session, desk, graph_directory):
+    graph_directory["oid-sam"] = raw_user("oid-sam", "Sam Newhire", "sam.newhire@example.com")
+    ticket = worked(db_session, desk)
+    data = {"new_requester_oid": "oid-sam", "new_requester": "other@outside.org"}
+    assert client.post(f"/tickets/{ticket.number}/requester", data=data).status_code == 200
+    assert reload(db_session, ticket).requester_email == "sam.newhire@example.com"
 
 
 # ---- History -----------------------------------------------------------------------------------------
