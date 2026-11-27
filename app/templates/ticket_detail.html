@@ -167,7 +167,7 @@
     {# The End user picker (#279): the chevron opens this panel in place (static/requester-picker.js); a result or "Use {address}" sets
        one of the two hidden fields, and the server checks the choice again. Without scripts the panel stays closed. #}
     <div class="rp-panel" id="rp-panel" hidden data-rp-panel>
-      <form class="tp-form tp-edit" method="post" action="/tickets/{{ ticket.number }}/requester" hx-post="/tickets/{{ ticket.number }}/requester" hx-target="main" hx-swap="innerHTML" data-doing="changing the end user">
+      <form class="tp-form tp-edit" method="post" action="/tickets/{{ ticket.number }}/requester" hx-post="/tickets/{{ ticket.number }}/requester" hx-target="main" hx-swap="innerHTML">
         <input type="hidden" name="new_requester_oid" id="rp-oid" value="" />
         <input type="hidden" name="new_requester" id="rp-address" value="" />
         <p class="mb-chosen" id="rp-chosen" hidden>

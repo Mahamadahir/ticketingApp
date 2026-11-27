@@ -130,13 +130,13 @@ def test_a_split_part_has_the_originals_reference_as_the_subject_does_and_the_ab
 # ---- No header on anything else ---------------------------------------------------------------------
 
 
-def test_only_the_requester_builders_make_a_header():  # the four of #257 and the split notice (#259, an automatic notice)
+def test_only_the_requester_builders_make_a_header():  # the four of #257, the split notice (#259) and the end-user-changed notice (#279), automatic notices
     callers = {
         name for name, fn in inspect.getmembers(mail, inspect.isfunction)
         if fn.__module__ == mail.__name__ and "email_header(" in inspect.getsource(fn)
     }
     assert callers == {"build_message_mail", "build_raised_for_mail", "build_acknowledgement_mail", "build_chase_mail",
-                       "build_split_notice_mail"}
+                       "build_split_notice_mail", "build_requester_changed_mail"}
 
 
 def test_a_follower_update_has_no_header(client, db_session, dev_mail):

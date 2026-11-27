@@ -26,6 +26,8 @@
     var panel = byId("rp-panel");
     if (!toggle || !panel) { return; }
     panel.hidden = !open;
+    var form = panel.querySelector("form");  // the presence strip reads data-doing, so it is there only while the panel is open
+    if (form) { if (open) { form.setAttribute("data-doing", "changing the end user"); } else { form.removeAttribute("data-doing"); } }
     toggle.setAttribute("aria-expanded", open ? "true" : "false");
     if (open) {
       var q = byId("rp-q");
