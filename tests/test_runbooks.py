@@ -188,6 +188,9 @@ def test_an_organization_that_is_not_an_onmicrosoft_name_is_refused_before_conne
         ("The operation has timed out.", "retryable", "timeout"),
         ("The role assigned to application x isn't supported in this scenario.", "permanent", "access_denied"),
         ("Insufficient permissions to run this command.", "permanent", "access_denied"),
+        # Exchange's words for a mailbox outside the role group's recipient write scope (seen on staging, 26 Nov 2026).
+        ("The operation on mailbox \"Ticketing scope test\" failed because it's out of the current user's write scope. "
+         "'Ticketing scope test' isn't within your current write scopes. Can't perform save operation.", "permanent", "access_denied"),
         ("Something nobody has seen before", "retryable", "unknown"),
     ],
 )
