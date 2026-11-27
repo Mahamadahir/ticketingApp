@@ -67,6 +67,7 @@ BATCH = 20
 CAP_WINDOW = timedelta(hours=24)
 NOT_READY_WAIT = timedelta(minutes=10)  # how long an email that cannot go yet waits before the next look
 NOT_READY_LIMIT = timedelta(days=3)  # after this long since it was queued, it is given up on
+HELD_BACK = "Held back: the limit on automatic emails to this person on this ticket was reached"  # the row's last_error while held (the thread shows it, #349)
 MAX_QUOTED = 1500  # characters of the requester's own words put into an email to someone else
 # A 4xx means Graph refused the message itself, which retrying cannot fix, except: 401 and 403 are
 # a misconfigured or not yet consented app, fixed on the Azure side while the email waits; 408 and
@@ -661,10 +662,10 @@ def deliver_mail(
         try:
             if builder is None:
                 raise Unsendable("Unknown kind")
-            release = cap_release(session, row, now)
+            release = cap_release(session, row, now) if row.cap_override_at is None else None  # "Send anyway" (#349): this row only
             if release is not None:
                 # Held back until the day's count allows it: not a failure and no try used.
-                row.last_error = "Held back: the limit on automatic emails to this person on this ticket was reached"
+                row.last_error = HELD_BACK
                 row.next_attempt_at = release
                 session.add(row)
                 session.commit()

@@ -1024,6 +1024,10 @@ class OutboundEmail(SQLModel, table=True):
     # What a reaction to this email counts as (app/reactions.py: resolution, awaiting_user, other), decided when it is SENT (a chase:
     # when queued), like the Teams copy's kind. Empty for an email nobody reacts meaningfully to (and every email sent before #299).
     reaction_kind: Optional[str] = Field(default=None)
+    # "Send anyway" (#349): an agent who works the ticket released this one email from the per-ticket limit on automatic emails.
+    # Set once; the sender then skips the cap for this row only (app/mail.py).
+    cap_override_by: Optional[str] = Field(default=None)
+    cap_override_at: Optional[datetime] = Field(default=None)
 
 
 class ScheduledJob(SQLModel, table=True):
