@@ -244,7 +244,7 @@ def test_the_directory_failing_is_not_a_lost_mail(db_session, monkeypatch):
     def broken(*args, **kwargs):
         raise people_directory.DirectoryError("down")
 
-    monkeypatch.setattr(people_directory, "is_internal", broken)
+    monkeypatch.setattr(people_directory, "internal_person", broken)
     ticket = forward(db_session, OUTLOOK_BLOCK)
     assert ticket.requester_email == "owen@corp.example"
     [event] = events_of(db_session, ticket, forwards.EVENT_MAIL_FORWARDED)

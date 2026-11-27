@@ -8,7 +8,8 @@ rules (27 Nov 2026) and returns who is the requester and who follows; app/inboun
   whose mail Exchange also authenticated as internal (`inbound.authenticated_as_internal`, #356): the From address alone can be
   forged. An outside forwarder is the requester as ever, with nobody added; an internal-looking one whose mail was not
   authenticated is the same, with an event saying the rules were not applied.
-- Nothing written above the forwarded block: the original sender is the requester, even an outside one, and the forwarder
+- Nothing written above the forwarded block ("Treat as empty" rules and the forwarder's own signature lines do not count as
+  writing, app/treat_as_empty.py, #359): the original sender is the requester, even an outside one, and the forwarder
   follows. Words above it: the forwarder is the requester and the original sender follows.
 - The original sender is read from the block's "From:" line (`Name <address>`, `Name [mailto:address]` or a bare address). A
   line with only a name is looked up in the directory and used when exactly one enabled person has that name. When no single
@@ -31,6 +32,7 @@ from app.config import settings
 from app.followers import InvalidEmail, normalise_email
 from app.never_follow import is_listed, is_msp
 from app.quoted_text import lines_of, quote_start
+from app.treat_as_empty import judge_above
 
 log = logging.getLogger("app.forwards")
 
@@ -105,14 +107,14 @@ def decide(session: Session, forwarder: str, subject: str, body: str, authentica
     if parts is None:
         return None
     try:
-        internal = people_directory.is_internal(session, forwarder)
+        who = people_directory.internal_person(session, forwarder)
     except people_directory.DirectoryError:
         log.warning("forward from %s: the directory could not be asked, so it was treated as from outside", forwarder)
         return ForwardDecision(
             requester=forwarder,
             detail="Forwarded mail: the directory could not be asked whether the forwarder is inside the organisation, so the forwarder is the requester.",
         )
-    if not internal:
+    if who is None:
         return None
     if not authenticated:
         # A forward of their own mail changes nothing either way, so it gets no misleading event (the address read here is
@@ -144,12 +146,15 @@ def decide(session: Session, forwarder: str, subject: str, body: str, authentica
             requester=forwarder,
             detail=f"Forwarded by {forwarder}. The original sender could not be read ({why}), so the forwarder is the requester.",
         )
-    if parts.above:
+    # Lines the mail program or the forwarder's signature put above the block do not count as text (#359).
+    judged = judge_above(session, parts.above, (who.name, who.job_title, who.department))
+    ignored = f" ({judged.ignored} line{'s' if judged.ignored != 1 else ''} treated as empty)" if judged.ignored else ""
+    if judged.text:
         return ForwardDecision(
             requester=forwarder, follower=address, applied=True,
-            detail=f"Forwarded by {forwarder} with a message; {forwarder} is the requester and {address} follows.",
+            detail=f"Forwarded by {forwarder} with a message; {forwarder} is the requester and {address} follows{ignored}.",
         )
     return ForwardDecision(
         requester=address, follower=forwarder, applied=True,
-        detail=f"Forwarded by {forwarder}; {address} is the requester.",
+        detail=f"Forwarded by {forwarder}; {address} is the requester{ignored}.",
     )

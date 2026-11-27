@@ -54,6 +54,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/a359e1c7d2b4_treat_as_empty_rules.py",
+        "revision": "a359e1c7d2b4"
+      },
+      {
         "file": "migrations/versions/e5b2c8d4f731_outbound_mail_threading.py",
         "revision": "e5b2c8d4f731"
       },
@@ -68,17 +72,13 @@
       {
         "file": "migrations/versions/e5b81c4a7d29_attachment_retries.py",
         "revision": "e5b81c4a7d29"
-      },
-      {
-        "file": "migrations/versions/d41e7a9b3c05_scheduled_job_run.py",
-        "revision": "d41e7a9b3c05"
       }
     ],
-    "count": 89,
+    "count": 90,
     "heads": [
       {
-        "file": "migrations/versions/e5b2c8d4f731_outbound_mail_threading.py",
-        "revision": "e5b2c8d4f731"
+        "file": "migrations/versions/a359e1c7d2b4_treat_as_empty_rules.py",
+        "revision": "a359e1c7d2b4"
       }
     ]
   },
@@ -1720,14 +1720,16 @@
         "app.identity",
         "app.never_follow",
         "app.people_directory",
-        "app.quoted_text"
+        "app.quoted_text",
+        "app.treat_as_empty"
       ],
       "module": "app.forwards",
       "routes": [],
       "summary": "Forwards (#347): an email that opens a ticket and was forwarded to the mailbox by someone inside the organisation.",
       "tables": [],
       "tests": [
-        "tests/test_forward_mail.py"
+        "tests/test_forward_mail.py",
+        "tests/test_treat_as_empty.py"
       ]
     },
     {
@@ -1766,7 +1768,8 @@
         "tests/test_portal_mailbox.py",
         "tests/test_presence.py",
         "tests/test_requester_change.py",
-        "tests/test_time_zones.py"
+        "tests/test_time_zones.py",
+        "tests/test_treat_as_empty.py"
       ]
     },
     {
@@ -2287,10 +2290,12 @@
       "functions": [
         "body_html",
         "is_emailed",
+        "is_picture_line",
         "mail_html"
       ],
       "imported_by": [
-        "app.templating"
+        "app.templating",
+        "app.treat_as_empty"
       ],
       "imports": [],
       "module": "app.mail_display",
@@ -2739,6 +2744,7 @@
         "TicketSource",
         "TicketStatus",
         "TicketType",
+        "TreatAsEmptyRule",
         "User",
         "UserPermission",
         "UserRole",
@@ -2861,6 +2867,7 @@
         "app.ticket_presence",
         "app.ticket_service",
         "app.time_zones",
+        "app.treat_as_empty",
         "app.triage",
         "app.user_filters",
         "app.visibility"
@@ -3091,6 +3098,10 @@
           "table": "ticket_reaction"
         },
         {
+          "class": "TreatAsEmptyRule",
+          "table": "treatasemptyrule"
+        },
+        {
           "class": "User",
           "table": "user"
         },
@@ -3246,6 +3257,7 @@
         "tests/test_ticket_urls.py",
         "tests/test_tickets_rbac.py",
         "tests/test_time_zones.py",
+        "tests/test_treat_as_empty.py",
         "tests/test_triage.py",
         "tests/test_visibility.py",
         "tests/test_wiring_3f.py",
@@ -3847,6 +3859,7 @@
       "file": "app/people_directory.py",
       "functions": [
         "blocklist",
+        "internal_person",
         "is_internal",
         "people_named",
         "resolve",
@@ -3873,7 +3886,8 @@
       "tables": [],
       "tests": [
         "tests/test_forward_mail.py",
-        "tests/test_requester_change.py"
+        "tests/test_requester_change.py",
+        "tests/test_treat_as_empty.py"
       ]
     },
     {
@@ -4742,6 +4756,7 @@
         "add_request_type",
         "add_subrequest_template",
         "add_thanks_rule_route",
+        "add_treat_as_empty",
         "add_type_question",
         "admin_home",
         "approve_link",
@@ -4753,6 +4768,7 @@
         "create_team",
         "decline_link",
         "delete_subrequest_template",
+        "delete_treat_as_empty",
         "delete_type_question",
         "dismiss_thanks_candidate",
         "edit_canned",
@@ -4760,6 +4776,7 @@
         "edit_request_type",
         "edit_subrequest_template",
         "edit_thanks_rule",
+        "edit_treat_as_empty",
         "edit_type_question",
         "list_approval_groups",
         "list_canned",
@@ -4769,6 +4786,7 @@
         "list_request_types",
         "list_teams",
         "list_thanks_rules",
+        "list_treat_as_empty",
         "list_users",
         "move_subrequest_template",
         "move_type_question",
@@ -4798,6 +4816,7 @@
         "sign_out_user_everywhere",
         "thanks_candidate_to_rule",
         "toggle_thanks_rule",
+        "toggle_treat_as_empty",
         "unlink_link",
         "unlock_user",
         "update_category",
@@ -4857,6 +4876,7 @@
         "app.thanks_rules",
         "app.ticket_service",
         "app.time_zones",
+        "app.treat_as_empty",
         "app.user_filters",
         "app.visibility"
       ],
@@ -5186,6 +5206,31 @@
           "handler": "toggle_thanks_rule",
           "method": "POST",
           "path": "/admin/thanks-rules/{rule_id}/{action}"
+        },
+        {
+          "handler": "list_treat_as_empty",
+          "method": "GET",
+          "path": "/admin/treat-as-empty"
+        },
+        {
+          "handler": "add_treat_as_empty",
+          "method": "POST",
+          "path": "/admin/treat-as-empty"
+        },
+        {
+          "handler": "edit_treat_as_empty",
+          "method": "POST",
+          "path": "/admin/treat-as-empty/{rule_id}"
+        },
+        {
+          "handler": "delete_treat_as_empty",
+          "method": "POST",
+          "path": "/admin/treat-as-empty/{rule_id}/delete"
+        },
+        {
+          "handler": "toggle_treat_as_empty",
+          "method": "POST",
+          "path": "/admin/treat-as-empty/{rule_id}/{action}"
         },
         {
           "handler": "list_users",
@@ -7771,6 +7816,7 @@
         "add_rule",
         "all_rules",
         "candidate_to_rule",
+        "clean_pattern",
         "clean_rule",
         "describe",
         "dismiss_candidate",
@@ -7788,7 +7834,8 @@
         "app.reopening",
         "app.routers.admin",
         "app.splitting",
-        "app.teams_intake"
+        "app.teams_intake",
+        "app.treat_as_empty"
       ],
       "imports": [
         "app.models"
@@ -7800,7 +7847,8 @@
       "tests": [
         "tests/test_teams_followups.py",
         "tests/test_teams_intake.py",
-        "tests/test_thanks_rules.py"
+        "tests/test_thanks_rules.py",
+        "tests/test_treat_as_empty.py"
       ]
     },
     {
@@ -8124,6 +8172,39 @@
         "tests/test_portal_home.py",
         "tests/test_requester_change.py",
         "tests/test_time_zones.py"
+      ]
+    },
+    {
+      "classes": [
+        "Judged"
+      ],
+      "file": "app/treat_as_empty.py",
+      "functions": [
+        "add_rule",
+        "all_rules",
+        "delete_rule",
+        "describe",
+        "enabled_rules",
+        "judge_above",
+        "matches_any",
+        "set_rule_enabled",
+        "update_rule"
+      ],
+      "imported_by": [
+        "app.forwards",
+        "app.routers.admin"
+      ],
+      "imports": [
+        "app.mail_display",
+        "app.models",
+        "app.thanks_rules"
+      ],
+      "module": "app.treat_as_empty",
+      "routes": [],
+      "summary": "\"Treat as empty\" rules (#359): lines above a forwarded block that do not count as text.",
+      "tables": [],
+      "tests": [
+        "tests/test_treat_as_empty.py"
       ]
     },
     {
@@ -8994,6 +9075,7 @@
     "tests/test_ticket_urls.py",
     "tests/test_tickets_rbac.py",
     "tests/test_time_zones.py",
+    "tests/test_treat_as_empty.py",
     "tests/test_triage.py",
     "tests/test_visibility.py",
     "tests/test_wiring_3f.py",
