@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Admin: Job runs{% endblock %}
+{% block content %}
+{# #341: every recorded run of a scheduled job, newest first. The filter bar and table are the Audit log's. The "What it did" sentence is
+   built from a fixed wording per job and count key (app/job_runs.py), so it never names a person; ticket references link to the ticket. #}
+<header class="admin-head">
+  <h1>Job runs</h1>
+  <p>Each time a scheduled job ran, what it did and how long it took. Kept for the number of days set under Settings. Times are in your time zone.</p>
+</header>
+
+<form class="filter-bar" method="get" action="/admin/job-runs" role="search" aria-label="Filter the job runs">
+  <label class="field">Job
+    <select name="job">
+      <option value="">All jobs</option>
+      {% for name in jobs %}
+      <option value="{{ name }}" {{ "selected" if job == name else "" }}>{{ name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="field">Outcome
+    <select name="outcome">
+      <option value="">Any outcome</option>
+      {% for key, label in outcomes.items() %}
+      <option value="{{ key }}" {{ "selected" if outcome == key else "" }}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="field">From <input type="date" name="date_from" value="{{ date_from }}" /></label>
+  <label class="field">To <input type="date" name="date_to" value="{{ date_to }}" /></label>
+  <label class="field-check"><input type="checkbox" name="run_now_only" value="true" {{ "checked" if run_now_only else "" }} /> Run now only</label>
+  <button type="submit" class="btn btn-primary">Filter</button>
+  <a class="btn" href="/admin/job-runs">Clear</a>
+</form>
+
+{% if rows %}
+<div class="table-box">
+  <table class="table log-table">
+    <thead>
+      <tr><th>Job</th><th>Started</th><th>Duration</th><th>Outcome</th><th>What it did</th><th>Triggered</th></tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      {% set run = r.run %}
+      <tr>
+        <td>{{ run.job_name }}</td>
+        <td>{{ run.started_at|local_time(seconds=True) }}</td>
+        <td>{% if run.duration_ms is not none %}{% if run.duration_ms >= 1000 %}{{ "%.1f"|format(run.duration_ms / 1000) }} s{% else %}{{ run.duration_ms }} ms{% endif %}{% else %}<span class="muted">-</span>{% endif %}</td>
+        <td><span class="chip {{ r.tone }}">{{ r.label }}</span></td>
+        <td>
+          {% if run.outcome == "failed" %}
+          <span class="error small">{{ r.error or "The run failed" }}</span>
+          {% if run.error %}
+          <details class="job-error-full">
+            <summary class="small">Full error</summary>
+            <div class="mono-wrap">{{ run.error }}</div>
+          </details>
+          {% endif %}
+          {% elif run.outcome == "did_not_finish" %}
+          <span class="muted">The worker stopped before the run finished.</span>
+          {% elif run.outcome == "running" %}
+          <span class="muted">Running.</span>
+          {% else %}
+          {{ r.what }}
+          {% endif %}
+          {% if r.tickets %}
+          <div class="small">
+            {% for t in r.tickets %}<a href="/tickets/{{ t.number }}">{{ t.reference }}</a>{{ ", " if not loop.last else "" }}{% endfor %}{% if run.tickets_more %} and {{ run.tickets_more }} more{% endif %}
+          </div>
+          {% endif %}
+        </td>
+        <td>{{ r.triggered }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="empty-state"><strong>No job runs recorded.</strong><span>Each run of a scheduled job is recorded here once the worker has run it.</span></div>
+{% endif %}
+
+{% include "_pagination.html" %}
+{% endblock %}

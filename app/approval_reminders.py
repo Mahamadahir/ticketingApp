@@ -37,6 +37,7 @@ from app.audit import log_action
 from app.models import ApprovalVote, OutboundEmail, Ticket, TicketApproval, TicketStatus, User, UserRole
 from app.notifications import notify_approval_overdue, notify_approval_reminder
 from app.outbox import APPROVAL, APPROVAL_REMINDER, is_on, queue_approval_overdue, queue_approval_reminder
+from app.run_summary import RunSummary
 from app.teams import MAX_ATTEMPTS, has_chat_with_bot
 from app.settings_store import (
     APPROVAL_ESCALATE_AFTER_DAYS,
@@ -59,12 +60,14 @@ def _due(vote: ApprovalVote, now: datetime, after: timedelta, every: timedelta, 
     return now >= vote.last_reminded_at + every
 
 
-def send_approval_reminders(session: Session, now: Optional[datetime] = None) -> None:
+def send_approval_reminders(session: Session, now: Optional[datetime] = None) -> RunSummary:
     """The job. Does not commit (the runner does). Before anything else, and whether or not reminders are on, it drops
-    the votes of voters who became inactive and starts the round of requests waiting for approvers (#161)."""
+    the votes of voters who became inactive and starts the round of requests waiting for approvers (#161).
+    Summary: reminded (approvers reminded), overdue_told (overdue approvals the super admins were told about)."""
     reconcile_approvals(session)
+    summary = RunSummary.of(reminded=0, overdue_told=0)
     if not get_flag(session, APPROVAL_REMINDERS_ENABLED):
-        return
+        return summary
     now = now or datetime.now(timezone.utc)
     after = timedelta(days=count_setting(session, APPROVAL_REMIND_AFTER_DAYS))
     every = timedelta(days=count_setting(session, APPROVAL_REMIND_EVERY_DAYS))
@@ -110,8 +113,15 @@ def send_approval_reminders(session: Session, now: Optional[datetime] = None) ->
                 vote.reminder_count += 1
                 vote.last_reminded_at = now
                 session.add(vote)
+                summary.counts["reminded"] += 1
+                if ticket.id not in summary.ticket_ids:
+                    summary.ticket_ids.append(ticket.id)
         if approval.escalated_at is None and waiting and now >= approval.created_at + escalate_after:
-            _escalate(session, ticket, approval, now, len(waiting))
+            if _escalate(session, ticket, approval, now, len(waiting)):
+                summary.counts["overdue_told"] += 1
+                if ticket.id not in summary.ticket_ids:
+                    summary.ticket_ids.append(ticket.id)
+    return summary
 
 
 def _still_queued(session: Session, vote: ApprovalVote) -> bool:
@@ -127,7 +137,7 @@ def _still_queued(session: Session, vote: ApprovalVote) -> bool:
     ).first() is not None
 
 
-def _escalate(session: Session, ticket: Ticket, approval: TicketApproval, now: datetime, unanswered: int) -> None:
+def _escalate(session: Session, ticket: Ticket, approval: TicketApproval, now: datetime, unanswered: int) -> bool:
     """Tells the super admins once, in the bell and by email (the `approval_overdue` template; each super admin can
     switch the email off). Only counts as done if someone was told either way, so with no super admin yet it is
     tried again on the next run."""
@@ -140,7 +150,8 @@ def _escalate(session: Session, ticket: Ticket, approval: TicketApproval, now: d
         if belled or emailed:
             told.append(admin)
     if not told:
-        return
+        return False
     approval.escalated_at = now
     session.add(approval)
     log_action(session, AUDIT_ACTOR, "ticket", ticket.id, "approval_overdue", f"{unanswered} had not answered after {days} days")
+    return True

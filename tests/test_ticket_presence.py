@@ -330,7 +330,7 @@ def test_the_cleanup_job_deletes_expired_rows_and_keeps_the_rest(client, second,
 
 def test_the_cleanup_is_a_recurring_job():
     [job] = [j for j in scheduled_jobs.SCHEDULED_JOBS if j.name == "presence-cleanup"]
-    assert job.run is ticket_presence.purge_expired and job.every_seconds == 3600
+    assert job.run.__wrapped__ is ticket_presence.purge_expired and job.every_seconds == 3600
     assert scheduled_jobs.registry_errors(scheduled_jobs.SCHEDULED_JOBS) == []
 
 

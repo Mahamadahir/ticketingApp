@@ -46,6 +46,7 @@ from app.mail import own_first_message
 from app.never_follow import is_msp
 from app.messages import add_note, mail_subject, record_msp_message, record_notice, requester_visible_messages
 from app.identity import person_for_address
+from app.run_summary import RunSummary
 from app.models import (
     FINISHED_STATUSES,
     Attachment,
@@ -602,14 +603,16 @@ def warn_before_handoff(session: Session, now: Optional[datetime] = None) -> int
     return told
 
 
-def run_msp_handoff(session: Session) -> None:
-    """The recurring job (registered in app/scheduled_jobs.py): the evening warning, then the handoff itself."""
+def run_msp_handoff(session: Session) -> RunSummary:
+    """The recurring job (registered in app/scheduled_jobs.py): the evening warning, then the handoff itself.
+    Summary: sent (tickets handed to the MSP), warned (assignees warned about tonight's handoff)."""
+    warned = 0
     try:
         with session.begin_nested():
-            warn_before_handoff(session)
+            warned = warn_before_handoff(session)
     except Exception:
         log.exception("MSP handoff warning failed")  # a bell entry must never stop the handoff itself
-    hand_off_due_tickets(session)
+    return RunSummary.of(sent=hand_off_due_tickets(session), warned=warned)
 
 
 # ---- Mail from the MSP (5B) --------------------------------------------------------------------------------
@@ -788,9 +791,9 @@ def forward_waiting_messages(session: Session, now: Optional[datetime] = None) -
     return sent
 
 
-def run_msp_forwards(session: Session) -> None:
-    """The recurring job (registered in app/scheduled_jobs.py)."""
-    forward_waiting_messages(session)
+def run_msp_forwards(session: Session) -> RunSummary:
+    """The recurring job (registered in app/scheduled_jobs.py). Summary: forwarded."""
+    return RunSummary.of(forwarded=forward_waiting_messages(session))
 
 
 # ---- The MSP's own ticket number, and mail that matches nothing ---------------------------------------------
@@ -1052,11 +1055,12 @@ def alert_unacknowledged(session: Session, now: Optional[datetime] = None) -> in
     return told
 
 
-def run_msp_ack_alerts(session: Session) -> None:
-    """The recurring job (registered in app/scheduled_jobs.py)."""
+def run_msp_ack_alerts(session: Session) -> RunSummary:
+    """The recurring job (registered in app/scheduled_jobs.py). Summary: alerted."""
     told = alert_unacknowledged(session)
     if told:
         log.info("MSP acknowledgement alerts raised for %s ticket(s)", told)
+    return RunSummary.of(alerted=told)
 
 
 # ---- Reporting data (the reports themselves are phase 7) --------------------------------------------------

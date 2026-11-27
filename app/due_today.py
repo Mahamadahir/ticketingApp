@@ -19,6 +19,7 @@ from sqlmodel import Session, select
 from app.audit import log_action
 from app.models import MAILBOX_APPLYING, MAILBOX_SCHEDULED, MailboxChange, Ticket, TicketStatus
 from app.notifications import notify_due_today
+from app.run_summary import RunSummary
 from app.splitting import has_sub_tickets
 from app.ticket_service import set_status
 from app.time_zones import morning_of, scheduled_morning_hour, zone_for_email  # morning_of: re-exported for tests
@@ -75,6 +76,6 @@ def wake_scheduled_tickets(session: Session, now: Optional[datetime] = None) -> 
     return woken
 
 
-def run_scheduled_due(session: Session) -> None:
-    """The recurring job (registered in app/scheduled_jobs.py)."""
-    wake_scheduled_tickets(session)
+def run_scheduled_due(session: Session) -> RunSummary:
+    """The recurring job (registered in app/scheduled_jobs.py). Summary: reopened."""
+    return RunSummary.of(reopened=wake_scheduled_tickets(session))

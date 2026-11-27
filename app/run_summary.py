@@ -9,6 +9,10 @@ from dataclasses import dataclass, field
 from typing import Iterable, Optional
 
 
+# Counts that say what a run looked at, not what it changed: a run with only these is "nothing to do".
+NOT_WORK_KEYS = frozenset({"skipped_not_due", "read", "checked", "fetched"})
+
+
 @dataclass
 class RunSummary:
     counts: dict[str, int] = field(default_factory=dict)
@@ -27,7 +31,7 @@ class RunSummary:
 
     @property
     def did_work(self) -> bool:
-        return bool(self.ticket_ids) or any(self.counts.values())
+        return bool(self.ticket_ids) or any(number for key, number in self.counts.items() if key not in NOT_WORK_KEYS)
 
 
 def adapt(result) -> Optional[RunSummary]:

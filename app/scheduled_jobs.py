@@ -24,6 +24,7 @@ no worker edit); the row appears on the next tick. Like every worker job it must
 and, after a crash, to run twice.
 """
 
+import functools
 import logging
 import os
 import socket
@@ -44,20 +45,24 @@ from app.auto_close_chase import run_auto_close, run_chase
 from app.bank_holidays import run_bank_holiday_fetch
 from app.database import engine
 from app.due_today import run_scheduled_due
-from app.email_reactions import run_email_reactions
+from app.email_reactions import email_reactions_job
 from app.entra_check import JOB_NAME as ENTRA_CHECK_JOB, run_entra_account_check
-from app.mailbox_changes import run_mailbox_changes
+from app.job_runs import abandon_running, close_run, open_run, purge_job_runs
+from app.mailbox_changes import mailbox_changes_job
 from app.models import ScheduledJob
 from app.msp import run_msp_ack_alerts, run_msp_forwards, run_msp_handoff
 from app.note_purge import purge_deleted_notes
 from app.notification_purge import purge_notifications
 from app.reply_files import expire as expire_reply_files
+from app.run_summary import RunSummary, adapt
 from app.ticket_presence import purge_expired as purge_ticket_presence
 from app.sessions import purge_ended_sessions
 from app.teams_pending import expire_pending
 from app.settings_store import EMAIL_REACTIONS_MINUTES, MAILBOX_CHANGES_MINUTES, JOB_LATE_MINUTES, JOB_LEASE_MINUTES, JOB_RETRY_MINUTES, REGISTRY, get_int_setting
 
 log = logging.getLogger("app.worker")
+
+__all__ = ["RunSummary"]  # the summary a job's run may return: app/run_summary.py
 
 TICK_EVERY_SECONDS = 60
 AUDIT_ACTOR = "worker"
@@ -69,7 +74,7 @@ MAX_ERROR_LENGTH = 500
 class ScheduledJobDef:
     name: str  # unique; the row's key and the name in the heartbeat line
     every_seconds: int
-    run: Callable[[Session], None]  # given a session; the runner commits on return, rolls back on a raise
+    run: Callable[[Session], Optional[RunSummary]]  # given a session; returns what it did (a RunSummary); the runner commits on return, rolls back on a raise
     description: str = ""  # what the job does, in plain words: shown on the Run now confirm page
     warns: tuple[str, ...] = ()  # WARN_EMAIL and/or WARN_MSP: shown as a warning on the Run now confirm page
     min_lease_minutes: int = 0  # a job whose run can take long (calls that wait for Azure) holds its lease at least this long, whatever the setting
@@ -91,6 +96,16 @@ WARNINGS = {
     WARN_MSP: "This job can hand tickets to the MSP, or send mail to or from it, when it runs. The job still keeps its own rules (for example the handoff only acts in its window).",
 }
 
+def counted(key: str, work: Callable[[Session], Optional[int]]) -> Callable[[Session], RunSummary]:
+    """Adapts a job function that returns how many it handled (or None) into one that returns the summary {key: n}."""
+
+    @functools.wraps(work)  # `run.__wrapped__` is the job function itself
+    def run(session: Session) -> RunSummary:
+        return RunSummary.of(**{key: work(session) or 0})
+
+    return run
+
+
 # The registry: add a ScheduledJobDef here to add a recurring job.
 SCHEDULED_JOBS: list[ScheduledJobDef] = [
     ScheduledJobDef("approval-reminders", 3600, send_approval_reminders, "Reminds approvers who have not voted on a request, and tells the agent when an approval is overdue.", (WARN_EMAIL,)),
@@ -100,14 +115,14 @@ SCHEDULED_JOBS: list[ScheduledJobDef] = [
     ScheduledJobDef("chase", 3600, run_chase, "Emails requesters of tickets that have been Awaiting user for a while, asking them to reply (only when chasing is on).", (WARN_EMAIL,)),
     ScheduledJobDef(ENTRA_CHECK_JOB, 3600, run_entra_account_check, "Checks in Entra that each user's account is still enabled and deactivates those who are not. It wakes hourly but only checks once a night, after the Entra check time setting."),
     ScheduledJobDef(
-        "email-reactions", 600, run_email_reactions,
+        "email-reactions", 600, email_reactions_job,
         "Reads the shared mailbox's Sent Items for reactions people made in Outlook to the emails the app sent, and records them on the "
         "tickets like Teams reactions. It only reads: it sends nothing. How often it runs is the setting \"Outlook reactions: how often "
         "Sent Items is read\".",
         (), interval_setting=EMAIL_REACTIONS_MINUTES,
     ),
     ScheduledJobDef(
-        "mailbox-changes", 300, run_mailbox_changes,
+        "mailbox-changes", 300, mailbox_changes_job,
         "Makes the scheduled mailbox changes (mail forwarding, mailbox access) whose start time has come, removes those whose end "
         "has, and retries failed attempts, resolving or handing back the request ticket as it goes. Only the executor talks to "
         "Exchange. How often it runs is the setting \"Mailbox changes: how often the worker looks for due changes\".",
@@ -116,13 +131,14 @@ SCHEDULED_JOBS: list[ScheduledJobDef] = [
     ScheduledJobDef("msp-ack-alerts", 300, run_msp_ack_alerts, "Raises an alert for a ticket sent to the MSP that the MSP has not confirmed in time."),
     ScheduledJobDef("msp-forwards", 300, run_msp_forwards, "Forwards mail the MSP sent on a ticket, left waiting for an agent, to the user once business hours end.", (WARN_EMAIL, WARN_MSP)),
     ScheduledJobDef("msp-handoff", 300, run_msp_handoff, "At the handoff time each day, sends the tickets waiting for the MSP to the MSP and emails them. It only acts inside its handoff window.", (WARN_EMAIL, WARN_MSP)),
-    ScheduledJobDef("note-purge", 86400, purge_deleted_notes, "Removes notes deleted at least the keep-deleted-notes number of days ago, with their files."),
-    ScheduledJobDef("notification-purge", 86400, purge_notifications, "Deletes dismissed notifications past the undo window and every notification past its age limit, with their Teams posts."),
-    ScheduledJobDef("presence-cleanup", 3600, purge_ticket_presence, "Deletes the records of who is looking at a ticket once they are past the gone-after time."),
-    ScheduledJobDef("reply-files", 3600, expire_reply_files, "Drops files held for an email preview that was never confirmed."),
+    ScheduledJobDef("job-run-purge", 86400, purge_job_runs, "Deletes the history of scheduled job runs (Admin > Logs > Job runs) that started more than the days-kept setting ago."),
+    ScheduledJobDef("note-purge", 86400, counted("deleted", purge_deleted_notes), "Removes notes deleted at least the keep-deleted-notes number of days ago, with their files."),
+    ScheduledJobDef("notification-purge", 86400, counted("deleted", purge_notifications), "Deletes dismissed notifications past the undo window and every notification past its age limit, with their Teams posts."),
+    ScheduledJobDef("presence-cleanup", 3600, counted("deleted", purge_ticket_presence), "Deletes the records of who is looking at a ticket once they are past the gone-after time."),
+    ScheduledJobDef("reply-files", 3600, counted("deleted", expire_reply_files), "Drops files held for an email preview that was never confirmed."),
     ScheduledJobDef("scheduled-due", 900, run_scheduled_due, "On a Scheduled ticket's Due date, moves it back to Open and tells the assignee in the bell."),
-    ScheduledJobDef("session-cleanup", 86400, purge_ended_sessions, "Deletes sign-in sessions that ended more than the session keep-days setting ago."),
-    ScheduledJobDef("teams-pending", 3600, expire_pending, "Ends the Teams bot's unanswered \"which request?\" questions and releases their held files."),
+    ScheduledJobDef("session-cleanup", 86400, counted("deleted", purge_ended_sessions), "Deletes sign-in sessions that ended more than the session keep-days setting ago."),
+    ScheduledJobDef("teams-pending", 3600, counted("expired", expire_pending), "Ends the Teams bot's unanswered \"which request?\" questions and releases their held files."),
 ]
 
 
@@ -177,8 +193,10 @@ def claim_next_due(session: Session, jobs: Sequence[ScheduledJobDef], owner: str
     ).first()
     if row is None:
         return None
+    requested_by = row.run_requested_by  # read before the claim clears it: the run row records who asked for a Run now
     if row.lease_owner is not None:
         # The previous run never reported back: its worker died (or overran the lease). Count it as a failure.
+        abandon_running(session, row.name)
         row.last_error = "The previous run never finished (the worker stopped mid-run?)"
         row.last_error_at = now
         row.failures_in_a_row += 1
@@ -201,6 +219,7 @@ def claim_next_due(session: Session, jobs: Sequence[ScheduledJobDef], owner: str
     row.lease_expires_at = now + max(timing(session, JOB_LEASE_MINUTES), timedelta(minutes=registered.min_lease_minutes if registered else 0))
     row.last_started_at = now
     session.add(row)
+    open_run(session, row.name, owner, now, requested_by)
     return row
 
 
@@ -211,7 +230,8 @@ def next_slot(due: datetime, started: datetime, every: timedelta) -> datetime:
 
 
 def _finish(
-    job: ScheduledJobDef, owner: str, started: datetime, due: datetime, error: Optional[str], clock: Callable[[], datetime]
+    job: ScheduledJobDef, owner: str, started: datetime, due: datetime, error: Optional[str], clock: Callable[[], datetime],
+    summary: Optional[RunSummary] = None, duration_ms: Optional[int] = None,
 ) -> None:
     """Records the outcome and releases the lease, but only if this worker still holds it (after a
     lease expiry another worker may have taken the job over, and its record wins)."""
@@ -223,6 +243,7 @@ def _finish(
             log.warning("job=%s outcome not recorded: its lease was taken over", job.name)
             return
         now = clock()
+        close_run(session, job.name, owner, started, now, error, summary, duration_ms)  # the history; never raises
         row.lease_owner = None
         row.lease_expires_at = None
         resume, row.run_resume_at = row.run_resume_at, None
@@ -248,17 +269,19 @@ def run_claimed(
     """Runs a job that was claimed, in its own session, and records the outcome. Never raises."""
     began = time.monotonic()
     error: Optional[str] = None
+    summary: Optional[RunSummary] = None
     try:
         with Session(engine) as session:
-            job.run(session)
+            summary = adapt(job.run(session))
             session.commit()
     except Exception as exc:
         log.exception("job=%s status=failed", job.name)
         error = f"{type(exc).__name__}: {exc}"
+        summary = None
     else:
         log.info("heartbeat job=%s status=ok duration_ms=%d", job.name, (time.monotonic() - began) * 1000)
     try:
-        _finish(job, owner, started, due, error, clock)
+        _finish(job, owner, started, due, error, clock, summary, int((time.monotonic() - began) * 1000))
     except Exception:
         # The work is done but not recorded; the lease expires and the job is recovered then.
         log.exception("job=%s outcome could not be recorded", job.name)

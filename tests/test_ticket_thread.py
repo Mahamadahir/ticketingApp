@@ -626,7 +626,7 @@ def test_the_purge_is_one_line_in_the_recurring_jobs():
     from app.scheduled_jobs import SCHEDULED_JOBS, registry_errors
 
     job = next(j for j in SCHEDULED_JOBS if j.name == "note-purge")
-    assert job.run is purge_deleted_notes and job.every_seconds == 86400
+    assert job.run.__wrapped__ is purge_deleted_notes and job.every_seconds == 86400
     assert not registry_errors(SCHEDULED_JOBS)
 
 

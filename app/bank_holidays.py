@@ -18,6 +18,7 @@ import httpx
 from sqlmodel import Session
 
 from app.audit import log_action
+from app.run_summary import RunSummary
 from app.models import BankHolidayCache
 from app.settings_store import BANK_HOLIDAY_FAIL_DAYS, BANK_HOLIDAY_REGION, REGISTRY, get_int_setting, get_setting
 
@@ -107,6 +108,15 @@ def refresh_bank_holidays(session: Session, now: Optional[datetime] = None) -> b
     return True
 
 
-def run_bank_holiday_fetch(session: Session) -> None:
-    """The recurring job (daily, registered in app/scheduled_jobs.py)."""
-    refresh_bank_holidays(session)
+def run_bank_holiday_fetch(session: Session) -> RunSummary:
+    """The recurring job (daily, registered in app/scheduled_jobs.py). Summary: fetched (1 when the list was refreshed),
+    added (dates that were not in the stored list before)."""
+    region = region_setting(session)
+    row = session.get(BankHolidayCache, region)
+    before = set((row.dates or "").split(",")) if row is not None else set()
+    refreshed = refresh_bank_holidays(session)
+    session.flush()
+    row = session.get(BankHolidayCache, region)
+    after = set((row.dates or "").split(",")) if row is not None else set()
+    before.discard(""), after.discard("")
+    return RunSummary.of(fetched=int(refreshed), added=len(after - before) if refreshed else 0)
