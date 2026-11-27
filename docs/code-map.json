@@ -1794,6 +1794,7 @@
       ],
       "file": "app/inbound.py",
       "functions": [
+        "authenticated_as_internal",
         "automatic_reason",
         "find_ticket_for",
         "ingest_mail",
