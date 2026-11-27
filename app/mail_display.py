@@ -23,7 +23,7 @@ from urllib.parse import parse_qs, urlsplit
 from markupsafe import Markup, escape
 
 # `<scheme:rest>` with no spaces inside. Plain `<a@b.c>` has no scheme and is left alone.
-_ANGLE = re.compile(r"<([A-Za-z][A-Za-z0-9+.\-]*:[^\s<>]*)>")
+_ANGLE = re.compile(r"<(tel:[^<>]*|[A-Za-z][A-Za-z0-9+.-]*:[^\s<>]*)>", re.IGNORECASE)
 _PICTURE_LINE = re.compile(r"^\s*\[[^\[\]]*[A-Za-z][^\[\]]*\]\s*$")
 _DOMAIN_LABEL = re.compile(r"^(?:https?://)?((?:[A-Za-z0-9\-]+\.)+[A-Za-z]{2,})(?::\d+)?(?:[/?#]\S*)?$", re.IGNORECASE)
 _LINK_SCHEMES = ("http", "https", "mailto")
@@ -71,7 +71,7 @@ def _link(url: str, label: str) -> Markup:
     real_host = _strip_www(_host(real))
     if not label or label == url or label == real:
         return _anchor(url, real)
-    m = _DOMAIN_LABEL.match(label)
+    m = _DOMAIN_LABEL.match(label.strip(".,;:()\"'"))
     if m and _strip_www(m.group(1).lower()) == real_host:
         return _anchor(url, label)
     return _anchor(url, label) + Markup(' <span class="muted small">({})</span>').format(_host(real) or real)
@@ -102,7 +102,7 @@ def mail_html(text) -> Markup:
     if not text:
         return Markup("")
     lines = str(text).split("\n")
-    kept = [ln for ln in lines if not _PICTURE_LINE.match(ln)]
+    kept = [ln for ln in lines if not _PICTURE_LINE.match(ln)] or lines  # never show an empty body
     return Markup("\n").join(_tidy_line(ln) for ln in kept)
 
 

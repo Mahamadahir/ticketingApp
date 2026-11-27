@@ -113,3 +113,13 @@ def test_the_stored_body_is_unchanged(client, db_session):
     client.get(f"/portal/{ticket.number}")
     db_session.expire_all()
     assert db_session.get(Message, msg.id).body == SIGNATURE
+
+
+def test_punctuation_around_a_label_is_not_a_mismatch_and_a_spaced_tel_is_dropped():
+    assert "muted" not in str(mail_html("see (vardags.com)<https://vardags.com/>"))
+    assert "muted" not in str(mail_html("see vardags.com.<https://vardags.com/>"))
+    assert str(mail_html("Tel: 0207 404 9390<tel:+44 207 404 9390>")) == "Tel: 0207 404 9390"
+
+
+def test_a_message_of_only_a_bracketed_name_is_not_emptied():
+    assert str(mail_html("[Vardags]")) == "[Vardags]"
