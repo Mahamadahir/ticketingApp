@@ -12,6 +12,7 @@ What is recognised (English wording, the mail programs the organisation uses):
 - Outlook (desktop, web and mobile): "-----Original Message-----" (also "--- Original Message ---"), and the header block
   "From: ... / Sent: ... / To: ... / Subject: ..." (with "Date:" in place of "Sent:", and "Cc:" lines allowed), usually under
   a line of underscores.
+- Gmail's forward: "---------- Forwarded message ---------" (the header block that follows is read by app/forwards.py).
 - Any program: a block of lines starting with ">" that runs to the end of the mail.
 
 Limits: only the English markers above; a reply typed between the lines of the quote (an inline reply) is not split, apart from
@@ -27,6 +28,7 @@ from typing import Optional
 # ordinary sentence ending in "wrote:" is unlikely to match.
 _WROTE_END = re.compile(r"\bwrote:\s*$", re.IGNORECASE)
 _ORIGINAL = re.compile(r"^\s*-{2,}\s*Original Message\s*-{2,}\s*$", re.IGNORECASE)
+_FORWARDED = re.compile(r"^\s*-{3,}\s*Forwarded message\s*-{3,}\s*$", re.IGNORECASE)
 _RULE = re.compile(r"^\s*_{10,}\s*$")
 _HEADER = re.compile(r"^\s*\**(From|Sent|Date|To|Cc|Subject)\**\s*:\s*\S", re.IGNORECASE)
 _FROM = re.compile(r"^\s*\**From\**\s*:\s*\S", re.IGNORECASE)
@@ -74,15 +76,16 @@ def _trailing_quote_start(lines: list[str]) -> Optional[int]:
     return start
 
 
-def split_quoted(body: str) -> tuple[str, Optional[str]]:
-    """(what the sender wrote, the quoted earlier conversation or None). Joining the two with a newline gives the original
-    text again apart from trailing blank lines; the whole body is the first part when nothing is recognised or nothing of their
-    own comes before the marker."""
-    text = body or ""
-    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+def lines_of(text: str) -> list[str]:
+    return (text or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")
+
+
+def quote_start(lines: list[str]) -> Optional[int]:
+    """The index of the first line of the quoted or forwarded part (the marker, or the rule above it), or None. It may be 0:
+    callers decide what to do when nothing of the sender's own comes first."""
     cut: Optional[int] = None
     for i in range(len(lines)):
-        if _ORIGINAL.match(lines[i]) or _wrote_line_at(lines, i) or _outlook_header_at(lines, i):
+        if _ORIGINAL.match(lines[i]) or _FORWARDED.match(lines[i]) or _wrote_line_at(lines, i) or _outlook_header_at(lines, i):
             cut = i
             break
         if _RULE.match(lines[i]) and i + 1 < len(lines):
@@ -92,6 +95,16 @@ def split_quoted(body: str) -> tuple[str, Optional[str]]:
                 break
     if cut is None:
         cut = _trailing_quote_start(lines)
+    return cut
+
+
+def split_quoted(body: str) -> tuple[str, Optional[str]]:
+    """(what the sender wrote, the quoted earlier conversation or None). Joining the two with a newline gives the original
+    text again apart from trailing blank lines; the whole body is the first part when nothing is recognised or nothing of their
+    own comes before the marker."""
+    text = body or ""
+    lines = lines_of(text)
+    cut = quote_start(lines)
     if cut is None:
         return text, None
     kept = "\n".join(lines[:cut]).rstrip()
