@@ -518,6 +518,7 @@
         "is_inline_type",
         "keys_in_use",
         "lock_blob",
+        "picture_copies",
         "rename_attachment",
         "serving_headers",
         "shown_name",
