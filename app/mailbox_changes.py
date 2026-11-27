@@ -403,6 +403,33 @@ def was_declined(session: Session, ticket: Ticket) -> bool:
     return approval is not None and approval.status == DECLINED
 
 
+ENDED_LINE = "This change has ended. Submit a new request to start it again."
+NEW_REQUEST_LINE = "This request has finished. To set it up again, make a new request."
+
+
+def is_mailbox_request(session: Session, ticket: Ticket) -> bool:
+    """Whether the ticket is a request that made mailbox changes (#363): it has at least one. The one test for "a requester's Reopen
+    becomes Make a new request": reopening a finished change restarts nothing in Exchange, so the requester is sent to the form
+    again. The incident raised for a failed removal has no change of its own, so it is not one."""
+    return session.exec(select(MailboxChange.id).where(MailboxChange.ticket_id == ticket.id).limit(1)).first() is not None
+
+
+def has_ended(session: Session, ticket: Ticket) -> bool:
+    """Whether every change on this request has ended (#363): at least one was made and removed, and none is waiting, on or
+    failed. The pages say so when an agent has reopened the ticket (reopening starts nothing), unless it was declined (#325)."""
+    changes = changes_for_ticket(session, ticket)
+    if not changes or was_declined(session, ticket):
+        return False
+    return all(c.state in (MAILBOX_ENDED, MAILBOX_CANCELLED) for c in changes) and any(c.state == MAILBOX_ENDED for c in changes)
+
+
+def new_request_path(ticket: Ticket) -> str:
+    """Where Make a new request goes: the same kind of request, its form filled in again from this (finished) request. The form
+    reads the request itself and checks the person asking owns it; nothing but the number is in the address."""
+    query = f"request_type_id={ticket.request_type_id}&again={ticket.number}" if ticket.request_type_id else f"again={ticket.number}"
+    return f"/portal/new?{query}"
+
+
 def drop_unstarted(session: Session, ticket: Ticket, reason: str, now: Optional[datetime] = None) -> None:
     """A request for someone else's mailbox will not be approved (declined or withdrawn, #311): the changes it was holding back are
     cancelled with an audit entry, so the job never makes them. The ticket was closed by the approval flow, which told the requester.

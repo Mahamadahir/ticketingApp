@@ -43,6 +43,7 @@
     </form>{% endif %}{% endif %}
   </div>
   <h1>{{ ticket.subject }}</h1>
+  {% if mailbox_ended %}<p class="note tp-declined" id="mailbox-ended" role="status">{{ mailbox_ended }}</p>{% endif %}
   {% if mailbox_declined %}<p class="note tp-declined" id="mailbox-declined" role="status">{{ mailbox_declined }}</p>{% endif %}
   <p class="tp-info">
     <span><span class="muted">Requester</span> <b title="{{ ticket.requester_email }}">{{ requester_name }}</b></span>

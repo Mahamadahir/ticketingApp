@@ -281,6 +281,8 @@ def _sentence(e: TicketEvent, n: Names) -> str:
         return f"A message was moved {'to ' + to if to else 'from ' + (frm or 'another ticket')}." + (f" {detail}." if detail else "")
     if t == "thanks_ignored":
         return f'A thank-you reply did not reopen the ticket: "{detail}"' if detail else "A thank-you reply did not reopen the ticket."
+    if t == "reply_not_reopened":
+        return "A reply to this finished mailbox request did not reopen it (that would change nothing in Exchange)" + (f': "{detail}"' if detail else ".")
     if t == "mail_reference_not_used":
         return (detail + ".") if detail else "A reply named this ticket but was not matched to it."
     if t in ("attachments_pending", "attachments_added", "attachments_failed") and detail:

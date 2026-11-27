@@ -40,6 +40,8 @@ EVENT_RECLOSED = "reclosed"  # to_value: the reason, detail: its wording
 EVENT_FOLLOWS = "follows"  # on the new ticket: to_value is the earlier (closed) ticket
 EVENT_FOLLOWED_BY = "followed_by"  # on the closed ticket: to_value is the new ticket
 
+EVENT_REPLY_NOT_REOPENED = "reply_not_reopened"  # a reply to a finished mailbox request (#363); detail: what it said
+
 AUDIT_REOPENED = "reopened"
 AUDIT_RECLOSED = "reclosed"
 

@@ -27,7 +27,7 @@ from sqlmodel import Session, select
 from app import identity
 from app.approvals import mailbox_owner_address, mailbox_owner_voter
 from app.mailbox_changes import (
-    DECLINED_LINE,
+    DECLINED_LINE, ENDED_LINE, has_ended,
     MailboxChangeError, changes_for_ticket, create_mailbox_change, failed_phase, finish_on_behalf, lock_owner, was_declined,
 )
 from app.mailbox_executor import is_enabled
@@ -543,6 +543,48 @@ def _view_of(session: Session, change: MailboxChange, user: User, now: datetime,
     result.can_cancel = change.state == MAILBOX_SCHEDULED and _aware(change.starts_at) > now and not waiting_for_approval
     result.can_stop = change.state == MAILBOX_ACTIVE
     return result
+
+
+def filled_again(session: Session, user: User, ticket: Ticket) -> Optional[ForwardingForm]:
+    """The form for "Make a new request" on a finished mailbox request (#363): the same kind, whose mailbox, the same person and
+    the copy setting, with the times left blank for the person to choose. Read from the requester's own request, never from the
+    address; the person is only an object id, fetched again when the form is sent like on any form. None for a ticket that is not
+    the signed-in requester's or has no mailbox change."""
+    if not identity.is_requester(ticket, user):
+        return None
+    changes = changes_for_ticket(session, ticket)
+    if not changes:
+        return None
+    first = changes[0]
+    kinds = {c.kind for c in changes}
+    on_behalf = first.owner_address not in identity.requester_emails(user, session)
+    common = dict(
+        whose=OTHER if on_behalf else MINE,
+        owner_object_id=(first.owner_object_id or "") if on_behalf else "",
+        owner_name=_plain_name(session, first.owner_address) if on_behalf else "",
+        start_mode=NOW, start_date="", end_date="",
+    )
+    if kinds & set(ACCESS_ACTIONS):
+        if "forwarding" in kinds:
+            return None
+        return AccessForm(
+            **common, target_object_id=first.target_object_id or "", target_name=_plain_name(session, first.target_address),
+            full_access="full_access" in kinds, send_as="send_as" in kinds,
+        )
+    return ForwardingForm(
+        **common, target_object_id=first.target_object_id or "", target_name=_plain_name(session, first.target_address),
+        keep_copy=first.keep_copy,
+    )
+
+
+def _plain_name(session: Session, address: str) -> str:
+    person = identity.person_for_address(session, address)
+    return person.display_name if person is not None and person.display_name else address
+
+
+def ended_line(session: Session, ticket: Ticket) -> str:
+    """"This change has ended..." for a request an agent has reopened after every change ended (#363), else nothing."""
+    return ENDED_LINE if ticket.status not in (TicketStatus.RESOLVED, TicketStatus.CLOSED) and has_ended(session, ticket) else ""
 
 
 def views(session: Session, ticket: Ticket, user: User, now: Optional[datetime] = None) -> list[ChangeView]:

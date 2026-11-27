@@ -72,7 +72,7 @@ from app.request_questions import answer_rows, form_rows
 from app.request_types import (
     PROBLEM_TITLE, active_request_types, approval_notice, is_offered, offers_someone_elses, portal_cards, portal_tiles, request_type_of,
 )
-from app import people_directory, portal_mailbox
+from app import mailbox_changes, people_directory, portal_mailbox
 from app.mailbox_changes import MailboxChangeError, cancel_by_requester, changes_for_ticket, stop_now
 from app.portal_mailbox import AccessForm, ConfirmAccess, ConfirmNoCopy, ForwardingForm, MailboxFormError, OwnerRefused, TargetRefused
 from app.rate_limit import PEOPLE_SEARCH, rate_limited
@@ -258,12 +258,14 @@ def _conversation(
     return rows
 
 
-def _render_ticket(request: Request, ticket: Ticket, user: User, session: Session) -> HTMLResponse:
+def _render_ticket(request: Request, ticket: Ticket, user: User, session: Session, *, notice: str = "", status_code: int = 200) -> HTMLResponse:
     visible = requester_visible_messages(session, ticket)
     mine = _is_requester(ticket, user)
     emails = identity.requester_emails(user)
     zone = zone_for_user(session, user)
-    status = requester_status(session, ticket, zone, can_reopen=mine, is_requester=mine)
+    # A finished mailbox request is not reopened by its requester: they make a new request (#363).
+    new_request = mine and ticket.status == TicketStatus.RESOLVED and mailbox_changes.is_mailbox_request(session, ticket)
+    status = requester_status(session, ticket, zone, can_reopen=mine and not new_request, is_requester=mine)
     request_info = request_type_of(session, ticket)
     assignee = session.get(User, ticket.assigned_agent_id) if ticket.assigned_agent_id else None
     # The files an agent attached to an email (open from the portal, as the Teams message says) and the ones this person
@@ -310,7 +312,11 @@ def _render_ticket(request: Request, ticket: Ticket, user: User, session: Sessio
             "can_set_required_by": (offers_required_by(session, ticket) or ticket.required_by is not None)
             and may_set_required_by(user, ticket, access_context(session, user)),
             "can_withdraw": _is_requester(ticket, user) and ticket.status == TicketStatus.AWAITING_APPROVAL,
-            "can_reopen": _is_requester(ticket, user) and ticket.status == TicketStatus.RESOLVED,
+            "can_reopen": _is_requester(ticket, user) and ticket.status == TicketStatus.RESOLVED and not new_request,
+            "new_request_url": mailbox_changes.new_request_path(ticket) if new_request else "",
+            "new_request_line": mailbox_changes.NEW_REQUEST_LINE,
+            "mailbox_ended": portal_mailbox.ended_line(session, ticket) if mine else "",
+            "notice": notice,
             # The earlier or later request this one is linked to by a reply after closure, if the person can read it.
             "related": [
                 (other, which) for other, which in related_tickets(session, ticket)
@@ -322,6 +328,7 @@ def _render_ticket(request: Request, ticket: Ticket, user: User, session: Sessio
             "mailboxes": portal_mailbox.views(session, ticket, user) if mine else [],
             "user": user,
         },
+        status_code=status_code,
     )
 
 
@@ -354,14 +361,16 @@ def list_my_tickets(
     rows = []
     for ticket in tickets_page.items:
         mine = ticket.requester_email.strip().lower() in emails
-        status = requester_status(session, ticket, zone, can_reopen=mine, is_requester=mine)
+        mailbox_request = mailbox_changes.is_mailbox_request(session, ticket)
+        status = requester_status(session, ticket, zone, can_reopen=mine and not mailbox_request, is_requester=mine)
         rows.append({
             "ticket": ticket,
             "kind": requester_kind(ticket, kinds.get(ticket.request_type_id)),
             "status": status,
             "last_update": requester_last_update(session, ticket, zone, emails, can_reopen=mine, viewer_id=user.id, status=status),
             "following": not mine,
-            "can_reopen": mine and ticket.status == TicketStatus.RESOLVED,
+            "can_reopen": mine and ticket.status == TicketStatus.RESOLVED and not mailbox_request,
+            "new_request_url": mailbox_changes.new_request_path(ticket) if mine and mailbox_request and ticket.status == TicketStatus.RESOLVED else "",
         })
     return templates.TemplateResponse(
         request,
@@ -384,11 +393,21 @@ def list_my_tickets(
 def new_ticket_form(
     request: Request,
     request_type_id: Optional[str] = None,
+    again: Optional[str] = None,
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    """The raise form. `request_type_id` (a quick-start tile on My requests) chooses the kind of request in advance."""
-    return _render_new_form(request, user, session, optional_int(request_type_id))
+    """The raise form. `request_type_id` (a quick-start tile on My requests) chooses the kind of request in advance. `again` is the
+    number of the person's own finished mailbox request (Make a new request, #363): the form is that request's kind with its person
+    and settings filled in and no times. It is read from the request, not from the address; a number that is not theirs, or not a
+    mailbox request, gives the ordinary form."""
+    chosen = optional_int(request_type_id)
+    number = optional_int(again)
+    ticket = get_by_number(session, number) if number is not None else None
+    filled = portal_mailbox.filled_again(session, user, ticket) if ticket is not None else None
+    if filled is not None:
+        chosen = ticket.request_type_id or chosen
+    return _render_new_form(request, user, session, chosen, mailbox_form=filled)
 
 
 @router.get("/questions", response_class=HTMLResponse)
@@ -687,17 +706,24 @@ def add_comment(
     session.commit()
     session.refresh(ticket)
 
-    return _render_ticket(request, ticket, user, session)
+    notice = ""
+    if ticket.status == TicketStatus.RESOLVED and _is_requester(ticket, user) and mailbox_changes.is_mailbox_request(session, ticket):
+        notice = "Your message has been passed to IT Support, but it has not reopened this request. " + mailbox_changes.NEW_REQUEST_LINE
+    return _render_ticket(request, ticket, user, session, notice=notice)
 
 
 @router.post("/{number}/reopen")
 def reopen_my_ticket(
+    request: Request,
     number: int,
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
     """The signed-in requester reopens their resolved ticket (no emailed link needed). Followers cannot."""
     ticket = _get_own_ticket(session, number, user)
+    if ticket.status == TicketStatus.RESOLVED and mailbox_changes.is_mailbox_request(session, ticket):
+        # A doctored form: reopening would start nothing in Exchange, so the requester is told to make a new request (#363).
+        return _render_ticket(request, ticket, user, session, notice=mailbox_changes.NEW_REQUEST_LINE, status_code=409)
     try:
         reopen_ticket(session, ticket, user.email, "The requester reopened it from the portal")
     except ReopenError:

@@ -200,8 +200,16 @@ def apply_requester_reply(
     (A reply on a Closed ticket never gets here: it opens a new ticket, app/reopening.py.)"""
     if ticket.status == TicketStatus.RESOLVED and ticket.triaged_at is not None:
         from app.reopening import ReopenError, reopen_ticket  # here because app.reopening builds on this module
+        from app.mailbox_changes import is_mailbox_request
+        from app.reopening import EVENT_REPLY_NOT_REOPENED
         from app.thanks_rules import EVENT_REOPENED_BY_REPLY, EVENT_THANKS_IGNORED, is_thanks_reply
 
+        if is_mailbox_request(session, ticket):
+            # A finished mailbox request is not reopened by a reply (#363): reopening starts nothing in Exchange, so the ticket would
+            # sit in the queue with nothing to do. The reply is recorded and the assignee told as for any reply; the requester sends a
+            # new request (the portal page says so, and so does the resolution email).
+            record_event(session, ticket, EVENT_REPLY_NOT_REOPENED, actor_email, detail=(text or "").strip()[:200])
+            return None
         if is_thanks_reply(session, text, has_attachment):
             record_event(session, ticket, EVENT_THANKS_IGNORED, actor_email, detail=(text or "").strip()[:200])
             return None  # a thank-you: recorded by the caller, not a reason to reopen

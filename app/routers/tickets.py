@@ -2647,6 +2647,7 @@ def _render_ticket_detail(
             "chips": chips,
             "mailbox_change": mailbox_change if mailbox_phase else None,
             "mailbox_declined": mailbox_changes.DECLINED_LINE if mailbox_changes.was_declined(session, ticket) else "",
+            "mailbox_ended": mailbox_changes.ENDED_LINE if ticket.status not in FINISHED_STATUSES and mailbox_changes.has_ended(session, ticket) else "",
             "mailbox_phase": mailbox_phase,
             "card": card,
             "card_title": card_title,

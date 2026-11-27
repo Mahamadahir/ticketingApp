@@ -26,6 +26,10 @@
   </label>
   <button type="submit">Send feedback</button>
 </form>
+{% elif state == "new_request" %}
+<p>This request has finished. To set it up again, make a new request.</p>
+{% if new_request_url %}<p><a href="{{ new_request_url }}">Make a new request</a> (you will be asked to sign in first)</p>
+{% else %}<p>Sign in to the support portal and choose New request.</p>{% endif %}
 {% elif state == "closed" %}
 <p>This ticket has been closed, so it cannot be reopened from here. Reply to the email you received and we will open a new ticket linked to this one.</p>
 {% elif state == "not_resolved" %}
