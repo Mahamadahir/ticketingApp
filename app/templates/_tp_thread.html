@@ -93,6 +93,33 @@
     </ul>
     {% endif %}
     {% for line in box.extra %}<p class="muted small tp-extra">{{ line }}</p>{% endfor %}
+    {% if box.delivery %}{% set d = box.delivery %}
+    {# An email the app sent or queued about this ticket (#349): its kind, who it went to, its state, and what was kept of its text. #}
+    <div class="tp-delivery">
+      <p class="tp-delivery-head">
+        <b>{{ d.label }}</b>
+        <span class="chip t-{{ d.tone }}">{% if d.state == "sent" %}Sent {{ d.sent_at|local_time }}{% elif d.state == "held" %}Held back by the limit{% elif d.state == "failed" %}Failed{% else %}Queued{% endif %}</span>
+      </p>
+      <p class="muted small tp-extra">To: {{ d.to }}{% if d.cc %} &middot; Cc: {{ d.cc }}{% endif %}</p>
+      {% if d.state == "held" %}
+      <p class="tp-line">{{ d.reason }}</p>
+      {% if d.can_send_anyway %}
+      <form method="post" action="/tickets/{{ ticket.number }}/emails/{{ d.row_id }}/send-anyway" hx-post="/tickets/{{ ticket.number }}/emails/{{ d.row_id }}/send-anyway" hx-target="main" hx-swap="innerHTML">
+        <button type="submit" class="btn">Send anyway</button>
+      </form>
+      {% endif %}
+      {% elif d.state == "failed" and d.reason %}<p class="tp-line">{{ d.reason }}</p>
+      {% elif d.state == "queued" and d.released_by %}<p class="muted small tp-extra">Released by {{ d.released_by }} with Send anyway; it goes out next.</p>
+      {% elif d.state == "queued" and d.reason %}<p class="muted small tp-extra">Waiting: {{ d.reason }}</p>{% endif %}
+      {% if not box.message %}
+      <details class="tp-quoted tp-delivery-text">
+        <summary>Show text</summary>
+        {% if d.text %}<div class="message-body tp-msg-body tp-quoted-body">{{ d.text }}</div>
+        {% else %}<p class="muted small tp-quoted-body">The text is written when the email is sent.</p>{% endif %}
+      </details>
+      {% endif %}
+    </div>
+    {% endif %}
     {% if box.reactions %}
     <ul class="tp-reactions" aria-label="Reactions">
       {% for r in box.reactions %}

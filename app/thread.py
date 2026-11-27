@@ -31,7 +31,8 @@ from app.models import (
 from app.quoted_text import split_quoted
 from app.reactions import NEGATIVE, POSITIVE, display_of, reactions_for_ticket
 from app.reply_channel import AGENT, EMAIL, PORTAL, SYSTEM, TEAMS_CHANNEL
-from app.visibility import AccessContext, may_manage_note
+from app.ticket_emails import Delivery, describe, ticket_emails
+from app.visibility import Access, AccessContext, may_manage_note, ticket_access
 
 _EMAIL = re.compile(r"[\w.+'-]+@[\w-]+(?:\.[\w-]+)+")
 
@@ -99,6 +100,7 @@ class Box:
     alert: Optional[str] = None  # a red chip beside the kind chip (MSP mail whose sender was not verified)
     waits_for_triage: bool = False  # a visible note on an untriaged ticket: the requester sees it once triaged
     reactions: list = field(default_factory=list)  # ReactionLines: reactions to this message (#298)
+    delivery: Optional[Delivery] = None  # the email this box is or carries: its kind, recipients and state (#349)
 
 
 # ---- names -----------------------------------------------------------------------------------------------------
@@ -238,6 +240,8 @@ def _sentence(e: TicketEvent, n: Names) -> str:
         return f"Split off {to}."
     if t == "split_from":
         return f"Split from {to}."
+    if t == "email_sent_anyway":
+        return f"Sent an email anyway that the limit on automatic emails had held back: {detail or 'an email'}."
     if t == "sent_to_msp":
         how = {"thread": "the whole thread", "original": "the original request", "automatic": "automatically"}.get(to or "", None)
         return f"Sent the ticket to the MSP{' (' + how + ')' if how else ''}.{_reason(detail)}"
@@ -498,9 +502,31 @@ def build_thread(
 
     # Newest first. At the same moment an event comes before the message that caused it (the oldest-first order of
     # `agent_timeline` reversed), and the later row before the earlier.
+    _add_emails(session, ticket, boxes, ticket_access(viewer, ticket, levels) >= Access.WORK)
     _add_reactions(session, ticket, boxes)
     boxes.sort(key=lambda b: (b.at, 0 if b.message is not None else 1, b.num), reverse=True)
     return boxes
+
+
+def _add_emails(session: Session, ticket: Ticket, boxes: list[Box], can_work: bool) -> None:
+    """Every email sent or queued about the ticket (#349), one entry each. An email that carries one of the ticket's own messages (an
+    agent's reply, an automatic notice) shows as the delivery line of that message's box; any other (acknowledgement, chase, approval
+    mail, follower update, MSP mail, ...) is a box of its own in the automatic-message format, at the time it was queued."""
+    rows = ticket_emails(session, ticket)
+    if not rows:
+        return
+    by_message = {b.message.id: b for b in boxes if b.message is not None and b.source is None and b.kind != NOTE_DELETED}
+    chip, tone = CHIPS[EMAIL_OUT]
+    for row in rows:
+        delivery = describe(row, can_work)
+        target = by_message.get(row.message_id) if row.message_id else None
+        if target is not None and target.delivery is None:
+            target.delivery = delivery
+            continue
+        boxes.append(Box(
+            id=f"o{row.id}", kind=EMAIL_OUT, at=row.created_at, num=row.id or 0, who="IT Support (automatic)", who_email=None,
+            title="Sent an automatic message", chip=chip, tone=tone, delivery=delivery,
+        ))
 
 
 def _add_reactions(session: Session, ticket: Ticket, boxes: list[Box]) -> None:
