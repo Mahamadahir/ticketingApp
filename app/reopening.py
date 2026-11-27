@@ -9,6 +9,10 @@ What happens to a finished ticket:
   goes up, a "reopened" event records the reason, and the assigned agent is told (`notify_reopened`).
   A reply that reopens does not send that second notification: the agent has already been told of the
   reply (`record_inbound`).
+- A finished mailbox request (it has a mailbox change, `mailbox_changes.is_mailbox_request`) is not reopened by its requester
+  (#363): reopening would start nothing in Exchange. The portal and the emailed link offer a new request, the reopen POST is
+  refused, and a reply is recorded (`reply_not_reopened`) in `apply_requester_reply` and leaves it Resolved. An agent's Reopen
+  works as for any ticket.
 - Closed: it stays closed. A reply after closure opens a new ticket by the existing paths (source
   email or portal) with a related-ticket link to the old one (`open_follow_on_ticket`), shown on both
   ticket pages (`related_tickets`). It is a plain link, not a parent and child (that is
