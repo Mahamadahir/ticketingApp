@@ -76,6 +76,7 @@ from app.intake import (
     IncomingAttachment, clean_body, clean_subject, clean_text, ignored_as_never_follow,
     record_first_message, record_reply, store_files,
 )
+from app.forwards import EVENT_MAIL_FORWARDED, decide as decide_forward
 from app.identity import addresses_of, person_for_address
 from app.models import (
     TICKET_TYPE_PREFIXES,
@@ -148,7 +149,11 @@ class IncomingMail:
     graph_message_id: str
     sender: str  # the From address, lower case, "" if there is none
     subject: str = ""
+    # The new text only (Graph uniqueBody, or body when that is blank): a reply, MSP mail, the thanks rules and the split
+    # check read this one.
     body: str = ""
+    # The whole message (Graph body) with the earlier chain under it: the email that opens a ticket keeps it. "" means body.
+    full_body: str = ""
     internet_message_id: Optional[str] = None  # normalised, see _message_id
     conversation_id: Optional[str] = None
     cc: list[str] = field(default_factory=list)
@@ -201,8 +206,16 @@ def parse_graph_message(raw: dict) -> IncomingMail:
     """A Graph message (the fields `GraphClient.get_message` selects) as an IncomingMail. Anything
     missing or oddly shaped becomes empty rather than an error: a mail we cannot read is ignored, it
     does not stop the ones behind it."""
-    body = raw.get("uniqueBody") or raw.get("body") or {}
-    content = body.get("content") if isinstance(body, dict) else None
+    def content_of(key: str) -> str:
+        part = raw.get(key)
+        return _text(part.get("content") if isinstance(part, dict) else None)
+
+    # uniqueBody is only what is new in the conversation: Graph leaves out forwarded and quoted text, so an empty forward
+    # comes back blank. A blank one falls back to the whole body, never "(no message text)" (#347).
+    whole = content_of("body")
+    content = content_of("uniqueBody")
+    if not content.strip():
+        content = whole
     headers: dict[str, str] = {}
     auth_results: list[str] = []
     for header in raw.get("internetMessageHeaders") or []:
@@ -219,7 +232,8 @@ def parse_graph_message(raw: dict) -> IncomingMail:
         graph_message_id=str(raw.get("id") or ""),
         sender=sender,
         subject=_text(raw.get("subject")),
-        body=_text(content),
+        body=content,
+        full_body=whole or content,
         internet_message_id=_message_id(raw.get("internetMessageId")),
         conversation_id=_text(raw.get("conversationId")) or None,
         cc=[a for a in (_address(e) for e in raw.get("ccRecipients") or []) if a],
@@ -415,8 +429,14 @@ def _subject_of(mail: IncomingMail) -> str:
     return clean_subject(mail.subject)
 
 
-def _body_of(mail: IncomingMail) -> str:
-    return clean_body(mail.body)
+def opening_text(mail: IncomingMail) -> str:
+    """What the email that opens a ticket keeps: the whole message with the earlier chain or the forwarded email under it
+    (the thread folds it, app/quoted_text.py), not only the new lines a reply keeps (#347)."""
+    return mail.full_body or mail.body
+
+
+def _body_of(mail: IncomingMail, *, opening: bool = False) -> str:
+    return clean_body(opening_text(mail) if opening else mail.body)
 
 
 def _has_real_attachment(mail: IncomingMail, files: list[IncomingAttachment]) -> bool:
@@ -588,6 +608,7 @@ def ingest_mail(
 
     ticket, how = find_ticket_for(session, mail)
     closed = None
+    forward = None
     if ticket is not None:
         # A thread that already carried on in a ticket opened after closure goes on in that one.
         newer = latest_follow_on(session, ticket)
@@ -619,14 +640,26 @@ def ingest_mail(
             actor_email=None,
         )
     else:
-        new = create_ticket(session, subject=_subject_of(mail), requester_email=sender, source=TicketSource.EMAIL)
+        # A forward from someone inside the organisation may name another requester (app/forwards.py); not a follow-on
+        # ticket, whose requester is the closed ticket's.
+        forward = decide_forward(session, sender, mail.subject, opening_text(mail))
+        new = create_ticket(
+            session, subject=_subject_of(mail), requester_email=forward.requester if forward else sender, source=TicketSource.EMAIL
+        )
     if ticket is not None:
         record_event(
             session, new, EVENT_REFERENCE_NOT_USED, None, to_value=ticket.tag,
             detail="The subject or thread names that ticket, but the sender is not its requester or a follower",
         )
+    if forward is not None and forward.detail:
+        record_event(session, new, EVENT_MAIL_FORWARDED, sender, to_value=new.requester_email, detail=forward.detail)
+    if forward is not None and forward.follower:
+        try:
+            add_follower(session, new, forward.follower, sender)
+        except (InvalidEmail, NeverFollowListed, TooManyFollowers):
+            pass
     message = record_first_message(
-        session, new, sender=sender, body=body, author_id=author_id, action="created_by_email",
+        session, new, sender=sender, body=_body_of(mail, opening=True), author_id=author_id, action="created_by_email",
         channel=EMAIL, graph_message_id=mail.graph_message_id,
     )
     mailbox = settings.graph_shared_mailbox.strip().lower()
@@ -642,7 +675,7 @@ def ingest_mail(
     _store_files(session, storage, new, message, files)
     # A receipt to a real person only: automatic mail, bounces, our own mail, floods and mail from a
     # never-follow address (a list or shared mailbox) were all set aside above.
-    if is_on() and sender == new.requester_email:
+    if is_on() and (sender == new.requester_email or (forward is not None and forward.applied)):
         queue_acknowledgement(session, new)
     return settle(TICKET_CREATED, new, message)
 
