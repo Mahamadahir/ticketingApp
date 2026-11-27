@@ -235,6 +235,22 @@ def test_the_confirm_line_names_the_current_end_user_and_follows_the_choice(clie
     assert 'data-mail="someone@example.org"' in results  # the "Use {address}" choice carries the address for the line
 
 
+def test_the_chevron_sits_at_the_end_of_the_heading_row_not_after_the_name(client, db_session, desk):
+    from pathlib import Path
+
+    ticket = worked(db_session, desk)
+    page = client.get(f"/tickets/{ticket.number}").text
+    head = re.search(r'<div class="tp-box-head">(.*?)</div>', page, re.S).group(1)
+    assert 'id="enduser-heading"' in head and head.index("enduser-heading") < head.index('id="rp-toggle"')  # heading first, control after it
+    assert 'class="icon-btn tp-pencil rp-toggle"' in head and 'aria-expanded="false"' in head
+    box = page[page.index('id="box-enduser"'):page.index('id="rp-panel"')]
+    assert box.index('class="tp-box-head"') < box.index('class="tp-person"')  # the head row comes before the details
+    assert 'id="rp-toggle"' not in box[box.index('class="tp-person"'):]  # and nothing sits after the name
+    css = Path("app/static/styles.css").read_text(encoding="utf-8")
+    assert re.search(r"\.tp-box-head \{[^}]*justify-content: space-between", css)  # pushed to the right end, at every width
+    assert re.search(r'\.rp-toggle\[aria-expanded="true"\] svg \{ transform: rotate\(180deg\)', css)  # points up while open
+
+
 # ---- Who it can become -------------------------------------------------------------------------------
 
 

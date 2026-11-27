@@ -156,7 +156,7 @@ The app's first modal (#309), a deliberate exception to "never a pop-over" (the 
 
 ## Inline person picker
 
-The End user box on the agent ticket page (#279): a small `.icon-btn.rp-toggle` (chevron, `aria-expanded`, `aria-controls`) after the name opens `.rp-panel` in place; Escape or Cancel closes it and focus returns to the chevron. Inside: a `type=search` field whose results are the `.mb-person` buttons of `_people_results.html` (shared with the portal's mailbox form), then the form's tick boxes and Save / Cancel. Script: `app/static/requester-picker.js`. Chosen people show in `.mb-chosen` with Choose someone else, and `p.note#rp-confirm` above Save reads "Change end user from {old name} ({old address}) to {new name} ({new address})?" (hidden until a choice is made, no browser pop-up).
+The End user box on the agent ticket page (#279): a plain `.icon-btn.tp-pencil.rp-toggle` (chevron without border or fill, `aria-expanded`, `aria-controls`, pointing up while open) at the right-hand end of the box's heading row (`.tp-box-head`, the heading left and the control right, at every width) opens `.rp-panel` below the details in place; Escape or Cancel closes it and focus returns to the chevron. Inside: a `type=search` field whose results are the `.mb-person` buttons of `_people_results.html` (shared with the portal's mailbox form), then the form's tick boxes and Save / Cancel. Script: `app/static/requester-picker.js`. Chosen people show in `.mb-chosen` with Choose someone else, and `p.note#rp-confirm` above Save reads "Change end user from {old name} ({old address}) to {new name} ({new address})?" (hidden until a choice is made, no browser pop-up).
 
 ## Font
 

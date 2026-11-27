@@ -150,14 +150,19 @@
 <aside class="tp-side" aria-label="Ticket details">
   {# 1. End user: its own box, so the Entra details and Call user (#250) can join it later. #}
   <section class="card tp-card tp-box" id="box-enduser" aria-labelledby="enduser-heading">
-    <h2 id="enduser-heading">End user</h2>
+    <div class="tp-box-head">
+      <h2 id="enduser-heading">End user</h2>
+      {% if editable.requester %}
+      {# The chevron sits at the right-hand end of the heading row, where a pencil would sit on a row, and points up while the panel is open. #}
+      <button type="button" class="icon-btn tp-pencil rp-toggle" id="rp-toggle" aria-expanded="false" aria-controls="rp-panel" aria-label="Change end user" data-rp-toggle>
+        <svg aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"></path></svg>
+      </button>
+      {% endif %}
+    </div>
     <div class="tp-person">
       <span class="avatar tp-avatar" aria-hidden="true">{{ requester_name|initials }}</span>
       <div>
-        <b>{{ requester_name }}</b>{% if editable.requester %}
-        <button type="button" class="icon-btn rp-toggle" id="rp-toggle" aria-expanded="false" aria-controls="rp-panel" aria-label="Change end user" data-rp-toggle>
-          <svg aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"></path></svg>
-        </button>{% endif %}<br>
+        <b>{{ requester_name }}</b><br>
         <a href="mailto:{{ ticket.requester_email }}">{{ ticket.requester_email }}</a><br>
         <span class="muted small">{{ requester_zone }}</span>
       </div>
