@@ -14,7 +14,7 @@
   </header>
 
   {# A refused action (card_errors in app/routers/tickets.py): the message sits here, in the card, and the form keeps what was typed. #}
-  {% if card_error %}<p class="error tp-card-error" role="alert" id="tp-card-error">{{ card_error }}</p>{% endif %}
+  {% if card_error and not card_confirm %}<p class="error tp-card-error" role="alert" id="tp-card-error">{{ card_error }}</p>{% endif %}
 
   {% if compose and composer %}
   {# A send was held back: another agent posted after this page loaded (#246). Nothing was sent; the text is kept below. #}
@@ -286,6 +286,53 @@
     <button type="submit" class="btn btn-primary">Cancel the change</button>
   </form>
   {% endif %}
+
+  {% elif card == "mailbox" and mailbox_card %}
+  {# Set up mailbox change (#364, app/agent_mailbox.py): for a request that arrived by email or Teams. The picker, times and script are
+     the portal's mailbox form partials; the form's id and the picker ids are what static/mailbox-form.js looks up. A plain POST that
+     also works with htmx, like the other cards. The keep-a-copy and access warnings are the server's: they come back as the red
+     confirmation below, and the request is only made when it is sent with `confirmed`. #}
+  {% set f = mailbox_card.form %}{% set mailbox_zone = mailbox_card.zone %}{% set quarter_times = mailbox_card.quarter_times %}{% set mailbox_max_days = mailbox_card.max_days %}
+  <form class="tp-form mb-agent" id="mb-form" method="post" action="/tickets/{{ ticket.number }}/mailbox/set-up" hx-post="/tickets/{{ ticket.number }}/mailbox/set-up" hx-target="main" hx-swap="innerHTML" data-zone="{{ mailbox_zone }}">
+    <p class="note">For a request that came in by email or Teams. You are IT, so this is set up for the requester without an approval: say below how you confirmed it. The mailbox owner is told when it starts and when it ends, and that IT set it up.</p>
+    <fieldset class="mb-fieldset">
+      <legend>What to set up</legend>
+      {% for value, label in mailbox_card.kinds %}
+      <label class="mb-choice"><input type="radio" name="kind" value="{{ value }}" {{ "checked" if f.kind == value else "" }} /> {{ label }}</label>
+      {% endfor %}
+    </fieldset>
+
+    {% set picker_legend = "Mailbox owner" %}{% set picker_prefix = "mo" %}{% set picker_field = "owner" %}{% set picker_oid = f.owner_object_id %}{% set picker_name = f.owner_name %}{% include "_mailbox_picker.html" %}
+
+    <p class="note">Leave the next box empty to use the requester, when they are not the mailbox owner.</p>
+    {% set picker_legend = "Forward to, or give access to" %}{% set picker_prefix = "mb" %}{% set picker_field = "target" %}{% set picker_oid = f.target_object_id %}{% set picker_name = f.target_name %}{% include "_mailbox_picker.html" %}
+
+    <label class="check"><input type="checkbox" name="keep_copy" id="mb-keep-copy" {{ "checked" if f.keep_copy else "" }} /> Keep a copy in the owner's mailbox <span class="note">(forwarding only; recommended)</span></label>
+
+    {% set times_what = "Forwarding or access" %}{% include "_mailbox_times.html" %}
+
+    <label>How you confirmed this request (required)
+      <textarea name="note" rows="2" maxlength="{{ mailbox_card.max_note }}" placeholder="For example: Confirmed by phone with the owner, 10:05" required>{{ f.note }}</textarea>
+    </label>
+    <p class="note">The note goes on the ticket for the team and in the audit log. The requester and the mailbox owner do not see it.</p>
+
+    <button type="submit" class="btn btn-primary">Set up</button>
+    {% if card_confirm %}
+    <section class="mb-confirm" id="mb-confirm-block" aria-labelledby="mb-confirm-title" role="alert">
+      <h3 class="mb-confirm-head" id="mb-confirm-title">{{ "Turn off the copy?" if f.kind == "forwarding" else "Give access to the mailbox?" }}</h3>
+      <div class="mb-confirm-body">
+        <p>{{ card_error }}</p>
+        <div class="rq-actions">
+          <input type="hidden" name="confirm_token" value="{{ mailbox_card.token }}" />
+          <button type="submit" name="confirmed" value="1" class="btn btn-danger">{{ "Turn off the copy" if f.kind == "forwarding" else "Give access" }}</button>
+          <a class="btn" href="/tickets/{{ ticket.number }}?action=mailbox">Cancel</a>
+        </div>
+        <p class="note">To change who or what, change the form above and press Set up again.</p>
+      </div>
+    </section>
+    {% endif %}
+  </form>
+  <script src="{{ static_url('mailbox-form.js') }}" defer></script>
 
   {% elif card == "link" %}
   <form class="tp-form" method="post" action="/tickets/{{ ticket.number }}/link" hx-post="/tickets/{{ ticket.number }}/link" hx-target="main" hx-swap="innerHTML">
