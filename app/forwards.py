@@ -4,8 +4,10 @@
 with a "From:" line) and what is in it: the words written above the block and the original sender. `decide` applies the owner's
 rules (27 Nov 2026) and returns who is the requester and who follows; app/inbound.py acts on it and records the event.
 
-- Only an internal forwarder (an enabled member account with a mailbox, app/people_directory.py; a linked address counts).
-  An outside forwarder is the requester as ever, with nobody added.
+- Only an internal forwarder (an enabled member account with a mailbox, app/people_directory.py; a linked address counts)
+  whose mail Exchange also authenticated as internal (`inbound.authenticated_as_internal`, #356): the From address alone can be
+  forged. An outside forwarder is the requester as ever, with nobody added; an internal-looking one whose mail was not
+  authenticated is the same, with an event saying the rules were not applied.
 - Nothing written above the forwarded block: the original sender is the requester, even an outside one, and the forwarder
   follows. Words above it: the forwarder is the requester and the original sender follows.
 - The original sender is read from the block's "From:" line (`Name <address>`, `Name [mailto:address]` or a bare address). A
@@ -94,9 +96,11 @@ def original_address(session: Session, from_text: str) -> tuple[Optional[str], s
     return None, ("no one in the directory has that name" if not people else "more than one person has that name")
 
 
-def decide(session: Session, forwarder: str, subject: str, body: str) -> Optional[ForwardDecision]:
+def decide(session: Session, forwarder: str, subject: str, body: str, authenticated: bool = True) -> Optional[ForwardDecision]:
     """What a forward of `body` from `forwarder` means for who the requester is, or None to carry on as for any mail (not a
-    forward, an outside forwarder, or the original sender is the forwarder). The forwarder's address is the normalised one."""
+    forward, an outside forwarder, or the original sender is the forwarder). The forwarder's address is the normalised one.
+    `authenticated` is whether Exchange authenticated the mail as internal (#356); the internal rules need that and the
+    directory both."""
     parts = read_forward(subject, body)
     if parts is None:
         return None
@@ -110,6 +114,24 @@ def decide(session: Session, forwarder: str, subject: str, body: str) -> Optiona
         )
     if not internal:
         return None
+    if not authenticated:
+        # A forward of their own mail changes nothing either way, so it gets no misleading event (the address read here is
+        # the line's own, never a directory lookup).
+        angled = _ANGLE.search(parts.from_text)
+        written = angled.group(1) if angled else (_ADDRESS.search(parts.from_text) or [None])[0]
+        try:
+            if written and normalise_email(written) in identity.addresses_of(session, forwarder):
+                return None
+        except InvalidEmail:
+            pass
+        log.warning("forward from %s: the mail was not authenticated as internal, so the forward rules were not applied", forwarder)
+        return ForwardDecision(
+            requester=forwarder,
+            detail=(
+                f"Forwarded by {forwarder}. The forward rules were not applied because the mail was not authenticated as "
+                "internal by Exchange, so the forwarder is the requester."
+            ),
+        )
     address, why = original_address(session, parts.from_text)
     mailbox = settings.graph_shared_mailbox.strip().lower()
     if address is not None and address in identity.addresses_of(session, forwarder):

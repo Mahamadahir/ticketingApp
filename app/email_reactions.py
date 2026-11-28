@@ -44,6 +44,7 @@ from app import reactions
 from app.config import settings
 from app.graph_client import REACTIONS_BLOB_ID, REACTIONS_COUNT_ID, graph_client
 from app.identity import addresses_of, person_for_address
+from app.mail_threading import THREADED_KINDS, norm_subject, recipients_of
 from app.run_summary import RunSummary
 from app.models import MailSyncState, OutboundEmail, Ticket, TicketFollower, TicketReaction
 from app.settings_store import EMAIL_REACTIONS_BACKFILL_DAYS, count_setting
@@ -127,31 +128,24 @@ def decode_blob(blob: str) -> list[Reaction]:
 # ---- Matching ----------------------------------------------------------------------------------------------------
 
 
-def recipients_of(item: dict) -> set[str]:
-    """The lower-case addresses a sent message went to (to and cc)."""
-    found: set[str] = set()
-    for key in ("toRecipients", "ccRecipients"):
-        for entry in item.get(key) or []:
-            address = entry.get("emailAddress", {}).get("address") if isinstance(entry, dict) and isinstance(entry.get("emailAddress"), dict) else None
-            if isinstance(address, str) and address.strip():
-                found.add(address.strip().lower())
-    return found
-
-
-def outbox_row_for(session: Session, subject: str, sent_at: Optional[datetime], recipients: set[str]) -> Optional[OutboundEmail]:
+def outbox_row_for(
+    session: Session, subject: str, sent_at: Optional[datetime], recipients: set[str], unclaimed_only: bool = False
+) -> Optional[OutboundEmail]:
     """The email the outbox sent that this Sent Items message is: same subject and recipient, sent at (nearly) the same time, the
     closest in time when there are several. None when none matches (an email sent by hand from the mailbox, or before the app kept
     what it sent), and None when the two closest are different kinds of email sent within AMBIGUOUS_GAP of each other (a reply and
     then the resolution, seconds apart: `sent_at` is the app's clock after Graph answered, so their order could be swapped), because a
-    wrong kind would be worse than the plain `other`."""
+    wrong kind would be worse than the plain `other`. A reply's copy carries an "RE: " the row's subject does not (#350), so it is
+    matched on the subject without it. `unclaimed_only` looks only at emails whose Sent Items id is not yet known."""
     if not subject or sent_at is None:
         return None
-    rows = session.exec(
-        select(OutboundEmail).where(
-            OutboundEmail.subject == subject, OutboundEmail.ticket_id.is_not(None), OutboundEmail.sent_at.is_not(None),
-            OutboundEmail.sent_at >= sent_at - SENT_MATCH_WINDOW, OutboundEmail.sent_at <= sent_at + SENT_MATCH_WINDOW,
-        )
-    ).all()
+    query = select(OutboundEmail).where(
+        OutboundEmail.subject.in_({subject, norm_subject(subject)}), OutboundEmail.ticket_id.is_not(None), OutboundEmail.sent_at.is_not(None),
+        OutboundEmail.sent_at >= sent_at - SENT_MATCH_WINDOW, OutboundEmail.sent_at <= sent_at + SENT_MATCH_WINDOW,
+    )
+    if unclaimed_only:
+        query = query.where(OutboundEmail.graph_message_id.is_(None), OutboundEmail.kind.in_(THREADED_KINDS))
+    rows = session.exec(query).all()
     rows = sorted(
         (row for row in rows if (row.to_address or "").strip().lower() in recipients), key=lambda row: abs(_aware(row.sent_at) - sent_at),
     )
@@ -161,6 +155,21 @@ def outbox_row_for(session: Session, subject: str, sent_at: Optional[datetime], 
         if abs(_aware(rows[1].sent_at) - sent_at) - abs(_aware(rows[0].sent_at) - sent_at) < AMBIGUOUS_GAP:
             return None
     return rows[0]
+
+
+def claim_sent_item(session: Session, item: dict) -> bool:
+    """Notes this Sent Items message's id on the email it is the copy of, if that email's copy was not yet found (#350: the next email
+    to the same people replies to it). The same match as the reactions use, and nothing is claimed when two kinds of email are too close
+    to tell apart. Returns whether an email was claimed."""
+    subject = item.get("subject") if isinstance(item.get("subject"), str) else ""
+    if not item.get("id"):
+        return False
+    row = outbox_row_for(session, subject, parse_graph_time(item.get("sentDateTime")), recipients_of(item), unclaimed_only=True)
+    if row is None or session.exec(select(OutboundEmail.id).where(OutboundEmail.graph_message_id == item["id"])).first() is not None:
+        return False
+    row.graph_message_id = item["id"]
+    session.add(row)
+    return True
 
 
 def _aware(moment: datetime) -> datetime:
@@ -250,6 +259,7 @@ def _sync(session: Session, graph, state: MailSyncState, now: datetime, counts: 
         standing = _standing_on(session, [_ref_of(item) for item in items])
         for item in items:
             counts.changed += 1
+            claim_sent_item(session, item)
             _one_message(session, graph, item, counts, now, standing.get(_ref_of(item), []))
         next_link, delta_link = page.get("@odata.nextLink"), page.get("@odata.deltaLink")
         if next_link:

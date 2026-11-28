@@ -54,6 +54,10 @@
   "migrations": {
     "chain_tail": [
       {
+        "file": "migrations/versions/e5b2c8d4f731_outbound_mail_threading.py",
+        "revision": "e5b2c8d4f731"
+      },
+      {
         "file": "migrations/versions/a355c0de01b2_sla_reopen_restart.py",
         "revision": "a355c0de01b2"
       },
@@ -68,17 +72,13 @@
       {
         "file": "migrations/versions/d41e7a9b3c05_scheduled_job_run.py",
         "revision": "d41e7a9b3c05"
-      },
-      {
-        "file": "migrations/versions/c3f8a2d6b941_seed_mailbox_request_types.py",
-        "revision": "c3f8a2d6b941"
       }
     ],
-    "count": 88,
+    "count": 89,
     "heads": [
       {
-        "file": "migrations/versions/a355c0de01b2_sla_reopen_restart.py",
-        "revision": "a355c0de01b2"
+        "file": "migrations/versions/e5b2c8d4f731_outbound_mail_threading.py",
+        "revision": "e5b2c8d4f731"
       }
     ]
   },
@@ -1206,6 +1206,7 @@
         "tests/test_inbound_mail.py",
         "tests/test_linked_identities.py",
         "tests/test_mail_subscriptions.py",
+        "tests/test_mail_threading.py",
         "tests/test_mailbox_changes.py",
         "tests/test_mailbox_executor_azure.py",
         "tests/test_mailbox_reopen.py",
@@ -1365,11 +1366,11 @@
       ],
       "file": "app/email_reactions.py",
       "functions": [
+        "claim_sent_item",
         "decode_blob",
         "email_reactions_job",
         "outbox_row_for",
         "properties_of",
-        "recipients_of",
         "run_email_reactions",
         "went_to_a_party"
       ],
@@ -1380,6 +1381,7 @@
         "app.config",
         "app.graph_client",
         "app.identity",
+        "app.mail_threading",
         "app.models",
         "app.reactions",
         "app.run_summary",
@@ -1392,7 +1394,8 @@
       "summary": "Reactions in Outlook (issue #299): the recurring job that reads them from the shared mailbox's Sent Items.",
       "tables": [],
       "tests": [
-        "tests/test_email_reactions.py"
+        "tests/test_email_reactions.py",
+        "tests/test_mail_threading.py"
       ]
     },
     {
@@ -1764,6 +1767,7 @@
         "tests/test_forward_mail.py",
         "tests/test_inbound_mail.py",
         "tests/test_mail_subscriptions.py",
+        "tests/test_mail_threading.py",
         "tests/test_msp_mail.py",
         "tests/test_outbound_mail.py",
         "tests/test_portal_mailbox.py",
@@ -1803,6 +1807,7 @@
         "app.inbound",
         "app.linked_identities",
         "app.mail",
+        "app.mail_threading",
         "app.mailbox_changes",
         "app.msp",
         "app.notifications",
@@ -1847,6 +1852,7 @@
       ],
       "file": "app/inbound.py",
       "functions": [
+        "authenticated_as_internal",
         "automatic_reason",
         "backoff_until",
         "find_ticket_for",
@@ -2211,6 +2217,7 @@
         "own_first_message",
         "quoted",
         "record_only",
+        "reply_was_refused",
         "send_link_code",
         "send_now",
         "send_through_graph"
@@ -2235,6 +2242,7 @@
         "app.followers",
         "app.graph_client",
         "app.identity",
+        "app.mail_threading",
         "app.messages",
         "app.models",
         "app.never_follow",
@@ -2265,6 +2273,7 @@
         "tests/test_email_templates.py",
         "tests/test_follower_updates.py",
         "tests/test_linked_identities.py",
+        "tests/test_mail_threading.py",
         "tests/test_mailbox_on_behalf.py",
         "tests/test_mailbox_reopen.py",
         "tests/test_msp.py",
@@ -2301,6 +2310,33 @@
       "tables": [],
       "tests": [
         "tests/test_mail_display.py"
+      ]
+    },
+    {
+      "classes": [],
+      "file": "app/mail_threading.py",
+      "functions": [
+        "claim_sent_copy",
+        "norm_subject",
+        "recipients_of",
+        "reply_target"
+      ],
+      "imported_by": [
+        "app.email_reactions",
+        "app.mail"
+      ],
+      "imports": [
+        "app.identity",
+        "app.models",
+        "app.outbox",
+        "app.subscriptions"
+      ],
+      "module": "app.mail_threading",
+      "routes": [],
+      "summary": "Mail threading (issue #350): which earlier email a ticket email is sent as a reply to, and how the Graph id of each email we",
+      "tables": [],
+      "tests": [
+        "tests/test_mail_threading.py"
       ]
     },
     {
@@ -2630,6 +2666,7 @@
         "tests/test_escalation_tidy.py",
         "tests/test_follower_updates.py",
         "tests/test_inbound_mail.py",
+        "tests/test_mail_threading.py",
         "tests/test_mailbox_changes.py",
         "tests/test_mailbox_on_behalf.py",
         "tests/test_message_channel.py",
@@ -2768,6 +2805,7 @@
         "app.linked_identities",
         "app.linking",
         "app.mail",
+        "app.mail_threading",
         "app.mailbox_changes",
         "app.mailbox_executor",
         "app.mailbox_executor_azure",
@@ -3141,6 +3179,7 @@
         "tests/test_login_lockout.py",
         "tests/test_mail_display.py",
         "tests/test_mail_subscriptions.py",
+        "tests/test_mail_threading.py",
         "tests/test_mailbox_access.py",
         "tests/test_mailbox_changes.py",
         "tests/test_mailbox_executor_azure.py",
@@ -3743,6 +3782,7 @@
         "app.follower_updates",
         "app.inbound",
         "app.mail",
+        "app.mail_threading",
         "app.mailbox_changes",
         "app.messages",
         "app.msp",
@@ -3776,6 +3816,7 @@
         "tests/test_email_templates.py",
         "tests/test_follower_updates.py",
         "tests/test_forward_mail.py",
+        "tests/test_mail_threading.py",
         "tests/test_mailbox_access.py",
         "tests/test_mailbox_changes.py",
         "tests/test_mailbox_on_behalf.py",
@@ -7275,6 +7316,7 @@
         "app.email_reactions",
         "app.inbound",
         "app.jobs",
+        "app.mail_threading",
         "app.routers.admin",
         "app.routers.health"
       ],
@@ -8414,6 +8456,12 @@
       },
       {
         "detail": "select() on Message",
+        "file": "app/mail_threading.py",
+        "in": "reply_target",
+        "rule": "messages-via-messages-module"
+      },
+      {
+        "detail": "select() on Message",
         "file": "app/msp.py",
         "in": "_thread_messages",
         "rule": "messages-via-messages-module"
@@ -8888,6 +8936,7 @@
     "tests/test_login_lockout.py",
     "tests/test_mail_display.py",
     "tests/test_mail_subscriptions.py",
+    "tests/test_mail_threading.py",
     "tests/test_mailbox_access.py",
     "tests/test_mailbox_changes.py",
     "tests/test_mailbox_executor_azure.py",
