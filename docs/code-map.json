@@ -106,7 +106,9 @@
         "find",
         "hash_token",
         "is_expired",
+        "is_mailbox_request",
         "mint",
+        "new_request_url",
         "put_links_in",
         "reopen_from_link",
         "submit_feedback"
@@ -114,12 +116,14 @@
       "imported_by": [
         "app.closing",
         "app.mail",
+        "app.reopening",
         "app.resolution",
         "app.routers.action_links",
         "app.teams"
       ],
       "imports": [
         "app.config",
+        "app.mailbox_changes",
         "app.models",
         "app.reactions",
         "app.reopening",
@@ -132,6 +136,7 @@
       "tests": [
         "tests/test_action_links.py",
         "tests/test_closing_email.py",
+        "tests/test_mailbox_reopen.py",
         "tests/test_reactions.py"
       ]
     },
@@ -1204,6 +1209,7 @@
         "tests/test_mail_threading.py",
         "tests/test_mailbox_changes.py",
         "tests/test_mailbox_executor_azure.py",
+        "tests/test_mailbox_reopen.py",
         "tests/test_mailbox_third_person.py",
         "tests/test_message_channel.py",
         "tests/test_msp.py",
@@ -1420,6 +1426,7 @@
         "app.messages",
         "app.msp",
         "app.msp_actions",
+        "app.reopening",
         "app.resolution",
         "app.routers.admin",
         "app.routers.legal",
@@ -1902,6 +1909,8 @@
         "tests/test_follower_updates.py",
         "tests/test_forward_mail.py",
         "tests/test_inbound_mail.py",
+        "tests/test_mailbox_reopen.py",
+        "tests/test_mailbox_reply_notice.py",
         "tests/test_msp_mail.py",
         "tests/test_msp_real_mail.py",
         "tests/test_never_follow.py",
@@ -1938,6 +1947,7 @@
         "app.models",
         "app.never_follow",
         "app.raising",
+        "app.reopening",
         "app.reply_channel",
         "app.settings_store",
         "app.splitting",
@@ -2265,6 +2275,7 @@
         "tests/test_linked_identities.py",
         "tests/test_mail_threading.py",
         "tests/test_mailbox_on_behalf.py",
+        "tests/test_mailbox_reopen.py",
         "tests/test_msp.py",
         "tests/test_msp_actions.py",
         "tests/test_msp_mail.py",
@@ -2345,9 +2356,12 @@
         "failed_change_for_ticket",
         "failed_phase",
         "finish_on_behalf",
+        "has_ended",
+        "is_mailbox_request",
         "lock_owner",
         "mailbox_changes_job",
         "max_attempts",
+        "new_request_path",
         "pending_change_condition",
         "run_mailbox_changes",
         "schedule_ticket",
@@ -2357,11 +2371,14 @@
         "was_declined"
       ],
       "imported_by": [
+        "app.action_links",
         "app.approvals",
         "app.portal_mailbox",
+        "app.resolution",
         "app.routers.portal",
         "app.routers.tickets",
-        "app.scheduled_jobs"
+        "app.scheduled_jobs",
+        "app.splitting"
       ],
       "imports": [
         "app.approvals",
@@ -2523,6 +2540,7 @@
         "tests/test_entra_check.py",
         "tests/test_health.py",
         "tests/test_htmx_errors.py",
+        "tests/test_mailbox_reopen.py",
         "tests/test_outage_mode.py",
         "tests/test_portal_new.py",
         "tests/test_portal_request.py",
@@ -3166,6 +3184,8 @@
         "tests/test_mailbox_changes.py",
         "tests/test_mailbox_executor_azure.py",
         "tests/test_mailbox_on_behalf.py",
+        "tests/test_mailbox_reopen.py",
+        "tests/test_mailbox_reply_notice.py",
         "tests/test_mailbox_seed_types.py",
         "tests/test_mailbox_third_person.py",
         "tests/test_message_channel.py",
@@ -3800,6 +3820,8 @@
         "tests/test_mailbox_access.py",
         "tests/test_mailbox_changes.py",
         "tests/test_mailbox_on_behalf.py",
+        "tests/test_mailbox_reopen.py",
+        "tests/test_mailbox_reply_notice.py",
         "tests/test_msp_mail.py",
         "tests/test_outbound_mail.py",
         "tests/test_reply_files.py",
@@ -3973,6 +3995,8 @@
         "approval_note",
         "approval_summary",
         "copy_off_warning",
+        "ended_line",
+        "filled_again",
         "read_times",
         "submit_access",
         "submit_forwarding",
@@ -4215,18 +4239,23 @@
         "open_follow_on_ticket",
         "reclose_ticket",
         "related_tickets",
-        "reopen_ticket"
+        "reopen_ticket",
+        "reply_not_reopened_count",
+        "tell_reply_did_not_reopen"
       ],
       "imported_by": [
         "app.action_links",
         "app.inbound",
+        "app.intake",
         "app.reports",
         "app.routers.portal",
         "app.routers.tickets",
         "app.splitting"
       ],
       "imports": [
+        "app.action_links",
         "app.audit",
+        "app.email_templates",
         "app.followers",
         "app.messages",
         "app.models",
@@ -4632,6 +4661,7 @@
         "auto_resolution_note",
         "check_can_resolve",
         "clean_notes",
+        "is_mailbox_request",
         "preview_resolution",
         "resolution_email_body",
         "resolve_ticket"
@@ -4649,6 +4679,7 @@
         "app.audit",
         "app.email_templates",
         "app.forms",
+        "app.mailbox_changes",
         "app.messages",
         "app.models",
         "app.msp_actions",
@@ -4665,6 +4696,7 @@
         "tests/test_bulk_resolve.py",
         "tests/test_email_header.py",
         "tests/test_mailbox_changes.py",
+        "tests/test_mailbox_reopen.py",
         "tests/test_msp.py",
         "tests/test_msp_actions.py",
         "tests/test_reopening.py",
@@ -6868,6 +6900,7 @@
         "tests/test_mailbox_access.py",
         "tests/test_mailbox_changes.py",
         "tests/test_mailbox_on_behalf.py",
+        "tests/test_mailbox_reopen.py",
         "tests/test_mailbox_third_person.py",
         "tests/test_msp.py",
         "tests/test_msp_actions.py",
@@ -7029,6 +7062,7 @@
         "app.ticket_service"
       ],
       "imports": [
+        "app.mailbox_changes",
         "app.messages",
         "app.models",
         "app.reopening",
@@ -7798,6 +7832,7 @@
       "summary": "Thank-you rules and their review queue (phase 4E-2). Nothing here commits.",
       "tables": [],
       "tests": [
+        "tests/test_mailbox_reply_notice.py",
         "tests/test_teams_followups.py",
         "tests/test_teams_intake.py",
         "tests/test_thanks_rules.py"
@@ -8906,6 +8941,8 @@
     "tests/test_mailbox_changes.py",
     "tests/test_mailbox_executor_azure.py",
     "tests/test_mailbox_on_behalf.py",
+    "tests/test_mailbox_reopen.py",
+    "tests/test_mailbox_reply_notice.py",
     "tests/test_mailbox_seed_types.py",
     "tests/test_mailbox_third_person.py",
     "tests/test_message_channel.py",

@@ -50,6 +50,8 @@
         <span class="chip t-{{ row.status.tone }}">{{ row.status.label }}</span>
         {% if row.can_reopen %}
         <form method="post" action="/portal/{{ ticket.number }}/reopen" class="inline-form"><button type="submit" class="btn">Reopen</button></form>
+        {% elif row.new_request_url %}
+        <a class="btn" href="{{ row.new_request_url }}">Make a new request</a>
         {% endif %}
       </div>
     </li>

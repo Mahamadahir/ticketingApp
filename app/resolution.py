@@ -22,7 +22,7 @@ from typing import Optional
 
 from sqlmodel import Session
 
-from app.action_links import FEEDBACK_MARKER, REOPEN_MARKER
+from app.action_links import FEEDBACK_MARKER, NEW_REQUEST_MARKER, REOPEN_MARKER
 from app.audit import log_action
 from app.email_templates import render_template, ticket_values
 from app.forms import MAX_MESSAGE_LENGTH
@@ -62,12 +62,20 @@ def check_can_resolve(session: Session, ticket: Ticket) -> None:
         raise ResolveError(str(error))
 
 
+def is_mailbox_request(session: Session, ticket: Ticket) -> bool:
+    from app.mailbox_changes import is_mailbox_request as test  # here: the mailbox code builds on this module
+
+    return test(session, ticket)
+
+
 def resolution_email_body(session: Session, ticket: Ticket, notes: str) -> str:
     """The text of the resolution email: the admin template with the notes put in."""
     # The links are put in as the email is built (app/action_links.py), so the stored text holds markers.
     return render_template(session, "resolution", {
         **ticket_values(ticket), "resolution_notes": notes,
-        "feedback_link": FEEDBACK_MARKER, "reopen_link": REOPEN_MARKER,
+        "feedback_link": FEEDBACK_MARKER,
+        # A mailbox request is not reopened by its requester: the email offers a new request instead (#363).
+        "reopen_link": NEW_REQUEST_MARKER if is_mailbox_request(session, ticket) else REOPEN_MARKER,
     }).body
 
 

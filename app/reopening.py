@@ -9,6 +9,10 @@ What happens to a finished ticket:
   goes up, a "reopened" event records the reason, and the assigned agent is told (`notify_reopened`).
   A reply that reopens does not send that second notification: the agent has already been told of the
   reply (`record_inbound`).
+- A finished mailbox request (it has a mailbox change, `mailbox_changes.is_mailbox_request`) is not reopened by its requester
+  (#363): reopening would start nothing in Exchange. The portal and the emailed link offer a new request, the reopen POST is
+  refused, and a reply is recorded (`reply_not_reopened`) in `apply_requester_reply` and leaves it Resolved. An agent's Reopen
+  works as for any ticket.
 - Closed: it stays closed. A reply after closure opens a new ticket by the existing paths (source
   email or portal) with a related-ticket link to the old one (`open_follow_on_ticket`), shown on both
   ticket pages (`related_tickets`). It is a plain link, not a parent and child (that is
@@ -30,7 +34,7 @@ from sqlmodel import Session, select
 from app.audit import log_action
 from app.followers import InvalidEmail, NeverFollowListed, TooManyFollowers, add_follower
 from app.messages import STATUS_CHOICES
-from app.models import FINISHED_STATUSES, RelatedTicket, Ticket, TicketSource, TicketStatus
+from app.models import FINISHED_STATUSES, RelatedTicket, Ticket, TicketEvent, TicketSource, TicketStatus
 from app.notifications import notify_reopened, notify_reply
 from app.thanks_rules import record_candidate
 from app.ticket_service import create_ticket, record_event, set_status
@@ -39,6 +43,9 @@ EVENT_REOPENED = "reopened"  # detail: the reason
 EVENT_RECLOSED = "reclosed"  # to_value: the reason, detail: its wording
 EVENT_FOLLOWS = "follows"  # on the new ticket: to_value is the earlier (closed) ticket
 EVENT_FOLLOWED_BY = "followed_by"  # on the closed ticket: to_value is the new ticket
+
+EVENT_REPLY_EMAILED = "reply_notice_sent"  # the one automatic email about it (#363); checked before sending, so never twice
+EVENT_REPLY_NOT_REOPENED = "reply_not_reopened"  # a reply to a finished mailbox request (#363); detail: what it said
 
 AUDIT_REOPENED = "reopened"
 AUDIT_RECLOSED = "reclosed"
@@ -182,6 +189,29 @@ def reclose_ticket(session: Session, ticket: Ticket, actor_email: str, reason_ke
     log_action(session, actor_email, "ticket", ticket.id, AUDIT_RECLOSED, label)
     if reason_key == "said_thanks":
         record_candidate(session, ticket)  # the reply goes to the admin's review queue (app/thanks_rules.py)
+
+
+def tell_reply_did_not_reopen(session: Session, ticket: Ticket, before: int) -> bool:
+    """The one automatic email to the requester after an emailed reply to a finished mailbox request that did not reopen it (#363):
+    "make a new request" with the link. `before` is how many `reply_not_reopened` events the ticket had before the reply was
+    applied; nothing is sent unless the reply added one (a thank-you, or any other ticket, adds none), nor when this ticket was
+    told already. Does not commit. True when an email was queued."""
+    from app.action_links import new_request_url
+    from app.email_templates import render_template, ticket_values
+    from app.messages import record_notice
+
+    count = lambda kind: len(session.exec(select(TicketEvent.id).where(TicketEvent.ticket_id == ticket.id, TicketEvent.event_type == kind)).all())
+    if count(EVENT_REPLY_NOT_REOPENED) <= before or count(EVENT_REPLY_EMAILED) > 0:
+        return False
+    link = new_request_url(ticket) or "sign in to the support portal and choose New request"
+    body = render_template(session, "mailbox_reply_notice", {**ticket_values(ticket), "link": link}).body
+    record_notice(session, ticket, body)
+    record_event(session, ticket, EVENT_REPLY_EMAILED, "system", detail="Told the requester to make a new request")
+    return True
+
+
+def reply_not_reopened_count(session: Session, ticket: Ticket) -> int:
+    return len(session.exec(select(TicketEvent.id).where(TicketEvent.ticket_id == ticket.id, TicketEvent.event_type == EVENT_REPLY_NOT_REOPENED)).all())
 
 
 # ---- A reply after closure --------------------------------------------------------------------------

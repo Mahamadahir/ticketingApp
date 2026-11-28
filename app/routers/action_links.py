@@ -27,13 +27,14 @@ _HEADERS = {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}
 
 def _page(request: Request, kind: str, token: str, row: Optional[ActionToken], ticket: Optional[Ticket],
           state: str, message: str = "", status_code: int = 200) -> HTMLResponse:
-    """state: ready (the form), done (acted just now), used, expired, closed (cannot reopen), invalid."""
+    """state: ready (the form), done (acted just now), used, expired, closed (cannot reopen), new_request (a mailbox request, #363), invalid."""
     return templates.TemplateResponse(
         request,
         "action_link_page.html",
         {
             "kind": kind, "token": token, "ticket": ticket, "state": state, "message": message,
             "max_comment_length": action_links.MAX_COMMENT_LENGTH, "user": None,
+            "new_request_url": action_links.new_request_url(ticket) if state == "new_request" else "",
         },
         status_code=status_code,
         headers=_HEADERS,
@@ -45,11 +46,13 @@ def _load(session: Session, kind: str, token: str) -> tuple[Optional[ActionToken
     return row, (session.get(Ticket, row.ticket_id) if row is not None else None)
 
 
-def _state(kind: str, row: ActionToken, ticket: Ticket) -> str:
+def _state(session: Session, kind: str, row: ActionToken, ticket: Ticket) -> str:
     if row.used_at is not None:
         return "used"
     if action_links.is_expired(row):
         return "expired"
+    if kind == REOPEN and ticket.status == TicketStatus.RESOLVED and action_links.is_mailbox_request(session, ticket):
+        return "new_request"  # a mailbox request is not reopened by its requester (#363)
     if kind == REOPEN and not action_links.can_reopen(ticket):
         return "closed" if ticket.status == TicketStatus.CLOSED else "not_resolved"
     return "ready"
@@ -59,7 +62,7 @@ def _show(request: Request, session: Session, kind: str, token: str, message: st
     row, ticket = _load(session, kind, token)
     if row is None or ticket is None:
         return _page(request, kind, token, None, None, "invalid", status_code=404)
-    state = _state(kind, row, ticket)
+    state = _state(session, kind, row, ticket)
     return _page(request, kind, token, row, ticket, state, message, status_code=410 if state == "expired" else 200)
 
 
@@ -100,7 +103,7 @@ def reopen(request: Request, token: str, session: Session = Depends(get_session)
     row, ticket = _load(session, REOPEN, token)
     if row is None or ticket is None:
         return _page(request, REOPEN, token, None, None, "invalid", status_code=404)
-    state = _state(REOPEN, row, ticket)
+    state = _state(session, REOPEN, row, ticket)
     if state != "ready":
         return _show(request, session, REOPEN, token)
     try:

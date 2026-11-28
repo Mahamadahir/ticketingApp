@@ -278,6 +278,23 @@ REGISTRY: dict[str, TemplateDef] = {
             sample={**_COMMON_SAMPLE, "days": "3"},
         ),
         TemplateDef(
+            key="mailbox_reply_notice",
+            label="Reply to a finished mailbox request",
+            description=(
+                "Sent once to the requester when they reply by email to a request that has finished and changed a mailbox "
+                "(forwarding, Full access, Send As). Such a request is not reopened by a reply, so this tells them to make a "
+                "new request. It goes out under the ticket's own subject, so it threads with the rest, and never twice for "
+                "the same ticket. A thank-you reply (see Thanks rules) gets nothing. {link} is the portal's new-request form "
+                "with their request filled in again."
+            ),
+            body_default=(
+                "This request has finished, so your reply did not reopen it. To set it up again, make a new request: {link}"
+            ),
+            body_placeholders={**_COMMON, "link": "the link to make a new request (the form is filled in from this one)"},
+            required=("link",),
+            sample={**_COMMON_SAMPLE, "link": "https://tickets.example.org/portal/new?again=1042"},
+        ),
+        TemplateDef(
             key="auto_resolve_note",
             label="Automatic resolution note",
             description=(
@@ -787,7 +804,7 @@ AUDIENCES: tuple[tuple[str, str, str], ...] = (
 )
 AUDIENCE_OF: dict[str, str] = {
     "raised_for": "requester", "requester_changed": "requester", "acknowledgement": "requester", "split_notice": "requester", "follower_update": "requester", "resolution": "requester",
-    "closed": "requester", "chase": "requester", "auto_resolve_note": "requester", "link_code": "requester",
+    "closed": "requester", "chase": "requester", "auto_resolve_note": "requester", "mailbox_reply_notice": "requester", "link_code": "requester",
     "msp_forward": "requester", "msp_sent_notice": "requester", "approval_approved": "requester",
     "approval_declined": "requester", "approval_waived": "requester",
     "mailbox_started_requester": "requester", "mailbox_started_target": "requester", "mailbox_stopped_requester": "requester",

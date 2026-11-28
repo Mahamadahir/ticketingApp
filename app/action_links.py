@@ -43,6 +43,10 @@ LIFETIME_SETTINGS = {FEEDBACK: FEEDBACK_LINK_MINUTES}  # the reopen link has non
 # Worded to read sensibly where the requester sees the stored text (the portal timeline).
 FEEDBACK_MARKER = "(your personal feedback link is in the email)"
 REOPEN_MARKER = "(your personal reopen link is in the email)"
+# A mailbox request is not reopened by its requester (#363): its resolution email offers the new-request form instead, and the
+# stored text says so (the portal timeline shows it), so the requester is never told they can reopen it.
+DEFAULT_REOPEN_SENTENCE = "If this has not fixed the problem, tell us or reopen the ticket."  # the default resolution template's line
+NEW_REQUEST_MARKER = "(a link to make a new request is in the email)"
 MARKERS = {FEEDBACK: FEEDBACK_MARKER, REOPEN: REOPEN_MARKER}
 
 MAX_COMMENT_LENGTH = 2000
@@ -134,9 +138,18 @@ def can_reopen(ticket: Ticket) -> bool:
     return True
 
 
+def is_mailbox_request(session: Session, ticket: Ticket) -> bool:
+    from app.mailbox_changes import is_mailbox_request as test  # here: see new_request_url
+
+    return test(session, ticket)
+
+
 def reopen_from_link(session: Session, row: ActionToken, ticket: Ticket) -> None:
     """Reopens the ticket as its requester and uses up the link. Raises LinkError and the caller rolls back,
-    so a refused reopen leaves the link usable."""
+    so a refused reopen leaves the link usable. A mailbox request is never reopened by its requester (#363): an old
+    link shows the make-a-new-request page, and this refuses a doctored POST the same way."""
+    if is_mailbox_request(session, ticket):
+        raise LinkError("This request has finished. To set it up again, make a new request.")
     if not claim(session, row):
         raise LinkError("This link has already been used or has expired")
     try:
@@ -152,15 +165,33 @@ def _drop_lines_with(text: str, marker: str) -> str:
     return "\n".join(line for line in text.split("\n") if marker not in line)
 
 
+def new_request_url(ticket: Ticket) -> str:
+    """The sign-in-first link to the new-request form: on the web app (the public app serves only these links), "" when
+    the web address is not configured."""
+    from app.mailbox_changes import new_request_path  # here: the mailbox code is heavy and this module is not
+
+    base = settings.ticket_link_base.rstrip("/")
+    return f"{base}{new_request_path(ticket)}" if base else ""
+
+
 def put_links_in(session: Session, ticket: Ticket, body: str) -> str:
     """The email text with each marker replaced by a fresh link. A link that cannot be offered loses its whole line rather
     than leaving a dead marker: the reopen link needs a Resolved ticket, the feedback link a Resolved or Closed one
     (the closed email has it, #131), and both need PUBLIC_BASE_URL."""
-    if FEEDBACK_MARKER not in body and REOPEN_MARKER not in body:
+    if FEEDBACK_MARKER not in body and REOPEN_MARKER not in body and NEW_REQUEST_MARKER not in body:
         return body
     base = settings.public_base_url.rstrip("/")
     if not base:
         log.warning("PUBLIC_BASE_URL is not set, so the resolution email for %s has no feedback or reopen link", ticket.reference)
+    if NEW_REQUEST_MARKER in body:
+        # The line with the marker becomes the new-request link (a template's "Reopen this ticket: {reopen_link}" must not offer a
+        # reopen), and the default template's sentence "... tell us or reopen the ticket." goes too (#363).
+        url = new_request_url(ticket)
+        if url and ticket.status == TicketStatus.RESOLVED:
+            body = "\n".join("Make a new request: " + url if NEW_REQUEST_MARKER in line else line for line in body.split("\n"))
+        else:
+            body = _drop_lines_with(body, NEW_REQUEST_MARKER)
+        body = "\n".join(line for line in body.split("\n") if line.strip() != DEFAULT_REOPEN_SENTENCE)
     for kind in (FEEDBACK, REOPEN):
         marker = MARKERS[kind]
         if marker not in body:

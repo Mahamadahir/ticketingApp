@@ -19,6 +19,8 @@
   {% endfor %}
 </ol>
 {% if approval_rule %}<p class="note">Waiting for approval ({{ approval_rule }}).{% if approval_note %} {{ approval_note }}{% endif %}</p>{% endif %}
+{% if notice %}<p class="note" id="rq-notice" role="alert">{{ notice }}</p>{% endif %}
+{% if mailbox_ended %}<p class="note" id="mailbox-ended" role="status">{{ mailbox_ended }}</p>{% endif %}
 {% if self_approved %}<p class="note">Your own approval was recorded automatically: approvers may approve their own requests of this kind.</p>{% endif %}
 
 <div class="rq-cols">
@@ -128,6 +130,14 @@
     {% set until = status.reopen_note.replace(" · ", "") %}
     {% if until %}<p class="rq-hint">{{ until[:1]|upper }}{{ until[1:] }}.</p>{% endif %}
     <form method="post" action="/portal/{{ ticket.number }}/reopen"><button type="submit" class="btn">Reopen this request</button></form>
+  </div>
+  {% endif %}
+
+  {% if new_request_url %}
+  <div class="card rq-card rq-form" id="new-request">
+    <h2>Need it again?</h2>
+    <p class="rq-hint">{{ new_request_line }}</p>
+    <p><a class="btn btn-primary" href="{{ new_request_url }}">Make a new request</a></p>
   </div>
   {% endif %}
 
