@@ -2004,7 +2004,16 @@ def _clean_setting_value(session: Session, definition, value: str, submitted: di
         value = ", ".join(addresses)
         if len(value) > 2000:
             raise ValueError("That is too long (2000 characters at most)")
-    if len(value) > (500 if definition.kind in ("regex", "reaction_map") else 200) and definition.kind not in ("dates", "emails"):
+    if definition.kind == "domains" and value:
+        if len(value) > 1000:
+            raise ValueError("That is too long (1000 characters at most)")
+        parts = sorted({part.lower() for part in re.split(r"[,;\s]+", value) if part})
+        if not all(re.fullmatch(r"[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+", part) for part in parts):
+            raise ValueError("Enter domains such as example.com separated by commas or spaces, or leave it blank")
+        value = ", ".join(parts)
+        if len(value) > 1000:
+            raise ValueError("That is too long (1000 characters at most)")
+    if len(value) > (500 if definition.kind in ("regex", "reaction_map") else 200) and definition.kind not in ("dates", "emails", "domains"):
         raise ValueError("That is too long (500 characters at most)" if definition.kind in ("regex", "reaction_map") else "That is too long (200 characters at most)")
     if definition.kind == "reaction_map":
         try:
